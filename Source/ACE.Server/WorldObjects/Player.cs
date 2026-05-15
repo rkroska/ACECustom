@@ -103,18 +103,53 @@ namespace ACE.Server.WorldObjects
                 {
                     return false;
                 }
-                if (FastTick)
-                    return !PhysicsObj.TransientState.HasFlag(TransientStateFlags.OnWalkable);
-                else
-                {
-                    // for npks only, fixes a bug where OnWalkable can briefly lose state for 1 AutoPos frame
-                    // a good repro for this is collision w/ monsters near the top of ramps
-                    return !PhysicsObj.TransientState.HasFlag(TransientStateFlags.OnWalkable) && Velocity != Vector3.Zero;
-                }
+                // Do not treat "not OnWalkable" alone as mid-air: it can stick false indoors (EnvCell / ramps / contact quirks)
+                // while the client is clearly grounded and stationary. Require motion so PK (FastTick) matches the non-PK guard.
+                // Retail string "in the air" maps to this property, not literal height.
+                return !PhysicsObj.TransientState.HasFlag(TransientStateFlags.OnWalkable) && Velocity != Vector3.Zero;
             }
         }
 
         public DateTime LastJumpTime;
+
+        /// <summary>
+        /// When true, portal/jump suppression emits <c>[PortalJumpSuppress]</c> at log4net <b>Debug</b> (see <see cref="ApplyTeleportJumpGate"/> and related paths).
+        /// </summary>
+        public static bool LogPortalJumpSuppressToConsole = false;
+
+        private long _portalJumpSuppressMotionLastLogTicks;
+
+        /// <summary>
+        /// While <see cref="WorldObject.Teleporting"/>, server-side jump from motion (<c>apply_raw_movement(..., allowJump)</c>) is disabled.
+        /// </summary>
+        public void ApplyTeleportJumpGate(ref bool allowJump, string channel, string detail, bool throttleMotionLog = true)
+        {
+            if (!Teleporting)
+                return;
+
+            if (!allowJump)
+                return;
+
+            allowJump = false;
+
+            if (!LogPortalJumpSuppressToConsole || !log.IsDebugEnabled)
+                return;
+
+            var now = DateTime.UtcNow.Ticks;
+            if (throttleMotionLog && (now - _portalJumpSuppressMotionLastLogTicks) < TimeSpan.FromMilliseconds(150).Ticks)
+                return;
+            _portalJumpSuppressMotionLastLogTicks = now;
+
+            var po = PhysicsObj;
+            var ts = po?.TransientState;
+            log.Debug(
+                $"[PortalJumpSuppress][{channel}] player={Name} guid=0x{Guid.Full:X8} Teleporting=true -> allowJump forced false. {detail} " +
+                $"LocCell=0x{Location?.Cell ?? 0:X8} var={Location?.Variation?.ToString() ?? "null"} FastTick={FastTick} " +
+                $"Hidden={Hidden} IgnoreCollisions={IgnoreCollisions} ReportCollisions={ReportCollisions} " +
+                $"PortalSpaceEnteredUtc={PortalSpaceEnteredUtc?.ToString("O") ?? "null"} " +
+                $"PhysVel=({po?.Velocity.X:F3},{po?.Velocity.Y:F3},{po?.Velocity.Z:F3}) " +
+                $"OnWalkable={ts?.HasFlag(TransientStateFlags.OnWalkable)} Contact={ts?.HasFlag(TransientStateFlags.Contact)}");
+        }
 
         public ACE.Entity.Position LastGroundPos;
         public ACE.Entity.Position SnapPos;
@@ -968,6 +1003,25 @@ namespace ACE.Server.WorldObjects
 
         public void HandleActionJump(JumpPack jump)
         {
+            if (Teleporting)
+            {
+                if (LogPortalJumpSuppressToConsole && log.IsDebugEnabled)
+                {
+                    var po = PhysicsObj;
+                    var ts = po?.TransientState;
+                    log.Debug(
+                        $"[PortalJumpSuppress][GameActionJump] REJECT player={Name} guid=0x{Guid.Full:X8} Teleporting=true (jump ignored; no stamina spent). " +
+                        $"jumpExtent={jump.Extent:F4} jumpVel=({jump.Velocity.X:F4},{jump.Velocity.Y:F4},{jump.Velocity.Z:F4}) " +
+                        $"LocCell=0x{Location?.Cell ?? 0:X8} var={Location?.Variation?.ToString() ?? "null"} FastTick={FastTick} " +
+                        $"Hidden={Hidden} IgnoreCollisions={IgnoreCollisions} ReportCollisions={ReportCollisions} " +
+                        $"PortalSpaceEnteredUtc={PortalSpaceEnteredUtc?.ToString("O") ?? "null"} LastTeleportTime={LastTeleportTime.ToUniversalTime():O} " +
+                        $"PhysVel=({po?.Velocity.X:F4},{po?.Velocity.Y:F4},{po?.Velocity.Z:F4}) VelLenSq={Velocity.LengthSquared():F6} " +
+                        $"OnWalkable={ts?.HasFlag(TransientStateFlags.OnWalkable)} Contact={ts?.HasFlag(TransientStateFlags.Contact)} " +
+                        $"IsJumping={IsJumping}");
+                }
+                return;
+            }
+
             StartJump = new ACE.Entity.Position(Location);
             //Console.WriteLine($"JumpPack: Velocity: {jump.Velocity}, Extent: {jump.Extent}");
 

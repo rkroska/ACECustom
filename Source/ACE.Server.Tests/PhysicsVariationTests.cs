@@ -26,6 +26,7 @@ namespace ACE.Server.Tests
             Setup(true);
 
             var cell = DBObj.GetEnvCell(3880648731, null);
+            Assert.IsNotNull(cell);
             Assert.AreNotEqual<uint>(0, cell.CellStructureID);
         }
 

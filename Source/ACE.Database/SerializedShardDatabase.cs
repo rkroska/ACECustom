@@ -89,20 +89,16 @@ namespace ACE.Database
 
         private void DoReadOnlyWork()
         {
-            while (!_readOnlyQueue.IsAddingCompleted)
+            // Block when empty (GetConsumingEnumerable) instead of spinning on TryTake + continue.
+            try
             {
-                try
+                foreach (var t in _readOnlyQueue.GetConsumingEnumerable())
                 {
-                    Task t;
-
-                    bool tasked = _readOnlyQueue.TryTake(out t);
                     try
                     {
-                        if (!tasked)
-                        {
-                            // no task to process, continue
+                        if (t == null)
                             continue;
-                        }
+
                         t.Start();
                     }
                     catch (Exception e)
@@ -110,20 +106,10 @@ namespace ACE.Database
                         log.Error($"[DATABASE] DoReadOnlyWork task failed with exception: {e}");
                     }
                 }
-                catch (ObjectDisposedException)
-                {
-                    // the _readOnlyQueue has been disposed, we're good
-                    break;
-                }
-                catch (InvalidOperationException)
-                {
-                    // _readOnlyQueue is empty and CompleteForAdding has been called -- we're done here
-                    break;
-                }
-                catch (NullReferenceException)
-                {
-                    break;
-                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // the _readOnlyQueue has been disposed, we're good
             }
         }
         private void DoSaves()

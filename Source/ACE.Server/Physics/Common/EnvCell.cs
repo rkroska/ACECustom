@@ -21,6 +21,11 @@ namespace ACE.Server.Physics.Common
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        /// <summary>Guards against pathological visible-cell graphs (bad cell.dat) blowing the stack.</summary>
+        [ThreadStatic]
+        private static int _buildVisibleDepth;
+
+        private const int MaxBuildVisibleDepth = 48;
         //public int NumSurfaces;
         //public List<Surface> Surfaces;
         public CellStruct CellStructure;
@@ -80,13 +85,36 @@ namespace ACE.Server.Physics.Common
             if (Environment?.Cells != null && Environment.Cells.TryGetValue(CellStructureID, out var cellStruct))
                 CellStructure = new CellStruct(cellStruct);
             else
-                Console.WriteLine("CellStructureID {0} not found in Environment {1}", CellStructureID, EnvironmentID);
-
+            {
+                PhysicsLogGates.MissingCellStructure.Warn(
+                    () =>
+                        $"[PHYSICS] EnvCell CellStructureID 0x{CellStructureID:X8} not found in Environment 0x{EnvironmentID:X8} (cell 0x{ID:X8} variation={Variation?.ToString() ?? "null"}). CellStructure left null; physics for this cell will be skipped until cell.dat is repaired.",
+                    10_000);
+            }
             //NumSurfaces = envCell.Surfaces.Count;
+            // PostInit may skip before build_visible_cells runs; never leave VisibleCells null (GetVisible / add_visible_cell).
+            VisibleCells = new ConcurrentDictionary<uint, EnvCell>();
         }
 
         public void PostInit(int? variation)
         {
+            if (ID == 0)
+            {
+                PhysicsLogGates.PostInitSkipped.Warn(
+                    () => $"[PHYSICS] EnvCell.PostInit skipped: cell Id is 0 (invalid). variation={variation?.ToString() ?? "null"}",
+                    10_000);
+                return;
+            }
+
+            if (CellStructure == null)
+            {
+                PhysicsLogGates.PostInitSkipped.Warn(
+                    () =>
+                        $"[PHYSICS] EnvCell.PostInit skipped: CellStructure is null for cell 0x{ID:X8} env=0x{EnvironmentID:X8} cellStructId=0x{CellStructureID:X8} variation={variation?.ToString() ?? "null"}. Skipping visible-cell build and statics.",
+                    10_000);
+                return;
+            }
+
             build_visible_cells();
             init_static_objects(variation);
         }
@@ -129,7 +157,32 @@ namespace ACE.Server.Physics.Common
             //{
             //    return; // already built
             //}
+            _buildVisibleDepth++;
+            try
+            {
+                if (_buildVisibleDepth > MaxBuildVisibleDepth)
+                {
+                    PhysicsLogGates.BuildVisibleDepth.Warn(
+                        () =>
+                            $"[PHYSICS] build_visible_cells aborted: depth {_buildVisibleDepth} exceeds {MaxBuildVisibleDepth} (likely bad cell.dat visible graph). rootCell=0x{ID:X8} variation={Pos.Variation?.ToString() ?? "null"}",
+                        10_000);
+                    return;
+                }
+
+                BuildVisibleCellsCore();
+            }
+            finally
+            {
+                _buildVisibleDepth--;
+            }
+        }
+
+        private void BuildVisibleCellsCore()
+        {
             VisibleCells ??= new ConcurrentDictionary<uint, EnvCell>();
+            if (VisibleCellIDs == null)
+                return;
+
             var diagDebug = IndoorPlacementDiagLogging.IsColo(ID) && log.IsDebugEnabled;
             var diagCfg = IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(ID);
             var visibleListCount = VisibleCellIDs?.Count ?? 0;
@@ -193,6 +246,8 @@ namespace ACE.Server.Physics.Common
         {
             //if (portalId == 0) return;
             if (portalId == ushort.MaxValue) return;
+            if (CellStructure == null)
+                return;
 
             foreach (var sphere in spheres)
             {
@@ -211,6 +266,9 @@ namespace ACE.Server.Physics.Common
         {
             //if (portalId == 0) return;
             if (portalId == ushort.MaxValue) return;
+            if (CellStructure == null || Portals == null || CellStructure.Portals == null
+                || portalId < 0 || portalId >= Portals.Count || portalId >= CellStructure.Portals.Count)
+                return;
 
             var portal = Portals[portalId];
             var portalPoly = CellStructure.Portals[portalId];
@@ -344,6 +402,8 @@ namespace ACE.Server.Physics.Common
 
         public EnvCell GetVisible(uint cellID)
         {
+            if (VisibleCells == null)
+                return null;
             VisibleCells.TryGetValue(cellID, out EnvCell envCell);
             return envCell;
         }
@@ -357,24 +417,41 @@ namespace ACE.Server.Physics.Common
             VisibleCells = new ConcurrentDictionary<uint, EnvCell>();
         }
 
-        public EnvCell add_visible_cell(uint cellID, int? Variation)
+        public EnvCell? add_visible_cell(uint cellID, int? Variation)
         {
-            var envCell = DBObj.GetEnvCell(cellID, Variation);
-            VisibleCells.TryAdd(cellID, envCell);
+            // VisibleCells keys are low 16 bits (same as BuildVisibleCellsCore / GetVisible(portal.OtherCellId) / IsVisibleIndoors).
+            var loadCellId = (cellID & 0xFFFF0000) != 0 ? cellID : (uint)((ID & 0xFFFF0000) | (cellID & 0xFFFF));
+            var key = loadCellId & 0xFFFFU;
+
+            var envCell = DBObj.GetEnvCell(loadCellId, Variation);
+            if (envCell == null)
+            {
+                PhysicsLogGates.AddVisibleCellNull.Warn(
+                    () => $"[PHYSICS] add_visible_cell: DBObj.GetEnvCell returned null for loadCellId=0x{loadCellId:X8} (arg cellID=0x{cellID:X8}) variation={Variation?.ToString() ?? "null"} (parent 0x{ID:X8})",
+                    10_000);
+                return null;
+            }
+            VisibleCells ??= new ConcurrentDictionary<uint, EnvCell>();
+            VisibleCells.TryAdd(key, envCell);
             return envCell;
         }
 
         public override void find_transit_cells(int numParts, List<PhysicsPart> parts, CellArray cellArray)
         {
+            if (CellStructure == null || Portals == null)
+                return;
+
             var checkOutside = false;
 
             foreach (var portal in Portals)
             {
-                var portalPoly = CellStructure.Polygons[portal.PolygonId];
+                if (portal == null || CellStructure.Polygons == null
+                    || !CellStructure.Polygons.TryGetValue(portal.PolygonId, out var portalPoly))
+                    continue;
 
                 foreach (var part in parts)
                 {
-                    if (part == null) continue;
+                    if (part == null || part.GfxObj == null) continue;
                     var sphere = part.GfxObj.PhysicsSphere;
                     if (sphere == null)
                         sphere = part.GfxObj.DrawingSphere;
@@ -417,6 +494,9 @@ namespace ACE.Server.Physics.Common
                         break;
                     }
 
+                    if (otherCell.CellStructure == null)
+                        continue;
+
                     var cellBox = new BBox();
                     cellBox.LocalToLocal(bbox, part.Pos, otherCell.Pos);
                     if (otherCell.CellStructure.box_intersects_cell(cellBox))
@@ -432,11 +512,16 @@ namespace ACE.Server.Physics.Common
 
         public override void find_transit_cells(Position position, int numSphere, List<Sphere> spheres, CellArray cellArray, SpherePath path)
         {
+            if (CellStructure == null || Portals == null)
+                return;
+
             var checkOutside = false;
 
             foreach (var portal in Portals)
             {
-                var portalPoly = CellStructure.Polygons[portal.PolygonId];
+                if (portal == null || CellStructure.Polygons == null
+                    || !CellStructure.Polygons.TryGetValue(portal.PolygonId, out var portalPoly))
+                    continue;
 
                 if (portal.OtherCellId == ushort.MaxValue)
                 {
@@ -456,7 +541,7 @@ namespace ACE.Server.Physics.Common
                 else
                 {
                     var otherCell = GetVisible(portal.OtherCellId);
-                    if (otherCell != null)
+                    if (otherCell != null && otherCell.CellStructure != null)
                     {
                         foreach (var sphere in spheres)
                         {
@@ -471,7 +556,7 @@ namespace ACE.Server.Physics.Common
                             }
                         }
                     }
-                    else
+                    else if (otherCell == null)
                     {
                         foreach (var sphere in spheres)
                         {
@@ -528,7 +613,9 @@ namespace ACE.Server.Physics.Common
         public static ObjCell get_visible(uint cellID, int? variationId)
         {
             var cell = (EnvCell)LScape.get_landcell(cellID, variationId);
-            return cell.VisibleCells.Values.First();
+            if (cell?.VisibleCells == null || cell.VisibleCells.Count == 0)
+                return null;
+            return cell.VisibleCells.Values.FirstOrDefault();
         }
 
         //public void grab_visible(List<uint> stabs)
