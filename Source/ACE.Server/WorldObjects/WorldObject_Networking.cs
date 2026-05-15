@@ -1323,6 +1323,9 @@ namespace ACE.Server.WorldObjects
                 //PhysicsObj.UpdateTime = Physics.Common.PhysicsTimer.CurrentTime - PhysicsGlobals.MinQuantum;
                 PhysicsObj.UpdateTime = Physics.Common.PhysicsTimer.CurrentTime;
 
+            if (this is Player pl)
+                pl.ApplyTeleportJumpGate(ref allowJump, "ApplyPhysicsMotion", $"stance={motion.Stance} fwdCmd={motion.MotionState.ForwardCommand}", throttleMotionLog: true);
+
             minterp.apply_raw_movement(true, allowJump);
         }
 

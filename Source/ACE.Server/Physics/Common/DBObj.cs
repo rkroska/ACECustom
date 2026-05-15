@@ -1,5 +1,5 @@
 using System;
-using System.Diagnostics;
+
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
 
@@ -59,14 +59,18 @@ namespace ACE.Server.Physics.Common
         }
 
         /// <summary>
-        /// QualifiedDID Type 3
+        /// QualifiedDID Type 3. Returns null when the cell.dat read is missing or invalid (Id == 0).
         /// </summary>
-        public static EnvCell GetEnvCell(uint id, int? Variation)
+        public static EnvCell? GetEnvCell(uint id, int? Variation)
         {
             var envCell = DatManager.CellDat.ReadFromDat<DatLoader.FileTypes.EnvCell>(id);
             if (envCell.Id == 0)
             {
-                Console.WriteLine("EnvCell not found: " + id + "\n" + new StackTrace().ToString());
+                PhysicsLogGates.InvalidEnvCellDat.Warn(
+                    () =>
+                        $"[PHYSICS] EnvCell dat read returned Id=0 (missing or invalid cell.dat entry). cellId=0x{id:X8} variation={Variation?.ToString() ?? "null"}. " +
+                        $"Landblock=0x{(id >> 16):X4}. Do not use this cell for physics until cell.dat is repaired.");
+                return null;
             }
             return new EnvCell(envCell, Variation);
         }

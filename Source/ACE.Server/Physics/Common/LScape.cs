@@ -104,13 +104,20 @@ namespace ACE.Server.Physics.Common
                     if (!Nullable.Equals(variationId, variantForCache)
                         && landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId }, out cell))
                     {
-                        Console.WriteLine(
-                            $"get_landcell variant mismatch for {blockCellID:X8}: caller v={variationId?.ToString() ?? "null"} landblock v={landblock.VariationId?.ToString() ?? "null"}; recovered with caller variant — fix variation propagation.");
+                        PhysicsLogGates.GetLandcellVariantRecover.Warn(
+                            () =>
+                                $"[PHYSICS] get_landcell variant mismatch for 0x{blockCellID:X8}: caller v={variationId?.ToString() ?? "null"} landblock v={landblock.VariationId?.ToString() ?? "null"}; recovered with caller variant — fix variation propagation.",
+                            15_000);
                     }
                     else
                     {
-                        Console.WriteLine($"get_landcell({blockCellID:X8} - {landCellIdx:X8} - variantForCache={variantForCache:X8}) failed to get from dictionary, cache miss.");
-                        Console.WriteLine($"Landblock {landblock.ID:X8} keys: " + string.Join(", ", landblock.LandCells.Keys.Where(k => k.Variant == variantForCache).Select(k => $"{k.Landblock}:{k.Variant}").Take(10)));
+                        PhysicsLogGates.GetLandcellOutdoorMiss.Warn(
+                            () =>
+                            {
+                                var keySample = string.Join(", ", landblock.LandCells.Keys.Where(k => k.Variant == variantForCache).Select(k => $"{k.Landblock}:{k.Variant}").Take(10));
+                                return $"[PHYSICS] get_landcell outdoor cache miss blockCell=0x{blockCellID:X8} landCellIdx={landCellIdx:X8} variantForCache={variantForCache?.ToString() ?? "null"} landblock=0x{landblock.ID:X8} sampleKeys=[{keySample}]";
+                            },
+                            5_000);
                     }
                 }
             }

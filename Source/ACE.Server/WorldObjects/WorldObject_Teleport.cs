@@ -91,6 +91,17 @@ namespace ACE.Server.WorldObjects
             Hidden = false;
             Teleporting = false;
 
+            if (this is Player pl && Player.LogPortalJumpSuppressToConsole && log.IsDebugEnabled)
+            {
+                var po = pl.PhysicsObj;
+                var ts = po?.TransientState;
+                log.Debug(
+                    $"[PortalJumpSuppress][OnTeleportComplete] player={pl.Name} guid=0x{pl.Guid.Full:X8} Teleporting=false -> jump gate lifted. " +
+                    $"LocCell=0x{pl.Location?.Cell ?? 0:X8} var={pl.Location?.Variation?.ToString() ?? "null"} FastTick={pl.FastTick} " +
+                    $"PhysVel=({po?.Velocity.X:F4},{po?.Velocity.Y:F4},{po?.Velocity.Z:F4}) " +
+                    $"OnWalkable={ts?.HasFlag(TransientStateFlags.OnWalkable)} Contact={ts?.HasFlag(TransientStateFlags.Contact)} IsJumping={pl.IsJumping}");
+            }
+
             EnqueueBroadcastPhysicsState();
         }
 
