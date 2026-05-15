@@ -1653,7 +1653,8 @@ namespace ACE.Server.WorldObjects
             // Ring radius — scaled by the future AoeRangeMultiplier charm.
             var radius = DefaultRingAoeRadius * (float)(GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
 
-            var magicSkill    = GetCreatureSkill(spell.School).Current;
+            var attackSkill   = GetCreatureSkill(spell.School);
+            var magicSkill    = attackSkill.Current;
             var resistanceType = Creature.GetResistanceType(spell.DamageType);
             var weapon        = GetEquippedWand();
 
@@ -1668,6 +1669,7 @@ namespace ACE.Server.WorldObjects
             foreach (var creature in visibleCreatures)
             {
                 if (creature == null || creature == this) continue;
+                if (!creature.IsAlive)                    continue;  // skip corpses from this or prior casts
                 if (creature.Location == null)            continue;
 
                 // Distance gate: horizontal ring radius (2D) + vertical height cap.
@@ -1697,11 +1699,15 @@ namespace ACE.Server.WorldObjects
                 var critDamageBonus  = 0.0f;
                 var skillBonus       = 0.0f;
 
-                // 2% base crit chance (no weapon for ring spells).
-                if (ThreadSafeRandom.Next(0.0f, 1.0f) < 0.02f)
+                // Use the full crit pipeline: 5% base + player crit rating, mitigated by target resist rating.
+                // Mirrors GetWeaponMagicCritFrequency — weapon == null returns defaultMagicCritFrequency (5%).
+                var critChance = GetWeaponMagicCritFrequency(weapon, this as Creature, attackSkill, creature);
+                if (ThreadSafeRandom.Next(0.0f, 1.0f) < critChance)
                 {
                     criticalHit     = true;
-                    critDamageBonus = spell.MaxDamage * 0.5f; // PvE: 50% of max damage
+                    // Use crit damage multiplier (accounts for Crippling Blow imbues on wand).
+                    var critDamageMult = GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
+                    critDamageBonus = spell.MaxDamage * critDamageMult;
                 }
 
                 // Skill-based damage bonus.

@@ -1979,7 +1979,6 @@ namespace ACE.Server.WorldObjects
 
                 sp.LifeProjectileDamage = lifeProjectileDamage;
 
-
                 if (!LandblockManager.AddObject(sp))
                 {
                     sp.Destroy();

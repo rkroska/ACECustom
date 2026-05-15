@@ -276,9 +276,11 @@ namespace ACE.Server.Command.Handlers
                 var known = player.PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature();
                 var inRange = known
                     .Where(c => c != null && c != player && c.Location != null
+                                && c.IsAlive
                                 && Math.Abs(player.Location.PositionZ - c.Location.PositionZ) <= Player.RingAoeMaxHeightDelta
                                 && player.Location.Distance2D(c.Location) <= radius
-                                && player.CanDamage(c))
+                                && player.CanDamage(c)
+                                && player.CheckPKStatusVsTarget(c, null) == null)
                     .OrderBy(c => player.Location.Distance2D(c.Location))
                     .ToList();
 
