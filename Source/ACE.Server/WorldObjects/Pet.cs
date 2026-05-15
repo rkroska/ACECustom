@@ -43,8 +43,9 @@ namespace ACE.Server.WorldObjects
 
         private void SetEphemeralValues()
         {
-            // Solid collision so pets respect doors and world geometry like normal creatures (ethereal walked through doors).
-            Ethereal = false;
+            // Ethereal replicates to clients so players do not predict hard blockage vs pets.
+            // Do not set IgnoreCollisions — server PhysicsObj.IsPetMustBlockNonPlayerCollision keeps pets solid vs doors, monsters, and other objects.
+            Ethereal = true;
             RadarBehavior = ACE.Entity.Enum.RadarBehavior.ShowNever;
             ItemUseable = Usable.No;
 
@@ -91,6 +92,15 @@ namespace ACE.Server.WorldObjects
             {
                 player.SendTransientError($"Couldn't spawn {Name}");
                 return false;
+            }
+
+            // InitPhysicsObj reads CalculatedPhysicsState(); re-apply so PhysicsState.Ethereal is on the wire for clients.
+            Ethereal = true;
+
+            if (ServerConfig.pet_player_collision_debug_console.Value && PhysicsObj != null)
+            {
+                Console.WriteLine(
+                    $"[PetPlayerColl] spawn {Name} (0x{Guid.Full:X8}) Ethereal prop={Ethereal} IgnoreColl={IgnoreCollisions} PhysicsState={PhysicsObj.State}");
             }
 
             player.CurrentActivePet = this;
@@ -259,19 +269,36 @@ namespace ACE.Server.WorldObjects
 
             var dist = GetCylinderDistance(P_PetOwner);
 
-            if (!IsMoving && dist > PetFollowMinDistance)
+            if (dist > PetFollowMinDistance)
             {
-                if (this is CombatPet combatPet && combatPet.IsOwnerFollowRecallBlocked())
+                // Catch-up: stale monster MoveTo can leave IsMovingTo set while IsMoving is false — cancel so follow can start.
+                if (this is CombatPet catchupPet && catchupPet.AttackTarget == null && catchupPet.IsBeyondCombatHardLeashFromOwner())
                 {
-                    if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
-                        CombatPet.DebugFollowAiConsole(combatPet, $"SlowTick skip StartFollowPetOwner (recall_block) dist={dist:F1}m");
+                    if (PhysicsObj != null && PhysicsObj.IsMovingTo())
+                    {
+                        if (IsMoving)
+                            return;
+
+                        catchupPet.CancelMoveTo();
+                    }
+                }
+                else if (IsMoving)
+                {
+                    return;
+                }
+
+                // Recall block keeps the pet in place while it has a target (finish the fight). With no target, allow catch-up follow.
+                if (this is CombatPet combatPet && combatPet.IsOwnerFollowRecallBlocked() && combatPet.AttackTarget != null)
+                {
+                    if (CombatPet.IsAiDebugConsoleEnabled)
+                        CombatPet.DebugAiConsole(combatPet, "follow", $"SlowTick skip StartFollowPetOwner (recall_block+engaged) dist={dist:F1}m", force: true);
 
                     CombatPet.TraceRecallBlockStatic(combatPet, "SlowTick.skip_StartFollowPetOwner", $"dist={dist:F1}m (>{PetFollowMinDistance})");
                     return;
                 }
 
-                if (this is CombatPet dcp && ServerConfig.pet_combat_debug_follow_ai_console.Value)
-                    CombatPet.DebugFollowAiConsole(dcp, $"SlowTick StartFollowPetOwner dist={dist:F1}m IsMoving={IsMoving}");
+                if (this is CombatPet dcp && CombatPet.IsAiDebugConsoleEnabled)
+                    CombatPet.DebugAiConsole(dcp, "follow", $"SlowTick StartFollowPetOwner dist={dist:F1}m", force: true);
 
                 StartFollowPetOwner();
             }
@@ -299,6 +326,7 @@ namespace ACE.Server.WorldObjects
             var motion = new Motion(this, target, MovementType.MoveToObject);
 
             motion.MoveToParameters.MovementParameters |= MovementParams.CanCharge;
+            motion.MoveToParameters.MovementParameters &= ~MovementParams.CancelMoveTo;
             motion.MoveToParameters.DistanceToObject = PetFollowMinDistance;
             motion.MoveToParameters.WalkRunThreshold = 0.0f;
 
@@ -316,11 +344,24 @@ namespace ACE.Server.WorldObjects
         {
             //Console.WriteLine($"{Name}.StartFollowPetOwner()");
 
+            if (P_PetOwner?.PhysicsObj == null)
+                return;
+
+            // Combat pets: stale monster chase can leave IsMovingTo without IsMoving (run-in-place). Cancel and path to owner.
+            if (this is CombatPet combatCatchup && combatCatchup.AttackTarget == null && PhysicsObj != null && PhysicsObj.IsMovingTo())
+            {
+                if (IsMoving)
+                    return;
+
+                combatCatchup.CancelMoveTo();
+            }
+
             IsMoving = true;
 
             BroadcastFollowOwnerMotion(P_PetOwner);
 
             var mvp = new MovementParameters();
+            mvp.CancelMoveTo = false;
             mvp.DistanceToObject = PetFollowMinDistance;
             mvp.WalkRunThreshold = 0.0f;
 

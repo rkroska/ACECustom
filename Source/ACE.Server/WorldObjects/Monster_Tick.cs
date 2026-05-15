@@ -35,6 +35,37 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// One-time attack stance on wake; combat pets clear <see cref="firstUpdate"/> even if stance polish keeps animating
+        /// so idle-follow ticks do not stall forever with firstUpdate=true.
+        /// </summary>
+        private void AdvanceCombatPetFirstUpdateStance()
+        {
+            if (!firstUpdate)
+                return;
+
+            if (CurrentMotionState == null)
+            {
+                log.Warn($"[Monster_Tick] 0x{Guid} {Name} has a null CurrentMotionState setting to NonCombat");
+                CurrentMotionState = new ACE.Server.Entity.Motion(MotionStance.NonCombat, MotionCommand.Ready);
+            }
+
+            if (CurrentMotionState.Stance == MotionStance.NonCombat)
+                DoAttackStance();
+
+            if (IsAnimating)
+            {
+                if (CombatPet.IsAiDebugConsoleEnabled && this is CombatPet animPet)
+                    CombatPet.DebugAiConsole(animPet, "engaged", "firstUpdate IsAnimating after DoAttackStance (combat loop continues)", force: true);
+
+                PhysicsObj.update_object();
+                if (this is not CombatPet)
+                    return;
+            }
+
+            firstUpdate = false;
+        }
+
+        /// <summary>
         /// Primary dispatch for monster think
         /// </summary>
         public void Monster_Tick(double currentUnixTime)
@@ -69,6 +100,9 @@ namespace ACE.Server.WorldObjects
 
             if (!IsAwake)
             {
+                if (this is CombatPet asleepPet && CombatPet.IsAiDebugConsoleEnabled)
+                    CombatPet.DebugAiConsole(asleepPet, "tick", "return !IsAwake");
+
                 if (IsFactionMob || HasFoeType)
                     FactionMob_CheckMonsters();
 
@@ -86,11 +120,20 @@ namespace ACE.Server.WorldObjects
             if (this is CombatPet engagedRangePet
                 && (engagedRangePet.AttackTarget != null || engagedRangePet.MonsterState == State.Return)
                 && engagedRangePet.TryDespawnIfOwnerBeyondMaxFollowThrottled(currentUnixTime))
+            {
+                if (CombatPet.IsAiDebugConsoleEnabled)
+                    CombatPet.DebugAiConsole(engagedRangePet, "tick", "return owner beyond max follow (despawn)", force: true);
                 return;
+            }
 
-            if (EmoteManager.IsBusy) return;
+            if (EmoteManager.IsBusy)
+            {
+                if (this is CombatPet busyPet && CombatPet.IsAiDebugConsoleEnabled)
+                    CombatPet.DebugAiConsole(busyPet, "tick", "return EmoteManager.IsBusy");
+                return;
+            }
 
-            // Owner leash while engaged: monster AI never runs Pet follow while AttackTarget is set; if the owner walks away, drop target so idle follow runs.
+            // Owner leash while engaged: if the owner kites beyond recall distance, drop target so follow can run (even during recall-block window).
             if (this is CombatPet ownerLeashPet
                 && ServerConfig.pet_combat_follow_owner_when_idle.Value
                 && ServerConfig.pet_combat_owner_recall_distance_m.Value > 0
@@ -98,35 +141,35 @@ namespace ACE.Server.WorldObjects
                 && ownerLeashPet.P_PetOwner?.PhysicsObj != null
                 && ownerLeashPet.GetCylinderDistance(ownerLeashPet.P_PetOwner) > (float)ServerConfig.pet_combat_owner_recall_distance_m.Value)
             {
+                if (CombatPet.IsAiDebugConsoleEnabled)
+                {
+                    var recallNote = ownerLeashPet.IsOwnerFollowRecallBlocked() ? " (recall_block active, still dropping)" : "";
+                    CombatPet.DebugAiConsole(ownerLeashPet, "tick",
+                        $"owner_recall DROP atk={(ownerLeashPet.AttackTarget as Creature)?.Name} ownerDist={ownerLeashPet.GetCylinderDistance(ownerLeashPet.P_PetOwner):F1}m > {ServerConfig.pet_combat_owner_recall_distance_m.Value:F0}m{recallNote}", force: true);
+                }
+
                 if (ownerLeashPet.IsOwnerFollowRecallBlocked())
-                {
-                    CombatPet.TraceRecallBlockStatic(ownerLeashPet, "Monster_Tick.owner_leash_suppressed",
-                        $"ownerDist>{ServerConfig.pet_combat_owner_recall_distance_m.Value:F0}m recall_blocked_after_damage");
-                }
-                else
-                {
-                    if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
-                        CombatPet.DebugFollowAiConsole(ownerLeashPet,
-                            $"owner_recall_drop atk={(ownerLeashPet.AttackTarget as Creature)?.Name} ownerDist={ownerLeashPet.GetCylinderDistance(ownerLeashPet.P_PetOwner):F1}m > {ServerConfig.pet_combat_owner_recall_distance_m.Value:F0}m");
-                    ownerLeashPet.AttackTarget = null;
-                    ownerLeashPet.ResetAttack();
-                    ((Pet)ownerLeashPet).Tick(currentUnixTime);
-                    HandleFindTarget();
-                    return;
-                }
+                    CombatPet.TraceRecallBlockStatic(ownerLeashPet, "Monster_Tick.owner_recall_drop",
+                        $"ownerDist>{ServerConfig.pet_combat_owner_recall_distance_m.Value:F0}m recall_block_does_not_suppress_kite");
+
+                ownerLeashPet.AttackTarget = null;
+                ownerLeashPet.ResetAttack();
+                ((Pet)ownerLeashPet).Tick(currentUnixTime);
+                HandleFindTarget();
+                return;
             }
 
             // Hard leash radius (independent of idle-follow toggle): if configured, drop target when pet strays too far from owner.
             if (this is CombatPet hardLeashPet
-                && ServerConfig.pet_combat_leash_radius_m.Value > 0
                 && hardLeashPet.AttackTarget != null
-                && hardLeashPet.P_PetOwner?.PhysicsObj != null
-                && hardLeashPet.GetCylinderDistance(hardLeashPet.P_PetOwner) > (float)ServerConfig.pet_combat_leash_radius_m.Value)
+                && hardLeashPet.IsBeyondCombatHardLeashFromOwner())
             {
+                if (CombatPet.IsAiDebugConsoleEnabled)
+                    CombatPet.DebugAiConsole(hardLeashPet, "tick",
+                        $"owner_tether DROP atk={(hardLeashPet.AttackTarget as Creature)?.Name} ownerDist={hardLeashPet.GetCylinderDistance(hardLeashPet.P_PetOwner):F1}m > {CombatPet.GetCombatPetOwnerTetherM():F0}m", force: true);
                 hardLeashPet.AttackTarget = null;
                 hardLeashPet.ResetAttack();
                 ((Pet)hardLeashPet).Tick(currentUnixTime);
-                HandleFindTarget();
                 return;
             }
 
@@ -138,15 +181,20 @@ namespace ACE.Server.WorldObjects
                 && AttackTarget == null
                 && MonsterState != State.Return)
             {
-                if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
-                {
-                    var od = combatPetRecall.P_PetOwner != null ? combatPetRecall.GetCylinderDistance(combatPetRecall.P_PetOwner) : -1f;
-                    CombatPet.DebugFollowAiConsole(combatPetRecall,
-                        $"idle_follow_tick IsMoving={combatPetRecall.IsMoving} IsAnimating={combatPetRecall.IsAnimating} firstUpdate={firstUpdate} ownerDist={od:F1}m");
-                }
+                if (CombatPet.IsAiDebugConsoleEnabled)
+                    CombatPet.DebugAiConsole(combatPetRecall, "idle_follow",
+                        $"Pet.Tick+HandleFindTarget firstUpdate={firstUpdate}");
                 ((Pet)combatPetRecall).Tick(currentUnixTime);
-                HandleFindTarget();
-                return;
+
+                // Catching up to owner: skip target scan so defer_acquire does not fight MoveToObject follow.
+                if (!combatPetRecall.IsBeyondCombatHardLeashFromOwner())
+                    HandleFindTarget();
+
+                AdvanceCombatPetFirstUpdateStance();
+
+                // Target acquired while still within hard leash — run combat this tick instead of idling until next tick.
+                if (AttackTarget == null || combatPetRecall.IsBeyondCombatHardLeashFromOwner())
+                    return;
             }
 
             // Optimization: Skip AI tick for idle monsters with no targets nearby
@@ -156,6 +204,9 @@ namespace ACE.Server.WorldObjects
             // Player proximity aggro handled by Player.CheckMonsters() on movement (instant response)
             if (ShouldSkipIdleMonsterTick())
             {
+                if (this is CombatPet skipIdlePet && CombatPet.IsAiDebugConsoleEnabled)
+                    CombatPet.DebugAiConsole(skipIdlePet, "tick", "ShouldSkipIdleMonsterTick -> HandleFindTarget only");
+
                 // Still check occasionally if we should wake up (proximity-based aggro)
                 // HandleFindTarget() already checks NextFindTarget timer internally (every 5 seconds)
                 HandleFindTarget();
@@ -176,21 +227,28 @@ namespace ACE.Server.WorldObjects
             {
                 if (this is CombatPet homeCombatPet && ServerConfig.pet_combat_follow_owner_when_idle.Value)
                 {
+                    if (CombatPet.IsAiDebugConsoleEnabled)
+                        CombatPet.DebugAiConsole(homeCombatPet, "idle_follow", "no target -> Pet.Tick+HandleFindTarget (homeCombatPet path)");
                     ((Pet)homeCombatPet).Tick(currentUnixTime);
                     HandleFindTarget();
-                    return;
+                    if (AttackTarget == null || homeCombatPet.IsBeyondCombatHardLeashFromOwner())
+                        return;
                 }
+                if (this is CombatPet noHomePet && CombatPet.IsAiDebugConsoleEnabled)
+                    CombatPet.DebugAiConsole(noHomePet, "tick", "no target -> MoveToHome");
                 MoveToHome();
                 return;
             }
 
+            var combatPet = this as CombatPet;
+
             if (MonsterState == State.Return)
             {
+                if (combatPet != null && CombatPet.IsAiDebugConsoleEnabled)
+                    CombatPet.DebugAiConsole(combatPet, "engaged", "State.Return -> Movement()");
                 Movement();
                 return;
             }
-
-            var combatPet = this as CombatPet;
 
             var creatureTarget = AttackTarget as Creature;
 
@@ -232,30 +290,7 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            if (firstUpdate)
-            {
-                if (CurrentMotionState == null)
-                {
-                    log.Warn($"[Monster_Tick] 0x{Guid} {Name} has a null CurrentMotionState setting to NonCombat");
-                    CurrentMotionState = new ACE.Server.Entity.Motion(MotionStance.NonCombat, MotionCommand.Ready);
-                }
-                if (CurrentMotionState.Stance == MotionStance.NonCombat)
-                    DoAttackStance();
-
-                if (IsAnimating)
-                {
-                    if (ServerConfig.pet_combat_debug_follow_ai_console.Value && this is CombatPet animPet)
-                        CombatPet.DebugFollowAiConsole(animPet, "firstUpdate IsAnimating=true after DoAttackStance");
-
-                    PhysicsObj.update_object();
-                    if (this is not CombatPet)
-                        return;
-                    // CombatPet: stance polish can keep IsAnimating true across many ticks; do not stall the
-                    // entire combat loop on firstUpdate or the pet never reaches Movement()/Attack().
-                }
-
-                firstUpdate = false;
-            }
+            AdvanceCombatPetFirstUpdateStance();
 
             // select a new weapon if missile launcher is out of ammo
             var weapon = GetEquippedWeapon();
@@ -290,43 +325,67 @@ namespace ACE.Server.WorldObjects
             var targetDist = GetDistanceToTarget();
             //Console.WriteLine($"{Name} ({Guid}) - Dist: {targetDist}");
 
+            string combatPetAction = null;
+
             if (CurrentAttack != CombatType.Missile)
             {
                 if (targetDist > MaxRange || (!IsFacing(AttackTarget) && !IsSelfCast()))
                 {
                     // turn / move towards
                     if (!IsTurning && !IsMoving)
+                    {
+                        combatPetAction = "StartTurn";
                         StartTurn();
+                    }
                     else
+                    {
+                        combatPetAction = "Movement";
                         Movement();
+                    }
                 }
                 else
                 {
                     // perform attack
                     if (AttackReady())
+                    {
+                        combatPetAction = "Attack";
                         Attack();
+                    }
+                    else
+                        combatPetAction = "AttackNotReady";
                 }
             }
             else
             {
                 if (IsTurning || IsMoving)
                 {
+                    combatPetAction = "MissileMovement";
                     Movement();
+                    if (combatPet != null && CombatPet.IsAiDebugConsoleEnabled)
+                        CombatPet.DebugAiConsole(combatPet, "engaged",
+                            $"action={combatPetAction} targetDist={targetDist:F2} maxRng={MaxRange:F2} facing={IsFacing(AttackTarget)}");
                     return;
                 }
 
                 if (!IsFacing(AttackTarget))
                 {
+                    combatPetAction = "MissileStartTurn";
                     StartTurn();
                 }
                 else if (targetDist <= MaxRange)
                 {
                     // perform attack
                     if (AttackReady())
+                    {
+                        combatPetAction = "MissileAttack";
                         Attack();
+                    }
+                    else
+                        combatPetAction = "MissileAttackNotReady";
                 }
                 else
                 {
+                    combatPetAction = "TrySwitchToMelee";
                     // monster switches to melee combat immediately,
                     // if target is beyond max range?
 
@@ -334,6 +393,12 @@ namespace ACE.Server.WorldObjects
                     //Console.WriteLine($"{Name}.MissileAttack({AttackTarget.Name}): targetDist={targetDist}, MaxRange={MaxRange}, switching to melee");
                     TrySwitchToMeleeAttack();
                 }
+            }
+
+            if (combatPet != null && CombatPet.IsAiDebugConsoleEnabled && combatPetAction != null)
+            {
+                CombatPet.DebugAiConsole(combatPet, "engaged",
+                    $"action={combatPetAction} targetDist={targetDist:F2} maxRng={MaxRange:F2} facing={IsFacing(AttackTarget)}");
             }
 
             // pets drawing aggro

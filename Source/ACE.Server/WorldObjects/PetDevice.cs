@@ -170,6 +170,23 @@ namespace ACE.Server.WorldObjects
             return Math.Max(1, deltaTable);
         }
 
+        /// <summary>
+        /// Pushes bond fields to the owning client via <see cref="Player.UpdateProperty"/> (and includes them on identify
+        /// when marked <see cref="AssessmentPropertyAttribute"/>). Property IDs: PetBondAttuned 9047, PetBondXp 9050,
+        /// PetBondXpTotal 9051, PetBondAttunedCharacterId 9052, PetBondLevel 9053.
+        /// </summary>
+        public void SyncPetBondPropertiesToOwner(Player owner, bool broadcast = false)
+        {
+            if (owner == null || !ServerConfig.pet_bond_enabled.Value || !IsCombatPetDevice())
+                return;
+
+            owner.UpdateProperty(this, PropertyBool.PetBondAttuned, PetBondAttuned, broadcast);
+            owner.UpdateProperty(this, PropertyInt.PetBondLevel, PetBondLevel ?? 1, broadcast);
+            owner.UpdateProperty(this, PropertyInt64.PetBondXp, PetBondXp ?? 0, broadcast);
+            owner.UpdateProperty(this, PropertyInt64.PetBondXpTotal, PetBondXpTotal ?? 0, broadcast);
+            owner.UpdateProperty(this, PropertyInt64.PetBondAttunedCharacterId, PetBondAttunedCharacterId, broadcast);
+        }
+
         public bool TryAwardBondXp(Player owner, long amount, out bool leveledUp)
         {
             leveledUp = false;
@@ -216,13 +233,8 @@ namespace ACE.Server.WorldObjects
 
             SaveBiotaToDatabase();
 
-            // Best-effort immediate client updates (appraisal already shows it; this makes it feel responsive).
             if (owner != null)
-            {
-                owner.UpdateProperty(this, PropertyInt.PetBondLevel, level, true);
-                owner.UpdateProperty(this, PropertyInt64.PetBondXp, xp, true);
-                owner.UpdateProperty(this, PropertyInt64.PetBondXpTotal, total, true);
-            }
+                SyncPetBondPropertiesToOwner(owner, broadcast: true);
 
             // Same level-up play script as players (Player_Xp), on the spawned pet so it shows in-world for nearby clients.
             if (leveledUp && owner != null

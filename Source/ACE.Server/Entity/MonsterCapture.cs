@@ -999,11 +999,7 @@ namespace ACE.Server.Entity
                 player.UpdateProperty(crate, PropertyInt.Bonded, (int?)crate.Bonded);
             }
             if (ServerConfig.pet_bond_enabled.Value && crate.IsCombatPetDevice())
-            {
-                player.UpdateProperty(crate, PropertyBool.PetBondAttuned, crate.PetBondAttuned);
-                player.UpdateProperty(crate, PropertyInt64.PetBondAttunedCharacterId, crate.PetBondAttunedCharacterId);
-                player.UpdateProperty(crate, PropertyInt.PetBondLevel, crate.PetBondLevel ?? 1);
-            }
+                crate.SyncPetBondPropertiesToOwner(player);
 
             // Full object snapshot: the client caches name/icon data for inventory items; per-property
             // string updates are not always enough (see Player.UpdateProperty for PropertyString). Same

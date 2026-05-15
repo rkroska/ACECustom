@@ -250,6 +250,7 @@ namespace ACE.Entity.Enum.Properties
         IsPassiveSpellSuppressor          = 9046,
 
         /// <summary>Combat pet essence: bond attunement enabled for this device.</summary>
+        [AssessmentProperty]
         PetBondAttuned                   = 9047,
         /// <summary>Combat pet uses captured creature weapon appearance/skin.</summary>
         CombatPetCaptureSkinWeapon       = 9048,

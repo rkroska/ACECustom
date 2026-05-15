@@ -749,6 +749,7 @@ namespace ACE.Entity.Enum.Properties
         SpellSuppressionSchools                 = 9047,
 
         /// <summary>Pet bond level stored on combat pet summoning essence (server/custom).</summary>
+        [AssessmentProperty]
         PetBondLevel                            = 9053,
         /// <summary>DamageType copied from capture source for combat pet appearance/rules.</summary>
         CapturedSourceDamageType                = 9054,
