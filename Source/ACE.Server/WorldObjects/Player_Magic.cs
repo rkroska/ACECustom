@@ -1762,9 +1762,9 @@ namespace ACE.Server.WorldObjects
                                   * elementalMod * slayerMod * resistanceMod * absorbMod * attribBonus;
 
                 // CombatPet mitigation — extra spell-only damage reduction from owner's summon aug.
-                // Condition mirrors SpellProjectile.CalculateDamage; sourcePlayer != null is always true here.
-                if (finalDamage > 0 && spell.IsHarmful && creature is CombatPet combatPet
-                    && (!ServerConfig.pet_combat_summon_aug_spell_mitigation_players_only.Value || true))
+                // Vanilla also gates this on pet_combat_summon_aug_spell_mitigation_players_only; since
+                // ring AOE is always cast by a Player, sourcePlayer != null is unconditionally true here.
+                if (finalDamage > 0 && spell.IsHarmful && creature is CombatPet combatPet)
                 {
                     var petMit = combatPet.GetSpellProjectileDamageTakenMultiplier();
                     if (petMit < 1.0f) finalDamage *= petMit;

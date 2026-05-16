@@ -67,8 +67,13 @@ namespace ACE.Server.Command.Handlers
             {
                 var classic = player.GetProperty(PropertyBool.ClassicRingAoe) ?? false;
                 classic = !classic;  // toggle
-                player.SetProperty(PropertyBool.ClassicRingAoe, classic);
-                player.SaveBiotaToDatabase();
+
+                if (classic)
+                    player.SetProperty(PropertyBool.ClassicRingAoe, true);
+                else
+                    player.RemoveProperty(PropertyBool.ClassicRingAoe);  // absent = New mode (default)
+
+                player.SaveBiotaToDatabase(enqueueSave: true);
 
                 var msg = classic
                     ? "Ring Spell Mode: Classic (physics collision \u2014 can multi-hit, rings may miss monsters)"
