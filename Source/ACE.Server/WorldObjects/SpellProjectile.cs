@@ -700,6 +700,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Shield absorb calculation using a WorldObject as the directional source (for AOE paths).
         /// Mirrors GetShieldMod but replaces 'this' with the provided attacker.
+        /// NOTE: keep in sync with GetShieldMod if that method is ever updated.
         /// </summary>
         private static float GetShieldAbsorbMod(WorldObject attacker, Creature target, WorldObject shield)
         {

@@ -1762,7 +1762,9 @@ namespace ACE.Server.WorldObjects
                                   * elementalMod * slayerMod * resistanceMod * absorbMod * attribBonus;
 
                 // CombatPet mitigation — extra spell-only damage reduction from owner's summon aug.
-                if (finalDamage > 0 && spell.IsHarmful && creature is CombatPet combatPet)
+                // Condition mirrors SpellProjectile.CalculateDamage; sourcePlayer != null is always true here.
+                if (finalDamage > 0 && spell.IsHarmful && creature is CombatPet combatPet
+                    && (!ServerConfig.pet_combat_summon_aug_spell_mitigation_players_only.Value || true))
                 {
                     var petMit = combatPet.GetSpellProjectileDamageTakenMultiplier();
                     if (petMit < 1.0f) finalDamage *= petMit;
@@ -1771,7 +1773,6 @@ namespace ACE.Server.WorldObjects
                 if (finalDamage <= 0) continue;
 
                 creature.TakeDamage(this, spell.DamageType, finalDamage, criticalHit);
-
 
                 // Only send "You hit X for Y" if the target survived — mirrors SpellProjectile.DamageTarget
                 // which gates the attacker message on target.IsAlive (line 920).
