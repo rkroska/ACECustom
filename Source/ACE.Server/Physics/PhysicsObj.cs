@@ -35,6 +35,8 @@ namespace ACE.Server.Physics
         private static readonly ConcurrentDictionary<long, long> _prestigeVisDiagLastLogMs = new();
         private static readonly ConcurrentDictionary<string, double> _petPlayerCollisionDebugLastLog = new();
 
+        private const double PetPlayerCollisionDebugThrottleSec = 0.35;
+
         /// <summary> Trim stale throttle keys so long-running servers do not grow this map without bound. </summary>
         private static void PrestigeVisDiagMaybePrune(long nowMs)
         {
@@ -48,6 +50,20 @@ namespace ACE.Server.Physics
                 var age = nowMs - kv.Value;
                 if (age > staleMs || age < -staleMs)
                     _prestigeVisDiagLastLogMs.TryRemove(kv.Key, out _);
+            }
+        }
+
+        /// <summary> Drop pet/player collision debug throttle entries past the log interval so pair keys do not accumulate forever. </summary>
+        private static void PetPlayerCollisionDebugMaybePrune(double now)
+        {
+            if (_petPlayerCollisionDebugLastLog.Count == 0)
+                return;
+
+            foreach (var kv in _petPlayerCollisionDebugLastLog.ToArray())
+            {
+                var age = now - kv.Value;
+                if (age > PetPlayerCollisionDebugThrottleSec || age < -PetPlayerCollisionDebugThrottleSec)
+                    _petPlayerCollisionDebugLastLog.TryRemove(kv.Key, out _);
             }
         }
 
@@ -527,9 +543,10 @@ namespace ACE.Server.Physics
             if (!LooksLikePetPlayerCollision(obstacle, mover) && !IsPetVsPlayerCollision(obstacle, mover))
                 return;
 
-            var key = $"{stage}:{Math.Min(obstacle.ID, mover.ID):X8}:{Math.Max(obstacle.ID, mover.ID):X8}";
             var now = PhysicsTimer.CurrentTime;
-            if (_petPlayerCollisionDebugLastLog.TryGetValue(key, out var last) && now - last < 0.35)
+            PetPlayerCollisionDebugMaybePrune(now);
+            var key = $"{Math.Min(obstacle.ID, mover.ID):X8}:{Math.Max(obstacle.ID, mover.ID):X8}";
+            if (_petPlayerCollisionDebugLastLog.TryGetValue(key, out var last) && now - last < PetPlayerCollisionDebugThrottleSec)
                 return;
             _petPlayerCollisionDebugLastLog[key] = now;
 
