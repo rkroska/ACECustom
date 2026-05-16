@@ -3447,6 +3447,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasPentaCast); else SetProperty(PropertyBool.HasPentaCast, value); }
         }
 
+        /// <summary>True while the Explosive Arrow Charm is activated — landing an arrow on an enemy triggers a Ring of Exploding Magma burst from the caster's position.</summary>
+        public bool HasExplosiveArrowCharm
+        {
+            get => GetProperty(PropertyBool.HasExplosiveArrowCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasExplosiveArrowCharm); else SetProperty(PropertyBool.HasExplosiveArrowCharm, value); }
+        }
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
         {

@@ -1666,7 +1666,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Creates and launches the projectiles for a spell
         /// </summary>
-        public List<SpellProjectile> CreateSpellProjectiles(Spell spell, WorldObject target, WorldObject weapon, bool isWeaponSpell = false, bool fromProc = false, uint lifeProjectileDamage = 0)
+        public List<SpellProjectile> CreateSpellProjectiles(Spell spell, WorldObject target, WorldObject weapon, bool isWeaponSpell = false, bool fromProc = false, uint lifeProjectileDamage = 0, WorldObject originOverride = null)
         {
             if (spell.NumProjectiles == 0)
             {
@@ -1743,9 +1743,9 @@ namespace ACE.Server.WorldObjects
 
                     // Sort both lists by distance to original target ascending
                     leftCandidates.Sort((a, b) => Vector3.Distance(targetGlobal, a.Location.ToGlobal(false))
-                        .CompareTo(Vector3.Distance(targetGlobal, b.Location.ToGlobal(false))));
+                         .CompareTo(Vector3.Distance(targetGlobal, b.Location.ToGlobal(false))));
                     rightCandidates.Sort((a, b) => Vector3.Distance(targetGlobal, a.Location.ToGlobal(false))
-                        .CompareTo(Vector3.Distance(targetGlobal, b.Location.ToGlobal(false))));
+                         .CompareTo(Vector3.Distance(targetGlobal, b.Location.ToGlobal(false))));
                 }
 
                 // 3. Select up to 4 extra targets in alternating order
@@ -1796,7 +1796,7 @@ namespace ACE.Server.WorldObjects
 
             var defaultVelocity = CalculateProjectileVelocity(spell, target, spellType, defaultOrigins[0]);
 
-            return LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, defaultOrigins, defaultVelocity, lifeProjectileDamage);
+            return LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, defaultOrigins, defaultVelocity, lifeProjectileDamage, originOverride);
         }
 
         public static readonly float ProjHeight = 2.0f / 3.0f;
@@ -2032,7 +2032,7 @@ namespace ACE.Server.WorldObjects
             return dir * speed;
         }
 
-        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0)
+        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null)
         {
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -2040,7 +2040,10 @@ namespace ACE.Server.WorldObjects
 
             var spellProjectiles = new List<SpellProjectile>();
 
-            var casterLoc = PhysicsObj.Position.ACEPosition();
+            // originOverride: use a different WorldObject's position as the ring/projectile spawn point.
+            // ProjectileSource is still set to 'this' below, so non-ClassicRingAoe suppression works correctly.
+            var spawnOrigin = originOverride ?? this;
+            var casterLoc = spawnOrigin.PhysicsObj.Position.ACEPosition();
             var targetLoc = target?.PhysicsObj.Position.ACEPosition();
 
             for (var i = 0; i < origins.Count; i++)
@@ -2082,6 +2085,18 @@ namespace ACE.Server.WorldObjects
 
                 sp.ProjectileSource = this;
                 sp.FromProc = fromProc;
+
+                // Ring visuals cast by a player in New AOE mode are visual-only — damage is handled
+                // server-side. Make them non-collidable so players can never get stuck on the ring.
+                // Monster ring spells and Classic mode rings retain normal physics collision for damage.
+                if (spellType == ProjectileSpellType.Ring
+                    && this is Player ringPlayer
+                    && !(ringPlayer.GetProperty(PropertyBool.ClassicRingAoe) ?? false))
+                {
+                    sp.Ethereal = true;
+                    sp.IgnoreCollisions = true;
+                    sp.ReportCollisions = false;
+                }
 
                 // side projectiles always untargeted?
                 if (i == 0)

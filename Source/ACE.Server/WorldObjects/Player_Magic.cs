@@ -23,6 +23,34 @@ namespace ACE.Server.WorldObjects
         private const uint SpellId_TectonicRiftsII = 6196u;
         private const uint SpellId_RockyShrapnel   = 6152u;
         private const uint SpellId_RingOfAgony     = 2673u;
+        private const uint SpellId_FlameRing       = (uint)ACE.Entity.Enum.SpellId.FlameRing;
+
+        // ── Explosive Arrow proc ring spells (Tier II, one per damage type) ────
+        private const uint SpellId_NuhmudiraSpinesII   = 6192u; // Pierce
+        private const uint SpellId_HorizonsBladesII    = 6190u; // Slash
+        private const uint SpellId_CassiusRingOfFireII = 6191u; // Fire
+        private const uint SpellId_HaloOfFrostII       = 6193u; // Cold
+        private const uint SpellId_SearingDiscII       = 6189u; // Acid
+        private const uint SpellId_EyeOfTheStormII     = 6194u; // Electric
+        private const uint SpellId_CloudedSoulII       = 6195u; // Nether
+        // Bludgeon uses SpellId_TectonicRiftsII (Tier II bludgeon ring)
+
+        /// <summary>
+        /// Maps an arrow's damage type to the matching Tier-II ring spell for the Explosive Arrow proc.
+        /// The chosen spell controls both the visual ring animation and the damage type applied.
+        /// </summary>
+        private static uint GetRingSpellForDamageType(DamageType dt)
+        {
+            if ((dt & DamageType.Pierce)   != 0) return SpellId_NuhmudiraSpinesII;
+            if ((dt & DamageType.Fire)     != 0) return SpellId_CassiusRingOfFireII;
+            if ((dt & DamageType.Cold)     != 0) return SpellId_HaloOfFrostII;
+            if ((dt & DamageType.Acid)     != 0) return SpellId_SearingDiscII;
+            if ((dt & DamageType.Electric) != 0) return SpellId_EyeOfTheStormII;
+            if ((dt & DamageType.Slash)    != 0) return SpellId_HorizonsBladesII;
+            if ((dt & DamageType.Nether)   != 0) return SpellId_CloudedSoulII;
+            if ((dt & DamageType.Bludgeon) != 0) return SpellId_TectonicRiftsII;
+            return SpellId_FlameRing; // ultimate fallback
+        }
 
         // TODO: get rid of this, only used for determining if TurnTo is required
         public enum TargetCategory
@@ -1140,6 +1168,42 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Called by the missile hit path (Player_Combat.DamageTarget) when
+        /// <see cref="HasExplosiveArrowCharm"/> is active and an arrow successfully damages an enemy.
+        /// Fires Ring of Exploding Magma as a server-side radius AOE centered on the caster,
+        /// mirroring the ring spell AOE system used by Rocky Shrapnel / Ring of Agony.
+        /// </summary>
+        internal void TryApplyExplosiveArrowProc(Creature target, float arrowDamage, DamageType arrowDamageType)
+        {
+            if (!HasExplosiveArrowCharm)
+                return;
+
+            var spellId = GetRingSpellForDamageType(arrowDamageType);
+            if (spellId == 0) return; // unsupported damage type — no matching ring spell
+
+            var spell   = new Spell(spellId);
+            var flatDmg = arrowDamage * 0.5f;
+
+            // 1 second delay between arrow hit and ring detonation.
+            var actionChain = new ActionChain();
+            actionChain.AddDelaySeconds(1.0);
+            actionChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () =>
+            {
+                // Guard: player or target may have died/logged out/been destroyed during the delay.
+                if (IsDead || IsDestroyed || target.IsDestroyed || target.Location == null) return;
+
+                // Use target's current position for both the visual and the damage origin
+                // so the ring always detonates where the target actually is at fire time.
+                CreateSpellProjectiles(spell, null, null, false, true, 0, originOverride: target);
+                ApplyRingSpellAreaDamage(spell, target.Location,
+                    radiusOverride: 15f,
+                    heightOverride: 10f,
+                    flatDamage:     flatDmg);
+            });
+            actionChain.EnqueueChain();
+        }
+
+        /// <summary>
         /// Redirects Tectonic Rifts I/II to Rocky Shrapnel (priority) or Ring of Unspeakable Agony (fallback)
         /// when the corresponding charm is active and the spell is known. Called at the very start of both
         /// CreatePlayerSpell overloads so all downstream validation (range, components, mana) runs against
@@ -1646,12 +1710,15 @@ namespace ACE.Server.WorldObjects
         /// effective radius.  Called immediately after the visual ring projectiles are spawned;
         /// the projectiles themselves are made non-damaging in SpellProjectile.OnCollideObject.
         /// </summary>
-        internal void ApplyRingSpellAreaDamage(Spell spell)
+        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f)
         {
-            if (Location == null) return;
+            var center = centerOverride ?? Location;
+            if (center == null) return;
 
-            // Ring radius — scaled by the future AoeRangeMultiplier charm.
-            var radius = DefaultRingAoeRadius * (float)(GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
+            // Ring radius — radiusOverride used by proc paths (e.g. Explosive Arrow); otherwise default scaled by charm.
+            var radius = radiusOverride > 0f
+                ? radiusOverride
+                : DefaultRingAoeRadius * (float)(GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
 
             var attackSkill   = GetCreatureSkill(spell.School);
             var magicSkill    = attackSkill.Current;
@@ -1672,12 +1739,11 @@ namespace ACE.Server.WorldObjects
                 if (!creature.IsAlive)                    continue;  // skip corpses from this or prior casts
                 if (creature.Location == null)            continue;
 
-                // Distance gate: horizontal ring radius (2D) + vertical height cap.
-                // 2D keeps creatures on uneven terrain / slight slopes within range.
-                // Height cap prevents hitting creatures on a completely different floor.
-                var dz = Math.Abs(Location.PositionZ - creature.Location.PositionZ);
-                if (dz > RingAoeMaxHeightDelta) continue;
-                if (Location.Distance2D(creature.Location) > radius) continue;
+                // Height and distance gate — heightOverride used by proc paths.
+                var heightCap = heightOverride > 0f ? heightOverride : RingAoeMaxHeightDelta;
+                var dz = Math.Abs(center.PositionZ - creature.Location.PositionZ);
+                if (dz > heightCap) continue;
+                if (center.Distance2D(creature.Location) > radius) continue;
 
                 if (!CanDamage(creature)) continue;
 
@@ -1758,8 +1824,11 @@ namespace ACE.Server.WorldObjects
                 }
 
                 // Attribute bonus (Focus + Self) — pre-computed before the loop.
-                var finalDamage = (baseDamage + critDamageBonus + skillBonus)
-                                  * elementalMod * slayerMod * resistanceMod * absorbMod * attribBonus;
+                // flatDamage path: Explosive Arrow proc — pure flat value, exactly 50% of the triggering arrow hit.
+                // War-magic path: full crit/skill/attribute/resistance scaling for player-cast ring spells.
+                var finalDamage = flatDamage > 0f
+                    ? flatDamage
+                    : (baseDamage + critDamageBonus + skillBonus) * elementalMod * slayerMod * resistanceMod * absorbMod * attribBonus;
 
                 // CombatPet mitigation — extra spell-only damage reduction from owner's summon aug.
                 // Vanilla also gates this on pet_combat_summon_aug_spell_mitigation_players_only; since

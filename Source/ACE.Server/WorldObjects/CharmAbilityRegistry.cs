@@ -26,6 +26,7 @@ namespace ACE.Server.WorldObjects
         public const int ArtisansCharmAbilityId   = 18;
         public const int ShrapnelCharmAbilityId   = 19;
         public const int AgonyCharmAbilityId      = 20;
+        public const int ExplosiveArrowCharmAbilityId = 21;
         public const int PentaCastAbilityId       = 22;
 
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
@@ -37,6 +38,7 @@ namespace ACE.Server.WorldObjects
             { ArtisansCharmAbilityId,   new AbilityEntry(p => p.HasArtisanCharm,    (p, v) => p.HasArtisanCharm    = v, "Artisan's Charm")  },
             { ShrapnelCharmAbilityId,   new AbilityEntry(p => p.HasShrapnelCharm,   (p, v) => p.HasShrapnelCharm   = v, "Shrapnel Charm")   },
             { AgonyCharmAbilityId,       new AbilityEntry(p => p.HasAgonyCharm,      (p, v) => p.HasAgonyCharm      = v, "Agony Charm")      },
+            { ExplosiveArrowCharmAbilityId, new AbilityEntry(p => p.HasExplosiveArrowCharm, (p, v) => p.HasExplosiveArrowCharm = v, "Explosive Arrow Charm") },
             { PentaCastAbilityId,       new AbilityEntry(p => p.HasPentaCast,       (p, v) => p.HasPentaCast       = v, "Penta Cast")       },
         };
 
@@ -57,6 +59,8 @@ namespace ACE.Server.WorldObjects
             { 777700022, ShrapnelCharmAbilityId },
             // Agony Charm (Tier 1 only)
             { 777700023, AgonyCharmAbilityId },
+            // Explosive Arrow Charm (Tiers 1–3)
+            { 777700025, ExplosiveArrowCharmAbilityId }, { 777710005, ExplosiveArrowCharmAbilityId }, { 777720005, ExplosiveArrowCharmAbilityId },
             // Penta Cast Charm (Tier 1 only)
             { 777700024, PentaCastAbilityId },
         };
