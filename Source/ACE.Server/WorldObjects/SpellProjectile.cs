@@ -668,6 +668,59 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Static overload for use in server-side AOE paths (e.g. ring spells) where there is no
+        /// physical projectile. Uses the attacker WorldObject as the directional source instead of
+        /// the projectile position — ring spells radiate from the caster, so this is the correct substitute.
+        /// </summary>
+        internal static float GetAbsorbMod(WorldObject attacker, Creature target)
+        {
+            switch (target.CombatMode)
+            {
+                case CombatMode.Melee:
+                    var shield = target.GetEquippedShield();
+                    if (shield != null && shield.GetAbsorbMagicDamage() != null)
+                        return GetShieldAbsorbMod(attacker, target, shield);
+                    break;
+
+                case CombatMode.Missile:
+                    var missileLauncherOrShield = target.GetEquippedMissileLauncher() ?? target.GetEquippedShield();
+                    if (missileLauncherOrShield != null && missileLauncherOrShield.GetAbsorbMagicDamage() != null)
+                        return AbsorbMagic(target, missileLauncherOrShield);
+                    break;
+
+                case CombatMode.Magic:
+                    var caster = target.GetEquippedWand();
+                    if (caster != null && caster.GetAbsorbMagicDamage() != null)
+                        return AbsorbMagic(target, caster);
+                    break;
+            }
+            return 1.0f;
+        }
+
+        /// <summary>
+        /// Shield absorb calculation using a WorldObject as the directional source (for AOE paths).
+        /// Mirrors GetShieldMod but replaces 'this' with the provided attacker.
+        /// </summary>
+        private static float GetShieldAbsorbMod(WorldObject attacker, Creature target, WorldObject shield)
+        {
+            var effectiveAngle = 180.0f;
+            var angle = target.GetAngle(attacker);
+            if (Math.Abs(angle) > effectiveAngle / 2.0f)
+                return 1.0f;
+
+            var shieldSkill = target.GetCreatureSkill(Skill.Shield);
+            if (shieldSkill.AdvancementClass < SkillAdvancementClass.Trained || shieldSkill.Base < 100)
+                return 1.0f;
+
+            var baseSkill = Math.Min(shieldSkill.Base, 433);
+            var specMod = shieldSkill.AdvancementClass == SkillAdvancementClass.Specialized ? 1.0f : 0.8f;
+            var cap = (float)(shield.GetAbsorbMagicDamage() ?? 0.0f);
+
+            var reduction = (cap * specMod * baseSkill * 0.003f) - (cap * specMod * 0.3f);
+            return Math.Min(1.0f, 1.0f - reduction);
+        }
+
+        /// <summary>
         /// Calculates the amount of damage a shield absorbs from magic projectile
         /// </summary>
         public float GetShieldMod(Creature target, WorldObject shield)

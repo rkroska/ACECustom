@@ -1694,20 +1694,32 @@ namespace ACE.Server.WorldObjects
 
                 if (resisted) { dbgResist++; continue; }
 
-                // ── War-magic damage calculation (mirrors SpellProjectile.CalculateDamage) ──
+                // ── War-magic damage calculation (exact parity with SpellProjectile.CalculateDamage) ──
                 var criticalHit      = false;
                 var critDamageBonus  = 0.0f;
                 var skillBonus       = 0.0f;
+                var isPvP            = creature is Player;
 
-                // Use the full crit pipeline: 5% base + player crit rating, mitigated by target resist rating.
-                // Mirrors GetWeaponMagicCritFrequency — weapon == null returns defaultMagicCritFrequency (5%).
+                // Crit chance — 5% base + player crit rating, mitigated by target resist rating.
                 var critChance = GetWeaponMagicCritFrequency(weapon, this as Creature, attackSkill, creature);
                 if (ThreadSafeRandom.Next(0.0f, 1.0f) < critChance)
                 {
-                    criticalHit     = true;
-                    // Use crit damage multiplier (accounts for Crippling Blow imbues on wand).
-                    var critDamageMult = GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
-                    critDamageBonus = spell.MaxDamage * critDamageMult;
+                    // AugmentationCriticalDefense check (PvP only — 5% per aug rank vs player attacker).
+                    var critDefended = false;
+                    if (creature is Player tgtPlayer && tgtPlayer.AugmentationCriticalDefense > 0)
+                    {
+                        var critDefChance = tgtPlayer.AugmentationCriticalDefense * 0.05f; // sourcePlayer != null → 5%
+                        if (critDefChance > ThreadSafeRandom.Next(0.0f, 1.0f))
+                            critDefended = true;
+                    }
+
+                    if (!critDefended)
+                    {
+                        criticalHit = true;
+                        // PvE: +50% of MaxDamage.  PvP: +50% of MinDamage.
+                        critDamageBonus  = isPvP ? spell.MinDamage * 0.5f : spell.MaxDamage * 0.5f;
+                        critDamageBonus *= GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
+                    }
                 }
 
                 // Skill-based damage bonus.
@@ -1720,18 +1732,46 @@ namespace ACE.Server.WorldObjects
                 if (LuminanceAugmentWarCount.HasValue && LuminanceAugmentWarCount >= 1)
                     baseDamage += LuminanceAugmentWarCount.Value;
 
-                // Elemental modifier (wand-centric, no separate weapon for ring spells).
-                var elementalMod  = GetCasterElementalDamageModifier(weapon, this as Creature, creature, spell.DamageType);
+                // Elemental modifier (wand element vs target).
+                var elementalMod = GetCasterElementalDamageModifier(weapon, this as Creature, creature, spell.DamageType);
 
-                // Target resistance.
-                var resistanceMod = (float)Math.Max(0.0f, creature.GetResistanceMod(resistanceType, null, null, 1.0f));
+                // Slayer modifier — respects wand/creature slayer properties.
+                var slayerMod = GetWeaponCreatureSlayerModifier(weapon, this as Creature, creature);
+
+                // Weapon resistance mod — applies rending on wand to target resistance.
+                var weaponResistanceMod = GetWeaponResistanceModifier(weapon, this as Creature, attackSkill, spell.DamageType);
+                var resistanceMod = (float)Math.Max(0.0f, creature.GetResistanceMod(resistanceType, null, null, weaponResistanceMod));
+
+                // Void PvP modifier (matches SpellProjectile line ~602).
+                if (isPvP && spell.DamageType == DamageType.Nether)
+                    resistanceMod *= (float)ServerConfig.void_pvp_modifier.Value;
+
+                // Absorb mod — Aegis shield / magic-absorbing items on target.
+                // Uses caster position as directional source (ring radiates from caster).
+                var absorbMod = SpellProjectile.GetAbsorbMod(this, creature);
+                if (isPvP && (creature.CombatMode == CombatMode.Melee || creature.CombatMode == CombatMode.Missile))
+                {
+                    // Aegis is 72% effective in PvP (Forces of Nature patch).
+                    absorbMod  = 1 - absorbMod;
+                    absorbMod *= 0.72f;
+                    absorbMod  = 1 - absorbMod;
+                }
 
                 // Attribute bonus (Focus + Self) — pre-computed before the loop.
-                var finalDamage = (baseDamage + critDamageBonus + skillBonus) * elementalMod * resistanceMod * attribBonus;
+                var finalDamage = (baseDamage + critDamageBonus + skillBonus)
+                                  * elementalMod * slayerMod * resistanceMod * absorbMod * attribBonus;
+
+                // CombatPet mitigation — extra spell-only damage reduction from owner's summon aug.
+                if (finalDamage > 0 && spell.IsHarmful && creature is CombatPet combatPet)
+                {
+                    var petMit = combatPet.GetSpellProjectileDamageTakenMultiplier();
+                    if (petMit < 1.0f) finalDamage *= petMit;
+                }
 
                 if (finalDamage <= 0) continue;
 
                 creature.TakeDamage(this, spell.DamageType, finalDamage, criticalHit);
+
 
                 // Only send "You hit X for Y" if the target survived — mirrors SpellProjectile.DamageTarget
                 // which gates the attacker message on target.IsAlive (line 920).
