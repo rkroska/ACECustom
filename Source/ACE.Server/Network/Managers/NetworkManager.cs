@@ -345,6 +345,25 @@ namespace ACE.Server.Network.Managers
         }
 
         /// <summary>
+        /// Returns all active sessions belonging to the given account ID.
+        /// Unlike Find(uint accountId) which uses SingleOrDefault, this handles
+        /// the stuck-character scenario where two sessions share the same AccountId
+        /// (one zombie/stuck, one newly connected). Safe to call with any account.
+        /// </summary>
+        public static List<Session> FindAllByAccount(uint accountId)
+        {
+            sessionLock.EnterReadLock();
+            try
+            {
+                return sessionMap.Where(s => s != null && s.AccountId == accountId).ToList();
+            }
+            finally
+            {
+                sessionLock.ExitReadLock();
+            }
+        }
+
+        /// <summary>
         /// Removes a session, network client and network endpoint from the various tracker objects.
         /// </summary>
         public static void RemoveSession(Session session)
