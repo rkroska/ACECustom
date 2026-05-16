@@ -42,7 +42,7 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("ilt", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
             "ILT custom server commands and player preferences.",
-            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train|ringmode]")]
+            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train|ringmode|ringdebug]")]
         public static void HandleILT(Session session, params string[] parameters)
         {
             var player = session.Player;
@@ -322,6 +322,8 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat("      Train all affordable untrained skills using skill credits, in priority order.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt ringmode", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"      Toggle ring spell mode between New (guaranteed AOE) and Classic (physics multi-hit). (currently: {ringLabel})", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt ringdebug", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"      Toggle ring AOE cast diagnostics broadcast for your character. Resets on relog.", ChatMessageType.System));
             }
         }
     }

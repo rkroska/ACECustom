@@ -698,47 +698,22 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Shield absorb calculation using a WorldObject as the directional source (for AOE paths).
-        /// Mirrors GetShieldMod but replaces 'this' with the provided attacker.
-        /// NOTE: keep in sync with GetShieldMod if that method is ever updated.
+        /// Core shield magic absorb calculation given a pre-computed angle.
+        /// Single source of truth for both projectile and AOE code paths.
         /// </summary>
-        private static float GetShieldAbsorbMod(WorldObject attacker, Creature target, WorldObject shield)
+        /// <param name="angle">Angle in degrees from the incoming source to the target's facing.</param>
+        private static float CalculateShieldAbsorb(Creature target, WorldObject shield, float angle)
         {
-            var effectiveAngle = 180.0f;
-            var angle = target.GetAngle(attacker);
-            if (Math.Abs(angle) > effectiveAngle / 2.0f)
-                return 1.0f;
-
-            var shieldSkill = target.GetCreatureSkill(Skill.Shield);
-            if (shieldSkill.AdvancementClass < SkillAdvancementClass.Trained || shieldSkill.Base < 100)
-                return 1.0f;
-
-            var baseSkill = Math.Min(shieldSkill.Base, 433);
-            var specMod = shieldSkill.AdvancementClass == SkillAdvancementClass.Specialized ? 1.0f : 0.8f;
-            var cap = (float)(shield.GetAbsorbMagicDamage() ?? 0.0f);
-
-            var reduction = (cap * specMod * baseSkill * 0.003f) - (cap * specMod * 0.3f);
-            return Math.Min(1.0f, 1.0f - reduction);
-        }
-
-        /// <summary>
-        /// Calculates the amount of damage a shield absorbs from magic projectile
-        /// </summary>
-        public float GetShieldMod(Creature target, WorldObject shield)
-        {
-            // is spell projectile in front of creature target,
-            // within shield effectiveness area?
-            var effectiveAngle = 180.0f;
-            var angle = target.GetAngle(this);
-            if (Math.Abs(angle) > effectiveAngle / 2.0f)
-                return 1.0f;
-
             // https://asheron.fandom.com/wiki/Shield
             // The formula to determine magic absorption for shields is:
             // Reduction Percent = (cap * specMod * baseSkill * 0.003f) - (cap * specMod * 0.3f)
             // Cap = Maximum reduction
             // SpecMod = 1.0 for spec, 0.8 for trained
             // BaseSkill = 100 to 433 (above 433 base shield you always achieve the maximum %)
+
+            var effectiveAngle = 180.0f;
+            if (Math.Abs(angle) > effectiveAngle / 2.0f)
+                return 1.0f;
 
             var shieldSkill = target.GetCreatureSkill(Skill.Shield);
             // ensure trained?
@@ -759,9 +734,26 @@ namespace ACE.Server.WorldObjects
             // trained, 433 skill = 80%
 
             var reduction = (cap * specMod * baseSkill * 0.003f) - (cap * specMod * 0.3f);
+            return Math.Min(1.0f, 1.0f - reduction);
+        }
 
-            var shieldMod = Math.Min(1.0f, 1.0f - reduction);
-            return shieldMod;
+        /// <summary>
+        /// Shield absorb calculation using a WorldObject as the directional source (for AOE paths).
+        /// Ring spells radiate from the caster, so the caster's position substitutes for projectile position.
+        /// </summary>
+        private static float GetShieldAbsorbMod(WorldObject attacker, Creature target, WorldObject shield)
+        {
+            return CalculateShieldAbsorb(target, shield, target.GetAngle(attacker));
+        }
+
+        /// <summary>
+        /// Calculates the amount of damage a shield absorbs from magic projectile
+        /// </summary>
+        public float GetShieldMod(Creature target, WorldObject shield)
+        {
+            // is spell projectile in front of creature target,
+            // within shield effectiveness area?
+            return CalculateShieldAbsorb(target, shield, target.GetAngle(this));
         }
 
         /// <summary>
