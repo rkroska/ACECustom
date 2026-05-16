@@ -749,7 +749,14 @@ namespace ACE.Server.WorldObjects
             if (!IsAiDebugConsoleEnabled)
                 return;
 
-            var visible = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
+            var visible = PhysicsObj?.ObjMaint?.GetVisibleTargetsValuesOfTypeCreature();
+            if (visible == null)
+            {
+                DebugAiConsole(this, "scan",
+                    $"visible=0 candidates={candidates.Count} (ObjMaint or visible list unavailable)");
+                return;
+            }
+
             var leashRadius = (float)ServerConfig.pet_combat_leash_radius_m.Value;
             var leashEnabled = leashRadius > 0;
 

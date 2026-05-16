@@ -742,6 +742,28 @@ namespace ACE.Server.WorldObjects
         /// <summary>Legacy suffix from older clients: <c> [Slash]</c>, etc.</summary>
         private static readonly Regex WeaponDamageDisplaySuffix = new(@" \[(?<tag>\w+)\]\s*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+        /// <summary>Bracket suffix tags may use enum names or <see cref="DamageTypeExtensions.DisplayName"/> (e.g. Lightning for Electric).</summary>
+        private static bool TryParseWeaponDamageSuffixTag(string tag, out DamageType parsed)
+        {
+            if (Enum.TryParse(tag, ignoreCase: true, out parsed))
+                return true;
+
+            foreach (DamageType dt in Enum.GetValues(typeof(DamageType)))
+            {
+                if (dt == DamageType.Undef || dt == DamageType.Base || dt.IsMultiDamage())
+                    continue;
+                if (tag.Equals(dt.ToString(), StringComparison.OrdinalIgnoreCase)
+                    || tag.Equals(dt.DisplayName(), StringComparison.OrdinalIgnoreCase))
+                {
+                    parsed = dt;
+                    return true;
+                }
+            }
+
+            parsed = DamageType.Undef;
+            return false;
+        }
+
         private static string GetDisplayNameWithoutWeaponDamageSuffix(string name)
         {
             var n = name ?? "";
@@ -750,7 +772,7 @@ namespace ACE.Server.WorldObjects
                 return n;
 
             var tag = m.Groups["tag"].Value;
-            if (!Enum.TryParse(tag, ignoreCase: true, out DamageType parsed))
+            if (!TryParseWeaponDamageSuffixTag(tag, out var parsed))
                 return n;
             if (parsed == DamageType.Undef || parsed == DamageType.Base || parsed.IsMultiDamage())
                 return n;
