@@ -637,7 +637,7 @@ namespace ACE.Server.WorldObjects
         private static HashSet<string> BuildEssenceNameDamageLeadWords()
         {
             var hs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (DamageType dt in Enum.GetValues(typeof(DamageType)))
+            foreach (var dt in Enum.GetValues(typeof(DamageType)).Cast<DamageType>().OrderBy(d => (int)d))
             {
                 if (dt == DamageType.Undef || dt == DamageType.Base || dt.IsMultiDamage())
                     continue;

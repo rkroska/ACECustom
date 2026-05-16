@@ -234,6 +234,10 @@ namespace ACE.Server.WorldObjects
                     if (AttackTarget == null || homeCombatPet.IsBeyondCombatHardLeashFromOwner())
                         return;
                 }
+            }
+
+            if (AttackTarget == null && MonsterState != State.Return)
+            {
                 if (this is CombatPet noHomePet && CombatPet.IsAiDebugConsoleEnabled)
                     CombatPet.DebugAiConsole(noHomePet, "tick", "no target -> MoveToHome");
                 MoveToHome();

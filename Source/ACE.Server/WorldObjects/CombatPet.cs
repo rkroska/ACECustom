@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -224,6 +225,8 @@ namespace ACE.Server.WorldObjects
 
         public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
         {
+            RemoveAiDebugThrottleKeysForCombatPet(Guid.Full);
+
             // Clean up imbued effects before destroying the pet
             // This ensures effects are removed even if the pet is destroyed without being resummoned
             if (_previousImbuedTarget != null && _previousImbuedEffects != ImbuedEffectType.Undef)
@@ -660,6 +663,17 @@ namespace ACE.Server.WorldObjects
         private static readonly ConcurrentDictionary<string, double> AiDebugLastLogByKey = new();
         private const double AiDebugThrottleSec = 0.25;
 
+        /// <summary> Drop AI-console throttle rows for this pet GUID so idle-debug maps do not leak after despawn. </summary>
+        private static void RemoveAiDebugThrottleKeysForCombatPet(uint petGuidFull)
+        {
+            var prefix = $"{petGuidFull:X8}:";
+            foreach (var key in AiDebugLastLogByKey.Keys.ToArray())
+            {
+                if (key.StartsWith(prefix, StringComparison.Ordinal))
+                    AiDebugLastLogByKey.TryRemove(key, out _);
+            }
+        }
+
         internal static bool IsAiDebugConsoleEnabled =>
             ServerConfig.pet_combat_debug_follow_ai_console.Value;
 
@@ -1016,7 +1030,10 @@ namespace ACE.Server.WorldObjects
             }
 
             // Re-validate current target immediately (leash / visibility); do not throttle this path.
-            if (creature != null && !creature.IsDead && IsVisibleTarget(creature) && !GetNearbyMonsters().Contains(creature))
+            var nearbyForValidate = creature != null && !creature.IsDead && IsVisibleTarget(creature)
+                ? GetNearbyMonsters()
+                : null;
+            if (nearbyForValidate != null && !nearbyForValidate.Contains(creature))
             {
                 if (IsAiDebugConsoleEnabled)
                     DebugAiConsole(this, "target", $"current foe not in nearby/leash -> FindNextTarget (was={creature.Name})", force: true);
@@ -1254,6 +1271,11 @@ namespace ACE.Server.WorldObjects
             item.SetProperty(PropertyFloat.DamageMod, 1.0f);
         }
 
+        private static BaseDamageMod BaseDamageModFromBodyPart(PropertiesBodyPart attackPart) =>
+            attackPart == null
+                ? new BaseDamageMod(new BaseDamage(0, 0.0f))
+                : new BaseDamageMod(new BaseDamage(attackPart.DVal, attackPart.DVar));
+
         /// <summary>
         /// Override GetBaseDamage to ALWAYS apply item augmentation bonuses,
         /// regardless of whether the summon has a weapon or if the weapon is enchantable
@@ -1267,12 +1289,7 @@ namespace ACE.Server.WorldObjects
                 var launcher = GetEquippedMissileWeapon();
                 // Cosmetic capture-skin launcher: same rule as melee — use body-part damage, not stripped weapon/ammo DM.
                 if (launcher != null && (launcher.GetProperty(PropertyBool.CombatPetCaptureSkinWeapon) ?? false))
-                {
-                    if (attackPart == null)
-                        baseDamageMod = new BaseDamageMod(new BaseDamage(0, 0.0f));
-                    else
-                        baseDamageMod = new BaseDamageMod(new BaseDamage(attackPart.DVal, attackPart.DVar));
-                }
+                    baseDamageMod = BaseDamageModFromBodyPart(attackPart);
                 else
                     baseDamageMod = GetMissileDamage();
             }
@@ -1281,39 +1298,11 @@ namespace ACE.Server.WorldObjects
                 var weapon = GetEquippedMeleeWeapon();
                 // Capture-skin weapons are cosmetic: use body-part damage like unarmed (do not use item weapon stats).
                 if (weapon != null && (weapon.GetProperty(PropertyBool.CombatPetCaptureSkinWeapon) ?? false))
-                {
-                    if (attackPart == null)
-                    {
-                        var baseDamage = new BaseDamage(0, 0.0f);
-                        baseDamageMod = new BaseDamageMod(baseDamage);
-                    }
-                    else
-                    {
-                        var maxDamage = attackPart.DVal;
-                        var variance = attackPart.DVar;
-                        var baseDamage = new BaseDamage(maxDamage, variance);
-                        baseDamageMod = new BaseDamageMod(baseDamage);
-                    }
-                }
+                    baseDamageMod = BaseDamageModFromBodyPart(attackPart);
                 else if (weapon != null)
-                {
                     baseDamageMod = weapon.GetDamageMod(this);
-                }
                 else
-                {
-                    if (attackPart == null)
-                    {
-                        var baseDamage = new BaseDamage(0, 0.0f);
-                        baseDamageMod = new BaseDamageMod(baseDamage);
-                    }
-                    else
-                    {
-                        var maxDamage = attackPart.DVal;
-                        var variance = attackPart.DVar;
-                        var baseDamage = new BaseDamage(maxDamage, variance);
-                        baseDamageMod = new BaseDamageMod(baseDamage);
-                    }
-                }
+                    baseDamageMod = BaseDamageModFromBodyPart(attackPart);
             }
 
             // ALWAYS apply item augmentation damage bonus directly, regardless of weapon type or enchantability
