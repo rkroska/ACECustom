@@ -396,6 +396,85 @@ namespace ACE.Server.WorldObjects
             return 45f;
         }
 
+        private const string SummonDurationSeparateFromCooldownFooter = "\n(Separate from essence cooldown.)";
+
+        /// <summary>
+        /// Appraisal-only summary for how long a summoned combat pet stays before decay/lifespan despawns it,
+        /// mirroring <see cref="CombatPet.Init"/> (server unlimited flag; luminance summon/duration aug bonuses applied to both
+        /// <see cref="PropertyFloat.TimeToRot"/> and <see cref="PropertyInt.Lifespan"/> when present). Distinct from essence reuse cooldown.
+        /// </summary>
+        public string BuildCombatPetSummonDurationAppraisal(Player examiner)
+        {
+            if (!IsCombatPetDevice())
+                return null;
+
+            if (!PetClass.HasValue || PetClass.Value <= 0)
+                return null;
+
+            if (ServerConfig.pet_combat_unlimited_lifespan.Value)
+            {
+                return "Summon duration: unlimited decay while alive (server setting). Pet still despawns if killed or exceeds owner follow distance.\n(This is separate from \"Cooldown When Used\" on this essence.)";
+            }
+
+            var petWeenie = DatabaseManager.World.GetCachedWeenie((uint)PetClass.Value);
+            if (petWeenie == null)
+                return null;
+
+            var (rotSeconds, lifeSeconds) = GetCombatPetSummonRotAndLifespanSeconds(petWeenie, examiner);
+
+            if (!rotSeconds.HasValue && !lifeSeconds.HasValue)
+            {
+                return "Summon duration: not fixed by creature decay/lifespan on this pet template (pet may still despawn from kill or owner follow distance)." + SummonDurationSeparateFromCooldownFooter;
+            }
+
+            return FormatCombatPetSummonDurationCore(rotSeconds, lifeSeconds) + SummonDurationSeparateFromCooldownFooter;
+        }
+
+        /// <summary>Mirrors <see cref="CombatPet.Init"/> luminance aug math applied to creature TimeToRot and Lifespan.</summary>
+        private static (int? RotSeconds, int? LifeSeconds) GetCombatPetSummonRotAndLifespanSeconds(Weenie petWeenie, Player examiner)
+        {
+            var tr = petWeenie.GetProperty(PropertyFloat.TimeToRot);
+            var life = petWeenie.GetProperty(PropertyInt.Lifespan);
+
+            var summonAugCount = examiner?.LuminanceAugmentSummonCount ?? 0;
+            var durationAugEffective = CombatPet.GetLifespanBonusEffectiveDurationAugCount(examiner, summonAugCount);
+
+            var extraSeconds = 0.0;
+            var perAug = ServerConfig.pet_summon_lifespan_seconds_per_aug.Value;
+            var perDur = ServerConfig.pet_combat_lifespan_seconds_per_duration_aug.Value;
+            if (summonAugCount > 0 && perAug > 0)
+                extraSeconds += summonAugCount * perAug;
+            if (durationAugEffective > 0 && perDur > 0)
+                extraSeconds += durationAugEffective * perDur;
+
+            var bonusRounded = extraSeconds > 0 ? (int)Math.Round(extraSeconds) : 0;
+
+            int? rotSeconds = null;
+            if (tr.HasValue && tr.Value > 0)
+                rotSeconds = bonusRounded > 0 ? (int)Math.Round(tr.Value + bonusRounded) : (int)Math.Round(tr.Value);
+
+            int? lifeSeconds = null;
+            if (life.HasValue && life.Value > 0)
+                lifeSeconds = bonusRounded > 0 ? life.Value + bonusRounded : life.Value;
+
+            return (rotSeconds, lifeSeconds);
+        }
+
+        private static string FormatCombatPetSummonDurationCore(int? rotSeconds, int? lifeSeconds)
+        {
+            if (rotSeconds.HasValue && lifeSeconds.HasValue)
+            {
+                if (rotSeconds.Value == lifeSeconds.Value)
+                    return $"Summon duration (for you): ~{rotSeconds.Value}s (decay timer matches innate lifespan).";
+                return $"Summon duration (for you): whichever expires first — decay ~{rotSeconds.Value}s (includes luminance summon/duration aug bonuses when configured); innate lifespan ~{lifeSeconds.Value}s.";
+            }
+
+            if (rotSeconds.HasValue)
+                return $"Summon duration (for you): ~{rotSeconds.Value}s until decay (includes luminance summon/duration aug bonuses when configured).";
+
+            return $"Summon duration (for you): ~{lifeSeconds.Value}s from creature lifespan timer (includes luminance summon/duration aug bonuses when configured).";
+        }
+
         private void TryApplySummonActivationCooldown(Player player)
         {
             if (player?.EnchantmentManager == null || CooldownId == null)

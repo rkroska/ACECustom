@@ -239,6 +239,18 @@ namespace ACE.Server.WorldObjects
             base.Destroy(raiseNotifyOfDestructionEvent, fromLandblockUnload);
         }
 
+        /// <summary>
+        /// Effective luminance spell-duration aug count for the combat pet lifespan bonus (must stay aligned with appraisal).
+        /// Used only from <see cref="CombatPet.Init"/> and combat-pet appraisal on <see cref="PetDevice"/>.
+        /// </summary>
+        internal static long GetLifespanBonusEffectiveDurationAugCount(Player player, long summonAugCount)
+        {
+            var durationCount = player?.LuminanceAugmentSpellDurationCount ?? 0;
+            if (ServerConfig.pet_combat_lifespan_duration_aug_ignore_summon_cap.Value)
+                return durationCount;
+            return Math.Min(summonAugCount, durationCount);
+        }
+
         public override bool? Init(Player player, PetDevice petDevice)
         {
             // Before Pet.Init -> EnterWorld: weenie defaults are creature/gold on radar; clients never get a later blip update unless we set this now so the create packet includes RadarBlipColor.
@@ -490,25 +502,44 @@ namespace ACE.Server.WorldObjects
             if (bondMaxHealthBonus > 0)
                 Health.StartingValue = (uint)Math.Min(uint.MaxValue, (ulong)Health.StartingValue + (uint)bondMaxHealthBonus);
 
+            // Lifespan vs TimeToRot (stock ACE): WorldObject.IsDecayable() returns false when Lifespan is set, so landblock
+            // TimeToRot decay does not run — heartbeat Lifespan drives despawn in that case. Pet templates often duplicate both;
+            // extending both keeps TimeToRot meaningful if Lifespan is ever omitted and avoids mismatched DB tuning surprises.
+            // Unlimited clears both so neither timer despawns the pet.
+            // Lifespan bonus logic runs only here (CombatPet summon Init); appraisal mirrors it on PetDevice only.
             if (ServerConfig.pet_combat_unlimited_lifespan.Value)
+            {
                 TimeToRot = -1;
+                Lifespan = null;
+            }
             else
             {
-                var tr = TimeToRot;
                 var perAug = ServerConfig.pet_summon_lifespan_seconds_per_aug.Value;
                 var perDurationAug = ServerConfig.pet_combat_lifespan_seconds_per_duration_aug.Value;
-                var durationAugEffective = Math.Min(summonAugCount, player.LuminanceAugmentSpellDurationCount ?? 0);
+                var durationAugEffective = GetLifespanBonusEffectiveDurationAugCount(player, summonAugCount);
 
-                if (tr.HasValue && tr.Value > 0)
+                var extraSeconds = 0.0;
+                if (summonAugCount > 0 && perAug > 0)
+                    extraSeconds += summonAugCount * perAug;
+                if (durationAugEffective > 0 && perDurationAug > 0)
+                    extraSeconds += durationAugEffective * perDurationAug;
+
+                if (extraSeconds > 0)
                 {
-                    var extraSeconds = 0.0;
-                    if (summonAugCount > 0 && perAug > 0)
-                        extraSeconds += summonAugCount * perAug;
-                    if (durationAugEffective > 0 && perDurationAug > 0)
-                        extraSeconds += durationAugEffective * perDurationAug;
+                    var bonusRounded = (int)Math.Round(extraSeconds);
+                    if (bonusRounded > 0)
+                    {
+                        var tr = TimeToRot;
+                        if (tr.HasValue && tr.Value > 0)
+                            TimeToRot = tr.Value + bonusRounded;
 
-                    if (extraSeconds > 0)
-                        TimeToRot = tr.Value + (int)Math.Round(extraSeconds);
+                        var ls = Lifespan;
+                        if (ls.HasValue && ls.Value > 0)
+                        {
+                            var sum = (long)ls.Value + bonusRounded;
+                            Lifespan = sum > int.MaxValue ? int.MaxValue : (int)sum;
+                        }
+                    }
                 }
             }
 

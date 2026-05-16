@@ -286,6 +286,15 @@ namespace ACE.Server.Network.Structure
                         else
                             PropertiesString[PropertyString.LongDesc] = msg;
                     }
+
+                    var summonDur = petDevice.BuildCombatPetSummonDurationAppraisal(examiner);
+                    if (!string.IsNullOrWhiteSpace(summonDur))
+                    {
+                        if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                            PropertiesString[PropertyString.LongDesc] += $"\n\n{summonDur}";
+                        else
+                            PropertiesString[PropertyString.LongDesc] = summonDur;
+                    }
                 }
 
                 var minLumAugSummon = petDevice.GetProperty(PropertyInt.PetDeviceMinLumAugSummonCount);
