@@ -749,9 +749,15 @@ namespace ACE.Entity.Enum.Properties
         SpellSuppressionSchools                 = 9047,
 
         /// <summary>Pet bond level stored on combat pet summoning essence (server/custom).</summary>
+        [AssessmentProperty]
         PetBondLevel                            = 9053,
         /// <summary>DamageType copied from capture source for combat pet appearance/rules.</summary>
         CapturedSourceDamageType                = 9054,
+        /// <summary>
+        /// Minimum <see cref="PropertyInt64.LumAugSummonCount"/> (9018) required to use this combat pet essence.
+        /// Set on tier 250/300 devices; unset or 0 skips the check (e.g. stock 200-tier essences).
+        /// </summary>
+        PetDeviceMinLumAugSummonCount           = 9055,
 
         // -- ILT Ability Charm System (50000-50099) ---------------------------------
         /// <summary>On an IsAbilityCharm item: integer key into CharmAbilityRegistry (1-50).</summary>

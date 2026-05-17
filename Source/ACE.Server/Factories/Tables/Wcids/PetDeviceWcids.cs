@@ -20,6 +20,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace48947_fireskeletonbushiessence150,
             WeenieClassName.ace48948_fireskeletonbushiessence180,
             WeenieClassName.ace48956_fireskeletonsamuraiessence,
+            WeenieClassName.ace787801001_fireskeletonsamuraiessence250,
+            WeenieClassName.ace787801037_fireskeletonsamuraiessence300,
         };
 
         private static readonly List<WeenieClassName> acidSkeletons = new List<WeenieClassName>()
@@ -31,6 +33,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49217_acidskeletonbushiessence150,
             WeenieClassName.ace49218_acidskeletonbushiessence180,
             WeenieClassName.ace49219_acidskeletonsamuraiessence,
+            WeenieClassName.ace787801002_acidskeletonsamuraiessence250,
+            WeenieClassName.ace787801038_acidskeletonsamuraiessence300,
         };
 
         private static readonly List<WeenieClassName> lightningSkeletons = new List<WeenieClassName>()
@@ -42,6 +46,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49224_lightningskeletonbushiessence150,
             WeenieClassName.ace49225_lightningskeletonbushiessence180,
             WeenieClassName.ace49226_lightningskeletonsamuraiessence,
+            WeenieClassName.ace787801003_lightningskeletonsamuraiessence250,
+            WeenieClassName.ace787801039_lightningskeletonsamuraiessence300,
         };
 
         private static readonly List<WeenieClassName> frostSkeletons = new List<WeenieClassName>()
@@ -53,6 +59,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49231_frostskeletonbushiessence150,
             WeenieClassName.ace49232_frostskeletonbushiessence180,
             WeenieClassName.ace49212_frostskeletonsamuraiessence,
+            WeenieClassName.ace787801004_frostskeletonsamuraiessence250,
+            WeenieClassName.ace787801040_frostskeletonsamuraiessence300,
         };
 
         // necromancer - zombies
@@ -66,6 +74,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49237_acidzombieessence150,
             WeenieClassName.ace49238_acidzombieessence180,
             WeenieClassName.ace49239_blisteredzombieessence,
+            WeenieClassName.ace787801005_blisteredzombieessence250,
+            WeenieClassName.ace787801041_blisteredzombieessence300,
         };
 
         private static readonly List<WeenieClassName> lightningZombies = new List<WeenieClassName>()
@@ -77,6 +87,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49244_lightningzombieessence150,
             WeenieClassName.ace49245_lightningzombieessence180,
             WeenieClassName.ace49246_shockedzombieessence,
+            WeenieClassName.ace787801006_shockedzombieessence250,
+            WeenieClassName.ace787801042_shockedzombieessence300,
         };
 
         private static readonly List<WeenieClassName> fireZombies = new List<WeenieClassName>()
@@ -88,6 +100,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49251_firezombieessence150,
             WeenieClassName.ace49252_firezombieessence180,
             WeenieClassName.ace49253_charredzombieessence,
+            WeenieClassName.ace787801007_charredzombieessence250,
+            WeenieClassName.ace787801043_charredzombieessence300,
         };
 
         private static readonly List<WeenieClassName> frostZombies = new List<WeenieClassName>()
@@ -99,6 +113,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49258_frostzombieessence150,
             WeenieClassName.ace49259_frostzombieessence180,
             WeenieClassName.ace49233_frigidzombieessence,
+            WeenieClassName.ace787801008_frigidzombieessence250,
+            WeenieClassName.ace787801044_frigidzombieessence300,
         };
 
         // necromancer - spectres
@@ -112,6 +128,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49425_acidspectreessence150,
             WeenieClassName.ace49426_acidspectreessence180,
             WeenieClassName.ace49427_acidmaidenessence,
+            WeenieClassName.ace787801009_acidmaidenessence250,
+            WeenieClassName.ace787801045_acidmaidenessence300,
         };
 
         private static readonly List<WeenieClassName> lightningSpectres = new List<WeenieClassName>()
@@ -123,6 +141,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49432_lightningspectreessence150,
             WeenieClassName.ace49433_lightningspectreessence180,
             WeenieClassName.ace49434_lightningmaidenessence,
+            WeenieClassName.ace787801010_lightningmaidenessence250,
+            WeenieClassName.ace787801046_lightningmaidenessence300,
         };
 
         private static readonly List<WeenieClassName> fireSpectres = new List<WeenieClassName>()
@@ -134,6 +154,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49439_firespectreessence150,
             WeenieClassName.ace49440_firespectreessence180,
             WeenieClassName.ace49441_firemaidenessence,
+            WeenieClassName.ace787801011_firemaidenessence250,
+            WeenieClassName.ace787801047_firemaidenessence300,
         };
 
         private static readonly List<WeenieClassName> frostSpectres = new List<WeenieClassName>()
@@ -145,6 +167,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49446_frostspectreessence150,
             WeenieClassName.ace49447_frostspectreessence180,
             WeenieClassName.ace49448_frostmaidenessence,
+            WeenieClassName.ace787801012_frostmaidenessence250,
+            WeenieClassName.ace787801048_frostmaidenessence300,
         };
 
         // primalist - elementals
@@ -158,6 +182,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace48967_firechildessence150,
             WeenieClassName.ace48969_firechildessence180,
             WeenieClassName.ace48957_incendiaryknightessence,
+            WeenieClassName.ace787801013_incendiaryknightessence250,
+            WeenieClassName.ace787801049_incendiaryknightessence300,
         };
 
         private static readonly List<WeenieClassName> acidElementals = new List<WeenieClassName>()
@@ -169,6 +195,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49265_acidchildessence150,
             WeenieClassName.ace49266_acidchildessence180,
             WeenieClassName.ace49267_causticknightessence,
+            WeenieClassName.ace787801014_causticknightessence250,
+            WeenieClassName.ace787801050_causticknightessence300,
         };
 
         private static readonly List<WeenieClassName> lightningElementals = new List<WeenieClassName>()
@@ -180,6 +208,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49272_lightningchildessence150,
             WeenieClassName.ace49273_lightningchildessence180,
             WeenieClassName.ace49274_galvanicknightessence,
+            WeenieClassName.ace787801015_galvanicknightessence250,
+            WeenieClassName.ace787801051_galvanicknightessence300,
         };
 
         private static readonly List<WeenieClassName> frostElementals = new List<WeenieClassName>()
@@ -191,6 +221,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49279_frostchildessence150,
             WeenieClassName.ace49280_frostchildessence180,
             WeenieClassName.ace49260_glacialknightessence,
+            WeenieClassName.ace787801016_glacialknightessence250,
+            WeenieClassName.ace787801052_glacialknightessence300,
         };
 
         // naturalist - k'naths
@@ -204,6 +236,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49286_acidknathessence150,
             WeenieClassName.ace49287_acidknathessence180,
             WeenieClassName.ace49281_knathrajedessence,
+            WeenieClassName.ace787801017_knathrajedessence250,
+            WeenieClassName.ace787801053_knathrajedessence300,
         };
 
         private static readonly List<WeenieClassName> lightningKnaths = new List<WeenieClassName>()
@@ -215,6 +249,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49293_lightningknathessence150,
             WeenieClassName.ace49294_lightningknathessence180,
             WeenieClassName.ace49288_knathyndaessence,
+            WeenieClassName.ace787801018_knathyndaessence250,
+            WeenieClassName.ace787801054_knathyndaessence300,
         };
 
         private static readonly List<WeenieClassName> fireKnaths = new List<WeenieClassName>()
@@ -226,6 +262,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49300_fireknathessence150,
             WeenieClassName.ace49301_fireknathessence180,
             WeenieClassName.ace49295_knathtsoctessence,
+            WeenieClassName.ace787801019_knathtsoctessence250,
+            WeenieClassName.ace787801055_knathtsoctessence300,
         };
 
         private static readonly List<WeenieClassName> frostKnaths = new List<WeenieClassName>()
@@ -237,6 +275,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49307_frostknathessence150,
             WeenieClassName.ace49308_frostknathessence180,
             WeenieClassName.ace49302_knathborretessence,
+            WeenieClassName.ace787801020_knathborretessence250,
+            WeenieClassName.ace787801056_knathborretessence300,
         };
 
         // primalist - wisps
@@ -250,6 +290,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49314_acidwispessence150,
             WeenieClassName.ace49315_acidwispessence180,
             WeenieClassName.ace49316_corrosionwispessence,
+            WeenieClassName.ace787801021_corrosionwispessence250,
+            WeenieClassName.ace787801057_corrosionwispessence300,
         };
 
         private static readonly List<WeenieClassName> lightningWisps = new List<WeenieClassName>()
@@ -261,6 +303,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49321_lightningwispessence150,
             WeenieClassName.ace49322_lightningwispessence180,
             WeenieClassName.ace49323_voltiacwispessence,
+            WeenieClassName.ace787801022_voltiacwispessence250,
+            WeenieClassName.ace787801058_voltiacwispessence300,
         };
 
         private static readonly List<WeenieClassName> fireWisps = new List<WeenieClassName>()
@@ -272,6 +316,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49328_firewispessence150,
             WeenieClassName.ace49329_firewispessence180,
             WeenieClassName.ace49330_incendiarywispessence,
+            WeenieClassName.ace787801023_incendiarywispessence250,
+            WeenieClassName.ace787801059_incendiarywispessence300,
         };
 
         private static readonly List<WeenieClassName> frostWisps = new List<WeenieClassName>()
@@ -283,6 +329,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49335_frostwispessence150,
             WeenieClassName.ace49336_frostwispessence180,
             WeenieClassName.ace49309_blizzardwispessence,
+            WeenieClassName.ace787801024_blizzardwispessence250,
+            WeenieClassName.ace787801060_blizzardwispessence300,
         };
 
         // naturalist - moars
@@ -296,6 +344,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49342_acidmoaressence150,
             WeenieClassName.ace49343_acidmoaressence180,
             WeenieClassName.ace49344_blisteringmoaressence,
+            WeenieClassName.ace787801025_blisteringmoaressence250,
+            WeenieClassName.ace787801061_blisteringmoaressence300,
         };
 
         private static readonly List<WeenieClassName> lightningMoars = new List<WeenieClassName>()
@@ -307,6 +357,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49349_lightningmoaressence150,
             WeenieClassName.ace49350_lightningmoaressence180,
             WeenieClassName.ace49351_electrifiedmoaressence,
+            WeenieClassName.ace787801026_electrifiedmoaressence250,
+            WeenieClassName.ace787801062_electrifiedmoaressence300,
         };
 
         private static readonly List<WeenieClassName> fireMoars = new List<WeenieClassName>()
@@ -318,6 +370,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49356_firemoaressence150,
             WeenieClassName.ace49357_firemoaressence180,
             WeenieClassName.ace49358_volcanicmoaressence,
+            WeenieClassName.ace787801027_volcanicmoaressence250,
+            WeenieClassName.ace787801063_volcanicmoaressence300,
         };
 
         private static readonly List<WeenieClassName> frostMoars = new List<WeenieClassName>()
@@ -329,6 +383,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49363_frostmoaressence150,
             WeenieClassName.ace49364_frostmoaressence180,
             WeenieClassName.ace49337_freezingmoaressence,
+            WeenieClassName.ace787801028_freezingmoaressence250,
+            WeenieClassName.ace787801064_freezingmoaressence300,
         };
 
         // naturalist - grievvers
@@ -342,6 +398,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49370_acidgrievveressence150,
             WeenieClassName.ace49371_acidgrievveressence180,
             WeenieClassName.ace49372_causticgrievveressence,
+            WeenieClassName.ace787801029_causticgrievveressence250,
+            WeenieClassName.ace787801065_causticgrievveressence300,
         };
 
         private static readonly List<WeenieClassName> lightningGrievvers = new List<WeenieClassName>()
@@ -353,6 +411,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49377_lightninggrievveressence150,
             WeenieClassName.ace49378_lightninggrievveressence180,
             WeenieClassName.ace49379_excitedgrievveressence,
+            WeenieClassName.ace787801030_excitedgrievveressence250,
+            WeenieClassName.ace787801066_excitedgrievveressence300,
         };
 
         private static readonly List<WeenieClassName> fireGrievvers = new List<WeenieClassName>()
@@ -364,6 +424,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49384_firegrievveressence150,
             WeenieClassName.ace49385_firegrievveressence180,
             WeenieClassName.ace49386_scorchedgrievveressence,
+            WeenieClassName.ace787801031_scorchedgrievveressence250,
+            WeenieClassName.ace787801067_scorchedgrievveressence300,
         };
 
         private static readonly List<WeenieClassName> frostGrievvers = new List<WeenieClassName>()
@@ -375,6 +437,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49391_frostgrievveressence150,
             WeenieClassName.ace49392_frostgrievveressence180,
             WeenieClassName.ace49365_arcticgrievveressence,
+            WeenieClassName.ace787801032_arcticgrievveressence250,
+            WeenieClassName.ace787801068_arcticgrievveressence300,
         };
 
         // naturalist - phyntos wasps
@@ -388,6 +452,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49528_acidphyntoswaspessence150,
             WeenieClassName.ace49529_acidphyntoswaspessence180,
             WeenieClassName.ace49530_acidphyntosswarmessence,
+            WeenieClassName.ace787801033_acidphyntosswarmessence250,
+            WeenieClassName.ace787801069_acidphyntosswarmessence300,
         };
 
         private static readonly List<WeenieClassName> fireWasps = new List<WeenieClassName>()
@@ -399,6 +465,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49535_firephyntoswaspessence150,
             WeenieClassName.ace49536_firephyntoswaspessence180,
             WeenieClassName.ace49537_firephyntosswarmessence,
+            WeenieClassName.ace787801034_firephyntosswarmessence250,
+            WeenieClassName.ace787801070_firephyntosswarmessence300,
         };
 
         private static readonly List<WeenieClassName> frostWasps = new List<WeenieClassName>()
@@ -410,6 +478,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49542_frostphyntoswaspessence150,
             WeenieClassName.ace49543_frostphyntoswaspessence180,
             WeenieClassName.ace49544_frostphyntosswarmessence,
+            WeenieClassName.ace787801035_frostphyntosswarmessence250,
+            WeenieClassName.ace787801071_frostphyntosswarmessence300,
         };
 
         private static readonly List<WeenieClassName> lightningWasps = new List<WeenieClassName>()
@@ -421,6 +491,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             WeenieClassName.ace49549_lightningphyntoswaspessence150,
             WeenieClassName.ace49550_lightningphyntoswaspessence180,
             WeenieClassName.ace49551_lightningphyntosswarmessence,
+            WeenieClassName.ace787801036_lightningphyntosswarmessence250,
+            WeenieClassName.ace787801072_lightningphyntosswarmessence300,
         };
 
         private static readonly List<List<WeenieClassName>> Necromancer_PetDevices = new List<List<WeenieClassName>>()
@@ -485,7 +557,9 @@ namespace ACE.Server.Factories.Tables.Wcids
             { 125, 3 },
             { 150, 4 },
             { 180, 5 },
-            { 200, 6 }
+            { 200, 6 },
+            { 250, 7 },
+            { 300, 8 }
         };
 
         private static readonly List<List<WeenieClassName>> petDevices = Necromancer_PetDevices.Union(Primalist_PetDevices).Union(Naturalist_PetDevices).ToList();

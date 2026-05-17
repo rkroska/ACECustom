@@ -15,6 +15,7 @@ namespace ACE.Server.WorldObjects
             //if (!Attackable) return;
 
             var creatures = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
+            var alerted = 0;
 
             foreach (var monster in creatures)
             {
@@ -22,8 +23,14 @@ namespace ACE.Server.WorldObjects
 
                 //if (Location.SquaredDistanceTo(monster.Location) <= monster.VisualAwarenessRangeSq)
                 if (PhysicsObj.get_distance_sq_to_object(monster.PhysicsObj, true) <= monster.VisualAwarenessRangeSq)
-                    PetAlertMonster(monster);
+                {
+                    if (PetAlertMonster(monster))
+                        alerted++;
+                }
             }
+
+            if (alerted > 0 && IsAiDebugConsoleEnabled)
+                DebugAiConsole(this, "aggro", $"PetCheckMonsters woke {alerted} monster(s) (visible={creatures.Count})");
         }
 
         /// <summary>
@@ -47,6 +54,9 @@ namespace ACE.Server.WorldObjects
 
             monster.AttackTarget = this;
             monster.WakeUp();
+
+            if (IsAiDebugConsoleEnabled)
+                DebugAiConsole(this, "aggro", $"PetAlertMonster {monster.Name} state={monster.MonsterState}", force: true);
 
             return true;
         }

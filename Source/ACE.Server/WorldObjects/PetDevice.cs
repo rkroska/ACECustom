@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 using log4net;
 
@@ -84,7 +85,7 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// Bond-derived combat bonuses for a summoned CombatPet (additive on top of gem gear ratings).
-        /// DR uses (level+2)/3; CDR/CD ramp linearly 0→cap over bond level cap; D uses the agreed low-level table then +1 per 3 levels from 15+.
+        /// DR uses (level+2)/3; CDR/CD ramp linearly 0→cap over bond level cap (if cap is unlimited, ramp uses 1000 levels so bonuses reach their configured caps at finite bond); D uses the agreed low-level table then +1 per 3 levels from 15+.
         /// Vitality bonus is bondLevel × pet_bond_vitality_per_level (applied as flat max health in CombatPet.Init).
         /// </summary>
         public static void GetBondCombatStatBonuses(int bondLevel, int levelCap, out int damageResistRating, out int critDamageResistRating, out int damageRating, out int critDamageRating, out int vitalityToMaxHealth)
@@ -113,8 +114,11 @@ namespace ACE.Server.WorldObjects
             if (cdCap < 0)
                 cdCap = 0;
 
-            critDamageResistRating = (int)Math.Min(cdrCap, (long)bondLevel * cdrCap / levelCap);
-            critDamageRating = (int)Math.Min(cdCap, (long)bondLevel * cdCap / levelCap);
+            // Unlimited bond level uses int.MaxValue as cap; do not divide by that or CDR/CD stay ~0 until enormous bond.
+            var linearRampLevels = levelCap == int.MaxValue ? 1000 : levelCap;
+
+            critDamageResistRating = (int)Math.Min(cdrCap, (long)bondLevel * cdrCap / linearRampLevels);
+            critDamageRating = (int)Math.Min(cdCap, (long)bondLevel * cdCap / linearRampLevels);
 
             damageRating = GetBondDamageRatingBonus(bondLevel);
 
@@ -166,6 +170,23 @@ namespace ACE.Server.WorldObjects
             return Math.Max(1, deltaTable);
         }
 
+        /// <summary>
+        /// Pushes bond fields to the owning client via <see cref="Player.UpdateProperty"/> (and includes them on identify
+        /// when marked <see cref="AssessmentPropertyAttribute"/>). Property IDs: PetBondAttuned 9047, PetBondXp 9050,
+        /// PetBondXpTotal 9051, PetBondAttunedCharacterId 9052, PetBondLevel 9053.
+        /// </summary>
+        public void SyncPetBondPropertiesToOwner(Player owner, bool broadcast = false)
+        {
+            if (owner == null || !ServerConfig.pet_bond_enabled.Value || !IsCombatPetDevice())
+                return;
+
+            owner.UpdateProperty(this, PropertyBool.PetBondAttuned, PetBondAttuned, broadcast);
+            owner.UpdateProperty(this, PropertyInt.PetBondLevel, PetBondLevel ?? 1, broadcast);
+            owner.UpdateProperty(this, PropertyInt64.PetBondXp, PetBondXp ?? 0, broadcast);
+            owner.UpdateProperty(this, PropertyInt64.PetBondXpTotal, PetBondXpTotal ?? 0, broadcast);
+            owner.UpdateProperty(this, PropertyInt64.PetBondAttunedCharacterId, PetBondAttunedCharacterId, broadcast);
+        }
+
         public bool TryAwardBondXp(Player owner, long amount, out bool leveledUp)
         {
             leveledUp = false;
@@ -212,13 +233,8 @@ namespace ACE.Server.WorldObjects
 
             SaveBiotaToDatabase();
 
-            // Best-effort immediate client updates (appraisal already shows it; this makes it feel responsive).
             if (owner != null)
-            {
-                owner.UpdateProperty(this, PropertyInt.PetBondLevel, level, true);
-                owner.UpdateProperty(this, PropertyInt64.PetBondXp, xp, true);
-                owner.UpdateProperty(this, PropertyInt64.PetBondXpTotal, total, true);
-            }
+                SyncPetBondPropertiesToOwner(owner, broadcast: true);
 
             // Same level-up play script as players (Player_Xp), on the spawned pet so it shows in-world for nearby clients.
             if (leveledUp && owner != null
@@ -378,6 +394,85 @@ namespace ACE.Server.WorldObjects
                 return (float)d.Value;
 
             return 45f;
+        }
+
+        private const string SummonDurationSeparateFromCooldownFooter = "\n(Separate from essence cooldown.)";
+
+        /// <summary>
+        /// Appraisal-only summary for how long a summoned combat pet stays before decay/lifespan despawns it,
+        /// mirroring <see cref="CombatPet.Init"/> (server unlimited flag; luminance summon/duration aug bonuses applied to both
+        /// <see cref="PropertyFloat.TimeToRot"/> and <see cref="PropertyInt.Lifespan"/> when present). Distinct from essence reuse cooldown.
+        /// </summary>
+        public string BuildCombatPetSummonDurationAppraisal(Player examiner)
+        {
+            if (!IsCombatPetDevice())
+                return null;
+
+            if (!PetClass.HasValue || PetClass.Value <= 0)
+                return null;
+
+            if (ServerConfig.pet_combat_unlimited_lifespan.Value)
+            {
+                return "Summon duration: unlimited decay while alive (server setting). Pet still despawns if killed or exceeds owner follow distance.\n(This is separate from \"Cooldown When Used\" on this essence.)";
+            }
+
+            var petWeenie = DatabaseManager.World.GetCachedWeenie((uint)PetClass.Value);
+            if (petWeenie == null)
+                return null;
+
+            var (rotSeconds, lifeSeconds) = GetCombatPetSummonRotAndLifespanSeconds(petWeenie, examiner);
+
+            if (!rotSeconds.HasValue && !lifeSeconds.HasValue)
+            {
+                return "Summon duration: not fixed by creature decay/lifespan on this pet template (pet may still despawn from kill or owner follow distance)." + SummonDurationSeparateFromCooldownFooter;
+            }
+
+            return FormatCombatPetSummonDurationCore(rotSeconds, lifeSeconds) + SummonDurationSeparateFromCooldownFooter;
+        }
+
+        /// <summary>Mirrors <see cref="CombatPet.Init"/> luminance aug math applied to creature TimeToRot and Lifespan.</summary>
+        private static (int? RotSeconds, int? LifeSeconds) GetCombatPetSummonRotAndLifespanSeconds(Weenie petWeenie, Player examiner)
+        {
+            var tr = petWeenie.GetProperty(PropertyFloat.TimeToRot);
+            var life = petWeenie.GetProperty(PropertyInt.Lifespan);
+
+            var summonAugCount = examiner?.LuminanceAugmentSummonCount ?? 0;
+            var durationAugEffective = CombatPet.GetLifespanBonusEffectiveDurationAugCount(examiner, summonAugCount);
+
+            var extraSeconds = 0.0;
+            var perAug = ServerConfig.pet_summon_lifespan_seconds_per_aug.Value;
+            var perDur = ServerConfig.pet_combat_lifespan_seconds_per_duration_aug.Value;
+            if (summonAugCount > 0 && perAug > 0)
+                extraSeconds += summonAugCount * perAug;
+            if (durationAugEffective > 0 && perDur > 0)
+                extraSeconds += durationAugEffective * perDur;
+
+            var bonusRounded = extraSeconds > 0 ? (int)Math.Round(extraSeconds) : 0;
+
+            int? rotSeconds = null;
+            if (tr.HasValue && tr.Value > 0)
+                rotSeconds = bonusRounded > 0 ? (int)Math.Round(tr.Value + bonusRounded) : (int)Math.Round(tr.Value);
+
+            int? lifeSeconds = null;
+            if (life.HasValue && life.Value > 0)
+                lifeSeconds = bonusRounded > 0 ? life.Value + bonusRounded : life.Value;
+
+            return (rotSeconds, lifeSeconds);
+        }
+
+        private static string FormatCombatPetSummonDurationCore(int? rotSeconds, int? lifeSeconds)
+        {
+            if (rotSeconds.HasValue && lifeSeconds.HasValue)
+            {
+                if (rotSeconds.Value == lifeSeconds.Value)
+                    return $"Summon duration (for you): ~{rotSeconds.Value}s (decay timer matches innate lifespan).";
+                return $"Summon duration (for you): whichever expires first — decay ~{rotSeconds.Value}s (includes luminance summon/duration aug bonuses when configured); innate lifespan ~{lifeSeconds.Value}s.";
+            }
+
+            if (rotSeconds.HasValue)
+                return $"Summon duration (for you): ~{rotSeconds.Value}s until decay (includes luminance summon/duration aug bonuses when configured).";
+
+            return $"Summon duration (for you): ~{lifeSeconds.Value}s from creature lifespan timer (includes luminance summon/duration aug bonuses when configured).";
         }
 
         private void TryApplySummonActivationCooldown(Player player)
@@ -578,6 +673,18 @@ namespace ACE.Server.WorldObjects
             if (!baseRequirements.Success)
                 return baseRequirements;
 
+            var minLumAugSummon = GetProperty(PropertyInt.PetDeviceMinLumAugSummonCount);
+            if (minLumAugSummon.HasValue && minLumAugSummon.Value > 0)
+            {
+                var current = player.GetProperty(PropertyInt64.LumAugSummonCount) ?? 0;
+                if (current < minLumAugSummon.Value)
+                {
+                    player.Session.Network.EnqueueSend(new GameEventCommunicationTransientString(player.Session,
+                        $"Your Luminance Summoning inheritance is {current}. This item requires at least {minLumAugSummon.Value}."));
+                    return new ActivationResult(false);
+                }
+            }
+
             // verify summoning mastery
             if (SummoningMastery != null && player.SummoningMastery != SummoningMastery)
             {
@@ -588,6 +695,345 @@ namespace ACE.Server.WorldObjects
             // While a CombatPet is active, summoning another creature goes through Pet.Init -> HandleCurrentActivePet
             // (replace/stow rules). Do not block unrelated PetDevice uses (e.g. inventory crates misclassified as PetDevice).
             return new ActivationResult(true);
+        }
+
+        /// <summary>
+        /// Sends <see cref="GameMessagePublicUpdatePropertyString"/> for <see cref="PropertyString.Name"/> to the
+        /// summoning player (non-broadcast). Helps inventory display refresh without relog; client may still cache
+        /// some string properties (see <see cref="Player.UpdateProperty(WorldObject, PropertyString, string, bool)"/>).
+        /// </summary>
+        public void TryNotifySummonerNameProperty(Player summoner)
+        {
+            if (summoner?.Session == null)
+                return;
+
+            summoner.UpdateProperty(this, PropertyString.Name, Name ?? "");
+        }
+
+        /// <summary>First word of matrix / naturalist essence names that denotes damage flavor (elemental or physical).</summary>
+        private static readonly HashSet<string> EssenceNameDamageLeadWords = BuildEssenceNameDamageLeadWords();
+
+        private static HashSet<string> BuildEssenceNameDamageLeadWords()
+        {
+            var hs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var dt in Enum.GetValues(typeof(DamageType)).Cast<DamageType>().OrderBy(d => (int)d))
+            {
+                if (dt == DamageType.Undef || dt == DamageType.Base || dt.IsMultiDamage())
+                    continue;
+                if (dt == DamageType.Health || dt == DamageType.Stamina || dt == DamageType.Mana)
+                    continue;
+                hs.Add(dt.ToString());
+                hs.Add(dt.DisplayName());
+            }
+
+            hs.Add("Frost");
+            // Common matrix / capstone name lead-ins (not enum spellings): see PetDeviceToPetMapping comments.
+            foreach (var extra in new[]
+                     {
+                         "Caustic", "Blistering", "Scorched", "Arctic", "Excited", "Volcanic", "Electrified", "Galvanic",
+                         "Glacial", "Incendiary", "Frigid", "Charred", "Shocked", "Corrosion", "Corrosive", "Voltaic", "Freezing",
+                         "Blizzard"
+                     })
+                hs.Add(extra);
+
+            return hs;
+        }
+
+        /// <summary>Legacy suffix from older clients: <c> [Slash]</c>, etc.</summary>
+        private static readonly Regex WeaponDamageDisplaySuffix = new(@" \[(?<tag>\w+)\]\s*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        /// <summary>Bracket suffix tags may use enum names or <see cref="DamageTypeExtensions.DisplayName"/> (e.g. Lightning for Electric).</summary>
+        private static bool TryParseWeaponDamageSuffixTag(string tag, out DamageType parsed)
+        {
+            if (Enum.TryParse(tag, ignoreCase: true, out parsed))
+                return true;
+
+            foreach (DamageType dt in Enum.GetValues(typeof(DamageType)))
+            {
+                if (dt == DamageType.Undef || dt == DamageType.Base || dt.IsMultiDamage())
+                    continue;
+                if (tag.Equals(dt.ToString(), StringComparison.OrdinalIgnoreCase)
+                    || tag.Equals(dt.DisplayName(), StringComparison.OrdinalIgnoreCase))
+                {
+                    parsed = dt;
+                    return true;
+                }
+            }
+
+            parsed = DamageType.Undef;
+            return false;
+        }
+
+        private static string GetDisplayNameWithoutWeaponDamageSuffix(string name)
+        {
+            var n = name ?? "";
+            var m = WeaponDamageDisplaySuffix.Match(n);
+            if (!m.Success)
+                return n;
+
+            var tag = m.Groups["tag"].Value;
+            if (!TryParseWeaponDamageSuffixTag(tag, out var parsed))
+                return n;
+            if (parsed == DamageType.Undef || parsed == DamageType.Base || parsed.IsMultiDamage())
+                return n;
+
+            return n[..m.Index].TrimEnd();
+        }
+
+        private static DamageType? PickPrimaryPhysicalDamageType(DamageType flags)
+        {
+            if (flags == DamageType.Undef || flags == 0)
+                return null;
+
+            foreach (DamageType damageType in Enum.GetValues(typeof(DamageType)))
+            {
+                if ((flags & damageType) != 0 && !damageType.IsMultiDamage())
+                    return damageType;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Damage type from creature equipped weapons only (no body innate). Used when siphoning for
+        /// <see cref="PropertyInt.CapturedSourceDamageType"/> so unarmed captures do not lock creature innate damage.
+        /// </summary>
+        public static DamageType? TryGetDamageTypeFromCreatureEquippedWeaponsOnly(Creature creature)
+        {
+            if (creature == null)
+                return null;
+
+            var melee = creature.GetEquippedMeleeWeapon();
+            var launcher = creature.GetEquippedMissileWeapon();
+            var ammo = creature.GetMissileAmmo();
+
+            if (melee != null)
+                return PickPrimaryPhysicalDamageType(melee.W_DamageType);
+            if (launcher != null && ammo != null)
+                return PickPrimaryPhysicalDamageType(ammo.W_DamageType);
+            if (launcher != null)
+                return PickPrimaryPhysicalDamageType(launcher.W_DamageType);
+            var wand = creature.GetEquippedWand();
+            if (wand != null)
+                return PickPrimaryPhysicalDamageType(wand.W_DamageType);
+            return null;
+        }
+
+        /// <summary>
+        /// If <paramref name="leadWord"/> matches a known matrix / essence damage lead-in, returns the corresponding
+        /// <see cref="DamageType"/> (single-type only). Used for template weenie names and for validating replace-only naming.
+        /// </summary>
+        public static DamageType? TryMatchEssenceDamageLeadWordToDamageType(string leadWord)
+        {
+            if (string.IsNullOrWhiteSpace(leadWord))
+                return null;
+
+            foreach (DamageType dt in Enum.GetValues(typeof(DamageType)))
+            {
+                if (dt == DamageType.Undef || dt == DamageType.Base || dt.IsMultiDamage())
+                    continue;
+                if (dt == DamageType.Health || dt == DamageType.Stamina || dt == DamageType.Mana)
+                    continue;
+                if (leadWord.Equals(dt.ToString(), StringComparison.OrdinalIgnoreCase)
+                    || leadWord.Equals(dt.DisplayName(), StringComparison.OrdinalIgnoreCase))
+                    return dt;
+            }
+
+            // Matrix-style words that are not enum spellings (subset of <see cref="EssenceNameDamageLeadWords"/>).
+            if (leadWord.Equals("Frost", StringComparison.OrdinalIgnoreCase))
+                return DamageType.Cold;
+
+            if (MatrixExtraEssenceDamageLeadWords.TryGetValue(leadWord, out var mapped))
+                return mapped;
+
+            return null;
+        }
+
+        /// <summary>Maps non-enum matrix name lead-ins to a single <see cref="DamageType"/> for template parsing.</summary>
+        private static readonly Dictionary<string, DamageType> MatrixExtraEssenceDamageLeadWords = BuildMatrixExtraEssenceDamageLeadWords();
+
+        private static Dictionary<string, DamageType> BuildMatrixExtraEssenceDamageLeadWords()
+        {
+            static void add(Dictionary<string, DamageType> d, string w, DamageType dt) => d[w] = dt;
+
+            var d = new Dictionary<string, DamageType>(StringComparer.OrdinalIgnoreCase);
+            foreach (var extra in new[]
+                     {
+                         "Caustic", "Blistering", "Corrosion", "Corrosive"
+                     })
+                add(d, extra, DamageType.Acid);
+
+            foreach (var extra in new[] { "Scorched", "Incendiary", "Charred", "Volcanic" })
+                add(d, extra, DamageType.Fire);
+
+            foreach (var extra in new[] { "Arctic", "Glacial", "Frigid", "Freezing", "Blizzard" })
+                add(d, extra, DamageType.Cold);
+
+            foreach (var extra in new[] { "Electrified", "Galvanic", "Shocked", "Excited", "Voltaic" })
+                add(d, extra, DamageType.Electric);
+
+            return d;
+        }
+
+        /// <summary>
+        /// Parses the first word of a combat-pet <see cref="PetDevice"/> template weenie <see cref="PropertyString.Name"/>
+        /// (e.g. "Acid Matron Essence (250)") for a matrix elemental / physical lead-in.
+        /// </summary>
+        public static DamageType? TryGetTemplateEssenceDamageTypeFromWeenie(uint deviceWeenieClassId)
+        {
+            var weenie = DatabaseManager.World.GetCachedWeenie(deviceWeenieClassId);
+            var n = weenie?.GetProperty(PropertyString.Name);
+            if (string.IsNullOrWhiteSpace(n))
+                return null;
+
+            n = n.TrimStart();
+            var sp = n.IndexOf(' ');
+            var lead = sp > 0 ? n[..sp] : n;
+            return TryMatchEssenceDamageLeadWordToDamageType(lead);
+        }
+
+        /// <summary>
+        /// Resolves <see cref="PropertyInt.CapturedSourceDamageType"/> on the device, or the matrix template default from
+        /// <see cref="WorldObject.WeenieClassId"/> when unset (e.g. after reskin to an unarmed appearance).
+        /// </summary>
+        public static DamageType? TryResolveCapturedSourceDamageTypeForCombatPet(PetDevice device)
+        {
+            if (device == null || !device.IsCombatPetDevice())
+                return null;
+
+            var capDt = device.GetProperty(PropertyInt.CapturedSourceDamageType);
+            if (capDt.HasValue && capDt.Value != 0 && Enum.IsDefined(typeof(DamageType), capDt.Value))
+                return (DamageType)capDt.Value;
+
+            return TryGetTemplateEssenceDamageTypeFromWeenie(device.WeenieClassId);
+        }
+
+        /// <summary>
+        /// Primary physical/elemental damage type from the creature's wielded weapon(s), for essence naming.
+        /// Mirrors <see cref="CombatPet.Init"/> capture-source override for melee vs missile ammo rules.
+        /// When unarmed and <c>pet_apply_capture_source_damage_type</c> is on, falls back to stored/template damage on the device.
+        /// </summary>
+        public static DamageType? TryGetPrimaryWeaponDamageTypeForDisplay(Creature creature, PetDevice device)
+        {
+            if (creature == null)
+                return null;
+
+            var melee = creature.GetEquippedMeleeWeapon();
+            var launcher = creature.GetEquippedMissileWeapon();
+            var ammo = creature.GetMissileAmmo();
+
+            DamageType? raw = null;
+
+            if (melee != null)
+                raw = PickPrimaryPhysicalDamageType(melee.W_DamageType);
+            else if (launcher != null && ammo != null)
+                raw = PickPrimaryPhysicalDamageType(ammo.W_DamageType);
+            else if (launcher != null)
+                raw = PickPrimaryPhysicalDamageType(launcher.W_DamageType);
+            else
+            {
+                var wand = creature.GetEquippedWand();
+                if (wand != null)
+                    raw = PickPrimaryPhysicalDamageType(wand.W_DamageType);
+            }
+
+            if (raw.HasValue)
+            {
+                if (device != null && ServerConfig.pet_apply_capture_source_damage_type.Value)
+                {
+                    var capDt = device.GetProperty(PropertyInt.CapturedSourceDamageType);
+                    if (capDt.HasValue && capDt.Value != 0 && Enum.IsDefined(typeof(DamageType), capDt.Value))
+                    {
+                        var forced = (DamageType)capDt.Value;
+                        if (melee != null || launcher == null)
+                            return forced;
+                    }
+                }
+
+                return raw;
+            }
+
+            if (device != null && device.IsCombatPetDevice() && ServerConfig.pet_apply_capture_source_damage_type.Value)
+                return TryResolveCapturedSourceDamageTypeForCombatPet(device);
+
+            return null;
+        }
+
+        /// <summary>
+        /// If the name begins with a known damage-type label (from <see cref="EssenceNameDamageLeadWords"/>), replace
+        /// that word with <paramref name="weaponDt"/>'s display label. If the first word is not a known damage lead-in,
+        /// returns <paramref name="name"/> unchanged (no insertion).
+        /// </summary>
+        private static string ReplaceLeadingEssenceDamageLabel(string name, DamageType weaponDt)
+        {
+            var n = name.TrimStart();
+            var sp = n.IndexOf(' ');
+            if (sp <= 0)
+                return name;
+
+            var lead = n[..sp];
+            if (!EssenceNameDamageLeadWords.Contains(lead))
+                return name;
+
+            var tail = n[sp..];
+            return weaponDt.DisplayName() + tail;
+        }
+
+        /// <summary>
+        /// Updates this combat pet essence's <see cref="WorldObject.Name"/> from the summoned pet's weapons: strips
+        /// any legacy <c> [Slash]</c> suffix, then replaces a leading elemental/physical word (Acid, Fire, …) with the
+        /// weapon's damage label (Slash, Bludgeon, Lightning, …).
+        /// </summary>
+        private void RefreshCombatPetEssenceDisplayNameForSummonedPet(CombatPet pet, Player owner)
+        {
+            if (!IsCombatPetDevice() || pet == null || owner?.Session == null)
+                return;
+
+            var stripped = GetDisplayNameWithoutWeaponDamageSuffix(Name ?? "");
+            var weaponDt = TryGetPrimaryWeaponDamageTypeForDisplay(pet, this);
+            if (!weaponDt.HasValue)
+            {
+                if (stripped != Name)
+                    Name = stripped;
+                TryNotifySummonerNameProperty(owner);
+                return;
+            }
+
+            var rebuilt = ReplaceLeadingEssenceDamageLabel(stripped, weaponDt.Value);
+            if (stripped != rebuilt)
+                Name = rebuilt;
+            else if (stripped != Name)
+                Name = stripped;
+
+            TryNotifySummonerNameProperty(owner);
+        }
+
+        /// <summary>
+        /// After applying a siphoned appearance, re-sync the leading damage word on the combat essence name from
+        /// <see cref="TryResolveCapturedSourceDamageTypeForCombatPet"/> (weapon capture or matrix template when unarmed).
+        /// </summary>
+        public void RefreshCombatPetEssenceDisplayNameAfterSkinApply(Player player)
+        {
+            if (!IsCombatPetDevice() || player?.Session == null || !ServerConfig.pet_apply_capture_source_damage_type.Value)
+                return;
+
+            var stripped = GetDisplayNameWithoutWeaponDamageSuffix(Name ?? "");
+            var weaponDt = TryResolveCapturedSourceDamageTypeForCombatPet(this);
+            if (!weaponDt.HasValue)
+            {
+                if (stripped != Name)
+                    Name = stripped;
+                TryNotifySummonerNameProperty(player);
+                return;
+            }
+
+            var rebuilt = ReplaceLeadingEssenceDamageLabel(stripped, weaponDt.Value);
+            if (stripped != rebuilt)
+                Name = rebuilt;
+            else if (stripped != Name)
+                Name = stripped;
+
+            TryNotifySummonerNameProperty(player);
         }
 
         public bool? SummonCreature(Player player, uint wcid)
@@ -785,7 +1231,15 @@ namespace ACE.Server.WorldObjects
 
             var success = pet.Init(player, this);
 
-            if (success != true) wo.Destroy();
+            if (success == true)
+            {
+                if (pet is CombatPet combatPet)
+                    RefreshCombatPetEssenceDisplayNameForSummonedPet(combatPet, player);
+                else
+                    TryNotifySummonerNameProperty(player);
+            }
+            else
+                wo.Destroy();
 
             return success;
         }
@@ -1193,6 +1647,79 @@ namespace ACE.Server.WorldObjects
             { 49321, new Tuple<uint, DamageType>(49196, DamageType.Electric) }, // lightning wisp (150)
             { 49322, new Tuple<uint, DamageType>(49197, DamageType.Electric) }, // lightning wisp (180)
             { 49323, new Tuple<uint, DamageType>(49198, DamageType.Electric) }, // voltaic wisp (200)
+
+            { 787801001, new Tuple<uint, DamageType>(787802001, DamageType.Fire) }, // fireskeletonsamuraiessence (250)
+            { 787801037, new Tuple<uint, DamageType>(787802037, DamageType.Fire) }, // fireskeletonsamuraiessence (300)
+            { 787801002, new Tuple<uint, DamageType>(787802002, DamageType.Acid) }, // acidskeletonsamuraiessence (250)
+            { 787801038, new Tuple<uint, DamageType>(787802038, DamageType.Acid) }, // acidskeletonsamuraiessence (300)
+            { 787801003, new Tuple<uint, DamageType>(787802003, DamageType.Electric) }, // lightningskeletonsamuraiessence (250)
+            { 787801039, new Tuple<uint, DamageType>(787802039, DamageType.Electric) }, // lightningskeletonsamuraiessence (300)
+            { 787801004, new Tuple<uint, DamageType>(787802004, DamageType.Cold) }, // frostskeletonsamuraiessence (250)
+            { 787801040, new Tuple<uint, DamageType>(787802040, DamageType.Cold) }, // frostskeletonsamuraiessence (300)
+            { 787801005, new Tuple<uint, DamageType>(787802005, DamageType.Acid) }, // blisteredzombieessence (250)
+            { 787801041, new Tuple<uint, DamageType>(787802041, DamageType.Acid) }, // blisteredzombieessence (300)
+            { 787801006, new Tuple<uint, DamageType>(787802006, DamageType.Electric) }, // shockedzombieessence (250)
+            { 787801042, new Tuple<uint, DamageType>(787802042, DamageType.Electric) }, // shockedzombieessence (300)
+            { 787801007, new Tuple<uint, DamageType>(787802007, DamageType.Fire) }, // charredzombieessence (250)
+            { 787801043, new Tuple<uint, DamageType>(787802043, DamageType.Fire) }, // charredzombieessence (300)
+            { 787801008, new Tuple<uint, DamageType>(787802008, DamageType.Cold) }, // frigidzombieessence (250)
+            { 787801044, new Tuple<uint, DamageType>(787802044, DamageType.Cold) }, // frigidzombieessence (300)
+            { 787801009, new Tuple<uint, DamageType>(787802009, DamageType.Acid) }, // acidmaidenessence (250)
+            { 787801045, new Tuple<uint, DamageType>(787802045, DamageType.Acid) }, // acidmaidenessence (300)
+            { 787801010, new Tuple<uint, DamageType>(787802010, DamageType.Electric) }, // lightningmaidenessence (250)
+            { 787801046, new Tuple<uint, DamageType>(787802046, DamageType.Electric) }, // lightningmaidenessence (300)
+            { 787801011, new Tuple<uint, DamageType>(787802011, DamageType.Fire) }, // firemaidenessence (250)
+            { 787801047, new Tuple<uint, DamageType>(787802047, DamageType.Fire) }, // firemaidenessence (300)
+            { 787801012, new Tuple<uint, DamageType>(787802012, DamageType.Cold) }, // frostmaidenessence (250)
+            { 787801048, new Tuple<uint, DamageType>(787802048, DamageType.Cold) }, // frostmaidenessence (300)
+            { 787801013, new Tuple<uint, DamageType>(787802013, DamageType.Fire) }, // incendiaryknightessence (250)
+            { 787801049, new Tuple<uint, DamageType>(787802049, DamageType.Fire) }, // incendiaryknightessence (300)
+            { 787801014, new Tuple<uint, DamageType>(787802014, DamageType.Acid) }, // causticknightessence (250)
+            { 787801050, new Tuple<uint, DamageType>(787802050, DamageType.Acid) }, // causticknightessence (300)
+            { 787801015, new Tuple<uint, DamageType>(787802015, DamageType.Electric) }, // galvanicknightessence (250)
+            { 787801051, new Tuple<uint, DamageType>(787802051, DamageType.Electric) }, // galvanicknightessence (300)
+            { 787801016, new Tuple<uint, DamageType>(787802016, DamageType.Cold) }, // glacialknightessence (250)
+            { 787801052, new Tuple<uint, DamageType>(787802052, DamageType.Cold) }, // glacialknightessence (300)
+            { 787801017, new Tuple<uint, DamageType>(787802017, DamageType.Cold) }, // knathrajedessence (250)
+            { 787801053, new Tuple<uint, DamageType>(787802053, DamageType.Cold) }, // knathrajedessence (300)
+            { 787801018, new Tuple<uint, DamageType>(787802018, DamageType.Acid) }, // knathyndaessence (250)
+            { 787801054, new Tuple<uint, DamageType>(787802054, DamageType.Acid) }, // knathyndaessence (300)
+            { 787801019, new Tuple<uint, DamageType>(787802019, DamageType.Electric) }, // knathtsoctessence (250)
+            { 787801055, new Tuple<uint, DamageType>(787802055, DamageType.Electric) }, // knathtsoctessence (300)
+            { 787801020, new Tuple<uint, DamageType>(787802020, DamageType.Fire) }, // knathborretessence (250)
+            { 787801056, new Tuple<uint, DamageType>(787802056, DamageType.Fire) }, // knathborretessence (300)
+            { 787801021, new Tuple<uint, DamageType>(787802021, DamageType.Acid) }, // corrosionwispessence (250)
+            { 787801057, new Tuple<uint, DamageType>(787802057, DamageType.Acid) }, // corrosionwispessence (300)
+            { 787801022, new Tuple<uint, DamageType>(787802022, DamageType.Electric) }, // voltiacwispessence (250)
+            { 787801058, new Tuple<uint, DamageType>(787802058, DamageType.Electric) }, // voltiacwispessence (300)
+            { 787801023, new Tuple<uint, DamageType>(787802023, DamageType.Fire) }, // incendiarywispessence (250)
+            { 787801059, new Tuple<uint, DamageType>(787802059, DamageType.Fire) }, // incendiarywispessence (300)
+            { 787801024, new Tuple<uint, DamageType>(787802024, DamageType.Cold) }, // blizzardwispessence (250)
+            { 787801060, new Tuple<uint, DamageType>(787802060, DamageType.Cold) }, // blizzardwispessence (300)
+            { 787801025, new Tuple<uint, DamageType>(787802025, DamageType.Acid) }, // blisteringmoaressence (250)
+            { 787801061, new Tuple<uint, DamageType>(787802061, DamageType.Acid) }, // blisteringmoaressence (300)
+            { 787801026, new Tuple<uint, DamageType>(787802026, DamageType.Electric) }, // electrifiedmoaressence (250)
+            { 787801062, new Tuple<uint, DamageType>(787802062, DamageType.Electric) }, // electrifiedmoaressence (300)
+            { 787801027, new Tuple<uint, DamageType>(787802027, DamageType.Fire) }, // volcanicmoaressence (250)
+            { 787801063, new Tuple<uint, DamageType>(787802063, DamageType.Fire) }, // volcanicmoaressence (300)
+            { 787801028, new Tuple<uint, DamageType>(787802028, DamageType.Cold) }, // freezingmoaressence (250)
+            { 787801064, new Tuple<uint, DamageType>(787802064, DamageType.Cold) }, // freezingmoaressence (300)
+            { 787801029, new Tuple<uint, DamageType>(787802029, DamageType.Acid) }, // causticgrievveressence (250)
+            { 787801065, new Tuple<uint, DamageType>(787802065, DamageType.Acid) }, // causticgrievveressence (300)
+            { 787801030, new Tuple<uint, DamageType>(787802030, DamageType.Electric) }, // excitedgrievveressence (250)
+            { 787801066, new Tuple<uint, DamageType>(787802066, DamageType.Electric) }, // excitedgrievveressence (300)
+            { 787801031, new Tuple<uint, DamageType>(787802031, DamageType.Fire) }, // scorchedgrievveressence (250)
+            { 787801067, new Tuple<uint, DamageType>(787802067, DamageType.Fire) }, // scorchedgrievveressence (300)
+            { 787801032, new Tuple<uint, DamageType>(787802032, DamageType.Cold) }, // arcticgrievveressence (250)
+            { 787801068, new Tuple<uint, DamageType>(787802068, DamageType.Cold) }, // arcticgrievveressence (300)
+            { 787801033, new Tuple<uint, DamageType>(787802033, DamageType.Acid) }, // acidphyntosswarmessence (250)
+            { 787801069, new Tuple<uint, DamageType>(787802069, DamageType.Acid) }, // acidphyntosswarmessence (300)
+            { 787801034, new Tuple<uint, DamageType>(787802034, DamageType.Fire) }, // firephyntosswarmessence (250)
+            { 787801070, new Tuple<uint, DamageType>(787802070, DamageType.Fire) }, // firephyntosswarmessence (300)
+            { 787801035, new Tuple<uint, DamageType>(787802035, DamageType.Cold) }, // frostphyntosswarmessence (250)
+            { 787801071, new Tuple<uint, DamageType>(787802071, DamageType.Cold) }, // frostphyntosswarmessence (300)
+            { 787801036, new Tuple<uint, DamageType>(787802036, DamageType.Electric) }, // lightningphyntosswarmessence (250)
+            { 787801072, new Tuple<uint, DamageType>(787802072, DamageType.Electric) }, // lightningphyntosswarmessence (300)
         };
 
         /// <summary>

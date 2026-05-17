@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 using ACE.Entity;
@@ -22,6 +25,16 @@ namespace ACE.Server.WorldObjects
     public partial class CombatPet : Pet
     {
         private static readonly ILog RecallBlockDbgLog = LogManager.GetLogger(typeof(CombatPet));
+
+        /// <summary>
+        /// Combat pets override <see cref="HandleFindTarget"/> and bypass the base 5s NextFindTarget gate.
+        /// Throttle idle acquisition scans so we do not fight monster MoveTo vs idle follow every tick.
+        /// </summary>
+        private double nextCombatPetIdleAcquireTargetTime;
+
+        private const double CombatPetIdleAcquireTargetCooldownSec = 0.75;
+
+        private double _nextOwnerFollowResumeTime;
 
         private WeakReference<PetDevice> _summoningDevice;
         private ObjectGuid _summoningDeviceGuid = ObjectGuid.Invalid;
@@ -212,6 +225,8 @@ namespace ACE.Server.WorldObjects
 
         public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
         {
+            RemoveAiDebugThrottleKeysForCombatPet(Guid.Full);
+
             // Clean up imbued effects before destroying the pet
             // This ensures effects are removed even if the pet is destroyed without being resummoned
             if (_previousImbuedTarget != null && _previousImbuedEffects != ImbuedEffectType.Undef)
@@ -222,6 +237,18 @@ namespace ACE.Server.WorldObjects
             }
 
             base.Destroy(raiseNotifyOfDestructionEvent, fromLandblockUnload);
+        }
+
+        /// <summary>
+        /// Effective luminance spell-duration aug count for the combat pet lifespan bonus (must stay aligned with appraisal).
+        /// Used only from <see cref="CombatPet.Init"/> and combat-pet appraisal on <see cref="PetDevice"/>.
+        /// </summary>
+        internal static long GetLifespanBonusEffectiveDurationAugCount(Player player, long summonAugCount)
+        {
+            var durationCount = player?.LuminanceAugmentSpellDurationCount ?? 0;
+            if (ServerConfig.pet_combat_lifespan_duration_aug_ignore_summon_cap.Value)
+                return durationCount;
+            return Math.Min(summonAugCount, durationCount);
         }
 
         public override bool? Init(Player player, PetDevice petDevice)
@@ -294,9 +321,8 @@ namespace ACE.Server.WorldObjects
 
                 if (ServerConfig.pet_bond_enabled.Value && petDevice.IsCombatPetDevice() && petDevice.IsPetBondAttuned)
                 {
-                    var cap = (int)ServerConfig.pet_bond_level_cap.Value;
-                    if (cap < 1)
-                        cap = 1;
+                    var capRaw = (int)ServerConfig.pet_bond_level_cap.Value;
+                    var cap = capRaw <= 0 ? int.MaxValue : Math.Max(1, capRaw);
 
                     var bondLevel = petDevice.PetBondLevel ?? 0;
                     if (bondLevel < 0)
@@ -451,10 +477,10 @@ namespace ACE.Server.WorldObjects
 
             if (petDevice != null && ServerConfig.pet_apply_capture_source_damage_type.Value)
             {
-                var capDt = petDevice.GetProperty(PropertyInt.CapturedSourceDamageType);
-                if (capDt.HasValue && capDt.Value != 0 && Enum.IsDefined(typeof(DamageType), capDt.Value))
+                var capDtResolved = PetDevice.TryResolveCapturedSourceDamageTypeForCombatPet(petDevice);
+                if (capDtResolved.HasValue)
                 {
-                    var dt = (DamageType)capDt.Value;
+                    var dt = capDtResolved.Value;
                     var meleeWeapon = GetEquippedMeleeWeapon();
                     if (meleeWeapon != null)
                         meleeWeapon.SetProperty(PropertyInt.DamageType, (int)dt);
@@ -476,25 +502,44 @@ namespace ACE.Server.WorldObjects
             if (bondMaxHealthBonus > 0)
                 Health.StartingValue = (uint)Math.Min(uint.MaxValue, (ulong)Health.StartingValue + (uint)bondMaxHealthBonus);
 
+            // Lifespan vs TimeToRot (stock ACE): WorldObject.IsDecayable() returns false when Lifespan is set, so landblock
+            // TimeToRot decay does not run — heartbeat Lifespan drives despawn in that case. Pet templates often duplicate both;
+            // extending both keeps TimeToRot meaningful if Lifespan is ever omitted and avoids mismatched DB tuning surprises.
+            // Unlimited clears both so neither timer despawns the pet.
+            // Lifespan bonus logic runs only here (CombatPet summon Init); appraisal mirrors it on PetDevice only.
             if (ServerConfig.pet_combat_unlimited_lifespan.Value)
+            {
                 TimeToRot = -1;
+                Lifespan = null;
+            }
             else
             {
-                var tr = TimeToRot;
                 var perAug = ServerConfig.pet_summon_lifespan_seconds_per_aug.Value;
                 var perDurationAug = ServerConfig.pet_combat_lifespan_seconds_per_duration_aug.Value;
-                var durationAugEffective = Math.Min(summonAugCount, player.LuminanceAugmentSpellDurationCount ?? 0);
+                var durationAugEffective = GetLifespanBonusEffectiveDurationAugCount(player, summonAugCount);
 
-                if (tr.HasValue && tr.Value > 0)
+                var extraSeconds = 0.0;
+                if (summonAugCount > 0 && perAug > 0)
+                    extraSeconds += summonAugCount * perAug;
+                if (durationAugEffective > 0 && perDurationAug > 0)
+                    extraSeconds += durationAugEffective * perDurationAug;
+
+                if (extraSeconds > 0)
                 {
-                    var extraSeconds = 0.0;
-                    if (summonAugCount > 0 && perAug > 0)
-                        extraSeconds += summonAugCount * perAug;
-                    if (durationAugEffective > 0 && perDurationAug > 0)
-                        extraSeconds += durationAugEffective * perDurationAug;
+                    var bonusRounded = (int)Math.Round(extraSeconds);
+                    if (bonusRounded > 0)
+                    {
+                        var tr = TimeToRot;
+                        if (tr.HasValue && tr.Value > 0)
+                            TimeToRot = tr.Value + bonusRounded;
 
-                    if (extraSeconds > 0)
-                        TimeToRot = tr.Value + (int)Math.Round(extraSeconds);
+                        var ls = Lifespan;
+                        if (ls.HasValue && ls.Value > 0)
+                        {
+                            var sum = (long)ls.Value + bonusRounded;
+                            Lifespan = sum > int.MaxValue ? int.MaxValue : (int)sum;
+                        }
+                    }
                 }
             }
 
@@ -567,7 +612,8 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// Blocks stowing a combat pet by reusing its essence (or a passive essence that would dismiss it) while
-        /// <see cref="ServerConfig.pet_combat_recall_block_after_damage_seconds"/> is active. Idle follow / leash already consult <see cref="IsOwnerFollowRecallBlocked"/>.
+        /// <see cref="ServerConfig.pet_combat_recall_block_after_damage_seconds"/> is active. Also delays catch-up follow while still engaged at short range;
+        /// does not suppress owner-recall target drop when the owner kites away.
         /// </summary>
         public static bool TryDenyOwnerStowFromRecallBlock(Player player, CombatPet pet, string debugTag)
         {
@@ -645,6 +691,150 @@ namespace ACE.Server.WorldObjects
             pet.TraceRecallBlock(stage, detail);
         }
 
+        private static readonly ConcurrentDictionary<string, double> AiDebugLastLogByKey = new();
+        private const double AiDebugThrottleSec = 0.25;
+
+        /// <summary> Drop AI-console throttle rows for this pet GUID so idle-debug maps do not leak after despawn. </summary>
+        private static void RemoveAiDebugThrottleKeysForCombatPet(uint petGuidFull)
+        {
+            var prefix = $"{petGuidFull:X8}:";
+            foreach (var key in AiDebugLastLogByKey.Keys.ToArray())
+            {
+                if (key.StartsWith(prefix, StringComparison.Ordinal))
+                    AiDebugLastLogByKey.TryRemove(key, out _);
+            }
+        }
+
+        internal static bool IsAiDebugConsoleEnabled =>
+            ServerConfig.pet_combat_debug_follow_ai_console.Value;
+
+        /// <summary>Verbose stdout trace when <see cref="ServerConfig.pet_combat_debug_follow_ai_console"/> is TRUE.</summary>
+        internal static void DebugAiConsole(CombatPet pet, string stage, string detail, bool force = false)
+        {
+            if (pet == null || !IsAiDebugConsoleEnabled)
+                return;
+
+            if (!force)
+            {
+                var key = $"{pet.Guid.Full:X8}:{stage}";
+                var now = Timers.RunningTime;
+                if (AiDebugLastLogByKey.TryGetValue(key, out var last) && now - last < AiDebugThrottleSec)
+                    return;
+                AiDebugLastLogByKey[key] = now;
+            }
+
+            Console.WriteLine($"[CombatPetAI] [{stage}] {pet.Name} 0x{pet.Guid.Full:X8} | {detail} | {FormatAiSnapshot(pet)}");
+        }
+
+        /// <summary>Legacy one-line helper; logs under stage "follow" (not throttled).</summary>
+        internal static void DebugFollowAiConsole(CombatPet pet, string detail) =>
+            DebugAiConsole(pet, "follow", detail, force: true);
+
+        internal static string FormatAiSnapshot(CombatPet pet)
+        {
+            var ownerDist = pet.P_PetOwner != null ? pet.GetCylinderDistance(pet.P_PetOwner) : -1f;
+            var atk = pet.AttackTarget as Creature;
+            var atkName = atk?.Name ?? "none";
+            var atkDist = atk != null ? pet.GetDistanceToTarget() : -1f;
+            var recallDefer = pet.ShouldDeferCombatPetTargetAcquisitionForOwnerCatchup();
+            var hardLeashDefer = pet.IsBeyondCombatHardLeashFromOwner();
+            return
+                $"state={pet.MonsterState} awake={pet.IsAwake} moving={pet.IsMoving} turning={pet.IsTurning} anim={pet.IsAnimating} " +
+                $"atk={atkName} atkDist={atkDist:F1} ownerDist={ownerDist:F1} recallBlock={pet.IsOwnerFollowRecallBlocked()} recallDefer={recallDefer} hardLeashDefer={hardLeashDefer} " +
+                $"curAtk={pet.CurrentAttack} maxRng={pet.MaxRange:F1} emoteBusy={pet.EmoteManager.IsBusy}";
+        }
+
+        private void DebugLogNearbyMonsterScan(List<Creature> candidates)
+        {
+            if (!IsAiDebugConsoleEnabled)
+                return;
+
+            var visible = PhysicsObj?.ObjMaint?.GetVisibleTargetsValuesOfTypeCreature();
+            if (visible == null)
+            {
+                DebugAiConsole(this, "scan",
+                    $"visible=0 candidates={candidates.Count} (ObjMaint or visible list unavailable)");
+                return;
+            }
+
+            var leashRadius = (float)ServerConfig.pet_combat_leash_radius_m.Value;
+            var leashEnabled = leashRadius > 0;
+
+            var dead = 0;
+            var notAttackable = 0;
+            var hidden = 0;
+            var factionSkip = 0;
+            var leashSkip = 0;
+
+            foreach (var creature in visible)
+            {
+                if (creature.IsDead)
+                {
+                    dead++;
+                    continue;
+                }
+
+                if (!creature.Attackable)
+                {
+                    notAttackable++;
+                    continue;
+                }
+
+                if (creature.Visibility)
+                {
+                    hidden++;
+                    continue;
+                }
+
+                if (SameFaction(creature) && !creature.HasRetaliateTarget(P_PetOwner) && !creature.HasRetaliateTarget(this))
+                {
+                    factionSkip++;
+                    continue;
+                }
+
+                if (leashEnabled && !IsCreatureWithinCombatTargetLeash(creature, leashRadius))
+                    leashSkip++;
+            }
+
+            var nearestName = candidates.Count > 0 ? candidates[0].Name : "n/a";
+            var nearestOwnerDist = -1f;
+            var nearestPetDist = -1f;
+            if (candidates.Count == 0 && leashEnabled && P_PetOwner?.PhysicsObj != null)
+            {
+                void noteNearest(Creature creature)
+                {
+                    if (creature.IsDead || !creature.Attackable || creature.Visibility)
+                        return;
+                    if (SameFaction(creature) && !creature.HasRetaliateTarget(P_PetOwner) && !creature.HasRetaliateTarget(this))
+                        return;
+
+                    var petDist = GetCylinderDistance(creature);
+                    var ownerDist = creature.GetCylinderDistance(P_PetOwner);
+                    if (nearestPetDist < 0 || petDist < nearestPetDist)
+                        nearestPetDist = petDist;
+                    if (nearestOwnerDist < 0 || ownerDist < nearestOwnerDist)
+                        nearestOwnerDist = ownerDist;
+                }
+
+                foreach (var creature in visible)
+                    noteNearest(creature);
+
+                var ownerVisible = P_PetOwner.PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
+                if (ownerVisible != null)
+                {
+                    foreach (var creature in ownerVisible)
+                        noteNearest(creature);
+                }
+            }
+
+            var nearestDistNote = candidates.Count == 0 && nearestPetDist >= 0
+                ? $" nearestPet={nearestPetDist:F1}m nearestOwner={nearestOwnerDist:F1}m leash={leashRadius:F0} tether={GetCombatPetOwnerTetherM():F0}"
+                : string.Empty;
+
+            DebugAiConsole(this, "scan",
+                $"visible={visible.Count} candidates={candidates.Count} filt dead={dead} !atk={notAttackable} hidden={hidden} faction={factionSkip} leash={leashSkip} nearest={nearestName}{nearestDistNote}");
+        }
+
         private void TraceRecallBlock(string sourceTag, string detail)
         {
             if (!ServerConfig.pet_combat_recall_block_debug.Value)
@@ -678,76 +868,360 @@ namespace ACE.Server.WorldObjects
             return dealt;
         }
 
+        public override void OnMoveComplete(WeenieError status)
+        {
+            if (IsAiDebugConsoleEnabled)
+                DebugAiConsole(this, "move", $"OnMoveComplete status={status}", force: true);
+
+            // Idle follow uses Pet.MoveToObject (not monster chase). Monster OnMoveComplete drops IsMoving on cancel and never retries.
+            if (AttackTarget == null && ServerConfig.pet_combat_follow_owner_when_idle.Value)
+            {
+                if (status != WeenieError.None)
+                {
+                    // Kiting owner invalidates MoveToObject; SlowTick (~1 Hz) re-issues follow — do not retry here (double cancel).
+                    IsMoving = false;
+                    return;
+                }
+
+                PhysicsObj.CachedVelocity = Vector3.Zero;
+                IsMoving = false;
+
+                if (P_PetOwner?.PhysicsObj != null && GetCylinderDistance(P_PetOwner) > PetFollowMinDistance)
+                    TryResumeOwnerFollowAfterMoveInterrupt();
+                return;
+            }
+
+            base.OnMoveComplete(status);
+        }
+
+        private void TryResumeOwnerFollowAfterMoveInterrupt()
+        {
+            if (P_PetOwner?.PhysicsObj == null || AttackTarget != null)
+                return;
+
+            if (GetCylinderDistance(P_PetOwner) <= PetFollowMinDistance)
+                return;
+
+            if (Timers.RunningTime < _nextOwnerFollowResumeTime)
+                return;
+
+            _nextOwnerFollowResumeTime = Timers.RunningTime + 0.5;
+            StartFollowPetOwner();
+        }
+
+        /// <summary>
+        /// True when <paramref name="creature"/> is in the owner's leash bubble.
+        /// </summary>
+        private bool IsOwnerAdjacentCombatTarget(Creature creature, float leashRadius)
+        {
+            return leashRadius > 0 && P_PetOwner?.PhysicsObj != null
+                && creature.GetCylinderDistance(P_PetOwner) <= leashRadius;
+        }
+
+        /// <summary>
+        /// Owner-local targets beyond the pet's visual cylinder may still be acquired when the pet is in the owner's leash bubble (run-through spawns).
+        /// When the pet has lagged behind, require normal visual range so it does not peel off on ObjMaint ghosts 30m+ away.
+        /// </summary>
+        private bool CanAcquireTargetBeyondPetVisualRange(Creature creature, float leashRadius)
+        {
+            if (!IsOwnerAdjacentCombatTarget(creature, leashRadius))
+                return false;
+
+            return GetCylinderDistance(P_PetOwner) <= leashRadius;
+        }
+
+        /// <summary>
+        /// Max distance the pet may be from its owner while acquiring or fighting.
+        /// Uses <see cref="ServerConfig.pet_combat_owner_recall_distance_m"/> when set, else <see cref="ServerConfig.pet_combat_leash_radius_m"/>.
+        /// </summary>
+        internal static float GetCombatPetOwnerTetherM()
+        {
+            var recall = (float)ServerConfig.pet_combat_owner_recall_distance_m.Value;
+            if (recall > 0)
+                return recall;
+
+            var leash = (float)ServerConfig.pet_combat_leash_radius_m.Value;
+            return leash > 0 ? leash : 0f;
+        }
+
+        /// <summary>
+        /// True when the pet is farther from its owner than <see cref="GetCombatPetOwnerTetherM"/>.
+        /// Matches <see cref="Monster_Tick"/> owner-tether drop; blocks target acquire while catching up.
+        /// </summary>
+        public bool IsBeyondCombatHardLeashFromOwner()
+        {
+            var tetherM = GetCombatPetOwnerTetherM();
+            if (tetherM <= 0 || P_PetOwner?.PhysicsObj == null)
+                return false;
+
+            return GetCylinderDistance(P_PetOwner) > tetherM;
+        }
+
+        /// <summary>
+        /// Foe is eligible if within <paramref name="leashRadius"/> of the pet or the owner.
+        /// Owner proximity uses leash only (not recall tether — tether limits pet-to-owner distance, not how far from you a mob can be).
+        /// </summary>
+        private bool IsCreatureWithinCombatTargetLeash(Creature creature, float leashRadius)
+        {
+            if (GetCylinderDistance(creature) <= leashRadius)
+                return true;
+
+            return P_PetOwner?.PhysicsObj != null && creature.GetCylinderDistance(P_PetOwner) <= leashRadius;
+        }
+
+        /// <summary>
+        /// When owner-recall is enabled, do not start or continue local targeting while the pet is still
+        /// farther from its owner than the recall distance (same band as <see cref="Monster_Tick"/> uses to drop combat).
+        /// Otherwise the pet ping-pongs between monster chase and idle follow every tick.
+        /// </summary>
+        private bool ShouldDeferCombatPetTargetAcquisitionForOwnerCatchup()
+        {
+            if (!ServerConfig.pet_combat_follow_owner_when_idle.Value)
+                return false;
+
+            var recall = ServerConfig.pet_combat_owner_recall_distance_m.Value;
+            if (recall <= 0 || P_PetOwner?.PhysicsObj == null)
+                return false;
+
+            return GetCylinderDistance(P_PetOwner) > (float)recall;
+        }
+
+        private bool ShouldDeferCombatPetTargetAcquisition()
+        {
+            if (!IsBeyondCombatHardLeashFromOwner())
+                return false;
+
+            var leash = (float)ServerConfig.pet_combat_leash_radius_m.Value;
+            if (leash <= 0 || P_PetOwner?.PhysicsObj == null)
+                return true;
+
+            // Owner is in a mob pile — allow acquire while pet catches up (owner_recall still drops if kite too far).
+            foreach (var creature in P_PetOwner.PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature())
+            {
+                if (creature == null || creature.IsDead || !creature.Attackable || creature.Visibility)
+                    continue;
+
+                if (SameFaction(creature) && !creature.HasRetaliateTarget(P_PetOwner) && !creature.HasRetaliateTarget(this))
+                    continue;
+
+                if (creature.GetCylinderDistance(P_PetOwner) <= leash)
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Prefer mobs within the owner's leash bubble whenever any exist in the merged candidate set.
+        /// Avoids chasing spawns deep on the pet's visibility cylinder while the owner has pulled ahead (the old pet-vs-owner distance gate let those long picks happen once separation exceeded 2× leash).
+        /// </summary>
+        private List<Creature> PreferOwnerLocalMonstersWhenOwnerNearby(List<Creature> monsters, float leashRadius)
+        {
+            if (leashRadius <= 0 || P_PetOwner?.PhysicsObj == null || monsters.Count == 0)
+                return monsters;
+
+            var ownerLocal = new List<Creature>();
+            foreach (var creature in monsters)
+            {
+                if (creature.GetCylinderDistance(P_PetOwner) <= leashRadius)
+                    ownerLocal.Add(creature);
+            }
+
+            if (ownerLocal.Count == 0)
+                return monsters;
+
+            // Pet lagging behind owner: only keep owner-local mobs the pet can actually reach this tick.
+            if (GetCylinderDistance(P_PetOwner) > leashRadius)
+            {
+                var petReach = new List<Creature>();
+                var maxPetRange = Math.Max(leashRadius, (float)Math.Sqrt(VisualAwarenessRangeSq));
+                foreach (var creature in ownerLocal)
+                {
+                    if (GetCylinderDistance(creature) <= maxPetRange)
+                        petReach.Add(creature);
+                }
+
+                if (petReach.Count > 0)
+                    return petReach;
+            }
+
+            return ownerLocal;
+        }
+
+        private void BumpCombatPetIdleAcquireCooldown()
+        {
+            nextCombatPetIdleAcquireTargetTime = Timers.RunningTime + CombatPetIdleAcquireTargetCooldownSec;
+        }
+
         public override void HandleFindTarget()
         {
             var creature = AttackTarget as Creature;
 
-            if (creature == null || creature.IsDead || !IsVisibleTarget(creature))
+            if (creature != null && IsBeyondCombatHardLeashFromOwner())
+            {
+                if (IsAiDebugConsoleEnabled)
+                    DebugAiConsole(this, "target", "drop target (pet beyond hard leash from owner)", force: true);
+
+                AttackTarget = null;
+                BumpCombatPetIdleAcquireCooldown();
+                return;
+            }
+
+            // Re-validate current target immediately (leash / visibility); do not throttle this path.
+            var nearbyForValidate = creature != null && !creature.IsDead && IsVisibleTarget(creature)
+                ? GetNearbyMonsters()
+                : null;
+            if (nearbyForValidate != null && !nearbyForValidate.Contains(creature))
+            {
+                if (IsAiDebugConsoleEnabled)
+                    DebugAiConsole(this, "target", $"current foe not in nearby/leash -> FindNextTarget (was={creature.Name})", force: true);
+
                 FindNextTarget();
+                return;
+            }
+
+            if (creature == null || creature.IsDead || !IsVisibleTarget(creature))
+            {
+                if (ShouldDeferCombatPetTargetAcquisition())
+                {
+                    if (IsAiDebugConsoleEnabled)
+                    {
+                        var reason = IsBeyondCombatHardLeashFromOwner()
+                            ? $"defer_acquire (owner tether > {GetCombatPetOwnerTetherM():F0}m)"
+                            : "defer_acquire (owner-recall catchup)";
+                        DebugAiConsole(this, "target", reason, force: true);
+                    }
+
+                    AttackTarget = null;
+                    BumpCombatPetIdleAcquireCooldown();
+                    return;
+                }
+
+                if (AttackTarget == null && Timers.RunningTime < nextCombatPetIdleAcquireTargetTime)
+                {
+                    if (IsAiDebugConsoleEnabled)
+                        DebugAiConsole(this, "target", $"throttle idle acquire until t>={nextCombatPetIdleAcquireTargetTime:F2} (now={Timers.RunningTime:F2})");
+                    return;
+                }
+
+                FindNextTarget();
+            }
         }
 
         public override bool FindNextTarget()
         {
-            var nearbyMonsters = GetNearbyMonsters();
+            var wasIdleAcquisition = AttackTarget == null;
+
+            if (ShouldDeferCombatPetTargetAcquisition())
+            {
+                if (IsAiDebugConsoleEnabled)
+                {
+                    var reason = IsBeyondCombatHardLeashFromOwner()
+                        ? $"FindNextTarget blocked (owner tether > {GetCombatPetOwnerTetherM():F0}m)"
+                        : "FindNextTarget blocked by owner-recall defer";
+                    DebugAiConsole(this, "target", reason, force: true);
+                }
+
+                AttackTarget = null;
+                BumpCombatPetIdleAcquireCooldown();
+                return false;
+            }
+
+            if (wasIdleAcquisition && Timers.RunningTime < nextCombatPetIdleAcquireTargetTime)
+            {
+                if (IsAiDebugConsoleEnabled)
+                    DebugAiConsole(this, "target", $"idle throttle skip (now={Timers.RunningTime:F2})");
+                return false;
+            }
+
+            var leashRadius = (float)ServerConfig.pet_combat_leash_radius_m.Value;
+            var nearbyMonsters = PreferOwnerLocalMonstersWhenOwnerNearby(GetNearbyMonsters(), leashRadius);
             if (nearbyMonsters.Count == 0)
             {
                 AttackTarget = null;
-                //Console.WriteLine($"{Name}.FindNextTarget(): empty");
+                if (wasIdleAcquisition)
+                    BumpCombatPetIdleAcquireCooldown();
+                DebugLogNearbyMonsterScan(nearbyMonsters);
+                if (IsAiDebugConsoleEnabled)
+                    DebugAiConsole(this, "target", "no nearby monsters (after leash/faction filter)");
                 return false;
             }
 
             // get nearest monster
             var nearest = BuildTargetDistance(nearbyMonsters, true);
 
-            if (nearest[0].Distance > VisualAwarenessRangeSq)
+            var leashRadiusForVisual = (float)ServerConfig.pet_combat_leash_radius_m.Value;
+            if (nearest[0].Distance > VisualAwarenessRangeSq
+                && !(nearest[0].Target is Creature nearCreature
+                    && CanAcquireTargetBeyondPetVisualRange(nearCreature, leashRadiusForVisual)))
             {
                 AttackTarget = null;
-                //Console.WriteLine($"{Name}.FindNextTarget(): next object out-of-range (dist: {Math.Round(Math.Sqrt(nearest[0].Distance))})");
+                if (wasIdleAcquisition)
+                    BumpCombatPetIdleAcquireCooldown();
+                if (IsAiDebugConsoleEnabled)
+                {
+                    var d = Math.Sqrt(nearest[0].Distance);
+                    var lim = Math.Sqrt(VisualAwarenessRangeSq);
+                    DebugAiConsole(this, "target", $"nearest {nearest[0].Target.Name} dist={d:F1}m > visualAware={lim:F1}m", force: true);
+                }
                 return false;
             }
 
             AttackTarget = nearest[0].Target;
+            if (wasIdleAcquisition)
+                BumpCombatPetIdleAcquireCooldown();
 
-            //Console.WriteLine($"{Name}.FindNextTarget(): {AttackTarget.Name}");
+            if (IsAiDebugConsoleEnabled)
+                DebugAiConsole(this, "target", $"ACQUIRED {AttackTarget.Name} distSq={nearest[0].Distance:F1} visualSq={VisualAwarenessRangeSq:F1}", force: true);
 
             return true;
         }
 
         /// <summary>
-        /// Returns a list of attackable monsters in this pet's visible targets
+        /// Attackable monsters within leash of the pet or owner, from both visibility tables (owner runs ahead in dense spawns).
         /// </summary>
         public List<Creature> GetNearbyMonsters()
         {
-            var monsters = new List<Creature>();
-            var listOfCreatures = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
-
+            var monsters = new Dictionary<uint, Creature>();
             var leashRadius = (float)ServerConfig.pet_combat_leash_radius_m.Value;
-            var leashEnabled = leashRadius > 0 && P_PetOwner?.PhysicsObj != null;
+            var leashEnabled = leashRadius > 0;
+
+            ConsiderVisibleCreaturesForCombatPet(PhysicsObj?.ObjMaint?.GetVisibleTargetsValuesOfTypeCreature(), monsters, leashRadius, leashEnabled);
+
+            if (P_PetOwner?.PhysicsObj != null)
+                ConsiderVisibleCreaturesForCombatPet(P_PetOwner.PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature(), monsters, leashRadius, leashEnabled);
+
+            return new List<Creature>(monsters.Values);
+        }
+
+        private void ConsiderVisibleCreaturesForCombatPet(
+            List<Creature> listOfCreatures,
+            Dictionary<uint, Creature> monsters,
+            float leashRadius,
+            bool leashEnabled)
+        {
+            if (listOfCreatures == null)
+                return;
 
             foreach (var creature in listOfCreatures)
             {
-                // why does this need to be in here?
-                if (creature.IsDead || !creature.Attackable || creature.Visibility)
-                {
-                    //Console.WriteLine($"{Name}.GetNearbyMonsters(): refusing to add dead creature {creature.Name} ({creature.Guid})");
+                if (creature == null || monsters.ContainsKey(creature.Guid.Full))
                     continue;
-                }
 
-                // combat pets do not aggro monsters belonging to the same faction as the pet owner?
+                if (creature.IsDead || !creature.Attackable || creature.Visibility)
+                    continue;
+
                 if (SameFaction(creature))
                 {
-                    // unless the pet owner or the pet is being retaliated against?
                     if (!creature.HasRetaliateTarget(P_PetOwner) && !creature.HasRetaliateTarget(this))
                         continue;
                 }
 
-                if (leashEnabled && creature.GetCylinderDistance(P_PetOwner) > leashRadius)
+                if (leashEnabled && !IsCreatureWithinCombatTargetLeash(creature, leashRadius))
                     continue;
 
-                monsters.Add(creature);
+                monsters[creature.Guid.Full] = creature;
             }
-
-            return monsters;
         }
 
         public override void Sleep()
@@ -835,52 +1309,38 @@ namespace ACE.Server.WorldObjects
             item.SetProperty(PropertyFloat.DamageMod, 1.0f);
         }
 
+        private static BaseDamageMod BaseDamageModFromBodyPart(PropertiesBodyPart attackPart) =>
+            attackPart == null
+                ? new BaseDamageMod(new BaseDamage(0, 0.0f))
+                : new BaseDamageMod(new BaseDamage(attackPart.DVal, attackPart.DVar));
+
         /// <summary>
         /// Override GetBaseDamage to ALWAYS apply item augmentation bonuses,
         /// regardless of whether the summon has a weapon or if the weapon is enchantable
         /// </summary>
         public override BaseDamageMod GetBaseDamage(PropertiesBodyPart attackPart)
         {
-            if (CurrentAttack == CombatType.Missile && GetMissileAmmo() != null)
-                return GetMissileDamage();
-
             BaseDamageMod baseDamageMod;
 
-            var weapon = GetEquippedMeleeWeapon();
-            // Capture-skin weapons are cosmetic: use body-part damage like unarmed (do not use item weapon stats).
-            if (weapon != null && (weapon.GetProperty(PropertyBool.CombatPetCaptureSkinWeapon) ?? false))
+            if (CurrentAttack == CombatType.Missile && GetMissileAmmo() != null)
             {
-                if (attackPart == null)
-                {
-                    var baseDamage = new BaseDamage(0, 0.0f);
-                    baseDamageMod = new BaseDamageMod(baseDamage);
-                }
+                var launcher = GetEquippedMissileWeapon();
+                // Cosmetic capture-skin launcher: same rule as melee — use body-part damage, not stripped weapon/ammo DM.
+                if (launcher != null && (launcher.GetProperty(PropertyBool.CombatPetCaptureSkinWeapon) ?? false))
+                    baseDamageMod = BaseDamageModFromBodyPart(attackPart);
                 else
-                {
-                    var maxDamage = attackPart.DVal;
-                    var variance = attackPart.DVar;
-                    var baseDamage = new BaseDamage(maxDamage, variance);
-                    baseDamageMod = new BaseDamageMod(baseDamage);
-                }
-            }
-            else if (weapon != null)
-            {
-                baseDamageMod = weapon.GetDamageMod(this);
+                    baseDamageMod = GetMissileDamage();
             }
             else
             {
-                if (attackPart == null)
-                {
-                    var baseDamage = new BaseDamage(0, 0.0f);
-                    baseDamageMod = new BaseDamageMod(baseDamage);
-                }
+                var weapon = GetEquippedMeleeWeapon();
+                // Capture-skin weapons are cosmetic: use body-part damage like unarmed (do not use item weapon stats).
+                if (weapon != null && (weapon.GetProperty(PropertyBool.CombatPetCaptureSkinWeapon) ?? false))
+                    baseDamageMod = BaseDamageModFromBodyPart(attackPart);
+                else if (weapon != null)
+                    baseDamageMod = weapon.GetDamageMod(this);
                 else
-                {
-                    var maxDamage = attackPart.DVal;
-                    var variance = attackPart.DVar;
-                    var baseDamage = new BaseDamage(maxDamage, variance);
-                    baseDamageMod = new BaseDamageMod(baseDamage);
-                }
+                    baseDamageMod = BaseDamageModFromBodyPart(attackPart);
             }
 
             // ALWAYS apply item augmentation damage bonus directly, regardless of weapon type or enchantability

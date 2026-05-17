@@ -262,27 +262,51 @@ namespace ACE.Server.Network.Structure
 
             // Pet Bonding System - display bond info on PetDevice appraisal
             // This is intentionally done in appraisal output (not persisted to wo.LongDesc).
-            if (wo is ACE.Server.WorldObjects.PetDevice petDevice && petDevice.IsCombatPetDevice())
+            if (wo is ACE.Server.WorldObjects.PetDevice petDevice)
             {
-                // Show only when the pet device is attuned OR has any bond fields set.
-                var isAttuned = petDevice.IsPetBondAttuned;
-                var bondLevel = petDevice.PetBondLevel;
-                var bondXp = petDevice.PetBondXp;
-
-                if (isAttuned || bondLevel.HasValue || bondXp.HasValue)
+                if (petDevice.IsCombatPetDevice())
                 {
-                    var level = bondLevel.GetValueOrDefault();
-                    var xp = bondXp.GetValueOrDefault();
+                    // Show only when the pet device is attuned OR has any bond fields set.
+                    var isAttuned = petDevice.IsPetBondAttuned;
+                    var bondLevel = petDevice.PetBondLevel;
+                    var bondXp = petDevice.PetBondXp;
 
-                    // Keep wording player-friendly; avoid implementation details.
-                    var msg = isAttuned
-                        ? $"Bond Level: {level:N0}\nBond XP: {xp:N0}"
-                        : $"Bond (unattuned)\nBond Level: {level:N0}\nBond XP: {xp:N0}";
+                    if (isAttuned || bondLevel.HasValue || bondXp.HasValue)
+                    {
+                        var level = bondLevel.GetValueOrDefault();
+                        var xp = bondXp.GetValueOrDefault();
 
-                    if (PropertiesString.ContainsKey(PropertyString.LongDesc))
-                        PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
+                        // Keep wording player-friendly; avoid implementation details.
+                        var msg = isAttuned
+                            ? $"Bond Level: {level:N0}\nBond XP: {xp:N0}"
+                            : $"Bond (unattuned)\nBond Level: {level:N0}\nBond XP: {xp:N0}";
+
+                        if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                            PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
+                        else
+                            PropertiesString[PropertyString.LongDesc] = msg;
+                    }
+
+                    var summonDur = petDevice.BuildCombatPetSummonDurationAppraisal(examiner);
+                    if (!string.IsNullOrWhiteSpace(summonDur))
+                    {
+                        if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                            PropertiesString[PropertyString.LongDesc] += $"\n\n{summonDur}";
+                        else
+                            PropertiesString[PropertyString.LongDesc] = summonDur;
+                    }
+                }
+
+                var minLumAugSummon = petDevice.GetProperty(PropertyInt.PetDeviceMinLumAugSummonCount);
+                if (minLumAugSummon.HasValue && minLumAugSummon.Value > 0 && examiner != null)
+                {
+                    var req = minLumAugSummon.Value;
+                    var current = examiner.GetProperty(PropertyInt64.LumAugSummonCount) ?? 0;
+                    var suffix = $"\n\nLuminance Summoning inheritance: {current} (requires at least {req} to use this device).";
+                    if (PropertiesString.TryGetValue(PropertyString.LongDesc, out var ld) && !string.IsNullOrEmpty(ld))
+                        PropertiesString[PropertyString.LongDesc] = ld + suffix;
                     else
-                        PropertiesString[PropertyString.LongDesc] = msg;
+                        PropertiesString[PropertyString.LongDesc] = suffix.TrimStart('\r', '\n');
                 }
             }
 

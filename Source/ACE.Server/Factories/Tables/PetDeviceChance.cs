@@ -52,16 +52,19 @@ namespace ACE.Server.Factories.Tables
 
         private static readonly ChanceTable<int> T9_PetLevelChances = new ChanceTable<int>()
         {
-            ( 125, 0.0150f ),
-            ( 150, 0.05f ),
-            ( 180, 0.50f ),
-            ( 200, 0.4125f ),
+            ( 125, 0.0125f ),
+            ( 150, 0.04f ),
+            ( 180, 0.45f ),
+            ( 200, 0.37f ),
+            ( 250, 0.1275f ),
         };
 
         private static readonly ChanceTable<int> T10_PetLevelChances = new ChanceTable<int>()
         {
-            ( 180, 0.40f ),
-            ( 200, 0.60f ),
+            ( 180, 0.20f ),
+            ( 200, 0.45f ),
+            ( 250, 0.25f ),
+            ( 300, 0.10f ),
         };
 
         private static readonly List<ChanceTable<int>> petLevelChances = new List<ChanceTable<int>>()
