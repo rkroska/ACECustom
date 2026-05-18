@@ -192,6 +192,29 @@ namespace ACE.Server.Factories.Tables
             ( TreasureItemType_Orig.Cloak,            0.10f ),
         };
 
+        // ACECustom: copies of profiles 1 / 2 / 25 with PetDevice (revert DB to magic profiles 1/2/25 to restore stock behavior).
+        private static ChanceTable<TreasureItemType_Orig> magicItemProfile26 = new ChanceTable<TreasureItemType_Orig>()
+        {
+            ( TreasureItemType_Orig.Weapon,    0.95f ),
+            ( TreasureItemType_Orig.PetDevice,   0.05f ),
+        };
+
+        private static ChanceTable<TreasureItemType_Orig> magicItemProfile27 = new ChanceTable<TreasureItemType_Orig>()
+        {
+            ( TreasureItemType_Orig.Armor,       0.95f ),
+            ( TreasureItemType_Orig.PetDevice,   0.05f ),
+        };
+
+        private static ChanceTable<TreasureItemType_Orig> magicItemProfile28 = new ChanceTable<TreasureItemType_Orig>()
+        {
+            ( TreasureItemType_Orig.Weapon,           0.19f ),
+            ( TreasureItemType_Orig.Armor,            0.285f ),
+            ( TreasureItemType_Orig.Clothing,         0.1425f ),
+            ( TreasureItemType_Orig.Jewelry,          0.2375f ),
+            ( TreasureItemType_Orig.Cloak,            0.095f ),
+            ( TreasureItemType_Orig.PetDevice,          0.05f ),
+        };
+
         /// <summary>
         /// TreasureDeath.MagicItemTreasureTypeSelectionChances indexes into these profiles
         /// </summary>
@@ -222,6 +245,9 @@ namespace ACE.Server.Factories.Tables
             magicItemProfile23,
             magicItemProfile24,
             magicItemProfile25,
+            magicItemProfile26,
+            magicItemProfile27,
+            magicItemProfile28,
         };
 
         /// <summary>
