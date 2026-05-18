@@ -299,6 +299,9 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>ILT Skill #20: Tectonic Rifts I is redirected to Ring of Unspeakable Agony while charm is active (requires Agony learned). Rocky Shrapnel takes priority if both charms are active.</summary>
         HasAgonyCharm    = 50033,
 
+        /// <summary>ILT Player Pref: Use classic physics-collision ring spell behavior (can multi-hit through positioning). Default OFF = new guaranteed AOE system.</summary>
+        ClassicRingAoe   = 50034,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }

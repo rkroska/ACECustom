@@ -227,99 +227,217 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, "Account password successfully changed.", ChatMessageType.Broadcast);
         }
 
-        // Add a cooldown dictionary to track last unstuck usage per session
-        private static readonly Dictionary<uint, DateTime> UnstuckCooldowns = new Dictionary<uint, DateTime>();
+        // -----------------------------------------------------------------------
+        // PREVIOUS /unstuck IMPLEMENTATION (preserved, no longer active)
+        // Issues: AccessLevel.Developer (players couldn't use it), required account
+        // name as argument, used IP matching as security gate (broke on VPN/NAT),
+        // and called NetworkManager.RemoveSession() manually after Terminate() which
+        // is redundant and unsafe. Replaced below with a corrected version.
+        // -----------------------------------------------------------------------
+        //
+        // // Add a cooldown dictionary to track last unstuck usage per session
+        // private static readonly Dictionary<uint, DateTime> UnstuckCooldowns = new Dictionary<uint, DateTime>();
+        //
+        // [CommandHandler("unstuck", AccessLevel.Developer, CommandHandlerFlag.None, 1,
+        //     "Kicks all online players for the specified account if the IP matches the command issuer.",
+        //     "accountname")]
+        // public static void HandleUnstuck(Session session, params string[] parameters)
+        // {
+        //     // Cooldown check
+        //     var now = DateTime.UtcNow;
+        //     var sessionId = session?.Player?.Guid.Full ?? 0;
+        //     lock (UnstuckCooldowns)
+        //     {
+        //         if (UnstuckCooldowns.TryGetValue(sessionId, out var lastUsed))
+        //         {
+        //             if ((now - lastUsed).TotalSeconds < 15)
+        //             {
+        //                 CommandHandlerHelper.WriteOutputInfo(session, $"/unstuck is on cooldown. Please wait {15 - (int)(now - lastUsed).TotalSeconds} seconds.", ChatMessageType.Broadcast);
+        //                 return;
+        //             }
+        //         }
+        //         UnstuckCooldowns[sessionId] = now;
+        //     }
+        //
+        //     string accountName = parameters[0].ToLower();
+        //
+        //     var account = DatabaseManager.Authentication.GetAccountByName(accountName);
+        //     if (account == null)
+        //     {
+        //         CommandHandlerHelper.WriteOutputInfo(session, "Account does not exist.", ChatMessageType.Broadcast);
+        //         return;
+        //     }
+        //
+        //     // Only target sessions for the account that are NOT the issuer's session
+        //     var playersToKick = PlayerManager.GetAllOnline()
+        //         .Where(p => p.Account != null
+        //             && p.Account.AccountId == account.AccountId
+        //             && p.Session != session) // Exclude the issuer's session
+        //         .ToList();
+        //
+        //     if (playersToKick.Count == 0)
+        //     {
+        //         CommandHandlerHelper.WriteOutputInfo(session, "Account is not online.", ChatMessageType.Broadcast);
+        //         return;
+        //     }
+        //
+        //     // Check if the IP of the command issuer matches the IP of the target account's online session(s)
+        //     var issuerIP = session?.EndPoint?.Address;
+        //     var targetIPs = playersToKick.Select(p => p.Session?.EndPoint?.Address).Distinct().ToList();
+        //     if (!targetIPs.Contains(issuerIP))
+        //     {
+        //         CommandHandlerHelper.WriteOutputInfo(session, "IP mismatch - failed to kick.", ChatMessageType.Broadcast);
+        //         return;
+        //     }
+        //
+        //     foreach (var player in playersToKick)
+        //     {
+        //         player.Session.Terminate(
+        //             ACE.Server.Network.Enum.SessionTerminationReason.AccountBooted,
+        //             new ACE.Server.Network.GameMessages.Messages.GameMessageBootAccount("! You have been kicked by /unstuck command."));
+        //     }
+        //
+        //     // Capture the sessions to remove
+        //     var sessionsToRemove = playersToKick.Select(p => p.Session).ToList();
+        //
+        //     System.Threading.Tasks.Task.Run(async () =>
+        //     {
+        //         await System.Threading.Tasks.Task.Delay(3000);
+        //         foreach (var sessionToRemove in sessionsToRemove)
+        //         {
+        //             if (sessionToRemove != null)
+        //             {
+        //                 try
+        //                 {
+        //                     ACE.Server.Network.Managers.NetworkManager.RemoveSession(sessionToRemove);
+        //                 }
+        //                 catch (Exception ex)
+        //                 {
+        //                     // Log error but do not freeze server
+        //                     log.Error($"Error removing session in /unstuck: {ex.Message}", ex);
+        //                 }
+        //             }
+        //         }
+        //     });
+        //
+        //     // Write to Audit channel
+        //     if (session?.Player != null)
+        //     {
+        //         PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has issued a stuck command for {accountName} - Verified by IP - KICKING");
+        //     }
+        //
+        //     var kickedNames = string.Join(", ", playersToKick.Select(p => p.Name));
+        //     CommandHandlerHelper.WriteOutputInfo(session, $"Unstuck: {playersToKick.Count} player(s) on account '{accountName}' have been kicked: {kickedNames}", ChatMessageType.Broadcast);
+        // }
+        // -----------------------------------------------------------------------
 
-        [CommandHandler("unstuck", AccessLevel.Developer, CommandHandlerFlag.None, 1,
-            "Kicks all online players for the specified account if the IP matches the command issuer.",
-            "accountname")]
+        /// <summary>
+        /// Per-account cooldown tracker for @unstuck. Keyed by AccountId.
+        /// </summary>
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, DateTime> _unstuckCooldowns
+            = new System.Collections.Concurrent.ConcurrentDictionary<uint, DateTime>();
+
+        /// <summary>
+        /// Per-account lock gates for @unstuck. Ensures the cooldown check, boot, and stamp
+        /// are serialized per account so two concurrent calls cannot both pass the cooldown check.
+        /// </summary>
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, object> _unstuckLocks
+            = new System.Collections.Concurrent.ConcurrentDictionary<uint, object>();
+
+        private static readonly TimeSpan UnstuckCooldownDuration = TimeSpan.FromMinutes(5);
+
+        [CommandHandler("unstuck", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
+            "Boots any other stuck characters on your account so you can log back in to them.",
+            "Usage: @unstuck\n" +
+            "If another character on your account is stuck and preventing you from logging in,\n" +
+            "log in to any other character and type @unstuck. The stuck character will be\n" +
+            "disconnected and you will be able to log back in to them normally.\n" +
+            "A 5-minute cooldown applies after a successful boot. Checking when nothing is stuck is always free.")]
         public static void HandleUnstuck(Session session, params string[] parameters)
         {
-            // Cooldown check
-            var now = DateTime.UtcNow;
-            var sessionId = session?.Player?.Guid.Full ?? 0;
-            lock (UnstuckCooldowns)
+            var accountId = session.AccountId;
+
+            // Acquire a per-account gate so the cooldown check → boot → stamp sequence
+            // is atomic. Without this, two concurrent @unstuck calls on the same account
+            // could both pass the cooldown check before either stamps it.
+            var gate = _unstuckLocks.GetOrAdd(accountId, _ => new object());
+            lock (gate)
             {
-                if (UnstuckCooldowns.TryGetValue(sessionId, out var lastUsed))
+                var now = DateTime.UtcNow;
+
+                // --- Cooldown check ---
+                if (_unstuckCooldowns.TryGetValue(accountId, out var lastUsed))
                 {
-                    if ((now - lastUsed).TotalSeconds < 15)
+                    var elapsed = now - lastUsed;
+                    if (elapsed < UnstuckCooldownDuration)
                     {
-                        CommandHandlerHelper.WriteOutputInfo(session, $"/unstuck is on cooldown. Please wait {15 - (int)(now - lastUsed).TotalSeconds} seconds.", ChatMessageType.Broadcast);
+                        var remaining = Math.Max(1, (int)(UnstuckCooldownDuration - elapsed).TotalSeconds);
+                        CommandHandlerHelper.WriteOutputInfo(session,
+                            $"Silas the Unsticker whispers: \"Easy there — I just helped you. Give it another {remaining} second{(remaining == 1 ? "" : "s")} before asking again.\"",
+                            ChatMessageType.Broadcast);
                         return;
                     }
                 }
-                UnstuckCooldowns[sessionId] = now;
-            }
 
-            string accountName = parameters[0].ToLower();
+                // NOTE: Cooldown is stamped ONLY after a real boot (below).
+                // The "nothing found" path is a read-only no-op with negligible cost
+                // and no reason to penalise the player for checking.
 
-            var account = DatabaseManager.Authentication.GetAccountByName(accountName);
-            if (account == null)
-            {
-                CommandHandlerHelper.WriteOutputInfo(session, "Account does not exist.", ChatMessageType.Broadcast);
-                return;
-            }
+                // --- Find all OTHER sessions on this account ---
+                // Uses NetworkManager.FindAllByAccount() instead of PlayerManager.GetAllOnline()
+                // so that zombie/stuck sessions (no attached Player object) are also caught.
+                // The caller's own session is excluded — only other sessions on the account are booted.
+                var sessionsToKick = ACE.Server.Network.Managers.NetworkManager.FindAllByAccount(accountId)
+                    .Where(s => s != session)
+                    .ToList();
 
-            // Only target sessions for the account that are NOT the issuer's session
-            var playersToKick = PlayerManager.GetAllOnline()
-                .Where(p => p.Account != null
-                    && p.Account.AccountId == account.AccountId
-                    && p.Session != session) // Exclude the issuer's session
-                .ToList();
-
-            if (playersToKick.Count == 0)
-            {
-                CommandHandlerHelper.WriteOutputInfo(session, "Account is not online.", ChatMessageType.Broadcast);
-                return;
-            }
-
-            // Check if the IP of the command issuer matches the IP of the target account's online session(s)
-            var issuerIP = session?.EndPoint?.Address;
-            var targetIPs = playersToKick.Select(p => p.Session?.EndPoint?.Address).Distinct().ToList();
-            if (!targetIPs.Contains(issuerIP))
-            {
-                CommandHandlerHelper.WriteOutputInfo(session, "IP mismatch - failed to kick.", ChatMessageType.Broadcast);
-                return;
-            }
-
-            foreach (var player in playersToKick)
-            {
-                player.Session.Terminate(
-                    ACE.Server.Network.Enum.SessionTerminationReason.AccountBooted,
-                    new ACE.Server.Network.GameMessages.Messages.GameMessageBootAccount("! You have been kicked by /unstuck command."));
-            }
-
-            // Capture the sessions to remove
-            var sessionsToRemove = playersToKick.Select(p => p.Session).ToList();
-
-            System.Threading.Tasks.Task.Run(async () =>
-            {
-                await System.Threading.Tasks.Task.Delay(3000);
-                foreach (var sessionToRemove in sessionsToRemove)
+                if (sessionsToKick.Count == 0)
                 {
-                    if (sessionToRemove != null)
-                    {
-                        try
-                        {
-                            ACE.Server.Network.Managers.NetworkManager.RemoveSession(sessionToRemove);
-                        }
-                        catch (Exception ex)
-                        {
-                            // Log error but do not freeze server
-                            log.Error($"Error removing session in /unstuck: {ex.Message}", ex);
-                        }
-                    }
+                    CommandHandlerHelper.WriteOutputInfo(session,
+                        "Silas the Unsticker whispers: \"Hmm... I don't see any other characters from your account stuck out there. You look fine to me!\"",
+                        ChatMessageType.Broadcast);
+                    return;
                 }
-            });
 
-            // Write to Audit channel
-            if (session?.Player != null)
-            {
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has issued a stuck command for {accountName} - Verified by IP - KICKING");
+                // session.Player is guaranteed non-null by CommandHandlerFlag.RequiresWorld.
+                var callerName = session.Player.Name;
+
+                var kickedNames = new List<string>(sessionsToKick.Count);
+                foreach (var stuckSession in sessionsToKick)
+                {
+                    // stuckSession.Player may be null for zombie sessions — fall back to account info.
+                    var charName = stuckSession.Player?.Name ?? $"[session:{stuckSession.AccountId}]";
+                    log.Info($"[Unstuck] Booting session for '{charName}' (Account: {session.Account ?? "[unknown]"}, AccountId: {accountId}) requested by '{callerName}'.");
+
+                    stuckSession.Terminate(
+                        ACE.Server.Network.Enum.SessionTerminationReason.AccountBooted,
+                        new ACE.Server.Network.GameMessages.Messages.GameMessageBootAccount(
+                            " - Freed by Silas the Unsticker at your request."));
+
+                    kickedNames.Add(charName);
+                }
+
+                // Prune entries older than the cooldown window to keep the dictionary
+                // bounded over long server uptimes. Filter first, then remove — avoids
+                // a redundant TryGetValue inside the loop.
+                var staleKeys = _unstuckCooldowns
+                    .Where(kvp => (now - kvp.Value) > UnstuckCooldownDuration)
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+                foreach (var staleKey in staleKeys)
+                    _unstuckCooldowns.TryRemove(staleKey, out _);
+                _unstuckCooldowns[accountId] = now;
+
+                // --- Audit log ---
+                PlayerManager.BroadcastToAuditChannel(session.Player,
+                    $"[Unstuck] {callerName} used @unstuck — booted {kickedNames.Count} session(s) on account '{session.Account ?? "[unknown]"}': {string.Join(", ", kickedNames)}");
+
+                // --- Confirmation to the player ---
+                var names = string.Join(", ", kickedNames);
+                CommandHandlerHelper.WriteOutputInfo(session,
+                    $"Silas the Unsticker whispers: \"Consider it done! I've sent {names} packing. They should be free to log back in now.\"",
+                    ChatMessageType.Broadcast);
             }
-
-            var kickedNames = string.Join(", ", playersToKick.Select(p => p.Name));
-            CommandHandlerHelper.WriteOutputInfo(session, $"Unstuck: {playersToKick.Count} player(s) on account '{accountName}' have been kicked: {kickedNames}", ChatMessageType.Broadcast);
         }
     }
 }
