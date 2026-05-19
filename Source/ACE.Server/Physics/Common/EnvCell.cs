@@ -21,11 +21,19 @@ namespace ACE.Server.Physics.Common
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        /// <summary>Guards against pathological visible-cell graphs (bad cell.dat) blowing the stack.</summary>
+        /// <summary>True while a root <see cref="build_visible_cells"/> is running (nested loads defer instead of recursing).</summary>
         [ThreadStatic]
-        private static int _buildVisibleDepth;
+        private static bool _buildingVisibleCells;
 
-        private const int MaxBuildVisibleDepth = 48;
+        /// <summary>Cells whose neighbor load triggered <see cref="build_visible_cells"/> during an outer build.</summary>
+        [ThreadStatic]
+        private static List<EnvCell> _deferredVisibleBuilds;
+
+        /// <summary>Cells fully built in the current root build (avoids duplicate work and dat cycles).</summary>
+        [ThreadStatic]
+        private static HashSet<uint> _builtVisibleCellIds;
+
+        private const int MaxDeferredVisibleBuilds = 4096;
         //public int NumSurfaces;
         //public List<Surface> Surfaces;
         public CellStruct CellStructure;
@@ -115,8 +123,22 @@ namespace ACE.Server.Physics.Common
                 return;
             }
 
-            build_visible_cells();
+            EnsureVisibleCellsBuilt();
             init_static_objects(variation);
+        }
+
+        /// <summary>
+        /// Populates <see cref="VisibleCells"/> when still empty (e.g. deferred build or first PVS use).
+        /// </summary>
+        public void EnsureVisibleCellsBuilt()
+        {
+            if (CellStructure == null || VisibleCellIDs == null || VisibleCellIDs.Count == 0)
+                return;
+
+            if (VisibleCells != null && VisibleCells.Count > 0)
+                return;
+
+            build_visible_cells();
         }
 
         public override TransitionState FindEnvCollisions(Transition transition)
@@ -153,27 +175,74 @@ namespace ACE.Server.Physics.Common
 
         public void build_visible_cells()
         {
-            //if (VisibleCells != null && VisibleCellIDs != null && VisibleCells.Count == VisibleCellIDs.Count)
-            //{
-            //    return; // already built
-            //}
-            _buildVisibleDepth++;
-            try
+            build_visible_cells(fromDeferDrain: false);
+        }
+
+        /// <param name="fromDeferDrain">When true, run even if an outer build is in progress (avoids re-deferring the drain queue).</param>
+        private void build_visible_cells(bool fromDeferDrain)
+        {
+            if (CellStructure == null || VisibleCellIDs == null)
+                return;
+
+            _builtVisibleCellIds ??= new HashSet<uint>();
+
+            if (_builtVisibleCellIds.Contains(ID))
+                return;
+
+            if (_buildingVisibleCells && !fromDeferDrain)
             {
-                if (_buildVisibleDepth > MaxBuildVisibleDepth)
+                _deferredVisibleBuilds ??= new List<EnvCell>();
+                if (_deferredVisibleBuilds.Count >= MaxDeferredVisibleBuilds)
                 {
                     PhysicsLogGates.BuildVisibleDepth.Warn(
                         () =>
-                            $"[PHYSICS] build_visible_cells aborted: depth {_buildVisibleDepth} exceeds {MaxBuildVisibleDepth} (likely bad cell.dat visible graph). rootCell=0x{ID:X8} variation={Pos.Variation?.ToString() ?? "null"}",
+                            $"[PHYSICS] build_visible_cells deferred queue exceeded {MaxDeferredVisibleBuilds} (likely cyclic visible-cell graph). cell=0x{ID:X8} variation={Pos.Variation?.ToString() ?? "null"}",
                         10_000);
                     return;
                 }
 
+                for (var i = 0; i < _deferredVisibleBuilds.Count; i++)
+                {
+                    if (_deferredVisibleBuilds[i].ID == ID)
+                        return;
+                }
+
+                _deferredVisibleBuilds.Add(this);
+                return;
+            }
+
+            var isRoot = !fromDeferDrain;
+            if (isRoot)
+                _buildingVisibleCells = true;
+
+            try
+            {
                 BuildVisibleCellsCore();
+                _builtVisibleCellIds.Add(ID);
+
+                if (isRoot)
+                    DrainDeferredVisibleBuilds();
             }
             finally
             {
-                _buildVisibleDepth--;
+                if (isRoot)
+                {
+                    _buildingVisibleCells = false;
+                    _builtVisibleCellIds = null;
+                    _deferredVisibleBuilds = null;
+                }
+            }
+        }
+
+        private static void DrainDeferredVisibleBuilds()
+        {
+            while (_deferredVisibleBuilds != null && _deferredVisibleBuilds.Count > 0)
+            {
+                var batch = _deferredVisibleBuilds;
+                _deferredVisibleBuilds = null;
+
+                foreach (var cell in batch)
+                    cell.build_visible_cells(fromDeferDrain: true);
             }
         }
 
@@ -660,6 +729,8 @@ namespace ACE.Server.Physics.Common
 
         public bool IsVisibleIndoors(ObjCell cell)
         {
+            EnsureVisibleCellsBuilt();
+
             var blockDist = PhysicsObj.GetBlockDist(ID, cell.ID);
 
             // if landblocks equal
