@@ -1607,8 +1607,6 @@ namespace ACE.Server.Physics
                     {
                         if (IsPlayer)
                             log.Debug($"{Name} ({ID:X8}).UpdateObjectInternal({quantum}) - failed transition from {Position} to {newPos}");
-                        else if (transit != null && transit.SpherePath.CurCell == null)
-                            log.Warn($"{Name} ({ID:X8}).UpdateObjectInternal({quantum}) - avoided CurCell=null from {Position} to {newPos}");
 
                         newPos.Frame.Origin = Position.Frame.Origin;
                         set_initial_frame(newPos.Frame);
