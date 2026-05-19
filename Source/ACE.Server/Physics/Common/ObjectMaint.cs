@@ -420,6 +420,8 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         private List<PhysicsObj> GetVisibleObjects(EnvCell cell, VisibleObjectType type, int? VariationId = null)
         {
+            cell.EnsureVisibleCellsBuilt();
+
             var visibleObjs = new List<PhysicsObj>();
 
             // add objects from current cell
