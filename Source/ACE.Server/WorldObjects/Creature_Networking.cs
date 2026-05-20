@@ -153,9 +153,7 @@ namespace ACE.Server.WorldObjects
                 // We can wield things that are not part of our model, only use those items that can cover our model.
                 if ((w.CurrentWieldedLocation & (EquipMask.Clothing | EquipMask.Armor | EquipMask.Cloak)) != 0)
                 {
-                    if (w.ClothingBase.HasValue)
-                        item = DatManager.PortalDat.ReadFromDat<ClothingTable>((uint)w.ClothingBase);
-                    else
+                    if (!w.ClothingBase.HasValue || !DatManager.PortalDat.TryReadClothingTable((uint)w.ClothingBase, out item))
                     {
                         objDesc = AddSetupAsClothingBase(objDesc, w);
                         // Add any potentially added parts back into the coverage list

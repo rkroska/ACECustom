@@ -1114,7 +1114,13 @@ namespace ACE.Server.WorldObjects
                     pet.PaletteBaseId = VisualOverridePaletteBase.Value;
 
                 if (VisualOverrideClothingBase.HasValue)
-                    pet.ClothingBase = VisualOverrideClothingBase.Value;
+                {
+                    var clothingBaseId = VisualOverrideClothingBase.Value;
+                    if (DatLoader.DatDatabase.IsClothingBaseId(clothingBaseId))
+                        pet.ClothingBase = clothingBaseId;
+                    else
+                        log.Warn($"{nameof(SummonCreature)}: {nameof(VisualOverrideClothingBase)} {clothingBaseId:X8} on device {Name} ({Guid}) is not a clothing DID (0x10xxxxxx); skipping.");
+                }
                 else
                     pet.RemoveProperty(PropertyDataId.ClothingBase); // Remove inherited ClothingBase if original had none
 
