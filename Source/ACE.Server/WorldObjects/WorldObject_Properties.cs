@@ -1312,9 +1312,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void setVisualClothingPriority()
         {
-            if (ClothingBase.HasValue && (CurrentWieldedLocation & (EquipMask.Armor | EquipMask.Extremity)) != 0)
+            if (ClothingBase.HasValue && (CurrentWieldedLocation & (EquipMask.Armor | EquipMask.Extremity)) != 0
+                && DatManager.PortalDat.TryReadClothingTable((uint)ClothingBase, out ClothingTable item))
             {
-                ClothingTable item = DatManager.PortalDat.ReadFromDat<ClothingTable>((uint)ClothingBase);
                 VisualClothingPriority = item.GetVisualPriority();
             }
         }

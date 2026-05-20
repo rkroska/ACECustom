@@ -898,12 +898,8 @@ namespace ACE.Server.WorldObjects
 
             AddBaseModelData(objDesc);
 
-            if (ClothingBase.HasValue)
-                item = DatManager.PortalDat.ReadFromDat<ClothingTable>((uint)ClothingBase);
-            else
-            {
+            if (!ClothingBase.HasValue || !DatManager.PortalDat.TryReadClothingTable((uint)ClothingBase, out item))
                 return objDesc;
-            }
 
             if (item.ClothingBaseEffects.TryGetValue(SetupTableId, out ClothingBaseEffect clothingBaseEffect))
             // Check if the ClothingBase is applicable for this Setup. (Gear Knights, this is usually you.)

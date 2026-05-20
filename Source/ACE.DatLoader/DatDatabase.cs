@@ -61,11 +61,34 @@ namespace ACE.DatLoader
         /// This will try to find the object for the given fileId in local cache. If the object was not found, it will be read from the dat and cached.<para />
         /// This function is thread safe.
         /// </summary>
+        public static bool IsClothingBaseId(uint fileId) => (fileId & 0xFF000000) == 0x10000000;
+
+        /// <summary>
+        /// Reads a portal clothing table (0x10xxxxxx). Returns false when the id is not a clothing DID
+        /// or the cache already holds a different file type for this id (e.g. Setup cached first).
+        /// </summary>
+        public bool TryReadClothingTable(uint fileId, out ClothingTable clothingTable)
+        {
+            clothingTable = null;
+
+            if (!IsClothingBaseId(fileId))
+                return false;
+
+            if (FileCache.TryGetValue(fileId, out FileType cached) && cached is not ClothingTable)
+                return false;
+
+            clothingTable = ReadFromDat<ClothingTable>(fileId);
+            return true;
+        }
+
         public T ReadFromDat<T>(uint fileId) where T : FileType, new()
         {
             // Check the FileCache so we don't need to hit the FileSystem repeatedly
             if (FileCache.TryGetValue(fileId, out FileType result))
-                return (T)result;
+            {
+                if (result is T typedResult)
+                    return typedResult;
+            }
 
             var datReader = GetReaderForFile(fileId);
 
