@@ -17,7 +17,7 @@ namespace ACE.Server.WorldObjects
 
             foreach (var wo in EquippedObjects.Values)
             {
-                if (!wo.EnchantmentManager.HasEnchantments && !wo.Lifespan.HasValue)
+                if (!wo.EnchantmentManager.HasEnchantments && !wo.Lifespan.HasValue && !wo.ItemExpirationTimestamp.HasValue)
                     continue;
 
                 // FIXME: wo.NextHeartbeatTime is double.MaxValue here
