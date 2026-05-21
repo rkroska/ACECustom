@@ -5935,14 +5935,11 @@ namespace ACE.Server.Command.Handlers
 
                 creature.SetMaxVitals();
 
-                if (!(creature is Player))
-                {
-                    var hpFormatted = Creature.FormatDamage(hpHealed, 2);
-                    var stamFormatted = Creature.FormatDamage(stamHealed, 2);
-                    var manaFormatted = Creature.FormatDamage(manaHealed, 2);
+                var hpFormatted = Creature.FormatDamage(hpHealed, 2);
+                var stamFormatted = Creature.FormatDamage(stamHealed, 2);
+                var manaFormatted = Creature.FormatDamage(manaHealed, 2);
 
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Healed {creature.Name} to full vitals (+{hpFormatted} HP, +{stamFormatted} Stam, +{manaFormatted} Mana).", ChatMessageType.Broadcast));
-                }
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Healed {creature.Name} to full vitals (+{hpFormatted} HP, +{stamFormatted} Stam, +{manaFormatted} Mana).", ChatMessageType.Broadcast));
             }
             else
             {
