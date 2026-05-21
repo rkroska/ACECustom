@@ -500,6 +500,39 @@ namespace ACE.Server.Network.Structure
 
             if (wo.ItemExpirationTimestamp.HasValue)
             {
+                if (PropertiesInt.TryGetValue(PropertyInt.AppraisalLongDescDecoration, out var dec))
+                {
+                    if ((dec & 4) != 0) // AppraisalLongDescDecorations.AppendGemInfo
+                    {
+                        if (wo.GemType.HasValue && wo.GemCount.HasValue)
+                        {
+                            var gemName = System.Text.RegularExpressions.Regex.Replace(wo.GemType.Value.ToString(), "(\\B[A-Z])", " $1");
+                            if (wo.GemCount > 1)
+                            {
+                                if (gemName.EndsWith("y"))
+                                    gemName = gemName.Substring(0, gemName.Length - 1) + "ies";
+                                else if (gemName.EndsWith("x"))
+                                    gemName += "es";
+                                else
+                                    gemName += "s";
+                            }
+
+                            var gemString = $", set with {wo.GemCount} {gemName}";
+                            if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                                PropertiesString[PropertyString.LongDesc] += gemString;
+                            else
+                                PropertiesString[PropertyString.LongDesc] = gemString.TrimStart(',', ' ');
+                        }
+
+                        // Remove the AppendGemInfo flag so the client doesn't double-append
+                        dec &= ~4;
+                        if (dec == 0)
+                            PropertiesInt.Remove(PropertyInt.AppraisalLongDescDecoration);
+                        else
+                            PropertiesInt[PropertyInt.AppraisalLongDescDecoration] = dec;
+                    }
+                }
+
                 var absoluteExpiration = ACE.Common.Time.GetDateTimeFromTimestamp(wo.ItemExpirationTimestamp.Value);
                 var timeToExpiration = absoluteExpiration - DateTime.UtcNow;
                 string msg;
