@@ -759,6 +759,11 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         PetDeviceMinLumAugSummonCount           = 9055,
 
+        /// <summary>
+        /// The absolute Unix timestamp (in seconds since epoch) when the item expires.
+        /// </summary>
+        ItemExpirationTimestamp                 = 9060,
+
         // -- ILT Ability Charm System (50000-50099) ---------------------------------
         /// <summary>On an IsAbilityCharm item: integer key into CharmAbilityRegistry (1-50).</summary>
         CharmGrantsAbility = 50000,
@@ -902,6 +907,7 @@ namespace ACE.Entity.Enum.Properties
 
                 case PropertyInt.GeneratorStartTime:
                 case PropertyInt.GeneratorEndTime:
+                case PropertyInt.ItemExpirationTimestamp:
                     return DateTimeOffset.FromUnixTimeSeconds(value).DateTime.ToString(CultureInfo.InvariantCulture);
 
                 case PropertyInt.ArmorType:

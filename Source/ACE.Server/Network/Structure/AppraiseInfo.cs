@@ -498,6 +498,26 @@ namespace ACE.Server.Network.Structure
                 //PropertiesString.Clear();
             }
 
+            if (wo.ItemExpirationTimestamp.HasValue)
+            {
+                var absoluteExpiration = ACE.Common.Time.GetDateTimeFromTimestamp(wo.ItemExpirationTimestamp.Value);
+                var timeToExpiration = absoluteExpiration - DateTime.UtcNow;
+                string msg;
+                if (timeToExpiration.TotalSeconds < 5)
+                {
+                    msg = "This item is temporary and is about to crumble to dust.";
+                }
+                else
+                {
+                    msg = $"This item is temporary and will crumble to dust in {timeToExpiration.GetFriendlyString()}.";
+                }
+
+                if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                    PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
+                else
+                    PropertiesString[PropertyString.LongDesc] = msg;
+            }
+
             BuildFlags();
         }
 

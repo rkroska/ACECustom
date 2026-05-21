@@ -3456,5 +3456,11 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyInt.DamageNumberFormat) ?? 0;
             set { if (value == 0) RemoveProperty(PropertyInt.DamageNumberFormat); else SetProperty(PropertyInt.DamageNumberFormat, value); }
         }
+
+        public int? ItemExpirationTimestamp
+        {
+            get => GetProperty(PropertyInt.ItemExpirationTimestamp);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.ItemExpirationTimestamp); else SetProperty(PropertyInt.ItemExpirationTimestamp, value.Value); }
+        }
     }
 }

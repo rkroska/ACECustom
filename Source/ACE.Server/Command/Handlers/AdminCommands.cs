@@ -7810,5 +7810,52 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("setexpire", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Sets an absolute expiration date/time on the selected item.", "dateTimeString|clear")]
+        public static void HandleSetExpire(Session session, params string[] parameters)
+        {
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session);
+            if (target == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("You must first appraise (select) an item.", ChatMessageType.System));
+                return;
+            }
+
+            var input = string.Join(" ", parameters);
+
+            if (input.Equals("none", StringComparison.OrdinalIgnoreCase) ||
+                input.Equals("clear", StringComparison.OrdinalIgnoreCase) ||
+                input.Equals("null", StringComparison.OrdinalIgnoreCase))
+            {
+                session.Player.UpdateProperty(target, PropertyInt.ItemExpirationTimestamp, null, true);
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Cleared absolute expiration date from {target.Name} ({target.Guid}).", ChatMessageType.System));
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} cleared expiration timestamp from {target.Name} ({target.Guid}).");
+                return;
+            }
+
+            if (!DateTime.TryParse(input, CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime))
+            {
+                if (!DateTime.TryParse(input, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out parsedDateTime))
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid date/time format: '{input}'. Examples: '5/22/2026 11:00 PM', '2026-05-22 23:00'.", ChatMessageType.System));
+                    return;
+                }
+            }
+
+            var utcDateTime = parsedDateTime.ToUniversalTime();
+            var unixTimestamp = (int)new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
+            var currentUnixTime = (int)new DateTimeOffset(DateTime.UtcNow).ToUnixTimeSeconds();
+
+            session.Player.UpdateProperty(target, PropertyInt.ItemExpirationTimestamp, unixTimestamp, true);
+
+            var localDisplayString = parsedDateTime.ToString(CultureInfo.CurrentCulture);
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Set absolute expiration date on {target.Name} ({target.Guid}) to {localDisplayString} (UTC: {utcDateTime:yyyy-MM-dd HH:mm:ss}, Epoch: {unixTimestamp}).", ChatMessageType.System));
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} set absolute expiration on {target.Name} ({target.Guid}) to {localDisplayString} (UTC: {utcDateTime:yyyy-MM-dd HH:mm:ss}, Epoch: {unixTimestamp}).");
+
+            if (unixTimestamp <= currentUnixTime)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Warning: This expiration date is in the past! The item will crumble on its next tick.", ChatMessageType.System));
+            }
+        }
+
     }
 }
