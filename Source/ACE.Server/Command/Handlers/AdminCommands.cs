@@ -5937,7 +5937,11 @@ namespace ACE.Server.Command.Handlers
 
                 if (!(creature is Player))
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Healed {creature.Name} to full vitals (+{hpHealed} HP, +{stamHealed} Stam, +{manaHealed} Mana).", ChatMessageType.Broadcast));
+                    var hpFormatted = Creature.FormatDamage(hpHealed, session.Player.DamageNumberFormat);
+                    var stamFormatted = Creature.FormatDamage(stamHealed, session.Player.DamageNumberFormat);
+                    var manaFormatted = Creature.FormatDamage(manaHealed, session.Player.DamageNumberFormat);
+
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Healed {creature.Name} to full vitals (+{hpFormatted} HP, +{stamFormatted} Stam, +{manaFormatted} Mana).", ChatMessageType.Broadcast));
                 }
             }
             else
