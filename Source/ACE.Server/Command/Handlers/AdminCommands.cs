@@ -5927,13 +5927,22 @@ namespace ACE.Server.Command.Handlers
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Unable to locate what you have selected.", ChatMessageType.Broadcast));
             }
-            else if (wo is Player player)
+            else if (wo is Creature creature)
             {
-                player.SetMaxVitals();
+                var hpHealed = creature.Health.Missing;
+                var stamHealed = creature.Stamina.Missing;
+                var manaHealed = creature.Mana.Missing;
+
+                creature.SetMaxVitals();
+
+                if (!(creature is Player))
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Healed {creature.Name} to full vitals (+{hpHealed} HP, +{stamHealed} Stam, +{manaHealed} Mana).", ChatMessageType.Broadcast));
+                }
             }
             else
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"You cannot heal {wo.Name} because it is not a player.", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"You cannot heal {wo.Name} because it is not a creature.", ChatMessageType.Broadcast));
             }
         }
 
