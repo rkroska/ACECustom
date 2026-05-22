@@ -1,6 +1,6 @@
 -- ============================================================
 -- Penta Cast Charm (Tier 1) — WCID 777700024
--- ILT Ability Charm — Ability ID 21 (HasPentaCast)
+-- ILT Ability Charm — Ability ID 22 (HasPentaCast)
 -- While active, Streak, Arc, and Bolt spells will target up to 5 distinct enemies simultaneously.
 -- ============================================================
 
@@ -26,7 +26,7 @@ VALUES (777700024,     1, 2048) /* ItemType - Gem */
      , (777700024,    83,    2) /* ActivationResponse - Use */
      , (777700024,    93, 1044) /* PhysicsState */
      , (777700024,   114,    1) /* Attuned */
-     , (777700024, 50000,   21) /* CharmGrantsAbility - ID 21 = Penta Cast Charm */
+     , (777700024, 50000,   22) /* CharmGrantsAbility - ID 22 = Penta Cast Charm */
      , (777700024, 50005,    1) /* CharmLevel - 1 */
      , (777700024, 50006,    1); /* CharmMaxLevel - 1 tier */
 

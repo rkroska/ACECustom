@@ -26,7 +26,7 @@ namespace ACE.Server.WorldObjects
         public const int ArtisansCharmAbilityId   = 18;
         public const int ShrapnelCharmAbilityId   = 19;
         public const int AgonyCharmAbilityId      = 20;
-        public const int PentaCastAbilityId       = 21;
+        public const int PentaCastAbilityId       = 22;
 
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {

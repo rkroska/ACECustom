@@ -1716,10 +1716,10 @@ namespace ACE.Server.WorldObjects
                         if (!creature.IsAlive) continue;
                         if (creature.Location == null) continue;
 
-                        // Target proximity check (max 20 meters from original target using global coordinates)
+                        // Target proximity check (max 10 meters from original target using global coordinates)
                         var creatureGlobal = creature.Location.ToGlobal(false);
                         var dist = Vector3.Distance(targetGlobal, creatureGlobal);
-                        if (dist > 20.0f) continue;
+                        if (dist > 10.0f) continue;
 
                         if (!player.CanDamage(creature)) continue;
 
