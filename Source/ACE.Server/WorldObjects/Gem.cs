@@ -496,6 +496,13 @@ namespace ACE.Server.WorldObjects
                     : "Penta Cast Charm deactivated. Spells will cast normally.";
             }
 
+            if (abilityId == CharmAbilityRegistry.PrismaticStrikeAbilityId)
+            {
+                return activating
+                    ? "Prismatic Strike Charm activated. Melee attacks scan resistances and override damage type to target's weakest element, dynamically matching weapon rends."
+                    : "Prismatic Strike Charm deactivated. Attacks will deal damage normally.";
+            }
+
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
             return activating ? $"{name} Level {level} activated." : $"{name} deactivated.";
         }

@@ -1181,6 +1181,71 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("giveelementaluas", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Spawns one Unarmed Attack katar for each element, each configured with its respective Rending imbued effect.")]
+        public static void HandleGiveElementalUAs(Session session, params string[] parameters)
+        {
+            var elementalUAs = new List<(DamageType damageType, ImbuedEffectType imbuedEffect, string name)>()
+            {
+                (DamageType.Slash, ImbuedEffectType.SlashRending, "Slashing Rending Katar"),
+                (DamageType.Pierce, ImbuedEffectType.PierceRending, "Piercing Rending Katar"),
+                (DamageType.Bludgeon, ImbuedEffectType.BludgeonRending, "Bludgeoning Rending Katar"),
+                (DamageType.Cold, ImbuedEffectType.ColdRending, "Cold Rending Katar"),
+                (DamageType.Fire, ImbuedEffectType.FireRending, "Fire Rending Katar"),
+                (DamageType.Acid, ImbuedEffectType.AcidRending, "Acid Rending Katar"),
+                (DamageType.Electric, ImbuedEffectType.ElectricRending, "Electric Rending Katar"),
+                (DamageType.Nether, ImbuedEffectType.NetherRending, "Nether Rending Katar")
+            };
+
+            var spawnedUAs = new List<WorldObject>();
+
+            foreach (var uaInfo in elementalUAs)
+            {
+                // WCID 1621 is the standard Unarmed Combat Katar
+                var katar = WorldObjectFactory.CreateNewWorldObject(1621);
+                if (katar == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to create Katar template (WCID 1621) for {uaInfo.name}", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                // Configure name and custom properties
+                katar.Name = uaInfo.name;
+                katar.W_DamageType = uaInfo.damageType;
+                katar.ImbuedEffect = uaInfo.imbuedEffect;
+                katar.UiEffects = UiEffects.Magical;
+
+                // Setup the underlay icon based on RecipeManager's mappings or Nether custom
+                if (RecipeManager.IconUnderlay.TryGetValue(uaInfo.imbuedEffect, out var underlayId))
+                {
+                    katar.IconUnderlayId = underlayId;
+                }
+                else if (uaInfo.imbuedEffect == ImbuedEffectType.NetherRending)
+                {
+                    katar.IconUnderlayId = 0x06006E3D; // Nether Rending underlay icon
+                }
+
+                // Add to player's inventory
+                if (!katar.Stuck)
+                {
+                    session.Player.TryCreateInInventoryWithNetworking(katar);
+                    spawnedUAs.Add(katar);
+                }
+                else
+                {
+                    katar.Destroy();
+                }
+            }
+
+            if (spawnedUAs.Count > 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Successfully spawned {spawnedUAs.Count} elemental Rending katars in your inventory.", ChatMessageType.Broadcast));
+                if (session.AccessLevel >= AccessLevel.Admin)
+                {
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} spawned {spawnedUAs.Count} elemental Rending katars using /giveelementaluas.");
+                }
+            }
+        }
+
         /// <summary>
         /// Debug console command to test the GetSpellFormula function.
         /// </summary>

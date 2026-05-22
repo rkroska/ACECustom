@@ -308,6 +308,9 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>ILT Skill #21: When an arrow hits an enemy, casts a damage-type-matched ring spell centered on the target.</summary>
         HasExplosiveArrowCharm = 50036,
 
+        /// <summary>ILT Skill #22: Melee attacks scan target resistances, override damage to weakest element, and dynamically match weapon rends.</summary>
+        HasPrismaticStrike = 50037,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }

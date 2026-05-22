@@ -486,6 +486,27 @@ namespace ACE.Server.WorldObjects
             {
                 hasRending = true;
             }
+            else if (weapon != null && wielder is Player player && player.HasPrismaticStrike)
+            {
+                // If the player has Prismatic Strike active and the weapon has *any* physical/elemental rending effect,
+                // we treat it as matching the target's weakest element's rending effect!
+                var weaponImbues = weapon.GetImbuedEffects();
+                bool weaponHasAnyRend = (weaponImbues & (
+                    ImbuedEffectType.SlashRending |
+                    ImbuedEffectType.PierceRending |
+                    ImbuedEffectType.BludgeonRending |
+                    ImbuedEffectType.AcidRending |
+                    ImbuedEffectType.ColdRending |
+                    ImbuedEffectType.ElectricRending |
+                    ImbuedEffectType.FireRending |
+                    ImbuedEffectType.NetherRending
+                )) != 0;
+
+                if (weaponHasAnyRend)
+                {
+                    hasRending = true;
+                }
+            }
             else if (wielder is CombatPet && wielder.HasImbuedEffect(rendDamageType))
             {
                 // For CombatPets without weapons, check if rending was applied to the creature itself

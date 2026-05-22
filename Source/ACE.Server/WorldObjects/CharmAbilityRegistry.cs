@@ -28,6 +28,7 @@ namespace ACE.Server.WorldObjects
         public const int AgonyCharmAbilityId      = 20;
         public const int ExplosiveArrowCharmAbilityId = 21;
         public const int PentaCastAbilityId       = 22;
+        public const int PrismaticStrikeAbilityId = 23;
 
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {
@@ -40,6 +41,7 @@ namespace ACE.Server.WorldObjects
             { AgonyCharmAbilityId,       new AbilityEntry(p => p.HasAgonyCharm,      (p, v) => p.HasAgonyCharm      = v, "Agony Charm")      },
             { ExplosiveArrowCharmAbilityId, new AbilityEntry(p => p.HasExplosiveArrowCharm, (p, v) => p.HasExplosiveArrowCharm = v, "Explosive Arrow Charm") },
             { PentaCastAbilityId,       new AbilityEntry(p => p.HasPentaCast,       (p, v) => p.HasPentaCast       = v, "Penta Cast")       },
+            { PrismaticStrikeAbilityId, new AbilityEntry(p => p.HasPrismaticStrike, (p, v) => p.HasPrismaticStrike = v, "Prismatic Strike") },
         };
 
         /// <summary>Returns all registered ability IDs. Prefer this over hardcoded numeric ranges.</summary>
@@ -63,6 +65,8 @@ namespace ACE.Server.WorldObjects
             { 777700025, ExplosiveArrowCharmAbilityId }, { 777710005, ExplosiveArrowCharmAbilityId }, { 777720005, ExplosiveArrowCharmAbilityId },
             // Penta Cast Charm (Tier 1 only)
             { 777700024, PentaCastAbilityId },
+            // Prismatic Strike Charm
+            { 777700026, PrismaticStrikeAbilityId },
         };
 
         /// <summary>

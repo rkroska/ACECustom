@@ -3453,6 +3453,14 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyBool.HasExplosiveArrowCharm) ?? false;
             set { if (!value) RemoveProperty(PropertyBool.HasExplosiveArrowCharm); else SetProperty(PropertyBool.HasExplosiveArrowCharm, value); }
         }
+
+        /// <summary>True while the Prismatic Strike Charm is activated — melee attacks override to target's weakest element and dynamically match weapon rending.</summary>
+        public bool HasPrismaticStrike
+        {
+            get => GetProperty(PropertyBool.HasPrismaticStrike) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasPrismaticStrike); else SetProperty(PropertyBool.HasPrismaticStrike, value); }
+        }
+
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
         {

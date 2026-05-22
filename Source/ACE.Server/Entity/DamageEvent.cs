@@ -597,6 +597,41 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
+        /// Scans the target creature's elemental resistances (Fire, Cold, Acid, Lightning/Electric, Nether/Void)
+        /// and returns the element to which the target has the highest resistance modifier (weakest resistance).
+        /// </summary>
+        public static DamageType GetWeakestElement(Creature defender, Creature attacker, WorldObject weapon)
+        {
+            if (defender == null) return DamageType.Fire;
+
+            var elements = new[]
+            {
+                DamageType.Fire,
+                DamageType.Cold,
+                DamageType.Acid,
+                DamageType.Electric,
+                DamageType.Nether
+            };
+
+            DamageType weakest = DamageType.Fire;
+            double maxMod = -1.0;
+
+            foreach (var dt in elements)
+            {
+                var resistType = Creature.GetResistanceType(dt);
+                // Query target's resistance modifier with base 1.0f weaponResistanceMod (natural/buffed)
+                var mod = defender.GetResistanceMod(resistType, attacker, weapon, 1.0f);
+                if (mod > maxMod)
+                {
+                    maxMod = mod;
+                    weakest = dt;
+                }
+            }
+
+            return weakest;
+        }
+
+        /// <summary>
         /// Returns the chance for creature to avoid monster attack
         /// </summary>
         public float GetEvadeChance(Creature attacker, Creature defender)
@@ -635,6 +670,12 @@ namespace ACE.Server.Entity
             }
             else
                 DamageType = attacker.GetDamageType(false, CombatType.Melee);
+
+            if (attacker.HasPrismaticStrike)
+            {
+                var weakestElement = GetWeakestElement(Defender, attacker, Weapon);
+                DamageType = weakestElement;
+            }
 
             // TODO: combat maneuvers for player?
             BaseDamageMod = attacker.GetBaseDamageMod(DamageSource);
