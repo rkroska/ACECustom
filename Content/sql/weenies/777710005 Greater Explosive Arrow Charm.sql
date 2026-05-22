@@ -34,7 +34,7 @@ VALUES (777710005,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777710005,    1, 33554556)  /* Setup - Coffer/Chest */
      , (777710005,    3, 536870932) /* SoundTable */
-     , (777710005,    8, 100670726) /* Icon - 0x06001D06 (fiery/flame bolt spell icon) */
+     , (777710005,    8, 100672653)  /* Icon - 0x0600248D (AC Icon Viewer 248D) */
      , (777710005,   48, 100676435) /* IconUnderlay */
      , (777710005,   50, 100667551); /* IconOverlay - Tier 2 badge */
 
