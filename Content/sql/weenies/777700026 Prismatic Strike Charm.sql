@@ -36,7 +36,7 @@ VALUES (777700026,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777700026,    1, 33554556)  /* Setup - Coffer/Chest */
      , (777700026,    3, 536870932) /* SoundTable */
-     , (777700026,    8, 100665902)  /* Icon - 0x06000A2E (AC Icon Viewer 2606) */
+     , (777700026,    8, 100673030)  /* Icon - 0x06002606 (AC Icon Viewer 2606) */
      , (777700026,   48, 100676435) /* IconUnderlay */
      , (777700026,   50, 100667552); /* IconOverlay - Master tier gold badge */
 
