@@ -259,6 +259,57 @@ namespace ACE.Server.WorldObjects
             return true;
         }
 
+        /// <summary>
+        /// Vendors / stationary quest NPCs in dungeons — not players, monsters, or combat pets.
+        /// </summary>
+        private bool IsIndoorStationarySpawnCreature()
+        {
+            if (this is not Creature creature)
+                return false;
+
+            if (creature is Player || creature is CombatPet)
+                return false;
+
+            // IsMonster is true for any Attackable weenie; vendors/NPCs use IsNPC instead.
+            return creature.IsNPC;
+        }
+
+        /// <summary>
+        /// Physics visibility uses bare TrackObject; indoor vendors may need a fresh CreateObject after teleport/relog.
+        /// </summary>
+        internal bool TryRefreshIndoorStationarySpawnForViewer(Player viewer)
+        {
+            if (viewer == null || !IsIndoorStationarySpawnCreature())
+                return false;
+
+            RefreshIndoorStationarySpawnPhysics(viewer);
+            return true;
+        }
+
+        /// <summary>
+        /// Purge stale ObjMaint and re-send CreateObject for a viewer (teleport/relog).
+        /// Landblocks keep dungeon NPCs across relog; ObjMaint can mark them known before the client receives an updated create.
+        /// </summary>
+        internal void RefreshIndoorStationarySpawnPhysics(Player viewer)
+        {
+            if (PhysicsObj == null || !IsIndoorStationarySpawnCreature())
+                return;
+
+            if ((Location.Cell & 0xFFFF) < 0x100)
+                return;
+
+            if (viewer == null || viewer.PhysicsObj == null)
+                return;
+
+            if (viewer.ObjMaint?.KnownObjectsContainsValue(PhysicsObj) ?? false)
+            {
+                PhysicsObj.ObjMaint?.RemoveObject(viewer.PhysicsObj);
+                viewer.ObjMaint.RemoveObject(PhysicsObj);
+            }
+
+            viewer.AddTrackedObject(this);
+        }
+
         public void SyncLocation(int? Variation)
         {
             Location.LandblockId = new LandblockId(PhysicsObj.Position.ObjCellID, Variation);

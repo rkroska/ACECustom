@@ -22,6 +22,7 @@ using ACE.Entity.Models;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Factories;
 using ACE.Server.Managers;
+using ACE.Server.Physics;
 using ACE.Server.Physics.Common;
 using ACE.Server.Network.GameMessages;
 using ACE.Server.WorldObjects;
@@ -327,6 +328,12 @@ namespace ACE.Server.Entity
 
             actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
             {
+                if (PhysicsLandblock.HasDungeon)
+                {
+                    foreach (var envCell in PhysicsLandblock.get_envcells())
+                        envCell.EnsureVisibleCellsBuilt();
+                }
+
                 // for mansion linking
                 var houses = new List<House>();
                 foreach (var fo in factoryObjects)
@@ -366,8 +373,43 @@ namespace ACE.Server.Entity
                 // Spawn prestige boundary markers after normal objects
                 SpawnPrestigeBoundaryMarkers();
 
+                if (PhysicsLandblock.HasDungeon && (players.Count > 0 || pendingAdditions.Values.Any(v => v is Player)))
+                    RefreshIndoorStationaryCreaturesForViewers();
+
                 PhysicsLandblock.SortObjects();
             }, ActionPriority.Low));
+        }
+
+        /// <summary>
+        /// Dungeon NPCs persist on the landblock across player relog. Refresh physics and re-send CreateObject
+        /// so clients do not reuse a stale ObjMaint "already known" entry without grounded vendor state.
+        /// </summary>
+        private void RefreshIndoorStationaryCreaturesForViewers(Player viewer = null)
+        {
+            var viewers = new List<Player>();
+            if (viewer != null)
+                viewers.Add(viewer);
+            else
+            {
+                viewers.AddRange(players);
+                foreach (var kvp in pendingAdditions)
+                {
+                    if (kvp.Value is Player pendingPlayer && !viewers.Contains(pendingPlayer))
+                        viewers.Add(pendingPlayer);
+                }
+            }
+
+            if (viewers.Count == 0)
+                return;
+
+            foreach (var wo in worldObjects.Values.Union(pendingAdditions.Values))
+            {
+                if (wo is not WorldObject worldObject)
+                    continue;
+
+                foreach (var p in viewers)
+                    worldObject.RefreshIndoorStationarySpawnPhysics(p);
+            }
         }
 
         /// <summary>
@@ -1322,6 +1364,29 @@ namespace ACE.Server.Entity
 
             if (wo is Player player)
             {
+                if (PhysicsLandblock.HasDungeon)
+                {
+                    foreach (var envCell in PhysicsLandblock.get_envcells())
+                        envCell.EnsureVisibleCellsBuilt();
+
+                    if (CreateWorldObjectsCompleted)
+                    {
+                        if (DateTime.UtcNow - player.LastTeleportTime < PhysicsObj.TeleportCreateObjectDelay)
+                        {
+                            var actionChain = new ActionChain();
+                            actionChain.AddDelaySeconds(PhysicsObj.TeleportCreateObjectDelay.TotalSeconds);
+                            actionChain.AddAction(player, ActionType.Landblock_CreateWorldObjects, () =>
+                                RefreshIndoorStationaryCreaturesForViewers(player));
+                            actionChain.EnqueueChain();
+                        }
+                        else
+                        {
+                            actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+                                RefreshIndoorStationaryCreaturesForViewers(player)));
+                        }
+                    }
+                }
+
                 if (ServerConfig.prestige_interaction_diag_verbose.Value)
                 {
                     // Helpful when one player can't see another: shows whether physics/ObjMaint is even populated yet.

@@ -127,6 +127,19 @@ namespace ACE.Server.WorldObjects
                         _lastDuplicateKnownPlayerTrackMs[key] = now;
                         return true;
                     }
+
+                    if (worldObject.TryRefreshIndoorStationarySpawnForViewer(this))
+                    {
+                        var key = worldObject.Guid.Full;
+                        var now = System.Environment.TickCount64;
+                        if (_lastDuplicateKnownPlayerTrackMs.TryGetValue(key, out var last) &&
+                            now - last < DuplicateKnownPlayerTrackDebounceMs)
+                            return false;
+
+                        _lastDuplicateKnownPlayerTrackMs[key] = now;
+                        return true;
+                    }
+
                     return false;
                 }
 

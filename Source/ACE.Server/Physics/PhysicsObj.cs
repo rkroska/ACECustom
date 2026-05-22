@@ -1985,10 +1985,18 @@ namespace ACE.Server.Physics
         }
 
         /// <summary>
-        /// This is to mitigate possible decal crashes w/ CO messages being sent
-        /// for objects when the client landblock is very early in the loading state
+        /// Mitigate decal crashes when CreateObject is sent while the client landblock is still loading.
+        /// Landblock indoor-NPC refresh should use the same delay after a player teleport.
         /// </summary>
-        private static TimeSpan TeleportCreateObjectDelay = TimeSpan.FromSeconds(1);
+        internal static TimeSpan TeleportCreateObjectDelay = TimeSpan.FromSeconds(1);
+
+        private static void TrackOrRefreshVisibleWorldObject(Player player, WorldObject wo)
+        {
+            if (wo.TryRefreshIndoorStationarySpawnForViewer(player))
+                return;
+
+            player.TrackObject(wo);
+        }
 
         public void enqueue_objs(IEnumerable<PhysicsObj> newlyVisible)
         {
@@ -2004,8 +2012,8 @@ namespace ACE.Server.Physics
                     foreach (var obj in newlyVisible)
                     {
                         var wo = obj.WeenieObj.WorldObject;
-                        if (wo != null && (wo.Location.Variation ?? 0) == (player.Location.Variation ?? 0))
-                            player.TrackObject(wo, true);
+                        if (wo != null && PrestigeManager.SameVariationForVisibility(wo.Location.Variation, player.Location.Variation))
+                            TrackOrRefreshVisibleWorldObject(player, wo);
                     }
                 });
                 actionChain.EnqueueChain();
@@ -2019,7 +2027,7 @@ namespace ACE.Server.Physics
                     if (wo == null)
                         continue;
 
-                    if ((wo.Location.Variation ?? 0) != (player.Location.Variation ?? 0))
+                    if (!PrestigeManager.SameVariationForVisibility(wo.Location.Variation, player.Location.Variation))
                         continue;
 
                     if (wo.Teleporting)
@@ -2027,11 +2035,11 @@ namespace ACE.Server.Physics
                         // ensure post-teleport position is sent
                         var actionChain = new ActionChain();
                         actionChain.AddDelayForOneTick();
-                        actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo));
+                        actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => TrackOrRefreshVisibleWorldObject(player, wo));
                         actionChain.EnqueueChain();
                     }
                     else
-                        player.TrackObject(wo);
+                        TrackOrRefreshVisibleWorldObject(player, wo);
                 }
             }
         }
@@ -2045,14 +2053,14 @@ namespace ACE.Server.Physics
             if (wo == null)
                 return;
 
-            if ((wo.Location.Variation ?? 0) != (player.Location.Variation ?? 0))
+            if (!PrestigeManager.SameVariationForVisibility(wo.Location.Variation, player.Location.Variation))
                 return;
 
             if (DateTime.UtcNow - player.LastTeleportTime < TeleportCreateObjectDelay)
             {
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(TeleportCreateObjectDelay.TotalSeconds);
-                actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo, true));
+                actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => TrackOrRefreshVisibleWorldObject(player, wo));
                 actionChain.EnqueueChain();
             }
             else
@@ -2062,11 +2070,11 @@ namespace ACE.Server.Physics
                     // ensure post-teleport position is sent
                     var actionChain = new ActionChain();
                     actionChain.AddDelayForOneTick();
-                    actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo));
+                    actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => TrackOrRefreshVisibleWorldObject(player, wo));
                     actionChain.EnqueueChain();
                 }
                 else
-                    player.TrackObject(wo);
+                    TrackOrRefreshVisibleWorldObject(player, wo);
             }
         }
 
@@ -2137,7 +2145,7 @@ namespace ACE.Server.Physics
             entering_world = true;
 
             store_position(pos);
-            bool slide = ProjectileTarget == null || WeenieObj.WorldObject is SpellProjectile;
+            var slide = ProjectileTarget == null || WeenieObj.WorldObject is SpellProjectile;
             var result = enter_world(slide, pos);
 
             entering_world = false;
