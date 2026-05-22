@@ -212,18 +212,25 @@ namespace ACE.Server.WorldObjects
 
         public static double UpdateRate_Creature = 0.3f;
 
-        public bool IsLifespanSpent => Lifespan != null && GetRemainingLifespan() <= 0;
+        public bool IsLifespanSpent => (Lifespan != null || ItemExpirationTimestamp != null) && GetRemainingLifespan() <= 0;
 
         public int GetRemainingLifespan()
         {
+            if (ItemExpirationTimestamp.HasValue)
+            {
+                var absoluteExpiration = Time.GetDateTimeFromTimestamp(ItemExpirationTimestamp.Value);
+                var timeToExpiration = absoluteExpiration - DateTime.UtcNow;
+                return (int)timeToExpiration.TotalSeconds;
+            }
+
             if (Lifespan == null) return int.MaxValue;
 
             var creationTimestamp = CreationTimestamp ?? 0;
             var lifespan = Lifespan ?? 0;
             var expirationTimestamp = Time.GetDateTimeFromTimestamp(creationTimestamp).AddSeconds(lifespan);
-            var timeToExpiration = expirationTimestamp - DateTime.UtcNow;
+            var timeToExpirationFallback = expirationTimestamp - DateTime.UtcNow;
 
-            return (int)timeToExpiration.TotalSeconds;
+            return (int)timeToExpirationFallback.TotalSeconds;
         }
 
         private int slowUpdateObjectPhysicsHits;
