@@ -1182,7 +1182,7 @@ namespace ACE.Server.WorldObjects
             if (spellId == 0) return; // unsupported damage type — no matching ring spell
 
             var spell   = new Spell(spellId);
-            var flatDmg = arrowDamage * 0.5f;
+            var flatDmg = (float)(arrowDamage * ThreadSafeRandom.Next(0.50f, 1.00f));
 
             // 1 second delay between arrow hit and ring detonation.
             var actionChain = new ActionChain();
