@@ -4202,9 +4202,9 @@ namespace ACE.Server.Command.Handlers
             "Be careful with large numbers, especially with ethereal weenies.")]
         public static void HandleCreate(Session session, params string[] parameters)
         {
-            if (ParseCreateParameters(session, parameters, false, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out _, out _))
+            if (ParseCreateParameters(session, parameters, false, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out _, out _, out string pattern, out float? radius))
             {
-                TryCreateObject(session, weenie, numToSpawn, palette, shade);
+                TryCreateObject(session, weenie, numToSpawn, palette, shade, null, null, pattern, radius);
 
                 if (session.AccessLevel >= AccessLevel.Admin)
                     PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} created {numToSpawn}x {weenie.ClassName} ({weenie.WeenieClassId}) using /create.");
@@ -4216,16 +4216,17 @@ namespace ACE.Server.Command.Handlers
         /// </summary>
         [CommandHandler("createliveops", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Creates an object or objects with lifespans in the world for live events.",
-            "<wcid or classname> (amount) (lifespan or date/time) (palette) (shade)\n" +
+            "<wcid or classname> (amount) (lifespan or date/time) (palette) (shade) (pattern) (radius)\n" +
             "This will attempt to spawn the weenie you specify. If you include an amount to spawn, it will attempt to spawn that many of the object.\n" +
             "Stackable items will spawn in stacks of their max stack size. All spawns will be limited by the physics engine placement, which may prevent the number you specify from actually spawning.\n" +
             "Be careful with large numbers, especially with ethereal weenies.\n" +
-            "If you include a lifespan/date, this value can be in seconds (e.g. 3600), or a calendar date/time string (e.g. '5/22/2026 11:00 PM'). Defaults to 3600 seconds if not specified.")]
+            "If you include a lifespan/date, this value can be in seconds (e.g. 3600), or a calendar date/time string (e.g. '5/22/2026 11:00 PM'). Defaults to 3600 seconds if not specified.\n" +
+            "You can specify a shape pattern (e.g. circle, square, star, penis) and optional radius at the end of the command to spawn objects in geometric arrangements.")]
         public static void HandleCreateLiveOps(Session session, params string[] parameters)
         {
-            if (ParseCreateParameters(session, parameters, true, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out int? lifespan, out int? itemExpirationTimestamp))
+            if (ParseCreateParameters(session, parameters, true, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out int? lifespan, out int? itemExpirationTimestamp, out string pattern, out float? radius))
             {
-                TryCreateObject(session, weenie, numToSpawn, palette, shade, lifespan, itemExpirationTimestamp);
+                TryCreateObject(session, weenie, numToSpawn, palette, shade, lifespan, itemExpirationTimestamp, pattern, radius);
             }
         }
 
@@ -4334,14 +4335,50 @@ namespace ACE.Server.Command.Handlers
         /// Parses the command-line parameters for /create or /createliveops
         /// The only difference with /createliveops is that it includes a lifespan parameter in the middle
         /// </summary>
-        private static bool ParseCreateParameters(Session session, string[] parameters, bool hasLifespan, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out int? lifespan, out int? itemExpirationTimestamp)
+        private static bool ParseCreateParameters(Session session, string[] parameters, bool hasLifespan, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out int? lifespan, out int? itemExpirationTimestamp, out string pattern, out float? radius)
         {
-            weenie = GetWeenieForCreate(session, parameters[0]);
+            weenie = null;
             numToSpawn = 1;
             palette = null;
             shade = null;
             lifespan = null;
             itemExpirationTimestamp = null;
+            pattern = null;
+            radius = null;
+
+            if (parameters.Length == 0)
+                return false;
+
+            if (parameters.Length >= 3)
+            {
+                var lastToken = parameters[parameters.Length - 1];
+                var secondLastToken = parameters[parameters.Length - 2];
+
+                if (KnownPatterns.Contains(secondLastToken) && float.TryParse(lastToken, out float parsedRadius))
+                {
+                    pattern = secondLastToken;
+                    radius = parsedRadius;
+                    parameters = parameters.Take(parameters.Length - 2).ToArray();
+                }
+                else if (KnownPatterns.Contains(lastToken))
+                {
+                    pattern = lastToken;
+                    radius = 5f;
+                    parameters = parameters.Take(parameters.Length - 1).ToArray();
+                }
+            }
+            else if (parameters.Length >= 2)
+            {
+                var lastToken = parameters[parameters.Length - 1];
+                if (KnownPatterns.Contains(lastToken))
+                {
+                    pattern = lastToken;
+                    radius = 5f;
+                    parameters = parameters.Take(parameters.Length - 1).ToArray();
+                }
+            }
+
+            weenie = GetWeenieForCreate(session, parameters[0]);
 
             if (weenie == null)
                 return false;
@@ -4521,7 +4558,7 @@ namespace ACE.Server.Command.Handlers
         /// <summary>
         /// Attempts to spawn some # of weenies in the world for /create or /createliveops
         /// </summary>
-        private static void TryCreateObject(Session session, Weenie weenie, int numToSpawn, int? palette = null, float? shade = null, int? lifespan = null, int? itemExpirationTimestamp = null)
+        private static void TryCreateObject(Session session, Weenie weenie, int numToSpawn, int? palette = null, float? shade = null, int? lifespan = null, int? itemExpirationTimestamp = null, string pattern = null, float? radius = null)
         {
             var obj = CreateObjectForCommand(session, weenie);
 
@@ -4578,8 +4615,20 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            foreach (var w in objs)
+            List<Position> patternPositions = null;
+            if (!string.IsNullOrEmpty(pattern) && radius.HasValue && objs.Count > 0)
             {
+                patternPositions = PatternGenerator.GeneratePattern(session.Player.Location, objs.Count, pattern, radius.Value);
+            }
+
+            for (int i = 0; i < objs.Count; i++)
+            {
+                var w = objs[i];
+                if (patternPositions != null && i < patternPositions.Count)
+                {
+                    w.Location = patternPositions[i];
+                }
+
                 if (palette != null)
                     w.PaletteTemplate = palette;
 
@@ -4604,6 +4653,12 @@ namespace ACE.Server.Command.Handlers
         }
 
         public static Position LastSpawnPos;
+
+        private static readonly HashSet<string> KnownPatterns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "circle", "triangle", "rectangle", "square", "line", "star", "arrow", "cross",
+            "diamond", "crown", "heart", "boot", "sword", "spiral", "penis"
+        };
 
         /// <summary>
         /// Creates WorldObjects from Weenies for /create, /createliveops, and /ci
