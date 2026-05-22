@@ -4202,7 +4202,7 @@ namespace ACE.Server.Command.Handlers
             "Be careful with large numbers, especially with ethereal weenies.")]
         public static void HandleCreate(Session session, params string[] parameters)
         {
-            if (ParseCreateParameters(session, parameters, false, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out _))
+            if (ParseCreateParameters(session, parameters, false, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out _, out _))
             {
                 TryCreateObject(session, weenie, numToSpawn, palette, shade);
 
@@ -4216,16 +4216,16 @@ namespace ACE.Server.Command.Handlers
         /// </summary>
         [CommandHandler("createliveops", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Creates an object or objects with lifespans in the world for live events.",
-            "<wcid or classname> (amount) (lifespan) (palette) (shade)\n" +
+            "<wcid or classname> (amount) (lifespan or date/time) (palette) (shade)\n" +
             "This will attempt to spawn the weenie you specify. If you include an amount to spawn, it will attempt to spawn that many of the object.\n" +
             "Stackable items will spawn in stacks of their max stack size. All spawns will be limited by the physics engine placement, which may prevent the number you specify from actually spawning.\n" +
             "Be careful with large numbers, especially with ethereal weenies.\n" +
-            "If you include a lifespan, this value is in seconds, and defaults to 3600 (1 hour) if not specified.")]
+            "If you include a lifespan/date, this value can be in seconds (e.g. 3600), or a calendar date/time string (e.g. '5/22/2026 11:00 PM'). Defaults to 3600 seconds if not specified.")]
         public static void HandleCreateLiveOps(Session session, params string[] parameters)
         {
-            if (ParseCreateParameters(session, parameters, true, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out int? lifespan))
+            if (ParseCreateParameters(session, parameters, true, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out int? lifespan, out int? itemExpirationTimestamp))
             {
-                TryCreateObject(session, weenie, numToSpawn, palette, shade, lifespan);
+                TryCreateObject(session, weenie, numToSpawn, palette, shade, lifespan, itemExpirationTimestamp);
             }
         }
 
@@ -4283,13 +4283,14 @@ namespace ACE.Server.Command.Handlers
         /// Parses the command-line parameters for /create or /createliveops
         /// The only difference with /createliveops is that it includes a lifespan parameter in the middle
         /// </summary>
-        private static bool ParseCreateParameters(Session session, string[] parameters, bool hasLifespan, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out int? lifespan)
+        private static bool ParseCreateParameters(Session session, string[] parameters, bool hasLifespan, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out int? lifespan, out int? itemExpirationTimestamp)
         {
             weenie = GetWeenieForCreate(session, parameters[0]);
             numToSpawn = 1;
             palette = null;
             shade = null;
             lifespan = null;
+            itemExpirationTimestamp = null;
 
             if (weenie == null)
                 return false;
@@ -4309,9 +4310,20 @@ namespace ACE.Server.Command.Handlers
             {
                 if (parameters.Length > 2)
                 {
+                    // Attempt to parse all subsequent parameters together as a calendar date/time string
+                    var dateString = string.Join(" ", parameters.Skip(2));
+                    if (DateTime.TryParse(dateString, CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime) ||
+                        DateTime.TryParse(dateString, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out parsedDateTime))
+                    {
+                        var utcDateTime = parsedDateTime.ToUniversalTime();
+                        itemExpirationTimestamp = (int)new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
+                        return true;
+                    }
+
+                    // Otherwise, treat as relative lifespan seconds
                     if (!int.TryParse(parameters[2], out int _lifespan))
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Lifespan must be a number between {int.MinValue} - {int.MaxValue}.", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Lifespan must be a number of seconds or a valid date/time string (e.g. '5/22/2026 11:00 PM').", ChatMessageType.Broadcast));
                         return false;
                     }
                     else
@@ -4434,7 +4446,7 @@ namespace ACE.Server.Command.Handlers
         /// <summary>
         /// Attempts to spawn some # of weenies in the world for /create or /createliveops
         /// </summary>
-        private static void TryCreateObject(Session session, Weenie weenie, int numToSpawn, int? palette = null, float? shade = null, int? lifespan = null)
+        private static void TryCreateObject(Session session, Weenie weenie, int numToSpawn, int? palette = null, float? shade = null, int? lifespan = null, int? itemExpirationTimestamp = null)
         {
             var obj = CreateObjectForCommand(session, weenie);
 
@@ -4499,7 +4511,9 @@ namespace ACE.Server.Command.Handlers
                 if (shade != null)
                     w.Shade = shade;
 
-                if (lifespan != null)
+                if (itemExpirationTimestamp != null)
+                    w.ItemExpirationTimestamp = itemExpirationTimestamp;
+                else if (lifespan != null)
                     w.Lifespan = lifespan;
 
                 if (!w.EnterWorld()) // If the last object failed to add to the landblock, don't keep trying
@@ -7810,52 +7824,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("setexpire", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Sets an absolute expiration date/time on the selected item.", "dateTimeString|clear")]
-        public static void HandleSetExpire(Session session, params string[] parameters)
-        {
-            var target = CommandHandlerHelper.GetLastAppraisedObject(session);
-            if (target == null)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat("You must first appraise (select) an item.", ChatMessageType.System));
-                return;
-            }
 
-            var input = string.Join(" ", parameters);
-
-            if (input.Equals("none", StringComparison.OrdinalIgnoreCase) ||
-                input.Equals("clear", StringComparison.OrdinalIgnoreCase) ||
-                input.Equals("null", StringComparison.OrdinalIgnoreCase))
-            {
-                session.Player.UpdateProperty(target, PropertyInt.ItemExpirationTimestamp, null, true);
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Cleared absolute expiration date from {target.Name} ({target.Guid}).", ChatMessageType.System));
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} cleared expiration timestamp from {target.Name} ({target.Guid}).");
-                return;
-            }
-
-            if (!DateTime.TryParse(input, CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime))
-            {
-                if (!DateTime.TryParse(input, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out parsedDateTime))
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid date/time format: '{input}'. Examples: '5/22/2026 11:00 PM', '2026-05-22 23:00'.", ChatMessageType.System));
-                    return;
-                }
-            }
-
-            var utcDateTime = parsedDateTime.ToUniversalTime();
-            var unixTimestamp = (int)new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
-            var currentUnixTime = (int)new DateTimeOffset(DateTime.UtcNow).ToUnixTimeSeconds();
-
-            session.Player.UpdateProperty(target, PropertyInt.ItemExpirationTimestamp, unixTimestamp, true);
-
-            var localDisplayString = parsedDateTime.ToString(CultureInfo.CurrentCulture);
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Set absolute expiration date on {target.Name} ({target.Guid}) to {localDisplayString} (UTC: {utcDateTime:yyyy-MM-dd HH:mm:ss}, Epoch: {unixTimestamp}).", ChatMessageType.System));
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} set absolute expiration on {target.Name} ({target.Guid}) to {localDisplayString} (UTC: {utcDateTime:yyyy-MM-dd HH:mm:ss}, Epoch: {unixTimestamp}).");
-
-            if (unixTimestamp <= currentUnixTime)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat("Warning: This expiration date is in the past! The item will crumble on its next tick.", ChatMessageType.System));
-            }
-        }
 
     }
 }
