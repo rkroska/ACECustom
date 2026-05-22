@@ -707,6 +707,89 @@ namespace ACE.Server.Physics
             return SetPositionError.OK;
         }
 
+        private bool IsIndoorStationarySpawnPosition(Position pos)
+        {
+            if ((pos.ObjCellID & 0xFFFF) < 0x100)
+                return false;
+
+            if (WeenieObj?.WorldObject is not Creature creature)
+                return false;
+
+            if (creature is Player || creature is CombatPet)
+                return false;
+
+            return creature.IsNPC;
+        }
+
+        private bool ShouldForceIndoorSpawnPlacement(ObjCell newCell, Position pos)
+        {
+            if (!entering_world || newCell == null)
+                return false;
+
+            return IsIndoorStationarySpawnPosition(pos);
+        }
+
+        /// <summary>
+        /// Stay in the spawn env cell; step down only within that cell to find the platform floor.
+        /// Prevents unrestricted slide from dropping into a lower overlapping cell (e.g. under buildings).
+        /// </summary>
+        private SetPositionError PlaceIndoorStationarySpawn(ObjCell newCell, Position pos, Transition transition, SetPosition setPos)
+        {
+            transition.InitPath(newCell, null, pos);
+            transition.RestrictPlacementToCheckCell = true;
+            transition.PlacementMinOriginZ = pos.Frame.Origin.Z - 2.0f;
+            transition.SpherePath.PlacementAllowsSliding = false;
+
+            var placed = transition.FindValidPosition();
+            transition.RestrictPlacementToCheckCell = false;
+            transition.PlacementMinOriginZ = null;
+
+            if (!placed || transition.SpherePath.CurCell == null || transition.SpherePath.CurPos.ObjCellID != newCell.ID)
+                return ForceIntoCell(newCell, pos);
+
+            if (entering_world && transition.SpherePath.CurPos.Landblock != pos.Landblock)
+                return SetPositionError.NoValidPosition;
+
+            if (!SetPositionInternal(transition))
+                return SetPositionError.GeneralFailure;
+
+            return SetPositionError.OK;
+        }
+
+        /// <summary>
+        /// Re-snap persisted indoor vendors after relog (landblock keeps NPCs; unrestricted slide may have left bad Z).
+        /// </summary>
+        internal bool TryReconcileIndoorStationarySpawnPlacement(Position nominalPos)
+        {
+            if (entering_world)
+                return false;
+
+            if (!IsIndoorStationarySpawnPosition(nominalPos))
+                return false;
+
+            var newCell = CurCell ?? LScape.get_landcell(nominalPos.ObjCellID, nominalPos.Variation);
+            if (newCell == null)
+                return false;
+
+            var transition = Transition.MakeTransition();
+            if (transition == null)
+                return false;
+
+            transition.InitObject(this, ObjectInfoState.Default);
+
+            if (PartArray != null && PartArray.GetNumSphere() != 0)
+                transition.InitSphere(PartArray.GetNumSphere(), PartArray.GetSphere(), Scale);
+            else
+                transition.InitSphere(1, PhysicsGlobals.DummySphere, 1.0f);
+
+            transition.VariationId = nominalPos.Variation;
+            var setPos = new SetPosition { Pos = nominalPos, Flags = SetPositionFlags.Placement };
+
+            var result = PlaceIndoorStationarySpawn(newCell, nominalPos, transition, setPos) == SetPositionError.OK;
+            transition.CleanupTransition();
+            return result;
+        }
+
         public double GetAutonomyBlipDistance()
         {
             if ((Position.ObjCellID & 0xFFFF) < 0x100) return 100.0f;
@@ -1233,6 +1316,9 @@ namespace ACE.Server.Physics
                 set_active(false);
                 return SetPositionError.OK;
             }
+
+            if (WeenieObj != null && ShouldForceIndoorSpawnPlacement(newCell, pos))
+                return PlaceIndoorStationarySpawn(newCell, pos, transition, setPos);
 
             if (WeenieObj != null && (WeenieObj.IsStorage || WeenieObj.IsCorpse))
                 return ForceIntoCell(newCell, pos);

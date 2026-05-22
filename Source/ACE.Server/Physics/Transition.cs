@@ -28,6 +28,13 @@ namespace ACE.Server.Physics.Animation
         public CollisionInfo CollisionInfo;
         public CellArray CellArray;
         public int? VariationId;
+        /// <summary>
+        /// When set, placement/step-down only resolves against <see cref="SpherePath.CheckCell"/>,
+        /// avoiding transitions into lower overlapping env cells (dungeon vendor spawns).
+        /// </summary>
+        public bool RestrictPlacementToCheckCell;
+        /// <summary>When <see cref="RestrictPlacementToCheckCell"/> is set, step-down will not lower origin below this Z.</summary>
+        public float? PlacementMinOriginZ;
         //public ObjCell NewCellPtr;
 
         // Reusable objects to reduce allocations
@@ -161,6 +168,9 @@ namespace ACE.Server.Physics.Animation
 
         public TransitionState CheckOtherCells(ObjCell currCell)
         {
+            if (RestrictPlacementToCheckCell)
+                return TransitionState.OK;
+
             var result = TransitionState.OK;
 
             //SpherePath.CellArrayValid = true;
@@ -755,6 +765,9 @@ namespace ACE.Server.Physics.Animation
 
             var transitionState = TransitionalInsert(3); //was 5
             SpherePath.StepDown = false;
+
+            if (RestrictPlacementToCheckCell && PlacementMinOriginZ.HasValue && SpherePath.CheckPos.Frame.Origin.Z < PlacementMinOriginZ.Value)
+                return false;
 
             if (transitionState == TransitionState.OK && CollisionInfo.ContactPlaneValid && CollisionInfo.ContactPlane.Normal.Z >= zVal &&
                 ((ObjectInfo.State & ObjectInfoState.EdgeSlide) == 0 || SpherePath.StepUp || CheckWalkable(zVal)))
