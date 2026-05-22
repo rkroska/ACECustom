@@ -4312,6 +4312,30 @@ namespace ACE.Server.Command.Handlers
                 {
                     // Attempt to parse all subsequent parameters together as a calendar date/time string
                     var dateString = string.Join(" ", parameters.Skip(2));
+
+                    // Pre-process common timezone abbreviations to their offset equivalents for standard parsing
+                    var tzMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        { "EST", "-05:00" },
+                        { "EDT", "-04:00" },
+                        { "CST", "-06:00" },
+                        { "CDT", "-05:00" },
+                        { "MST", "-07:00" },
+                        { "MDT", "-06:00" },
+                        { "PST", "-08:00" },
+                        { "PDT", "-07:00" },
+                        { "UTC", "+00:00" },
+                        { "GMT", "+00:00" },
+                        { "BST", "+01:00" },
+                        { "CET", "+01:00" },
+                        { "CEST", "+02:00" }
+                    };
+
+                    foreach (var kvp in tzMappings)
+                    {
+                        dateString = System.Text.RegularExpressions.Regex.Replace(dateString, $@"\b{kvp.Key}\b", kvp.Value, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    }
+
                     if (DateTime.TryParse(dateString, CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime) ||
                         DateTime.TryParse(dateString, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out parsedDateTime))
                     {
