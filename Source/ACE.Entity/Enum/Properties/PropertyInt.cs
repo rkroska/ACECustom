@@ -762,7 +762,7 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>
         /// The absolute Unix timestamp (in seconds since epoch) when the item expires.
         /// </summary>
-        ItemExpirationTimestamp                 = 9060,
+        ItemExpirationTimestamp                 = 50060,
 
         // -- ILT Ability Charm System (50000-50099) ---------------------------------
         /// <summary>On an IsAbilityCharm item: integer key into CharmAbilityRegistry (1-50).</summary>
