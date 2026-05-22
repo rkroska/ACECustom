@@ -34,12 +34,12 @@ VALUES (777700026,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777700026,    1, 33554556)  /* Setup - Coffer/Chest */
      , (777700026,    3, 536870932) /* SoundTable */
-     , (777700026,    8, 100672653)  /* Icon - 0x0600248D (AC Icon Viewer 248D) */
+     , (777700026,    8, 100665902)  /* Icon - 0x06000A2E (AC Icon Viewer 2606) */
      , (777700026,   48, 100676435) /* IconUnderlay */
      , (777700026,   50, 100667552); /* IconOverlay - Master tier gold badge */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777700026,  1, 'Prismatic Strike Charm')
      , (777700026, 14, '
-Double-click to activate. While active, your melee attacks scan the target creature''s resistances, overriding the damage type to their weakest element (Fire, Cold, Acid, Electric, or Nether), and dynamically matching any weapon rending effect to the matched element.
+Double-click to activate. While active, your melee attacks scan the target creature''s resistances, overriding the damage type to their weakest element or physical type (Slash, Pierce, Bludgeon, Fire, Cold, Acid, Electric, or Nether), and dynamically matching any weapon rending effect to the matched type.
 ');

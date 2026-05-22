@@ -606,6 +606,9 @@ namespace ACE.Server.Entity
 
             var elements = new[]
             {
+                DamageType.Slash,
+                DamageType.Pierce,
+                DamageType.Bludgeon,
                 DamageType.Fire,
                 DamageType.Cold,
                 DamageType.Acid,
