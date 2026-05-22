@@ -302,6 +302,9 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>ILT Player Pref: Use classic physics-collision ring spell behavior (can multi-hit through positioning). Default OFF = new guaranteed AOE system.</summary>
         ClassicRingAoe   = 50034,
 
+        /// <summary>Player has Penta Cast active — Streak, Arc, and Bolt spells hit up to 5 distinct targets in alternating proximity order.</summary>
+        HasPentaCast     = 50035,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }

@@ -1676,11 +1676,127 @@ namespace ACE.Server.WorldObjects
 
             var spellType = SpellProjectile.GetProjectileSpellType(spell.Id);
 
-            var origins = CalculateProjectileOrigins(spell, spellType, target);
+            // Penta Cast Charm Interception
+            if (this is Player player && player.HasPentaCast && target != null &&
+                (spellType == ProjectileSpellType.Streak || spellType == ProjectileSpellType.Arc || spellType == ProjectileSpellType.Bolt))
+            {
+                var spellProjectiles = new List<SpellProjectile>();
 
-            var velocity = CalculateProjectileVelocity(spell, target, spellType, origins[0]);
+                // 1. Gather all creatures in primary target's landblock + adjacent landblocks
+                var allObjects = new List<WorldObject>();
+                var landblock = target.CurrentLandblock;
+                if (landblock != null)
+                {
+                    allObjects.AddRange(landblock.GetWorldObjectsForPhysicsHandling());
+                    foreach (var adj in landblock.Adjacents)
+                    {
+                        if (adj != null)
+                            allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
+                    }
+                }
 
-            return LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, origins, velocity, lifeProjectileDamage);
+                // 2. Filter candidates into Left vs Right lists relative to caster-to-target heading in global coordinates
+                var leftCandidates = new List<Creature>();
+                var rightCandidates = new List<Creature>();
+
+                var playerGlobal = player.Location.ToGlobal(false);
+                var targetGlobal = target.Location.ToGlobal(false);
+
+                var lookX = targetGlobal.X - playerGlobal.X;
+                var lookY = targetGlobal.Y - playerGlobal.Y;
+
+                if (lookX != 0 || lookY != 0)
+                {
+                    // Deduplicate by Guid
+                    var uniqueObjects = allObjects.GroupBy(o => o.Guid).Select(g => g.First());
+
+                    foreach (var obj in uniqueObjects)
+                    {
+                        if (obj is not Creature creature || creature == player || creature == target) continue;
+                        if (!creature.IsAlive) continue;
+                        if (creature.Location == null) continue;
+
+                        // Target proximity check (max 20 meters from original target using global coordinates)
+                        var creatureGlobal = creature.Location.ToGlobal(false);
+                        var dist = Vector3.Distance(targetGlobal, creatureGlobal);
+                        if (dist > 20.0f) continue;
+
+                        if (!player.CanDamage(creature)) continue;
+
+                        // PK status check
+                        var pkError = player.CheckPKStatusVsTarget(creature, spell);
+                        if (pkError != null) continue;
+
+                        // Relative position vector from original target to candidate in global coordinates
+                        var relX = creatureGlobal.X - targetGlobal.X;
+                        var relY = creatureGlobal.Y - targetGlobal.Y;
+
+                        // Perpendicular right vector of look line: (lookY, -lookX)
+                        // Dot product determines side relative to look line
+                        var dot = relX * lookY - relY * lookX;
+
+                        if (dot >= 0)
+                            rightCandidates.Add(creature);
+                        else
+                            leftCandidates.Add(creature);
+                    }
+
+                    // Sort both lists by distance to original target ascending
+                    leftCandidates.Sort((a, b) => Vector3.Distance(targetGlobal, a.Location.ToGlobal(false))
+                        .CompareTo(Vector3.Distance(targetGlobal, b.Location.ToGlobal(false))));
+                    rightCandidates.Sort((a, b) => Vector3.Distance(targetGlobal, a.Location.ToGlobal(false))
+                        .CompareTo(Vector3.Distance(targetGlobal, b.Location.ToGlobal(false))));
+                }
+
+                // 3. Select up to 4 extra targets in alternating order
+                var extraTargets = new List<Creature>();
+                int leftIndex = 0;
+                int rightIndex = 0;
+
+                for (int i = 0; i < 4; i++)
+                {
+                    if (i % 2 == 0) // Left first
+                    {
+                        if (leftIndex < leftCandidates.Count)
+                            extraTargets.Add(leftCandidates[leftIndex++]);
+                        else if (rightIndex < rightCandidates.Count)
+                            extraTargets.Add(rightCandidates[rightIndex++]);
+                    }
+                    else // Right next
+                    {
+                        if (rightIndex < rightCandidates.Count)
+                            extraTargets.Add(rightCandidates[rightIndex++]);
+                        else if (leftIndex < leftCandidates.Count)
+                            extraTargets.Add(leftCandidates[leftIndex++]);
+                    }
+                }
+
+                // 4. Launch spells at all selected targets
+                // Primary target first
+                var origins = CalculateProjectileOrigins(spell, spellType, target);
+                var velocity = CalculateProjectileVelocity(spell, target, spellType, origins[0]);
+                var primaryProjectiles = LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, origins, velocity, lifeProjectileDamage);
+                if (primaryProjectiles != null)
+                    spellProjectiles.AddRange(primaryProjectiles);
+
+                // Extra targets next
+                foreach (var extraTarget in extraTargets)
+                {
+                    var extraOrigins = CalculateProjectileOrigins(spell, spellType, extraTarget);
+                    var extraVelocity = CalculateProjectileVelocity(spell, extraTarget, spellType, extraOrigins[0]);
+                    var extraProjectiles = LaunchSpellProjectiles(spell, extraTarget, spellType, weapon, isWeaponSpell, fromProc, extraOrigins, extraVelocity, lifeProjectileDamage);
+                    if (extraProjectiles != null)
+                        spellProjectiles.AddRange(extraProjectiles);
+                }
+
+                return spellProjectiles;
+            }
+
+            var defaultOrigins = CalculateProjectileOrigins(spell, spellType, target);
+
+            var defaultVelocity = CalculateProjectileVelocity(spell, target, spellType, defaultOrigins[0]);
+
+            return LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, defaultOrigins, defaultVelocity, lifeProjectileDamage);
         }
 
         public static readonly float ProjHeight = 2.0f / 3.0f;

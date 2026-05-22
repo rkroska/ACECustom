@@ -3440,6 +3440,13 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasAgonyCharm); else SetProperty(PropertyBool.HasAgonyCharm, value); }
         }
 
+        /// <summary>True while the Penta Cast Charm is activated — Streak, Arc, and Bolt spells target up to 5 distinct enemies.</summary>
+        public bool HasPentaCast
+        {
+            get => GetProperty(PropertyBool.HasPentaCast) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasPentaCast); else SetProperty(PropertyBool.HasPentaCast, value); }
+        }
+
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
         {

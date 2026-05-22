@@ -489,6 +489,13 @@ namespace ACE.Server.WorldObjects
                 };
             }
 
+            if (abilityId == CharmAbilityRegistry.PentaCastAbilityId)
+            {
+                return activating
+                    ? "Penta Cast Charm activated. Streak, Arc, and Bolt spells will target up to 5 distinct enemies simultaneously."
+                    : "Penta Cast Charm deactivated. Spells will cast normally.";
+            }
+
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
             return activating ? $"{name} Level {level} activated." : $"{name} deactivated.";
         }
