@@ -1184,27 +1184,32 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("giveelementaluas", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Spawns one Unarmed Attack katar for each element, each configured with its respective Rending imbued effect.")]
         public static void HandleGiveElementalUAs(Session session, params string[] parameters)
         {
-            var elementalUAs = new List<(DamageType damageType, ImbuedEffectType imbuedEffect, string name)>()
+            var elementalUAs = new List<(uint wcid, DamageType damageType, ImbuedEffectType imbuedEffect, string name)>()
             {
-                (DamageType.Slash, ImbuedEffectType.SlashRending, "Slashing Rending Katar"),
-                (DamageType.Pierce, ImbuedEffectType.PierceRending, "Piercing Rending Katar"),
-                (DamageType.Bludgeon, ImbuedEffectType.BludgeonRending, "Bludgeoning Rending Katar"),
-                (DamageType.Cold, ImbuedEffectType.ColdRending, "Cold Rending Katar"),
-                (DamageType.Fire, ImbuedEffectType.FireRending, "Fire Rending Katar"),
-                (DamageType.Acid, ImbuedEffectType.AcidRending, "Acid Rending Katar"),
-                (DamageType.Electric, ImbuedEffectType.ElectricRending, "Electric Rending Katar"),
-                (DamageType.Nether, ImbuedEffectType.NetherRending, "Nether Rending Katar")
+                (326, DamageType.Slash, ImbuedEffectType.SlashRending, "Slashing Rending Katar"),
+                (326, DamageType.Pierce, ImbuedEffectType.PierceRending, "Piercing Rending Katar"),
+                (326, DamageType.Bludgeon, ImbuedEffectType.BludgeonRending, "Bludgeoning Rending Katar"),
+                (3821, DamageType.Cold, ImbuedEffectType.ColdRending, "Cold Rending Katar"),
+                (3820, DamageType.Fire, ImbuedEffectType.FireRending, "Fire Rending Katar"),
+                (3818, DamageType.Acid, ImbuedEffectType.AcidRending, "Acid Rending Katar"),
+                (3819, DamageType.Electric, ImbuedEffectType.ElectricRending, "Electric Rending Katar"),
+                (326, DamageType.Nether, ImbuedEffectType.NetherRending, "Nether Rending Katar")
             };
 
             var spawnedUAs = new List<WorldObject>();
 
             foreach (var uaInfo in elementalUAs)
             {
-                // WCID 1621 is the standard Unarmed Combat Katar
-                var katar = WorldObjectFactory.CreateNewWorldObject(1621);
+                var katar = WorldObjectFactory.CreateNewWorldObject(uaInfo.wcid);
                 if (katar == null)
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to create Katar template (WCID 1621) for {uaInfo.name}", ChatMessageType.Broadcast));
+                    // Fallback to baseline WCID 326 (Katar) if the specific template is not found in the DB
+                    katar = WorldObjectFactory.CreateNewWorldObject(326);
+                }
+
+                if (katar == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to create Katar template for WCID {uaInfo.wcid} ({uaInfo.name})", ChatMessageType.Broadcast));
                     continue;
                 }
 
