@@ -4229,6 +4229,57 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("timeconvert", AccessLevel.Developer, CommandHandlerFlag.None, 1,
+            "Converts a date/time string into a Unix Epoch timestamp.",
+            "<date string> (e.g. 5/22/2026 11:59 PM EST)")]
+        public static void HandleTimeConvert(Session session, params string[] parameters)
+        {
+            var dateString = string.Join(" ", parameters);
+
+            // Pre-process common timezone abbreviations to their offset equivalents
+            var tzMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "EST", "-05:00" },
+                { "EDT", "-04:00" },
+                { "CST", "-06:00" },
+                { "CDT", "-05:00" },
+                { "MST", "-07:00" },
+                { "MDT", "-06:00" },
+                { "PST", "-08:00" },
+                { "PDT", "-07:00" },
+                { "UTC", "+00:00" },
+                { "GMT", "+00:00" },
+                { "BST", "+01:00" },
+                { "CET", "+01:00" },
+                { "CEST", "+02:00" }
+            };
+
+            foreach (var kvp in tzMappings)
+            {
+                dateString = System.Text.RegularExpressions.Regex.Replace(dateString, $@"\b{kvp.Key}\b", kvp.Value, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            }
+
+            if (DateTime.TryParse(dateString, CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime) ||
+                DateTime.TryParse(dateString, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out parsedDateTime))
+            {
+                var utcDateTime = parsedDateTime.ToUniversalTime();
+                var epoch = (int)new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"Converted Date:\n" +
+                    $"  Local: {parsedDateTime:M/d/yyyy h:mm:ss tt}\n" +
+                    $"  UTC: {utcDateTime:yyyy-MM-dd HH:mm:ss}\n" +
+                    $"  Unix Epoch: {epoch}  <-- Copy this for your SQL script",
+                    ChatMessageType.Broadcast));
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    "Failed to parse date/time. Example format: '/timeconvert 5/22/2026 11:59 PM EST'",
+                    ChatMessageType.Broadcast));
+            }
+        }
+
         [CommandHandler("clearquest", AccessLevel.Admin, CommandHandlerFlag.None, 1)]
         public static void HandleQuestClear(Session session, params string[] parameters)
         {
