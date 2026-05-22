@@ -282,24 +282,24 @@ namespace ACE.Server.WorldObjects
             if (viewer == null || !IsIndoorStationarySpawnCreature())
                 return false;
 
-            RefreshIndoorStationarySpawnPhysics(viewer);
-            return true;
+            return RefreshIndoorStationarySpawnPhysics(viewer);
         }
 
         /// <summary>
         /// Purge stale ObjMaint and re-send CreateObject for a viewer (teleport/relog).
         /// Landblocks keep dungeon NPCs across relog; ObjMaint can mark them known before the client receives an updated create.
         /// </summary>
-        internal void RefreshIndoorStationarySpawnPhysics(Player viewer)
+        /// <returns>true if tracking was handled here; false so callers can fall back to TrackObject.</returns>
+        internal bool RefreshIndoorStationarySpawnPhysics(Player viewer)
         {
             if (PhysicsObj == null || !IsIndoorStationarySpawnCreature())
-                return;
+                return false;
 
             if ((Location.Cell & 0xFFFF) < 0x100)
-                return;
+                return false;
 
             if (viewer == null || viewer.PhysicsObj == null)
-                return;
+                return false;
 
             if (viewer.ObjMaint?.KnownObjectsContainsValue(PhysicsObj) ?? false)
             {
@@ -307,7 +307,7 @@ namespace ACE.Server.WorldObjects
                 viewer.ObjMaint.RemoveObject(PhysicsObj);
             }
 
-            viewer.AddTrackedObject(this);
+            return viewer.AddTrackedObject(this);
         }
 
         public void SyncLocation(int? Variation)

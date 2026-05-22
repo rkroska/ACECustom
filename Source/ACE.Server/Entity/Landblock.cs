@@ -384,6 +384,17 @@ namespace ACE.Server.Entity
         /// Dungeon NPCs persist on the landblock across player relog. Refresh physics and re-send CreateObject
         /// so clients do not reuse a stale ObjMaint "already known" entry without grounded vendor state.
         /// </summary>
+        /// <summary>
+        /// Queued after player add/teleport; skip if the player left this landblock before the callback runs.
+        /// </summary>
+        private void TryRefreshIndoorStationaryCreaturesForPlayer(Player player)
+        {
+            if (player?.CurrentLandblock != this)
+                return;
+
+            RefreshIndoorStationaryCreaturesForViewers(player);
+        }
+
         private void RefreshIndoorStationaryCreaturesForViewers(Player viewer = null)
         {
             var viewers = new List<Player>();
@@ -1376,13 +1387,13 @@ namespace ACE.Server.Entity
                             var actionChain = new ActionChain();
                             actionChain.AddDelaySeconds(PhysicsObj.TeleportCreateObjectDelay.TotalSeconds);
                             actionChain.AddAction(player, ActionType.Landblock_CreateWorldObjects, () =>
-                                RefreshIndoorStationaryCreaturesForViewers(player));
+                                TryRefreshIndoorStationaryCreaturesForPlayer(player));
                             actionChain.EnqueueChain();
                         }
                         else
                         {
                             actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
-                                RefreshIndoorStationaryCreaturesForViewers(player)));
+                                TryRefreshIndoorStationaryCreaturesForPlayer(player)));
                         }
                     }
                 }
