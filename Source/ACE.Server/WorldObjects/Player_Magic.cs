@@ -1182,7 +1182,28 @@ namespace ACE.Server.WorldObjects
             if (spellId == 0) return; // unsupported damage type — no matching ring spell
 
             var spell   = new Spell(spellId);
-            var flatDmg = (float)(arrowDamage * ThreadSafeRandom.Next(0.50f, 1.00f));
+
+            ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ExplosiveArrowCharmAbilityId, out var level);
+            if (level < 1) level = 1;
+
+            float minMult, maxMult;
+            if (level == 2)
+            {
+                minMult = 0.65f;
+                maxMult = 0.85f;
+            }
+            else if (level == 3)
+            {
+                minMult = 0.90f;
+                maxMult = 1.10f;
+            }
+            else
+            {
+                minMult = 0.40f;
+                maxMult = 0.60f;
+            }
+
+            var flatDmg = (float)(arrowDamage * ThreadSafeRandom.Next(minMult, maxMult));
 
             // 1 second delay between arrow hit and ring detonation.
             var actionChain = new ActionChain();

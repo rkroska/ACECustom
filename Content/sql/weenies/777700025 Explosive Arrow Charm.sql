@@ -43,5 +43,5 @@ VALUES (777700025,    1, 33554556)  /* Setup - Coffer/Chest */
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777700025,  1, 'Explosive Arrow Charm')
      , (777700025, 14, '
-Double-click to activate. While active, Bow, Crossbow, and Thrown weapon projectiles explode on impact, firing a damage-type-matched ring spell at the target''s location after a 1s delay.
+Double-click to activate. While active, Bow, Crossbow, and Thrown weapon projectiles explode on impact, firing a damage-type-matched ring spell at the target''s location after a 1s delay. The explosion deals 50% of the arrow''s damage (40% - 60% random spread).
 ');

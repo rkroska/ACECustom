@@ -36,12 +36,12 @@ VALUES (777700026,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777700026,    1, 33554556)  /* Setup - Coffer/Chest */
      , (777700026,    3, 536870932) /* SoundTable */
-     , (777700026,    8, 100673030)  /* Icon - 0x06002606 (AC Icon Viewer 2606) */
+     , (777700026,    8, 100692234)  /* Icon - 0x0600710A (AC Icon Viewer 710A) */
      , (777700026,   48, 100676435) /* IconUnderlay */
-     , (777700026,   50, 100667552); /* IconOverlay - Master tier gold badge */
+     , (777700026,   50, 100667550); /* IconOverlay - Tier 1 badge */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777700026,  1, 'Prismatic Strike Charm')
      , (777700026, 14, '
-Double-click to activate. While active, your melee attacks scan the target creature''s resistances, overriding the damage type to their weakest element or physical type (Slash, Pierce, Bludgeon, Fire, Cold, Acid, Electric, or Nether), and dynamically matching any weapon rending effect to the matched type.
+Double-click to activate. While active, your melee attacks dynamically align with the currents of magic, striking with the exact element or physical force your target is most vulnerable to. Weapon rending effects are dynamically attuned to match this weakness.
 ');

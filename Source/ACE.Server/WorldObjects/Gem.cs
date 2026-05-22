@@ -499,7 +499,7 @@ namespace ACE.Server.WorldObjects
             if (abilityId == CharmAbilityRegistry.PrismaticStrikeAbilityId)
             {
                 return activating
-                    ? "Prismatic Strike Charm activated. Melee attacks scan resistances and override damage type to target's weakest element, dynamically matching weapon rends."
+                    ? "Prismatic Strike Charm activated. Your melee attacks will strike with the element or physical force your target is most vulnerable to."
                     : "Prismatic Strike Charm deactivated. Attacks will deal damage normally.";
             }
 
