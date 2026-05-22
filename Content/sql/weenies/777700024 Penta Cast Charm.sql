@@ -14,7 +14,8 @@ VALUES (777700024,    11, 1)  /* IgnoreCollisions */
      , (777700024,    14, 1)  /* GravityStatus */
      , (777700024,    63, 1)  /* UnlimitedUse */
      , (777700024,  9040, 1)  /* IsCharm */
-     , (777700024, 50000, 1); /* IsAbilityCharm */
+     , (777700024, 50000, 1)  /* IsAbilityCharm */
+     , (777700024, 50002, 1); /* IsTestCharm */
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (777700024,     1, 2048) /* ItemType - Gem */
@@ -28,7 +29,8 @@ VALUES (777700024,     1, 2048) /* ItemType - Gem */
      , (777700024,   114,    1) /* Attuned */
      , (777700024, 50000,   22) /* CharmGrantsAbility - ID 22 = Penta Cast Charm */
      , (777700024, 50005,    1) /* CharmLevel - 1 */
-     , (777700024, 50006,    1); /* CharmMaxLevel - 1 tier */
+     , (777700024, 50006,    1) /* CharmMaxLevel - 1 tier */
+     , (777700024, 50060, 1779768000); /* ItemExpirationTimestamp - Monday May 25, 2026 11:00 PM EST */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777700024,    1, 33554556)  /* Setup - Coffer/Chest */

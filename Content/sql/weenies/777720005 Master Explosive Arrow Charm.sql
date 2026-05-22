@@ -15,7 +15,8 @@ VALUES (777720005,    11, 1)  /* IgnoreCollisions */
      , (777720005,    14, 1)  /* GravityStatus */
      , (777720005,    63, 1)  /* UnlimitedUse */
      , (777720005,  9040, 1)  /* IsCharm */
-     , (777720005, 50000, 1); /* IsAbilityCharm */
+     , (777720005, 50000, 1)  /* IsAbilityCharm */
+     , (777720005, 50002, 1); /* IsTestCharm */
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (777720005,     1, 2048) /* ItemType - Gem */
@@ -29,7 +30,8 @@ VALUES (777720005,     1, 2048) /* ItemType - Gem */
      , (777720005,   114,    1) /* Attuned */
      , (777720005, 50000,   21) /* CharmGrantsAbility - ID 21 = Explosive Arrow Charm */
      , (777720005, 50005,    3) /* CharmLevel - 3 */
-     , (777720005, 50006,    3); /* CharmMaxLevel - 3 tiers total */
+     , (777720005, 50006,    3) /* CharmMaxLevel - 3 tiers total */
+     , (777720005, 50060, 1779768000); /* ItemExpirationTimestamp - Monday May 25, 2026 11:00 PM EST */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777720005,    1, 33554556)  /* Setup - Coffer/Chest */
