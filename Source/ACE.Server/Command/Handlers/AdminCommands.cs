@@ -4260,8 +4260,27 @@ namespace ACE.Server.Command.Handlers
                 dateString = System.Text.RegularExpressions.Regex.Replace(dateString, $@"\b{kvp.Key}\b", kvp.Value, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             }
 
-            if (DateTime.TryParse(dateString, CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime) ||
-                DateTime.TryParse(dateString, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out parsedDateTime))
+            var formats = new[]
+            {
+                "M/d/yyyy h:mm:ss tt zzz",
+                "M/d/yyyy h:mm tt zzz",
+                "M/d/yyyy h:mm:ss tt",
+                "M/d/yyyy h:mm tt",
+                "M/d/yyyy H:mm:ss zzz",
+                "M/d/yyyy H:mm zzz",
+                "M/d/yyyy H:mm:ss",
+                "M/d/yyyy H:mm",
+                "yyyy-MM-dd HH:mm:ss zzz",
+                "yyyy-MM-dd HH:mm zzz",
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy-MM-dd HH:mm",
+                "yyyy-MM-dd h:mm:ss tt zzz",
+                "yyyy-MM-dd h:mm tt zzz",
+                "yyyy-MM-dd h:mm:ss tt",
+                "yyyy-MM-dd h:mm tt"
+            };
+
+            if (DateTime.TryParseExact(dateString, formats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime))
             {
                 var utcDateTime = parsedDateTime.ToUniversalTime();
                 var epoch = (int)new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
@@ -4424,8 +4443,27 @@ namespace ACE.Server.Command.Handlers
                         dateString = System.Text.RegularExpressions.Regex.Replace(dateString, $@"\b{kvp.Key}\b", kvp.Value, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                     }
 
-                    if (DateTime.TryParse(dateString, CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime) ||
-                        DateTime.TryParse(dateString, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out parsedDateTime))
+                    var formats = new[]
+                    {
+                        "M/d/yyyy h:mm:ss tt zzz",
+                        "M/d/yyyy h:mm tt zzz",
+                        "M/d/yyyy h:mm:ss tt",
+                        "M/d/yyyy h:mm tt",
+                        "M/d/yyyy H:mm:ss zzz",
+                        "M/d/yyyy H:mm zzz",
+                        "M/d/yyyy H:mm:ss",
+                        "M/d/yyyy H:mm",
+                        "yyyy-MM-dd HH:mm:ss zzz",
+                        "yyyy-MM-dd HH:mm zzz",
+                        "yyyy-MM-dd HH:mm:ss",
+                        "yyyy-MM-dd HH:mm",
+                        "yyyy-MM-dd h:mm:ss tt zzz",
+                        "yyyy-MM-dd h:mm tt zzz",
+                        "yyyy-MM-dd h:mm:ss tt",
+                        "yyyy-MM-dd h:mm tt"
+                    };
+
+                    if (DateTime.TryParseExact(dateString, formats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime))
                     {
                         var utcDateTime = parsedDateTime.ToUniversalTime();
                         itemExpirationTimestamp = (int)new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
