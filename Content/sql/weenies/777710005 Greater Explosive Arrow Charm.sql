@@ -1,8 +1,8 @@
 -- ============================================================
 -- Greater Explosive Arrow Charm (Tier 2) — WCID 777710005
 -- ILT Ability Charm — Ability ID 21 (HasExplosiveArrowCharm)
--- While active, each arrow that hits an enemy triggers Ring of Exploding Magma
--- centered on the caster. Requires Exploding Magma (spell 1781) in your spellbook.
+-- While active, Bow, Crossbow, and Thrown weapon projectiles explode on impact,
+-- firing a damage-type-matched ring spell at the target's location after a 1s delay.
 -- ============================================================
 
 DELETE FROM `weenie` WHERE `class_Id` = 777710005;
@@ -34,12 +34,12 @@ VALUES (777710005,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777710005,    1, 33554556)  /* Setup - Coffer/Chest */
      , (777710005,    3, 536870932) /* SoundTable */
-     , (777710005,    8, 100670573) /* Icon - 0x06001D6D (FlameRing/fire ring icon) */
+     , (777710005,    8, 100670726) /* Icon - 0x06001D06 (fiery/flame bolt spell icon) */
      , (777710005,   48, 100676435) /* IconUnderlay */
      , (777710005,   50, 100667551); /* IconOverlay - Tier 2 badge */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777710005,  1, 'Greater Explosive Arrow Charm')
      , (777710005, 14, '
-While held, each arrow that connects with an enemy erupts into a Ring of Exploding Magma, blasting nearby foes from your position. Requires Ring of Exploding Magma to be in your spellbook.
+Double-click to activate. While active, Bow, Crossbow, and Thrown weapon projectiles explode on impact, firing a damage-type-matched ring spell at the target''s location after a 1s delay.
 ');
