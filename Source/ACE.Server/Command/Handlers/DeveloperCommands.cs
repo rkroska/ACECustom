@@ -1105,6 +1105,82 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("giveelementalbows", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Spawns one bow for each element, each configured with its respective Rending imbued effect and Split Arrow x3.")]
+        public static void HandleGiveElementalBows(Session session, params string[] parameters)
+        {
+            var elementalBows = new List<(uint wcid, DamageType damageType, ImbuedEffectType imbuedEffect, string name)>()
+            {
+                (29244, DamageType.Slash, ImbuedEffectType.SlashRending, "Slashing Rending Bow"),
+                (29239, DamageType.Pierce, ImbuedEffectType.PierceRending, "Piercing Rending Bow"),
+                (29243, DamageType.Bludgeon, ImbuedEffectType.BludgeonRending, "Bludgeoning Rending Bow"),
+                (29241, DamageType.Cold, ImbuedEffectType.ColdRending, "Cold Rending Bow"),
+                (29242, DamageType.Fire, ImbuedEffectType.FireRending, "Fire Rending Bow"),
+                (29238, DamageType.Acid, ImbuedEffectType.AcidRending, "Acid Rending Bow"),
+                (29240, DamageType.Electric, ImbuedEffectType.ElectricRending, "Electric Rending Bow"),
+                (64454611, DamageType.Nether, ImbuedEffectType.NetherRending, "Nether Rending Bow")
+            };
+
+            var spawnedBows = new List<WorldObject>();
+
+            foreach (var bowInfo in elementalBows)
+            {
+                var bow = WorldObjectFactory.CreateNewWorldObject(bowInfo.wcid);
+                if (bow == null)
+                {
+                    // Fallback to Slashing Bow WCID 29244 as a baseline template if the specific WCID is not found in the DB (e.g. custom Nether bow)
+                    bow = WorldObjectFactory.CreateNewWorldObject(29244);
+                }
+
+                if (bow == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to create bow for WCID {bowInfo.wcid} ({bowInfo.name})", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                // Configure name and custom properties
+                bow.Name = bowInfo.name;
+                bow.W_DamageType = bowInfo.damageType;
+                bow.ImbuedEffect = bowInfo.imbuedEffect;
+                bow.UiEffects = UiEffects.Magical;
+
+                // Setup the underlay icon based on RecipeManager's mappings or Nether custom
+                if (RecipeManager.IconUnderlay.TryGetValue(bowInfo.imbuedEffect, out var underlayId))
+                {
+                    bow.IconUnderlayId = underlayId;
+                }
+                else if (bowInfo.imbuedEffect == ImbuedEffectType.NetherRending)
+                {
+                    bow.IconUnderlayId = 0x06006E3D; // Nether Rending underlay icon
+                }
+
+                // Apply Split Arrow x3 properties
+                bow.SplitArrows = true;
+                bow.SplitArrowCount = 3;
+                bow.SplitArrowRange = 10.0;
+                bow.SplitArrowDamageMultiplier = 0.6;
+
+                // Add to player's inventory
+                if (!bow.Stuck)
+                {
+                    session.Player.TryCreateInInventoryWithNetworking(bow);
+                    spawnedBows.Add(bow);
+                }
+                else
+                {
+                    bow.Destroy();
+                }
+            }
+
+            if (spawnedBows.Count > 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Successfully spawned {spawnedBows.Count} elemental Rending bows with Split Arrow x3 in your inventory.", ChatMessageType.Broadcast));
+                if (session.AccessLevel >= AccessLevel.Admin)
+                {
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} spawned {spawnedBows.Count} elemental Rending bows using /giveelementalbows.");
+                }
+            }
+        }
+
         /// <summary>
         /// Debug console command to test the GetSpellFormula function.
         /// </summary>
