@@ -327,6 +327,12 @@ namespace ACE.Server.Command.Handlers
 
                 // CR-13: scan from target's ObjMaint — the actual proc (after CR-2 fix) uses
                 // target.PhysicsObj.ObjMaint, so this preview must do the same to be accurate.
+                if (target.PhysicsObj?.ObjMaint == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "[ArrowDebug] Target physics context unavailable.", ChatMessageType.System));
+                    return;
+                }
                 var known = target.PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature();
                 var inBlast = known
                     .Where(c => c != null && c.Location != null

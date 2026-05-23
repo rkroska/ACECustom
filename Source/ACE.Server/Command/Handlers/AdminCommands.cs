@@ -4682,6 +4682,7 @@ namespace ACE.Server.Command.Handlers
                 patternPositions = PatternGenerator.GeneratePattern(session.Player.Location, objs.Count, pattern, radius.Value);
             }
 
+            var actuallySpawned = 0;
             for (int i = 0; i < objs.Count; i++)
             {
                 var w = objs[i];
@@ -4703,16 +4704,22 @@ namespace ACE.Server.Command.Handlers
 
                 if (!w.EnterWorld()) // If the last object failed to add to the landblock, don't keep trying
                 {
+                    // Clean up any remaining objects that were created but never placed in the world
+                    for (int j = i; j < objs.Count; j++)
+                    {
+                        objs[j].Destroy();
+                    }
                     break;
                 }
+                actuallySpawned += w.StackSize ?? 1;
             }
 
             // CR-15: use objs[0] for the audit log; `obj` is the pre-loop phantom that was created
             // but never placed in the world for multi-spawn paths.
             var auditRef = objs.Count > 0 ? objs[0] : obj;
-            if (numToSpawn > 1)
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {numToSpawn} {auditRef.Name} near {auditRef.Location}.");
-            else
+            if (actuallySpawned > 1)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {actuallySpawned} {auditRef.Name} near {auditRef.Location}.");
+            else if (actuallySpawned == 1)
                 PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {auditRef.Name} (0x{auditRef.Guid:X8}) at {auditRef.Location}.");
         }
 
