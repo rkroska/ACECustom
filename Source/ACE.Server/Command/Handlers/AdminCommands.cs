@@ -4429,83 +4429,78 @@ namespace ACE.Server.Command.Handlers
             {
                 if (parameters.Length > 2)
                 {
-                    // Attempt to parse all subsequent parameters together as a calendar date/time string
-                    var dateString = string.Join(" ", parameters.Skip(2));
+                    var rem = parameters.Skip(2).ToArray();
+                    var parsedDate = false;
 
-                    // Pre-process common timezone abbreviations to their offset equivalents for standard parsing
+                    // Pre-process common timezone abbreviations
                     var tzMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                     {
-                        { "EST", "-05:00" },
-                        { "EDT", "-04:00" },
-                        { "CST", "-06:00" },
-                        { "CDT", "-05:00" },
-                        { "MST", "-07:00" },
-                        { "MDT", "-06:00" },
-                        { "PST", "-08:00" },
-                        { "PDT", "-07:00" },
-                        { "UTC", "+00:00" },
-                        { "GMT", "+00:00" },
-                        { "BST", "+01:00" },
-                        { "CET", "+01:00" },
+                        { "EST", "-05:00" }, { "EDT", "-04:00" }, { "CST", "-06:00" },
+                        { "CDT", "-05:00" }, { "MST", "-07:00" }, { "MDT", "-06:00" },
+                        { "PST", "-08:00" }, { "PDT", "-07:00" }, { "UTC", "+00:00" },
+                        { "GMT", "+00:00" }, { "BST", "+01:00" }, { "CET", "+01:00" },
                         { "CEST", "+02:00" }
                     };
 
-                    foreach (var kvp in tzMappings)
-                    {
-                        dateString = System.Text.RegularExpressions.Regex.Replace(dateString, $@"\b{kvp.Key}\b", kvp.Value, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    }
-
                     var formats = new[]
                     {
-                        "M/d/yyyy h:mm:ss tt zzz",
-                        "M/d/yyyy h:mm tt zzz",
-                        "M/d/yyyy h:mm:ss tt",
-                        "M/d/yyyy h:mm tt",
-                        "M/d/yyyy H:mm:ss zzz",
-                        "M/d/yyyy H:mm zzz",
-                        "M/d/yyyy H:mm:ss",
-                        "M/d/yyyy H:mm",
-                        "yyyy-MM-dd HH:mm:ss zzz",
-                        "yyyy-MM-dd HH:mm zzz",
-                        "yyyy-MM-dd HH:mm:ss",
-                        "yyyy-MM-dd HH:mm",
-                        "yyyy-MM-dd h:mm:ss tt zzz",
-                        "yyyy-MM-dd h:mm tt zzz",
-                        "yyyy-MM-dd h:mm:ss tt",
-                        "yyyy-MM-dd h:mm tt"
+                        "M/d/yyyy h:mm:ss tt zzz", "M/d/yyyy h:mm tt zzz",
+                        "M/d/yyyy h:mm:ss tt", "M/d/yyyy h:mm tt",
+                        "M/d/yyyy H:mm:ss zzz", "M/d/yyyy H:mm zzz",
+                        "M/d/yyyy H:mm:ss", "M/d/yyyy H:mm",
+                        "yyyy-MM-dd HH:mm:ss zzz", "yyyy-MM-dd HH:mm zzz",
+                        "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm",
+                        "yyyy-MM-dd h:mm:ss tt zzz", "yyyy-MM-dd h:mm tt zzz",
+                        "yyyy-MM-dd h:mm:ss tt", "yyyy-MM-dd h:mm tt"
                     };
 
-                    if (DateTime.TryParseExact(dateString, formats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime))
+                    // Try to parse the calendar date from prefixes of the remaining parameters
+                    for (int len = rem.Length; len >= 1; len--)
                     {
-                        var utcDateTime = parsedDateTime.ToUniversalTime();
-                        // CR-11: ToUnixTimeSeconds() returns long; casting to int silently wraps past Jan 19 2038.
-                        var epochLong = new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
-                        if (epochLong < 0 || epochLong > int.MaxValue)
+                        var dateString = string.Join(" ", rem.Take(len));
+                        foreach (var kvp in tzMappings)
                         {
-                            session.Network.EnqueueSend(new GameMessageSystemChat(
-                                "Expiry date is out of range (must be before Jan 19, 2038). Use /timeconvert to verify your timestamp.",
-                                ChatMessageType.Broadcast));
+                            dateString = System.Text.RegularExpressions.Regex.Replace(dateString, $@"\b{kvp.Key}\b", kvp.Value, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                        }
+
+                        if (DateTime.TryParseExact(dateString, formats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime))
+                        {
+                            var utcDateTime = parsedDateTime.ToUniversalTime();
+                            var epochLong = new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
+                            if (epochLong < 0 || epochLong > int.MaxValue)
+                            {
+                                session.Network.EnqueueSend(new GameMessageSystemChat(
+                                    "Expiry date is out of range (must be before Jan 19, 2038). Use /timeconvert to verify your timestamp.",
+                                    ChatMessageType.Broadcast));
+                                return false;
+                            }
+                            itemExpirationTimestamp = (int)epochLong;
+                            idx = 2 + len;
+                            parsedDate = true;
+                            break;
+                        }
+                    }
+
+                    if (!parsedDate)
+                    {
+                        // Otherwise, treat parameters[2] as relative lifespan seconds
+                        if (!int.TryParse(parameters[2], out int _lifespan))
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Lifespan must be a number of seconds or a valid date/time string (e.g. '5/22/2026 11:00 PM').", ChatMessageType.Broadcast));
                             return false;
                         }
-                        itemExpirationTimestamp = (int)epochLong;
-                        // CR-14: do NOT return early here — let palette/shade parsing below still run.
-                        // Set idx past the date tokens so we don't try to parse them as palette/shade.
-                        idx = parameters.Length; // all remaining tokens were consumed by the date string
+                        else
+                        {
+                            lifespan = _lifespan;
+                            idx = 3;
+                        }
                     }
-
-                    // Otherwise, treat as relative lifespan seconds
-                    if (!int.TryParse(parameters[2], out int _lifespan))
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Lifespan must be a number of seconds or a valid date/time string (e.g. '5/22/2026 11:00 PM').", ChatMessageType.Broadcast));
-                        return false;
-                    }
-                    else
-                        lifespan = _lifespan;
                 }
                 else
+                {
                     lifespan = 3600;
-
-                idx++;
+                    idx = 3;
+                }
             }
 
             if (parameters.Length > idx)

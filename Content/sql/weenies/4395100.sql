@@ -53,7 +53,7 @@ VALUES (4395100,  21,       0) /* WeaponLength */
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (4395100,   1, 'Infinite Deadly Prismatic Arrow') /* Name */
      , (4395100,  14, 'You must be a specialized fletcher of great skill to use these potentially volatile arrows.') /* Use */
-     , (4395100,  16, 'An Everlasting Deadly, crystaline arrow that draw the elemental energies from elementally attuned bows to damage their target.') /* LongDesc */;
+     , (4395100,  16, 'An Everlasting Deadly, crystalline arrow that draws the elemental energies from elementally attuned bows to damage their target.') /* LongDesc */;
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (4395100,   1, 0x02001A87) /* Setup */
