@@ -1268,6 +1268,45 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("givecloaks", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Spawns three different test cloaks (Level 5 DR, Level 5 Shroud of Darkness spell proc, and Level 1 DR quest-equivalent) in your inventory.")]
+        public static void HandleGiveCloaks(Session session, params string[] parameters)
+        {
+            var testCloaks = new List<(string name, int cloakWeaveProc, uint? procSpell, int maxLevel)>()
+            {
+                ("Test Cloak of Warding (Level 5 DR)", 2, null, 5),
+                ("Test Cloak of Darkness (Level 5 Spell Proc)", 1, (uint)SpellId.CloakMagicDLower, 5),
+                ("Test Cloak of Warding (Level 1 DR)", 2, null, 1)
+            };
+
+            var spawned = 0;
+            foreach (var info in testCloaks)
+            {
+                var cloak = WorldObjectFactory.CreateNewWorldObject(44840);
+                if (cloak == null) continue;
+
+                cloak.Name = info.name;
+                cloak.CloakWeaveProc = info.cloakWeaveProc;
+                cloak.ItemMaxLevel = info.maxLevel;
+                if (info.procSpell.HasValue)
+                {
+                    cloak.ProcSpell = info.procSpell.Value;
+                    cloak.ProcSpellSelfTargeted = false;
+                }
+                cloak.UiEffects = UiEffects.Magical;
+
+                if (!cloak.Stuck && session.Player.TryCreateInInventoryWithNetworking(cloak))
+                {
+                    spawned++;
+                }
+                else
+                {
+                    cloak.Destroy();
+                }
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Spawned {spawned} test cloaks in your inventory.", ChatMessageType.Broadcast));
+        }
+
         /// <summary>
         /// Debug console command to test the GetSpellFormula function.
         /// </summary>

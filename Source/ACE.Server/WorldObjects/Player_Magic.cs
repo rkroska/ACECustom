@@ -1797,6 +1797,15 @@ namespace ACE.Server.WorldObjects
 
                 if (resisted) { dbgResist++; continue; }
 
+                // --- 1. Intercept Enchantment Projectiles (e.g., debuffs like Shroud of Darkness) ---
+                if (spell.MetaSpellType == ACE.Entity.Enum.SpellType.EnchantmentProjectile)
+                {
+                    CreateEnchantment(creature, this, weapon, spell, false, fromProc);
+                    DoSpellEffects(spell, this, creature, true);
+                    dbgHit++;
+                    continue;
+                }
+
                 // ── War-magic damage calculation (exact parity with SpellProjectile.CalculateDamage) ──
                 var criticalHit      = false;
                 var critDamageBonus  = 0.0f;
@@ -1882,6 +1891,18 @@ namespace ACE.Server.WorldObjects
 
                 if (finalDamage <= 0) continue;
 
+                // --- 2. Cloak Damage Reduction Proc ---
+                var equippedCloak = creature.EquippedCloak;
+                var percent = finalDamage / creature.Health.MaxValue;
+
+                if (equippedCloak != null && Cloak.HasDamageProc(equippedCloak) && Cloak.RollProc(equippedCloak, percent))
+                {
+                    var reducedDamage = Cloak.GetReducedAmount(this, finalDamage);
+                    Cloak.ShowMessage(creature, this, finalDamage, reducedDamage);
+                    finalDamage = reducedDamage;
+                    percent = finalDamage / creature.Health.MaxValue;
+                }
+
                 creature.TakeDamage(this, spell.DamageType, finalDamage, criticalHit);
 
                 // Only send "You hit X for Y" if the target survived — mirrors SpellProjectile.DamageTarget
@@ -1891,13 +1912,19 @@ namespace ACE.Server.WorldObjects
                 {
                     var displayAmt  = (uint)Math.Round(finalDamage);
                     var amtStr      = Creature.FormatDamage(displayAmt, DamageNumberFormat);
-                    var percent     = (float)displayAmt / creature.Health.MaxValue;
+                    var pct         = (float)displayAmt / creature.Health.MaxValue;
                     string verb = null, plural = null;
-                    Strings.GetAttackVerb(spell.DamageType, percent, ref verb, ref plural);
+                    Strings.GetAttackVerb(spell.DamageType, pct, ref verb, ref plural);
                     var critMsg     = criticalHit ? "Critical hit! " : "";
                     var attackerMsg = $"{critMsg}You {verb} {creature.Name} for {amtStr} points with {spell.Name}.";
                     if (!SquelchManager.Squelches.Contains(creature, ACE.Entity.Enum.ChatMessageType.Magic))
                         Session?.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ACE.Entity.Enum.ChatMessageType.Magic));
+
+                    // --- 3. Cloak Spell Proc ---
+                    if (!fromProc && equippedCloak != null && Cloak.HasProcSpell(equippedCloak))
+                    {
+                        Cloak.TryProcSpell(creature, this, equippedCloak, percent);
+                    }
                 }
 
                 dbgHit++;
