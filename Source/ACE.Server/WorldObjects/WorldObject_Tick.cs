@@ -373,7 +373,7 @@ namespace ACE.Server.WorldObjects
                         // For player ring spells, use our server-controlled radius so the visual
                         // matches the kill radius exactly.  Monster rings keep the DAT value.
                         float maxRange;
-                        if (spellProjectile.ProjectileSource is Player playerCaster)
+                        if (spellProjectile.ProjectileSource is Player playerCaster && !(playerCaster.GetProperty(PropertyBool.ClassicRingAoe) ?? false))
                         {
                             var multiplier = (float)(playerCaster.GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
                             maxRange = Player.DefaultRingAoeRadius * multiplier;

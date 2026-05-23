@@ -1635,11 +1635,9 @@ namespace ACE.Server.WorldObjects
         }
 
         // ── Ring AOE radius (meters). Scaled by AoeRangeMultiplier charm (PropertyFloat 9048). ──
-        internal const float DefaultRingAoeRadius    =  5.0f;
+        internal const float DefaultRingAoeRadius    =  5.8f;
         // ── Max vertical delta (meters) — prevents hitting creatures on a different floor. ──
-        internal const float RingAoeMaxHeightDelta   =  4.0f;
-        // ── Per-player debug broadcast toggle (off by default). ──
-        public bool RingAoeDebug { get; set; } = false;
+        internal const float RingAoeMaxHeightDelta   =  7.0f;
 
         /// <summary>
         /// Applies one war-magic damage roll to every valid creature within the ring spell's
@@ -1665,6 +1663,12 @@ namespace ACE.Server.WorldObjects
             var attribBonus = 1.0f;
             attribBonus += SkillFormula.GetAttributeMod((int)Focus.Current) * SpellProjectile.DefaultSpellAttributeMult;
             attribBonus += SkillFormula.GetAttributeMod((int)Self.Current)  * SpellProjectile.DefaultSpellAttributeMult;
+
+            // Pre-calculate target-independent combat ratings for optimization.
+            var heritageMod = GetHeritageBonus(weapon) ? 1.05f : 1.0f;
+            var baseDamageRatingMod = Creature.GetPositiveRatingMod(GetDamageRating());
+            var critDamageRatingMod = Creature.GetPositiveRatingMod(GetCritDamageRating());
+            var pkDamageRatingMod = Creature.GetPositiveRatingMod(GetPKDamageRating());
 
             foreach (var creature in visibleCreatures)
             {
@@ -1761,6 +1765,37 @@ namespace ACE.Server.WorldObjects
                 var finalDamage = (baseDamage + critDamageBonus + skillBonus)
                                   * elementalMod * slayerMod * resistanceMod * absorbMod * attribBonus;
 
+                // Sneak attack & heritage mods (mirrors SpellProjectile.DamageTarget).
+                var sneakAttackMod = GetSneakAttackMod(creature);
+                var damageRatingMod = Creature.AdditiveCombine(baseDamageRatingMod, heritageMod, sneakAttackMod);
+
+                var damageResistRatingMod = creature.GetDamageResistRatingMod(CombatType.Magic);
+
+                if (criticalHit)
+                {
+                    var critDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetCritDamageResistRating());
+
+                    damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
+                    damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, critDamageResistRatingMod);
+                }
+
+                if (isPvP)
+                {
+                    var pkDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetPKDamageResistRating());
+
+                    damageRatingMod = Creature.AdditiveCombine(damageRatingMod, pkDamageRatingMod);
+                    damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, pkDamageResistRatingMod);
+                }
+
+                finalDamage *= damageRatingMod * damageResistRatingMod;
+
+                // Apply enrage damage reduction for the defender.
+                if (creature.IsEnraged)
+                {
+                    var enrageReduction = creature.EnrageDamageReduction ?? 0.0f;
+                    finalDamage *= (1.0f - enrageReduction);
+                }
+
                 // CombatPet mitigation — extra spell-only damage reduction from owner's summon aug.
                 // Vanilla also gates this on pet_combat_summon_aug_spell_mitigation_players_only; since
                 // ring AOE is always cast by a Player, sourcePlayer != null is unconditionally true here.
@@ -1797,12 +1832,6 @@ namespace ACE.Server.WorldObjects
             // Intentionally outside the loop — ring spells should not award N ticks for N targets.
             if (dbgHit > 0)
                 Proficiency.OnSuccessUse(this, GetCreatureSkill(spell.School), spell.PowerMod);
-
-            // DEBUG — broadcast ring AOE summary to caster (only when RingAoeDebug is enabled via /ilt ringdebug)
-            if (RingAoeDebug)
-                Session?.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"[RingAOE] inRange={dbgHit + dbgResist} resisted={dbgResist} hit={dbgHit} radius={radius:F1}m vertical={RingAoeMaxHeightDelta:F1}m",
-                    ACE.Entity.Enum.ChatMessageType.Broadcast));
         }
     }
 }
