@@ -24,6 +24,24 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public static readonly float DestructionTime = 25.0f;
 
+        /// <summary>
+        /// Aligns physics ObjMaint checks with <see cref="Player_Tracking"/> / <see cref="PrestigeManager"/> networking gates.
+        /// </summary>
+        private static int? GetVariationForVisibility(PhysicsObj obj, int? variationOverride = null)
+        {
+            if (variationOverride.HasValue)
+                return variationOverride;
+
+            return PrestigeManager.GetEffectiveVariationForVisibility(obj?.WeenieObj?.WorldObject) ?? obj?.Position?.Variation;
+        }
+
+        private static bool SameVariationForVisibility(PhysicsObj a, PhysicsObj b, int? aOverride = null, int? bOverride = null)
+        {
+            return PrestigeManager.SameVariationForVisibility(
+                GetVariationForVisibility(a, aOverride),
+                GetVariationForVisibility(b, bOverride));
+        }
+
         private readonly ReaderWriterLockSlim rwLock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
 
         /// <summary>
@@ -198,16 +216,8 @@ namespace ACE.Server.Physics.Common
         public bool AddKnownObject(PhysicsObj obj)
         {
             // Initial sanity checks (no lock needed yet)
-            // Must match networking (Player_Tracking / PrestigeManager): retail null vs 0 is one bucket; prestige is exact.
-            if (!PrestigeManager.SameVariationForVisibility(this.PhysicsObj.Position.Variation, obj.Position.Variation))
-            {
-                if (ServerConfig.prestige_interaction_diag_verbose.Value)
-                {
-                    log.Warn($"[PrestigeInteraction] ObjMaint.AddKnownObject blocked: viewer={PhysicsObj?.Name}({PhysicsObj?.ID:X8}) v={PhysicsObj?.Position?.Variation?.ToString() ?? "null"} " +
-                             $"target={obj?.Name}({obj?.ID:X8}) v={obj?.Position?.Variation?.ToString() ?? "null"}");
-                }
+            if (!SameVariationForVisibility(PhysicsObj, obj))
                 return false;
-            }
 
             // Check if already known (optimistic read to avoid write lock overhead)
             bool alreadyKnown = false;
@@ -402,12 +412,10 @@ namespace ACE.Server.Physics.Common
                 // and envcells seen from outside (all buildings)
                 var visibleObjs = PhysicsObj.CurLandblock.GetServerObjects(true);
 
-                var results = ApplyFilter(visibleObjs, type).Where(i => i.ID != PhysicsObj.ID && (i.CurCell is not EnvCell indoors || indoors.SeenOutside));
-
-                int targetVar = VariationId ?? PhysicsObj.Position.Variation ?? 0;
-                results = results.Where(i => (i.Position.Variation ?? 0) == targetVar);
-
-                return results.ToList();
+                return ApplyFilter(visibleObjs, type)
+                    .Where(i => i.ID != PhysicsObj.ID && (i.CurCell is not EnvCell indoors || indoors.SeenOutside))
+                    .Where(i => SameVariationForVisibility(PhysicsObj, i, VariationId, null))
+                    .ToList();
             }
             finally
             {
@@ -420,8 +428,6 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         private List<PhysicsObj> GetVisibleObjects(EnvCell cell, VisibleObjectType type, int? VariationId = null)
         {
-            cell.EnsureVisibleCellsBuilt();
-
             var visibleObjs = new List<PhysicsObj>();
 
             // add objects from current cell
@@ -442,10 +448,11 @@ namespace ACE.Server.Physics.Common
                 visibleObjs.AddRange(outsideObjs);
             }
 
-            int targetVar = VariationId ?? PhysicsObj.Position.Variation ?? 0;
-            var results = ApplyFilter(visibleObjs, type).Where(i => i.ID != PhysicsObj.ID && !i.DatObject);
-
-            return results.Where(i => (i.Position.Variation ?? 0) == targetVar).Distinct().ToList();
+            return ApplyFilter(visibleObjs, type)
+                .Where(i => !i.DatObject && i.ID != PhysicsObj.ID)
+                .Where(i => SameVariationForVisibility(PhysicsObj, i, VariationId, null))
+                .Distinct()
+                .ToList();
         }
 
         public enum VisibleObjectType
@@ -493,15 +500,9 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterWriteLock();
             try
             {
-                if (!PrestigeManager.SameVariationForVisibility(PhysicsObj.Position.Variation, obj.Position.Variation))
-                {
-                    if (ServerConfig.prestige_interaction_diag_verbose.Value)
-                    {
-                        log.Warn($"[PrestigeInteraction] ObjMaint.AddVisibleObject blocked: viewer={PhysicsObj?.Name}({PhysicsObj?.ID:X8}) v={PhysicsObj?.Position?.Variation?.ToString() ?? "null"} " +
-                                 $"target={obj?.Name}({obj?.ID:X8}) v={obj?.Position?.Variation?.ToString() ?? "null"}");
-                    }
+                if (!SameVariationForVisibility(PhysicsObj, obj))
                     return false;
-                }
+
                 if (VisibleObjects.ContainsKey(obj.ID))
                     return false;
 
@@ -546,13 +547,7 @@ namespace ACE.Server.Physics.Common
 
                 RemoveObjectsToBeDestroyed(objs);
 
-                var newlyKnown = AddKnownObjects(visibleAdded);
-                if (ServerConfig.prestige_interaction_diag_verbose.Value && PhysicsObj?.IsPlayer == true)
-                {
-                    log.Warn($"[PrestigeInteraction] ObjMaint.AddVisibleObjects: viewer={PhysicsObj.Name}({PhysicsObj.ID:X8}) v={PhysicsObj.Position?.Variation?.ToString() ?? "null"} " +
-                             $"candidates={objs?.Count.ToString() ?? "null"} newlyVisible={visibleAdded.Count} newlyKnown={newlyKnown?.Count.ToString() ?? "null"}");
-                }
-                return newlyKnown;
+                return AddKnownObjects(visibleAdded);
             }
             finally
             {
@@ -868,7 +863,7 @@ namespace ACE.Server.Physics.Common
                 log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player for dat object");
                 return false;
             }
-            if (!PrestigeManager.SameVariationForVisibility(obj.Position.Variation, PhysicsObj.Position.Variation))
+            if (!SameVariationForVisibility(PhysicsObj, obj))
             {
                 log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player in a different Variation");
                 return false;
@@ -898,12 +893,6 @@ namespace ACE.Server.Physics.Common
                         newObjs.Add(obj);
                 }
 
-                if (ServerConfig.prestige_interaction_diag_verbose.Value && PhysicsObj?.IsPlayer == true)
-                {
-                    var list = objs as ICollection<PhysicsObj>;
-                    log.Warn($"[PrestigeInteraction] ObjMaint.AddKnownPlayers: owner={PhysicsObj.Name}({PhysicsObj.ID:X8}) v={PhysicsObj.Position?.Variation?.ToString() ?? "null"} " +
-                             $"candidates={(list?.Count.ToString() ?? "?" )} added={newObjs.Count} totalKnownPlayers={KnownPlayers.Count}");
-                }
                 return newObjs;
             }
             finally
@@ -1094,21 +1083,11 @@ namespace ACE.Server.Physics.Common
                     (PhysicsObj.WeenieObj.FoeType == null || obj.WeenieObj.WorldObject != null && PhysicsObj.WeenieObj.FoeType != obj.WeenieObj.WorldObject.CreatureType))
                 {
                     obj.ObjMaint.AddVisibleTarget(PhysicsObj);
-                    // Legacy: observer had no Int.73 foe — only the other mob tracked us.
-                    // Custom targeting should only include other monsters in *our* VisibleTargets when the
-                    // config actually targets non-players (not player-only modes such as HostileToAllPlayers).
-                    var selfCreatureInverse = PhysicsObj.WeenieObj.WorldObject as Creature;
-                    if (selfCreatureInverse == null || !selfCreatureInverse.AllowsCustomMonsterTargets)
-                        return false;
+                    return false;
                 }
 
-                // only tracking players and combat pets, unless this creature has legacy foe targeting
-                // or custom targeting that explicitly includes non-player foes.
-                var selfCreature = PhysicsObj.WeenieObj.WorldObject as Creature;
-                var allowMonsterTargets = PhysicsObj.WeenieObj.FoeType != null
-                    || (selfCreature != null && selfCreature.AllowsCustomMonsterTargets);
-
-                if (!obj.IsPlayer && !obj.WeenieObj.IsCombatPet && !allowMonsterTargets)
+                // only tracking players and combat pets
+                if (!obj.IsPlayer && !obj.WeenieObj.IsCombatPet && PhysicsObj.WeenieObj.FoeType == null)
                 {
                     log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddVisibleTarget({obj.Name}): tried to add a non-player / non-combat pet");
                     return false;
@@ -1266,18 +1245,12 @@ namespace ACE.Server.Physics.Common
                 rwLock.ExitWriteLock();
             }
         }
+
         public bool RemoveRetaliateTarget(PhysicsObj obj)
         {
-            rwLock.EnterWriteLock();
-            try
-            {
-                return RetaliateTargets.Remove(obj.ID);
-            }
-            finally
-            {
-                rwLock.ExitWriteLock();
-            }
+            return RetaliateTargets.Remove(obj.ID);
         }
+
         /// <summary>
         /// Clears all of the ObjMaint tables for an object
         /// </summary>
