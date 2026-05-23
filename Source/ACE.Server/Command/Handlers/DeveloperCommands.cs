@@ -1307,6 +1307,33 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat($"Spawned {spawned} test cloaks in your inventory.", ChatMessageType.Broadcast));
         }
 
+        [CommandHandler("showtargetench", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Shows the active enchantments on your current target.")]
+        public static void HandleShowTargetEnch(Session session, params string[] parameters)
+        {
+            var target = CommandHandlerHelper.GetSelected(session) as Creature;
+            if (target == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("You must select a creature first.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var enchantments = target.Biota.PropertiesEnchantmentRegistry.GetEnchantmentsTopLayer(target.BiotaDatabaseLock, SpellSet.SetSpells);
+            if (enchantments.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} has no active enchantments.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Active enchantments on {target.Name}:", ChatMessageType.Broadcast));
+            log.Info($"Active enchantments on {target.Name}:");
+            foreach (var ench in enchantments)
+            {
+                var spell = new Spell((uint)ench.SpellId);
+                session.Network.EnqueueSend(new GameMessageSystemChat($"- Spell {ench.SpellId} ({spell.Name}): ModType={ench.StatModType}, ModKey={ench.StatModKey}, ModVal={ench.StatModValue}", ChatMessageType.Broadcast));
+                log.Info($"- Spell {ench.SpellId} ({spell.Name}): ModType={ench.StatModType}, ModKey={ench.StatModKey}, ModVal={ench.StatModValue}");
+            }
+        }
+
         /// <summary>
         /// Debug console command to test the GetSpellFormula function.
         /// </summary>
