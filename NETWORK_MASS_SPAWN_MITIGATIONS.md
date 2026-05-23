@@ -27,7 +27,7 @@ These apply to **all** outbound message types in a bundle, not CreateObject alon
 
 ## Suggested values for mass spawns (500+ mobs)
 
-```
+```bash
 /modifylong net_max_packets_per_tick 30
 /modifylong net_min_bundle_interval_ms 10
 /modifylong monster_tick_throttle_limit 50

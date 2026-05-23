@@ -2983,6 +2983,7 @@ namespace ACE.Server.Physics
 
             set_cell_id(pos.ObjCellID);
             set_frame(pos.Frame);
+            Position.Variation = pos.Variation;
         }
 
 

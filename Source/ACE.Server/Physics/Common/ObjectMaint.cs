@@ -1248,7 +1248,15 @@ namespace ACE.Server.Physics.Common
 
         public bool RemoveRetaliateTarget(PhysicsObj obj)
         {
-            return RetaliateTargets.Remove(obj.ID);
+            rwLock.EnterWriteLock();
+            try
+            {
+                return RetaliateTargets.Remove(obj.ID);
+            }
+            finally
+            {
+                rwLock.ExitWriteLock();
+            }
         }
 
         /// <summary>

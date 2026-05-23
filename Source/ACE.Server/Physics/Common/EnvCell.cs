@@ -75,7 +75,14 @@ namespace ACE.Server.Physics.Common
             if (Environment?.Cells != null && Environment.Cells.TryGetValue(CellStructureID, out var cellStruct))
                 CellStructure = new CellStruct(cellStruct);
             else
+            {
                 Console.WriteLine("CellStructureID {0} not found in Environment {1}", CellStructureID, EnvironmentID);
+                CellStructure = new CellStruct
+                {
+                    Polygons = new Dictionary<ushort, Polygon>(),
+                    Portals = new List<Polygon>()
+                };
+            }
 
             //NumSurfaces = envCell.Surfaces.Count;
         }
@@ -129,7 +136,8 @@ namespace ACE.Server.Physics.Common
             {
                 var blockCellID = ID & 0xFFFF0000 | visibleCellID;
                 var cell = (EnvCell)LScape.get_landcell(blockCellID, this.Pos.Variation);
-                VisibleCells.TryAdd(visibleCellID, cell);
+                if (cell != null)
+                    VisibleCells.TryAdd(visibleCellID, cell);
             }
             //Parallel.ForEach(VisibleCellIDs, ConfigManager.Config.Server.Threading.LandblockManagerParallelOptions, visibleCellID =>
             //{

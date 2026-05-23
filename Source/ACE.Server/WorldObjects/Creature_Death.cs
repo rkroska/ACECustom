@@ -34,7 +34,15 @@ namespace ACE.Server.WorldObjects
         public virtual DeathMessage OnDeath(DamageHistoryInfo lastDamager, DamageType damageType, bool criticalHit = false)
         {
             if (onDeathEntered)
-                return GetDeathMessage(lastDamager, damageType, criticalHit);
+            {
+                if (lastDamager == null || lastDamager.Guid == Guid || lastDamager.TryGetAttacker() is Hotspot)
+                    return Strings.General[1];
+
+                var deathMessage = Strings.GetDeathMessage(damageType, criticalHit);
+                if (criticalHit && this is Player)
+                    deathMessage = Strings.PKCritical[0];
+                return deathMessage;
+            }
 
             onDeathEntered = true;
 
