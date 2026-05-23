@@ -498,41 +498,45 @@ namespace ACE.Server.Network.Structure
                 //PropertiesString.Clear();
             }
 
-            if (wo.ItemExpirationTimestamp.HasValue)
+            // CR-33: Gem-socket LongDesc population is independent of item expiry.
+            // Run this block for all items that have the AppendGemInfo flag set, regardless of whether
+            // they also have an ItemExpirationTimestamp. Previously this was entangled inside the
+            // expiry block, which would silently skip gem-info for socketable items with no expiry.
+            if (PropertiesInt.TryGetValue(PropertyInt.AppraisalLongDescDecoration, out var dec))
             {
-                if (PropertiesInt.TryGetValue(PropertyInt.AppraisalLongDescDecoration, out var dec))
+                if ((dec & 4) != 0) // AppraisalLongDescDecorations.AppendGemInfo
                 {
-                    if ((dec & 4) != 0) // AppraisalLongDescDecorations.AppendGemInfo
+                    if (wo.GemType.HasValue && wo.GemCount.HasValue)
                     {
-                        if (wo.GemType.HasValue && wo.GemCount.HasValue)
+                        var gemName = System.Text.RegularExpressions.Regex.Replace(wo.GemType.Value.ToString(), "(\\B[A-Z])", " $1");
+                        if (wo.GemCount > 1)
                         {
-                            var gemName = System.Text.RegularExpressions.Regex.Replace(wo.GemType.Value.ToString(), "(\\B[A-Z])", " $1");
-                            if (wo.GemCount > 1)
-                            {
-                                if (gemName.EndsWith("y"))
-                                    gemName = gemName.Substring(0, gemName.Length - 1) + "ies";
-                                else if (gemName.EndsWith("x"))
-                                    gemName += "es";
-                                else
-                                    gemName += "s";
-                            }
-
-                            var gemString = $", set with {wo.GemCount} {gemName}";
-                            if (PropertiesString.ContainsKey(PropertyString.LongDesc))
-                                PropertiesString[PropertyString.LongDesc] += gemString;
+                            if (gemName.EndsWith("y"))
+                                gemName = gemName.Substring(0, gemName.Length - 1) + "ies";
+                            else if (gemName.EndsWith("x"))
+                                gemName += "es";
                             else
-                                PropertiesString[PropertyString.LongDesc] = gemString.TrimStart(',', ' ');
+                                gemName += "s";
                         }
 
-                        // Remove the AppendGemInfo flag so the client doesn't double-append
-                        dec &= ~4;
-                        if (dec == 0)
-                            PropertiesInt.Remove(PropertyInt.AppraisalLongDescDecoration);
+                        var gemString = $", set with {wo.GemCount} {gemName}";
+                        if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                            PropertiesString[PropertyString.LongDesc] += gemString;
                         else
-                            PropertiesInt[PropertyInt.AppraisalLongDescDecoration] = dec;
+                            PropertiesString[PropertyString.LongDesc] = gemString.TrimStart(',', ' ');
                     }
-                }
 
+                    // Remove the AppendGemInfo flag so the client doesn't double-append
+                    dec &= ~4;
+                    if (dec == 0)
+                        PropertiesInt.Remove(PropertyInt.AppraisalLongDescDecoration);
+                    else
+                        PropertiesInt[PropertyInt.AppraisalLongDescDecoration] = dec;
+                }
+            }
+
+            if (wo.ItemExpirationTimestamp.HasValue)
+            {
                 var absoluteExpiration = ACE.Common.Time.GetDateTimeFromTimestamp(wo.ItemExpirationTimestamp.Value);
                 var timeToExpiration = absoluteExpiration - DateTime.UtcNow;
                 string msg;

@@ -1127,7 +1127,12 @@ namespace ACE.Server.Command.Handlers
                 var bow = WorldObjectFactory.CreateNewWorldObject(bowInfo.wcid);
                 if (bow == null)
                 {
-                    // Fallback to Slashing Bow WCID 29244 as a baseline template if the specific WCID is not found in the DB (e.g. custom Nether bow)
+                    // CR-22: fallback to Slashing Bow WCID 29244 as a baseline template if the specific WCID
+                    // is not found in the DB (e.g. custom Nether bow WCID 64454611 may not exist locally).
+                    // An explicit warning is broadcast so the dev knows the fallback fired.
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"[Warning] WCID {bowInfo.wcid} ({bowInfo.name}) not found in DB. Falling back to WCID 29244 (Slashing Bow) as template.",
+                        ChatMessageType.Broadcast));
                     bow = WorldObjectFactory.CreateNewWorldObject(29244);
                 }
 
@@ -1162,8 +1167,10 @@ namespace ACE.Server.Command.Handlers
                 // Add to player's inventory
                 if (!bow.Stuck)
                 {
-                    session.Player.TryCreateInInventoryWithNetworking(bow);
-                    spawnedBows.Add(bow);
+                    if (session.Player.TryCreateInInventoryWithNetworking(bow))
+                        spawnedBows.Add(bow);
+                    else
+                        bow.Destroy();
                 }
                 else
                 {
@@ -1186,6 +1193,10 @@ namespace ACE.Server.Command.Handlers
         {
             var elementalUAs = new List<(uint wcid, DamageType damageType, ImbuedEffectType imbuedEffect, string name)>()
             {
+                // CR-19: Slash, Pierce, Bludgeon, and Nether use WCID 326 (generic Katar) because no
+                // dedicated elemental UA templates exist for those types in the DB. W_DamageType and
+                // ImbuedEffect are overridden at runtime. Fire/Cold/Acid/Electric use distinct WCIDs
+                // (3820/3821/3818/3819) which have dedicated physical setups.
                 (326, DamageType.Slash, ImbuedEffectType.SlashRending, "Slashing Rending Katar"),
                 (326, DamageType.Pierce, ImbuedEffectType.PierceRending, "Piercing Rending Katar"),
                 (326, DamageType.Bludgeon, ImbuedEffectType.BludgeonRending, "Bludgeoning Rending Katar"),
@@ -1203,7 +1214,11 @@ namespace ACE.Server.Command.Handlers
                 var katar = WorldObjectFactory.CreateNewWorldObject(uaInfo.wcid);
                 if (katar == null)
                 {
-                    // Fallback to baseline WCID 326 (Katar) if the specific template is not found in the DB
+                    // CR-22: Fallback to baseline WCID 326 (Katar) if the specific template is not found in the DB.
+                    // An explicit warning is broadcast so the dev knows the fallback fired.
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"[Warning] WCID {uaInfo.wcid} ({uaInfo.name}) not found in DB. Falling back to WCID 326 (Katar) as template.",
+                        ChatMessageType.Broadcast));
                     katar = WorldObjectFactory.CreateNewWorldObject(326);
                 }
 
@@ -1232,8 +1247,10 @@ namespace ACE.Server.Command.Handlers
                 // Add to player's inventory
                 if (!katar.Stuck)
                 {
-                    session.Player.TryCreateInInventoryWithNetworking(katar);
-                    spawnedUAs.Add(katar);
+                    if (session.Player.TryCreateInInventoryWithNetworking(katar))
+                        spawnedUAs.Add(katar);
+                    else
+                        katar.Destroy();
                 }
                 else
                 {

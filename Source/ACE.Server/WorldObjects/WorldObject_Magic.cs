@@ -1678,6 +1678,7 @@ namespace ACE.Server.WorldObjects
 
             // Penta Cast Charm Interception
             if (this is Player player && player.HasPentaCast && target != null &&
+                target.Location != null &&   // guard: target may have been removed from world before projectile launch
                 (spellType == ProjectileSpellType.Streak || spellType == ProjectileSpellType.Arc || spellType == ProjectileSpellType.Bolt))
             {
                 var spellProjectiles = new List<SpellProjectile>();
@@ -1695,81 +1696,39 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                // 2. Filter candidates into Left vs Right lists relative to caster-to-target heading in global coordinates
-                var leftCandidates = new List<Creature>();
-                var rightCandidates = new List<Creature>();
+                // 2. Collect all eligible candidates within 10 meters of the primary target,
+                //    sort by distance ascending, and take the 4 closest.
+                //    No left/right alternation — proximity is the only selection criterion.
+                var allCandidates = new List<(Creature creature, float dist)>();
 
-                var playerGlobal = player.Location.ToGlobal(false);
                 var targetGlobal = target.Location.ToGlobal(false);
 
-                var lookX = targetGlobal.X - playerGlobal.X;
-                var lookY = targetGlobal.Y - playerGlobal.Y;
+                // Deduplicate by Guid across landblock + adjacents
+                var uniqueObjects = allObjects.GroupBy(o => o.Guid).Select(g => g.First());
 
-                if (lookX != 0 || lookY != 0)
+                foreach (var obj in uniqueObjects)
                 {
-                    // Deduplicate by Guid
-                    var uniqueObjects = allObjects.GroupBy(o => o.Guid).Select(g => g.First());
+                    if (obj is not Creature creature || creature == player || creature == target) continue;
+                    if (!creature.IsAlive) continue;
+                    if (creature.Location == null) continue;
 
-                    foreach (var obj in uniqueObjects)
-                    {
-                        if (obj is not Creature creature || creature == player || creature == target) continue;
-                        if (!creature.IsAlive) continue;
-                        if (creature.Location == null) continue;
+                    var creatureGlobal = creature.Location.ToGlobal(false);
+                    var dist = Vector3.Distance(targetGlobal, creatureGlobal);
+                    if (dist > 10.0f) continue;
 
-                        // Target proximity check (max 10 meters from original target using global coordinates)
-                        var creatureGlobal = creature.Location.ToGlobal(false);
-                        var dist = Vector3.Distance(targetGlobal, creatureGlobal);
-                        if (dist > 10.0f) continue;
+                    if (!player.CanDamage(creature)) continue;
 
-                        if (!player.CanDamage(creature)) continue;
+                    var pkError = player.CheckPKStatusVsTarget(creature, spell);
+                    if (pkError != null) continue;
 
-                        // PK status check
-                        var pkError = player.CheckPKStatusVsTarget(creature, spell);
-                        if (pkError != null) continue;
-
-                        // Relative position vector from original target to candidate in global coordinates
-                        var relX = creatureGlobal.X - targetGlobal.X;
-                        var relY = creatureGlobal.Y - targetGlobal.Y;
-
-                        // Perpendicular right vector of look line: (lookY, -lookX)
-                        // Dot product determines side relative to look line
-                        var dot = relX * lookY - relY * lookX;
-
-                        if (dot >= 0)
-                            rightCandidates.Add(creature);
-                        else
-                            leftCandidates.Add(creature);
-                    }
-
-                    // Sort both lists by distance to original target ascending
-                    leftCandidates.Sort((a, b) => Vector3.Distance(targetGlobal, a.Location.ToGlobal(false))
-                         .CompareTo(Vector3.Distance(targetGlobal, b.Location.ToGlobal(false))));
-                    rightCandidates.Sort((a, b) => Vector3.Distance(targetGlobal, a.Location.ToGlobal(false))
-                         .CompareTo(Vector3.Distance(targetGlobal, b.Location.ToGlobal(false))));
+                    allCandidates.Add((creature, dist));
                 }
 
-                // 3. Select up to 4 extra targets in alternating order
-                var extraTargets = new List<Creature>();
-                int leftIndex = 0;
-                int rightIndex = 0;
+                allCandidates.Sort((a, b) => a.dist.CompareTo(b.dist));
 
-                for (int i = 0; i < 4; i++)
-                {
-                    if (i % 2 == 0) // Left first
-                    {
-                        if (leftIndex < leftCandidates.Count)
-                            extraTargets.Add(leftCandidates[leftIndex++]);
-                        else if (rightIndex < rightCandidates.Count)
-                            extraTargets.Add(rightCandidates[rightIndex++]);
-                    }
-                    else // Right next
-                    {
-                        if (rightIndex < rightCandidates.Count)
-                            extraTargets.Add(rightCandidates[rightIndex++]);
-                        else if (leftIndex < leftCandidates.Count)
-                            extraTargets.Add(leftCandidates[leftIndex++]);
-                    }
-                }
+                // 3. Take the 4 closest — fire them in distance order (closest first).
+                var extraTargets = allCandidates.Take(4).Select(c => c.creature).ToList();
+
 
                 // 4. Launch spells at all selected targets
                 // Primary target first

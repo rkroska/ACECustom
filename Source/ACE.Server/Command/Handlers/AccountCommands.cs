@@ -344,7 +344,7 @@ namespace ACE.Server.Command.Handlers
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, object> _unstuckLocks
             = new System.Collections.Concurrent.ConcurrentDictionary<uint, object>();
 
-        private static readonly TimeSpan UnstuckCooldownDuration = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan UnstuckCooldownDuration = TimeSpan.FromSeconds(30);
 
         [CommandHandler("unstuck", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
             "Boots any other stuck characters on your account so you can log back in to them.",
@@ -352,7 +352,7 @@ namespace ACE.Server.Command.Handlers
             "If another character on your account is stuck and preventing you from logging in,\n" +
             "log in to any other character and type @unstuck. The stuck character will be\n" +
             "disconnected and you will be able to log back in to them normally.\n" +
-            "A 5-minute cooldown applies after a successful boot. Checking when nothing is stuck is always free.")]
+            "A 30-second cooldown applies after a successful boot. Checking when nothing is stuck is always free.")]
         public static void HandleUnstuck(Session session, params string[] parameters)
         {
             var accountId = session.AccountId;

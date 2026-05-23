@@ -325,7 +325,9 @@ namespace ACE.Server.Command.Handlers
                 const float horizRadius = 15f;
                 const float vertHeight  = 10f;
 
-                var known = player.PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature();
+                // CR-13: scan from target's ObjMaint — the actual proc (after CR-2 fix) uses
+                // target.PhysicsObj.ObjMaint, so this preview must do the same to be accurate.
+                var known = target.PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature();
                 var inBlast = known
                     .Where(c => c != null && c.Location != null
                                 && c.IsAlive

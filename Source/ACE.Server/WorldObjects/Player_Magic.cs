@@ -1211,7 +1211,7 @@ namespace ACE.Server.WorldObjects
             actionChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () =>
             {
                 // Guard: player or target may have died/logged out/been destroyed during the delay.
-                if (IsDead || IsDestroyed || target.IsDestroyed || target.Location == null) return;
+                if (IsDead || IsDestroyed || target.IsDead || target.IsDestroyed || target.Location == null) return;
 
                 // Use target's current position for both the visual and the damage origin
                 // so the ring always detonates where the target actually is at fire time.
@@ -1219,7 +1219,9 @@ namespace ACE.Server.WorldObjects
                 ApplyRingSpellAreaDamage(spell, target.Location,
                     radiusOverride: 15f,
                     heightOverride: 10f,
-                    flatDamage:     flatDmg);
+                    flatDamage:     flatDmg,
+                    scanOrigin:     target,  // CR-2: scan target's ObjMaint so enemies near the blast point are found
+                    fromProc:       true);   // CR-4: suppress War Magic proficiency tick for procs
             });
             actionChain.EnqueueChain();
         }
@@ -1730,8 +1732,17 @@ namespace ACE.Server.WorldObjects
         /// Applies one war-magic damage roll to every valid creature within the ring spell's
         /// effective radius.  Called immediately after the visual ring projectiles are spawned;
         /// the projectiles themselves are made non-damaging in SpellProjectile.OnCollideObject.
+        /// <para>
+        /// <paramref name="scanOrigin"/>: when provided, the creature visibility scan uses that object's
+        /// ObjMaint instead of the caster's.  Used by proc paths (e.g. Explosive Arrow) where the
+        /// detonation center is the target, not the caster.
+        /// </para>
+        /// <para>
+        /// <paramref name="fromProc"/>: when true, suppresses the War Magic proficiency tick so proc
+        /// hits do not grant magic skill XP.
+        /// </para>
         /// </summary>
-        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f)
+        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false)
         {
             var center = centerOverride ?? Location;
             if (center == null) return;
@@ -1746,7 +1757,12 @@ namespace ACE.Server.WorldObjects
             var resistanceType = Creature.GetResistanceType(spell.DamageType);
             var weapon        = GetEquippedWand();
 
-            var visibleCreatures = PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature();
+            // CR-2: use scanOrigin's ObjMaint when the detonation center differs from the caster
+            // (e.g. Explosive Arrow proc — ring spawns on the target, not the caster).
+            // Without this, enemies near the blast point that aren't in the caster's physics
+            // visibility list would be silently skipped.
+            var scanSource = scanOrigin ?? this;
+            var visibleCreatures = scanSource.PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature();
             var dbgHit = 0; var dbgResist = 0;
 
             // Compute attribute bonus once — Focus/Self don't change mid-cast.
@@ -1844,9 +1860,13 @@ namespace ACE.Server.WorldObjects
                     absorbMod  = 1 - absorbMod;
                 }
 
-                // Attribute bonus (Focus + Self) — pre-computed before the loop.
-                // flatDamage path: Explosive Arrow proc — pure flat value, exactly 50% of the triggering arrow hit.
-                // War-magic path: full crit/skill/attribute/resistance scaling for player-cast ring spells.
+                // Damage selection:
+                // • flatDamage path (Explosive Arrow proc): pure percentage of the triggering arrow hit.
+                //   Resistances and absorb are intentionally NOT applied — the proc damage is an extension
+                //   of the arrow's physical impact, not an independent magic attack. The arrow already
+                //   penetrated the target's defenses; the elemental ring reflects that, not the target's
+                //   magic resistance or shield.
+                // • War-magic path: full crit/skill/attribute/resistance/absorb scaling as normal.
                 var finalDamage = flatDamage > 0f
                     ? flatDamage
                     : (baseDamage + critDamageBonus + skillBonus) * elementalMod * slayerMod * resistanceMod * absorbMod * attribBonus;
@@ -1885,7 +1905,8 @@ namespace ACE.Server.WorldObjects
 
             // Award one proficiency tick for the cast if at least one target was hit.
             // Intentionally outside the loop — ring spells should not award N ticks for N targets.
-            if (dbgHit > 0)
+            // CR-4: fromProc suppresses the tick so Explosive Arrow hits don't grant free War Magic XP.
+            if (dbgHit > 0 && !fromProc)
                 Proficiency.OnSuccessUse(this, GetCreatureSkill(spell.School), spell.PowerMod);
 
             // DEBUG — broadcast ring AOE summary to caster (only when RingAoeDebug is enabled via /ilt ringdebug)

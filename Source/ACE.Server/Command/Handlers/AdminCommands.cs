@@ -4221,6 +4221,7 @@ namespace ACE.Server.Command.Handlers
             "Stackable items will spawn in stacks of their max stack size. All spawns will be limited by the physics engine placement, which may prevent the number you specify from actually spawning.\n" +
             "Be careful with large numbers, especially with ethereal weenies.\n" +
             "If you include a lifespan/date, this value can be in seconds (e.g. 3600), or a calendar date/time string (e.g. '5/22/2026 11:00 PM'). Defaults to 3600 seconds if not specified.\n" +
+            "NOTE: The amount parameter must come before the date/time string. Example: @createliveops 777700025 1 \"5/25/2026 11:00 PM EST\"\n" +
             "You can specify a shape pattern (e.g. circle, square, star, penis) and optional radius at the end of the command to spawn objects in geometric arrangements.")]
         public static void HandleCreateLiveOps(Session session, params string[] parameters)
         {
@@ -4283,13 +4284,24 @@ namespace ACE.Server.Command.Handlers
             if (DateTime.TryParseExact(dateString, formats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime))
             {
                 var utcDateTime = parsedDateTime.ToUniversalTime();
-                var epoch = (int)new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
+                // CR-11: ToUnixTimeSeconds() returns long. Casting directly to int wraps past Jan 19 2038.
+                var epochLong = new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
+                if (epochLong < 0 || epochLong > int.MaxValue)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "Date is out of range. Unix timestamp must be between 0 and 2,147,483,647 (before Jan 19, 2038).",
+                        ChatMessageType.Broadcast));
+                    return;
+                }
 
+                // CR-16: note that unzoned times are server-local, not player-local.
+                var tzNote = parsedDateTime.Kind == DateTimeKind.Utc ? "" : " (no timezone = server local time)";
                 session.Network.EnqueueSend(new GameMessageSystemChat(
                     $"Converted Date:\n" +
-                    $"  Local: {parsedDateTime:M/d/yyyy h:mm:ss tt}\n" +
+                    $"  Local: {parsedDateTime:M/d/yyyy h:mm:ss tt}{tzNote}\n" +
                     $"  UTC: {utcDateTime:yyyy-MM-dd HH:mm:ss}\n" +
-                    $"  Unix Epoch: {epoch}  <-- Copy this for your SQL script",
+                    $"  Unix Epoch: {epochLong}  <-- Copy this for your SQL script\n" +
+                    $"  Tip: append EDT/EST/UTC to your date string to avoid server timezone assumptions.",
                     ChatMessageType.Broadcast));
             }
             else
@@ -4466,8 +4478,19 @@ namespace ACE.Server.Command.Handlers
                     if (DateTime.TryParseExact(dateString, formats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime))
                     {
                         var utcDateTime = parsedDateTime.ToUniversalTime();
-                        itemExpirationTimestamp = (int)new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
-                        return true;
+                        // CR-11: ToUnixTimeSeconds() returns long; casting to int silently wraps past Jan 19 2038.
+                        var epochLong = new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
+                        if (epochLong < 0 || epochLong > int.MaxValue)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat(
+                                "Expiry date is out of range (must be before Jan 19, 2038). Use /timeconvert to verify your timestamp.",
+                                ChatMessageType.Broadcast));
+                            return false;
+                        }
+                        itemExpirationTimestamp = (int)epochLong;
+                        // CR-14: do NOT return early here — let palette/shade parsing below still run.
+                        // Set idx past the date tokens so we don't try to parse them as palette/shade.
+                        idx = parameters.Length; // all remaining tokens were consumed by the date string
                     }
 
                     // Otherwise, treat as relative lifespan seconds
@@ -4684,10 +4707,13 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
+            // CR-15: use objs[0] for the audit log; `obj` is the pre-loop phantom that was created
+            // but never placed in the world for multi-spawn paths.
+            var auditRef = objs.Count > 0 ? objs[0] : obj;
             if (numToSpawn > 1)
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {numToSpawn} {obj.Name} (0x{obj.Guid:X8}) near {obj.Location}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {numToSpawn} {auditRef.Name} near {auditRef.Location}.");
             else
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {obj.Name} (0x{obj.Guid:X8}) at {obj.Location}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {auditRef.Name} (0x{auditRef.Guid:X8}) at {auditRef.Location}.");
         }
 
         public static Position LastSpawnPos;

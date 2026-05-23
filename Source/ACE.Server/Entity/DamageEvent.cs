@@ -597,8 +597,9 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Scans the target creature's elemental resistances (Fire, Cold, Acid, Lightning/Electric, Nether/Void)
-        /// and returns the element to which the target has the highest resistance modifier (weakest resistance).
+        /// Scans the target creature's resistances across all damage types (Slash, Pierce, Bludgeon,
+        /// Fire, Cold, Acid, Electric, Nether) and returns the type to which the target has the
+        /// highest resistance modifier (i.e. the weakest resistance / easiest to exploit).
         /// </summary>
         public static DamageType GetWeakestElement(Creature defender, Creature attacker, WorldObject weapon)
         {
@@ -622,8 +623,10 @@ namespace ACE.Server.Entity
             foreach (var dt in elements)
             {
                 var resistType = Creature.GetResistanceType(dt);
-                // Query target's resistance modifier with base 1.0f weaponResistanceMod (natural/buffed)
-                var mod = defender.GetResistanceMod(resistType, attacker, weapon, 1.0f);
+                // CR-18: pass null attacker/weapon so the scan reads the target's *natural* resistance
+                // without rend modifiers from the current weapon. Otherwise a weapon with AcidRending
+                // artificially lowers the target's apparent Acid resistance and skews element selection.
+                var mod = defender.GetResistanceMod(resistType, null, null, 1.0f);
                 if (mod > maxMod)
                 {
                     maxMod = mod;
@@ -674,7 +677,7 @@ namespace ACE.Server.Entity
             else
                 DamageType = attacker.GetDamageType(false, CombatType.Melee);
 
-            if (attacker.HasPrismaticStrike)
+            if (attacker.HasPrismaticStrike && attacker.CombatMode == CombatMode.Melee)
             {
                 var weakestElement = GetWeakestElement(Defender, attacker, Weapon);
                 DamageType = weakestElement;
