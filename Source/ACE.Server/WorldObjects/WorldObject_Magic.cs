@@ -2044,13 +2044,12 @@ namespace ACE.Server.WorldObjects
 
                 sp.ProjectileSource = this;
                 sp.FromProc = fromProc;
+                sp.CapturePlayerRingVisualOnlyMode();
 
                 // Ring visuals cast by a player in New AOE mode are visual-only — damage is handled
                 // server-side. Make them non-collidable so players can never get stuck on the ring.
                 // Monster ring spells and Classic mode rings retain normal physics collision for damage.
-                if (spellType == ProjectileSpellType.Ring
-                    && this is Player ringPlayer
-                    && !(ringPlayer.GetProperty(PropertyBool.ClassicRingAoe) ?? false))
+                if (sp.IsPlayerRingVisualOnly)
                 {
                     sp.Ethereal = true;
                     sp.IgnoreCollisions = true;
@@ -2086,9 +2085,7 @@ namespace ACE.Server.WorldObjects
                     continue;
                 }
 
-                if (spellType == ProjectileSpellType.Ring
-                    && this is Player
-                    && !(GetProperty(PropertyBool.ClassicRingAoe) ?? false))
+                if (sp.IsPlayerRingVisualOnly)
                     sp.SchedulePlayerRingVisualLifetimeCap();
 
                 spellProjectiles.Add(sp);

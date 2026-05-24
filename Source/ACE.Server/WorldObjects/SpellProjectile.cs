@@ -41,6 +41,11 @@ namespace ACE.Server.WorldObjects
         public int DebugVelocity;
 
         /// <summary>
+        /// Captured at spawn when <see cref="ProjectileSource"/> is set; do not re-read ClassicRingAoe at impact.
+        /// </summary>
+        private bool _isPlayerRingVisualOnly;
+
+        /// <summary>
         /// A new biota be created taking all of its values from weenie.
         /// </summary>
         public SpellProjectile(Weenie weenie, ObjectGuid guid) : base(weenie, guid)
@@ -210,15 +215,19 @@ namespace ACE.Server.WorldObjects
         private bool _projectileImpactComplete;
 
         /// <summary>
-        /// Player ring spells in New AOE mode: ethereal visuals only; damage is server-side.
-        /// The client may still render impacts against walls the server never sees.
+        /// Call once after <see cref="ProjectileSource"/> is assigned (LaunchSpellProjectiles).
         /// </summary>
-        private bool IsPlayerRingVisualOnly()
+        public void CapturePlayerRingVisualOnlyMode()
         {
-            return SpellType == ProjectileSpellType.Ring
+            _isPlayerRingVisualOnly = SpellType == ProjectileSpellType.Ring
                 && ProjectileSource is Player ringCaster
                 && !(ringCaster.GetProperty(PropertyBool.ClassicRingAoe) ?? false);
         }
+
+        /// <summary>
+        /// Player ring spells in New AOE mode: ethereal visuals only; damage is server-side.
+        /// </summary>
+        public bool IsPlayerRingVisualOnly => _isPlayerRingVisualOnly;
 
         /// <summary>
         /// Schedules a forced impact for New-mode player ring visuals so they cannot linger if
@@ -226,7 +235,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void SchedulePlayerRingVisualLifetimeCap()
         {
-            if (!IsPlayerRingVisualOnly())
+            if (!IsPlayerRingVisualOnly)
                 return;
 
             var actionChain = new ActionChain();
@@ -290,7 +299,7 @@ namespace ACE.Server.WorldObjects
             EnqueueBroadcast(new GameMessageVectorUpdate(this));
 
             var destroyDelay = 5.0;
-            if (IsPlayerRingVisualOnly())
+            if (IsPlayerRingVisualOnly)
             {
                 // New-mode ring visuals are non-colliding; clients often keep drawing them after explode.
                 BroadcastRemoveFromKnownPlayers();
@@ -343,9 +352,7 @@ namespace ACE.Server.WorldObjects
             // (Player.ApplyRingSpellAreaDamage).  The projectiles are visual-only so that
             // every enemy within range is guaranteed one hit regardless of angular gaps.
             // Exception: if the player has opted into Classic mode, allow physics damage through.
-            if (SpellType == ProjectileSpellType.Ring
-                && ProjectileSource is Player ringSourcePlayer
-                && !(ringSourcePlayer.GetProperty(PropertyBool.ClassicRingAoe) ?? false))
+            if (IsPlayerRingVisualOnly)
                 return;
 
             // ensure valid creature target

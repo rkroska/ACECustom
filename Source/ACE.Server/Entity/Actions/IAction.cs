@@ -167,7 +167,6 @@ namespace ACE.Server.Entity.Actions
         PlayerTracking_DeCloakStep2,
         PlayerTracking_DeCloakStep3,
         PlayerTracking_DeCloakStep4,
-        PlayerTracking_PostTeleportVisibilityReconcile,
         PlayerTrade_EnqueueSendAddToTrade,
         PlayerTrade_FinalizeTrade,
         PlayerUse_ApplyConsumableAction,
@@ -467,6 +466,7 @@ namespace ACE.Server.Entity.Actions
 
         // Always append new ActionTypes to avoid renumbering existing values.
         Landblock_Relocate_RemoveForPhysics,
+        PlayerTracking_PostTeleportVisibilityReconcile,
     }
     public static class ActionTypeConverter
     {
