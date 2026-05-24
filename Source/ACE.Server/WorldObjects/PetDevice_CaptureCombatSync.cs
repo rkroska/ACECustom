@@ -22,32 +22,78 @@ namespace ACE.Server.WorldObjects
             if (!ServerConfig.pet_capture_combat_sync_enabled.Value)
                 return null;
 
+            Dictionary<CombatBodyPart, PropertiesBodyPart> bodyPartSnapshot = null;
             var captureWcid = CaptureSkinCreatureWcid;
             if (captureWcid.HasValue && captureWcid.Value > 0)
+            {
+                bodyPartSnapshot = SnapshotBodyParts(pet.Biota.PropertiesBodyPart);
                 MergeCaptureSkinBodyParts(pet, (uint)captureWcid.Value, petClassWcid);
+            }
+
+            void OnCombatSyncFailed()
+            {
+                if (ServerConfig.pet_capture_combat_sync_fallback_cosmetic_only.Value)
+                    RevertCaptureSkinToTemplateCombat(pet, baselineMotionTableId, baselineCombatTableDid, player);
+
+                if (bodyPartSnapshot != null)
+                    RestoreBodyParts(pet, bodyPartSnapshot);
+            }
 
             pet.GetCombatTable();
             if (pet.CombatTable == null)
+            {
+                if (!ServerConfig.pet_capture_combat_sync_fallback_cosmetic_only.Value)
+                {
+                    if (bodyPartSnapshot != null)
+                        RestoreBodyParts(pet, bodyPartSnapshot);
+                    return null;
+                }
+
+                OnCombatSyncFailed();
                 return null;
+            }
 
             var meanDelay = (float)((pet.PowerupTime ?? 1.0f) * 0.5);
 
             if (!pet.TryFindValidUnarmedMeleeStance(pet.MotionTableId, meanDelay, out var resolvedStance))
             {
-                if (ServerConfig.pet_capture_combat_sync_fallback_cosmetic_only.Value)
-                    RevertCaptureSkinToTemplateCombat(pet, baselineMotionTableId, baselineCombatTableDid, player);
+                OnCombatSyncFailed();
                 return null;
             }
 
             var rate = pet.EstimateMeleeDamageEventsPerSecond(pet.MotionTableId, meanDelay, resolvedStance);
             if (rate <= float.Epsilon)
             {
-                if (ServerConfig.pet_capture_combat_sync_fallback_cosmetic_only.Value)
-                    RevertCaptureSkinToTemplateCombat(pet, baselineMotionTableId, baselineCombatTableDid, player);
+                OnCombatSyncFailed();
                 return null;
             }
 
             return resolvedStance;
+        }
+
+        private static Dictionary<CombatBodyPart, PropertiesBodyPart> SnapshotBodyParts(IDictionary<CombatBodyPart, PropertiesBodyPart> source)
+        {
+            if (source == null || source.Count == 0)
+                return null;
+
+            var snapshot = new Dictionary<CombatBodyPart, PropertiesBodyPart>(source.Count);
+            foreach (var kvp in source)
+                snapshot[kvp.Key] = kvp.Value.Clone();
+
+            return snapshot;
+        }
+
+        private static void RestoreBodyParts(Creature pet, Dictionary<CombatBodyPart, PropertiesBodyPart> snapshot)
+        {
+            if (snapshot == null)
+            {
+                pet.Biota.PropertiesBodyPart = null;
+                return;
+            }
+
+            pet.Biota.PropertiesBodyPart = new Dictionary<CombatBodyPart, PropertiesBodyPart>(snapshot.Count);
+            foreach (var kvp in snapshot)
+                pet.Biota.PropertiesBodyPart[kvp.Key] = kvp.Value.Clone();
         }
 
         private static void RevertCaptureSkinToTemplateCombat(CombatPet pet, uint baselineMotionTableId, uint? baselineCombatTableDid, Player player)

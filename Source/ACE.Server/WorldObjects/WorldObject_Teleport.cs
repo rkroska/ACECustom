@@ -157,10 +157,10 @@ namespace ACE.Server.WorldObjects
                 newPosition.Variation = Location.Variation;
             }
 
-            // pre-validate movement
-            if (player != null && !player.ValidateMovement(newPosition))
+            // pre-validate movement (skip during forced server teleport; CurrentLandblock is often null mid-handoff)
+            if (player != null && !(Teleporting && forceUpdate) && !player.ValidateMovement(newPosition))
             {
-                log.Error($"{Name}.UpdatePosition() - movement pre-validation failed from {Location} to {newPosition}, t: {Teleporting}");
+                log.Warn($"{Name}.UpdatePosition() - movement pre-validation failed from {Location} to {newPosition}, t: {Teleporting}");
                 return false;
             }
 
