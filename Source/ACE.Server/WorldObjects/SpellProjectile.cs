@@ -41,6 +41,11 @@ namespace ACE.Server.WorldObjects
         public int DebugVelocity;
 
         /// <summary>
+        /// Captured at spawn when <see cref="ProjectileSource"/> is set; do not re-read ClassicRingAoe at impact.
+        /// </summary>
+        private bool _isPlayerRingVisualOnly;
+
+        /// <summary>
         /// A new biota be created taking all of its values from weenie.
         /// </summary>
         public SpellProjectile(Weenie weenie, ObjectGuid guid) : base(weenie, guid)
@@ -207,9 +212,64 @@ namespace ACE.Server.WorldObjects
 
         public bool WorldEntryCollision { get; set; }
 
+        private bool _projectileImpactComplete;
+
+        /// <summary>
+        /// Call once after <see cref="ProjectileSource"/> is assigned (LaunchSpellProjectiles).
+        /// </summary>
+        public void CapturePlayerRingVisualOnlyMode()
+        {
+            _isPlayerRingVisualOnly = SpellType == ProjectileSpellType.Ring
+                && ProjectileSource is Player ringCaster
+                && !(ringCaster.GetProperty(PropertyBool.ClassicRingAoe) ?? false);
+        }
+
+        /// <summary>
+        /// Player ring spells in New AOE mode: ethereal visuals only; damage is server-side.
+        /// </summary>
+        public bool IsPlayerRingVisualOnly => _isPlayerRingVisualOnly;
+
+        /// <summary>
+        /// Schedules a forced impact for New-mode player ring visuals so they cannot linger if
+        /// physics range checks or network state updates are missed.
+        /// </summary>
+        public void SchedulePlayerRingVisualLifetimeCap()
+        {
+            if (!IsPlayerRingVisualOnly)
+                return;
+
+            var actionChain = new ActionChain();
+            actionChain.AddDelaySeconds(2.5);
+            actionChain.AddAction(this, ActionType.SpellProjectile_RingVisualLifetimeCap, () =>
+            {
+                if (IsDestroyed || _projectileImpactComplete)
+                    return;
+
+                ProjectileImpact();
+            });
+            actionChain.EnqueueChain();
+        }
+
+        private void BroadcastRemoveFromKnownPlayers()
+        {
+            if (PhysicsObj == null)
+                return;
+
+            foreach (var player in PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
+                player.RemoveTrackedObject(this, false);
+
+            if (ProjectileSource is Player caster)
+                caster.RemoveTrackedObject(this, false);
+        }
+
         public void ProjectileImpact()
         {
             //Console.WriteLine($"{Name}.ProjectileImpact()");
+
+            if (_projectileImpactComplete)
+                return;
+
+            _projectileImpactComplete = true;
 
             ReportCollisions = false;
             Ethereal = true;
@@ -238,8 +298,16 @@ namespace ACE.Server.WorldObjects
             PhysicsObj.Velocity = Vector3.Zero;
             EnqueueBroadcast(new GameMessageVectorUpdate(this));
 
+            var destroyDelay = 5.0;
+            if (IsPlayerRingVisualOnly)
+            {
+                // New-mode ring visuals are non-colliding; clients often keep drawing them after explode.
+                BroadcastRemoveFromKnownPlayers();
+                destroyDelay = 0.5;
+            }
+
             ActionChain selfDestructChain = new ActionChain();
-            selfDestructChain.AddDelaySeconds(5.0);
+            selfDestructChain.AddDelaySeconds(destroyDelay);
             selfDestructChain.AddAction(this, ActionType.SpellProjectile_Destroy, () => Destroy());
             selfDestructChain.EnqueueChain();
         }
@@ -284,9 +352,7 @@ namespace ACE.Server.WorldObjects
             // (Player.ApplyRingSpellAreaDamage).  The projectiles are visual-only so that
             // every enemy within range is guaranteed one hit regardless of angular gaps.
             // Exception: if the player has opted into Classic mode, allow physics damage through.
-            if (SpellType == ProjectileSpellType.Ring
-                && ProjectileSource is Player ringSourcePlayer
-                && !(ringSourcePlayer.GetProperty(PropertyBool.ClassicRingAoe) ?? false))
+            if (IsPlayerRingVisualOnly)
                 return;
 
             // ensure valid creature target

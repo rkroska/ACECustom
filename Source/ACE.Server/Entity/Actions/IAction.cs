@@ -183,6 +183,7 @@ namespace ACE.Server.Entity.Actions
         RecipeManager_ShowDialogue,
         Scroll_Read,
         SpellProjectile_Destroy,
+        SpellProjectile_RingVisualLifetimeCap,
         Switch_BaseOnActivate,
         Tailoring_DoTailoring,
         Vendor_ApplyService,
@@ -465,6 +466,7 @@ namespace ACE.Server.Entity.Actions
 
         // Always append new ActionTypes to avoid renumbering existing values.
         Landblock_Relocate_RemoveForPhysics,
+        PlayerTracking_PostTeleportVisibilityReconcile,
     }
     public static class ActionTypeConverter
     {
