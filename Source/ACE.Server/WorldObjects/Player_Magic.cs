@@ -1220,7 +1220,7 @@ namespace ACE.Server.WorldObjects
                     radiusOverride: 15f,
                     heightOverride: 10f,
                     flatDamage:     flatDmg,
-                    scanOrigin:     target,  // CR-2: scan target's ObjMaint so enemies near the blast point are found
+                    scanOrigin:     this,    // Scan the player's reliable ObjMaint (always populated) instead of target's (empty on static dummies like Winning Idol)
                     fromProc:       true);   // CR-4: suppress War Magic proficiency tick for procs
             });
             actionChain.EnqueueChain();
@@ -1885,28 +1885,31 @@ namespace ACE.Server.WorldObjects
                     : (baseDamage + critDamageBonus + skillBonus) * elementalMod * slayerMod * resistanceMod * absorbMod * attribBonus;
 
                 // Sneak attack & heritage mods (mirrors SpellProjectile.DamageTarget).
-                var sneakAttackMod = GetSneakAttackMod(creature);
-                var damageRatingMod = Creature.AdditiveCombine(baseDamageRatingMod, heritageMod, sneakAttackMod);
-
-                var damageResistRatingMod = creature.GetDamageResistRatingMod(CombatType.Magic);
-
-                if (criticalHit)
+                if (flatDamage <= 0f)
                 {
-                    var critDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetCritDamageResistRating());
+                    var sneakAttackMod = GetSneakAttackMod(creature);
+                    var damageRatingMod = Creature.AdditiveCombine(baseDamageRatingMod, heritageMod, sneakAttackMod);
 
-                    damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
-                    damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, critDamageResistRatingMod);
+                    var damageResistRatingMod = creature.GetDamageResistRatingMod(CombatType.Magic);
+
+                    if (criticalHit)
+                    {
+                        var critDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetCritDamageResistRating());
+
+                        damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
+                        damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, critDamageResistRatingMod);
+                    }
+
+                    if (isPvP)
+                    {
+                        var pkDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetPKDamageResistRating());
+
+                        damageRatingMod = Creature.AdditiveCombine(damageRatingMod, pkDamageRatingMod);
+                        damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, pkDamageResistRatingMod);
+                    }
+
+                    finalDamage *= damageRatingMod * damageResistRatingMod;
                 }
-
-                if (isPvP)
-                {
-                    var pkDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetPKDamageResistRating());
-
-                    damageRatingMod = Creature.AdditiveCombine(damageRatingMod, pkDamageRatingMod);
-                    damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, pkDamageResistRatingMod);
-                }
-
-                finalDamage *= damageRatingMod * damageResistRatingMod;
 
                 // Apply enrage damage reduction for the defender.
                 if (creature.IsEnraged)

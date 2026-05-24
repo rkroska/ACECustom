@@ -261,9 +261,9 @@ namespace ACE.Server.WorldObjects
                 OnAttackMonster(target);
 
             // Explosive Arrow Charm: on a successful missile arrow hit, blast Ring of Exploding Magma.
-            // NOTE: damageEvent.CombatType is always Melee for physical arrows (ProjectileSource is null on ammo).
-            // GetCombatType() checks the equipped weapon's wield slot and is always correct.
-            if (damageEvent.HasDamage && GetCombatType() == CombatType.Missile)
+            // NOTE: GetCombatType() checks the equipped weapon's wield slot, but if the player swaps weapons mid-flight
+            // or split arrows hit while stabbing, we also check damageEvent's CombatType and DamageSource's Missile status.
+            if (damageEvent.HasDamage && (GetCombatType() == CombatType.Missile || damageEvent.CombatType == CombatType.Missile || (damageEvent.DamageSource?.Missile ?? false)))
                 TryApplyExplosiveArrowProc(target, damageEvent.Damage, damageEvent.DamageType);
 
             return damageEvent;
