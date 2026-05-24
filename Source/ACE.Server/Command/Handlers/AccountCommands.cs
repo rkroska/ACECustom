@@ -371,7 +371,7 @@ namespace ACE.Server.Command.Handlers
                     var elapsed = now - lastUsed;
                     if (elapsed < UnstuckCooldownDuration)
                     {
-                        var remaining = Math.Max(1, (int)(UnstuckCooldownDuration - elapsed).TotalSeconds);
+                        var remaining = Math.Max(1, (int)Math.Ceiling((UnstuckCooldownDuration - elapsed).TotalSeconds));
                         CommandHandlerHelper.WriteOutputInfo(session,
                             $"Silas the Unsticker whispers: \"Easy there — I just helped you. Give it another {remaining} second{(remaining == 1 ? "" : "s")} before asking again.\"",
                             ChatMessageType.Broadcast);
@@ -383,18 +383,22 @@ namespace ACE.Server.Command.Handlers
                 // The "nothing found" path is a read-only no-op with negligible cost
                 // and no reason to penalise the player for checking.
 
-                // --- Find all OTHER sessions on this account ---
-                // Uses NetworkManager.FindAllByAccount() instead of PlayerManager.GetAllOnline()
-                // so that zombie/stuck sessions (no attached Player object) are also caught.
-                // The caller's own session is excluded — only other sessions on the account are booted.
+                // --- Find all OTHER sessions and player objects on this account ---
+                // 1. Find sessions via NetworkManager to catch active or zombie network sessions.
+                // 2. Find player objects via PlayerManager to catch session-less memory zombies.
+                // The caller's own session/player is excluded — only other sessions/players on the account are booted.
                 var sessionsToKick = ACE.Server.Network.Managers.NetworkManager.FindAllByAccount(accountId)
                     .Where(s => s != session)
                     .ToList();
 
-                if (sessionsToKick.Count == 0)
+                var playersToKick = PlayerManager.GetAllOnline()
+                    .Where(p => p.Account != null && p.Account.AccountId == accountId && p != session.Player)
+                    .ToList();
+
+                if (sessionsToKick.Count == 0 && playersToKick.Count == 0)
                 {
                     CommandHandlerHelper.WriteOutputInfo(session,
-                        "Silas the Unsticker whispers: \"Hmm... I don't see any other characters from your account stuck out there. You look fine to me!\"",
+                        "Silas the Unsticker whispers: \"Hmm... I don't see any other characters or active sessions from your account stuck out there. You look fine to me!\"",
                         ChatMessageType.Broadcast);
                     return;
                 }
@@ -402,19 +406,39 @@ namespace ACE.Server.Command.Handlers
                 // session.Player is guaranteed non-null by CommandHandlerFlag.RequiresWorld.
                 var callerName = session.Player.Name;
 
-                var kickedNames = new List<string>(sessionsToKick.Count);
+                var kickedNames = new List<string>(sessionsToKick.Count + playersToKick.Count);
+
+                // First, terminate all active/zombie network sessions
                 foreach (var stuckSession in sessionsToKick)
                 {
-                    // stuckSession.Player may be null for zombie sessions — fall back to account info.
-                    var charName = stuckSession.Player?.Name ?? $"[session:{stuckSession.AccountId}]";
-                    log.Info($"[Unstuck] Booting session for '{charName}' (Account: {session.Account ?? "[unknown]"}, AccountId: {accountId}) requested by '{callerName}'.");
+                    // stuckSession.Player may be null for zombie sessions.
+                    // Keep the raw name for the server log but use a neutral label in player-visible text.
+                    var charName = stuckSession.Player?.Name;
+                    var displayName = charName ?? "another login session";
+                    log.Info($"[Unstuck] Booting session for '{charName ?? "[no character selected]"}' (Account: {session.Account ?? "[unknown]"}, AccountId: {accountId}) requested by '{callerName}'.");
 
                     stuckSession.Terminate(
                         ACE.Server.Network.Enum.SessionTerminationReason.AccountBooted,
                         new ACE.Server.Network.GameMessages.Messages.GameMessageBootAccount(
                             " - Freed by Silas the Unsticker at your request."));
 
-                    kickedNames.Add(charName);
+                    kickedNames.Add(displayName);
+                }
+
+                // Second, clean up any session-less player objects (memory zombies)
+                foreach (var stuckPlayer in playersToKick)
+                {
+                    // If this player was already handled by the session termination loop, skip it
+                    if (stuckPlayer.Session != null && sessionsToKick.Contains(stuckPlayer.Session))
+                        continue;
+
+                    log.Info($"[Unstuck] Cleaning up session-less zombie player '{stuckPlayer.Name}' (Account: {session.Account ?? "[unknown]"}, AccountId: {accountId}) requested by '{callerName}'.");
+
+                    // Force logoff the session-less player
+                    stuckPlayer.ForcedLogOffRequested = true;
+                    stuckPlayer.ForceLogoff();
+
+                    kickedNames.Add(stuckPlayer.Name);
                 }
 
                 // Prune entries older than the cooldown window to keep the dictionary
