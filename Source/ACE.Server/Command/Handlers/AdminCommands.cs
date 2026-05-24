@@ -4220,7 +4220,7 @@ namespace ACE.Server.Command.Handlers
             "This will attempt to spawn the weenie you specify. If you include an amount to spawn, it will attempt to spawn that many of the object.\n" +
             "Stackable items will spawn in stacks of their max stack size. All spawns will be limited by the physics engine placement, which may prevent the number you specify from actually spawning.\n" +
             "Be careful with large numbers, especially with ethereal weenies.\n" +
-            "If you include a lifespan/date, this value can be in seconds (e.g. 3600), or a calendar date/time string (e.g. '5/22/2026 11:00 PM'). Use 'default' (e.g. default 20 0.5) to keep the 3600s default while passing palette/shade.\n" +
+            "If you include a lifespan/date, this value can be in seconds (e.g. 3600), or a calendar date/time string (e.g. '5/22/2026 11:00 PM'). Use 'default' (e.g. 1 default 20 0.5) to keep the 3600s default while passing palette/shade.\n" +
             "NOTE: The amount parameter must come before the date/time string. Example: @createliveops 777700025 1 \"5/25/2026 11:00 PM EST\"\n" +
             "You can specify a shape pattern (e.g. circle, square, star, penis) and optional radius at the end of the command to spawn objects in geometric arrangements.")]
         public static void HandleCreateLiveOps(Session session, params string[] parameters)
