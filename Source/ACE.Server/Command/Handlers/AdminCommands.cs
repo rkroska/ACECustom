@@ -4202,9 +4202,9 @@ namespace ACE.Server.Command.Handlers
             "Be careful with large numbers, especially with ethereal weenies.")]
         public static void HandleCreate(Session session, params string[] parameters)
         {
-            if (ParseCreateParameters(session, parameters, false, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out _))
+            if (ParseCreateParameters(session, parameters, false, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out _, out _, out string pattern, out float? radius))
             {
-                TryCreateObject(session, weenie, numToSpawn, palette, shade);
+                TryCreateObject(session, weenie, numToSpawn, palette, shade, null, null, pattern, radius);
 
                 if (session.AccessLevel >= AccessLevel.Admin)
                     PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} created {numToSpawn}x {weenie.ClassName} ({weenie.WeenieClassId}) using /create.");
@@ -4216,16 +4216,87 @@ namespace ACE.Server.Command.Handlers
         /// </summary>
         [CommandHandler("createliveops", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Creates an object or objects with lifespans in the world for live events.",
-            "<wcid or classname> (amount) (lifespan) (palette) (shade)\n" +
+            "<wcid or classname> (amount) (lifespan or date/time) (palette) (shade) (pattern) (radius)\n" +
             "This will attempt to spawn the weenie you specify. If you include an amount to spawn, it will attempt to spawn that many of the object.\n" +
             "Stackable items will spawn in stacks of their max stack size. All spawns will be limited by the physics engine placement, which may prevent the number you specify from actually spawning.\n" +
             "Be careful with large numbers, especially with ethereal weenies.\n" +
-            "If you include a lifespan, this value is in seconds, and defaults to 3600 (1 hour) if not specified.")]
+            "If you include a lifespan/date, this value can be in seconds (e.g. 3600), or a calendar date/time string (e.g. '5/22/2026 11:00 PM'). Defaults to 3600 seconds if not specified.\n" +
+            "You can specify a shape pattern (e.g. circle, square, star, penis) and optional radius at the end of the command to spawn objects in geometric arrangements.")]
         public static void HandleCreateLiveOps(Session session, params string[] parameters)
         {
-            if (ParseCreateParameters(session, parameters, true, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out int? lifespan))
+            if (ParseCreateParameters(session, parameters, true, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out int? lifespan, out int? itemExpirationTimestamp, out string pattern, out float? radius))
             {
-                TryCreateObject(session, weenie, numToSpawn, palette, shade, lifespan);
+                TryCreateObject(session, weenie, numToSpawn, palette, shade, lifespan, itemExpirationTimestamp, pattern, radius);
+            }
+        }
+
+        [CommandHandler("timeconvert", AccessLevel.Developer, CommandHandlerFlag.None, 1,
+            "Converts a date/time string into a Unix Epoch timestamp.",
+            "<date string> (e.g. 5/22/2026 11:59 PM EST)")]
+        public static void HandleTimeConvert(Session session, params string[] parameters)
+        {
+            var dateString = string.Join(" ", parameters);
+
+            // Pre-process common timezone abbreviations to their offset equivalents
+            var tzMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "EST", "-05:00" },
+                { "EDT", "-04:00" },
+                { "CST", "-06:00" },
+                { "CDT", "-05:00" },
+                { "MST", "-07:00" },
+                { "MDT", "-06:00" },
+                { "PST", "-08:00" },
+                { "PDT", "-07:00" },
+                { "UTC", "+00:00" },
+                { "GMT", "+00:00" },
+                { "BST", "+01:00" },
+                { "CET", "+01:00" },
+                { "CEST", "+02:00" }
+            };
+
+            foreach (var kvp in tzMappings)
+            {
+                dateString = System.Text.RegularExpressions.Regex.Replace(dateString, $@"\b{kvp.Key}\b", kvp.Value, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            }
+
+            var formats = new[]
+            {
+                "M/d/yyyy h:mm:ss tt zzz",
+                "M/d/yyyy h:mm tt zzz",
+                "M/d/yyyy h:mm:ss tt",
+                "M/d/yyyy h:mm tt",
+                "M/d/yyyy H:mm:ss zzz",
+                "M/d/yyyy H:mm zzz",
+                "M/d/yyyy H:mm:ss",
+                "M/d/yyyy H:mm",
+                "yyyy-MM-dd HH:mm:ss zzz",
+                "yyyy-MM-dd HH:mm zzz",
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy-MM-dd HH:mm",
+                "yyyy-MM-dd h:mm:ss tt zzz",
+                "yyyy-MM-dd h:mm tt zzz",
+                "yyyy-MM-dd h:mm:ss tt",
+                "yyyy-MM-dd h:mm tt"
+            };
+
+            if (DateTime.TryParseExact(dateString, formats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime))
+            {
+                var utcDateTime = parsedDateTime.ToUniversalTime();
+                var epoch = (int)new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"Converted Date:\n" +
+                    $"  Local: {parsedDateTime:M/d/yyyy h:mm:ss tt}\n" +
+                    $"  UTC: {utcDateTime:yyyy-MM-dd HH:mm:ss}\n" +
+                    $"  Unix Epoch: {epoch}  <-- Copy this for your SQL script",
+                    ChatMessageType.Broadcast));
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    "Failed to parse date/time. Example format: '/timeconvert 5/22/2026 11:59 PM EST'",
+                    ChatMessageType.Broadcast));
             }
         }
 
@@ -4283,13 +4354,50 @@ namespace ACE.Server.Command.Handlers
         /// Parses the command-line parameters for /create or /createliveops
         /// The only difference with /createliveops is that it includes a lifespan parameter in the middle
         /// </summary>
-        private static bool ParseCreateParameters(Session session, string[] parameters, bool hasLifespan, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out int? lifespan)
+        private static bool ParseCreateParameters(Session session, string[] parameters, bool hasLifespan, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out int? lifespan, out int? itemExpirationTimestamp, out string pattern, out float? radius)
         {
-            weenie = GetWeenieForCreate(session, parameters[0]);
+            weenie = null;
             numToSpawn = 1;
             palette = null;
             shade = null;
             lifespan = null;
+            itemExpirationTimestamp = null;
+            pattern = null;
+            radius = null;
+
+            if (parameters.Length == 0)
+                return false;
+
+            if (parameters.Length >= 3)
+            {
+                var lastToken = parameters[parameters.Length - 1];
+                var secondLastToken = parameters[parameters.Length - 2];
+
+                if (KnownPatterns.Contains(secondLastToken) && float.TryParse(lastToken, out float parsedRadius))
+                {
+                    pattern = secondLastToken;
+                    radius = parsedRadius;
+                    parameters = parameters.Take(parameters.Length - 2).ToArray();
+                }
+                else if (KnownPatterns.Contains(lastToken))
+                {
+                    pattern = lastToken;
+                    radius = 5f;
+                    parameters = parameters.Take(parameters.Length - 1).ToArray();
+                }
+            }
+            else if (parameters.Length >= 2)
+            {
+                var lastToken = parameters[parameters.Length - 1];
+                if (KnownPatterns.Contains(lastToken))
+                {
+                    pattern = lastToken;
+                    radius = 5f;
+                    parameters = parameters.Take(parameters.Length - 1).ToArray();
+                }
+            }
+
+            weenie = GetWeenieForCreate(session, parameters[0]);
 
             if (weenie == null)
                 return false;
@@ -4309,9 +4417,63 @@ namespace ACE.Server.Command.Handlers
             {
                 if (parameters.Length > 2)
                 {
+                    // Attempt to parse all subsequent parameters together as a calendar date/time string
+                    var dateString = string.Join(" ", parameters.Skip(2));
+
+                    // Pre-process common timezone abbreviations to their offset equivalents for standard parsing
+                    var tzMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        { "EST", "-05:00" },
+                        { "EDT", "-04:00" },
+                        { "CST", "-06:00" },
+                        { "CDT", "-05:00" },
+                        { "MST", "-07:00" },
+                        { "MDT", "-06:00" },
+                        { "PST", "-08:00" },
+                        { "PDT", "-07:00" },
+                        { "UTC", "+00:00" },
+                        { "GMT", "+00:00" },
+                        { "BST", "+01:00" },
+                        { "CET", "+01:00" },
+                        { "CEST", "+02:00" }
+                    };
+
+                    foreach (var kvp in tzMappings)
+                    {
+                        dateString = System.Text.RegularExpressions.Regex.Replace(dateString, $@"\b{kvp.Key}\b", kvp.Value, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    }
+
+                    var formats = new[]
+                    {
+                        "M/d/yyyy h:mm:ss tt zzz",
+                        "M/d/yyyy h:mm tt zzz",
+                        "M/d/yyyy h:mm:ss tt",
+                        "M/d/yyyy h:mm tt",
+                        "M/d/yyyy H:mm:ss zzz",
+                        "M/d/yyyy H:mm zzz",
+                        "M/d/yyyy H:mm:ss",
+                        "M/d/yyyy H:mm",
+                        "yyyy-MM-dd HH:mm:ss zzz",
+                        "yyyy-MM-dd HH:mm zzz",
+                        "yyyy-MM-dd HH:mm:ss",
+                        "yyyy-MM-dd HH:mm",
+                        "yyyy-MM-dd h:mm:ss tt zzz",
+                        "yyyy-MM-dd h:mm tt zzz",
+                        "yyyy-MM-dd h:mm:ss tt",
+                        "yyyy-MM-dd h:mm tt"
+                    };
+
+                    if (DateTime.TryParseExact(dateString, formats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime))
+                    {
+                        var utcDateTime = parsedDateTime.ToUniversalTime();
+                        itemExpirationTimestamp = (int)new DateTimeOffset(utcDateTime).ToUnixTimeSeconds();
+                        return true;
+                    }
+
+                    // Otherwise, treat as relative lifespan seconds
                     if (!int.TryParse(parameters[2], out int _lifespan))
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Lifespan must be a number between {int.MinValue} - {int.MaxValue}.", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Lifespan must be a number of seconds or a valid date/time string (e.g. '5/22/2026 11:00 PM').", ChatMessageType.Broadcast));
                         return false;
                     }
                     else
@@ -4434,7 +4596,7 @@ namespace ACE.Server.Command.Handlers
         /// <summary>
         /// Attempts to spawn some # of weenies in the world for /create or /createliveops
         /// </summary>
-        private static void TryCreateObject(Session session, Weenie weenie, int numToSpawn, int? palette = null, float? shade = null, int? lifespan = null)
+        private static void TryCreateObject(Session session, Weenie weenie, int numToSpawn, int? palette = null, float? shade = null, int? lifespan = null, int? itemExpirationTimestamp = null, string pattern = null, float? radius = null)
         {
             var obj = CreateObjectForCommand(session, weenie);
 
@@ -4491,15 +4653,29 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            foreach (var w in objs)
+            List<Position> patternPositions = null;
+            if (!string.IsNullOrEmpty(pattern) && radius.HasValue && objs.Count > 0)
             {
+                patternPositions = PatternGenerator.GeneratePattern(session.Player.Location, objs.Count, pattern, radius.Value);
+            }
+
+            for (int i = 0; i < objs.Count; i++)
+            {
+                var w = objs[i];
+                if (patternPositions != null && i < patternPositions.Count)
+                {
+                    w.Location = patternPositions[i];
+                }
+
                 if (palette != null)
                     w.PaletteTemplate = palette;
 
                 if (shade != null)
                     w.Shade = shade;
 
-                if (lifespan != null)
+                if (itemExpirationTimestamp != null)
+                    w.ItemExpirationTimestamp = itemExpirationTimestamp;
+                else if (lifespan != null)
                     w.Lifespan = lifespan;
 
                 if (!w.EnterWorld()) // If the last object failed to add to the landblock, don't keep trying
@@ -4515,6 +4691,12 @@ namespace ACE.Server.Command.Handlers
         }
 
         public static Position LastSpawnPos;
+
+        private static readonly HashSet<string> KnownPatterns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "circle", "triangle", "rectangle", "square", "line", "star", "arrow", "cross",
+            "diamond", "crown", "heart", "boot", "sword", "spiral", "penis"
+        };
 
         /// <summary>
         /// Creates WorldObjects from Weenies for /create, /createliveops, and /ci
@@ -7809,6 +7991,8 @@ namespace ACE.Server.Command.Handlers
                     ChatMessageType.Broadcast));
             }
         }
+
+
 
     }
 }
