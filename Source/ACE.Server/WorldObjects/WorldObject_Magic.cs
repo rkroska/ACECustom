@@ -2086,6 +2086,11 @@ namespace ACE.Server.WorldObjects
                     continue;
                 }
 
+                if (spellType == ProjectileSpellType.Ring
+                    && this is Player
+                    && !(GetProperty(PropertyBool.ClassicRingAoe) ?? false))
+                    sp.SchedulePlayerRingVisualLifetimeCap();
+
                 spellProjectiles.Add(sp);
             }
 
