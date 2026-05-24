@@ -90,6 +90,15 @@ namespace ACE.Server.WorldObjects
 
             var deathMessage = Strings.GetDeathMessage(damageType, criticalHit);
 
+            // ILT: always clear split arrow tracking — killer may not be a player
+            var lastHitWasSplitArrow = GetProperty(PropertyBool.LastHitWasSplitArrow) is true;
+            if (lastHitWasSplitArrow)
+            {
+                RemoveProperty(PropertyBool.LastHitWasSplitArrow);
+                RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+            }
+
             // if killed by a player, send them a message
             if (lastDamagerInfo.IsPlayer)
             {
@@ -99,7 +108,16 @@ namespace ACE.Server.WorldObjects
                 var killerMsg = string.Format(deathMessage.Killer, Name);
 
                 if (lastDamager is Player playerKiller && playerKiller.Session != null)
-                    playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, GetProperty(PropertyBool.IsSplitArrowKill) == true));
+                {
+                    // ILT: build overkill suffix — applied AFTER split arrow text transformation
+                    // inside GameEventKillerNotification, so [Overkill: N] is always last.
+                    var overkillSuffix = (playerKiller.ShowOverkill && lastDamagerInfo.OverkillAmount > 0)
+                        ? $" [Overkill: {Creature.FormatDamage(lastDamagerInfo.OverkillAmount, playerKiller.DamageNumberFormat)}]"
+                        : "";
+
+                    playerKiller.Session.Network.EnqueueSend(
+                        new GameEventKillerNotification(playerKiller.Session, killerMsg, lastHitWasSplitArrow, overkillSuffix));
+                }
             }
             return deathMessage;
         }
@@ -155,7 +173,8 @@ namespace ACE.Server.WorldObjects
             var deathAnimLength = ExecuteMotion(motionDeath);
 
             // Try to generate Siphon Lens before death emotes (which might destroy the creature)
-            GenerateSiphonLens(topDamager);
+            if (!(this is Pet))
+                GenerateSiphonLens(topDamager);
 
             if (EmoteManager != null)
             {
@@ -561,6 +580,10 @@ namespace ACE.Server.WorldObjects
             {
                 if (killer != null && killer.IsOlthoiPlayer) return;
 
+                // PetDevice summons (Pet / CombatPet): no death treasure or ground drops (DeathTreasure, createlist, siphon lens)
+                if (this is Pet)
+                    return;
+
                 var loot = GenerateTreasure(killer, null);
 
                 foreach(var item in loot)
@@ -638,12 +661,10 @@ namespace ACE.Server.WorldObjects
 
                     corpse.KillerId = killer.Guid.Full;
 
-                    if (killer.PetOwner != null)
-                    {
-                        var petOwner = killer.TryGetPetOwner();
-                        if (petOwner != null)
-                            corpse.KillerId = petOwner.Guid.Full;
-                    }
+                    if (killer.TryGetPetOwner() is Player petLootPlayer)
+                        corpse.KillerId = petLootPlayer.Guid.Full;
+                    else if (killer.TryGetAttacker() is CombatPet killerPet && killerPet.P_PetOwner != null)
+                        corpse.KillerId = killerPet.P_PetOwner.Guid.Full;
                 }
             }
 
@@ -868,6 +889,7 @@ namespace ACE.Server.WorldObjects
         private List<WorldObject> GenerateTreasure(DamageHistoryInfo killer, Corpse corpse)
         {
             var droppedItems = new List<WorldObject>();
+            var tier = PrestigeManager.GetKillScalingMonsterTier(this);
 
             // create death treasure from loot generation factory
             if (DeathTreasure != null)
@@ -875,6 +897,9 @@ namespace ACE.Server.WorldObjects
                 List<WorldObject> items = LootGenerationFactory.CreateRandomLootObjects(DeathTreasure);
                 foreach (WorldObject wo in items)
                 {
+                    if (tier > 0)
+                        PrestigeManager.ApplyLootScaling(wo, tier);
+
                     if (corpse != null)
                         corpse.TryAddToInventory(wo);
                     else
@@ -933,6 +958,9 @@ namespace ACE.Server.WorldObjects
 
                     if (wo != null)
                     {
+                        if (tier > 0)
+                            PrestigeManager.ApplyLootScaling(wo, tier);
+
                         if (corpse != null)
                             corpse.TryAddToInventory(wo);
                         else
