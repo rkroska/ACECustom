@@ -167,7 +167,6 @@ namespace ACE.Server.Entity.Actions
         PlayerTracking_DeCloakStep2,
         PlayerTracking_DeCloakStep3,
         PlayerTracking_DeCloakStep4,
-        PlayerTracking_PostTeleportVisibilityRefresh,
         PlayerTrade_EnqueueSendAddToTrade,
         PlayerTrade_FinalizeTrade,
         PlayerUse_ApplyConsumableAction,

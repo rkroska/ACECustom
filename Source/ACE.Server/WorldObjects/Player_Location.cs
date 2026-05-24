@@ -721,10 +721,7 @@ namespace ACE.Server.WorldObjects
             finally
             {
                 if (shouldCallBase)
-                {
                     base.OnTeleportComplete();
-                    SchedulePostTeleportVisibilityRefresh();
-                }
             }
         }
 

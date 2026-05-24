@@ -161,44 +161,6 @@ namespace ACE.Server.WorldObjects
             return true;
         }
 
-        /// <summary>
-        /// After teleport/login materialize, resend CreateObject for everything currently in the visible set.
-        /// Heals "empty world until I move" when ObjMaint knows objects but the client never received CO.
-        /// </summary>
-        public void RefreshVisibleObjectsAfterTeleport()
-        {
-            if (ObjMaint == null || Session == null)
-                return;
-
-            var myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
-
-            foreach (var physObj in ObjMaint.GetVisibleObjectsValuesWhere(obj =>
-            {
-                if (obj?.WeenieObj?.WorldObject == null)
-                    return false;
-                return PrestigeManager.SameVariationForVisibility(myVar, PrestigeManager.GetEffectiveVariationForVisibility(obj.WeenieObj.WorldObject));
-            }))
-            {
-                var wo = physObj.WeenieObj.WorldObject;
-                if (wo == null || wo.Guid == Guid)
-                    continue;
-
-                TrackObject(wo);
-            }
-        }
-
-        /// <summary>
-        /// Runs <see cref="RefreshVisibleObjectsAfterTeleport"/> after the post-teleport CreateObject delay so
-        /// client landblock load and physics enqueue_objs can finish first.
-        /// </summary>
-        public void SchedulePostTeleportVisibilityRefresh()
-        {
-            var actionChain = new ActionChain();
-            actionChain.AddDelaySeconds(1.05);
-            actionChain.AddAction(this, ActionType.PlayerTracking_PostTeleportVisibilityRefresh, RefreshVisibleObjectsAfterTeleport);
-            actionChain.EnqueueChain();
-        }
-
         public void RemoveTrackedObject(WorldObject wo, bool fromPickup)
         {
             //log.Info($"{Name}.RemoveTrackedObject({wo.Name} ({wo.Guid}), {fromPickup})");
