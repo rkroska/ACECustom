@@ -1666,7 +1666,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Creates and launches the projectiles for a spell
         /// </summary>
-        public List<SpellProjectile> CreateSpellProjectiles(Spell spell, WorldObject target, WorldObject weapon, bool isWeaponSpell = false, bool fromProc = false, uint lifeProjectileDamage = 0)
+        public List<SpellProjectile> CreateSpellProjectiles(Spell spell, WorldObject target, WorldObject weapon, bool isWeaponSpell = false, bool fromProc = false, uint lifeProjectileDamage = 0, WorldObject originOverride = null)
         {
             if (spell.NumProjectiles == 0)
             {
@@ -1676,11 +1676,86 @@ namespace ACE.Server.WorldObjects
 
             var spellType = SpellProjectile.GetProjectileSpellType(spell.Id);
 
-            var origins = CalculateProjectileOrigins(spell, spellType, target);
+            // Penta Cast Charm Interception
+            if (this is Player player && player.HasPentaCast && target != null &&
+                target.Location != null &&   // guard: target may have been removed from world before projectile launch
+                (spellType == ProjectileSpellType.Streak || spellType == ProjectileSpellType.Arc || spellType == ProjectileSpellType.Bolt))
+            {
+                var spellProjectiles = new List<SpellProjectile>();
 
-            var velocity = CalculateProjectileVelocity(spell, target, spellType, origins[0]);
+                // 1. Gather all creatures in primary target's landblock + adjacent landblocks
+                var allObjects = new List<WorldObject>();
+                var landblock = target.CurrentLandblock;
+                if (landblock != null)
+                {
+                    allObjects.AddRange(landblock.GetWorldObjectsForPhysicsHandling());
+                    foreach (var adj in landblock.Adjacents)
+                    {
+                        if (adj != null)
+                            allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
+                    }
+                }
 
-            return LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, origins, velocity, lifeProjectileDamage);
+                // 2. Collect all eligible candidates within 10 meters of the primary target,
+                //    sort by distance ascending, and take the 4 closest.
+                //    No left/right alternation — proximity is the only selection criterion.
+                var allCandidates = new List<(Creature creature, float dist)>();
+
+                var targetGlobal = target.Location.ToGlobal(false);
+
+                // Deduplicate by Guid across landblock + adjacents
+                var uniqueObjects = allObjects.GroupBy(o => o.Guid).Select(g => g.First());
+
+                foreach (var obj in uniqueObjects)
+                {
+                    if (obj is not Creature creature || creature == player || creature == target) continue;
+                    if (!creature.IsAlive) continue;
+                    if (creature.Location == null) continue;
+
+                    var creatureGlobal = creature.Location.ToGlobal(false);
+                    var dist = Vector3.Distance(targetGlobal, creatureGlobal);
+                    if (dist > 10.0f) continue;
+
+                    if (!player.CanDamage(creature)) continue;
+
+                    var pkError = player.CheckPKStatusVsTarget(creature, spell);
+                    if (pkError != null) continue;
+
+                    allCandidates.Add((creature, dist));
+                }
+
+                allCandidates.Sort((a, b) => a.dist.CompareTo(b.dist));
+
+                // 3. Take the 4 closest — fire them in distance order (closest first).
+                var extraTargets = allCandidates.Take(4).Select(c => c.creature).ToList();
+
+
+                // 4. Launch spells at all selected targets
+                // Primary target first
+                var origins = CalculateProjectileOrigins(spell, spellType, target);
+                var velocity = CalculateProjectileVelocity(spell, target, spellType, origins[0]);
+                var primaryProjectiles = LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, origins, velocity, lifeProjectileDamage);
+                if (primaryProjectiles != null)
+                    spellProjectiles.AddRange(primaryProjectiles);
+
+                // Extra targets next
+                foreach (var extraTarget in extraTargets)
+                {
+                    var extraOrigins = CalculateProjectileOrigins(spell, spellType, extraTarget);
+                    var extraVelocity = CalculateProjectileVelocity(spell, extraTarget, spellType, extraOrigins[0]);
+                    var extraProjectiles = LaunchSpellProjectiles(spell, extraTarget, spellType, weapon, isWeaponSpell, fromProc, extraOrigins, extraVelocity, lifeProjectileDamage);
+                    if (extraProjectiles != null)
+                        spellProjectiles.AddRange(extraProjectiles);
+                }
+
+                return spellProjectiles;
+            }
+
+            var defaultOrigins = CalculateProjectileOrigins(spell, spellType, target);
+
+            var defaultVelocity = CalculateProjectileVelocity(spell, target, spellType, defaultOrigins[0]);
+
+            return LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, defaultOrigins, defaultVelocity, lifeProjectileDamage, originOverride);
         }
 
         public static readonly float ProjHeight = 2.0f / 3.0f;
@@ -1916,7 +1991,7 @@ namespace ACE.Server.WorldObjects
             return dir * speed;
         }
 
-        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0)
+        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null)
         {
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -1924,7 +1999,10 @@ namespace ACE.Server.WorldObjects
 
             var spellProjectiles = new List<SpellProjectile>();
 
-            var casterLoc = PhysicsObj.Position.ACEPosition();
+            // originOverride: use a different WorldObject's position as the ring/projectile spawn point.
+            // ProjectileSource is still set to 'this' below, so non-ClassicRingAoe suppression works correctly.
+            var spawnOrigin = originOverride ?? this;
+            var casterLoc = spawnOrigin.PhysicsObj.Position.ACEPosition();
             var targetLoc = target?.PhysicsObj.Position.ACEPosition();
 
             for (var i = 0; i < origins.Count; i++)
@@ -1966,6 +2044,18 @@ namespace ACE.Server.WorldObjects
 
                 sp.ProjectileSource = this;
                 sp.FromProc = fromProc;
+
+                // Ring visuals cast by a player in New AOE mode are visual-only — damage is handled
+                // server-side. Make them non-collidable so players can never get stuck on the ring.
+                // Monster ring spells and Classic mode rings retain normal physics collision for damage.
+                if (spellType == ProjectileSpellType.Ring
+                    && this is Player ringPlayer
+                    && !(ringPlayer.GetProperty(PropertyBool.ClassicRingAoe) ?? false))
+                {
+                    sp.Ethereal = true;
+                    sp.IgnoreCollisions = true;
+                    sp.ReportCollisions = false;
+                }
 
                 // side projectiles always untargeted?
                 if (i == 0)

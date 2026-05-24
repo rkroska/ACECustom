@@ -330,8 +330,10 @@ namespace ACE.Server.WorldObjects
 
             if (!IsCharmActivated)
             {
-                // Guard: only one charm per ability may be active at a time
-                var duplicate = player.GetAllPossessions()
+                // Guard: only one charm per ability may be active at a time.
+                // CR-35: use GetAllPossessionsDeep so charms inside nested bags are detected —
+                // the same deep scan used by ValidateAbilityCharms() on login.
+                var duplicate = player.GetAllPossessionsDeep()
                     .FirstOrDefault(i => i.Guid != Guid
                         && i.IsAbilityCharm
                         && i.CharmGrantsAbility == abilityId
@@ -487,6 +489,39 @@ namespace ACE.Server.WorldObjects
                     3 => "Master Artisan's Charm deactivated.",
                     _ => "Artisan's Charm deactivated."
                 };
+            }
+
+            if (abilityId == CharmAbilityRegistry.PentaCastAbilityId)
+            {
+                return activating
+                    ? "Penta Cast Charm activated. Streak, Arc, and Bolt spells will target up to 5 distinct enemies simultaneously."
+                    : "Penta Cast Charm deactivated. Spells will cast normally.";
+            }
+
+            if (abilityId == CharmAbilityRegistry.ExplosiveArrowCharmAbilityId)
+            {
+                return activating
+                    ? level switch
+                    {
+                        1 => "Explosive Arrow Charm activated. Arrows that hit enemies will detonate a ring of elemental damage at the impact point.",
+                        2 => "Greater Explosive Arrow Charm activated. Arrows that hit enemies will detonate an intensified elemental ring at the impact point.",
+                        3 => "Master Explosive Arrow Charm activated. Arrows that hit enemies will detonate a devastating elemental ring at the impact point.",
+                        _ => $"Explosive Arrow Charm (Level {level}) activated."
+                    }
+                    : level switch
+                    {
+                        1 => "Explosive Arrow Charm deactivated. Arrows will no longer detonate on impact.",
+                        2 => "Greater Explosive Arrow Charm deactivated.",
+                        3 => "Master Explosive Arrow Charm deactivated.",
+                        _ => "Explosive Arrow Charm deactivated."
+                    };
+            }
+
+            if (abilityId == CharmAbilityRegistry.PrismaticStrikeAbilityId)
+            {
+                return activating
+                    ? "Prismatic Strike Charm activated. Your melee attacks will strike with the element or physical force your target is most vulnerable to."
+                    : "Prismatic Strike Charm deactivated. Attacks will deal damage normally.";
             }
 
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";

@@ -42,7 +42,7 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("ilt", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
             "ILT custom server commands and player preferences.",
-            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train|ringmode|ringrange]")]
+            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train|ringmode|ringrange|arrowdebug]")]
         public static void HandleILT(Session session, params string[] parameters)
         {
             var player = session.Player;
@@ -297,6 +297,63 @@ namespace ACE.Server.Command.Handlers
                 if (inRange.Count == 0)
                     session.Network.EnqueueSend(new GameMessageSystemChat("  None found.", ChatMessageType.System));
             }
+            else if (sub == "arrowdebug")
+            {
+                // Admin-only diagnostic for the Explosive Arrow charm proc.
+                // Appraise the target creature first, then run this command.
+                if (session.AccessLevel < AccessLevel.Admin)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("[ArrowDebug] Admin only.", ChatMessageType.System));
+                    return;
+                }
+
+                var target = CommandHandlerHelper.GetLastAppraisedObject(session) as Creature;
+                if (target == null || target.Location == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "[ArrowDebug] No creature targeted. Appraise a creature first.", ChatMessageType.System));
+                    return;
+                }
+
+                const float horizRadius = 15f;
+                const float vertHeight  = 10f;
+
+                // CR-13: scan from target's ObjMaint — the actual proc (after CR-2 fix) uses
+                // target.PhysicsObj.ObjMaint, so this preview must do the same to be accurate.
+                if (target.PhysicsObj?.ObjMaint == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "[ArrowDebug] Target physics context unavailable.", ChatMessageType.System));
+                    return;
+                }
+                var known = target.PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature();
+                var inBlast = known
+                    .Where(c => c != null && c.Location != null
+                                && c.IsAlive
+                                && Math.Abs(target.Location.PositionZ - c.Location.PositionZ) <= vertHeight
+                                && target.Location.Distance2D(c.Location) <= horizRadius
+                                && player.CanDamage(c)
+                                && player.CheckPKStatusVsTarget(c, null) == null)
+                    .OrderBy(c => target.Location.Distance2D(c.Location))
+                    .ToList();
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"[ArrowDebug] Impact point: {target.Name} | Radius: {horizRadius:F0}m horiz / {vertHeight:F0}m vert | Creatures in blast: {inBlast.Count}",
+                    ChatMessageType.System));
+
+                foreach (var c in inBlast)
+                {
+                    var dist   = target.Location.Distance2D(c.Location);
+                    var dz     = Math.Abs(target.Location.PositionZ - c.Location.PositionZ);
+                    var suffix = c == target ? "  [IMPACT TARGET]" : "";
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"  {c.Name}  (horiz: {dist:F1}m  vert: {dz:F1}m){suffix}",
+                        ChatMessageType.System));
+                }
+
+                if (inBlast.Count == 0)
+                    session.Network.EnqueueSend(new GameMessageSystemChat("  No creatures in blast range.", ChatMessageType.System));
+            }
             else
             {
                 var dmgLabel  = player.DamageNumberFormat switch { 1 => "commas", 2 => "short", _ => "default" };
@@ -317,6 +374,8 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"      Toggle ring spell mode between New (guaranteed AOE) and Classic (physics multi-hit). (currently: {ringLabel})", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt ringrange", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"      View all valid targets and parameters for your next ring spell.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt arrowdebug  [Admin only]", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"      Appraise a creature, then run this to see all targets caught in the Explosive Arrow blast radius (15m/10m).", ChatMessageType.System));
             }
         }
     }

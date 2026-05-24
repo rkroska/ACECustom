@@ -1105,6 +1105,235 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("giveelementalbows", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Spawns one bow for each element, each configured with its respective Rending imbued effect and Split Arrow x3.")]
+        public static void HandleGiveElementalBows(Session session, params string[] parameters)
+        {
+            var elementalBows = new List<(uint wcid, DamageType damageType, ImbuedEffectType imbuedEffect, string name)>()
+            {
+                (29244, DamageType.Slash, ImbuedEffectType.SlashRending, "Slashing Rending Bow"),
+                (29239, DamageType.Pierce, ImbuedEffectType.PierceRending, "Piercing Rending Bow"),
+                (29243, DamageType.Bludgeon, ImbuedEffectType.BludgeonRending, "Bludgeoning Rending Bow"),
+                (29241, DamageType.Cold, ImbuedEffectType.ColdRending, "Cold Rending Bow"),
+                (29242, DamageType.Fire, ImbuedEffectType.FireRending, "Fire Rending Bow"),
+                (29238, DamageType.Acid, ImbuedEffectType.AcidRending, "Acid Rending Bow"),
+                (29240, DamageType.Electric, ImbuedEffectType.ElectricRending, "Electric Rending Bow"),
+                (64454611, DamageType.Nether, ImbuedEffectType.NetherRending, "Nether Rending Bow")
+            };
+
+            var spawnedBows = new List<WorldObject>();
+
+            foreach (var bowInfo in elementalBows)
+            {
+                var bow = WorldObjectFactory.CreateNewWorldObject(bowInfo.wcid);
+                if (bow == null)
+                {
+                    // CR-22: fallback to Slashing Bow WCID 29244 as a baseline template if the specific WCID
+                    // is not found in the DB (e.g. custom Nether bow WCID 64454611 may not exist locally).
+                    // An explicit warning is broadcast so the dev knows the fallback fired.
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"[Warning] WCID {bowInfo.wcid} ({bowInfo.name}) not found in DB. Falling back to WCID 29244 (Slashing Bow) as template.",
+                        ChatMessageType.Broadcast));
+                    bow = WorldObjectFactory.CreateNewWorldObject(29244);
+                }
+
+                if (bow == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to create bow for WCID {bowInfo.wcid} ({bowInfo.name})", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                // Configure name and custom properties
+                bow.Name = bowInfo.name;
+                bow.W_DamageType = bowInfo.damageType;
+                bow.ImbuedEffect = bowInfo.imbuedEffect;
+                bow.UiEffects = UiEffects.Magical;
+
+                // Setup the underlay icon based on RecipeManager's mappings or Nether custom
+                if (RecipeManager.IconUnderlay.TryGetValue(bowInfo.imbuedEffect, out var underlayId))
+                {
+                    bow.IconUnderlayId = underlayId;
+                }
+                else if (bowInfo.imbuedEffect == ImbuedEffectType.NetherRending)
+                {
+                    bow.IconUnderlayId = 0x06006E3D; // Nether Rending underlay icon
+                }
+
+                // Apply Split Arrow x3 properties
+                bow.SplitArrows = true;
+                bow.SplitArrowCount = 3;
+                bow.SplitArrowRange = 10.0;
+                bow.SplitArrowDamageMultiplier = 0.6;
+
+                // Add to player's inventory
+                if (!bow.Stuck)
+                {
+                    if (session.Player.TryCreateInInventoryWithNetworking(bow))
+                        spawnedBows.Add(bow);
+                    else
+                        bow.Destroy();
+                }
+                else
+                {
+                    bow.Destroy();
+                }
+            }
+
+            if (spawnedBows.Count > 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Successfully spawned {spawnedBows.Count} elemental Rending bows with Split Arrow x3 in your inventory.", ChatMessageType.Broadcast));
+                if (session.AccessLevel >= AccessLevel.Admin)
+                {
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} spawned {spawnedBows.Count} elemental Rending bows using /giveelementalbows.");
+                }
+            }
+        }
+
+        [CommandHandler("giveelementaluas", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Spawns one Unarmed Attack katar for each element, each configured with its respective Rending imbued effect.")]
+        public static void HandleGiveElementalUAs(Session session, params string[] parameters)
+        {
+            var elementalUAs = new List<(uint wcid, DamageType damageType, ImbuedEffectType imbuedEffect, string name)>()
+            {
+                // CR-19: Slash, Pierce, Bludgeon, and Nether use WCID 326 (generic Katar) because no
+                // dedicated elemental UA templates exist for those types in the DB. W_DamageType and
+                // ImbuedEffect are overridden at runtime. Fire/Cold/Acid/Electric use distinct WCIDs
+                // (3820/3821/3818/3819) which have dedicated physical setups.
+                (326, DamageType.Slash, ImbuedEffectType.SlashRending, "Slashing Rending Katar"),
+                (326, DamageType.Pierce, ImbuedEffectType.PierceRending, "Piercing Rending Katar"),
+                (326, DamageType.Bludgeon, ImbuedEffectType.BludgeonRending, "Bludgeoning Rending Katar"),
+                (3821, DamageType.Cold, ImbuedEffectType.ColdRending, "Cold Rending Katar"),
+                (3820, DamageType.Fire, ImbuedEffectType.FireRending, "Fire Rending Katar"),
+                (3818, DamageType.Acid, ImbuedEffectType.AcidRending, "Acid Rending Katar"),
+                (3819, DamageType.Electric, ImbuedEffectType.ElectricRending, "Electric Rending Katar"),
+                (326, DamageType.Nether, ImbuedEffectType.NetherRending, "Nether Rending Katar")
+            };
+
+            var spawnedUAs = new List<WorldObject>();
+
+            foreach (var uaInfo in elementalUAs)
+            {
+                var katar = WorldObjectFactory.CreateNewWorldObject(uaInfo.wcid);
+                if (katar == null)
+                {
+                    // CR-22: Fallback to baseline WCID 326 (Katar) if the specific template is not found in the DB.
+                    // An explicit warning is broadcast so the dev knows the fallback fired.
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"[Warning] WCID {uaInfo.wcid} ({uaInfo.name}) not found in DB. Falling back to WCID 326 (Katar) as template.",
+                        ChatMessageType.Broadcast));
+                    katar = WorldObjectFactory.CreateNewWorldObject(326);
+                }
+
+                if (katar == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to create Katar template for WCID {uaInfo.wcid} ({uaInfo.name})", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                // Configure name and custom properties
+                katar.Name = uaInfo.name;
+                katar.W_DamageType = uaInfo.damageType;
+                katar.ImbuedEffect = uaInfo.imbuedEffect;
+                katar.UiEffects = UiEffects.Magical;
+
+                // Setup the underlay icon based on RecipeManager's mappings or Nether custom
+                if (RecipeManager.IconUnderlay.TryGetValue(uaInfo.imbuedEffect, out var underlayId))
+                {
+                    katar.IconUnderlayId = underlayId;
+                }
+                else if (uaInfo.imbuedEffect == ImbuedEffectType.NetherRending)
+                {
+                    katar.IconUnderlayId = 0x06006E3D; // Nether Rending underlay icon
+                }
+
+                // Add to player's inventory
+                if (!katar.Stuck)
+                {
+                    if (session.Player.TryCreateInInventoryWithNetworking(katar))
+                        spawnedUAs.Add(katar);
+                    else
+                        katar.Destroy();
+                }
+                else
+                {
+                    katar.Destroy();
+                }
+            }
+
+            if (spawnedUAs.Count > 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Successfully spawned {spawnedUAs.Count} elemental Rending katars in your inventory.", ChatMessageType.Broadcast));
+                if (session.AccessLevel >= AccessLevel.Admin)
+                {
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} spawned {spawnedUAs.Count} elemental Rending katars using /giveelementaluas.");
+                }
+            }
+        }
+
+        [CommandHandler("givecloaks", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Spawns three different test cloaks (Level 5 DR, Level 5 Shroud of Darkness spell proc, and Level 1 DR quest-equivalent) in your inventory.")]
+        public static void HandleGiveCloaks(Session session, params string[] parameters)
+        {
+            var testCloaks = new List<(string name, int cloakWeaveProc, uint? procSpell, int maxLevel)>()
+            {
+                ("Test Cloak of Warding (Level 5 DR)", 2, null, 5),
+                ("Test Cloak of Darkness (Level 5 Spell Proc)", 1, (uint)SpellId.CloakMagicDLower, 5),
+                ("Test Cloak of Warding (Level 1 DR)", 2, null, 1)
+            };
+
+            var spawned = 0;
+            foreach (var info in testCloaks)
+            {
+                var cloak = WorldObjectFactory.CreateNewWorldObject(44840);
+                if (cloak == null) continue;
+
+                cloak.Name = info.name;
+                cloak.CloakWeaveProc = info.cloakWeaveProc;
+                cloak.ItemMaxLevel = info.maxLevel;
+                if (info.procSpell.HasValue)
+                {
+                    cloak.ProcSpell = info.procSpell.Value;
+                    cloak.ProcSpellSelfTargeted = false;
+                }
+                cloak.UiEffects = UiEffects.Magical;
+
+                if (!cloak.Stuck && session.Player.TryCreateInInventoryWithNetworking(cloak))
+                {
+                    spawned++;
+                }
+                else
+                {
+                    cloak.Destroy();
+                }
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Spawned {spawned} test cloaks in your inventory.", ChatMessageType.Broadcast));
+        }
+
+        [CommandHandler("showtargetench", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Shows the active enchantments on your current target.")]
+        public static void HandleShowTargetEnch(Session session, params string[] parameters)
+        {
+            var target = CommandHandlerHelper.GetSelected(session) as Creature;
+            if (target == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("You must select a creature first.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var enchantments = target.Biota.PropertiesEnchantmentRegistry.GetEnchantmentsTopLayer(target.BiotaDatabaseLock, SpellSet.SetSpells);
+            if (enchantments.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} has no active enchantments.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Active enchantments on {target.Name}:", ChatMessageType.Broadcast));
+            log.Info($"Active enchantments on {target.Name}:");
+            foreach (var ench in enchantments)
+            {
+                var spell = new Spell((uint)ench.SpellId);
+                session.Network.EnqueueSend(new GameMessageSystemChat($"- Spell {ench.SpellId} ({spell.Name}): ModType={ench.StatModType}, ModKey={ench.StatModKey}, ModVal={ench.StatModValue}", ChatMessageType.Broadcast));
+                log.Info($"- Spell {ench.SpellId} ({spell.Name}): ModType={ench.StatModType}, ModKey={ench.StatModKey}, ModVal={ench.StatModValue}");
+            }
+        }
+
         /// <summary>
         /// Debug console command to test the GetSpellFormula function.
         /// </summary>

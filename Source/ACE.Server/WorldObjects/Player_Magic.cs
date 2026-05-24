@@ -23,6 +23,34 @@ namespace ACE.Server.WorldObjects
         private const uint SpellId_TectonicRiftsII = 6196u;
         private const uint SpellId_RockyShrapnel   = 6152u;
         private const uint SpellId_RingOfAgony     = 2673u;
+        private const uint SpellId_FlameRing       = (uint)ACE.Entity.Enum.SpellId.FlameRing;
+
+        // ── Explosive Arrow proc ring spells (Tier II, one per damage type) ────
+        private const uint SpellId_NuhmudiraSpinesII   = 6192u; // Pierce
+        private const uint SpellId_HorizonsBladesII    = 6190u; // Slash
+        private const uint SpellId_CassiusRingOfFireII = 6191u; // Fire
+        private const uint SpellId_HaloOfFrostII       = 6193u; // Cold
+        private const uint SpellId_SearingDiscII       = 6189u; // Acid
+        private const uint SpellId_EyeOfTheStormII     = 6194u; // Electric
+        private const uint SpellId_CloudedSoulII       = 6195u; // Nether
+        // Bludgeon uses SpellId_TectonicRiftsII (Tier II bludgeon ring)
+
+        /// <summary>
+        /// Maps an arrow's damage type to the matching Tier-II ring spell for the Explosive Arrow proc.
+        /// The chosen spell controls both the visual ring animation and the damage type applied.
+        /// </summary>
+        private static uint GetRingSpellForDamageType(DamageType dt)
+        {
+            if ((dt & DamageType.Pierce)   != 0) return SpellId_NuhmudiraSpinesII;
+            if ((dt & DamageType.Fire)     != 0) return SpellId_CassiusRingOfFireII;
+            if ((dt & DamageType.Cold)     != 0) return SpellId_HaloOfFrostII;
+            if ((dt & DamageType.Acid)     != 0) return SpellId_SearingDiscII;
+            if ((dt & DamageType.Electric) != 0) return SpellId_EyeOfTheStormII;
+            if ((dt & DamageType.Slash)    != 0) return SpellId_HorizonsBladesII;
+            if ((dt & DamageType.Nether)   != 0) return SpellId_CloudedSoulII;
+            if ((dt & DamageType.Bludgeon) != 0) return SpellId_TectonicRiftsII;
+            return SpellId_FlameRing; // ultimate fallback
+        }
 
         // TODO: get rid of this, only used for determining if TurnTo is required
         public enum TargetCategory
@@ -1140,6 +1168,65 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Called by the missile hit path (Player_Combat.DamageTarget) when
+        /// <see cref="HasExplosiveArrowCharm"/> is active and an arrow successfully damages an enemy.
+        /// Fires Ring of Exploding Magma as a server-side radius AOE centered on the caster,
+        /// mirroring the ring spell AOE system used by Rocky Shrapnel / Ring of Agony.
+        /// </summary>
+        internal void TryApplyExplosiveArrowProc(Creature target, float arrowDamage, DamageType arrowDamageType)
+        {
+            if (!HasExplosiveArrowCharm)
+                return;
+
+            var spellId = GetRingSpellForDamageType(arrowDamageType);
+            if (spellId == 0) return; // unsupported damage type — no matching ring spell
+
+            var spell   = new Spell(spellId);
+
+            ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ExplosiveArrowCharmAbilityId, out var level);
+            if (level < 1) level = 1;
+
+            float minMult, maxMult;
+            if (level == 2)
+            {
+                minMult = 0.65f;
+                maxMult = 0.85f;
+            }
+            else if (level == 3)
+            {
+                minMult = 0.90f;
+                maxMult = 1.10f;
+            }
+            else
+            {
+                minMult = 0.40f;
+                maxMult = 0.60f;
+            }
+
+            var flatDmg = (float)(arrowDamage * ThreadSafeRandom.Next(minMult, maxMult));
+
+            // 1 second delay between arrow hit and ring detonation.
+            var actionChain = new ActionChain();
+            actionChain.AddDelaySeconds(1.0);
+            actionChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () =>
+            {
+                // Guard: player or target may have died/logged out/been destroyed during the delay.
+                if (IsDead || IsDestroyed || target.IsDead || target.IsDestroyed || target.Location == null) return;
+
+                // Use target's current position for both the visual and the damage origin
+                // so the ring always detonates where the target actually is at fire time.
+                CreateSpellProjectiles(spell, null, null, false, true, 0, originOverride: target);
+                ApplyRingSpellAreaDamage(spell, target.Location,
+                    radiusOverride: 15f,
+                    heightOverride: 10f,
+                    flatDamage:     flatDmg,
+                    scanOrigin:     this,    // Scan the player's reliable ObjMaint (always populated) instead of target's (empty on static dummies like Winning Idol)
+                    fromProc:       true);   // CR-4: suppress War Magic proficiency tick for procs
+            });
+            actionChain.EnqueueChain();
+        }
+
+        /// <summary>
         /// Redirects Tectonic Rifts I/II to Rocky Shrapnel (priority) or Ring of Unspeakable Agony (fallback)
         /// when the corresponding charm is active and the spell is known. Called at the very start of both
         /// CreatePlayerSpell overloads so all downstream validation (range, components, mana) runs against
@@ -1643,20 +1730,37 @@ namespace ACE.Server.WorldObjects
         /// Applies one war-magic damage roll to every valid creature within the ring spell's
         /// effective radius.  Called immediately after the visual ring projectiles are spawned;
         /// the projectiles themselves are made non-damaging in SpellProjectile.OnCollideObject.
+        /// <para>
+        /// <paramref name="scanOrigin"/>: when provided, the creature visibility scan uses that object's
+        /// ObjMaint instead of the caster's.  Used by proc paths (e.g. Explosive Arrow) where the
+        /// detonation center is the target, not the caster.
+        /// </para>
+        /// <para>
+        /// <paramref name="fromProc"/>: when true, suppresses the War Magic proficiency tick so proc
+        /// hits do not grant magic skill XP.
+        /// </para>
         /// </summary>
-        internal void ApplyRingSpellAreaDamage(Spell spell)
+        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false)
         {
-            if (Location == null) return;
+            var center = centerOverride ?? Location;
+            if (center == null) return;
 
-            // Ring radius — scaled by the future AoeRangeMultiplier charm.
-            var radius = DefaultRingAoeRadius * (float)(GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
+            // Ring radius — radiusOverride used by proc paths (e.g. Explosive Arrow); otherwise default scaled by charm.
+            var radius = radiusOverride > 0f
+                ? radiusOverride
+                : DefaultRingAoeRadius * (float)(GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
 
             var attackSkill   = GetCreatureSkill(spell.School);
             var magicSkill    = attackSkill.Current;
             var resistanceType = Creature.GetResistanceType(spell.DamageType);
             var weapon        = GetEquippedWand();
 
-            var visibleCreatures = PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature();
+            // CR-2: use scanOrigin's ObjMaint when the detonation center differs from the caster
+            // (e.g. Explosive Arrow proc — ring spawns on the target, not the caster).
+            // Without this, enemies near the blast point that aren't in the caster's physics
+            // visibility list would be silently skipped.
+            var scanSource = scanOrigin ?? this;
+            var visibleCreatures = scanSource.PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature();
             var dbgHit = 0; var dbgResist = 0;
 
             // Compute attribute bonus once — Focus/Self don't change mid-cast.
@@ -1676,12 +1780,11 @@ namespace ACE.Server.WorldObjects
                 if (!creature.IsAlive)                    continue;  // skip corpses from this or prior casts
                 if (creature.Location == null)            continue;
 
-                // Distance gate: horizontal ring radius (2D) + vertical height cap.
-                // 2D keeps creatures on uneven terrain / slight slopes within range.
-                // Height cap prevents hitting creatures on a completely different floor.
-                var dz = Math.Abs(Location.PositionZ - creature.Location.PositionZ);
-                if (dz > RingAoeMaxHeightDelta) continue;
-                if (Location.Distance2D(creature.Location) > radius) continue;
+                // Height and distance gate — heightOverride used by proc paths.
+                var heightCap = heightOverride > 0f ? heightOverride : RingAoeMaxHeightDelta;
+                var dz = Math.Abs(center.PositionZ - creature.Location.PositionZ);
+                if (dz > heightCap) continue;
+                if (center.Distance2D(creature.Location) > radius) continue;
 
                 if (!CanDamage(creature)) continue;
 
@@ -1697,6 +1800,15 @@ namespace ACE.Server.WorldObjects
                     OnAttackMonster(creature, spell.IsHarmful);
 
                 if (resisted) { dbgResist++; continue; }
+
+                // --- 1. Intercept Enchantment Projectiles (e.g., debuffs like Shroud of Darkness) ---
+                if (spell.MetaSpellType == ACE.Entity.Enum.SpellType.EnchantmentProjectile)
+                {
+                    CreateEnchantment(creature, this, weapon, spell, false, fromProc);
+                    DoSpellEffects(spell, this, creature, true);
+                    dbgHit++;
+                    continue;
+                }
 
                 // ── War-magic damage calculation (exact parity with SpellProjectile.CalculateDamage) ──
                 var criticalHit      = false;
@@ -1761,33 +1873,43 @@ namespace ACE.Server.WorldObjects
                     absorbMod  = 1 - absorbMod;
                 }
 
-                // Attribute bonus (Focus + Self) — pre-computed before the loop.
-                var finalDamage = (baseDamage + critDamageBonus + skillBonus)
-                                  * elementalMod * slayerMod * resistanceMod * absorbMod * attribBonus;
+                // Damage selection:
+                // • flatDamage path (Explosive Arrow proc): pure percentage of the triggering arrow hit.
+                //   Resistances and absorb are intentionally NOT applied — the proc damage is an extension
+                //   of the arrow's physical impact, not an independent magic attack. The arrow already
+                //   penetrated the target's defenses; the elemental ring reflects that, not the target's
+                //   magic resistance or shield.
+                // • War-magic path: full crit/skill/attribute/resistance/absorb scaling as normal.
+                var finalDamage = flatDamage > 0f
+                    ? flatDamage
+                    : (baseDamage + critDamageBonus + skillBonus) * elementalMod * slayerMod * resistanceMod * absorbMod * attribBonus;
 
                 // Sneak attack & heritage mods (mirrors SpellProjectile.DamageTarget).
-                var sneakAttackMod = GetSneakAttackMod(creature);
-                var damageRatingMod = Creature.AdditiveCombine(baseDamageRatingMod, heritageMod, sneakAttackMod);
-
-                var damageResistRatingMod = creature.GetDamageResistRatingMod(CombatType.Magic);
-
-                if (criticalHit)
+                if (flatDamage <= 0f)
                 {
-                    var critDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetCritDamageResistRating());
+                    var sneakAttackMod = GetSneakAttackMod(creature);
+                    var damageRatingMod = Creature.AdditiveCombine(baseDamageRatingMod, heritageMod, sneakAttackMod);
 
-                    damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
-                    damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, critDamageResistRatingMod);
+                    var damageResistRatingMod = creature.GetDamageResistRatingMod(CombatType.Magic);
+
+                    if (criticalHit)
+                    {
+                        var critDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetCritDamageResistRating());
+
+                        damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
+                        damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, critDamageResistRatingMod);
+                    }
+
+                    if (isPvP)
+                    {
+                        var pkDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetPKDamageResistRating());
+
+                        damageRatingMod = Creature.AdditiveCombine(damageRatingMod, pkDamageRatingMod);
+                        damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, pkDamageResistRatingMod);
+                    }
+
+                    finalDamage *= damageRatingMod * damageResistRatingMod;
                 }
-
-                if (isPvP)
-                {
-                    var pkDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetPKDamageResistRating());
-
-                    damageRatingMod = Creature.AdditiveCombine(damageRatingMod, pkDamageRatingMod);
-                    damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, pkDamageResistRatingMod);
-                }
-
-                finalDamage *= damageRatingMod * damageResistRatingMod;
 
                 // Apply enrage damage reduction for the defender.
                 if (creature.IsEnraged)
@@ -1807,6 +1929,18 @@ namespace ACE.Server.WorldObjects
 
                 if (finalDamage <= 0) continue;
 
+                // --- 2. Cloak Damage Reduction Proc ---
+                var equippedCloak = creature.EquippedCloak;
+                var percent = finalDamage / creature.Health.MaxValue;
+
+                if (equippedCloak != null && Cloak.HasDamageProc(equippedCloak) && Cloak.RollProc(equippedCloak, percent))
+                {
+                    var reducedDamage = Cloak.GetReducedAmount(this, finalDamage);
+                    Cloak.ShowMessage(creature, this, finalDamage, reducedDamage);
+                    finalDamage = reducedDamage;
+                    percent = finalDamage / creature.Health.MaxValue;
+                }
+
                 creature.TakeDamage(this, spell.DamageType, finalDamage, criticalHit);
 
                 // Only send "You hit X for Y" if the target survived — mirrors SpellProjectile.DamageTarget
@@ -1816,13 +1950,19 @@ namespace ACE.Server.WorldObjects
                 {
                     var displayAmt  = (uint)Math.Round(finalDamage);
                     var amtStr      = Creature.FormatDamage(displayAmt, DamageNumberFormat);
-                    var percent     = (float)displayAmt / creature.Health.MaxValue;
+                    var pct         = (float)displayAmt / creature.Health.MaxValue;
                     string verb = null, plural = null;
-                    Strings.GetAttackVerb(spell.DamageType, percent, ref verb, ref plural);
+                    Strings.GetAttackVerb(spell.DamageType, pct, ref verb, ref plural);
                     var critMsg     = criticalHit ? "Critical hit! " : "";
                     var attackerMsg = $"{critMsg}You {verb} {creature.Name} for {amtStr} points with {spell.Name}.";
                     if (!SquelchManager.Squelches.Contains(creature, ACE.Entity.Enum.ChatMessageType.Magic))
                         Session?.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ACE.Entity.Enum.ChatMessageType.Magic));
+
+                    // --- 3. Cloak Spell Proc ---
+                    if (!fromProc && equippedCloak != null && Cloak.HasProcSpell(equippedCloak))
+                    {
+                        Cloak.TryProcSpell(creature, this, equippedCloak, percent);
+                    }
                 }
 
                 dbgHit++;
@@ -1830,7 +1970,8 @@ namespace ACE.Server.WorldObjects
 
             // Award one proficiency tick for the cast if at least one target was hit.
             // Intentionally outside the loop — ring spells should not award N ticks for N targets.
-            if (dbgHit > 0)
+            // CR-4: fromProc suppresses the tick so Explosive Arrow hits don't grant free War Magic XP.
+            if (dbgHit > 0 && !fromProc)
                 Proficiency.OnSuccessUse(this, GetCreatureSkill(spell.School), spell.PowerMod);
         }
     }

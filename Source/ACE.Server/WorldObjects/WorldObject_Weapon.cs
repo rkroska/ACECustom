@@ -486,6 +486,30 @@ namespace ACE.Server.WorldObjects
             {
                 hasRending = true;
             }
+            else if (weapon != null && wielder is Player player && player.HasPrismaticStrike && player.CombatMode == CombatMode.Melee)
+            {
+                // Prismatic Strike design intent: while the charm is active, any rend imbue on the weapon
+                // applies its rend bonus to the target's weakest element — regardless of which element the
+                // rend was originally imbued for. The charm makes the weapon "adapt" its rend to match
+                // whatever vulnerability was chosen by GetWeakestElement() in DamageEvent.
+                // e.g. a SlashRending weapon vs a Fire-weak target will apply the rend mod to Fire resistance.
+                var weaponImbues = weapon.GetImbuedEffects();
+                bool weaponHasAnyRend = (weaponImbues & (
+                    ImbuedEffectType.SlashRending |
+                    ImbuedEffectType.PierceRending |
+                    ImbuedEffectType.BludgeonRending |
+                    ImbuedEffectType.AcidRending |
+                    ImbuedEffectType.ColdRending |
+                    ImbuedEffectType.ElectricRending |
+                    ImbuedEffectType.FireRending |
+                    ImbuedEffectType.NetherRending
+                )) != 0;
+
+                if (weaponHasAnyRend)
+                {
+                    hasRending = true;
+                }
+            }
             else if (wielder is CombatPet && wielder.HasImbuedEffect(rendDamageType))
             {
                 // For CombatPets without weapons, check if rending was applied to the creature itself

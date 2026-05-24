@@ -3440,6 +3440,27 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasAgonyCharm); else SetProperty(PropertyBool.HasAgonyCharm, value); }
         }
 
+        /// <summary>True while the Penta Cast Charm is activated — Streak, Arc, and Bolt spells target up to 5 distinct enemies.</summary>
+        public bool HasPentaCast
+        {
+            get => GetProperty(PropertyBool.HasPentaCast) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasPentaCast); else SetProperty(PropertyBool.HasPentaCast, value); }
+        }
+
+        /// <summary>True while the Explosive Arrow Charm is activated — landing an arrow on an enemy triggers a Ring of Exploding Magma burst from the caster's position.</summary>
+        public bool HasExplosiveArrowCharm
+        {
+            get => GetProperty(PropertyBool.HasExplosiveArrowCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasExplosiveArrowCharm); else SetProperty(PropertyBool.HasExplosiveArrowCharm, value); }
+        }
+
+        /// <summary>True while the Prismatic Strike Charm is activated — melee attacks override to target's weakest element and dynamically match weapon rending.</summary>
+        public bool HasPrismaticStrike
+        {
+            get => GetProperty(PropertyBool.HasPrismaticStrike) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasPrismaticStrike); else SetProperty(PropertyBool.HasPrismaticStrike, value); }
+        }
+
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
         {
