@@ -415,6 +415,8 @@ namespace ACE.Server.Managers
         // Combat pet / bond / capture (custom): referenced by CombatPet, PetDevice, Creature_Death, etc.
         public static ConfigProperty<bool> pet_bond_enabled { get; private set; } = new(false, "If TRUE, pet bond XP and bond scaling features are enabled.");
         public static ConfigProperty<bool> pet_apply_capture_source_damage_type { get; private set; } = new(true, "If TRUE, combat pets may use captured source damage type metadata.");
+        public static ConfigProperty<bool> pet_capture_combat_sync_enabled { get; private set; } = new(true, "If TRUE, combat pet capture skins merge body parts and resolve combat stance for motion/CMT overrides.");
+        public static ConfigProperty<bool> pet_capture_combat_sync_fallback_cosmetic_only { get; private set; } = new(true, "If TRUE, when capture skin motion/CMT cannot produce valid melee, revert to essence template combat tables (look-only fallback).");
         public static ConfigProperty<bool> pet_combat_unlimited_lifespan { get; private set; } = new(false, "If TRUE, combat pets ignore summoned lifespan decay.");
         public static ConfigProperty<bool> pet_combat_summon_aug_spell_mitigation_enabled { get; private set; } = new(false, "If TRUE, reduce spell damage to combat pets from augmentation scaling.");
         public static ConfigProperty<bool> pet_combat_summon_aug_spell_mitigation_players_only { get; private set; } = new(true, "If TRUE, aug mitigation applies only when spell source is a player.");
@@ -448,8 +450,8 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> pet_combat_recall_block_device_cooldown_visual { get; private set; } = new(false, "Legacy/no-op for refresh logic: damage-triggered essence cooldown uses pet_combat_essence_damage_cooldown_ring_seconds whenever that value is > 0. Kept for config compatibility.");
         public static ConfigProperty<bool> pet_melee_motion_dps_normalize { get; private set; } = new(false, "If TRUE, scales combat pet melee damage to normalize DPS vs motion table changes.");
         public static ConfigProperty<bool> pet_combat_follow_owner_when_idle { get; private set; } = new(true, "If TRUE, idle combat pets follow owner using Pet.Tick / leash behavior.");
-        /// <summary>If TRUE, prints verbose combat-pet AI lines to the server process console (tick routing, targeting, movement/attack). /modifybool pet_combat_debug_follow_ai_console.</summary>
-        public static ConfigProperty<bool> pet_combat_debug_follow_ai_console { get; private set; } = new(false, "If TRUE, verbose combat pet AI trace to stdout: Monster_Tick branches, HandleFindTarget/FindNextTarget, nearby-monster scan, engaged turn/move/attack, follow SlowTick, OnMoveComplete.");
+        /// <summary>If TRUE, prints combat-pet AI targeting/leash lines to stdout (not per-tick movement). /modifybool pet_combat_debug_follow_ai_console.</summary>
+        public static ConfigProperty<bool> pet_combat_debug_follow_ai_console { get; private set; } = new(false, "If TRUE, combat pet AI trace to stdout for target acquire/drop, leash/recall, and attack actions only (movement/follow ticks omitted). Default FALSE.");
         /// <summary>If TRUE, logs server physics pet↔player collision checks to stdout (throttled). Use to see if blockage is server vs client Ethereal. /modifybool pet_player_collision_debug_console.</summary>
         public static ConfigProperty<bool> pet_player_collision_debug_console { get; private set; } = new(false, "If TRUE, throttled stdout lines for pet vs player FindObjCollisions / report_object_collision (server physics only).");
         public static ConfigProperty<bool> pet_self_boost_overflow_to_combat_pet { get; private set; } = new(false, "If TRUE, beneficial self-cast overflow healing may apply to active combat pet.");

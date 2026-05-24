@@ -223,6 +223,20 @@ namespace ACE.Server.WorldObjects
 
         internal float MeleeMotionDpsFactor => _meleeMotionDpsFactor;
 
+        private MotionStance? _captureSkinCombatStance;
+
+        internal void SetCaptureSkinCombatStance(MotionStance? stance) => _captureSkinCombatStance = stance;
+
+        public override MotionStance GetCombatStance()
+        {
+            if (_captureSkinCombatStance.HasValue)
+                return _captureSkinCombatStance.Value;
+
+            return base.GetCombatStance();
+        }
+
+        internal void ReconfigureMeleeMotionDpsAfterCaptureSkin() => ConfigureMeleeMotionDpsNormalization();
+
         public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
         {
             RemoveAiDebugThrottleKeysForCombatPet(Guid.Full);
@@ -253,6 +267,8 @@ namespace ACE.Server.WorldObjects
 
         public override bool? Init(Player player, PetDevice petDevice)
         {
+            _captureSkinCombatStance = null;
+
             // Before Pet.Init -> EnterWorld: weenie defaults are creature/gold on radar; clients never get a later blip update unless we set this now so the create packet includes RadarBlipColor.
             this.RadarColor = ACE.Entity.Enum.RadarColor.Pink;
 
@@ -708,10 +724,36 @@ namespace ACE.Server.WorldObjects
         internal static bool IsAiDebugConsoleEnabled =>
             ServerConfig.pet_combat_debug_follow_ai_console.Value;
 
-        /// <summary>Verbose stdout trace when <see cref="ServerConfig.pet_combat_debug_follow_ai_console"/> is TRUE.</summary>
+        /// <summary>Movement/follow tick spam is omitted even when AI console debug is on; use target/scan stages instead.</summary>
+        private static bool ShouldEmitAiDebugConsoleLine(string stage, string detail)
+        {
+            switch (stage)
+            {
+                case "move":
+                case "follow":
+                case "idle_follow":
+                case "aggro":
+                    return false;
+                case "engaged":
+                    if (detail.Contains("action=Movement", StringComparison.Ordinal)
+                        || detail.Contains("action=AttackNotReady", StringComparison.Ordinal)
+                        || detail.Contains("action=StartTurn", StringComparison.Ordinal)
+                        || detail.Contains("action=MissileMovement", StringComparison.Ordinal)
+                        || detail.Contains("firstUpdate IsAnimating", StringComparison.Ordinal))
+                        return false;
+                    return true;
+                default:
+                    return true;
+            }
+        }
+
+        /// <summary>Verbose stdout trace when <see cref="ServerConfig.pet_combat_debug_follow_ai_console"/> is TRUE (targeting/leash only; not per-tick movement).</summary>
         internal static void DebugAiConsole(CombatPet pet, string stage, string detail, bool force = false)
         {
             if (pet == null || !IsAiDebugConsoleEnabled)
+                return;
+
+            if (!ShouldEmitAiDebugConsoleLine(stage, detail))
                 return;
 
             if (!force)

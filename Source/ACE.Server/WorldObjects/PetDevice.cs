@@ -23,7 +23,7 @@ namespace ACE.Server.WorldObjects
     /// <summary>
     /// Pet Devices are the essences used to summon creatures
     /// </summary>
-    public class PetDevice : WorldObject
+    public partial class PetDevice : WorldObject
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -331,6 +331,13 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt.CapturedCreatureVariant);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.CapturedCreatureVariant); else SetProperty(PropertyInt.CapturedCreatureVariant, value.Value); }
+        }
+
+        /// <summary>WCID of the creature this combat essence skin was siphoned from (<see cref="PropertyInt.CapturedCreatureWCID"/>).</summary>
+        public int? CaptureSkinCreatureWcid
+        {
+            get => GetProperty(PropertyInt.CapturedCreatureWCID);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.CapturedCreatureWCID); else SetProperty(PropertyInt.CapturedCreatureWCID, value.Value); }
         }
 
         // Serialized ObjDesc data for humanoid appearance
@@ -859,7 +866,7 @@ namespace ACE.Server.WorldObjects
             var d = new Dictionary<string, DamageType>(StringComparer.OrdinalIgnoreCase);
             foreach (var extra in new[]
                      {
-                         "Caustic", "Blistering", "Corrosion", "Corrosive"
+                         "Caustic", "Blistering", "Blistered", "Corrosion", "Corrosive"
                      })
                 add(d, extra, DamageType.Acid);
 
@@ -960,8 +967,9 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// If the name begins with a known damage-type label (from <see cref="EssenceNameDamageLeadWords"/>), replace
-        /// that word with <paramref name="weaponDt"/>'s display label. If the first word is not a known damage lead-in,
+        /// If the name begins with a known damage-type label (<see cref="EssenceNameDamageLeadWords"/> or
+        /// <see cref="TryMatchEssenceDamageLeadWordToDamageType"/>), replace that word with
+        /// <paramref name="weaponDt"/>'s display label. If the first word is not a known damage lead-in,
         /// returns <paramref name="name"/> unchanged (no insertion).
         /// </summary>
         private static string ReplaceLeadingEssenceDamageLabel(string name, DamageType weaponDt)
@@ -972,7 +980,8 @@ namespace ACE.Server.WorldObjects
                 return name;
 
             var lead = n[..sp];
-            if (!EssenceNameDamageLeadWords.Contains(lead))
+            if (!EssenceNameDamageLeadWords.Contains(lead)
+                && !TryMatchEssenceDamageLeadWordToDamageType(lead).HasValue)
                 return name;
 
             var tail = n[sp..];
@@ -1053,6 +1062,10 @@ namespace ACE.Server.WorldObjects
                 log.Error($"{player.Name}.SummonCreature({wcid}) - PetDevice {WeenieClassId} - {WeenieClassName} tried to summon {wo.WeenieClassId} - {wo.WeenieClassName} of unknown type {wo.WeenieType}");
                 return false;
             }
+
+            MotionStance? captureSkinCombatStance = null;
+            var baselineMotionTableId = pet.MotionTableId;
+            var baselineCombatTableDid = pet.CombatTableDID;
 
             // Monster Capture System - Apply visual overrides if set
             if (VisualOverrideSetup.HasValue)
@@ -1233,6 +1246,9 @@ namespace ACE.Server.WorldObjects
                         }
                     }
                 }
+
+                if (pet is CombatPet combatPetForSync && IsCombatPetDevice())
+                    captureSkinCombatStance = TryApplyCaptureSkinCombatSync(combatPetForSync, player, wcid, baselineMotionTableId, baselineCombatTableDid);
             }
 
             var success = pet.Init(player, this);
@@ -1240,7 +1256,15 @@ namespace ACE.Server.WorldObjects
             if (success == true)
             {
                 if (pet is CombatPet combatPet)
+                {
+                    if (captureSkinCombatStance.HasValue)
+                        combatPet.SetCaptureSkinCombatStance(captureSkinCombatStance);
+
+                    if (VisualOverrideSetup.HasValue)
+                        combatPet.ReconfigureMeleeMotionDpsAfterCaptureSkin();
+
                     RefreshCombatPetEssenceDisplayNameForSummonedPet(combatPet, player);
+                }
                 else
                     TryNotifySummonerNameProperty(player);
             }
