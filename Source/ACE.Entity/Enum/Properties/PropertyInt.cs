@@ -759,6 +759,11 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         PetDeviceMinLumAugSummonCount           = 9055,
 
+        /// <summary>
+        /// The absolute Unix timestamp (in seconds since epoch) when the item expires.
+        /// </summary>
+        ItemExpirationTimestamp                 = 50060,
+
         // -- ILT Ability Charm System (50000-50099) ---------------------------------
         /// <summary>On an IsAbilityCharm item: integer key into CharmAbilityRegistry (1-50).</summary>
         CharmGrantsAbility = 50000,
@@ -771,12 +776,6 @@ namespace ACE.Entity.Enum.Properties
 
         /// <summary>On a player: the level of the currently active charm.</summary>
         ActiveCharmLevel = 50016,
-
-        /// <summary>
-        /// The absolute Unix timestamp (in seconds since epoch) when the item expires.
-        /// Stored as int so max supported date is Jan 19, 2038 (Unix 32-bit boundary).
-        /// </summary>
-        ItemExpirationTimestamp                 = 50060,
 
         // -- ILT Player UI Preferences (50101+) --------------------------------------
         /// <summary>

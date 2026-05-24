@@ -42,7 +42,7 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("ilt", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
             "ILT custom server commands and player preferences.",
-            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train|ringmode|ringdebug|arrowdebug]")]
+            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train|ringmode|ringrange|ringdebug|arrowdebug]")]
         public static void HandleILT(Session session, params string[] parameters)
         {
             var player = session.Player;
@@ -79,14 +79,6 @@ namespace ACE.Server.Command.Handlers
                     ? "Ring Spell Mode: Classic (physics collision \u2014 can multi-hit, rings may miss monsters)"
                     : "Ring Spell Mode: New (all targets in range guaranteed to hit once, no multi-hit)";
                 session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.System));
-            }
-            else if (sub == "ringdebug")
-            {
-                player.RingAoeDebug = !player.RingAoeDebug;
-                var state = player.RingAoeDebug ? "ON" : "OFF";
-                session.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"[RingAOE] Debug broadcast {state}. Cast any ring spell to see AOE stats.",
-                    ChatMessageType.System));
             }
             else if (sub == "dmgformat")
             {
@@ -261,16 +253,17 @@ namespace ACE.Server.Command.Handlers
             }
             else if (sub == "ringrange")
             {
-                // Admin-only diagnostic — not listed in player help.
-                if (session.AccessLevel < AccessLevel.Admin)
+                var isClassic = player.GetProperty(PropertyBool.ClassicRingAoe) ?? false;
+                if (isClassic)
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat("[RingRange] Admin only.", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("[RingRange] This diagnostic is only applicable in New ring mode. Classic mode operates entirely on standard projectile physics collisions with no custom server restraints.", ChatMessageType.System));
                     return;
                 }
 
                 // Scan for all known creatures within the player's ring AOE radius.
                 const float ringRadius = Player.DefaultRingAoeRadius;
                 var radius = ringRadius * (float)(player.GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
+                var maxHeight = Player.RingAoeMaxHeightDelta;
 
                 if (player.Location == null)
                 {
@@ -282,7 +275,7 @@ namespace ACE.Server.Command.Handlers
                 var inRange = known
                     .Where(c => c != null && c != player && c.Location != null
                                 && c.IsAlive
-                                && Math.Abs(player.Location.PositionZ - c.Location.PositionZ) <= Player.RingAoeMaxHeightDelta
+                                && Math.Abs(player.Location.PositionZ - c.Location.PositionZ) <= maxHeight
                                 && player.Location.Distance2D(c.Location) <= radius
                                 && player.CanDamage(c)
                                 && player.CheckPKStatusVsTarget(c, null) == null)
@@ -290,7 +283,7 @@ namespace ACE.Server.Command.Handlers
                     .ToList();
 
                 session.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"[RingRange] Radius: {radius:F1}m | Vertical: {Player.RingAoeMaxHeightDelta:F1}m | Creatures in range: {inRange.Count}",
+                    $"[RingRange] Radius: {radius:F1}m | Vertical: {maxHeight:F1}m | Creatures in range: {inRange.Count}",
                     ChatMessageType.System));
 
                 foreach (var c in inRange)
@@ -379,6 +372,8 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat("      Train all affordable untrained skills using skill credits, in priority order.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt ringmode", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"      Toggle ring spell mode between New (guaranteed AOE) and Classic (physics multi-hit). (currently: {ringLabel})", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt ringrange", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"      View all valid targets and parameters for your next ring spell.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt ringdebug", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"      Toggle ring AOE cast diagnostics broadcast for your character. Resets on relog.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt arrowdebug  [Admin only]", ChatMessageType.System));
