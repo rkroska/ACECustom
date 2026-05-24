@@ -830,6 +830,7 @@ namespace ACE.Server.Entity
             var capAttuned = capturedItem.Attuned;
             var capBonded = capturedItem.Bonded;
             var capCapturedDamageType = capturedItem.GetProperty(PropertyInt.CapturedSourceDamageType);
+            var capCreatureWcid = capturedItem.GetProperty(PropertyInt.CapturedCreatureWCID);
 
             var nameBeforeApply = crate.Name;
 
@@ -891,6 +892,11 @@ namespace ACE.Server.Entity
 
             if (crate.IsCombatPetDevice())
             {
+                if (capCreatureWcid.HasValue && capCreatureWcid.Value > 0)
+                    crate.SetProperty(PropertyInt.CapturedCreatureWCID, capCreatureWcid.Value);
+                else
+                    crate.RemoveProperty(PropertyInt.CapturedCreatureWCID);
+
                 if (capCapturedDamageType.HasValue && capCapturedDamageType.Value != 0 && Enum.IsDefined(typeof(DamageType), capCapturedDamageType.Value))
                     crate.SetProperty(PropertyInt.CapturedSourceDamageType, capCapturedDamageType.Value);
                 else

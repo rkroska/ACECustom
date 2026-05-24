@@ -287,7 +287,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Returns the combat stance for the currently wielded items
         /// </summary>
-        public MotionStance GetCombatStance()
+        public virtual MotionStance GetCombatStance()
         {
             var caster = GetEquippedWand();
 

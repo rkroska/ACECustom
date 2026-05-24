@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using ACE.DatLoader;
 using ACE.DatLoader.Entity;
@@ -19,6 +20,16 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public float EstimateMeleeDamageEventsPerSecond(uint motionTableId, float meanMeleeDelaySeconds)
         {
+            var stance = CurrentMotionState?.Stance ?? MotionStance.NonCombat;
+            return EstimateMeleeDamageEventsPerSecond(motionTableId, meanMeleeDelaySeconds, stance);
+        }
+
+        /// <summary>
+        /// Same as <see cref="EstimateMeleeDamageEventsPerSecond(uint,float)"/> but uses an explicit combat stance
+        /// (for capture-skin compatibility probes before <see cref="CurrentMotionState"/> is finalized).
+        /// </summary>
+        public float EstimateMeleeDamageEventsPerSecond(uint motionTableId, float meanMeleeDelaySeconds, MotionStance stance)
+        {
             if (CombatTable == null)
                 GetCombatTable();
             if (CombatTable == null || meanMeleeDelaySeconds < 0)
@@ -28,7 +39,6 @@ namespace ACE.Server.WorldObjects
             if (motionTable == null)
                 return 0f;
 
-            var stance = CurrentMotionState.Stance;
             if (!CombatTable.Stances.TryGetValue(stance, out var stanceManeuvers))
                 return 0f;
 
@@ -83,6 +93,39 @@ namespace ACE.Server.WorldObjects
             }
 
             return count > 0 ? (float)(sum / count) : 0f;
+        }
+
+        /// <summary>
+        /// Finds a combat stance that has at least one resolvable unarmed melee maneuver for the current
+        /// <see cref="CombatTable"/> and the given motion table. Prefers <see cref="MotionStance.HandCombat"/> when tied.
+        /// </summary>
+        public bool TryFindValidUnarmedMeleeStance(uint motionTableId, float meanMeleeDelaySeconds, out MotionStance stance)
+        {
+            stance = MotionStance.HandCombat;
+
+            if (CombatTable == null)
+                GetCombatTable();
+            if (CombatTable == null || CombatTable.Stances.Count == 0)
+                return false;
+
+            MotionStance? bestStance = null;
+            var bestRate = 0f;
+
+            foreach (var candidate in CombatTable.Stances.Keys.OrderBy(s => s == MotionStance.HandCombat ? 0 : 1))
+            {
+                var rate = EstimateMeleeDamageEventsPerSecond(motionTableId, meanMeleeDelaySeconds, candidate);
+                if (rate <= bestRate)
+                    continue;
+
+                bestRate = rate;
+                bestStance = candidate;
+            }
+
+            if (!bestStance.HasValue || bestRate <= float.Epsilon)
+                return false;
+
+            stance = bestStance.Value;
+            return true;
         }
 
         private static MotionCommand? ResolveMonsterMotionCommandForEstimate(MotionCommand motionCommand, Dictionary<uint, MotionData> motions)
