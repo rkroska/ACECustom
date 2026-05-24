@@ -33,12 +33,11 @@ namespace ACE.Server.WorldObjects
         public Dictionary<int, DateTime> LastUseTracker { get; set; }
 
         /// <summary>
-        /// ObjMaint can mark another Player as known before NotifyPlayers runs; we resend CreateObject from that reconcile path.
-        /// Without throttling, every Landblock/physics re-notify would enqueue duplicate CreateObject messages.
+        /// Debounce for <see cref="TryResendCreateObjectForStaleKnown"/> (post-teleport reconcile only).
         /// </summary>
-        private readonly Dictionary<uint, long> _lastDuplicateKnownPlayerTrackMs = new();
+        private readonly Dictionary<uint, long> _lastStaleKnownResendMs = new();
 
-        private const int DuplicateKnownPlayerTrackDebounceMs = 750;
+        private const int StaleKnownResendDebounceMs = 750;
 
         /// <summary>
         /// The link to this player's Object Maintenance
@@ -102,45 +101,30 @@ namespace ACE.Server.WorldObjects
             var myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
             var objVar = PrestigeManager.GetEffectiveVariationForVisibility(worldObject);
 
-            // ObjMaint can still list the other PhysicsObj from before a variation / visibility-domain change.
-            // The old early-out here skipped TrackObject entirely, so clients never got DO+CO and stayed wrong.
+            // Pre-prestige: return false when already known. Prestige (#421): purge stale links on variation mismatch.
             if (ObjMaint.KnownObjectsContainsValue(worldObject.PhysicsObj))
             {
-                if (PrestigeManager.SameVariationForVisibility(myVar, objVar))
+                if (!PrestigeManager.SameVariationForVisibility(myVar, objVar))
                 {
-                    // Physics can call ObjMaint.AddKnownObject (handle_visible_obj / AddVisibleObject) before
-                    // NotifyPlayers runs. ObjMaint then reports "already known" but the client never got CreateObject.
-                    if (worldObject is Player)
+                    if (ServerConfig.prestige_interaction_diag_verbose.Value)
                     {
-                        var key = worldObject.Guid.Full;
-                        var now = Environment.TickCount64;
-                        if (_lastDuplicateKnownPlayerTrackMs.TryGetValue(key, out var last) &&
-                            now - last < DuplicateKnownPlayerTrackDebounceMs)
-                            return false;
-
-                        TrackObject(worldObject);
-                        _lastDuplicateKnownPlayerTrackMs[key] = now;
-                        return true;
+                        log.Warn($"[PrestigeInteraction] AddTrackedObject purging stale ObjMaint link: viewer={Name}({Guid.Full:X8}) target={worldObject.Name}({worldObject.Guid.Full:X8}) " +
+                                 $"effVar_viewer={myVar?.ToString() ?? "null"} effVar_target={objVar?.ToString() ?? "null"}");
                     }
+
+                    _lastStaleKnownResendMs.Remove(worldObject.Guid.Full);
+
+                    worldObject.PhysicsObj.ObjMaint?.RemoveObject(PhysicsObj);
+                    if (worldObject is Player knownPlayer)
+                        knownPlayer.RemoveTrackedObject(this, false);
+                    ObjMaint.RemoveObject(worldObject.PhysicsObj);
+                    RemoveTrackedObject(worldObject, false);
+
+                    myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
+                    objVar = PrestigeManager.GetEffectiveVariationForVisibility(worldObject);
+                }
+                else
                     return false;
-                }
-
-                if (ServerConfig.prestige_interaction_diag_verbose.Value)
-                {
-                    log.Warn($"[PrestigeInteraction] AddTrackedObject purging stale ObjMaint link: viewer={Name}({Guid.Full:X8}) target={worldObject.Name}({worldObject.Guid.Full:X8}) " +
-                             $"effVar_viewer={myVar?.ToString() ?? "null"} effVar_target={objVar?.ToString() ?? "null"}");
-                }
-
-                _lastDuplicateKnownPlayerTrackMs.Remove(worldObject.Guid.Full);
-
-                worldObject.PhysicsObj.ObjMaint?.RemoveObject(PhysicsObj);
-                if (worldObject is Player knownPlayer)
-                    knownPlayer.RemoveTrackedObject(this, false);
-                ObjMaint.RemoveObject(worldObject.PhysicsObj);
-                RemoveTrackedObject(worldObject, false);
-
-                myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
-                objVar = PrestigeManager.GetEffectiveVariationForVisibility(worldObject);
             }
 
             if (!PrestigeManager.SameVariationForVisibility(myVar, objVar))
@@ -161,12 +145,85 @@ namespace ACE.Server.WorldObjects
             return true;
         }
 
+        /// <summary>
+        /// Post-teleport only. Physics can mark ObjMaint known before the client gets CreateObject; the normal
+        /// <see cref="AddTrackedObject"/> early-out would skip CO forever. Uses <see cref="TrackObject"/> directly,
+        /// same as <see cref="Physics.PhysicsObj.enqueue_objs"/> — not gated on AddTrackedObject.
+        /// </summary>
+        private void TryResendCreateObjectForStaleKnown(WorldObject worldObject)
+        {
+            if (worldObject == null || worldObject.Guid == Guid || worldObject.PhysicsObj == null)
+                return;
+
+            if (!ObjMaint.KnownObjectsContainsValue(worldObject.PhysicsObj))
+            {
+                AddTrackedObject(worldObject);
+                return;
+            }
+
+            if (!PrestigeManager.SameVariationForVisibility(
+                    PrestigeManager.GetEffectiveVariationForVisibility(this),
+                    PrestigeManager.GetEffectiveVariationForVisibility(worldObject)))
+                return;
+
+            var key = worldObject.Guid.Full;
+            var now = Environment.TickCount64;
+            if (_lastStaleKnownResendMs.TryGetValue(key, out var last) && now - last < StaleKnownResendDebounceMs)
+                return;
+
+            TrackObject(worldObject);
+            _lastStaleKnownResendMs[key] = now;
+        }
+
+        /// <summary>
+        /// One-shot after teleport (see <see cref="SchedulePostTeleportVisibilityReconcile"/>).
+        /// Refreshes this player's view from current cell PVS, then asks visible peers to resend our CO if they
+        /// still list us as known from before we left.
+        /// </summary>
+        public void ReconcileVisibilityAfterArrival()
+        {
+            if (ObjMaint == null || Session == null || PhysicsObj?.CurCell == null)
+                return;
+
+            var myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
+            var visible = ObjMaint.GetVisibleObjects(PhysicsObj.CurCell, ObjectMaint.VisibleObjectType.All, myVar);
+
+            foreach (var physObj in visible)
+            {
+                var wo = physObj?.WeenieObj?.WorldObject;
+                if (wo == null || wo.Guid == Guid)
+                    continue;
+
+                TryResendCreateObjectForStaleKnown(wo);
+            }
+
+            var peerPlayers = ObjMaint.GetVisibleObjects(PhysicsObj.CurCell, ObjectMaint.VisibleObjectType.Players, myVar);
+            foreach (var physObj in peerPlayers)
+            {
+                if (physObj?.WeenieObj?.WorldObject is not Player viewer || viewer.Guid == Guid)
+                    continue;
+
+                viewer.TryResendCreateObjectForStaleKnown(this);
+            }
+        }
+
+        /// <summary>
+        /// Runs <see cref="ReconcileVisibilityAfterArrival"/> after the 1s post-teleport delay used by physics CO enqueue.
+        /// </summary>
+        public void SchedulePostTeleportVisibilityReconcile()
+        {
+            var actionChain = new ActionChain();
+            actionChain.AddDelaySeconds(1.05);
+            actionChain.AddAction(this, ActionType.PlayerTracking_PostTeleportVisibilityReconcile, ReconcileVisibilityAfterArrival);
+            actionChain.EnqueueChain();
+        }
+
         public void RemoveTrackedObject(WorldObject wo, bool fromPickup)
         {
             //log.Info($"{Name}.RemoveTrackedObject({wo.Name} ({wo.Guid}), {fromPickup})");
 
             if (wo != null)
-                _lastDuplicateKnownPlayerTrackMs.Remove(wo.Guid.Full);
+                _lastStaleKnownResendMs.Remove(wo.Guid.Full);
 
             if (fromPickup)
             {
@@ -325,7 +382,7 @@ namespace ACE.Server.WorldObjects
             if (Location.Cell == newPosition.Cell && Location.Variation == newPosition.Variation)
                 return;
 
-            _lastDuplicateKnownPlayerTrackMs.Clear();
+            _lastStaleKnownResendMs.Clear();
 
             var knownObjs = GetKnownObjects();
 
