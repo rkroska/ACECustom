@@ -214,31 +214,115 @@ namespace ACE.Server.WorldObjects
             if (totalHealth == 0)
                 return;
 
+            var monsterTier = PrestigeManager.GetKillScalingMonsterTier(this);
+
+            var baseXp = (long)(XpOverride ?? 0);
+
+            // One EarnXP / EarnLuminance per player: combine direct hits + all of that player's combat pets.
+            // Avoids duplicate fellowship splits and matches "your kill bonuses apply to the full credit you earned on the mob."
+            var xpCreditByPlayer = new Dictionary<uint, float>();
             foreach (var kvp in DamageHistory.TotalDamage)
             {
-                var damager = kvp.Value.TryGetAttacker();
-
-                var playerDamager = damager as Player;
-
-                if (playerDamager == null && kvp.Value.PetOwner != null)
-                    playerDamager = kvp.Value.TryGetPetOwner();
-
-                if (playerDamager == null)
+                var info = kvp.Value;
+                if (info.TotalDamage <= 0)
                     continue;
 
-                var totalDamage = kvp.Value.TotalDamage;
+                var damager = info.TryGetAttacker();
+                Player creditPlayer = damager as Player;
+                if (creditPlayer == null && info.PetOwner != null)
+                    creditPlayer = info.TryGetPetOwner();
 
-                var damagePercent = totalDamage / totalHealth;
+                if (creditPlayer == null)
+                    continue;
 
-                var totalXP = (XpOverride ?? 0) * damagePercent;
+                var id = creditPlayer.Guid.Full;
+                if (xpCreditByPlayer.TryGetValue(id, out var acc))
+                    xpCreditByPlayer[id] = acc + info.TotalDamage;
+                else
+                    xpCreditByPlayer[id] = info.TotalDamage;
+            }
 
-                playerDamager.EarnXP((long)Math.Round(totalXP), XpType.Kill);
+            foreach (var kv in xpCreditByPlayer)
+            {
+                var player = PlayerManager.GetOnlinePlayer(new ObjectGuid(kv.Key));
+                if (player == null)
+                    continue;
 
-                // handle luminance
+                var damagePercent = kv.Value / totalHealth;
+                if (damagePercent <= 0)
+                    continue;
+
+                if (baseXp > 0)
+                {
+                    var totalXP = baseXp * damagePercent;
+                    player.EarnXP((long)Math.Round(totalXP), XpType.Kill, ShareType.All, monsterTier);
+                }
+
                 if (LuminanceAward != null)
                 {
-                    var totalLuminance = (long)Math.Round(LuminanceAward.Value * damagePercent);
-                    playerDamager.EarnLuminance(totalLuminance, XpType.Kill);
+                    var totalLuminance = LuminanceAward.Value * damagePercent;
+                    player.EarnLuminance((long)Math.Round(totalLuminance), XpType.Kill, ShareType.All, monsterTier);
+                }
+            }
+
+            // Pet Bonding System - bond XP scales with pet damage share and the owner's kill XP modifier stack (same profile as EarnXP).
+            // Accumulate per summoning device so TryAwardBondXp (save + network) runs once per device per kill.
+            if (ServerConfig.pet_bond_enabled.Value && baseXp > 0)
+            {
+                var bondXpByDevice = new Dictionary<uint, (Player Owner, long Xp)>();
+
+                foreach (var kvp in DamageHistory.TotalDamage)
+                {
+                    var info = kvp.Value;
+                    if (info.TotalDamage <= 0)
+                        continue;
+
+                    var damager = info.TryGetAttacker();
+                    if (damager is not CombatPet combatPet || info.PetOwner == null)
+                        continue;
+
+                    var playerDamager = info.TryGetPetOwner();
+                    if (playerDamager == null)
+                        continue;
+
+                    var damagePercent = info.TotalDamage / totalHealth;
+                    if (damagePercent <= 0)
+                        continue;
+
+                    var bondXp = (long)Math.Round(baseXp * damagePercent * ServerConfig.pet_bond_xp_multiplier.Value * playerDamager.GetKillXpModifierProduct());
+                    var minAward = ServerConfig.pet_bond_xp_min_award.Value;
+                    if (bondXp < minAward) bondXp = minAward;
+
+                    PetDevice device = combatPet.TryGetSummoningDevice();
+                    if (device == null)
+                    {
+                        var devGuid = combatPet.SummoningDeviceGuid;
+                        if (devGuid != ObjectGuid.Invalid)
+                        {
+                            device = playerDamager.FindObject(devGuid.Full, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) as PetDevice;
+                        }
+                    }
+
+                    if (device == null)
+                        continue;
+
+                    var key = device.Guid.Full;
+                    if (bondXpByDevice.TryGetValue(key, out var acc))
+                        bondXpByDevice[key] = (playerDamager, acc.Xp + bondXp);
+                    else
+                        bondXpByDevice[key] = (playerDamager, bondXp);
+                }
+
+                foreach (var kv in bondXpByDevice)
+                {
+                    var (owner, xp) = kv.Value;
+                    var device = owner.FindObject(kv.Key, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) as PetDevice;
+                    if (device == null)
+                        continue;
+
+                    var awarded = device.TryAwardBondXp(owner, xp, out var leveledUp);
+                    if (awarded && leveledUp)
+                        owner.SendMessage($"Your bond with {device.GetBondMessageDisplayName()} deepens. (Bond Level {device.PetBondLevel:N0})");
                 }
             }
         }
