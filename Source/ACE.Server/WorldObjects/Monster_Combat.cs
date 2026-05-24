@@ -232,6 +232,8 @@ namespace ACE.Server.WorldObjects
             if (Timers.RunningTime < NextMoveTime)
                 return false;
 
+            if (PhysicsObj == null) return false;
+
             PhysicsObj.update_object();
             UpdatePosition_SyncLocation();
 
@@ -248,6 +250,8 @@ namespace ACE.Server.WorldObjects
 
             if (Timers.RunningTime < nextAttackTime || !IsAttackRange())
                 return false;
+
+            if (PhysicsObj == null) return false;
 
             PhysicsObj.update_object();
             UpdatePosition_SyncLocation();
