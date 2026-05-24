@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
-using log4net;
-
 using ACE.Entity.Enum;
 using ACE.Server.Physics.BSP;
 using ACE.Server.Physics.Animation;
@@ -13,27 +11,11 @@ using ACE.Server.Physics.Extensions;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using ACE.Common;
-using ACE.Server.Physics.Util;
 
 namespace ACE.Server.Physics.Common
 {
     public class EnvCell: ObjCell, IEquatable<EnvCell>
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-
-        /// <summary>True while a root <see cref="build_visible_cells"/> is running (nested loads defer instead of recursing).</summary>
-        [ThreadStatic]
-        private static bool _buildingVisibleCells;
-
-        /// <summary>Cells whose neighbor load triggered <see cref="build_visible_cells"/> during an outer build.</summary>
-        [ThreadStatic]
-        private static List<EnvCell> _deferredVisibleBuilds;
-
-        /// <summary>Cells fully built in the current root build (avoids duplicate work and dat cycles).</summary>
-        [ThreadStatic]
-        private static HashSet<uint> _builtVisibleCellIds;
-
-        private const int MaxDeferredVisibleBuilds = 4096;
         //public int NumSurfaces;
         //public List<Surface> Surfaces;
         public CellStruct CellStructure;
@@ -94,51 +76,21 @@ namespace ACE.Server.Physics.Common
                 CellStructure = new CellStruct(cellStruct);
             else
             {
-                PhysicsLogGates.MissingCellStructure.Warn(
-                    () =>
-                        $"[PHYSICS] EnvCell CellStructureID 0x{CellStructureID:X8} not found in Environment 0x{EnvironmentID:X8} (cell 0x{ID:X8} variation={Variation?.ToString() ?? "null"}). CellStructure left null; physics for this cell will be skipped until cell.dat is repaired.",
-                    10_000);
+                Console.WriteLine("CellStructureID {0} not found in Environment {1}", CellStructureID, EnvironmentID);
+                CellStructure = new CellStruct
+                {
+                    Polygons = new Dictionary<ushort, Polygon>(),
+                    Portals = new List<Polygon>()
+                };
             }
+
             //NumSurfaces = envCell.Surfaces.Count;
-            // PostInit may skip before build_visible_cells runs; never leave VisibleCells null (GetVisible / add_visible_cell).
-            VisibleCells = new ConcurrentDictionary<uint, EnvCell>();
         }
 
         public void PostInit(int? variation)
         {
-            if (ID == 0)
-            {
-                PhysicsLogGates.PostInitSkipped.Warn(
-                    () => $"[PHYSICS] EnvCell.PostInit skipped: cell Id is 0 (invalid). variation={variation?.ToString() ?? "null"}",
-                    10_000);
-                return;
-            }
-
-            if (CellStructure == null)
-            {
-                PhysicsLogGates.PostInitSkipped.Warn(
-                    () =>
-                        $"[PHYSICS] EnvCell.PostInit skipped: CellStructure is null for cell 0x{ID:X8} env=0x{EnvironmentID:X8} cellStructId=0x{CellStructureID:X8} variation={variation?.ToString() ?? "null"}. Skipping visible-cell build and statics.",
-                    10_000);
-                return;
-            }
-
-            EnsureVisibleCellsBuilt();
-            init_static_objects(variation);
-        }
-
-        /// <summary>
-        /// Populates <see cref="VisibleCells"/> when still empty (e.g. deferred build or first PVS use).
-        /// </summary>
-        public void EnsureVisibleCellsBuilt()
-        {
-            if (CellStructure == null || VisibleCellIDs == null || VisibleCellIDs.Count == 0)
-                return;
-
-            if (VisibleCells != null && VisibleCells.Count > 0)
-                return;
-
             build_visible_cells();
+            init_static_objects(variation);
         }
 
         public override TransitionState FindEnvCollisions(Transition transition)
@@ -175,131 +127,17 @@ namespace ACE.Server.Physics.Common
 
         public void build_visible_cells()
         {
-            build_visible_cells(fromDeferDrain: false);
-        }
-
-        /// <param name="fromDeferDrain">When true, run even if an outer build is in progress (avoids re-deferring the drain queue).</param>
-        private void build_visible_cells(bool fromDeferDrain)
-        {
-            if (CellStructure == null || VisibleCellIDs == null)
-                return;
-
-            _builtVisibleCellIds ??= new HashSet<uint>();
-
-            if (_builtVisibleCellIds.Contains(ID))
-                return;
-
-            if (_buildingVisibleCells && !fromDeferDrain)
-            {
-                _deferredVisibleBuilds ??= new List<EnvCell>();
-                if (_deferredVisibleBuilds.Count >= MaxDeferredVisibleBuilds)
-                {
-                    PhysicsLogGates.BuildVisibleDepth.Warn(
-                        () =>
-                            $"[PHYSICS] build_visible_cells deferred queue exceeded {MaxDeferredVisibleBuilds} (likely cyclic visible-cell graph). cell=0x{ID:X8} variation={Pos.Variation?.ToString() ?? "null"}",
-                        10_000);
-                    return;
-                }
-
-                for (var i = 0; i < _deferredVisibleBuilds.Count; i++)
-                {
-                    if (_deferredVisibleBuilds[i].ID == ID)
-                        return;
-                }
-
-                _deferredVisibleBuilds.Add(this);
-                return;
-            }
-
-            var isRoot = !fromDeferDrain;
-            if (isRoot)
-                _buildingVisibleCells = true;
-
-            try
-            {
-                BuildVisibleCellsCore();
-                _builtVisibleCellIds.Add(ID);
-
-                if (isRoot)
-                    DrainDeferredVisibleBuilds();
-            }
-            finally
-            {
-                if (isRoot)
-                {
-                    _buildingVisibleCells = false;
-                    _builtVisibleCellIds = null;
-                    _deferredVisibleBuilds = null;
-                }
-            }
-        }
-
-        private static void DrainDeferredVisibleBuilds()
-        {
-            while (_deferredVisibleBuilds != null && _deferredVisibleBuilds.Count > 0)
-            {
-                var batch = _deferredVisibleBuilds;
-                _deferredVisibleBuilds = null;
-
-                foreach (var cell in batch)
-                    cell.build_visible_cells(fromDeferDrain: true);
-            }
-        }
-
-        private void BuildVisibleCellsCore()
-        {
+            //if (VisibleCells != null && VisibleCellIDs != null && VisibleCells.Count == VisibleCellIDs.Count)
+            //{
+            //    return; // already built
+            //}
             VisibleCells ??= new ConcurrentDictionary<uint, EnvCell>();
-            if (VisibleCellIDs == null)
-                return;
-
-            var diagDebug = IndoorPlacementDiagLogging.IsColo(ID) && log.IsDebugEnabled;
-            var diagCfg = IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(ID);
-            var visibleListCount = VisibleCellIDs?.Count ?? 0;
-            var failedVisibleLoads = 0;
-            var tryAddFailed = 0;
             foreach (var visibleCellID in VisibleCellIDs)
             {
-                var blockCellID = (ID & 0xFFFF0000) | visibleCellID;
+                var blockCellID = ID & 0xFFFF0000 | visibleCellID;
                 var cell = (EnvCell)LScape.get_landcell(blockCellID, this.Pos.Variation);
-                if (cell == null)
-                {
-                    if (diagDebug || diagCfg)
-                        log.Debug($"[DEBUG-VIS] EnvCell {ID:X8} (Var:{this.Pos.Variation}): Failed to load VisibleCell {blockCellID:X8} (requestedVar:{this.Pos.Variation})");
-                    failedVisibleLoads++;
-                }
-                else if (!VisibleCells.TryAdd(visibleCellID, cell))
-                    tryAddFailed++;// duplicate key — expected rarely when multiple paths register the same stub
-            }
-            if (diagDebug || diagCfg)
-            {
-                var keyMismatch = 0;
-                foreach (var kv in VisibleCells)
-                {
-                    if (kv.Value == null) continue;
-                    if (kv.Key != (kv.Value.ID & 0xFFFF))
-                        keyMismatch++;
-                }
-                var loaded = VisibleCells.Values.Where(v => v != null).ToList();
-                var distinctInstances = 0;
-                for (var i = 0; i < loaded.Count; i++)
-                {
-                    var isNew = true;
-                    for (var j = 0; j < i; j++)
-                    {
-                        if (ReferenceEquals(loaded[i], loaded[j])) { isNew = false; break; }
-                    }
-                    if (isNew) distinctInstances++;
-                }
-                var distinctFullIds = loaded.Select(v => v.ID).Distinct().Count();
-                var distinctOrigins = loaded
-                    .Select(v => $"{v.Pos.Frame.Origin.X:F1},{v.Pos.Frame.Origin.Y:F1},{v.Pos.Frame.Origin.Z:F1}")
-                    .Distinct()
-                    .Count();
-                var msg = $"build_visible_cells: root={ID:X8} posVar={Pos.Variation} visibleIdListCount={visibleListCount} visibleDictCount={VisibleCells.Count} failedLoads={failedVisibleLoads} tryAddDup={tryAddFailed} keyVsValueIdMismatch={keyMismatch} distinctVisibleInstances={distinctInstances} distinctVisibleFullIds={distinctFullIds} distinctVisibleOrigins={distinctOrigins} cellStructNull={CellStructure == null}";
-                if (diagCfg)
-                    log.Info($"[IndoorPlaceDiag] {msg}");
-                if (diagDebug)
-                    log.Debug($"[SpawnDiag] {msg}");
+                if (cell != null)
+                    VisibleCells.TryAdd(visibleCellID, cell);
             }
             //Parallel.ForEach(VisibleCellIDs, ConfigManager.Config.Server.Threading.LandblockManagerParallelOptions, visibleCellID =>
             //{
@@ -315,8 +153,6 @@ namespace ACE.Server.Physics.Common
         {
             //if (portalId == 0) return;
             if (portalId == ushort.MaxValue) return;
-            if (CellStructure == null)
-                return;
 
             foreach (var sphere in spheres)
             {
@@ -335,9 +171,6 @@ namespace ACE.Server.Physics.Common
         {
             //if (portalId == 0) return;
             if (portalId == ushort.MaxValue) return;
-            if (CellStructure == null || Portals == null || CellStructure.Portals == null
-                || portalId < 0 || portalId >= Portals.Count || portalId >= CellStructure.Portals.Count)
-                return;
 
             var portal = Portals[portalId];
             var portalPoly = CellStructure.Portals[portalId];
@@ -389,24 +222,13 @@ namespace ACE.Server.Physics.Common
 
             if (searchCells)
             {
-                if (VisibleCells == null)
-                {
-                    if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(ID))
-                        log.Info($"[IndoorPlaceDiag] find_visible_child_cell: VisibleCells is null (searchCells). root={ID:X8} posVar={Pos.Variation}");
-                    if (IndoorPlacementDiagLogging.IsColo(ID) && log.IsDebugEnabled)
-                        log.Debug($"[SpawnDiag] find_visible_child_cell: VisibleCells is null (searchCells). root={ID:X8} posVar={Pos.Variation}");
-                    return null;
-                }
-
-                // Use the EnvCell instances already stored in VisibleCells. Re-fetching via GetVisible(visibleCell.ID & 0xFFFF)
-                // can miss when dictionary keys ever diverge from (cell.ID & 0xFFFF) after variant-cache refactors (PR #391+),
-                // which would skip point_in_cell tests entirely and break indoor spawns.
                 foreach (var visibleCell in VisibleCells.Values)
                 {
                     if (visibleCell == null) continue;
 
-                    if (visibleCell.point_in_cell(origin))
-                        return visibleCell;
+                    var envCell = GetVisible(visibleCell.ID & 0xFFFF);
+                    if (envCell != null && envCell.point_in_cell(origin))
+                        return envCell;
                 }
             }
             else
@@ -418,61 +240,11 @@ namespace ACE.Server.Physics.Common
                         return envCell;
                 }
             }
-
-            var diagFindDebug = IndoorPlacementDiagLogging.IsColo(ID) && log.IsDebugEnabled;
-            var diagFindCfg = IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(ID);
-            if (diagFindDebug || diagFindCfg)
-            {
-                var rootIn = point_in_cell(origin);
-                var rootOwnOriginInCell = CellStructure != null && point_in_cell(Pos.Frame.Origin);
-                var childHits = 0;
-                var childStructNull = 0;
-                var ownOriginHits = 0;
-                var ownOriginChecked = 0;
-                if (VisibleCells != null)
-                {
-                    foreach (var vc in VisibleCells.Values)
-                    {
-                        if (vc == null) { childStructNull++; continue; }
-                        if (vc.CellStructure == null) childStructNull++;
-                        else if (vc.point_in_cell(origin)) childHits++;
-
-                        if (vc?.CellStructure != null)
-                        {
-                            ownOriginChecked++;
-                            if (vc.point_in_cell(vc.Pos.Frame.Origin))
-                                ownOriginHits++;
-                        }
-                    }
-                }
-                var lbVar = CurLandblock?.VariationId;
-                uint? adjustCellId = null;
-                string adjustCellOrigin = null;
-                if (diagFindCfg)
-                {
-                    var dungeonId = ID >> 16;
-                    var v = Pos.Variation ?? CurLandblock?.VariationId;
-                    adjustCellId = AdjustCell.Get(dungeonId, v)?.GetCell(origin);
-                    if (adjustCellId != null)
-                    {
-                        var hit = (EnvCell)LScape.get_landcell(adjustCellId.Value, v);
-                        adjustCellOrigin = hit?.Pos.Frame.Origin.ToString();
-                    }
-                }
-                var tail = $"adjustCellGetCell={adjustCellId?.ToString("X8") ?? "n/a"} adjustCellResolvedOrigin={adjustCellOrigin ?? "n/a"}";
-                var body = $"find_visible_child_cell null: root={ID:X8} env={EnvironmentID:X8} cellStruct={CellStructureID} posVar={Pos.Variation} physLandblockVar={lbVar} rootOrigin={Pos.Frame.Origin} origin={origin} distRootOriginToSample={Vector3.Distance(Pos.Frame.Origin, origin)} SeenOutside={SeenOutside} searchCells={searchCells} rootPointInCell={rootIn} rootOwnOriginInCell={rootOwnOriginInCell} rootCellStructNull={CellStructure == null} visibleDict={VisibleCells?.Count} visibleIdList={VisibleCellIDs?.Count} childPointHits={childHits} childOrStructNull={childStructNull} visibleOwnOriginHits={ownOriginHits}/{ownOriginChecked} {tail}";
-                if (diagFindCfg)
-                    log.Info($"[IndoorPlaceDiag] {body}");
-                if (diagFindDebug)
-                    log.Debug($"[SpawnDiag] {body}");
-            }
             return null;
         }
 
         public EnvCell GetVisible(uint cellID)
         {
-            if (VisibleCells == null)
-                return null;
             VisibleCells.TryGetValue(cellID, out EnvCell envCell);
             return envCell;
         }
@@ -486,41 +258,24 @@ namespace ACE.Server.Physics.Common
             VisibleCells = new ConcurrentDictionary<uint, EnvCell>();
         }
 
-        public EnvCell? add_visible_cell(uint cellID, int? Variation)
+        public EnvCell add_visible_cell(uint cellID, int? Variation)
         {
-            // VisibleCells keys are low 16 bits (same as BuildVisibleCellsCore / GetVisible(portal.OtherCellId) / IsVisibleIndoors).
-            var loadCellId = (cellID & 0xFFFF0000) != 0 ? cellID : (uint)((ID & 0xFFFF0000) | (cellID & 0xFFFF));
-            var key = loadCellId & 0xFFFFU;
-
-            var envCell = DBObj.GetEnvCell(loadCellId, Variation);
-            if (envCell == null)
-            {
-                PhysicsLogGates.AddVisibleCellNull.Warn(
-                    () => $"[PHYSICS] add_visible_cell: DBObj.GetEnvCell returned null for loadCellId=0x{loadCellId:X8} (arg cellID=0x{cellID:X8}) variation={Variation?.ToString() ?? "null"} (parent 0x{ID:X8})",
-                    10_000);
-                return null;
-            }
-            VisibleCells ??= new ConcurrentDictionary<uint, EnvCell>();
-            VisibleCells.TryAdd(key, envCell);
+            var envCell = DBObj.GetEnvCell(cellID, Variation);
+            VisibleCells.TryAdd(cellID, envCell);
             return envCell;
         }
 
         public override void find_transit_cells(int numParts, List<PhysicsPart> parts, CellArray cellArray)
         {
-            if (CellStructure == null || Portals == null)
-                return;
-
             var checkOutside = false;
 
             foreach (var portal in Portals)
             {
-                if (portal == null || CellStructure.Polygons == null
-                    || !CellStructure.Polygons.TryGetValue(portal.PolygonId, out var portalPoly))
-                    continue;
+                var portalPoly = CellStructure.Polygons[portal.PolygonId];
 
                 foreach (var part in parts)
                 {
-                    if (part == null || part.GfxObj == null) continue;
+                    if (part == null) continue;
                     var sphere = part.GfxObj.PhysicsSphere;
                     if (sphere == null)
                         sphere = part.GfxObj.DrawingSphere;
@@ -563,9 +318,6 @@ namespace ACE.Server.Physics.Common
                         break;
                     }
 
-                    if (otherCell.CellStructure == null)
-                        continue;
-
                     var cellBox = new BBox();
                     cellBox.LocalToLocal(bbox, part.Pos, otherCell.Pos);
                     if (otherCell.CellStructure.box_intersects_cell(cellBox))
@@ -581,16 +333,11 @@ namespace ACE.Server.Physics.Common
 
         public override void find_transit_cells(Position position, int numSphere, List<Sphere> spheres, CellArray cellArray, SpherePath path)
         {
-            if (CellStructure == null || Portals == null)
-                return;
-
             var checkOutside = false;
 
             foreach (var portal in Portals)
             {
-                if (portal == null || CellStructure.Polygons == null
-                    || !CellStructure.Polygons.TryGetValue(portal.PolygonId, out var portalPoly))
-                    continue;
+                var portalPoly = CellStructure.Polygons[portal.PolygonId];
 
                 if (portal.OtherCellId == ushort.MaxValue)
                 {
@@ -610,7 +357,7 @@ namespace ACE.Server.Physics.Common
                 else
                 {
                     var otherCell = GetVisible(portal.OtherCellId);
-                    if (otherCell != null && otherCell.CellStructure != null)
+                    if (otherCell != null)
                     {
                         foreach (var sphere in spheres)
                         {
@@ -625,7 +372,7 @@ namespace ACE.Server.Physics.Common
                             }
                         }
                     }
-                    else if (otherCell == null)
+                    else
                     {
                         foreach (var sphere in spheres)
                         {
@@ -662,7 +409,7 @@ namespace ACE.Server.Physics.Common
 
                 for (var i = 0; i < NumStaticObjects; i++)
                 {
-                    var staticObj = PhysicsObj.makeObject(StaticObjectIDs[i], 0, false, variation);
+                    var staticObj = PhysicsObj.makeObject(StaticObjectIDs[i], 0, false);
                     staticObj.DatObject = true;
                     staticObj.add_obj_to_cell(this, StaticObjectFrames[i], variation);
                     if (staticObj.CurCell == null)
@@ -682,9 +429,7 @@ namespace ACE.Server.Physics.Common
         public static ObjCell get_visible(uint cellID, int? variationId)
         {
             var cell = (EnvCell)LScape.get_landcell(cellID, variationId);
-            if (cell?.VisibleCells == null || cell.VisibleCells.Count == 0)
-                return null;
-            return cell.VisibleCells.Values.FirstOrDefault();
+            return cell.VisibleCells.Values.First();
         }
 
         //public void grab_visible(List<uint> stabs)
@@ -729,8 +474,6 @@ namespace ACE.Server.Physics.Common
 
         public bool IsVisibleIndoors(ObjCell cell)
         {
-            EnsureVisibleCellsBuilt();
-
             var blockDist = PhysicsObj.GetBlockDist(ID, cell.ID);
 
             // if landblocks equal

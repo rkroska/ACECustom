@@ -237,6 +237,10 @@ namespace ACE.Server.WorldObjects
 
             FirstEnterWorldDone = false;
 
+            // Treat login/relog the same as a teleport so dungeon NPC CreateObject messages
+            // are held for 1 second, giving the client time to load geometry before NPCs drop in.
+            LastTeleportTime = DateTime.UtcNow;
+
             SetStance(MotionStance.NonCombat, false);
 
             // radius for object updates

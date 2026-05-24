@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -15,7 +14,6 @@ using ACE.Server.Physics.Combat;
 using ACE.Server.Physics.Common;
 using ACE.Server.Physics.Hooks;
 using ACE.Server.Physics.Managers;
-using ACE.Server.Physics.Util;
 using ACE.Server.WorldObjects;
 
 using log4net;
@@ -31,41 +29,6 @@ namespace ACE.Server.Physics
     public class PhysicsObj
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-
-        private static readonly ConcurrentDictionary<long, long> _prestigeVisDiagLastLogMs = new();
-        private static readonly ConcurrentDictionary<string, double> _petPlayerCollisionDebugLastLog = new();
-
-        private const double PetPlayerCollisionDebugThrottleSec = 0.35;
-
-        /// <summary> Trim stale throttle keys so long-running servers do not grow this map without bound. </summary>
-        private static void PrestigeVisDiagMaybePrune(long nowMs)
-        {
-            const int maxEntries = 4096;
-            const long staleMs = 120_000;
-            if (_prestigeVisDiagLastLogMs.Count < maxEntries)
-                return;
-
-            foreach (var kv in _prestigeVisDiagLastLogMs.ToArray())
-            {
-                var age = nowMs - kv.Value;
-                if (age > staleMs || age < -staleMs)
-                    _prestigeVisDiagLastLogMs.TryRemove(kv.Key, out _);
-            }
-        }
-
-        /// <summary> Drop pet/player collision debug throttle entries past the log interval so pair keys do not accumulate forever. </summary>
-        private static void PetPlayerCollisionDebugMaybePrune(double now)
-        {
-            if (_petPlayerCollisionDebugLastLog.Count == 0)
-                return;
-
-            foreach (var kv in _petPlayerCollisionDebugLastLog.ToArray())
-            {
-                var age = now - kv.Value;
-                if (age > PetPlayerCollisionDebugThrottleSec || age < -PetPlayerCollisionDebugThrottleSec)
-                    _petPlayerCollisionDebugLastLog.TryRemove(kv.Key, out _);
-            }
-        }
 
         public uint ID;
         public ObjectGuid ObjID;
@@ -222,95 +185,35 @@ namespace ACE.Server.Physics
             }
         }
 
-        private ObjCell AdjustPosition(Position position, Vector3 low_pt, bool searchCells)
+        private static ObjCell AdjustPosition(Position position, Vector3 low_pt, bool searchCells)
         {
             var cellID = position.ObjCellID & 0xFFFF;
             //Console.WriteLine("AdjustPosition variation: {0:X4}", position.Variation);
             if ((cellID < 1 || cellID > 0x40) && (cellID < 0x100 || cellID > 0xFFFD) && cellID != 0xFFFF)
-            {
-                if (log.IsDebugEnabled)
-                    log.Debug($"[SpawnDiag] AdjustPosition: rejected ObjCellID (local cell {cellID:X4} out of valid ranges). physicsObj={Name} ({ID:X8}) full={position.ObjCellID:X8} v={position.Variation} origin={position.Frame.Origin}");
                 return null;
-            }
 
             if (cellID < 0x100)
             {
-                var originalID = position.ObjCellID;
-                var originalLoc = position.Frame.Origin;
                 LandDefs.AdjustToOutside(position);
-                var cell = ObjCell.GetVisible(position.ObjCellID, position.Variation);
-
-#if DEBUG
-                if (cell == null && (position.ObjCellID & 0xFFFF0000) == 0xDA550000)
-                {
-                    Console.WriteLine($"[DEBUG-PHYS] AdjustPosition ({originalID:X8}) -> ({position.ObjCellID:X8}) - Loc: {originalLoc} -> {position.Frame.Origin} - GetVisible returned NULL (Var: {position.Variation})");
-                }
-#endif
-                if (cell == null && log.IsDebugEnabled)
-                    log.Debug($"[SpawnDiag] AdjustPosition(outdoor): GetVisible null after AdjustToOutside. physicsObj={Name} ({ID:X8}) was={originalID:X8} now={position.ObjCellID:X8} v={position.Variation} loc {originalLoc} -> {position.Frame.Origin}");
-                return cell;
+                return ObjCell.GetVisible(position.ObjCellID, position.Variation);
             }
 
             var visibleCell = (EnvCell)ObjCell.GetVisible(position.ObjCellID, position.Variation);
-            if (visibleCell == null)
-            {
-                if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(position.ObjCellID))
-                    log.Info($"[IndoorPlaceDiag] AdjustPosition(indoor) GetVisible null physicsObj={Name} ({ID:X8}) cell={position.ObjCellID:X8} v={position.Variation} origin={position.Frame.Origin}");
-                if (log.IsDebugEnabled)
-                    log.Debug($"[SpawnDiag] AdjustPosition(indoor): GetVisible null — no landcell for this cell id + variation (check dat/instance variation). physicsObj={Name} ({ID:X8}) cell={position.ObjCellID:X8} v={position.Variation} origin={position.Frame.Origin}");
-                return null;
-            }
+            if (visibleCell == null) return null;
 
             var point = position.LocalToGlobal(low_pt);
-            if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(position.ObjCellID))
-                log.Info($"[IndoorPlaceDiag] AdjustPosition(indoor) probe physicsObj={Name} ({ID:X8}) wcid={WeenieObj?.WorldObject?.WeenieClassId} nominalCell={position.ObjCellID:X8} posV={position.Variation} lbV={visibleCell.CurLandblock?.VariationId} rootEnv={visibleCell.ID:X8} SeenOutside={visibleCell.SeenOutside} frameOrigin={position.Frame.Origin} sampleWorldPoint={point} sphereLocal={low_pt} searchCells={searchCells}");
             var child = visibleCell.find_visible_child_cell(point, searchCells);
             if (child != null)
             {
-                if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(position.ObjCellID))
-                    log.Info($"[IndoorPlaceDiag] AdjustPosition(indoor) find_visible_child_cell hit -> child={child.ID:X8} physicsObj={Name}");
                 position.ObjCellID = child.ID;
                 return child;
             }
 
             if (!visibleCell.SeenOutside)
-            {
-                // VisibleCells from the nominal ObjCellID may not list every stub that contains this
-                // world point (e.g. long colosseum-style shells). LandblockInfo enumeration + point_in_cell
-                // matches placement to the correct env cell when the visibility graph alone is incomplete.
-                var dungeonId = position.ObjCellID >> 16;
-                var v = position.Variation ?? visibleCell.CurLandblock?.VariationId;
-                var resolvedId = AdjustCell.Get(dungeonId, v)?.GetCell(point);
-                if (resolvedId != null)
-                {
-                    var env = (EnvCell)LScape.get_landcell(resolvedId.Value, v);
-                    if (env != null)
-                    {
-                        if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(position.ObjCellID))
-                            log.Info($"[IndoorPlaceDiag] AdjustPosition(indoor) AdjustCell fallback resolved nominal={position.ObjCellID:X8} -> {env.ID:X8} probeV={v?.ToString() ?? "null"} physicsObj={Name}");
-                        position.ObjCellID = env.ID;
-                        return env;
-                    }
-                }
-
-                if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(position.ObjCellID))
-                {
-                    var lbV = visibleCell.CurLandblock?.VariationId;
-                    log.Info($"[IndoorPlaceDiag] AdjustPosition(indoor) FAILED after fallback physicsObj={Name} ({ID:X8}) rootEnv={visibleCell.ID:X8} posV={position.Variation} physLandblockVar={lbV} frameOrigin={position.Frame.Origin} sampleWorldPoint={point} AdjustCellGetCell={resolvedId?.ToString("X8") ?? "null"}");
-                }
-                if (log.IsDebugEnabled)
-                {
-                    var lbV = visibleCell.CurLandblock?.VariationId;
-                    log.Debug($"[SpawnDiag] AdjustPosition(indoor): find_visible_child_cell returned null and SeenOutside=false — origin is outside any child BSP for this env shell (wrong coords vs variation, wrong env/cellStruct for dat, or bad CellBSP). physicsObj={Name} ({ID:X8}) rootEnv={visibleCell.ID:X8} posV={position.Variation} physLandblockVar={lbV} frameOrigin={position.Frame.Origin} sampleWorldPoint={point} localSphereOffset={low_pt}");
-                }
                 return null;
-            }
 
             position.adjust_to_outside();
-            var afterOutside = ObjCell.GetVisible(position.ObjCellID, position.Variation);
-            if (afterOutside == null && log.IsDebugEnabled)
-                log.Debug($"[SpawnDiag] AdjustPosition(indoor): after adjust_to_outside, GetVisible null. physicsObj={Name} ({ID:X8}) cell={position.ObjCellID:X8} v={position.Variation} origin={position.Frame.Origin}");
-            return afterOutside;
+            return ObjCell.GetVisible(position.ObjCellID, position.Variation);
         }
 
         public bool CacheHasPhysicsBSP()
@@ -436,13 +339,6 @@ namespace ACE.Server.Physics
                             var intersects = cylSpheres[i].IntersectsSphere(Position, Scale, transition);
                             if (intersects != TransitionState.OK)
                             {
-                                if (ServerConfig.pet_player_collision_debug_console.Value
-                                    && LooksLikePetPlayerCollision(this, transition.ObjectInfo.Object)
-                                    && !IsPetVsPlayerCollision(this, transition.ObjectInfo.Object))
-                                {
-                                    TracePetPlayerCollision("FindObjCollisions.cylHit.pairFailed", this, transition.ObjectInfo.Object, transition, intersects, ethereal, isCreature, suppressed: false);
-                                }
-
                                 return FindObjCollisions_Inner(transition, intersects, ethereal, isCreature);
                             }
                         }
@@ -460,124 +356,8 @@ namespace ACE.Server.Physics
             return TransitionState.OK;
         }
 
-        /// <summary>
-        /// True when one collision participant is a summon <see cref="Pet"/> (passive or <see cref="CombatPet"/>)
-        /// and the other is any <see cref="Player"/>. Used with replicated <see cref="PhysicsState.Ethereal"/> on pets for client walk-through.
-        /// </summary>
-        private static bool IsPetVsPlayerCollision(PhysicsObj self, PhysicsObj? other)
-        {
-            if (self?.WeenieObj?.WorldObject == null || other?.WeenieObj?.WorldObject == null)
-                return false;
-            var a = self.WeenieObj.WorldObject;
-            var b = other.WeenieObj.WorldObject;
-            if (a is Pet && b is Player)
-                return true;
-            if (b is Pet && a is Player)
-                return true;
-            return false;
-        }
-
-        /// <summary>
-        /// Pets use <see cref="PhysicsState.Ethereal"/> for client player walk-through. On the server, still block pet movement
-        /// vs doors, monsters, and other non-player objects (not <see cref="IgnoreCollisions"/> — that would skip env/object checks entirely).
-        /// </summary>
-        private static bool IsPetMustBlockNonPlayerCollision(PhysicsObj obstacle, PhysicsObj mover)
-        {
-            var involvesPet = obstacle.WeenieObj?.WorldObject is Pet || mover.WeenieObj?.WorldObject is Pet;
-            if (!involvesPet)
-                return false;
-
-            if (IsPetVsPlayerCollision(obstacle, mover))
-                return false;
-
-            return true;
-        }
-
-        private static bool TryGetPetPlayerPair(PhysicsObj? a, PhysicsObj? b, out Pet? pet, out Player? player)
-        {
-            pet = null;
-            player = null;
-            if (a?.WeenieObj?.WorldObject == null || b?.WeenieObj?.WorldObject == null)
-                return false;
-
-            var wa = a.WeenieObj.WorldObject;
-            var wb = b.WeenieObj.WorldObject;
-            if (wa is Pet p && wb is Player pl)
-            {
-                pet = p;
-                player = pl;
-                return true;
-            }
-            if (wb is Pet p2 && wa is Player pl2)
-            {
-                pet = p2;
-                player = pl2;
-                return true;
-            }
-            return false;
-        }
-
-        private static bool LooksLikePetPlayerCollision(PhysicsObj? a, PhysicsObj? b)
-        {
-            if (a?.WeenieObj == null || b?.WeenieObj == null)
-                return false;
-            var petSide = (a.WeenieObj.IsCreature && !a.WeenieObj.IsPlayer && a.WeenieObj.WorldObject is Pet)
-                || (b.WeenieObj.IsCreature && !b.WeenieObj.IsPlayer && b.WeenieObj.WorldObject is Pet);
-            var playerSide = a.WeenieObj.IsPlayer || b.WeenieObj.IsPlayer;
-            return petSide && playerSide;
-        }
-
-        private static string FormatPhysicsCollisionFlags(PhysicsObj obj)
-        {
-            if (obj == null)
-                return "null";
-            var s = obj.State;
-            return $"Ethereal={s.HasFlag(PhysicsState.Ethereal)} IgnoreColl={s.HasFlag(PhysicsState.IgnoreCollisions)} Static={s.HasFlag(PhysicsState.Static)} ReportColl={s.HasFlag(PhysicsState.ReportCollisions)}";
-        }
-
-        private static void TracePetPlayerCollision(string stage, PhysicsObj obstacle, PhysicsObj mover, Transition? transition, TransitionState result, bool ethereal, bool isCreature, bool suppressed)
-        {
-            if (!ServerConfig.pet_player_collision_debug_console.Value)
-                return;
-
-            if (!LooksLikePetPlayerCollision(obstacle, mover) && !IsPetVsPlayerCollision(obstacle, mover))
-                return;
-
-            var now = PhysicsTimer.CurrentTime;
-            PetPlayerCollisionDebugMaybePrune(now);
-            var key = $"{Math.Min(obstacle.ID, mover.ID):X8}:{Math.Max(obstacle.ID, mover.ID):X8}";
-            if (_petPlayerCollisionDebugLastLog.TryGetValue(key, out var last) && now - last < PetPlayerCollisionDebugThrottleSec)
-                return;
-            _petPlayerCollisionDebugLastLog[key] = now;
-
-            TryGetPetPlayerPair(obstacle, mover, out var pet, out var player);
-            var petWo = pet ?? obstacle.WeenieObj?.WorldObject as Pet ?? mover.WeenieObj?.WorldObject as Pet;
-            var playerWo = player ?? obstacle.WeenieObj?.WorldObject as Player ?? mover.WeenieObj?.WorldObject as Player;
-            var petName = petWo?.Name ?? "?";
-            var playerName = playerWo?.Name ?? "?";
-            var pairOk = IsPetVsPlayerCollision(obstacle, mover);
-            var woNull = obstacle.WeenieObj?.WorldObject == null || mover.WeenieObj?.WorldObject == null;
-            var pathDetail = transition?.SpherePath != null
-                ? $"path StepDown={transition.SpherePath.StepDown} Collide={transition.SpherePath.Collide} CheckWalkable={transition.SpherePath.CheckWalkable} ObstructionEthereal={transition.SpherePath.ObstructionEthereal}"
-                : "path n/a";
-
-            Console.WriteLine(
-                $"[PetPlayerColl] {stage} {(suppressed ? "SUPPRESSED" : "HARD")} result={result} pairOk={pairOk} woNull={woNull} " +
-                $"pet={petName} player={playerName} obs={obstacle.ID:X8} mover={mover.ID:X8} {pathDetail} " +
-                $"inner ethereal={ethereal} isCreature={isCreature} | obs({FormatPhysicsCollisionFlags(obstacle)}) mover({FormatPhysicsCollisionFlags(mover)}) " +
-                $"propEthereal pet={petWo?.Ethereal} player={playerWo?.Ethereal} | client blocks on PhysicsState.Ethereal from CreateObject, not server IsPetVsPlayer");
-        }
-
         public TransitionState FindObjCollisions_Inner(Transition transition, TransitionState result, bool ethereal, bool isCreature)
         {
-            var mover = transition.ObjectInfo.Object;
-            var looksPetPlayer = LooksLikePetPlayerCollision(this, mover) || IsPetVsPlayerCollision(this, mover);
-            var petMustBlock = IsPetMustBlockNonPlayerCollision(this, mover);
-            var allowPassThrough = !petMustBlock
-                && (ethereal
-                    || IsPetVsPlayerCollision(this, transition.ObjectInfo.Object)
-                    || isCreature && transition.ObjectInfo.State.HasFlag(ObjectInfoState.IgnoreCreatures));
-
             if (!transition.SpherePath.StepDown)
             {
                 if (State.HasFlag(PhysicsState.Static))
@@ -585,40 +365,15 @@ namespace ACE.Server.Physics
                     if (!transition.ObjectInfo.State.HasFlag(ObjectInfoState.Contact))
                         transition.CollisionInfo.CollidedWithEnvironment = true;
                 }
-                else if (allowPassThrough)
+                else if (ethereal || isCreature && transition.ObjectInfo.State.HasFlag(ObjectInfoState.IgnoreCreatures))
                 {
-                    if (looksPetPlayer)
-                        TracePetPlayerCollision("FindObjCollisions_Inner", this, mover, transition, result, ethereal, isCreature, suppressed: true);
-
                     result = TransitionState.OK;
                     transition.CollisionInfo.CollisionNormalValid = false;
                     transition.CollisionInfo.AddObject(this, TransitionState.OK);
                 }
                 else
-                {
-                    if (looksPetPlayer || (petMustBlock && ServerConfig.pet_player_collision_debug_console.Value))
-                        TracePetPlayerCollision(petMustBlock ? "FindObjCollisions_Inner.petMustBlock" : "FindObjCollisions_Inner", this, mover, transition, result, ethereal, isCreature, suppressed: false);
-
                     transition.CollisionInfo.AddObject(this, result);
-                }
             }
-            else if (allowPassThrough)
-            {
-                if (looksPetPlayer)
-                    TracePetPlayerCollision("FindObjCollisions_Inner.StepDown", this, mover, transition, result, ethereal, isCreature, suppressed: true);
-
-                result = TransitionState.OK;
-                transition.CollisionInfo.CollisionNormalValid = false;
-                transition.CollisionInfo.AddObject(this, TransitionState.OK);
-            }
-            else
-            {
-                if (looksPetPlayer || (petMustBlock && ServerConfig.pet_player_collision_debug_console.Value))
-                    TracePetPlayerCollision(petMustBlock ? "FindObjCollisions_Inner.StepDown.petMustBlock" : "FindObjCollisions_Inner.StepDown", this, mover, transition, result, ethereal, isCreature, suppressed: false);
-
-                transition.CollisionInfo.AddObject(this, result);
-            }
-
             transition.SpherePath.ObstructionEthereal = false;
             return result;
         }
@@ -1213,20 +968,10 @@ namespace ACE.Server.Physics
         {
             if (CurCell == null) prepare_to_enter_world();
 
-#if DEBUG
-            if ((pos.ObjCellID & 0xFFFF0000) == 0xDA550000)
-                Console.WriteLine($"[DEBUG-PHYS] SetPositionInternal ENTRY: pos.ObjCellID={pos.ObjCellID:X8} before AdjustPosition");
-#endif
-
             var newCell = AdjustPosition(pos, transition.SpherePath.LocalSphere[0].Center, true);
 
             if (newCell == null)
             {
-                if (log.IsDebugEnabled)
-                {
-                    var wcid = WeenieObj?.WorldObject?.WeenieClassId;
-                    log.Debug($"[SpawnDiag] SetPositionInternal: AdjustPosition returned null (physics still returns OK; CurCell stays null). physicsObj={Name} ({ID:X8}) wcid={wcid} posCell={pos.ObjCellID:X8} posVar={pos.Variation} transitionVar={transition.VariationId} origin={pos.Frame.Origin} enteringWorld={entering_world}");
-                }
                 prepare_to_leave_visibility();
                 store_position(pos);
                 //ObjMaint.GotoLostCell(this, Position.ObjCellID);
@@ -1241,23 +986,10 @@ namespace ACE.Server.Physics
             //transition.CellArray.DoNotLoadCells = true;
 
             if (!CheckPositionInternal(newCell, pos, transition, setPos))
-            {
-                 bool success = handle_all_collisions(transition.CollisionInfo, false, false);
-#if DEBUG
-                 if ((pos.ObjCellID & 0xFFFF0000) == 0xDA550000)
-                     Console.WriteLine($"[DEBUG-PHYS] SetPositionInternal DA55: CheckPositionInternal FAILED. HandleAllCollisions={success}. Transition.CollisionInfo: {transition.CollisionInfo.CollideObject.Count} objs.");
-#endif
-                 return success ? SetPositionError.Collided : SetPositionError.NoValidPosition;
-            }
+                return handle_all_collisions(transition.CollisionInfo, false, false) ?
+                    SetPositionError.Collided : SetPositionError.NoValidPosition;
 
-            if (transition.SpherePath.CurCell == null) 
-            {
-#if DEBUG
-                if ((pos.ObjCellID & 0xFFFF0000) == 0xDA550000)
-                    Console.WriteLine($"[DEBUG-PHYS] SetPositionInternal DA55: Transition.SpherePath.CurCell is NULL after CheckPositionInternal! NewCell was: {newCell?.ID:X8}");
-#endif
-                return SetPositionError.NoCell;
-            }
+            if (transition.SpherePath.CurCell == null) return SetPositionError.NoCell;
 
             // custom:
             // test for non-ethereal spell projectile collision on world entry
@@ -1607,6 +1339,8 @@ namespace ACE.Server.Physics
                     {
                         if (IsPlayer)
                             log.Debug($"{Name} ({ID:X8}).UpdateObjectInternal({quantum}) - failed transition from {Position} to {newPos}");
+                        else if (transit != null && transit.SpherePath.CurCell == null)
+                            log.Warn($"{Name} ({ID:X8}).UpdateObjectInternal({quantum}) - avoided CurCell=null from {Position} to {newPos}");
 
                         newPos.Frame.Origin = Position.Frame.Origin;
                         set_initial_frame(newPos.Frame);
@@ -1995,6 +1729,8 @@ namespace ACE.Server.Physics
             if (!IsPlayer || WeenieObj.WorldObject is not Player player)
                 return;
 
+            var playerVar = PrestigeManager.GetEffectiveVariationForVisibility(player);
+
             if (DateTime.UtcNow - player.LastTeleportTime < TeleportCreateObjectDelay)
             {
                 var actionChain = new ActionChain();
@@ -2004,8 +1740,13 @@ namespace ACE.Server.Physics
                     foreach (var obj in newlyVisible)
                     {
                         var wo = obj.WeenieObj.WorldObject;
-                        if (wo != null && (wo.Location.Variation ?? 0) == (player.Location.Variation ?? 0))
-                            player.TrackObject(wo, true);
+                        if (wo == null)
+                            continue;
+
+                        if (!PrestigeManager.SameVariationForVisibility(playerVar, PrestigeManager.GetEffectiveVariationForVisibility(wo)))
+                            continue;
+
+                        player.TrackObject(wo, true);
                     }
                 });
                 actionChain.EnqueueChain();
@@ -2019,7 +1760,7 @@ namespace ACE.Server.Physics
                     if (wo == null)
                         continue;
 
-                    if ((wo.Location.Variation ?? 0) != (player.Location.Variation ?? 0))
+                    if (!PrestigeManager.SameVariationForVisibility(playerVar, PrestigeManager.GetEffectiveVariationForVisibility(wo)))
                         continue;
 
                     if (wo.Teleporting)
@@ -2045,7 +1786,9 @@ namespace ACE.Server.Physics
             if (wo == null)
                 return;
 
-            if ((wo.Location.Variation ?? 0) != (player.Location.Variation ?? 0))
+            if (!PrestigeManager.SameVariationForVisibility(
+                    PrestigeManager.GetEffectiveVariationForVisibility(player),
+                    PrestigeManager.GetEffectiveVariationForVisibility(wo)))
                 return;
 
             if (DateTime.UtcNow - player.LastTeleportTime < TeleportCreateObjectDelay)
@@ -2072,20 +1815,13 @@ namespace ACE.Server.Physics
 
         public void enter_cell(ObjCell newCell)
         {
-            if (PartArray == null)
-            {
-                if (WeenieObj?.WorldObject?.WeenieClassId == 720 || WeenieObj?.WorldObject?.WeenieClassId == 835) // Door or Vendor
-                    Console.WriteLine($"[DEBUG-PHYS] enter_cell failed: PartArray is null for {Name} ({ID:X8})");
-                return;
-            }
+            if (PartArray == null) return;
             newCell.AddObject(this);
             foreach (var child in Children.Objects)
                 child.enter_cell(newCell);
 
             CurCell = newCell;
             Position.ObjCellID = newCell.ID;        // warning: Position will be in an inconsistent state here, until set_frame() is run!
-            // Note: Do NOT sync Position.Variation here - variation should be preserved during movement
-            // and only set during world entry via SyncLocation()
             if (PartArray != null && !State.HasFlag(PhysicsState.ParticleEmitter))
                 PartArray.SetCellID(newCell.ID);
 
@@ -2103,7 +1839,6 @@ namespace ACE.Server.Physics
 
             enter_cell(newCell);
             RequestPos.ObjCellID = newCell.ID;      // document this control flow better
-            // Note: Do NOT sync RequestPos.Variation here - variation should be preserved during movement
 
             // sync location for initial CO
             if (entering_world)
@@ -2500,50 +2235,12 @@ namespace ACE.Server.Physics
             }
 
             var isVisible = CurCell.IsVisible(obj.CurCell);
-            if (isVisible && !PrestigeManager.SameVariationForVisibility(obj.Position.Variation, this.Position.Variation))
+            if (isVisible)
             {
-                if (ServerConfig.prestige_interaction_diag_verbose.Value && this.IsPlayer && obj.IsPlayer)
-                {
-                    var key = ((long)ID << 32) | obj.ID;
-                    var nowMs = System.Environment.TickCount64;
-                    var lastMs = _prestigeVisDiagLastLogMs.GetOrAdd(key, 0);
-                    if (nowMs - lastMs >= 5000)
-                    {
-                        _prestigeVisDiagLastLogMs[key] = nowMs;
-                        PrestigeVisDiagMaybePrune(nowMs);
-                        log.Warn($"[PrestigeInteraction] PhysicsObj.handle_visible_obj variation blocked: viewer={Name}({ID:X8}) v={Position?.Variation?.ToString() ?? "null"} " +
-                                 $"target={obj.Name}({obj.ID:X8}) v={obj.Position?.Variation?.ToString() ?? "null"}");
-                    }
-                }
-                isVisible = false;
-            }
-            else if (!isVisible && ServerConfig.prestige_interaction_diag_verbose.Value && this.IsPlayer && obj.IsPlayer)
-            {
-                // If players are close and in the same visibility domain, but IsVisible is false, this strongly suggests a
-                // visible-cell graph / EnvCell load issue rather than prestige variation logic.
-                var sameVisDomain = PrestigeManager.SameVariationForVisibility(obj.Position.Variation, this.Position.Variation);
-                if (sameVisDomain)
-                {
-                    var dx = (double)(Position.Frame.Origin.X - obj.Position.Frame.Origin.X);
-                    var dy = (double)(Position.Frame.Origin.Y - obj.Position.Frame.Origin.Y);
-                    var distSq = dx * dx + dy * dy;
-
-                    // Only log when "nearby" to avoid spam during normal occlusion at distance.
-                    if (distSq <= 50.0 * 50.0)
-                    {
-                        // Throttle per viewer-target pair.
-                        var key = ((long)ID << 32) | obj.ID;
-                        var nowMs = System.Environment.TickCount64;
-                        var lastMs = _prestigeVisDiagLastLogMs.GetOrAdd(key, 0);
-                        if (nowMs - lastMs >= 5000)
-                        {
-                            _prestigeVisDiagLastLogMs[key] = nowMs;
-                            PrestigeVisDiagMaybePrune(nowMs);
-                            log.Warn($"[PrestigeInteraction] PhysicsObj.handle_visible_obj IsVisible=false (nearby): viewer={Name}({ID:X8}) cell={CurCell?.ID:X8} v={Position?.Variation?.ToString() ?? "null"} " +
-                                     $"target={obj.Name}({obj.ID:X8}) cell={obj.CurCell?.ID:X8} v={obj.Position?.Variation?.ToString() ?? "null"} dist2d={Math.Sqrt(distSq):0.00}");
-                        }
-                    }
-                }
+                var myVar = PrestigeManager.GetEffectiveVariationForVisibility(WeenieObj?.WorldObject);
+                var objVar = PrestigeManager.GetEffectiveVariationForVisibility(obj.WeenieObj?.WorldObject);
+                if (!PrestigeManager.SameVariationForVisibility(myVar, objVar))
+                    isVisible = false;
             }
 
             if (isVisible)
@@ -2903,13 +2600,6 @@ namespace ACE.Server.Physics
 
         public bool report_object_collision(PhysicsObj obj, bool prev_has_contact)
         {
-            if (ServerConfig.pet_player_collision_debug_console.Value
-                && (IsPetVsPlayerCollision(this, obj) || LooksLikePetPlayerCollision(this, obj)))
-            {
-                TracePetPlayerCollision("report_object_collision.enter", this, obj, null, TransitionState.OK, false, false,
-                    suppressed: false);
-            }
-
             if (obj.State.HasFlag(PhysicsState.ReportCollisionsAsEnvironment))
                 return report_environment_collision(prev_has_contact);
 
@@ -3293,8 +2983,6 @@ namespace ACE.Server.Physics
 
             set_cell_id(pos.ObjCellID);
             set_frame(pos.Frame);
-            
-            // Sync variation to ensure visibility filtering works correctly
             Position.Variation = pos.Variation;
         }
 
