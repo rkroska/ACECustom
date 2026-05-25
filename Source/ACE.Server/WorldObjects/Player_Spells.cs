@@ -782,5 +782,21 @@ namespace ACE.Server.WorldObjects
                 }
             }
         }
+
+        // ── Auto-Rebuff Charm Support ──────────────────────────────────────────
+        public bool HasAutoRebuffCharm { get; set; }
+        public double LastAutoRebuffToggleTime { get; set; }
+        public double LastDispelTimestamp { get; set; }
+
+        public double GetBuffRemainingTime()
+        {
+            var entry = EnchantmentManager.GetEnchantment((uint)SpellId.StrengthSelf8);
+            if (entry == null)
+                return 0.0;
+
+            var expirationTime = entry.StartTime + entry.Duration;
+            var remaining = expirationTime - ACE.Common.Time.GetUnixTime();
+            return remaining > 0.0 ? remaining : 0.0;
+        }
     }
 }
