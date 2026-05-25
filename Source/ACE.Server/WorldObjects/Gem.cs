@@ -351,14 +351,6 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                // Enforce 10-second toggle ON cooldown to prevent spamming
-                if (currentTime - player.LastAutoRebuffToggleTime < 10.0)
-                {
-                    var remainingSecs = (int)Math.Ceiling(10.0 - (currentTime - player.LastAutoRebuffToggleTime));
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"The Auto-Rebuff Charm is cooling down. Try again in {remainingSecs}s.", ChatMessageType.Broadcast));
-                    return;
-                }
-
                 // Enforce minimum 2000 Spell Duration augmentation requirement
                 var durationAugs = player.LuminanceAugmentSpellDurationCount ?? 0;
                 if (durationAugs < 2000)
@@ -379,7 +371,6 @@ namespace ACE.Server.WorldObjects
                 // Activation (turning ON)
                 IsCharmActivated = true;
                 CharmAbilityRegistry.Apply(player, abilityId, true, CharmLevel ?? 1);
-                player.LastAutoRebuffToggleTime = currentTime;
                 player.IsDispelMessageTriggered = false; // Arm the dispel alert message trigger
                 player.ApplyUltimateBlessings();
                 
