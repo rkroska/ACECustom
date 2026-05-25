@@ -787,6 +787,7 @@ namespace ACE.Server.WorldObjects
         public bool HasAutoRebuffCharm { get; set; }
         public double LastAutoRebuffToggleTime { get; set; }
         public double LastDispelTimestamp { get; set; }
+        public double LastAutoRebuffCheckTime { get; set; }
 
         public double GetBuffRemainingTime()
         {
@@ -794,8 +795,7 @@ namespace ACE.Server.WorldObjects
             if (entry == null)
                 return 0.0;
 
-            var expirationTime = entry.StartTime + entry.Duration;
-            var remaining = expirationTime - ACE.Common.Time.GetUnixTime();
+            var remaining = entry.Duration + entry.StartTime;
             return remaining > 0.0 ? remaining : 0.0;
         }
     }
