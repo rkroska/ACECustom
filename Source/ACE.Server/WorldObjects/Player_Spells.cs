@@ -394,6 +394,95 @@ namespace ACE.Server.WorldObjects
             });
         }
 
+        public void ApplyUltimateBlessings()
+        {
+            var maxSpellLevel = 8;
+            // Make sure level 8s are installed in the world DB (fallback to 7 if missing)
+            if (DatabaseManager.World.GetCachedSpell((uint)SpellId.ArmorOther8) == null)
+                maxSpellLevel = 7;
+
+            var tySpell = typeof(SpellId);
+            List<BuffMessage> buffMessages = new List<BuffMessage>();
+
+            foreach (var spell in Buffs)
+            {
+                var spellNamPrefix = spell;
+                bool isBane = false;
+                if (spellNamPrefix.StartsWith("@"))
+                {
+                    isBane = true;
+                    spellNamPrefix = spellNamPrefix.Substring(1);
+                }
+
+                // Gems always target "Self" for buffs (Attributes, Vitals, Protections, Masteries)
+                string fullSpellEnumName = spellNamPrefix + ((isBane) ? string.Empty : "Self") + maxSpellLevel;
+                string fullSpellEnumNameAlt = spellNamPrefix + ((isBane) ? string.Empty : "Other") + maxSpellLevel;
+
+                uint spellID = 0;
+                if (Enum.TryParse(tySpell, fullSpellEnumName, out object parsedId))
+                {
+                    spellID = (uint)parsedId;
+                }
+                else if (Enum.TryParse(tySpell, fullSpellEnumNameAlt, out object parsedIdAlt))
+                {
+                    spellID = (uint)parsedIdAlt;
+                }
+                else
+                {
+                    continue;
+                }
+
+                var buffMsg = BuildBuffMessage(spellID);
+                if (buffMsg != null)
+                {
+                    buffMsg.Bane = isBane;
+                    buffMessages.Add(buffMsg);
+                }
+            }
+
+            // 1. Buff Player
+            var playerBuffs = buffMessages.Where(k => !k.Bane).ToList();
+            if (playerBuffs.Count > 0)
+            {
+                playerBuffs.ForEach(k => k.SetTargetPlayer(this));
+                // update client-side enchantments
+                Session.Network.EnqueueSend(playerBuffs.Select(k => k.SessionMessage).ToArray());
+                // run client-side effect scripts, omitting duplicates
+                EnqueueBroadcast(playerBuffs.GroupBy(m => m.Spell.TargetEffect).Select(a => a.First().LandblockMessage).ToArray());
+                
+                // update server-side enchantments
+                var buffsForPlayer = playerBuffs.Select(k => k.Enchantment);
+                var lifeBuffs = buffsForPlayer.Where(k => k.Spell.School == MagicSchool.LifeMagic).ToList();
+                var critterBuffs = buffsForPlayer.Where(k => k.Spell.School == MagicSchool.CreatureEnchantment).ToList();
+                var itemBuffs = buffsForPlayer.Where(k => k.Spell.School == MagicSchool.ItemEnchantment).ToList();
+
+                lifeBuffs.ForEach(spl => CreateEnchantmentSilent(spl.Spell, this));
+                critterBuffs.ForEach(spl => CreateEnchantmentSilent(spl.Spell, this));
+                itemBuffs.ForEach(spl => CreateEnchantmentSilent(spl.Spell, this));
+            }
+
+            // 2. Cast Banes and Impen on all gear (both equipped and in all bags recursively)
+            var itemBuffsList = buffMessages.Where(k => k.Bane).ToList();
+            if (itemBuffsList.Count > 0)
+            {
+                var allGear = GetAllPossessionsDeep()
+                    .Where(item => (item.WeenieType == WeenieType.Clothing || item.IsShield) && item.IsEnchantable)
+                    .ToList();
+
+                foreach (var itemBuff in itemBuffsList)
+                {
+                    foreach (var item in allGear)
+                    {
+                        CreateEnchantmentSilent(itemBuff.Spell, item);
+                    }
+                }
+            }
+
+            // Play nice visual / sound effects and send chat confirmation
+            Session.Network.EnqueueSend(new GameMessageSystemChat("You feel a surge of ultimate blessings flow through you and all your gear!", ChatMessageType.Broadcast));
+            Session.Network.EnqueueSend(new GameMessageSound(Guid, Sound.EnchantUp));
+        }
+
         private void CreateEnchantmentSilent(Spell spell, WorldObject target)
         {
             var addResult = target.EnchantmentManager.Add(spell, this, null);
