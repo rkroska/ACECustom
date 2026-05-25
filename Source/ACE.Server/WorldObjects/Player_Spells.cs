@@ -396,6 +396,13 @@ namespace ACE.Server.WorldObjects
 
         public void ApplyUltimateBlessings()
         {
+            var durationAugs = LuminanceAugmentSpellDurationCount ?? 0;
+            if (durationAugs < 2000)
+            {
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"You must have a minimum of 2000 Spell Duration augmentations to use the Auto-Rebuff Charm. Current: {durationAugs:N0}.", ChatMessageType.Broadcast));
+                return;
+            }
+
             var maxSpellLevel = 8;
             // Make sure level 8s are installed in the world DB (fallback to 7 if missing)
             if (DatabaseManager.World.GetCachedSpell((uint)SpellId.ArmorOther8) == null)
@@ -452,42 +459,19 @@ namespace ACE.Server.WorldObjects
                 PendingStaggeredEvents.Clear();
 
                 var lifePrefixes = new[] { "Fire Protection", "Acid Protection", "Cold Protection", "Lightning Protection", "Bludgeon", "Blade Protection", "Piercing Protection", "Magic Resistance" };
-                var creaturePrefixes = new[] { "Strength", "Endurance", "Coordination", "Quickness", "Focus", "Willpower", "Regeneration", "Rejuvenation" };
-                var itemPrefixes = new[] { "Weapon Tinkering", "Item Tinkering", "Magic Item Tinkering", "Armor Tinkering" };
 
                 var lifeVisuals = new List<GameMessageScript>();
-                var creatureVisuals = new List<GameMessageScript>();
-                var itemVisuals = new List<GameMessageScript>();
 
                 foreach (var prefix in lifePrefixes)
                 {
                     var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.Contains(prefix, StringComparison.OrdinalIgnoreCase));
                     if (buff != null) lifeVisuals.Add(buff.LandblockMessage);
                 }
-                foreach (var prefix in creaturePrefixes)
-                {
-                    var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.Contains(prefix, StringComparison.OrdinalIgnoreCase));
-                    if (buff != null) creatureVisuals.Add(buff.LandblockMessage);
-                }
-                foreach (var prefix in itemPrefixes)
-                {
-                    var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.Contains(prefix, StringComparison.OrdinalIgnoreCase));
-                    if (buff != null) itemVisuals.Add(buff.LandblockMessage);
-                }
 
                 for (int i = 0; i < 8; i++)
                 {
-                    var evt = new StaggeredVisualEvent { BroadcastTimeOffset = i * 0.5 };
-                    
+                    var evt = new StaggeredVisualEvent { BroadcastTimeOffset = i * 1.0 };
                     if (i < lifeVisuals.Count) evt.Visuals.Add(lifeVisuals[i]);
-                    if (i < creatureVisuals.Count) evt.Visuals.Add(creatureVisuals[i]);
-                    
-                    if (i % 2 == 0)
-                    {
-                        int itemIndex = i / 2;
-                        if (itemIndex < itemVisuals.Count) evt.Visuals.Add(itemVisuals[itemIndex]);
-                    }
-
                     PendingStaggeredEvents.Enqueue(evt);
                 }
 

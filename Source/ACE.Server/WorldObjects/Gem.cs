@@ -359,6 +359,14 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
+                // Enforce minimum 2000 Spell Duration augmentation requirement
+                var durationAugs = player.LuminanceAugmentSpellDurationCount ?? 0;
+                if (durationAugs < 2000)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have a minimum of 2000 Spell Duration augmentations to activate this charm. Current: {durationAugs:N0}.", ChatMessageType.Broadcast));
+                    return;
+                }
+
                 // Activation (turning ON)
                 IsCharmActivated = true;
                 CharmAbilityRegistry.Apply(player, abilityId, true, CharmLevel ?? 1);
