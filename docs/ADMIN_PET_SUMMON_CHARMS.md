@@ -74,7 +74,7 @@ Implementation: `Source/ACE.Server/WorldObjects/PetDevice.cs` (use `global::ACE.
 
 ### Example commands (in-game, dev/admin)
 
-```
+```bash
 /modifybool pet_device_pyreal_auto_refill_enabled true
 /modifylong pet_device_pyreal_auto_refill_cost_per_charge 5000
 

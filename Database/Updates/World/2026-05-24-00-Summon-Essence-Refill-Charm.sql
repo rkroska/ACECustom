@@ -4,7 +4,7 @@
  */
 START TRANSACTION;
 
-DELETE FROM `weenie` WHERE `class_Id` IN (78780007, 78780030);
+DELETE FROM `weenie` WHERE `class_Id` = 78780030;
 
 INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`)
 VALUES (78780030, 'ace78780030_summonessencerefillcharm', 38, NOW());

@@ -196,7 +196,7 @@ To reduce “animation vs damage timing” complaints when applying wildly diffe
 - Pet **not** replacing tanks in hard content without intentional future systems.
 
 ### Success looks like
-- Pets become noticeably more reliable by mid bond levels.
+- Pets become noticeably more reliable by mid-bond levels.
 - Pet damage feels helpful but not dominant.
 - Players don’t feel forced to run a pet to be competitive.
 - Refill cost feels like a real sink but not an oppressive chore.
