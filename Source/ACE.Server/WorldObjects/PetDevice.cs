@@ -692,8 +692,11 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            // verify summoning mastery
-            if (SummoningMastery != null && player.SummoningMastery != SummoningMastery)
+            // Mastery: essence/player PropertyInt 362; universal charm = bool 50038 (see docs/ADMIN_PET_SUMMON_CHARMS.md).
+            // global:: required — PetDevice.SummoningMastery property shadows ACE.Entity.Enum.SummoningMastery.
+            if (SummoningMastery != null && SummoningMastery != global::ACE.Entity.Enum.SummoningMastery.Undef
+                && player.SummoningMastery != SummoningMastery
+                && !(ServerConfig.pet_charm_universal_summoning_mastery_enabled.Value && player.HasUniversalSummoningMastery))
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be a {SummoningMastery} to use the {Name}", ChatMessageType.Broadcast));
                 return new ActivationResult(false);

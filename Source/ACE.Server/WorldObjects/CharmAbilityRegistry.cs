@@ -29,6 +29,10 @@ namespace ACE.Server.WorldObjects
         public const int ExplosiveArrowCharmAbilityId = 21;
         public const int PentaCastAbilityId       = 22;
         public const int PrismaticStrikeAbilityId = 23;
+        /// <summary>Opt-in: pay pyreals to restore one summoning essence charge when empty (PetDevice summon path).</summary>
+        public const int PetDevicePyrealAutoRefillAbilityId = 24;
+        /// <summary>Bypass pet device SummoningMastery checks (Primalist / Necromancer / Naturalist essences).</summary>
+        public const int UniversalSummoningMasteryAbilityId = 25;
 
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {
@@ -42,6 +46,8 @@ namespace ACE.Server.WorldObjects
             { ExplosiveArrowCharmAbilityId, new AbilityEntry(p => p.HasExplosiveArrowCharm, (p, v) => p.HasExplosiveArrowCharm = v, "Explosive Arrow Charm") },
             { PentaCastAbilityId,       new AbilityEntry(p => p.HasPentaCast,       (p, v) => p.HasPentaCast       = v, "Penta Cast")       },
             { PrismaticStrikeAbilityId, new AbilityEntry(p => p.HasPrismaticStrike, (p, v) => p.HasPrismaticStrike = v, "Prismatic Strike") },
+            { PetDevicePyrealAutoRefillAbilityId, new AbilityEntry(p => p.PetDevicePyrealAutoRefillEnrolled, (p, v) => p.PetDevicePyrealAutoRefillEnrolled = v, "Summon Essence Refill") },
+            { UniversalSummoningMasteryAbilityId, new AbilityEntry(p => p.HasUniversalSummoningMastery, (p, v) => p.HasUniversalSummoningMastery = v, "Universal Summoning Mastery") },
         };
 
         /// <summary>Returns all registered ability IDs. Prefer this over hardcoded numeric ranges.</summary>
@@ -67,6 +73,9 @@ namespace ACE.Server.WorldObjects
             { 777700024, PentaCastAbilityId },
             // Prismatic Strike Charm
             { 777700026, PrismaticStrikeAbilityId },
+            // Summon Essence Refill Charm (pyreal auto-refill enrollment)
+            { 78780030, PetDevicePyrealAutoRefillAbilityId },
+            { 78780031, UniversalSummoningMasteryAbilityId },
         };
 
         /// <summary>
