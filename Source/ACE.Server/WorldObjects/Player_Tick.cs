@@ -174,36 +174,16 @@ namespace ACE.Server.WorldObjects
                     LastAutoRebuffCheckTime = currentUnixTime;
                     var remainingSeconds = GetBuffRemainingTime();
                     
-                    // Enforce 3-minute Dispel Lockout
-                    bool dispelLockoutActive = currentUnixTime - LastDispelTimestamp < 180.0;
-                    double lockoutRemaining = 180.0 - (currentUnixTime - LastDispelTimestamp);
-                    if (lockoutRemaining < 0.0) lockoutRemaining = 0.0;
-
-                    string debugMsg;
-                    if (dispelLockoutActive)
-                    {
-                        debugMsg = $"[Auto-Rebuff Debug] Blocked by Dispel Lockout. Remaining lockout: {lockoutRemaining:F1}s.";
-                    }
-                    else if (remainingSeconds <= 0.0)
-                    {
-                        debugMsg = "[Auto-Rebuff Debug] Triggering now: Buffs are missing or completely expired.";
-                    }
-                    else if (remainingSeconds <= 3600.0)
-                    {
-                        debugMsg = $"[Auto-Rebuff Debug] Triggering now: Buffs are expiring in {remainingSeconds:F1}s (<= 60m threshold).";
-                    }
-                    else
-                    {
-                        double secondsUntilRebuff = remainingSeconds - 3600.0;
-                        debugMsg = $"[Auto-Rebuff Debug] Idle. Buffs healthy. Remaining: {remainingSeconds:F1}s ({remainingSeconds / 60.0:F1}m). Next auto-rebuff in {secondsUntilRebuff:F1}s.";
-                    }
-
-                    Session?.Network?.EnqueueSend(new GameMessageSystemChat(debugMsg, ChatMessageType.Broadcast));
-
                     // Trigger auto-rebuff if buffs are expiring in less than 60 minutes
-                    if (remainingSeconds <= 3600.0 && !dispelLockoutActive)
+                    if (remainingSeconds <= 3600.0)
                     {
-                        ApplyUltimateBlessings();
+                        // Enforce 3-minute Dispel Lockout
+                        bool dispelLockoutActive = currentUnixTime - LastDispelTimestamp < 180.0;
+                        
+                        if (!dispelLockoutActive)
+                        {
+                            ApplyUltimateBlessings();
+                        }
                     }
                 }
             }
