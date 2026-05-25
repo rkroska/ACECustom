@@ -169,17 +169,21 @@ namespace ACE.Server.WorldObjects
             // Auto-Rebuff Charm Tick Check
             if (HasAutoRebuffCharm)
             {
-                var remainingSeconds = GetBuffRemainingTime();
-                
-                // Trigger auto-rebuff if buffs are expiring in less than 60 minutes
-                if (remainingSeconds <= 3600.0)
+                if (currentUnixTime - LastAutoRebuffCheckTime >= 5.0)
                 {
-                    // Enforce 3-minute Dispel Lockout
-                    bool dispelLockoutActive = currentUnixTime - LastDispelTimestamp < 180.0;
+                    LastAutoRebuffCheckTime = currentUnixTime;
+                    var remainingSeconds = GetBuffRemainingTime();
                     
-                    if (!dispelLockoutActive)
+                    // Trigger auto-rebuff if buffs are expiring in less than 60 minutes
+                    if (remainingSeconds <= 3600.0)
                     {
-                        ApplyUltimateBlessings();
+                        // Enforce 3-minute Dispel Lockout
+                        bool dispelLockoutActive = currentUnixTime - LastDispelTimestamp < 180.0;
+                        
+                        if (!dispelLockoutActive)
+                        {
+                            ApplyUltimateBlessings();
+                        }
                     }
                 }
             }
