@@ -447,12 +447,13 @@ namespace ACE.Server.WorldObjects
                 playerBuffs.ForEach(k => k.SetTargetPlayer(this));
                 // update client-side enchantments
                 Session.Network.EnqueueSend(playerBuffs.Select(k => k.SessionMessage).ToArray());
+
                 // Queue client-side effect scripts to stagger them sequentially
                 PendingStaggeredEvents.Clear();
 
-                var lifePrefixes = new[] { "Fire Protection", "Acid Protection", "Cold Protection", "Lightning Protection", "Bludgeon Protection", "Blade Protection", "Piercing Protection", "Magic Resistance" };
+                var lifePrefixes = new[] { "Fire Protection", "Acid Protection", "Cold Protection", "Lightning Protection", "Bludgeon", "Blade Protection", "Piercing Protection", "Magic Resistance" };
                 var creaturePrefixes = new[] { "Strength", "Endurance", "Coordination", "Quickness", "Focus", "Willpower", "Regeneration", "Rejuvenation" };
-                var itemPrefixes = new[] { "Weapon Expertise", "Item Expertise", "Magic Item Expertise", "Armor Expertise" };
+                var itemPrefixes = new[] { "Weapon Tinkering", "Item Tinkering", "Magic Item Tinkering", "Armor Tinkering" };
 
                 var lifeVisuals = new List<GameMessageScript>();
                 var creatureVisuals = new List<GameMessageScript>();
@@ -460,17 +461,17 @@ namespace ACE.Server.WorldObjects
 
                 foreach (var prefix in lifePrefixes)
                 {
-                    var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                    var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.Contains(prefix, StringComparison.OrdinalIgnoreCase));
                     if (buff != null) lifeVisuals.Add(buff.LandblockMessage);
                 }
                 foreach (var prefix in creaturePrefixes)
                 {
-                    var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                    var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.Contains(prefix, StringComparison.OrdinalIgnoreCase));
                     if (buff != null) creatureVisuals.Add(buff.LandblockMessage);
                 }
                 foreach (var prefix in itemPrefixes)
                 {
-                    var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                    var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.Contains(prefix, StringComparison.OrdinalIgnoreCase));
                     if (buff != null) itemVisuals.Add(buff.LandblockMessage);
                 }
 
