@@ -447,8 +447,14 @@ namespace ACE.Server.WorldObjects
                 playerBuffs.ForEach(k => k.SetTargetPlayer(this));
                 // update client-side enchantments
                 Session.Network.EnqueueSend(playerBuffs.Select(k => k.SessionMessage).ToArray());
-                // run client-side effect scripts, omitting duplicates
-                EnqueueBroadcast(playerBuffs.GroupBy(m => m.Spell.TargetEffect).Select(a => a.First().LandblockMessage).ToArray());
+                // Queue client-side effect scripts, omitting duplicates, to stagger them sequentially
+                PendingRebuffVisuals.Clear();
+                var uniqueVisuals = playerBuffs.GroupBy(m => m.Spell.TargetEffect).Select(a => a.First().LandblockMessage).ToList();
+                foreach (var visual in uniqueVisuals)
+                {
+                    PendingRebuffVisuals.Enqueue(visual);
+                }
+                LastRebuffVisualTime = 0.0; // Trigger the first animation immediately in the tick loop
                 
                 // update server-side enchantments
                 var buffsForPlayer = playerBuffs.Select(k => k.Enchantment);
@@ -478,9 +484,8 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            // Play nice visual / sound effects and send chat confirmation
+            // Send chat confirmation immediately
             Session.Network.EnqueueSend(new GameMessageSystemChat("You feel a surge of ultimate blessings flow through you and all your gear!", ChatMessageType.Broadcast));
-            Session.Network.EnqueueSend(new GameMessageSound(Guid, Sound.EnchantUp));
         }
 
         private void CreateEnchantmentSilent(Spell spell, WorldObject target)
@@ -788,6 +793,8 @@ namespace ACE.Server.WorldObjects
         public double LastAutoRebuffToggleTime { get; set; }
         public double LastDispelTimestamp { get; set; }
         public double LastAutoRebuffCheckTime { get; set; }
+        public Queue<GameMessageScript> PendingRebuffVisuals { get; } = new();
+        public double LastRebuffVisualTime { get; set; }
 
         public double GetBuffRemainingTime()
         {
