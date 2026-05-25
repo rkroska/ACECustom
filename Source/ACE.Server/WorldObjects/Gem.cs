@@ -136,6 +136,13 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Custom "Gem of Ultimate Blessings" (WCID: 777700200)
+            if (WeenieClassId == 777700200)
+            {
+                player.ApplyUltimateBlessings();
+                return;
+            }
+
             // â”€â”€ Ability Charm Toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (IsAbilityCharm && CharmGrantsAbility.HasValue)
             {
