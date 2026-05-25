@@ -782,7 +782,10 @@ namespace ACE.Server.WorldObjects.Managers
                 WorldObject.ChangesDetected = true;
 
             if (Player != null)
+            {
+                Player.LastDispelTimestamp = Time.GetUnixTime();
                 Player.Session.Network.EnqueueSend(new GameEventMagicDispelEnchantment(Player.Session, (ushort)entry.SpellId, entry.LayerId));
+            }
         }
 
         /// <summary>
@@ -799,7 +802,10 @@ namespace ACE.Server.WorldObjects.Managers
                     WorldObject.ChangesDetected = true;
             }
             if (Player != null)
+            {
+                Player.LastDispelTimestamp = Time.GetUnixTime();
                 Player.Session.Network.EnqueueSend(new GameEventMagicDispelMultipleEnchantments(Player.Session, entries));
+            }
         }
 
         /// <summary>

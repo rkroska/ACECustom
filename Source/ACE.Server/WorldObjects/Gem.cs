@@ -336,6 +336,41 @@ namespace ACE.Server.WorldObjects
             var abilityId = CharmGrantsAbility!.Value;
             var abilityName = CharmAbilityRegistry.GetDisplayName(abilityId) ?? Name;
 
+            if (abilityId == CharmAbilityRegistry.AutoRebuffAbilityId)
+            {
+                var currentTime = Time.GetUnixTime();
+
+                // Deactivation (turning OFF) is always free and instantly allowed
+                if (IsCharmActivated)
+                {
+                    IsCharmActivated = false;
+                    CharmAbilityRegistry.Apply(player, abilityId, false);
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("Auto-Rebuff Charm deactivated.", ChatMessageType.Broadcast));
+                    player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.ShieldDown));
+                    SaveBiotaToDatabase();
+                    player.SaveBiotaToDatabase(enqueueSave: true);
+                    return;
+                }
+
+                // Enforce 10-second toggle ON cooldown to prevent spamming
+                if (currentTime - player.LastAutoRebuffToggleTime < 10.0)
+                {
+                    var remainingSecs = (int)Math.Ceiling(10.0 - (currentTime - player.LastAutoRebuffToggleTime));
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"The Auto-Rebuff Charm is cooling down. Try again in {remainingSecs}s.", ChatMessageType.Broadcast));
+                    return;
+                }
+
+                // Activation (turning ON)
+                IsCharmActivated = true;
+                CharmAbilityRegistry.Apply(player, abilityId, true, CharmLevel ?? 1);
+                player.LastAutoRebuffToggleTime = currentTime;
+                player.ApplyUltimateBlessings();
+                
+                SaveBiotaToDatabase();
+                player.SaveBiotaToDatabase(enqueueSave: true);
+                return;
+            }
+
             if (!IsCharmActivated)
             {
                 // Guard: only one charm per ability may be active at a time.
