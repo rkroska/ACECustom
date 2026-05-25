@@ -124,6 +124,19 @@ namespace ACE.Server.WorldObjects
                 SyncLocationWithPhysics();
                 CheckPrestigeBoundary();
             }
+
+            // Staggered visual animation playout for Auto-Rebuff Charm
+            if (PendingRebuffVisuals != null && PendingRebuffVisuals.Count > 0 && currentUnixTime - LastRebuffVisualTime >= 1.0)
+            {
+                LastRebuffVisualTime = currentUnixTime;
+                var nextVisual = PendingRebuffVisuals.Dequeue();
+                
+                // Broadcast this single visual target effect message to the landblock
+                EnqueueBroadcast(new[] { nextVisual });
+                
+                // Play a soft magic sound with each staggered animation
+                Session?.Network?.EnqueueSend(new GameMessageSound(Guid, Sound.EnchantUp));
+            }
         }
 
         /// <summary>
