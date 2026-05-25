@@ -396,12 +396,6 @@ namespace ACE.Server.WorldObjects
 
         public void ApplyUltimateBlessings()
         {
-            var durationAugs = LuminanceAugmentSpellDurationCount ?? 0;
-            if (durationAugs < 2000)
-            {
-                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"You must have a minimum of 2000 Spell Duration augmentations to use the Auto-Rebuff Charm. Current: {durationAugs:N0}.", ChatMessageType.Broadcast));
-                return;
-            }
 
             var currentTime = ACE.Common.Time.GetUnixTime();
             var dispelLockoutActive = currentTime - LastDispelTimestamp < 180.0;
