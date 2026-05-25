@@ -3461,6 +3461,13 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasPrismaticStrike); else SetProperty(PropertyBool.HasPrismaticStrike, value); }
         }
 
+        /// <summary>Universal Summoning Mastery charm: bypass pet device SummoningMastery requirement (Primalist / Necromancer / Naturalist).</summary>
+        public bool HasUniversalSummoningMastery
+        {
+            get => GetProperty(PropertyBool.HasUniversalSummoningMastery) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasUniversalSummoningMastery); else SetProperty(PropertyBool.HasUniversalSummoningMastery, value); }
+        }
+
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
         {

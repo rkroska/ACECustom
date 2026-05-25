@@ -9,6 +9,7 @@ using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Server.Entity;
 using ACE.Server.Factories;
+using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Physics;
@@ -346,6 +347,16 @@ namespace ACE.Server.WorldObjects
                         ChatMessageType.Broadcast));
                     return;
                 }
+
+                if (abilityId == CharmAbilityRegistry.UniversalSummoningMasteryAbilityId
+                    && !ServerConfig.pet_charm_universal_summoning_mastery_enabled.Value)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "Universal Summoning Mastery is not enabled on this server.",
+                        ChatMessageType.Broadcast));
+                    return;
+                }
+
                 // Activate
                 IsCharmActivated = true;
                 CharmAbilityRegistry.Apply(player, abilityId, true, CharmLevel ?? 1);
