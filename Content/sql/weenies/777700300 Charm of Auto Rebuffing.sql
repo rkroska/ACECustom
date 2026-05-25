@@ -49,9 +49,9 @@ Double-click to activate. While active in your inventory, it will automatically 
 If you are dispelled (via traps, PvP, or PvE), a 3-minute Dispel Lockout prevents instant auto-rebuffing. Has a 10-second reuse cooldown.
 ');
 
--- DataIds (visuals — matching focus stone style)
+-- DataIds (visuals — matching custom charms coffer/chest Setup)
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES
-(777700300,  1, 33554975),   -- Setup (Focus Stone)
+(777700300,  1, 33554556),   -- Setup (Coffer/Chest)
 (777700300,  3, 536870932),  -- SoundTable
 (777700300,  6, 67111919),   -- PaletteBase
 (777700300,  8, 100689503),  -- Icon (Focus Stone)
