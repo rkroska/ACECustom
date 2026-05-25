@@ -403,6 +403,15 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            var currentTime = ACE.Common.Time.GetUnixTime();
+            var dispelLockoutActive = currentTime - LastDispelTimestamp < 180.0;
+            if (dispelLockoutActive)
+            {
+                var remainingSeconds = (int)Math.Ceiling(180.0 - (currentTime - LastDispelTimestamp));
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"You cannot use the Auto-Rebuff Charm while under a dispel lockout. Try again in {remainingSeconds}s.", ChatMessageType.Broadcast));
+                return;
+            }
+
             var maxSpellLevel = 8;
             // Make sure level 8s are installed in the world DB (fallback to 7 if missing)
             if (DatabaseManager.World.GetCachedSpell((uint)SpellId.ArmorOther8) == null)
@@ -814,6 +823,7 @@ namespace ACE.Server.WorldObjects
         public double LastAutoRebuffToggleTime { get; set; }
         public double LastDispelTimestamp { get; set; }
         public double LastAutoRebuffCheckTime { get; set; }
+        public bool IsDispelMessageTriggered { get; set; }
 
         public class StaggeredVisualEvent
         {

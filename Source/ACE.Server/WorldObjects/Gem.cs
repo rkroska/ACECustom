@@ -367,10 +367,20 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
+                // Enforce 3-minute Dispel Lockout on manual activation
+                var dispelLockoutActive = currentTime - player.LastDispelTimestamp < 180.0;
+                if (dispelLockoutActive)
+                {
+                    var remainingSeconds = (int)Math.Ceiling(180.0 - (currentTime - player.LastDispelTimestamp));
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You cannot activate the Auto-Rebuff Charm while under a dispel lockout. Try again in {remainingSeconds}s.", ChatMessageType.Broadcast));
+                    return;
+                }
+
                 // Activation (turning ON)
                 IsCharmActivated = true;
                 CharmAbilityRegistry.Apply(player, abilityId, true, CharmLevel ?? 1);
                 player.LastAutoRebuffToggleTime = currentTime;
+                player.IsDispelMessageTriggered = false; // Arm the dispel alert message trigger
                 player.ApplyUltimateBlessings();
                 
                 SaveBiotaToDatabase();
