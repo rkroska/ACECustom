@@ -618,18 +618,39 @@ namespace ACE.Server.Entity
             };
 
             DamageType weakest = DamageType.Fire;
-            double maxMod = -1.0;
+            double maxScore = -1.0;
+
+            // Calculate target's average base armor level (default to 100 if none)
+            double avgBaseArmor = 100.0;
+            if (defender.Biota.PropertiesBodyPart != null && defender.Biota.PropertiesBodyPart.Count > 0)
+            {
+                avgBaseArmor = defender.Biota.PropertiesBodyPart.Values.Average(bp => bp.BaseArmor);
+            }
+            else if (defender.ArmorLevel.HasValue)
+            {
+                avgBaseArmor = defender.ArmorLevel.Value;
+            }
 
             foreach (var dt in elements)
             {
                 var resistType = Creature.GetResistanceType(dt);
-                // CR-18: pass null attacker/weapon so the scan reads the target's *natural* resistance
-                // without rend modifiers from the current weapon. Otherwise a weapon with AcidRending
-                // artificially lowers the target's apparent Acid resistance and skews element selection.
-                var mod = defender.GetResistanceMod(resistType, null, null, 1.0f);
-                if (mod > maxMod)
+                
+                // 1. Get magic/elemental resistance multiplier
+                var resistMod = defender.GetResistanceMod(resistType, null, null, 1.0f);
+                
+                // 2. Get target's armor multiplier against this element
+                var armorVsType = defender.GetArmorVsType(dt);
+                
+                // 3. Compute effective armor and resulting damage multiplier (100 / (100 + AL))
+                var effectiveArmor = avgBaseArmor * armorVsType;
+                var armorMod = 100.0 / (100.0 + effectiveArmor);
+                
+                // 4. Combined score representing final damage ratio
+                var score = resistMod * armorMod;
+
+                if (score > maxScore)
                 {
-                    maxMod = mod;
+                    maxScore = score;
                     weakest = dt;
                 }
             }
