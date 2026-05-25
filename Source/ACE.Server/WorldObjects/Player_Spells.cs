@@ -449,7 +449,7 @@ namespace ACE.Server.WorldObjects
                 Session.Network.EnqueueSend(playerBuffs.Select(k => k.SessionMessage).ToArray());
                 // Queue client-side effect scripts, omitting duplicates, to stagger them sequentially
                 PendingRebuffVisuals.Clear();
-                var uniqueVisuals = playerBuffs.GroupBy(m => m.Spell.TargetEffect).Select(a => a.First().LandblockMessage).ToList();
+                var uniqueVisuals = playerBuffs.GroupBy(m => m.Spell.School).Select(a => a.First().LandblockMessage).ToList();
                 foreach (var visual in uniqueVisuals)
                 {
                     PendingRebuffVisuals.Enqueue(visual);
