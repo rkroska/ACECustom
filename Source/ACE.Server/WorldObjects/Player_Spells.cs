@@ -447,14 +447,50 @@ namespace ACE.Server.WorldObjects
                 playerBuffs.ForEach(k => k.SetTargetPlayer(this));
                 // update client-side enchantments
                 Session.Network.EnqueueSend(playerBuffs.Select(k => k.SessionMessage).ToArray());
-                // Queue client-side effect scripts, omitting duplicates, to stagger them sequentially
-                PendingRebuffVisuals.Clear();
-                var uniqueVisuals = playerBuffs.GroupBy(m => m.Spell.School).Select(a => a.First().LandblockMessage).ToList();
-                foreach (var visual in uniqueVisuals)
+                // Queue client-side effect scripts to stagger them sequentially
+                PendingStaggeredEvents.Clear();
+
+                var lifePrefixes = new[] { "Fire Protection", "Acid Protection", "Cold Protection", "Lightning Protection", "Bludgeon Protection", "Blade Protection", "Piercing Protection", "Magic Resistance" };
+                var creaturePrefixes = new[] { "Strength", "Endurance", "Coordination", "Quickness", "Focus", "Willpower", "Regeneration", "Rejuvenation" };
+                var itemPrefixes = new[] { "Weapon Expertise", "Item Expertise", "Magic Item Expertise", "Armor Expertise" };
+
+                var lifeVisuals = new List<GameMessageScript>();
+                var creatureVisuals = new List<GameMessageScript>();
+                var itemVisuals = new List<GameMessageScript>();
+
+                foreach (var prefix in lifePrefixes)
                 {
-                    PendingRebuffVisuals.Enqueue(visual);
+                    var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                    if (buff != null) lifeVisuals.Add(buff.LandblockMessage);
                 }
-                LastRebuffVisualTime = 0.0; // Trigger the first animation immediately in the tick loop
+                foreach (var prefix in creaturePrefixes)
+                {
+                    var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                    if (buff != null) creatureVisuals.Add(buff.LandblockMessage);
+                }
+                foreach (var prefix in itemPrefixes)
+                {
+                    var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                    if (buff != null) itemVisuals.Add(buff.LandblockMessage);
+                }
+
+                for (int i = 0; i < 8; i++)
+                {
+                    var evt = new StaggeredVisualEvent { BroadcastTimeOffset = i * 0.5 };
+                    
+                    if (i < lifeVisuals.Count) evt.Visuals.Add(lifeVisuals[i]);
+                    if (i < creatureVisuals.Count) evt.Visuals.Add(creatureVisuals[i]);
+                    
+                    if (i % 2 == 0)
+                    {
+                        int itemIndex = i / 2;
+                        if (itemIndex < itemVisuals.Count) evt.Visuals.Add(itemVisuals[itemIndex]);
+                    }
+
+                    PendingStaggeredEvents.Enqueue(evt);
+                }
+
+                StaggeredCascadeStartTime = ACE.Common.Time.GetUnixTime();
                 
                 // update server-side enchantments
                 var buffsForPlayer = playerBuffs.Select(k => k.Enchantment);
@@ -793,8 +829,15 @@ namespace ACE.Server.WorldObjects
         public double LastAutoRebuffToggleTime { get; set; }
         public double LastDispelTimestamp { get; set; }
         public double LastAutoRebuffCheckTime { get; set; }
-        public Queue<GameMessageScript> PendingRebuffVisuals { get; } = new();
-        public double LastRebuffVisualTime { get; set; }
+
+        public class StaggeredVisualEvent
+        {
+            public double BroadcastTimeOffset { get; set; }
+            public List<GameMessageScript> Visuals { get; } = new();
+        }
+
+        public Queue<StaggeredVisualEvent> PendingStaggeredEvents { get; } = new();
+        public double StaggeredCascadeStartTime { get; set; }
 
         public double GetBuffRemainingTime()
         {

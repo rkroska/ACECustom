@@ -125,17 +125,23 @@ namespace ACE.Server.WorldObjects
                 CheckPrestigeBoundary();
             }
 
-            // Staggered visual animation playout for Auto-Rebuff Charm
-            if (PendingRebuffVisuals != null && PendingRebuffVisuals.Count > 0 && currentUnixTime - LastRebuffVisualTime >= 1.0)
+            // Staggered choreographed visual animation playout for Auto-Rebuff Charm
+            if (PendingStaggeredEvents != null && PendingStaggeredEvents.Count > 0)
             {
-                LastRebuffVisualTime = currentUnixTime;
-                var nextVisual = PendingRebuffVisuals.Dequeue();
-                
-                // Broadcast this single visual target effect message to the landblock
-                EnqueueBroadcast(new[] { nextVisual });
-                
-                // Play a soft magic sound with each staggered animation
-                Session?.Network?.EnqueueSend(new GameMessageSound(Guid, Sound.EnchantUp));
+                var nextEvent = PendingStaggeredEvents.Peek();
+                if (currentUnixTime - StaggeredCascadeStartTime >= nextEvent.BroadcastTimeOffset)
+                {
+                    PendingStaggeredEvents.Dequeue();
+
+                    if (nextEvent.Visuals.Count > 0)
+                    {
+                        // Broadcast the bundled visuals together to the landblock
+                        EnqueueBroadcast(nextEvent.Visuals.ToArray());
+
+                        // Play a soft magic sound with each staggered step
+                        Session?.Network?.EnqueueSend(new GameMessageSound(Guid, Sound.EnchantUp));
+                    }
+                }
             }
         }
 
