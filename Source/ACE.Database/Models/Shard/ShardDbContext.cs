@@ -71,6 +71,7 @@ namespace ACE.Database.Models.Shard
         public virtual DbSet<CreatureBlacklist> CreatureBlacklist { get; set; }
 
         private static readonly int[] zeroInts = [0, 0];
+        private static ServerVersion _cachedServerVersion;
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -80,7 +81,9 @@ namespace ACE.Database.Models.Shard
 
                 var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};TreatTinyAsBoolean=False;SslMode=Disabled;AllowPublicKeyRetrieval=true;ApplicationName=ACEmulator;MaximumPoolSize=200;MinimumPoolSize=10;ConnectionLifetime=300";
 
-                optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), builder =>
+                _cachedServerVersion ??= ServerVersion.AutoDetect(connectionString);
+
+                optionsBuilder.UseMySql(connectionString, _cachedServerVersion, builder =>
                 {
                     builder.EnableRetryOnFailure(10);
                 });
