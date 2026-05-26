@@ -415,8 +415,6 @@ namespace ACE.Server.Managers
         // Combat pet / bond / capture (custom): referenced by CombatPet, PetDevice, Creature_Death, etc.
         public static ConfigProperty<bool> pet_bond_enabled { get; private set; } = new(false, "If TRUE, pet bond XP and bond scaling features are enabled.");
         public static ConfigProperty<bool> pet_apply_capture_source_damage_type { get; private set; } = new(true, "If TRUE, combat pets may use captured source damage type metadata.");
-        public static ConfigProperty<bool> pet_capture_combat_sync_enabled { get; private set; } = new(true, "If TRUE, combat pet capture skins merge body parts and resolve combat stance for motion/CMT overrides.");
-        public static ConfigProperty<bool> pet_capture_combat_sync_fallback_cosmetic_only { get; private set; } = new(true, "If TRUE, when capture skin motion/CMT cannot produce valid melee, revert to essence template combat tables (look-only fallback).");
         public static ConfigProperty<bool> pet_combat_unlimited_lifespan { get; private set; } = new(false, "If TRUE, combat pets ignore summoned lifespan decay.");
         public static ConfigProperty<bool> pet_combat_summon_aug_spell_mitigation_enabled { get; private set; } = new(false, "If TRUE, reduce spell damage to combat pets from augmentation scaling.");
         public static ConfigProperty<bool> pet_combat_summon_aug_spell_mitigation_players_only { get; private set; } = new(true, "If TRUE, aug mitigation applies only when spell source is a player.");
@@ -440,7 +438,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> pet_combat_resistance_owner_blend { get; private set; } = new(1.0, "Blend fraction (0..1) for owner resistance when pet_combat_resistance_use_owner_pipeline is TRUE. 0=ignore owner (1.0). 1=full owner resistance. Implemented as pow(ownerResistMod, blend) for smooth scaling.");
         public static ConfigProperty<bool> pet_combat_resistance_owner_blend_scale_with_bond { get; private set; } = new(false, "If TRUE, scales pet_combat_resistance_owner_blend by bond level using a diminishing-returns curve (requires pet_bond_enabled).");
         public static ConfigProperty<double> pet_combat_resistance_owner_blend_bond_scale { get; private set; } = new(250.0, "Bond scale for scaling owner-blend: towardCap = 1-exp(-bond/scale). Higher = slower ramp.");
-        public static ConfigProperty<bool> pet_combat_damage_debug_chat { get; private set; } = new(false, "If TRUE, sends combat pet damage debug lines to owner chat.");
+        public static ConfigProperty<bool> pet_combat_damage_debug_chat { get; private set; } = new(false, "If TRUE, sends combat pet outgoing hit and evade lines to owner chat (System). /modifybool pet_combat_damage_debug_chat true");
         /// <summary>One-line server log per melee/missile hit when the attacker is a <see cref="CombatPet"/> (base roll, pre-mitigation, final). Default FALSE. /modifybool pet_combat_outgoing_damage_event_debug_log.</summary>
         public static ConfigProperty<bool> pet_combat_outgoing_damage_event_debug_log { get; private set; } = new(false, "If TRUE, logs a compact DamageEvent line for each combat pet outgoing physical hit (server log). /modifybool pet_combat_outgoing_damage_event_debug_log.");
         /// <summary>Verbose melee/missile <see cref="ACE.Server.Entity.DamageEvent"/> lines in server log for Player or CombatPet defenders (see also damage_event_debug_only_nonplayer_attackers).</summary>

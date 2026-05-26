@@ -846,10 +846,10 @@ namespace ACE.Server.Entity
             // Apply ALL visual properties to crate (from snapshot only)
             crate.VisualOverrideSetup = setupId;
             crate.VisualOverrideMotionTable = capMotion;
+            crate.VisualOverrideCombatTable = capCombatTable;
             crate.VisualOverrideSoundTable = capSound;
             crate.VisualOverridePaletteBase = capPaletteBase;
             crate.VisualOverrideClothingBase = capClothingBase;
-            crate.VisualOverrideCombatTable = capCombatTable;
             // Don't copy VisualOverrideIcon - we set the crate icon directly below
             crate.VisualOverridePaletteTemplate = capPaletteTemplate;
             crate.VisualOverrideShade = capShade;
