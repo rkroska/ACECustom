@@ -500,7 +500,7 @@ namespace ACE.Server.WorldObjects
                 StaggeredCascadeStartTime = ACE.Common.Time.GetUnixTime();
                 
                 // update server-side enchantments
-                var buffsForPlayer = playerBuffs.Select(k => k.Enchantment);
+                var buffsForPlayer = playerBuffs.Select(k => k.Enchantment).ToList();
                 var lifeBuffs = buffsForPlayer.Where(k => k.Spell.School == MagicSchool.LifeMagic).ToList();
                 var critterBuffs = buffsForPlayer.Where(k => k.Spell.School == MagicSchool.CreatureEnchantment).ToList();
                 var itemBuffs = buffsForPlayer.Where(k => k.Spell.School == MagicSchool.ItemEnchantment).ToList();
@@ -871,7 +871,6 @@ namespace ACE.Server.WorldObjects
                 maxSpellLevel = 7;
 
             var tySpell = typeof(SpellId);
-            bool hasAnyQualifyingBuff = false;
 
             foreach (var spellPrefix in Buffs)
             {
@@ -908,9 +907,6 @@ namespace ACE.Server.WorldObjects
 
                 if (!SpellIsKnown(spellID))
                     continue;
-
-                // Player qualifies for this buff — mark that at least one qualifying buff exists
-                hasAnyQualifyingBuff = true;
 
                 // Check if the buff is missing entirely or expiring within 60 minutes
                 var entry = EnchantmentManager.GetEnchantment(spellID);

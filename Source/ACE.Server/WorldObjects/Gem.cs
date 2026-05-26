@@ -344,7 +344,6 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-
                 // Activation (turning ON)
                 IsCharmActivated = true;
                 CharmAbilityRegistry.Apply(player, abilityId, true, CharmLevel ?? 1);
