@@ -44,9 +44,11 @@ INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`) VALUES
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`) VALUES
 (777700300,  1, 'Charm of Auto Rebuffing'),
 (777700300, 14, '
-Double-click to activate. While active in your inventory, it will automatically rebuff you with all standard Level 8 self-buffs and apply Impen VIII + all 7 elemental Banes to all equipped and pack armor/shields exactly 60 minutes before they naturally expire.
+Double-click to activate or deactivate.
 
-If you are dispelled (via traps, PvP, or PvE), a 3-minute Dispel Lockout will prevent automatic rebuffing until 3 minutes have passed since your last dispel.
+Active: Automatically buffs and rebuffs all standard Level 8 self-buffs, Impen VIII, and Banes on your gear 60 minutes before they expire.
+
+Dispel Lockout: Dispels trigger a 3-minute lockout where auto-rebuffing is paused. The charm can still be enabled during a lockout; buffs will apply automatically when the lockout expires.
 ');
 
 -- DataIds (visuals — matching custom charms coffer/chest Setup)
