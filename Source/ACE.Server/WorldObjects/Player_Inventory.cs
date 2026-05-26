@@ -2718,7 +2718,8 @@ namespace ACE.Server.WorldObjects
             if (!AdjustStack(stack, -amount, stackFoundInContainer, stackRootOwner))
             {
                 // Undo the TryAddToInventory so no orphaned stack is left in the container
-                container.TryRemoveFromInventory(newStack.Guid);
+                if (!container.TryRemoveFromInventory(newStack.Guid))
+                    log.Warn($"{Name}.DoHandleActionStackableSplitToContainer - rollback failed: could not remove newStack 0x{newStack.Guid} from container 0x{container.Guid}");
                 Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, stack.Guid.Full));
                 return false;
             }
