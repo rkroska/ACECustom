@@ -1565,6 +1565,7 @@ namespace ACE.Server.WorldObjects
                 {
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "TryRemoveFromInventory failed!")); // Custom error message
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+                    return false; // fix: execution was falling through to TryAddToInventory, duping the item
                 }
 
                 if (itemRootOwner == this && containerRootOwner != this)
@@ -2115,6 +2116,7 @@ namespace ACE.Server.WorldObjects
                 {
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "TryRemoveFromInventory failed!")); // Custom error message
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+                    return false; // fix: execution was falling through to TryEquipObjectWithNetworking, duping the item into both inventory and equipped dicts
                 }
             }
 
@@ -2710,6 +2712,18 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
+            // fix: deduct source stack BEFORE notifying client — if AdjustStack fails after GameMessageCreateObject,
+            // the client believes the new stack exists but the source was never reduced, creating a dupe.
+            var oldStackSize = stack.StackSize;
+            if (!AdjustStack(stack, -amount, stackFoundInContainer, stackRootOwner))
+            {
+                // Undo the TryAddToInventory so no orphaned stack is left in the container
+                container.TryRemoveFromInventory(newStack.Guid);
+                Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, stack.Guid.Full));
+                return false;
+            }
+
+            // Both operations succeeded — safe to update encumbrance and notify client
             if (container != containerRootOwner && containerRootOwner != null)
             {
                 containerRootOwner.EncumbranceVal += (stack.StackUnitEncumbrance * amount);
@@ -2718,10 +2732,6 @@ namespace ACE.Server.WorldObjects
 
             Session.Network.EnqueueSend(new GameMessageCreateObject(newStack));
             Session.Network.EnqueueSend(new GameEventItemServerSaysContainId(Session, newStack, container));
-
-            var oldStackSize = stack.StackSize;
-            if (!AdjustStack(stack, -amount, stackFoundInContainer, stackRootOwner))
-                return false;
 
             var newStackSize = stack.StackSize;
             log.Debug($"[STACK SPLIT] Original stack {stack.Name} (0x{stack.Guid}) | Old StackSize={oldStackSize} | New StackSize={newStackSize} | Amount split={amount} | ChangesDetected={stack.ChangesDetected}");
