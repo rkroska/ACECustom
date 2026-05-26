@@ -474,7 +474,7 @@ namespace ACE.Server.WorldObjects
             {
                 playerBuffs.ForEach(k => k.SetTargetPlayer(this));
                 // update client-side enchantments
-                Session.Network.EnqueueSend(playerBuffs.Select(k => k.SessionMessage).ToArray());
+                Session?.Network?.EnqueueSend(playerBuffs.Select(k => k.SessionMessage).ToArray());
 
                 // Queue client-side effect scripts to stagger them sequentially
                 PendingStaggeredEvents.Clear();
@@ -530,11 +530,11 @@ namespace ACE.Server.WorldObjects
             bool appliedAny = playerBuffs.Count > 0 || itemBuffsList.Count > 0;
             if (appliedAny)
             {
-                Session.Network.EnqueueSend(new GameMessageSystemChat("You feel a surge of ultimate blessings flow through you and all your gear!", ChatMessageType.Broadcast));
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat("You feel a surge of ultimate blessings flow through you and all your gear!", ChatMessageType.Broadcast));
             }
             else
             {
-                Session.Network.EnqueueSend(new GameMessageSystemChat("The Auto-Rebuff Charm is active, but you do not meet the magic requirements (trained school, focus/augment, learned spell) for any of its buffs.", ChatMessageType.Broadcast));
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat("The Auto-Rebuff Charm is active, but you do not meet the magic requirements (trained school, focus/augment, learned spell) for any of its buffs.", ChatMessageType.Broadcast));
             }
         }
 
