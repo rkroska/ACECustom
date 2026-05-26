@@ -193,14 +193,15 @@ namespace ACE.Server.WorldObjects
                 if (currentUnixTime - LastAutoRebuffCheckTime >= 5.0)
                 {
                     LastAutoRebuffCheckTime = currentUnixTime;
-                    var remainingSeconds = GetBuffRemainingTime();
-                    
-                    // Trigger auto-rebuff if buffs are expiring in less than 60 minutes
-                    if (remainingSeconds <= 3600.0)
+
+                    // NeedsRebuff() scans all qualifying buffs: fires if any are missing or
+                    // have less than 60 minutes remaining. Returns false if the player has no
+                    // qualifying buffs at all (fully gated by Option B) — prevents infinite loop.
+                    if (NeedsRebuff())
                     {
                         // Enforce 3-minute Dispel Lockout
                         bool dispelLockoutActive = currentUnixTime - LastDispelTimestamp < 180.0;
-                        
+
                         if (!dispelLockoutActive)
                         {
                             ApplyUltimateBlessings();

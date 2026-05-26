@@ -855,14 +855,73 @@ namespace ACE.Server.WorldObjects
         public Queue<StaggeredVisualEvent> PendingStaggeredEvents { get; } = new();
         public double StaggeredCascadeStartTime { get; set; }
 
-        public double GetBuffRemainingTime()
+        /// <summary>
+        /// Returns true if any buff the player qualifies for (per Option B: trained skill, foci,
+        /// spellbook) is either completely missing from their enchantment registry, or has less
+        /// than 60 minutes (3600s) remaining. Banes are excluded — they are re-applied
+        /// automatically whenever the player buff scan triggers a full rebuff.
+        /// Returns false only when every qualifying buff is present and has >60 min remaining.
+        /// </summary>
+        public bool NeedsRebuff()
         {
-            var entry = EnchantmentManager.GetEnchantment((uint)SpellId.StrengthSelf8);
-            if (entry == null)
-                return 0.0;
+            var maxSpellLevel = 8;
+            if (DatabaseManager.World.GetCachedSpell((uint)SpellId.ArmorOther8) == null)
+                maxSpellLevel = 7;
 
-            var remaining = entry.Duration + entry.StartTime;
-            return remaining > 0.0 ? remaining : 0.0;
+            var tySpell = typeof(SpellId);
+            bool hasAnyQualifyingBuff = false;
+
+            foreach (var spellPrefix in Buffs)
+            {
+                // Skip banes — they target gear items, not the player.
+                // Banes are re-applied in the same ApplyUltimateBlessings() call when needed.
+                if (spellPrefix.StartsWith("@"))
+                    continue;
+
+                // Resolve the spell ID the same way ApplyUltimateBlessings does
+                string fullEnumName = spellPrefix + "Self"  + maxSpellLevel;
+                string altEnumName  = spellPrefix + "Other" + maxSpellLevel;
+
+                uint spellID = 0;
+                if (Enum.TryParse(tySpell, fullEnumName, out object parsed))
+                    spellID = (uint)parsed;
+                else if (Enum.TryParse(tySpell, altEnumName, out object parsedAlt))
+                    spellID = (uint)parsedAlt;
+                else
+                    continue;
+
+                // Resolve the spell object to check school
+                var spell = new Spell(spellID);
+                if (spell.NotFound) continue;
+
+                var school = spell.School;
+
+                // Option B: only consider spells the player is qualified to receive
+                var skill = GetCreatureSkill(school);
+                if (skill == null || skill.AdvancementClass < SkillAdvancementClass.Trained)
+                    continue;
+
+                if (FociWCIDs.ContainsKey(school) && !HasFoci(school))
+                    continue;
+
+                if (!SpellIsKnown(spellID))
+                    continue;
+
+                // Player qualifies for this buff — mark that at least one qualifying buff exists
+                hasAnyQualifyingBuff = true;
+
+                // Check if the buff is missing entirely or expiring within 60 minutes
+                var entry = EnchantmentManager.GetEnchantment(spellID);
+                if (entry == null)
+                    return true; // Missing — needs rebuff
+
+                var remaining = entry.Duration + entry.StartTime;
+                if (remaining <= 3600.0)
+                    return true; // Expiring within 60 minutes — needs rebuff
+            }
+
+            // If no qualifying buffs exist at all (fully gated by Option B), never auto-rebuff
+            return false;
         }
     }
 }
