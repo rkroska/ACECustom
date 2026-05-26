@@ -728,8 +728,10 @@ namespace ACE.Server.WorldObjects
                     break;
             }
 
+            // Use GetAllPossessionsDeep() so Focus Stones inside nested bags are detected.
+            // Inventory.Values only covers the top-level bag — a foci in a bag-in-a-bag would be invisible.
             var wcid = FociWCIDs[school];
-            return Inventory.Values.FirstOrDefault(i => i.WeenieClassId == wcid) != null;
+            return GetAllPossessionsDeep().FirstOrDefault(i => i.WeenieClassId == wcid) != null;
         }
 
         public void HandleSpellHooks(Spell spell)

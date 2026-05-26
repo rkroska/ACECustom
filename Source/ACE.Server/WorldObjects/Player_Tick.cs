@@ -126,7 +126,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Staggered choreographed visual animation playout for Auto-Rebuff Charm
-            if (PendingStaggeredEvents != null && PendingStaggeredEvents.Count > 0)
+            if (PendingStaggeredEvents.Count > 0)
             {
                 var nextEvent = PendingStaggeredEvents.Peek();
                 if (currentUnixTime - StaggeredCascadeStartTime >= nextEvent.BroadcastTimeOffset)
