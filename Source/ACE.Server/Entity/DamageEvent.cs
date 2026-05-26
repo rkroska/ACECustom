@@ -635,8 +635,11 @@ namespace ACE.Server.Entity
             {
                 var resistType = Creature.GetResistanceType(dt);
                 
-                // 1. Get magic/elemental resistance multiplier
-                var resistMod = defender.GetResistanceMod(resistType, null, null, 1.0f);
+                // Pass the real attacker + weapon so rending/cleaving/WeaponResistanceMod
+                // are factored in — this mirrors what DoCalculateDamage uses and ensures
+                // Prismatic Strike / Explosive Arrow pick the element that actually deals
+                // the most damage with the current weapon equipped.
+                var resistMod = defender.GetResistanceMod(resistType, attacker, weapon, 1.0f);
                 
                 // 2. Get target's armor multiplier against this element
                 var armorVsType = defender.GetArmorVsType(dt);
