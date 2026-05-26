@@ -489,10 +489,11 @@ namespace ACE.Server.WorldObjects
                     if (buff != null) lifeVisuals.Add(buff.LandblockMessage);
                 }
 
-                for (int i = 0; i < 8; i++)
+                // Only enqueue slots for visuals that actually matched — no empty-slot churn
+                for (int i = 0; i < lifeVisuals.Count; i++)
                 {
                     var evt = new StaggeredVisualEvent { BroadcastTimeOffset = i * 1.0 };
-                    if (i < lifeVisuals.Count) evt.Visuals.Add(lifeVisuals[i]);
+                    evt.Visuals.Add(lifeVisuals[i]);
                     PendingStaggeredEvents.Enqueue(evt);
                 }
 
@@ -544,7 +545,8 @@ namespace ACE.Server.WorldObjects
 
             if (target is Player targetPlayer)
             {
-                targetPlayer.Session.Network.EnqueueSend(new GameEventMagicUpdateEnchantment(targetPlayer.Session, new Enchantment(targetPlayer, addResult.Enchantment)));
+                // Use safe navigation: player may disconnect mid-loop (e.g., during multi-item bane application)
+                targetPlayer.Session?.Network?.EnqueueSend(new GameEventMagicUpdateEnchantment(targetPlayer.Session, new Enchantment(targetPlayer, addResult.Enchantment)));
 
                 targetPlayer.HandleSpellHooks(spell);
             }
@@ -840,7 +842,6 @@ namespace ACE.Server.WorldObjects
 
         // ── Auto-Rebuff Charm Support ──────────────────────────────────────────
         public bool HasAutoRebuffCharm { get; set; }
-        public double LastAutoRebuffToggleTime { get; set; }
         public double LastDispelTimestamp { get; set; }
         public double LastAutoRebuffCheckTime { get; set; }
         public bool IsDispelMessageTriggered { get; set; }
