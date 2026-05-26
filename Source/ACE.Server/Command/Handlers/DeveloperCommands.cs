@@ -4241,7 +4241,10 @@ namespace ACE.Server.Command.Handlers
                 {
                     var resistType = Creature.GetResistanceType(el.Type);
                     
-                    // 1. Get magic/elemental resistance multiplier
+                    // Intentionally passes null attacker/weapon — /weakness shows *natural* base
+                    // resistances independent of the caller's current weapon (diagnostic use).
+                    // GetWeakestElement() (runtime selector for Prismatic Strike) correctly passes
+                    // the real attacker+weapon so rending/cleaving modifiers are factored in.
                     var resistMod = target.GetResistanceMod(resistType, null, null, 1.0f);
                     
                     // 2. Get target's armor multiplier against this element
