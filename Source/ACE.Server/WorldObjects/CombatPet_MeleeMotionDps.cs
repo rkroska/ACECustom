@@ -1,5 +1,6 @@
 using System;
 
+using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Managers;
 
@@ -8,8 +9,8 @@ namespace ACE.Server.WorldObjects
     public partial class CombatPet
     {
         /// <summary>
-        /// Scales per-hit melee damage so sustained melee DPS matches the summon weenie (template) motion + strike count,
-        /// after visual/motion overrides from capture (or any MotionTableId change).
+        /// Scales per-hit melee damage so sustained melee DPS matches the summon weenie (template) motion + strike count
+        /// when <see cref="MotionTableId"/> differs from the template (e.g. future motion overrides).
         /// </summary>
         private void ConfigureMeleeMotionDpsNormalization()
         {
@@ -34,8 +35,9 @@ namespace ACE.Server.WorldObjects
             var baselineDelayMean = (float)(baselinePowerup * 0.5);
             var currentDelayMean = (float)(currentPowerup * 0.5);
 
-            var rateBase = EstimateMeleeDamageEventsPerSecond(baselineMotionId, baselineDelayMean);
-            var rateCurrent = EstimateMeleeDamageEventsPerSecond(MotionTableId, currentDelayMean);
+            var stance = GetCombatStance();
+            var rateBase = EstimateMeleeDamageEventsPerSecond(baselineMotionId, baselineDelayMean, stance);
+            var rateCurrent = EstimateMeleeDamageEventsPerSecond(MotionTableId, currentDelayMean, stance);
 
             if (rateBase <= 0 || rateCurrent <= 0 || rateCurrent <= float.Epsilon)
                 return;

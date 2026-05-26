@@ -1066,10 +1066,6 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            MotionStance? captureSkinCombatStance = null;
-            var baselineMotionTableId = pet.MotionTableId;
-            var baselineCombatTableDid = pet.CombatTableDID;
-
             // Monster Capture System - Apply visual overrides if set
             if (VisualOverrideSetup.HasValue)
             {
@@ -1250,8 +1246,6 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                if (pet is CombatPet combatPetForSync && IsCombatPetDevice())
-                    captureSkinCombatStance = TryApplyCaptureSkinCombatSync(combatPetForSync, player, wcid, baselineMotionTableId, baselineCombatTableDid);
             }
 
             var success = pet.Init(player, this);
@@ -1259,15 +1253,7 @@ namespace ACE.Server.WorldObjects
             if (success == true)
             {
                 if (pet is CombatPet combatPet)
-                {
-                    if (captureSkinCombatStance.HasValue)
-                        combatPet.SetCaptureSkinCombatStance(captureSkinCombatStance);
-
-                    if (VisualOverrideSetup.HasValue)
-                        combatPet.ReconfigureMeleeMotionDpsAfterCaptureSkin();
-
                     RefreshCombatPetEssenceDisplayNameForSummonedPet(combatPet, player);
-                }
                 else
                     TryNotifySummonerNameProperty(player);
             }

@@ -121,7 +121,12 @@ namespace ACE.Server.WorldObjects
                                     sourceCreature.FightDirty(targetPlayer, damageEvent.Weapon);
                             }
                             else
+                            {
+                                if (sourceCreature is CombatPet combatPetEvadePlayer)
+                                    CombatPet.TryNotifyOwnerOutgoingPhysical(combatPetEvadePlayer, targetPlayer, 0, damageEvent.DamageType, "Missile", evaded: true);
+
                                 targetPlayer.OnEvade(sourceCreature, CombatType.Missile);
+                            }
                         }
                         else
                         {
@@ -141,7 +146,12 @@ namespace ACE.Server.WorldObjects
                                     sourceCreature.FightDirty(targetCreature, damageEvent.Weapon);
                             }
                             else
+                            {
+                                if (sourceCreature is CombatPet combatPetEvadeCreature)
+                                    CombatPet.TryNotifyOwnerOutgoingPhysical(combatPetEvadeCreature, targetCreature, 0, damageEvent.DamageType, "Missile", evaded: true);
+
                                 targetCreature.OnEvade(sourceCreature, CombatType.Missile);
+                            }
 
                             if (!(targetCreature is CombatPet))
                             {

@@ -180,11 +180,18 @@ namespace ACE.Server.WorldObjects
                                         EmitSplatter(cleaveHit, cleaveDamageEvent.Damage);
                                     }
                                 }
+                                else if (combatPet != null)
+                                    CombatPet.TryNotifyOwnerOutgoingPhysical(combatPet, cleaveHit, 0, cleaveDamageEvent.DamageType, "Melee (cleave)", evaded: true);
                             }
                         }
                     }
                     else
+                    {
+                        if (combatPet != null)
+                            CombatPet.TryNotifyOwnerOutgoingPhysical(combatPet, target, 0, damageEvent.DamageType, "Melee", evaded: true);
+
                         target.OnEvade(this, CombatType.Melee);
+                    }
 
                     if (combatPet != null)
                         combatPet.PetOnAttackMonster(target);
@@ -624,7 +631,7 @@ namespace ACE.Server.WorldObjects
             // todo: speed up key lookup?
             if (attackHook != null)
             {
-                parts = Biota.PropertiesBodyPart.Where(b => (uint)b.Key == attackHook.AttackCone.PartIndex).ToList();
+                parts = Biota.PropertiesBodyPart.Where(b => (uint)b.Key == attackHook.AttackCone.PartIndex && b.Value.DVal > 0).ToList();
             }
             else if (motionCommand >= MotionCommand.SpecialAttack1 && motionCommand <= MotionCommand.SpecialAttack3)
             {
