@@ -355,7 +355,7 @@ namespace ACE.Server.WorldObjects
                 if (dispelLockoutActive)
                 {
                     var remainingSeconds = (int)Math.Ceiling(180.0 - (currentTime - player.LastDispelTimestamp));
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Auto-Rebuff Charm activated. Because you were recently dispelled, buffs will automatically apply in {remainingSeconds}s after your lockout expires.", ChatMessageType.Broadcast));
+                    player.Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Auto-Rebuff Charm activated. Because you were recently dispelled, buffs will automatically apply in {remainingSeconds}s after your lockout expires.", ChatMessageType.Broadcast));
                 }
                 else
                 {
