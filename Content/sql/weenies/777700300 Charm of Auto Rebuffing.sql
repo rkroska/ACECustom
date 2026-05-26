@@ -44,9 +44,9 @@ INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`) VALUES
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`) VALUES
 (777700300,  1, 'Charm of Auto Rebuffing'),
 (777700300, 14, '
-Double-click to activate or deactivate.
+On Use: Buff yourself and all equipment instantly.
 
-Active: Automatically buffs and rebuffs all standard Level 8 self-buffs, Impen VIII, and Banes on your gear 60 minutes before they expire.
+Active: Automatically rebuffs your equipment and all standard Level 8 self-buffs, Impen VIII, and Banes 60 minutes prior to expiring or if expired.
 
 Dispel Lockout: Dispels trigger a 3-minute lockout where auto-rebuffing is paused. The charm can still be enabled during a lockout; buffs will apply automatically when the lockout expires.
 ');
