@@ -1,5 +1,7 @@
 ## Bonded Combat Pets (Pokémon-style partner progression)
 
+**STATUS: Design document for future implementation.** Describes planned player-facing features (bond XP, attunement, upkeep); not a guarantee that every item below is live on production. Bond-related code may exist behind server config (e.g. `pet_bond_enabled`, default off).
+
 This document describes the **player-facing logic, story hooks, and balance intent** for a combat pet progression + upkeep system. It is written for content/design review (not code review).
 
 ---

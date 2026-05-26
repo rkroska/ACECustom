@@ -180,8 +180,13 @@ namespace ACE.Server.WorldObjects
                                         EmitSplatter(cleaveHit, cleaveDamageEvent.Damage);
                                     }
                                 }
-                                else if (combatPet != null)
-                                    CombatPet.TryNotifyOwnerOutgoingPhysical(combatPet, cleaveHit, 0, cleaveDamageEvent.DamageType, "Melee (cleave)", evaded: true);
+                                else
+                                {
+                                    if (combatPet != null)
+                                        CombatPet.TryNotifyOwnerOutgoingPhysical(combatPet, cleaveHit, 0, cleaveDamageEvent.DamageType, "Melee (cleave)", evaded: true);
+
+                                    cleaveHit.OnEvade(this, CombatType.Melee);
+                                }
                             }
                         }
                     }
