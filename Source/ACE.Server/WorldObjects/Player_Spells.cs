@@ -446,6 +446,24 @@ namespace ACE.Server.WorldObjects
                 if (buffMsg != null)
                 {
                     buffMsg.Bane = isBane;
+
+                    // Enforce Option B: Check magic requirements to cast this spell
+                    var spellObj = buffMsg.Spell;
+                    var school = spellObj.School;
+
+                    // 1. Skill check: Magic School must be trained or specialized
+                    var skill = GetCreatureSkill(school);
+                    if (skill == null || skill.AdvancementClass < SkillAdvancementClass.Trained)
+                        continue;
+
+                    // 2. Foci / Augment check: Player must have focus or augment
+                    if (FociWCIDs.ContainsKey(school) && !HasFoci(school))
+                        continue;
+
+                    // 3. Spellbook check: Player must have learned the specific spell
+                    if (!SpellIsKnown(spellID))
+                        continue;
+
                     buffMessages.Add(buffMsg);
                 }
             }
@@ -509,7 +527,15 @@ namespace ACE.Server.WorldObjects
             }
 
             // Send chat confirmation immediately
-            Session.Network.EnqueueSend(new GameMessageSystemChat("You feel a surge of ultimate blessings flow through you and all your gear!", ChatMessageType.Broadcast));
+            bool appliedAny = playerBuffs.Count > 0 || itemBuffsList.Count > 0;
+            if (appliedAny)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("You feel a surge of ultimate blessings flow through you and all your gear!", ChatMessageType.Broadcast));
+            }
+            else
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("The Auto-Rebuff Charm is active, but you do not meet the magic requirements (trained school, focus/augment, learned spell) for any of its buffs.", ChatMessageType.Broadcast));
+            }
         }
 
         private void CreateEnchantmentSilent(Spell spell, WorldObject target)
