@@ -186,7 +186,9 @@ namespace ACE.Server.WorldObjects
             }
 
             // Auto-Rebuff Charm Tick Check
-            if (HasAutoRebuffCharm)
+            // Note: ApplyUltimateBlessings() populates PendingStaggeredEvents which is drained in
+            // Player_Tick() (per-frame) for smooth 1s visual stagger — intentional cross-context flow.
+            if (HasAutoRebuffCharm && !IsDead)
             {
                 if (currentUnixTime - LastAutoRebuffCheckTime >= 5.0)
                 {

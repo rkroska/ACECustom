@@ -4292,8 +4292,9 @@ namespace ACE.Server.Command.Handlers
             }
             finally
             {
-                // If we created a temporary/mock creature from WCID, destroy it to clean up memory
-                if (parameters?.Length > 0 && target != null)
+                // Only destroy if this was a mock creature instantiated from WCID (no Location set).
+                // Live appraised creatures must NOT be destroyed.
+                if (target != null && target.Location == null)
                 {
                     target.Destroy(false);
                 }

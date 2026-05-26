@@ -337,8 +337,8 @@ namespace ACE.Server.WorldObjects
                 {
                     IsCharmActivated = false;
                     CharmAbilityRegistry.Apply(player, abilityId, false);
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("Auto-Rebuff Charm deactivated.", ChatMessageType.Broadcast));
-                    player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.ShieldDown));
+                    player.Session?.Network?.EnqueueSend(new GameMessageSystemChat("Auto-Rebuff Charm deactivated.", ChatMessageType.Broadcast));
+                    player.Session?.Network?.EnqueueSend(new GameMessageSound(player.Guid, Sound.ShieldDown));
                     SaveBiotaToDatabase();
                     player.SaveBiotaToDatabase(enqueueSave: true);
                     return;
