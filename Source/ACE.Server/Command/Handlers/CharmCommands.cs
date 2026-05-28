@@ -60,8 +60,9 @@ namespace ACE.Server.Command.Handlers
             {
                 if (parameters.Length == 1)
                 {
+                    var issuer = session?.Player;
                     CharmSettingsManager.ResetAll();
-                    Broadcast(session, "[CHARM] All charms reset to defaults.");
+                    PlayerManager.BroadcastToAuditChannel(issuer, "[CHARM] All charms reset to defaults.");
                 }
                 else
                 {
@@ -71,7 +72,7 @@ namespace ACE.Server.Command.Handlers
                         Reply(session, $"Unknown charm '{name}'. Known: {string.Join(", ", KnownCharms)}");
                         return;
                     }
-                    Broadcast(session, $"[CHARM] {name} reset to defaults.");
+                    Broadcast(session, $"[CHARM] {name} reset to defaults.", name);
                 }
                 return;
             }
@@ -108,7 +109,7 @@ namespace ACE.Server.Command.Handlers
                         Reply(session, $"'{val}' is not a valid setting for '{charmName}'.");
                         return;
                     }
-                    Broadcast(session, $"[CHARM] {result}");
+                    Broadcast(session, $"[CHARM] {result}", charmName);
                     return;
                 }
 
@@ -133,7 +134,7 @@ namespace ACE.Server.Command.Handlers
                     Reply(session, $"Unknown key '{key}' for charm '{charmName}'. Use /charm {charmName} to see valid keys.");
                     return;
                 }
-                Broadcast(session, $"[CHARM] {result}");
+                Broadcast(session, $"[CHARM] {result}", charmName);
             }
         }
 
@@ -152,21 +153,12 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
-        /// Sends to the issuing dev AND all other online developers+.
-        /// Also logs to server console for audit trail.
+        /// Sends to all online developers (in-game Audit channel + Discord audit channel) and server console.
         /// </summary>
-        private static void Broadcast(Session session, string msg)
+        private static void Broadcast(Session session, string msg, string charmName = null)
         {
-            Console.WriteLine($"[CHARM CMD] {msg}");
-
-            foreach (var onlinePlayer in PlayerManager.GetAllOnline())
-            {
-                if (onlinePlayer.Session?.AccessLevel >= AccessLevel.Developer)
-                    onlinePlayer.Session.Network.EnqueueSend(
-                        new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
-            }
-
-            // If invoked from server console (session == null), we already wrote to Console above.
+            var issuer = session?.Player;
+            PlayerManager.BroadcastToAuditChannel(issuer, msg);
         }
     }
 }
