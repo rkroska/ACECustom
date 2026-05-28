@@ -264,7 +264,7 @@ namespace ACE.Server.WorldObjects
             // NOTE: GetCombatType() checks the equipped weapon's wield slot, but if the player swaps weapons mid-flight
             // or split arrows hit while stabbing, we also check damageEvent's CombatType and DamageSource's Missile status.
             if (damageEvent.HasDamage && (GetCombatType() == CombatType.Missile || damageEvent.CombatType == CombatType.Missile || (damageEvent.DamageSource?.Missile ?? false)))
-                TryApplyExplosiveArrowProc(target, damageEvent.Damage, damageEvent.DamageType);
+                TryApplyExplosiveArrowProc(target, damageEvent.Damage, damageEvent.DamageType, damageEvent.DamageSource);
 
             return damageEvent;
         }

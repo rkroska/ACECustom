@@ -25,6 +25,8 @@ namespace ACE.Server.WorldObjects
         private const uint SpellId_RingOfAgony     = 2673u;
         private const uint SpellId_FlameRing       = (uint)ACE.Entity.Enum.SpellId.FlameRing;
 
+        private readonly Dictionary<int, int> _explosiveArrowProcsPerAttack = new();
+
         // ── Explosive Arrow proc ring spells (Tier II, one per damage type) ────
         private const uint SpellId_NuhmudiraSpinesII   = 6192u; // Pierce
         private const uint SpellId_HorizonsBladesII    = 6190u; // Slash
@@ -1173,7 +1175,7 @@ namespace ACE.Server.WorldObjects
         /// Fires Ring of Exploding Magma as a server-side radius AOE centered on the caster,
         /// mirroring the ring spell AOE system used by Rocky Shrapnel / Ring of Agony.
         /// </summary>
-        internal void TryApplyExplosiveArrowProc(Creature target, float arrowDamage, DamageType arrowDamageType)
+        internal void TryApplyExplosiveArrowProc(Creature target, float arrowDamage, DamageType arrowDamageType, WorldObject projectile = null)
         {
             // Global kill-switch — /charm explosivearrow false|off disables the charm server-wide
             if (!CharmSettingsManager.ExplosiveArrow.Enabled)
@@ -1181,6 +1183,33 @@ namespace ACE.Server.WorldObjects
 
             if (!HasExplosiveArrowCharm)
                 return;
+
+            var ea = CharmSettingsManager.ExplosiveArrow;
+
+            // Enforce max arrows per shot limit if projectile has an attack sequence
+            if (projectile != null && projectile.ProjectileAttackSequence.HasValue)
+            {
+                var seq = projectile.ProjectileAttackSequence.Value;
+                _explosiveArrowProcsPerAttack.TryGetValue(seq, out var count);
+
+                if (count >= ea.MaxArrows)
+                    return; // Reached limit for this shot!
+
+                // Keep the dictionary small: prune sequences older than the current attack sequence - 2
+                if (_explosiveArrowProcsPerAttack.Count > 10)
+                {
+                    var keysToRemove = new List<int>();
+                    foreach (var key in _explosiveArrowProcsPerAttack.Keys)
+                    {
+                        if (key < AttackSequence - 2)
+                            keysToRemove.Add(key);
+                    }
+                    foreach (var key in keysToRemove)
+                        _explosiveArrowProcsPerAttack.Remove(key);
+                }
+
+                _explosiveArrowProcsPerAttack[seq] = count + 1;
+            }
 
             var spellId = GetRingSpellForDamageType(arrowDamageType);
             if (spellId == 0) return; // unsupported damage type — no matching ring spell
@@ -1191,7 +1220,6 @@ namespace ACE.Server.WorldObjects
             if (level < 1) level = 1;
 
             // Read tier multipliers from CharmSettingsManager (tunable at runtime via /charm explosivearrow)
-            var ea = CharmSettingsManager.ExplosiveArrow;
             float minMult, maxMult;
             if (level == 2)
             {

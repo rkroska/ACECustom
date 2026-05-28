@@ -404,24 +404,26 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
 
         public sealed class ExplosiveArrowBlock : ICharmBlock
         {
-            public bool  Enabled { get; private set; } = true;
-            public float T1Min   { get; private set; } = 0.40f;
-            public float T1Max   { get; private set; } = 0.60f;
-            public float T2Min   { get; private set; } = 0.65f;
-            public float T2Max   { get; private set; } = 0.85f;
-            public float T3Min   { get; private set; } = 0.90f;
-            public float T3Max   { get; private set; } = 1.10f;
-            public float Radius  { get; private set; } = 15.0f;
-            public float Height  { get; private set; } = 10.0f;
-            public float Delay   { get; private set; } = 1.0f;
+            public bool  Enabled   { get; private set; } = true;
+            public float T1Min     { get; private set; } = 0.10f;
+            public float T1Max     { get; private set; } = 0.15f;
+            public float T2Min     { get; private set; } = 0.15f;
+            public float T2Max     { get; private set; } = 0.25f;
+            public float T3Min     { get; private set; } = 0.25f;
+            public float T3Max     { get; private set; } = 0.33f;
+            public float Radius    { get; private set; } = 15.0f;
+            public float Height    { get; private set; } = 10.0f;
+            public float Delay     { get; private set; } = 1.0f;
+            public int   MaxArrows { get; private set; } = 5;
 
             public void Reset()
             {
                 Enabled = true;
-                T1Min = 0.40f; T1Max = 0.60f;
-                T2Min = 0.65f; T2Max = 0.85f;
-                T3Min = 0.90f; T3Max = 1.10f;
+                T1Min = 0.10f; T1Max = 0.15f;
+                T2Min = 0.15f; T2Max = 0.25f;
+                T3Min = 0.25f; T3Max = 0.33f;
                 Radius = 15.0f; Height = 10.0f; Delay = 1.0f;
+                MaxArrows = 5;
             }
 
             public string TrySet(string key, string value)
@@ -442,6 +444,10 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                     case "radius": if (!ParseFloat(value, out var v7)) return $"Invalid float."; Radius = v7; return $"explosivearrow.radius → {F(Radius)}";
                     case "height": if (!ParseFloat(value, out var v8)) return $"Invalid float."; Height = v8; return $"explosivearrow.height → {F(Height)}";
                     case "delay":  if (!ParseFloat(value, out var v9)) return $"Invalid float."; Delay  = v9; return $"explosivearrow.delay → {F(Delay)}";
+                    case "maxarrows":
+                        if (!ParseInt(value, out var v10)) return $"Invalid int.";
+                        if (v10 < 1 || v10 > 10) return $"Value must be between 1 and 10.";
+                        MaxArrows = v10; return $"explosivearrow.maxarrows → {MaxArrows}";
                     default: return null;
                 }
             }
@@ -450,32 +456,34 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             {
                 switch (key)
                 {
-                    case "enabled": if (ParseBool(value, out var bv))  Enabled = bv; break;
-                    case "t1min":   if (ParseFloat(value, out var v))  T1Min   = v;  break;
-                    case "t1max":   if (ParseFloat(value, out var v2)) T1Max   = v2; break;
-                    case "t2min":   if (ParseFloat(value, out var v3)) T2Min   = v3; break;
-                    case "t2max":   if (ParseFloat(value, out var v4)) T2Max   = v4; break;
-                    case "t3min":   if (ParseFloat(value, out var v5)) T3Min   = v5; break;
-                    case "t3max":   if (ParseFloat(value, out var v6)) T3Max   = v6; break;
-                    case "radius":  if (ParseFloat(value, out var v7)) Radius  = v7; break;
-                    case "height":  if (ParseFloat(value, out var v8)) Height  = v8; break;
-                    case "delay":   if (ParseFloat(value, out var v9)) Delay   = v9; break;
+                    case "enabled":   if (ParseBool(value, out var bv))   Enabled = bv; break;
+                    case "t1min":     if (ParseFloat(value, out var v))   T1Min   = v;  break;
+                    case "t1max":     if (ParseFloat(value, out var v2))  T1Max   = v2; break;
+                    case "t2min":     if (ParseFloat(value, out var v3))  T2Min   = v3; break;
+                    case "t2max":     if (ParseFloat(value, out var v4))  T2Max   = v4; break;
+                    case "t3min":     if (ParseFloat(value, out var v5))  T3Min   = v5; break;
+                    case "t3max":     if (ParseFloat(value, out var v6))  T3Max   = v6; break;
+                    case "radius":    if (ParseFloat(value, out var v7))  Radius  = v7; break;
+                    case "height":    if (ParseFloat(value, out var v8))  Height  = v8; break;
+                    case "delay":     if (ParseFloat(value, out var v9))  Delay   = v9; break;
+                    case "maxarrows": if (ParseInt(value, out var v10)) MaxArrows = Math.Clamp(v10, 1, 10); break;
                 }
             }
 
             public string GetRaw(string key) => key switch
             {
-                "enabled" => B(Enabled),
-                "t1min"   => F(T1Min),
-                "t1max"   => F(T1Max),
-                "t2min"   => F(T2Min),
-                "t2max"   => F(T2Max),
-                "t3min"   => F(T3Min),
-                "t3max"   => F(T3Max),
-                "radius"  => F(Radius),
-                "height"  => F(Height),
-                "delay"   => F(Delay),
-                _         => null
+                "enabled"   => B(Enabled),
+                "t1min"     => F(T1Min),
+                "t1max"     => F(T1Max),
+                "t2min"     => F(T2Min),
+                "t2max"     => F(T2Max),
+                "t3min"     => F(T3Min),
+                "t3max"     => F(T3Max),
+                "radius"    => F(Radius),
+                "height"    => F(Height),
+                "delay"     => F(Delay),
+                "maxarrows" => MaxArrows.ToString(),
+                _           => null
             };
 
             public IEnumerable<(string, string)> GetAllRaw() => new[]
@@ -485,21 +493,23 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 ("t2min", F(T2Min)), ("t2max", F(T2Max)),
                 ("t3min", F(T3Min)), ("t3max", F(T3Max)),
                 ("radius", F(Radius)), ("height", F(Height)), ("delay", F(Delay)),
+                ("maxarrows", MaxArrows.ToString()),
             };
 
             public string Help() =>
                 "[explosivearrow] adjustable settings:\n" +
                 "  enabled  true/false/on/off   — global kill-switch\n" +
-                "  t1min/t1max  float           — Explosive Arrow: blast damage range as % of arrow dmg (default: 0.40-0.60)\n" +
-                "  t2min/t2max  float           — Greater Explosive Arrow: blast damage range (default: 0.65-0.85)\n" +
-                "  t3min/t3max  float           — Master Explosive Arrow: blast damage range (default: 0.90-1.10)\n" +
+                "  t1min/t1max  float           — Explosive Arrow: blast damage range as % of arrow dmg (default: 0.10-0.15)\n" +
+                "  t2min/t2max  float           — Greater Explosive Arrow: blast damage range (default: 0.15-0.25)\n" +
+                "  t3min/t3max  float           — Master Explosive Arrow: blast damage range (default: 0.25-0.33)\n" +
                 "  radius  float               — AOE blast radius in meters (default: 15.0)\n" +
                 "  height  float               — AOE blast cylinder height (default: 10.0)\n" +
-                "  delay   float               — seconds between arrow hit and detonation (default: 1.0)";
+                "  delay   float               — seconds between arrow hit and detonation (default: 1.0)\n" +
+                "  maxarrows int               — max arrows allowed to detonate per shot [1-10] (default: 5)";
 
             public string Dump() =>
                 $"[explosivearrow] enabled={B(Enabled)} t1={F(T1Min)}-{F(T1Max)} t2={F(T2Min)}-{F(T2Max)} t3={F(T3Min)}-{F(T3Max)} " +
-                $"radius={F(Radius)} height={F(Height)} delay={F(Delay)}\n";
+                $"radius={F(Radius)} height={F(Height)} delay={F(Delay)} maxarrows={MaxArrows}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────

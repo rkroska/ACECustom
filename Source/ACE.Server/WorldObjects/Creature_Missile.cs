@@ -107,6 +107,8 @@ namespace ACE.Server.WorldObjects
 
             proj.ProjectileLauncher = weapon;
             proj.ProjectileAmmo = ammo;
+            if (this is Player mainPlayer)
+                proj.ProjectileAttackSequence = mainPlayer.AttackSequence;
 
             // Check for split arrows capability (will be handled after main projectile launch)
 
@@ -598,6 +600,8 @@ namespace ACE.Server.WorldObjects
                 splitProj.ProjectileTarget = splitTarget;
                 splitProj.ProjectileLauncher = weapon;
                 splitProj.ProjectileAmmo = ammo;
+                if (this is Player splitPlayer)
+                    splitProj.ProjectileAttackSequence = splitPlayer.AttackSequence;
                 
                 // Mark as split arrow for special handling
                 // This enables death message modification to prevent VirindiTank kill attribution issues
