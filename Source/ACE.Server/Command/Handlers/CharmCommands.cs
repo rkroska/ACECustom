@@ -77,8 +77,23 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            // ── /charm <name> ────────────────────────────────────────────────
+            // ── /charm help <name>  or  /charm <name>  ──────────────────────
             var charmName = sub;
+
+            // /charm help <name>
+            if (sub == "help" && parameters.Length >= 2)
+            {
+                var name = parameters[1].ToLower();
+                var help = CharmSettingsManager.DumpHelp(name);
+                if (help == null)
+                {
+                    Reply(session, $"Unknown charm '{name}'. Known: {string.Join(", ", KnownCharms)}");
+                    return;
+                }
+                Reply(session, help);
+                return;
+            }
+
             if (parameters.Length == 1)
             {
                 var dump = CharmSettingsManager.DumpCharm(charmName);
@@ -88,6 +103,19 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
                 Reply(session, dump);
+                return;
+            }
+
+            // ── /charm <name> help ───────────────────────────────────────────
+            if (parameters.Length == 2 && parameters[1].ToLower() == "help")
+            {
+                var help = CharmSettingsManager.DumpHelp(charmName);
+                if (help == null)
+                {
+                    Reply(session, $"Unknown charm '{charmName}'. Known: {string.Join(", ", KnownCharms)}");
+                    return;
+                }
+                Reply(session, help);
                 return;
             }
 

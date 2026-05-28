@@ -151,6 +151,21 @@ namespace ACE.Server.WorldObjects
             };
         }
 
+        public static string DumpHelp(string charmName)
+        {
+            return charmName switch
+            {
+                "manabarrier"     => ManaBarrier.Help(),
+                "explosivearrow"  => ExplosiveArrow.Help(),
+                "shrapnel"        => Shrapnel.Help(),
+                "agony"           => Agony.Help(),
+                "pentacast"       => PentaCast.Help(),
+                "prismaticstrike" => Prismatic.Help(),
+                "autorebuff"      => AutoRebuff.Help(),
+                _                 => null
+            };
+        }
+
         // ─────────────────────────────────────────────────────────────────────
         //  DB helpers
         // ─────────────────────────────────────────────────────────────────────
@@ -230,6 +245,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             IEnumerable<(string key, string value)> GetAllRaw();
             void   Reset();
             string Dump();
+            string Help();
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -327,6 +343,16 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 ("t3",      F(T3)),
             };
 
+            public string Help() =>
+                "[manabarrier] adjustable settings:\n" +
+                "  enabled  true/false/on/off   — global kill-switch (false = full dmg passes through, silent to player)\n" +
+                "  ratio    float               — mana cost per 1 damage, all elements/physical (default: 1.0)\n" +
+                "  t1       float               — Mana Barrier: damage absorbed per mana (default: 1.0)\n" +
+                "  t2       float               — Greater Mana Barrier: damage absorbed per mana (default: 1.5)\n" +
+                "  t3       float               — Master Mana Barrier: damage absorbed per mana (default: 2.0)\n" +
+                "  Math: mana_spent = damage x ratio / tier\n" +
+                "  Examples: /charm manabarrier ratio 0.5  |  /charm manabarrier t3 3.0  |  /charm reset manabarrier";
+
             public string Dump() =>
                 $"[manabarrier] enabled={B(Enabled)} ratio={F(Ratio)} | tiers (dmg absorbed per mana): t1={F(T1)} t2={F(T2)} t3={F(T3)}\n";
         }
@@ -421,6 +447,16 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 ("radius", F(Radius)), ("height", F(Height)), ("delay", F(Delay)),
             };
 
+            public string Help() =>
+                "[explosivearrow] adjustable settings:\n" +
+                "  enabled  true/false/on/off   — global kill-switch\n" +
+                "  t1min/t1max  float           — Explosive Arrow: blast damage range as % of arrow dmg (default: 0.40-0.60)\n" +
+                "  t2min/t2max  float           — Greater Explosive Arrow: blast damage range (default: 0.65-0.85)\n" +
+                "  t3min/t3max  float           — Master Explosive Arrow: blast damage range (default: 0.90-1.10)\n" +
+                "  radius  float               — AOE blast radius in meters (default: 15.0)\n" +
+                "  height  float               — AOE blast cylinder height (default: 10.0)\n" +
+                "  delay   float               — seconds between arrow hit and detonation (default: 1.0)";
+
             public string Dump() =>
                 $"[explosivearrow] enabled={B(Enabled)} t1={F(T1Min)}-{F(T1Max)} t2={F(T2Min)}-{F(T2Max)} t3={F(T3Min)}-{F(T3Max)} " +
                 $"radius={F(Radius)} height={F(Height)} delay={F(Delay)}\n";
@@ -449,6 +485,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
+            public string Help() => "[shrapnel] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
             public string Dump() => $"[shrapnel] enabled={B(Enabled)} (no other tunables yet)\n";
         }
 
@@ -471,6 +508,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
+            public string Help() => "[agony] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
             public string Dump() => $"[agony] enabled={B(Enabled)} (no other tunables yet)\n";
         }
 
@@ -493,6 +531,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
+            public string Help() => "[prismaticstrike] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
             public string Dump() => $"[prismaticstrike] enabled={B(Enabled)} (no other tunables yet)\n";
         }
 
@@ -515,6 +554,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
+            public string Help() => "[autorebuff] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
             public string Dump() => $"[autorebuff] enabled={B(Enabled)} (no other tunables yet)\n";
         }
 
@@ -569,6 +609,12 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 ("targets", Targets.ToString()),
                 ("range",   F(Range)),
             };
+
+            public string Help() =>
+                "[pentacast] adjustable settings:\n" +
+                "  enabled  true/false/on/off   — global kill-switch\n" +
+                "  targets  int                 — number of additional targets to bounce spell to (default: 4)\n" +
+                "  range    float               — radius in meters to find bounce targets (default: 10.0)";
 
             public string Dump() =>
                 $"[pentacast] enabled={B(Enabled)} targets={Targets} range={F(Range)}\n";
