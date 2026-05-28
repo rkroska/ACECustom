@@ -518,25 +518,65 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
 
         public sealed class ShrapnelBlock : ICharmBlock
         {
-            public bool Enabled { get; private set; } = true;
-            public void Reset() { Enabled = true; }
+            public bool  Enabled { get; private set; } = true;
+            public float Radius  { get; private set; } = 5.8f;
+            public float Height  { get; private set; } = 7.0f;
+
+            public void Reset()
+            {
+                Enabled = true;
+                Radius = 5.8f;
+                Height = 7.0f;
+            }
 
             public string TrySet(string key, string value)
             {
-                if (key is "enabled" or "on" or "off" or "true" or "false")
+                switch (key)
                 {
-                    var bKey = key == "enabled" ? value : key;
-                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
-                    Enabled = bv; return $"shrapnel.enabled → {B(Enabled)}";
+                    case "enabled": case "on": case "off": case "true": case "false":
+                        var bKey = key == "enabled" ? value : key;
+                        if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
+                        Enabled = bv; return $"shrapnel.enabled → {B(Enabled)}";
+
+                    case "radius": if (!ParseFloat(value, out var v)) return $"Invalid float."; Radius = v; return $"shrapnel.radius → {F(Radius)}";
+                    case "height": if (!ParseFloat(value, out var v2)) return $"Invalid float."; Height = v2; return $"shrapnel.height → {F(Height)}";
+                    default: return null;
                 }
-                return null;
             }
 
-            public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
-            public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
-            public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
-            public string Help() => "[shrapnel] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
-            public string Dump() => $"[shrapnel] enabled={B(Enabled)} (no other tunables yet)\n";
+            public void ApplyRaw(string key, string value)
+            {
+                switch (key)
+                {
+                    case "enabled": if (ParseBool(value, out var bv))  Enabled = bv; break;
+                    case "radius":  if (ParseFloat(value, out var v))  Radius  = v;  break;
+                    case "height":  if (ParseFloat(value, out var v2)) Height  = v2; break;
+                }
+            }
+
+            public string GetRaw(string key) => key switch
+            {
+                "enabled" => B(Enabled),
+                "radius"  => F(Radius),
+                "height"  => F(Height),
+                _         => null
+            };
+
+            public IEnumerable<(string, string)> GetAllRaw() => new[]
+            {
+                ("enabled", B(Enabled)),
+                ("radius",  F(Radius)),
+                ("height",  F(Height)),
+            };
+
+            public string Help() =>
+                "[shrapnel] adjustable settings:\n" +
+                "  enabled  true/false/on/off   — global kill-switch\n" +
+                "  radius  float                — Rocky Shrapnel AOE physical blast radius in meters (default: 5.8)\n" +
+                "  height  float                — Rocky Shrapnel AOE physical blast height in meters (default: 7.0)";
+
+            public string Dump() =>
+                $"[shrapnel] enabled={B(Enabled)} radius={F(Radius)} height={F(Height)}\n";
         }
 
         public sealed class AgonyBlock : ICharmBlock

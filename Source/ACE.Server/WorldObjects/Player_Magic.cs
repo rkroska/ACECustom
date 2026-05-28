@@ -1783,7 +1783,9 @@ namespace ACE.Server.WorldObjects
             // Ring radius — radiusOverride used by proc paths (e.g. Explosive Arrow); otherwise default scaled by charm.
             var radius = radiusOverride > 0f
                 ? radiusOverride
-                : DefaultRingAoeRadius * (float)(GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
+                : (spell.Id == SpellId_RockyShrapnel
+                    ? CharmSettingsManager.Shrapnel.Radius
+                    : DefaultRingAoeRadius * (float)(GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f));
 
             var attackSkill   = GetCreatureSkill(spell.School);
             var magicSkill    = attackSkill.Current;
@@ -1816,7 +1818,11 @@ namespace ACE.Server.WorldObjects
                 if (creature.Location == null)            continue;
 
                 // Height and distance gate — heightOverride used by proc paths.
-                var heightCap = heightOverride > 0f ? heightOverride : RingAoeMaxHeightDelta;
+                var heightCap = heightOverride > 0f
+                    ? heightOverride
+                    : (spell.Id == SpellId_RockyShrapnel
+                        ? CharmSettingsManager.Shrapnel.Height
+                        : RingAoeMaxHeightDelta);
                 var dz = Math.Abs(center.PositionZ - creature.Location.PositionZ);
                 if (dz > heightCap) continue;
                 if (center.Distance2D(creature.Location) > radius) continue;
