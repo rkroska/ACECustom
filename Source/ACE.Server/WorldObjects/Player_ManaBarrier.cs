@@ -12,14 +12,14 @@ namespace ACE.Server.WorldObjects
         {
             // Use the cached runtime level map instead of walking the inventory.
             if (!ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ManaBarrierAbilityId, out var level))
-                return CharmSettingsManager.ManaBarrier.T1Mod;
+                return CharmSettingsManager.ManaBarrier.T1;
 
             return level switch
             {
-                1 => CharmSettingsManager.ManaBarrier.T1Mod,
-                2 => CharmSettingsManager.ManaBarrier.T2Mod,
-                3 => CharmSettingsManager.ManaBarrier.T3Mod,
-                _ => CharmSettingsManager.ManaBarrier.T1Mod
+                1 => CharmSettingsManager.ManaBarrier.T1,
+                2 => CharmSettingsManager.ManaBarrier.T2,
+                3 => CharmSettingsManager.ManaBarrier.T3,
+                _ => CharmSettingsManager.ManaBarrier.T1
             };
         }
 

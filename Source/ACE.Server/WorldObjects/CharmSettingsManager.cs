@@ -265,15 +265,15 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public float Ratio   { get; private set; } = 1.0f;
             // Per-tier efficiency multipliers (applied on top of Ratio)
             // T1: 1.000 = 1:1,  T2: 0.667 = 1:1.5,  T3: 0.500 = 1:2
-            public float T1Mod   { get; private set; } = 1.000f;
-            public float T2Mod   { get; private set; } = 0.667f;
-            public float T3Mod   { get; private set; } = 0.500f;
+            public float T1      { get; private set; } = 1.000f;
+            public float T2      { get; private set; } = 0.667f;
+            public float T3      { get; private set; } = 0.500f;
 
             public void Reset()
             {
                 Enabled = true;
                 Ratio = 1.0f;
-                T1Mod = 1.000f; T2Mod = 0.667f; T3Mod = 0.500f;
+                T1 = 1.000f; T2 = 0.667f; T3 = 0.500f;
             }
 
             public string TrySet(string key, string value)
@@ -286,9 +286,9 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                         Enabled = bv; return $"manabarrier.enabled → {B(Enabled)}";
 
                     case "ratio":  if (!ParseFloat(value, out var rv))  return $"Invalid float: '{value}'."; Ratio = rv;  return $"manabarrier.ratio → {F(Ratio)}";
-                    case "t1mod":  if (!ParseFloat(value, out var t1v)) return $"Invalid float: '{value}'."; T1Mod = t1v; return $"manabarrier.t1mod → {F(T1Mod)}";
-                    case "t2mod":  if (!ParseFloat(value, out var t2v)) return $"Invalid float: '{value}'."; T2Mod = t2v; return $"manabarrier.t2mod → {F(T2Mod)}";
-                    case "t3mod":  if (!ParseFloat(value, out var t3v)) return $"Invalid float: '{value}'."; T3Mod = t3v; return $"manabarrier.t3mod → {F(T3Mod)}";
+                    case "t1":     if (!ParseFloat(value, out var t1v)) return $"Invalid float: '{value}'."; T1 = t1v; return $"manabarrier.t1 → {F(T1)}";
+                    case "t2":     if (!ParseFloat(value, out var t2v)) return $"Invalid float: '{value}'."; T2 = t2v; return $"manabarrier.t2 → {F(T2)}";
+                    case "t3":     if (!ParseFloat(value, out var t3v)) return $"Invalid float: '{value}'."; T3 = t3v; return $"manabarrier.t3 → {F(T3)}";
                     default: return null;
                 }
             }
@@ -298,10 +298,10 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 switch (key)
                 {
                     case "enabled": if (ParseBool(value, out var bv))  Enabled = bv;  break;
-                    case "ratio":   if (ParseFloat(value, out var rv))  Ratio   = rv;  break;
-                    case "t1mod":   if (ParseFloat(value, out var t1v)) T1Mod   = t1v; break;
-                    case "t2mod":   if (ParseFloat(value, out var t2v)) T2Mod   = t2v; break;
-                    case "t3mod":   if (ParseFloat(value, out var t3v)) T3Mod   = t3v; break;
+                    case "ratio":   if (ParseFloat(value, out var rv))  Ratio = rv;  break;
+                    case "t1":      if (ParseFloat(value, out var t1v)) T1    = t1v; break;
+                    case "t2":      if (ParseFloat(value, out var t2v)) T2    = t2v; break;
+                    case "t3":      if (ParseFloat(value, out var t3v)) T3    = t3v; break;
                 }
             }
 
@@ -309,9 +309,9 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             {
                 "enabled" => B(Enabled),
                 "ratio"   => F(Ratio),
-                "t1mod"   => F(T1Mod),
-                "t2mod"   => F(T2Mod),
-                "t3mod"   => F(T3Mod),
+                "t1"      => F(T1),
+                "t2"      => F(T2),
+                "t3"      => F(T3),
                 _         => null
             };
 
@@ -319,13 +319,13 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             {
                 ("enabled", B(Enabled)),
                 ("ratio",   F(Ratio)),
-                ("t1mod",   F(T1Mod)),
-                ("t2mod",   F(T2Mod)),
-                ("t3mod",   F(T3Mod)),
+                ("t1",      F(T1)),
+                ("t2",      F(T2)),
+                ("t3",      F(T3)),
             };
 
             public string Dump() =>
-                $"[manabarrier] enabled={B(Enabled)} ratio={F(Ratio)} | tiers: t1mod={F(T1Mod)} t2mod={F(T2Mod)} t3mod={F(T3Mod)}\n";
+                $"[manabarrier] enabled={B(Enabled)} ratio={F(Ratio)} | tiers: t1={F(T1)} t2={F(T2)} t3={F(T3)}\n";
         }
 
 
