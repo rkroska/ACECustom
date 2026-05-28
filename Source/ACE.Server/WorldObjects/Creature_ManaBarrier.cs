@@ -13,9 +13,10 @@ namespace ACE.Server.WorldObjects
 
     public partial class Creature
     {
-        // Default absorption ratios (reference only — live values are in CharmSettingsManager.ManaBarrier).
-        // Value of 1.0 = 1 Mana per 1 Damage (1:1). Value of 0.5 = 1 Mana per 2 Damage.
-        // Edit at runtime with:  /charm manabarrier <slash|pierce|bludgeon|fire|cold|acid|electric|health|nether> <value>
+        // Mana Barrier ratios live in CharmSettingsManager.ManaBarrier.
+        // ratio  = mana cost per 1 damage (global, all elements)
+        // t1/t2/t3 = damage absorbed per 1 mana (tier divisor — higher = more efficient)
+        // Edit at runtime: /charm manabarrier ratio <val>  |  /charm manabarrier t1/t2/t3 <val>
 
         // ── Shared damage number formatter ─────────────────────────────────────
         /// <summary>
@@ -63,8 +64,8 @@ namespace ACE.Server.WorldObjects
             // Read the single global ratio from CharmSettingsManager (tunable via /charm manabarrier ratio <value>)
             var ratio = CharmSettingsManager.ManaBarrier.Ratio;
 
-            // Apply level-based or property-based scaling
-            ratio *= GetManaBarrierRatioMod();
+            // Apply tier scaling: t = damage absorbed per mana, so divide to get mana cost per damage
+            ratio /= GetManaBarrierRatioMod();
 
             // Ratio of 0.0 means bypass
             if (ratio <= 0)

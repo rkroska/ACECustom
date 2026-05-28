@@ -263,17 +263,20 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             // Single global ratio: mana cost per 1 damage absorbed (all damage types)
             // 1.0 = 1 mana per 1 damage, 0.5 = 1 mana per 2 damage, 2.0 = 2 mana per 1 damage
             public float Ratio   { get; private set; } = 1.0f;
-            // Per-tier efficiency multipliers (applied on top of Ratio)
-            // T1: 1.000 = 1:1,  T2: 0.667 = 1:1.5,  T3: 0.500 = 1:2
-            public float T1      { get; private set; } = 1.000f;
-            public float T2      { get; private set; } = 0.667f;
-            public float T3      { get; private set; } = 0.500f;
+            // Per-tier values: how much damage is absorbed per 1 mana spent
+            // Higher tier = absorbs more damage per mana = better
+            // T1: 1.0  = 1 damage per mana (1:1)
+            // T2: 1.5  = 1.5 damage per mana
+            // T3: 2.0  = 2 damage per mana
+            public float T1      { get; private set; } = 1.0f;
+            public float T2      { get; private set; } = 1.5f;
+            public float T3      { get; private set; } = 2.0f;
 
             public void Reset()
             {
                 Enabled = true;
                 Ratio = 1.0f;
-                T1 = 1.000f; T2 = 0.667f; T3 = 0.500f;
+                T1 = 1.0f; T2 = 1.5f; T3 = 2.0f;
             }
 
             public string TrySet(string key, string value)
@@ -325,7 +328,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             };
 
             public string Dump() =>
-                $"[manabarrier] enabled={B(Enabled)} ratio={F(Ratio)} | tiers: t1={F(T1)} t2={F(T2)} t3={F(T3)}\n";
+                $"[manabarrier] enabled={B(Enabled)} ratio={F(Ratio)} | tiers (dmg absorbed per mana): t1={F(T1)} t2={F(T2)} t3={F(T3)}\n";
         }
 
 
