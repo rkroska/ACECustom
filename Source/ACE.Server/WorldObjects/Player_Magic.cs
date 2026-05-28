@@ -1175,6 +1175,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         internal void TryApplyExplosiveArrowProc(Creature target, float arrowDamage, DamageType arrowDamageType)
         {
+            // Global kill-switch — /charm explosivearrow false|off disables the charm server-wide
+            if (!CharmSettingsManager.ExplosiveArrow.Enabled)
+                return;
+
             if (!HasExplosiveArrowCharm)
                 return;
 
@@ -1186,28 +1190,30 @@ namespace ACE.Server.WorldObjects
             ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ExplosiveArrowCharmAbilityId, out var level);
             if (level < 1) level = 1;
 
+            // Read tier multipliers from CharmSettingsManager (tunable at runtime via /charm explosivearrow)
+            var ea = CharmSettingsManager.ExplosiveArrow;
             float minMult, maxMult;
             if (level == 2)
             {
-                minMult = 0.65f;
-                maxMult = 0.85f;
+                minMult = ea.T2Min;
+                maxMult = ea.T2Max;
             }
             else if (level == 3)
             {
-                minMult = 0.90f;
-                maxMult = 1.10f;
+                minMult = ea.T3Min;
+                maxMult = ea.T3Max;
             }
             else
             {
-                minMult = 0.40f;
-                maxMult = 0.60f;
+                minMult = ea.T1Min;
+                maxMult = ea.T1Max;
             }
 
             var flatDmg = (float)(arrowDamage * ThreadSafeRandom.Next(minMult, maxMult));
 
-            // 1 second delay between arrow hit and ring detonation.
+            // Delay between arrow hit and ring detonation (tunable via /charm explosivearrow delay <seconds>)
             var actionChain = new ActionChain();
-            actionChain.AddDelaySeconds(1.0);
+            actionChain.AddDelaySeconds(ea.Delay);
             actionChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () =>
             {
                 // Guard: player or target may have died/logged out/been destroyed during the delay.
@@ -1217,8 +1223,8 @@ namespace ACE.Server.WorldObjects
                 // so the ring always detonates where the target actually is at fire time.
                 CreateSpellProjectiles(spell, null, null, false, true, 0, originOverride: target);
                 ApplyRingSpellAreaDamage(spell, target.Location,
-                    radiusOverride: 15f,
-                    heightOverride: 10f,
+                    radiusOverride: ea.Radius,
+                    heightOverride: ea.Height,
                     flatDamage:     flatDmg,
                     scanOrigin:     this,    // Scan the player's reliable ObjMaint (always populated) instead of target's (empty on static dummies like Winning Idol)
                     fromProc:       true);   // CR-4: suppress War Magic proficiency tick for procs
@@ -1237,10 +1243,11 @@ namespace ACE.Server.WorldObjects
             if (spell.Id != SpellId_TectonicRiftsI && spell.Id != SpellId_TectonicRiftsII)
                 return spell;
 
-            if (HasShrapnelCharm && SpellIsKnown(SpellId_RockyShrapnel))
+            // Global kill-switch checks — /charm shrapnel false|off or /charm agony false|off
+            if (HasShrapnelCharm && CharmSettingsManager.Shrapnel.Enabled && SpellIsKnown(SpellId_RockyShrapnel))
                 return new Spell(SpellId_RockyShrapnel);   // Rocky Shrapnel — priority
 
-            if (HasAgonyCharm && SpellIsKnown(SpellId_RingOfAgony))
+            if (HasAgonyCharm && CharmSettingsManager.Agony.Enabled && SpellIsKnown(SpellId_RingOfAgony))
                 return new Spell(SpellId_RingOfAgony);     // Ring of Unspeakable Agony — fallback
 
             return spell;
