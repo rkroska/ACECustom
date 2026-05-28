@@ -260,6 +260,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
         public sealed class ManaBarrierBlock : ICharmBlock
         {
             public bool  Enabled  { get; private set; } = true;
+            // Per-element mana cost ratios (mana per 1 damage absorbed)
             public float Slash    { get; private set; } = 1.0f;
             public float Pierce   { get; private set; } = 1.0f;
             public float Bludgeon { get; private set; } = 1.0f;
@@ -269,10 +270,19 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public float Electric { get; private set; } = 1.0f;
             public float Health   { get; private set; } = 1.0f;
             public float Nether   { get; private set; } = 1.0f;
+            // Per-tier efficiency multipliers (multiplied on top of the ratio)
+            // T1: 1.000 = 1 mana per 1 damage
+            // T2: 0.667 = 1 mana per 1.5 damage (more efficient)
+            // T3: 0.500 = 1 mana per 2 damage   (most efficient)
+            public float T1Mod   { get; private set; } = 1.000f;
+            public float T2Mod   { get; private set; } = 0.667f;
+            public float T3Mod   { get; private set; } = 0.500f;
 
             public void Reset()
             {
-                Enabled = true; Slash = Pierce = Bludgeon = Fire = Cold = Acid = Electric = Health = Nether = 1.0f;
+                Enabled = true;
+                Slash = Pierce = Bludgeon = Fire = Cold = Acid = Electric = Health = Nether = 1.0f;
+                T1Mod = 1.000f; T2Mod = 0.667f; T3Mod = 0.500f;
             }
 
             public string TrySet(string key, string value)
@@ -280,19 +290,22 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 switch (key)
                 {
                     case "enabled": case "on": case "off": case "true": case "false":
-                        var bKey = key == "enabled" ? value : key; // "/charm mb off" maps key="off"
+                        var bKey = key == "enabled" ? value : key;
                         if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'. Use true/on or false/off.";
                         Enabled = bv; return $"manabarrier.enabled → {B(Enabled)}";
 
-                    case "slash":    if (!ParseFloat(value, out var sv)) return $"Invalid float: '{value}'."; Slash    = sv; return $"manabarrier.slash → {F(Slash)}";
-                    case "pierce":   if (!ParseFloat(value, out var pv)) return $"Invalid float: '{value}'."; Pierce   = pv; return $"manabarrier.pierce → {F(Pierce)}";
+                    case "slash":    if (!ParseFloat(value, out var sv))  return $"Invalid float: '{value}'."; Slash    = sv;  return $"manabarrier.slash → {F(Slash)}";
+                    case "pierce":   if (!ParseFloat(value, out var pv))  return $"Invalid float: '{value}'."; Pierce   = pv;  return $"manabarrier.pierce → {F(Pierce)}";
                     case "bludgeon": if (!ParseFloat(value, out var blv)) return $"Invalid float: '{value}'."; Bludgeon = blv; return $"manabarrier.bludgeon → {F(Bludgeon)}";
-                    case "fire":     if (!ParseFloat(value, out var fv)) return $"Invalid float: '{value}'."; Fire     = fv; return $"manabarrier.fire → {F(Fire)}";
-                    case "cold":     if (!ParseFloat(value, out var cv)) return $"Invalid float: '{value}'."; Cold     = cv; return $"manabarrier.cold → {F(Cold)}";
-                    case "acid":     if (!ParseFloat(value, out var av)) return $"Invalid float: '{value}'."; Acid     = av; return $"manabarrier.acid → {F(Acid)}";
-                    case "electric": if (!ParseFloat(value, out var ev)) return $"Invalid float: '{value}'."; Electric = ev; return $"manabarrier.electric → {F(Electric)}";
-                    case "health":   if (!ParseFloat(value, out var hv)) return $"Invalid float: '{value}'."; Health   = hv; return $"manabarrier.health → {F(Health)}";
-                    case "nether":   if (!ParseFloat(value, out var nv)) return $"Invalid float: '{value}'."; Nether   = nv; return $"manabarrier.nether → {F(Nether)}";
+                    case "fire":     if (!ParseFloat(value, out var fv))  return $"Invalid float: '{value}'."; Fire     = fv;  return $"manabarrier.fire → {F(Fire)}";
+                    case "cold":     if (!ParseFloat(value, out var cv))  return $"Invalid float: '{value}'."; Cold     = cv;  return $"manabarrier.cold → {F(Cold)}";
+                    case "acid":     if (!ParseFloat(value, out var av))  return $"Invalid float: '{value}'."; Acid     = av;  return $"manabarrier.acid → {F(Acid)}";
+                    case "electric": if (!ParseFloat(value, out var ev))  return $"Invalid float: '{value}'."; Electric = ev;  return $"manabarrier.electric → {F(Electric)}";
+                    case "health":   if (!ParseFloat(value, out var hv))  return $"Invalid float: '{value}'."; Health   = hv;  return $"manabarrier.health → {F(Health)}";
+                    case "nether":   if (!ParseFloat(value, out var nv))  return $"Invalid float: '{value}'."; Nether   = nv;  return $"manabarrier.nether → {F(Nether)}";
+                    case "t1mod":    if (!ParseFloat(value, out var t1v)) return $"Invalid float: '{value}'."; T1Mod    = t1v; return $"manabarrier.t1mod → {F(T1Mod)}";
+                    case "t2mod":    if (!ParseFloat(value, out var t2v)) return $"Invalid float: '{value}'."; T2Mod    = t2v; return $"manabarrier.t2mod → {F(T2Mod)}";
+                    case "t3mod":    if (!ParseFloat(value, out var t3v)) return $"Invalid float: '{value}'."; T3Mod    = t3v; return $"manabarrier.t3mod → {F(T3Mod)}";
                     default: return null;
                 }
             }
@@ -301,16 +314,19 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             {
                 switch (key)
                 {
-                    case "enabled":  if (ParseBool(value, out var bv))  Enabled  = bv; break;
-                    case "slash":    if (ParseFloat(value, out var v))   Slash    = v;  break;
-                    case "pierce":   if (ParseFloat(value, out var v2))  Pierce   = v2; break;
-                    case "bludgeon": if (ParseFloat(value, out var v3))  Bludgeon = v3; break;
-                    case "fire":     if (ParseFloat(value, out var v4))  Fire     = v4; break;
-                    case "cold":     if (ParseFloat(value, out var v5))  Cold     = v5; break;
-                    case "acid":     if (ParseFloat(value, out var v6))  Acid     = v6; break;
-                    case "electric": if (ParseFloat(value, out var v7))  Electric = v7; break;
-                    case "health":   if (ParseFloat(value, out var v8))  Health   = v8; break;
-                    case "nether":   if (ParseFloat(value, out var v9))  Nether   = v9; break;
+                    case "enabled":  if (ParseBool(value, out var bv))  Enabled  = bv;  break;
+                    case "slash":    if (ParseFloat(value, out var v))   Slash    = v;   break;
+                    case "pierce":   if (ParseFloat(value, out var v2))  Pierce   = v2;  break;
+                    case "bludgeon": if (ParseFloat(value, out var v3))  Bludgeon = v3;  break;
+                    case "fire":     if (ParseFloat(value, out var v4))  Fire     = v4;  break;
+                    case "cold":     if (ParseFloat(value, out var v5))  Cold     = v5;  break;
+                    case "acid":     if (ParseFloat(value, out var v6))  Acid     = v6;  break;
+                    case "electric": if (ParseFloat(value, out var v7))  Electric = v7;  break;
+                    case "health":   if (ParseFloat(value, out var v8))  Health   = v8;  break;
+                    case "nether":   if (ParseFloat(value, out var v9))  Nether   = v9;  break;
+                    case "t1mod":    if (ParseFloat(value, out var t1v)) T1Mod    = t1v; break;
+                    case "t2mod":    if (ParseFloat(value, out var t2v)) T2Mod    = t2v; break;
+                    case "t3mod":    if (ParseFloat(value, out var t3v)) T3Mod    = t3v; break;
                 }
             }
 
@@ -326,6 +342,9 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 "electric" => F(Electric),
                 "health"   => F(Health),
                 "nether"   => F(Nether),
+                "t1mod"    => F(T1Mod),
+                "t2mod"    => F(T2Mod),
+                "t3mod"    => F(T3Mod),
                 _          => null
             };
 
@@ -341,11 +360,15 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 ("electric", F(Electric)),
                 ("health",   F(Health)),
                 ("nether",   F(Nether)),
+                ("t1mod",    F(T1Mod)),
+                ("t2mod",    F(T2Mod)),
+                ("t3mod",    F(T3Mod)),
             };
 
             public string Dump() =>
-                $"[manabarrier] enabled={B(Enabled)} slash={F(Slash)} pierce={F(Pierce)} bludgeon={F(Bludgeon)} " +
-                $"fire={F(Fire)} cold={F(Cold)} acid={F(Acid)} electric={F(Electric)} health={F(Health)} nether={F(Nether)}\n";
+                $"[manabarrier] enabled={B(Enabled)} | ratio: slash={F(Slash)} pierce={F(Pierce)} bludgeon={F(Bludgeon)} " +
+                $"fire={F(Fire)} cold={F(Cold)} acid={F(Acid)} electric={F(Electric)} health={F(Health)} nether={F(Nether)} " +
+                $"| tiers: t1mod={F(T1Mod)} t2mod={F(T2Mod)} t3mod={F(T3Mod)}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
