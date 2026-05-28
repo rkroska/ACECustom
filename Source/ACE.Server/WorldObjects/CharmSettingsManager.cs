@@ -26,13 +26,18 @@ namespace ACE.Server.WorldObjects
         //  Public per-charm settings blocks (lazy-initialised on first access)
         // ─────────────────────────────────────────────────────────────────────
 
-        public static ManaBarrierBlock    ManaBarrier    { get; } = new();
-        public static ExplosiveArrowBlock ExplosiveArrow { get; } = new();
-        public static ShrapnelBlock       Shrapnel       { get; } = new();
-        public static AgonyBlock          Agony          { get; } = new();
-        public static PentaCastBlock      PentaCast      { get; } = new();
-        public static PrismaticBlock      Prismatic      { get; } = new();
-        public static AutoRebuffBlock     AutoRebuff     { get; } = new();
+        public static ManaBarrierBlock        ManaBarrier        { get; } = new();
+        public static ExplosiveArrowBlock     ExplosiveArrow     { get; } = new();
+        public static ShrapnelBlock           Shrapnel           { get; } = new();
+        public static AgonyBlock              Agony              { get; } = new();
+        public static PentaCastBlock          PentaCast          { get; } = new();
+        public static PrismaticBlock          Prismatic          { get; } = new();
+        public static AutoRebuffBlock         AutoRebuff         { get; } = new();
+        public static InfiniteCastingBlock    InfiniteCasting    { get; } = new();
+        public static AsheronsFavorBlock      AsheronsFavor      { get; } = new();
+        public static ArtisansBlock           Artisans           { get; } = new();
+        public static EssenceRefillBlock      EssenceRefill      { get; } = new();
+        public static UniversalSummoningBlock UniversalSummoning { get; } = new();
 
         // ─────────────────────────────────────────────────────────────────────
         //  Startup
@@ -73,6 +78,11 @@ namespace ACE.Server.WorldObjects
             sb.Append(PentaCast.Dump());
             sb.Append(Prismatic.Dump());
             sb.Append(AutoRebuff.Dump());
+            sb.Append(InfiniteCasting.Dump());
+            sb.Append(AsheronsFavor.Dump());
+            sb.Append(Artisans.Dump());
+            sb.Append(EssenceRefill.Dump());
+            sb.Append(UniversalSummoning.Dump());
             return sb.ToString();
         }
 
@@ -85,14 +95,19 @@ namespace ACE.Server.WorldObjects
             found = true;
             ICharmBlock block = charmName switch
             {
-                "manabarrier"    => ManaBarrier,
-                "explosivearrow" => ExplosiveArrow,
-                "shrapnel"       => Shrapnel,
-                "agony"          => Agony,
-                "pentacast"      => PentaCast,
-                "prismaticstrike"=> Prismatic,
-                "autorebuff"     => AutoRebuff,
-                _                => null
+                "manabarrier"        => ManaBarrier,
+                "explosivearrow"     => ExplosiveArrow,
+                "shrapnel"           => Shrapnel,
+                "agony"              => Agony,
+                "pentacast"          => PentaCast,
+                "prismaticstrike"    => Prismatic,
+                "autorebuff"         => AutoRebuff,
+                "infinitecasting"    => InfiniteCasting,
+                "asheronsfavor"      => AsheronsFavor,
+                "artisans"           => Artisans,
+                "essencerefill"      => EssenceRefill,
+                "universalsummoning" => UniversalSummoning,
+                _                    => null
             };
 
             if (block == null) { found = false; return null; }
@@ -108,13 +123,18 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public static void ResetAll()
         {
-            ManaBarrier.Reset();    PersistBlock("manabarrier",    ManaBarrier);
-            ExplosiveArrow.Reset(); PersistBlock("explosivearrow", ExplosiveArrow);
-            Shrapnel.Reset();       PersistBlock("shrapnel",       Shrapnel);
-            Agony.Reset();          PersistBlock("agony",          Agony);
-            PentaCast.Reset();      PersistBlock("pentacast",      PentaCast);
-            Prismatic.Reset();      PersistBlock("prismaticstrike",Prismatic);
-            AutoRebuff.Reset();     PersistBlock("autorebuff",     AutoRebuff);
+            ManaBarrier.Reset();        PersistBlock("manabarrier",        ManaBarrier);
+            ExplosiveArrow.Reset();     PersistBlock("explosivearrow",     ExplosiveArrow);
+            Shrapnel.Reset();           PersistBlock("shrapnel",           Shrapnel);
+            Agony.Reset();              PersistBlock("agony",              Agony);
+            PentaCast.Reset();          PersistBlock("pentacast",          PentaCast);
+            Prismatic.Reset();          PersistBlock("prismaticstrike",    Prismatic);
+            AutoRebuff.Reset();         PersistBlock("autorebuff",         AutoRebuff);
+            InfiniteCasting.Reset();    PersistBlock("infinitecasting",    InfiniteCasting);
+            AsheronsFavor.Reset();      PersistBlock("asheronsfavor",      AsheronsFavor);
+            Artisans.Reset();           PersistBlock("artisans",           Artisans);
+            EssenceRefill.Reset();      PersistBlock("essencerefill",      EssenceRefill);
+            UniversalSummoning.Reset(); PersistBlock("universalsummoning", UniversalSummoning);
         }
 
         /// <summary>
@@ -125,13 +145,18 @@ namespace ACE.Server.WorldObjects
         {
             switch (charmName)
             {
-                case "manabarrier":    ManaBarrier.Reset();    PersistBlock("manabarrier",    ManaBarrier);    return true;
-                case "explosivearrow": ExplosiveArrow.Reset(); PersistBlock("explosivearrow", ExplosiveArrow); return true;
-                case "shrapnel":       Shrapnel.Reset();       PersistBlock("shrapnel",       Shrapnel);       return true;
-                case "agony":          Agony.Reset();          PersistBlock("agony",          Agony);          return true;
-                case "pentacast":      PentaCast.Reset();      PersistBlock("pentacast",      PentaCast);      return true;
-                case "prismaticstrike":Prismatic.Reset();      PersistBlock("prismaticstrike",Prismatic);      return true;
-                case "autorebuff":     AutoRebuff.Reset();     PersistBlock("autorebuff",     AutoRebuff);     return true;
+                case "manabarrier":        ManaBarrier.Reset();        PersistBlock("manabarrier",        ManaBarrier);        return true;
+                case "explosivearrow":     ExplosiveArrow.Reset();     PersistBlock("explosivearrow",     ExplosiveArrow);     return true;
+                case "shrapnel":           Shrapnel.Reset();           PersistBlock("shrapnel",           Shrapnel);           return true;
+                case "agony":              Agony.Reset();              PersistBlock("agony",              Agony);              return true;
+                case "pentacast":          PentaCast.Reset();          PersistBlock("pentacast",          PentaCast);          return true;
+                case "prismaticstrike":    Prismatic.Reset();          PersistBlock("prismaticstrike",    Prismatic);          return true;
+                case "autorebuff":         AutoRebuff.Reset();         PersistBlock("autorebuff",         AutoRebuff);         return true;
+                case "infinitecasting":    InfiniteCasting.Reset();    PersistBlock("infinitecasting",    InfiniteCasting);    return true;
+                case "asheronsfavor":      AsheronsFavor.Reset();      PersistBlock("asheronsfavor",      AsheronsFavor);      return true;
+                case "artisans":           Artisans.Reset();           PersistBlock("artisans",           Artisans);           return true;
+                case "essencerefill":      EssenceRefill.Reset();      PersistBlock("essencerefill",      EssenceRefill);      return true;
+                case "universalsummoning": UniversalSummoning.Reset(); PersistBlock("universalsummoning", UniversalSummoning); return true;
                 default: return false;
             }
         }
@@ -140,14 +165,19 @@ namespace ACE.Server.WorldObjects
         {
             return charmName switch
             {
-                "manabarrier"     => ManaBarrier.Dump(),
-                "explosivearrow"  => ExplosiveArrow.Dump(),
-                "shrapnel"        => Shrapnel.Dump(),
-                "agony"           => Agony.Dump(),
-                "pentacast"       => PentaCast.Dump(),
-                "prismaticstrike" => Prismatic.Dump(),
-                "autorebuff"      => AutoRebuff.Dump(),
-                _                 => null
+                "manabarrier"        => ManaBarrier.Dump(),
+                "explosivearrow"     => ExplosiveArrow.Dump(),
+                "shrapnel"           => Shrapnel.Dump(),
+                "agony"              => Agony.Dump(),
+                "pentacast"          => PentaCast.Dump(),
+                "prismaticstrike"    => Prismatic.Dump(),
+                "autorebuff"         => AutoRebuff.Dump(),
+                "infinitecasting"    => InfiniteCasting.Dump(),
+                "asheronsfavor"      => AsheronsFavor.Dump(),
+                "artisans"           => Artisans.Dump(),
+                "essencerefill"      => EssenceRefill.Dump(),
+                "universalsummoning" => UniversalSummoning.Dump(),
+                _                    => null
             };
         }
 
@@ -155,14 +185,19 @@ namespace ACE.Server.WorldObjects
         {
             return charmName switch
             {
-                "manabarrier"     => ManaBarrier.Help(),
-                "explosivearrow"  => ExplosiveArrow.Help(),
-                "shrapnel"        => Shrapnel.Help(),
-                "agony"           => Agony.Help(),
-                "pentacast"       => PentaCast.Help(),
-                "prismaticstrike" => Prismatic.Help(),
-                "autorebuff"      => AutoRebuff.Help(),
-                _                 => null
+                "manabarrier"        => ManaBarrier.Help(),
+                "explosivearrow"     => ExplosiveArrow.Help(),
+                "shrapnel"           => Shrapnel.Help(),
+                "agony"              => Agony.Help(),
+                "pentacast"          => PentaCast.Help(),
+                "prismaticstrike"    => Prismatic.Help(),
+                "autorebuff"         => AutoRebuff.Help(),
+                "infinitecasting"    => InfiniteCasting.Help(),
+                "asheronsfavor"      => AsheronsFavor.Help(),
+                "artisans"           => Artisans.Help(),
+                "essencerefill"      => EssenceRefill.Help(),
+                "universalsummoning" => UniversalSummoning.Help(),
+                _                    => null
             };
         }
 
@@ -222,14 +257,19 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
 
         private static ICharmBlock GetBlock(string charmName) => charmName switch
         {
-            "manabarrier"     => ManaBarrier,
-            "explosivearrow"  => ExplosiveArrow,
-            "shrapnel"        => Shrapnel,
-            "agony"           => Agony,
-            "pentacast"       => PentaCast,
-            "prismaticstrike" => Prismatic,
-            "autorebuff"      => AutoRebuff,
-            _                 => null
+            "manabarrier"        => ManaBarrier,
+            "explosivearrow"     => ExplosiveArrow,
+            "shrapnel"           => Shrapnel,
+            "agony"              => Agony,
+            "pentacast"          => PentaCast,
+            "prismaticstrike"    => Prismatic,
+            "autorebuff"         => AutoRebuff,
+            "infinitecasting"    => InfiniteCasting,
+            "asheronsfavor"      => AsheronsFavor,
+            "artisans"           => Artisans,
+            "essencerefill"      => EssenceRefill,
+            "universalsummoning" => UniversalSummoning,
+            _                    => null
         };
 
         // ─────────────────────────────────────────────────────────────────────
@@ -618,6 +658,141 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
 
             public string Dump() =>
                 $"[pentacast] enabled={B(Enabled)} targets={Targets} range={F(Range)}\n";
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  Infinite Casting
+        // ─────────────────────────────────────────────────────────────────────
+
+        public sealed class InfiniteCastingBlock : ICharmBlock
+        {
+            public bool Enabled { get; private set; } = true;
+            public void Reset() { Enabled = true; }
+
+            public string TrySet(string key, string value)
+            {
+                if (key is "enabled" or "on" or "off" or "true" or "false")
+                {
+                    var bKey = key == "enabled" ? value : key;
+                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
+                    Enabled = bv; return $"infinitecasting.enabled → {B(Enabled)}";
+                }
+                return null;
+            }
+
+            public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
+            public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
+            public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
+            public string Help() => "[infinitecasting] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
+            public string Dump() => $"[infinitecasting] enabled={B(Enabled)} (no other tunables yet)\n";
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  Asheron's Favor
+        // ─────────────────────────────────────────────────────────────────────
+
+        public sealed class AsheronsFavorBlock : ICharmBlock
+        {
+            public bool Enabled { get; private set; } = true;
+            public void Reset() { Enabled = true; }
+
+            public string TrySet(string key, string value)
+            {
+                if (key is "enabled" or "on" or "off" or "true" or "false")
+                {
+                    var bKey = key == "enabled" ? value : key;
+                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
+                    Enabled = bv; return $"asheronsfavor.enabled → {B(Enabled)}";
+                }
+                return null;
+            }
+
+            public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
+            public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
+            public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
+            public string Help() => "[asheronsfavor] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (tier health/armor values — pending review)";
+            public string Dump() => $"[asheronsfavor] enabled={B(Enabled)} (tier values pending review)\n";
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  Artisan's Charm
+        // ─────────────────────────────────────────────────────────────────────
+
+        public sealed class ArtisansBlock : ICharmBlock
+        {
+            public bool Enabled { get; private set; } = true;
+            public void Reset() { Enabled = true; }
+
+            public string TrySet(string key, string value)
+            {
+                if (key is "enabled" or "on" or "off" or "true" or "false")
+                {
+                    var bKey = key == "enabled" ? value : key;
+                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
+                    Enabled = bv; return $"artisans.enabled → {B(Enabled)}";
+                }
+                return null;
+            }
+
+            public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
+            public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
+            public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
+            public string Help() => "[artisans] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
+            public string Dump() => $"[artisans] enabled={B(Enabled)} (no other tunables yet)\n";
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  Summon Essence Refill (Pet Device Pyreal Auto-Refill)
+        // ─────────────────────────────────────────────────────────────────────
+
+        public sealed class EssenceRefillBlock : ICharmBlock
+        {
+            public bool Enabled { get; private set; } = true;
+            public void Reset() { Enabled = true; }
+
+            public string TrySet(string key, string value)
+            {
+                if (key is "enabled" or "on" or "off" or "true" or "false")
+                {
+                    var bKey = key == "enabled" ? value : key;
+                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
+                    Enabled = bv; return $"essencerefill.enabled → {B(Enabled)}";
+                }
+                return null;
+            }
+
+            public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
+            public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
+            public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
+            public string Help() => "[essencerefill] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (pyreal cost configured via ServerConfig)";
+            public string Dump() => $"[essencerefill] enabled={B(Enabled)} (pyreal cost in ServerConfig)\n";
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  Universal Summoning Mastery
+        // ─────────────────────────────────────────────────────────────────────
+
+        public sealed class UniversalSummoningBlock : ICharmBlock
+        {
+            public bool Enabled { get; private set; } = true;
+            public void Reset() { Enabled = true; }
+
+            public string TrySet(string key, string value)
+            {
+                if (key is "enabled" or "on" or "off" or "true" or "false")
+                {
+                    var bKey = key == "enabled" ? value : key;
+                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
+                    Enabled = bv; return $"universalsummoning.enabled → {B(Enabled)}";
+                }
+                return null;
+            }
+
+            public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
+            public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
+            public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
+            public string Help() => "[universalsummoning] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
+            public string Dump() => $"[universalsummoning] enabled={B(Enabled)} (no other tunables yet)\n";
         }
     }
 }

@@ -45,22 +45,49 @@ namespace ACE.Server.Command.Handlers
             ["prismatic strike"]  = "prismaticstrike",
             ["prismatic"]         = "prismaticstrike",
 
-            ["autorebuff"]        = "autorebuff",
-            ["auto rebuff"]       = "autorebuff",
-            ["auto-rebuff"]       = "autorebuff",
-            ["auto rebuffing"]    = "autorebuff",
+            ["universalsummoning"]    = "universalsummoning",
+            ["universal summoning"]   = "universalsummoning",
+            ["universal summoning mastery"] = "universalsummoning",
+
+            ["autorebuff"]            = "autorebuff",
+            ["auto rebuff"]           = "autorebuff",
+            ["auto-rebuff"]           = "autorebuff",
+            ["auto rebuffing"]        = "autorebuff",
+
+            ["infinitecasting"]       = "infinitecasting",
+            ["infinite casting"]      = "infinitecasting",
+            ["infinite casting stone"] = "infinitecasting",
+
+            ["asheronsfavor"]         = "asheronsfavor",
+            ["asherons favor"]        = "asheronsfavor",
+            ["asheron's favor"]       = "asheronsfavor",
+
+            ["artisans"]              = "artisans",
+            ["artisan"]               = "artisans",
+            ["artisans charm"]        = "artisans",
+            ["artisan's charm"]       = "artisans",
+
+            ["essencerefill"]         = "essencerefill",
+            ["essence refill"]        = "essencerefill",
+            ["summon essence refill"] = "essencerefill",
+            ["pyreal refill"]         = "essencerefill",
         };
 
         // Brief descriptions shown by /charms and /charm (no args)
         private static readonly string CharmList =
             "=== Available Charms ===\n" +
-            "  manabarrier      — Drains mana instead of taking damage. Higher tier = more efficient.\n" +
-            "  explosivearrow   — Arrows detonate on hit, dealing AOE blast damage to nearby enemies.\n" +
-            "  shrapnel         — Rocky Shrapnel: transforms incoming tectonic spells into physical AoE.\n" +
-            "  agony            — Ring of Agony: transforms incoming tectonic spells into fire AoE.\n" +
-            "  pentacast        — Bounces spells to additional nearby targets on cast.\n" +
-            "  prismaticstrike  — Melee attacks apply random elemental rends to the target.\n" +
-            "  autorebuff       — Automatically re-applies expiring beneficial buffs.\n" +
+            "  manabarrier          — Drains mana instead of taking damage. Higher tier = more efficient.\n" +
+            "  explosivearrow       — Arrows detonate on hit, dealing AOE blast damage to nearby enemies.\n" +
+            "  shrapnel             — Rocky Shrapnel: transforms incoming tectonic spells into physical AoE.\n" +
+            "  agony                — Ring of Agony: transforms incoming tectonic spells into fire AoE.\n" +
+            "  pentacast            — Bounces spells to additional nearby targets on cast.\n" +
+            "  prismaticstrike      — Melee attacks apply random elemental rends to the target.\n" +
+            "  autorebuff           — Automatically re-applies expiring beneficial buffs.\n" +
+            "  infinitecasting      — Removes mana cost when casting spells.\n" +
+            "  asheronsfavor        — Grants Health% and Natural Armor bonuses. Higher tier = larger bonus.\n" +
+            "  artisans             — Provides crafting and tinkering bonuses.\n" +
+            "  essencerefill        — Pays pyreals to automatically refill empty summoning essence charges.\n" +
+            "  universalsummoning   — Bypasses summoning mastery skill checks for any pet device.\n" +
             "\nUse /charm <name> to see current settings and all adjustable keys.";
 
         // ── /charms ──────────────────────────────────────────────────────────
