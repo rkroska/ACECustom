@@ -60,21 +60,8 @@ namespace ACE.Server.WorldObjects
             if (!HasManaBarrier || amount <= 0 || Mana == null || Mana.Current <= 0)
                 return result;
 
-            // Read the per-damage-type ratio from CharmSettingsManager (live, tunable at runtime)
-            var mb = CharmSettingsManager.ManaBarrier;
-            var ratio = damageType switch
-            {
-                DamageType.Slash    => mb.Slash,
-                DamageType.Pierce   => mb.Pierce,
-                DamageType.Bludgeon => mb.Bludgeon,
-                DamageType.Fire     => mb.Fire,
-                DamageType.Cold     => mb.Cold,
-                DamageType.Acid     => mb.Acid,
-                DamageType.Electric => mb.Electric,
-                DamageType.Health   => mb.Health,
-                DamageType.Nether   => mb.Nether,
-                _                   => mb.Slash,   // default to Slash ratio for unknown types
-            };
+            // Read the single global ratio from CharmSettingsManager (tunable via /charm manabarrier ratio <value>)
+            var ratio = CharmSettingsManager.ManaBarrier.Ratio;
 
             // Apply level-based or property-based scaling
             ratio *= GetManaBarrierRatioMod();
