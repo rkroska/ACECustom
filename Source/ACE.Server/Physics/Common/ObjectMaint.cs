@@ -509,14 +509,17 @@ namespace ACE.Server.Physics.Common
                     return false;
 
                 var wasKnown = KnownObjects.ContainsKey(obj.ID);
-                var dist2D = (float)Math.Sqrt(PhysicsObj.Position.Distance2DSquared(obj.Position));
+                var dist2DSq = PhysicsObj.Position.Distance2DSquared(obj.Position);
 
                 // Always clamp distance — do not skip when already in KnownObjects (AddTrackedObject used to
                 // call AddKnownObject first, which bypassed clamp and sent CreateObject at 9-LB PVS range).
-                if (InitialClamp && PhysicsObj.Position.Distance2DSquared(obj.Position) > InitialClamp_DistSq)
+                if (InitialClamp && dist2DSq > InitialClamp_DistSq)
                 {
-                    if (PhysicsObj.IsPlayer && PhysicsObj.WeenieObj.WorldObject is Player viewer)
+                    if (PhysicsObj.IsPlayer && PhysicsObj.WeenieObj.WorldObject is Player viewer && ServerConfig.visibility_create_object_diag_verbose.Value)
+                    {
+                        var dist2D = (float)Math.Sqrt(dist2DSq);
                         VisibilityCreateObjectDiag.LogAddVisibleObject(viewer, obj, added: false, rejectedByClamp: true, dist2D, wasKnown, wasVisible);
+                    }
 
                     return false;
                 }
@@ -527,8 +530,11 @@ namespace ACE.Server.Physics.Common
                 if (obj.WeenieObj.IsMonster)
                     obj.ObjMaint.AddVisibleTarget(PhysicsObj, false);
 
-                if (PhysicsObj.IsPlayer && PhysicsObj.WeenieObj.WorldObject is Player viewerAdded)
+                if (PhysicsObj.IsPlayer && PhysicsObj.WeenieObj.WorldObject is Player viewerAdded && ServerConfig.visibility_create_object_diag_verbose.Value)
+                {
+                    var dist2D = (float)Math.Sqrt(dist2DSq);
                     VisibilityCreateObjectDiag.LogAddVisibleObject(viewerAdded, obj, added: true, rejectedByClamp: false, dist2D, wasKnown, wasVisible);
+                }
 
                 return true;
             }

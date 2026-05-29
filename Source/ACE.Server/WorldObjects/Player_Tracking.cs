@@ -80,9 +80,9 @@ namespace ACE.Server.WorldObjects
             if (!string.IsNullOrEmpty(createObjectPath))
             {
                 var dist2D = VisibilityCreateObjectDiag.Distance2D(this, worldObject);
-                var wasKnown = worldObject.PhysicsObj != null && ObjMaint.KnownObjectsContainsValue(worldObject.PhysicsObj);
+                var clampWouldBlock = ObjectMaint.InitialClamp && dist2D > ObjectMaint.InitialClamp_Dist;
                 VisibilityCreateObjectDiag.LogCreateObject(this, worldObject, createObjectPath, dist2D,
-                    clampWouldApply: !wasKnown, extra: delay ? "delayed=true" : null);
+                    clampWouldApply: clampWouldBlock, extra: delay ? "delayed=true" : null);
             }
 
             Session.Network.EnqueueSend(new GameMessageCreateObject(worldObject, Adminvision, Adminvision));
@@ -202,29 +202,34 @@ namespace ACE.Server.WorldObjects
                 return;
 
             var myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
-            var visible = ObjectMaint.InitialClamp
-                ? ObjMaint.GetVisibleObjectsDist(PhysicsObj.CurCell, ObjectMaint.VisibleObjectType.All, myVar)
-                : ObjMaint.GetVisibleObjects(PhysicsObj.CurCell, ObjectMaint.VisibleObjectType.All, myVar);
+            var allCandidates = ObjMaint.GetVisibleObjects(PhysicsObj.CurCell, ObjectMaint.VisibleObjectType.All, myVar);
 
             var resendCount = 0;
             var resendBeyondClamp = 0;
             var maxResendDist2D = 0f;
 
-            foreach (var physObj in visible)
+            foreach (var physObj in allCandidates)
             {
                 var wo = physObj?.WeenieObj?.WorldObject;
                 if (wo == null || wo.Guid == Guid)
                     continue;
 
+                var dist2D = VisibilityCreateObjectDiag.Distance2D(this, wo);
+                var beyondClamp = ObjectMaint.InitialClamp && dist2D > ObjectMaint.InitialClamp_Dist;
+
+                if (beyondClamp)
+                {
+                    if (ObjMaint.KnownObjectsContainsKey(wo.Guid.Full))
+                        resendBeyondClamp++;
+                    continue;
+                }
+
                 if (!TryResendCreateObjectForStaleKnown(wo))
                     continue;
 
                 resendCount++;
-                var dist2D = VisibilityCreateObjectDiag.Distance2D(this, wo);
                 if (dist2D > maxResendDist2D)
                     maxResendDist2D = dist2D;
-                if (dist2D > ObjectMaint.InitialClamp_Dist)
-                    resendBeyondClamp++;
             }
 
             var peerPlayers = ObjectMaint.InitialClamp
@@ -238,7 +243,7 @@ namespace ACE.Server.WorldObjects
                 viewer.TryResendCreateObjectForStaleKnown(this);
             }
 
-            VisibilityCreateObjectDiag.LogReconcileSummary(this, visible.Count, resendCount, resendBeyondClamp, maxResendDist2D);
+            VisibilityCreateObjectDiag.LogReconcileSummary(this, allCandidates.Count, resendCount, resendBeyondClamp, maxResendDist2D);
         }
 
         /// <summary>

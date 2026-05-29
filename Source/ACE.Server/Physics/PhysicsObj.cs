@@ -2166,7 +2166,7 @@ namespace ACE.Server.Physics
             var visibleObjects = ObjMaint.GetVisibleObjects(CurCell, ObjectMaint.VisibleObjectType.All, this.Position.Variation);
 
             var maxCandidateDist2D = 0f;
-            if (IsPlayer)
+            if (IsPlayer && ServerConfig.visibility_create_object_diag_verbose.Value)
             {
                 foreach (var o in visibleObjects)
                 {
