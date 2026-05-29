@@ -214,9 +214,6 @@ namespace ACE.Server.Command.Handlers
         {
             PlayerManager.BroadcastToAuditChannel(session?.Player, msg);
 
-            if (session?.Player != null)
-                Console.WriteLine(msg);
-
             if (session != null)
                 session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
         }
