@@ -61,7 +61,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Sends a network message to player for CreateObject, if applicable
         /// </summary>
-        public void TrackObject(WorldObject worldObject, bool delay = false)
+        public void TrackObject(WorldObject worldObject, bool delay = false, string createObjectPath = null)
         {
             //Console.WriteLine($"TrackObject({worldObject.Name}, {delay})");
 
@@ -76,6 +76,14 @@ namespace ACE.Server.WorldObjects
                     PrestigeManager.GetEffectiveVariationForVisibility(this),
                     PrestigeManager.GetEffectiveVariationForVisibility(worldObject)))
                 return;
+
+            if (!string.IsNullOrEmpty(createObjectPath))
+            {
+                var dist2D = VisibilityCreateObjectDiag.Distance2D(this, worldObject);
+                var wasKnown = worldObject.PhysicsObj != null && ObjMaint.KnownObjectsContainsValue(worldObject.PhysicsObj);
+                VisibilityCreateObjectDiag.LogCreateObject(this, worldObject, createObjectPath, dist2D,
+                    clampWouldApply: !wasKnown, extra: delay ? "delayed=true" : null);
+            }
 
             Session.Network.EnqueueSend(new GameMessageCreateObject(worldObject, Adminvision, Adminvision));
 
@@ -138,10 +146,13 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            ObjMaint.AddKnownObject(worldObject.PhysicsObj);
-            ObjMaint.AddVisibleObject(worldObject.PhysicsObj);
+            // Match AddVisibleObjects: visible + distance clamp before known, or clamp is bypassed.
+            if (!ObjMaint.AddVisibleObject(worldObject.PhysicsObj))
+                return false;
 
-            TrackObject(worldObject);
+            ObjMaint.AddKnownObject(worldObject.PhysicsObj);
+
+            TrackObject(worldObject, createObjectPath: "AddTrackedObject");
             return true;
         }
 
@@ -150,29 +161,34 @@ namespace ACE.Server.WorldObjects
         /// <see cref="AddTrackedObject"/> early-out would skip CO forever. Uses <see cref="TrackObject"/> directly,
         /// same as <see cref="Physics.PhysicsObj.enqueue_objs"/> — not gated on AddTrackedObject.
         /// </summary>
-        private void TryResendCreateObjectForStaleKnown(WorldObject worldObject)
+        private bool TryResendCreateObjectForStaleKnown(WorldObject worldObject)
         {
             if (worldObject == null || worldObject.Guid == Guid || worldObject.PhysicsObj == null)
-                return;
+                return false;
 
             if (!ObjMaint.KnownObjectsContainsValue(worldObject.PhysicsObj))
             {
                 AddTrackedObject(worldObject);
-                return;
+                return false;
             }
 
             if (!PrestigeManager.SameVariationForVisibility(
                     PrestigeManager.GetEffectiveVariationForVisibility(this),
                     PrestigeManager.GetEffectiveVariationForVisibility(worldObject)))
-                return;
+                return false;
+
+            var dist2D = VisibilityCreateObjectDiag.Distance2D(this, worldObject);
+            if (ObjectMaint.InitialClamp && dist2D > ObjectMaint.InitialClamp_Dist)
+                return false;
 
             var key = worldObject.Guid.Full;
             var now = Environment.TickCount64;
             if (_lastStaleKnownResendMs.TryGetValue(key, out var last) && now - last < StaleKnownResendDebounceMs)
-                return;
+                return false;
 
-            TrackObject(worldObject);
+            TrackObject(worldObject, createObjectPath: "StaleKnownResend_#467");
             _lastStaleKnownResendMs[key] = now;
+            return true;
         }
 
         /// <summary>
@@ -186,7 +202,13 @@ namespace ACE.Server.WorldObjects
                 return;
 
             var myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
-            var visible = ObjMaint.GetVisibleObjects(PhysicsObj.CurCell, ObjectMaint.VisibleObjectType.All, myVar);
+            var visible = ObjectMaint.InitialClamp
+                ? ObjMaint.GetVisibleObjectsDist(PhysicsObj.CurCell, ObjectMaint.VisibleObjectType.All, myVar)
+                : ObjMaint.GetVisibleObjects(PhysicsObj.CurCell, ObjectMaint.VisibleObjectType.All, myVar);
+
+            var resendCount = 0;
+            var resendBeyondClamp = 0;
+            var maxResendDist2D = 0f;
 
             foreach (var physObj in visible)
             {
@@ -194,10 +216,20 @@ namespace ACE.Server.WorldObjects
                 if (wo == null || wo.Guid == Guid)
                     continue;
 
-                TryResendCreateObjectForStaleKnown(wo);
+                if (!TryResendCreateObjectForStaleKnown(wo))
+                    continue;
+
+                resendCount++;
+                var dist2D = VisibilityCreateObjectDiag.Distance2D(this, wo);
+                if (dist2D > maxResendDist2D)
+                    maxResendDist2D = dist2D;
+                if (dist2D > ObjectMaint.InitialClamp_Dist)
+                    resendBeyondClamp++;
             }
 
-            var peerPlayers = ObjMaint.GetVisibleObjects(PhysicsObj.CurCell, ObjectMaint.VisibleObjectType.Players, myVar);
+            var peerPlayers = ObjectMaint.InitialClamp
+                ? ObjMaint.GetVisibleObjectsDist(PhysicsObj.CurCell, ObjectMaint.VisibleObjectType.Players, myVar)
+                : ObjMaint.GetVisibleObjects(PhysicsObj.CurCell, ObjectMaint.VisibleObjectType.Players, myVar);
             foreach (var physObj in peerPlayers)
             {
                 if (physObj?.WeenieObj?.WorldObject is not Player viewer || viewer.Guid == Guid)
@@ -205,6 +237,8 @@ namespace ACE.Server.WorldObjects
 
                 viewer.TryResendCreateObjectForStaleKnown(this);
             }
+
+            VisibilityCreateObjectDiag.LogReconcileSummary(this, visible.Count, resendCount, resendBeyondClamp, maxResendDist2D);
         }
 
         /// <summary>
