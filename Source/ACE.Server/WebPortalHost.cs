@@ -56,21 +56,9 @@ namespace ACE.Server.Web
                 var secret = Secret;
 
 
-                // Environment-Aware Resolution:
-                // Development fallback: Crawl for Source tree dist (Vite build)
-                // Production fallback: Use binary-local 'wwwroot'
-
-                string? distPath = null;
-                if (isDevelopment || isDebuggerAttached)
-                {
-                    distPath = FindSourceDist();
-                }
-
-                // If not in dev, or crawler failed, look for binary-local wwwroot
-                if (string.IsNullOrEmpty(distPath))
-                {
-                    distPath = Path.Combine(AppContext.BaseDirectory, "wwwroot");
-                }
+                // Prefer ClientApp/dist from the source tree when present (npm run build).
+                // Falls back to binary-local wwwroot for deployments that only ship static assets.
+                var distPath = ResolveWebPortalAssetPath();
 
                 // Fail Fast: If the assets are missing, the Web Portal cannot function.
                 if (!Directory.Exists(distPath))
@@ -235,6 +223,36 @@ namespace ACE.Server.Web
             }
         }
 
+        /// <summary>
+        /// Locates portal static files. Uses source-tree <c>ClientApp/dist</c> when built (local dev);
+        /// otherwise uses <c>wwwroot</c> next to the server binary (published deployments).
+        /// </summary>
+        private static string ResolveWebPortalAssetPath()
+        {
+            var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+            var sourceDist = FindSourceDist();
+
+            if (sourceDist != null && File.Exists(Path.Combine(sourceDist, "index.html")))
+            {
+                if (Directory.Exists(wwwroot) && File.Exists(Path.Combine(wwwroot, "index.html")))
+                {
+                    var sourceBuilt = File.GetLastWriteTimeUtc(Path.Combine(sourceDist, "index.html"));
+                    var wwwrootBuilt = File.GetLastWriteTimeUtc(Path.Combine(wwwroot, "index.html"));
+                    if (wwwrootBuilt > sourceBuilt)
+                    {
+                        log.Info($"[WEB PORTAL] Using wwwroot (newer than source dist): {wwwroot}");
+                        return wwwroot;
+                    }
+                }
+
+                log.Info($"[WEB PORTAL] Using source-tree ClientApp/dist: {sourceDist}");
+                return sourceDist;
+            }
+
+            log.Info($"[WEB PORTAL] Using binary wwwroot: {wwwroot}");
+            return wwwroot;
+        }
+
         private static string? FindSourceDist()
         {
             // Crawl up to find the project root (Source/ACE.WebPortal/ClientApp)
@@ -243,9 +261,13 @@ namespace ACE.Server.Web
             {
                 // Path 1: Source tree is a child of the current directory (Development)
                 // Looking for Source/ACE.WebPortal/ClientApp
-                var projectRoot = Path.Combine(dir.FullName, "ACE.WebPortal", "ClientApp");
+                var projectRoot = Path.Combine(dir.FullName, "Source", "ACE.WebPortal", "ClientApp");
                 if (Directory.Exists(projectRoot))
                     return Path.Combine(projectRoot, "dist");
+
+                var legacyProjectRoot = Path.Combine(dir.FullName, "ACE.WebPortal", "ClientApp");
+                if (Directory.Exists(legacyProjectRoot))
+                    return Path.Combine(legacyProjectRoot, "dist");
 
                 // Path 2: Source tree is in a peer directory 'Server/Source' (Production Build Target)
                 // Looking for Server/Source/ACE.WebPortal/ClientApp

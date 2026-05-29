@@ -299,6 +299,8 @@ AppVeyor/
 Source/ACE.Server/config.js
 Source/ACE.Server/Config.js
 Database/tools/password.txt
+Database/tools/.env.readonly
+Database/tools/.env.write
 Source/ACE.Server/log4net.config
 docker.env
 docker-compose.yml

@@ -223,6 +223,53 @@ namespace ACE.Server.Controllers
             return Ok(result);
         }
 
+        [HttpGet("lookup/{id}")]
+        public async Task<IActionResult> Lookup(uint id)
+        {
+            if (!IsAdmin)
+                return Unauthorized();
+
+            var stub = DatabaseManager.Shard.BaseDatabase.GetCharacterStubByGuid(id);
+            if (stub == null)
+                return NotFound();
+
+            var player = PlayerManager.FindByGuid(id);
+            var isAdmin = (player?.Account?.AccessLevel ?? 0) > 0;
+            var charName = stub.Name;
+            if (isAdmin && !charName.StartsWith("+"))
+                charName = $"+{charName}";
+
+            var online = PlayerManager.GetOnlinePlayer(id);
+            WorldLocationDto location = null;
+            if (online != null)
+            {
+                var lbRaw = online.Location.LandblockId.Raw;
+                var variation = online.Location.Variation;
+                var coords = online.Location.GetMapCoordStr();
+                var isDungeon = online.CurrentLandblock?.IsDungeon ?? false;
+                var res = await LocationResolver.ResolveLocationAsync(lbRaw, variation, isDungeon);
+                location = new WorldLocationDto
+                {
+                    Landblock = lbRaw,
+                    Variation = variation,
+                    Coordinates = coords,
+                    IsDungeon = isDungeon,
+                    CategoryName = res.CategoryName,
+                    CategoryOrdinal = res.CategoryOrdinal,
+                    Name = res.Name,
+                };
+            }
+
+            return Ok(new PlayerStubDto
+            {
+                Guid = stub.Id,
+                Name = charName,
+                IsOnline = online != null,
+                IsAdmin = isAdmin,
+                Location = location,
+            });
+        }
+
         [HttpGet("search-all/{name}")]
         public async Task<IActionResult> SearchAll(string name)
         {

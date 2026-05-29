@@ -4,11 +4,16 @@ import WorldViewer from './components/WorldViewer'
 import PropertyExplorer from './components/PropertyExplorer'
 import LookupTables from './components/LookupTables'
 import ServerParams from './components/ServerParams'
+import ServerEvents from './components/ServerEvents'
+import ItemSearch from './components/ItemSearch'
+import StampSearch from './components/StampSearch'
 import LoginPage from './components/LoginPage'
 import CharacterList from './components/CharacterList'
 import CharacterDetail from './components/CharacterDetail'
 import { useAuthStore } from './store/useAuthStore'
 import PlayerList from './components/PlayerList'
+import CombatCalculator from './components/CombatCalculator'
+import QuestBuilder from './components/quest-builder/QuestBuilder'
 import MainLayout from './layouts/MainLayout'
 import { FileCode, Terminal, Activity } from 'lucide-react'
 
@@ -54,6 +59,11 @@ function App() {
             <Route path="/properties" element={<PropertyExplorer navigateToEnum={(name) => window.location.hash = `#/lookup?enum=${name}`} />} />
             <Route path="/lookup" element={<LookupTables />} />
             <Route path="/params" element={<ServerParams />} />
+            <Route path="/events" element={<ServerEvents />} />
+            <Route path="/items" element={<ItemSearch />} />
+            <Route path="/stamps" element={<StampSearch />} />
+            <Route path="/combat-calculator" element={<CombatCalculator />} />
+            <Route path="/quest-builder" element={<QuestBuilder />} />
             
             {/* Modules Under Construction */}
             <Route path="/weenie" element={<ConstructionPlaceholder icon={<FileCode className="w-8 h-8" />} label="Weenie Editor" />} />

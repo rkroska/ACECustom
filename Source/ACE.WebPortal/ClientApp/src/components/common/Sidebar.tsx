@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { User, Users, Globe, Search, Book, FileCode, Terminal, Settings, LogOut } from 'lucide-react';
+import { User, Users, Globe, Search, Book, FileCode, Terminal, Settings, LogOut, Swords, Calendar, Package, ScrollText, GitBranch } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { getRoleName } from '../../utils/auth';
 import { cn } from '../../utils/cn';
@@ -40,8 +40,12 @@ const Sidebar: React.FC = () => {
 
             <NavSection label="Content Tools" />
             <div className="space-y-1">
+              <SidebarItem to="/combat-calculator" icon={<Swords className="w-4 h-4" />} label="Combat Calculator" />
               <SidebarItem to="/properties" icon={<Search className="w-4 h-4" />} label="Property Explorer" />
               <SidebarItem to="/lookup" icon={<Book className="w-4 h-4" />} label="Lookup Tables" />
+              <SidebarItem to="/items" icon={<Package className="w-4 h-4" />} label="Item Search" />
+              <SidebarItem to="/stamps" icon={<ScrollText className="w-4 h-4" />} label="Stamp Search" />
+              <SidebarItem to="/quest-builder" icon={<GitBranch className="w-4 h-4" />} label="Quest Builder" />
               <SidebarItem to="/weenie" icon={<FileCode className="w-4 h-4" />} label="Weenie Editor" />
             </div>
 
@@ -49,6 +53,7 @@ const Sidebar: React.FC = () => {
             <div className="space-y-1">
               <SidebarItem to="/console" icon={<Terminal className="w-4 h-4" />} label="Console" />
               <SidebarItem to="/params" icon={<Settings className="w-4 h-4" />} label="Server Params" />
+              <SidebarItem to="/events" icon={<Calendar className="w-4 h-4" />} label="Server Events" />
             </div>
           </>
         )}
