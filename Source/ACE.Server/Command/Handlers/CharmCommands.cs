@@ -150,12 +150,11 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
 
-                var adminName = session?.Player?.Name?.TrimStart('+') ?? "Console";
                 var displayName = GetCharmDisplayName(charmName);
                 var isEnabled = arg1 is "true" or "on";
-                var action = isEnabled ? "activated" : "deactivated";
+                var action = isEnabled ? "activated" : "disabled";
 
-                Broadcast(session, $"[CHARM] Admin {adminName} has globally {action} the {displayName} charm.");
+                Broadcast(session, $"[CHARM] {displayName} charm has been {action}.");
                 return;
             }
 
