@@ -5,6 +5,9 @@ namespace ACE.Server.WorldObjects
 {
     public static class CharmAbilityRegistry
     {
+        private static readonly log4net.ILog log =
+            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         private readonly struct AbilityEntry
         {
             public readonly Func<Player, bool> Get;
@@ -97,12 +100,15 @@ namespace ACE.Server.WorldObjects
         {
             if (Registry.TryGetValue(abilityId, out var entry))
                 entry.Set(player, enable);
+            else
+                log.Warn($"[CharmAbilityRegistry] Apply called for unregistered abilityId={abilityId} — Has* property not updated.");
 
             if (enable)
                 player.ActiveCharmLevels[abilityId] = level;
             else
                 player.ActiveCharmLevels.Remove(abilityId);
         }
+
 
         /// <summary>
         /// Returns the display name for an ability ID, or null if not found.

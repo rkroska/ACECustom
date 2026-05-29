@@ -649,38 +649,44 @@ namespace ACE.Server.WorldObjects
             var itemInfo = worldObject is Player itemPlayer ? $"Player {itemPlayer.Name}" : $"{worldObject.Name} (0x{worldObject.Guid})";
             // log.Debug($"[SAVE DEBUG] TryAddToInventory START for {itemInfo} | Target container={containerInfo} | limitToMainPackOnly={limitToMainPackOnly} | burdenCheck={burdenCheck} | placementPosition={placementPosition}");
             
-            // ── Unique Charm Constraint ──
+            // ── Unique Charm Constraint (deep guard) ──
             // Collect all ability IDs from the incoming object (or its nested contents),
             // using both the WCID registry and the IsAbilityCharm/CharmGrantsAbility data-driven
             // properties so that charm bags and non-registry charms can't bypass the rule.
-            if (GetRootOwner() is Player _rootPlayerForCharm)
+            //
+            // NOTE: TryCreateInInventoryWithNetworking (Player_Inventory.cs) has a separate
+            // shallow duplicate guard that fires first for direct pickups. This deep guard
+            // is intentionally redundant defense-in-depth — it catches charms dragged into
+            // nested bags or added via code paths that bypass TryCreateInInventory.
+            if (GetRootOwner() is Player rootPlayerForCharm)
             {
-                var _incomingAbilityIds = new System.Collections.Generic.HashSet<int>();
-                var _incomingGuids     = new System.Collections.Generic.HashSet<ObjectGuid>();
-                CollectIncomingAbilityCharms(worldObject, _incomingAbilityIds, _incomingGuids);
+                var incomingAbilityIds = new System.Collections.Generic.HashSet<int>();
+                var incomingGuids      = new System.Collections.Generic.HashSet<ObjectGuid>();
+                CollectIncomingAbilityCharms(worldObject, incomingAbilityIds, incomingGuids);
 
-                if (_incomingAbilityIds.Count > 0)
+                if (incomingAbilityIds.Count > 0)
                 {
-                    var _conflict = _rootPlayerForCharm.GetAllPossessions().FirstOrDefault(possession =>
-                        !_incomingGuids.Contains(possession.Guid) &&
+                    var conflict = rootPlayerForCharm.GetAllPossessions().FirstOrDefault(possession =>
+                        !incomingGuids.Contains(possession.Guid) &&
                         possession.OwnerId != null &&
                         possession.OwnerId != 0 &&
                         possession.IsAbilityCharm &&
                         possession.CharmGrantsAbility.HasValue &&
-                        _incomingAbilityIds.Contains(possession.CharmGrantsAbility.Value));
+                        incomingAbilityIds.Contains(possession.CharmGrantsAbility.Value));
 
-                    if (_conflict != null)
+                    if (conflict != null)
                     {
-                        var _charmName = worldObject.Name ?? "Ability Charm";
-                        var _article   = (!string.IsNullOrEmpty(_charmName) && "aeiouAEIOU".Contains(_charmName[0])) ? "an" : "a";
-                        _rootPlayerForCharm.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                            $"You already have {_article} {_charmName} in your inventory. You may only carry one at a time.",
+                        var charmName = worldObject.Name ?? "Ability Charm";
+                        var article   = (!string.IsNullOrEmpty(charmName) && "aeiouAEIOU".Contains(charmName[0])) ? "an" : "a";
+                        rootPlayerForCharm.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"You already have {article} {charmName} in your inventory. You may only carry one at a time.",
                             ChatMessageType.System));
                         container = null;
                         return false;
                     }
                 }
             }
+
 
             // bug: should be root owner
             if (this is Player player && burdenCheck)
@@ -1367,61 +1373,75 @@ namespace ACE.Server.WorldObjects
             if (item.IsAbilityCharm && item.IsCharmActivated && item.CharmGrantsAbility.HasValue)
             {
                 var actionChain = new ActionChain();
+                // 1-second delay lets recipe upgrades add the replacement charm before we deactivate.
+                // The lambda re-checks ownership and suppresses if the item is still with this player.
                 actionChain.AddDelaySeconds(1.0f);
                 actionChain.AddAction(player, ActionType.GameMessage_None, () =>
                 {
-                    if (player.Session == null) return;
-
-                    // Use GetRootOwner() — depth-bounded, consistent with TryAddToInventory
-                    var current = (item.Container as Container)?.GetRootOwner() ?? item;
-
-                    if (current is Player owner && owner.Guid == player.Guid)
-                        return; // item still with player â€” suppress deactivation
-
-                    var id = item.CharmGrantsAbility.Value;
-
-                    // Suppress if a replacement activated charm for the same ability
-                    // is already in inventory (e.g. tier-upgrade recipe: old removed, new added)
-                    var hasReplacement = player.GetAllPossessions()
-                        .Any(p => p.Guid != item.Guid
-                               && p.IsAbilityCharm
-                               && p.IsCharmActivated
-                               && p.CharmGrantsAbility == id);
-                    if (hasReplacement)
-                        return;
-
-                    var abilityName = CharmAbilityRegistry.GetDisplayName(id) ?? item.Name;
-
-                    CharmAbilityRegistry.Apply(player, id, false);
-
-                    // Only clear the item's activation flag when the new holder hasn't already
-                    // re-activated it — avoids clobbering state after a trade during the delay.
-                    var newOwner = (item.Container as Container)?.GetRootOwner() as Player;
-                    var reactivatedByNewOwner = newOwner != null
-                        && newOwner.Guid != player.Guid
-                        && item.IsCharmActivated;
-                    if (!reactivatedByNewOwner)
+                    try
                     {
-                        item.IsCharmActivated = false;
-                        item.SaveBiotaToDatabase();
+                        if (player.Session == null) return;
+
+                        // Guard: item may have been destroyed/GC'd during the 1-second window
+                        // (e.g. consumed by a recipe tick before this chain fired).
+                        // Traversing a destroyed Container graph via GetRootOwner can NRE.
+                        if (item.IsDestroyed) return;
+
+                        // Use GetRootOwner() — depth-bounded, consistent with TryAddToInventory
+                        var current = (item.Container as Container)?.GetRootOwner() ?? item;
+
+                        if (current is Player owner && owner.Guid == player.Guid)
+                            return; // item still with player — suppress deactivation
+
+                        var id = item.CharmGrantsAbility.Value;
+
+                        // Suppress if a replacement activated charm for the same ability
+                        // is already in inventory (e.g. tier-upgrade recipe: old removed, new added)
+                        var hasReplacement = player.GetAllPossessions()
+                            .Any(p => p.Guid != item.Guid
+                                   && p.IsAbilityCharm
+                                   && p.IsCharmActivated
+                                   && p.CharmGrantsAbility == id);
+                        if (hasReplacement)
+                            return;
+
+                        var abilityName = CharmAbilityRegistry.GetDisplayName(id) ?? item.Name;
+
+                        CharmAbilityRegistry.Apply(player, id, false);
+
+                        // Only clear the item's activation flag when the new holder hasn't already
+                        // re-activated it — avoids clobbering state after a trade during the delay.
+                        var newOwner = (item.Container as Container)?.GetRootOwner() as Player;
+                        var reactivatedByNewOwner = newOwner != null
+                            && newOwner.Guid != player.Guid
+                            && item.IsCharmActivated;
+                        if (!reactivatedByNewOwner)
+                        {
+                            item.IsCharmActivated = false;
+                            item.SaveBiotaToDatabase();
+                        }
+
+                        // ILT: Infinite Casting — restore client comp requirement when stone leaves inventory
+                        if (id == CharmAbilityRegistry.InfiniteCastingAbilityId)
+                        {
+                            player.SpellComponentsRequired = true;
+                            player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, true));
+                        }
+
+                        // ILT: Asheron's Favor — remove Health + Natural Armor enchantments when charm leaves inventory
+                        if (id == CharmAbilityRegistry.AsheronsFavorAbilityId)
+                            player.RemoveAsheronsFavorEnchantments();
+
+                        if (!player.Teleporting)
+                        {
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                $"Your {item.Name} has left your inventory. {abilityName} has been deactivated.",
+                                ChatMessageType.Broadcast));
+                        }
                     }
-
-                    // ILT: Infinite Casting — restore client comp requirement when stone leaves inventory
-                    if (id == CharmAbilityRegistry.InfiniteCastingAbilityId)
+                    catch (Exception ex)
                     {
-                        player.SpellComponentsRequired = true;
-                        player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, true));
-                    }
-
-                    // ILT: Asheron's Favor — remove Health + Natural Armor enchantments when charm leaves inventory
-                    if (id == CharmAbilityRegistry.AsheronsFavorAbilityId)
-                        player.RemoveAsheronsFavorEnchantments();
-
-                    if (!player.Teleporting)
-                    {
-                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                            $"Your {item.Name} has left your inventory. {abilityName} has been deactivated.",
-                            ChatMessageType.Broadcast));
+                        log.Warn($"[CharmRemoval] Exception in deferred charm-removal for {item?.Name} (guid={item?.Guid}): {ex.Message}");
                     }
                 });
                 actionChain.EnqueueChain();
@@ -1433,5 +1453,6 @@ namespace ACE.Server.WorldObjects
                     CheckAbilityCharmRemovalRecursively(player, child);
             }
         }
+
     }
 }

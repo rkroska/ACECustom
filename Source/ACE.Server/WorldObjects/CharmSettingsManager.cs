@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
@@ -308,6 +308,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
 
         private static string F(float v) => v.ToString("G", CultureInfo.InvariantCulture);
         private static string B(bool  v) => v ? "true" : "false";
+        private static string P(float v) => $"{F(v)} ({(v * 100.0f).ToString("0.0", CultureInfo.InvariantCulture)}%)";
 
         // ─────────────────────────────────────────────────────────────────────
         //  Mana Barrier
@@ -340,14 +341,14 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 switch (key)
                 {
                     case "enabled": case "on": case "off": case "true": case "false":
-                        var bKey = key == "enabled" ? value : key;
-                        if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'. Use true/on or false/off.";
-                        Enabled = bv; return $"manabarrier.enabled → {B(Enabled)}";
+                        var valueToParse = key == "enabled" ? value : key;
+                        if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'. Use true/on or false/off.";
+                        Enabled = bv; return $"manabarrier.enabled = {B(Enabled)}";
 
-                    case "ratio":  if (!ParseFloat(value, out var rv))  return $"Invalid float: '{value}'."; Ratio = rv;  return $"manabarrier.ratio → {F(Ratio)}";
-                    case "t1":     if (!ParseFloat(value, out var t1v)) return $"Invalid float: '{value}'."; T1 = t1v; return $"manabarrier.t1 → {F(T1)}";
-                    case "t2":     if (!ParseFloat(value, out var t2v)) return $"Invalid float: '{value}'."; T2 = t2v; return $"manabarrier.t2 → {F(T2)}";
-                    case "t3":     if (!ParseFloat(value, out var t3v)) return $"Invalid float: '{value}'."; T3 = t3v; return $"manabarrier.t3 → {F(T3)}";
+                    case "ratio":  if (!ParseFloat(value, out var rv))  return $"Invalid float: '{value}'."; Ratio = rv;  return $"manabarrier.ratio = {F(Ratio)}";
+                    case "t1":     if (!ParseFloat(value, out var t1v)) return $"Invalid float: '{value}'."; T1 = t1v; return $"manabarrier.t1 = {F(T1)}";
+                    case "t2":     if (!ParseFloat(value, out var t2v)) return $"Invalid float: '{value}'."; T2 = t2v; return $"manabarrier.t2 = {F(T2)}";
+                    case "t3":     if (!ParseFloat(value, out var t3v)) return $"Invalid float: '{value}'."; T3 = t3v; return $"manabarrier.t3 = {F(T3)}";
                     default: return null;
                 }
             }
@@ -394,7 +395,12 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 "  Examples: /charm manabarrier ratio 0.5  |  /charm manabarrier t3 3.0  |  /charm reset manabarrier";
 
             public string Dump() =>
-                $"[manabarrier] enabled={B(Enabled)} ratio={F(Ratio)} | tiers (dmg absorbed per mana): t1={F(T1)} t2={F(T2)} t3={F(T3)}\n";
+                "[manabarrier] settings:\n" +
+                $"  enabled: {B(Enabled)}\n" +
+                $"  ratio: {F(Ratio)}\n" +
+                $"  t1: {F(T1)}\n" +
+                $"  t2: {F(T2)}\n" +
+                $"  t3: {F(T3)}\n";
         }
 
 
@@ -431,23 +437,23 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 switch (key)
                 {
                     case "enabled": case "on": case "off": case "true": case "false":
-                        var bKey = key == "enabled" ? value : key;
-                        if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
-                        Enabled = bv; return $"explosivearrow.enabled → {B(Enabled)}";
+                        var valueToParse = key == "enabled" ? value : key;
+                        if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
+                        Enabled = bv; return $"explosivearrow.enabled = {B(Enabled)}";
 
-                    case "t1min": if (!ParseFloat(value, out var v)) return $"Invalid float."; T1Min = v; return $"explosivearrow.t1min → {F(T1Min)}";
-                    case "t1max": if (!ParseFloat(value, out var v2)) return $"Invalid float."; T1Max = v2; return $"explosivearrow.t1max → {F(T1Max)}";
-                    case "t2min": if (!ParseFloat(value, out var v3)) return $"Invalid float."; T2Min = v3; return $"explosivearrow.t2min → {F(T2Min)}";
-                    case "t2max": if (!ParseFloat(value, out var v4)) return $"Invalid float."; T2Max = v4; return $"explosivearrow.t2max → {F(T2Max)}";
-                    case "t3min": if (!ParseFloat(value, out var v5)) return $"Invalid float."; T3Min = v5; return $"explosivearrow.t3min → {F(T3Min)}";
-                    case "t3max": if (!ParseFloat(value, out var v6)) return $"Invalid float."; T3Max = v6; return $"explosivearrow.t3max → {F(T3Max)}";
-                    case "radius": if (!ParseFloat(value, out var v7)) return $"Invalid float."; Radius = v7; return $"explosivearrow.radius → {F(Radius)}";
-                    case "height": if (!ParseFloat(value, out var v8)) return $"Invalid float."; Height = v8; return $"explosivearrow.height → {F(Height)}";
-                    case "delay":  if (!ParseFloat(value, out var v9)) return $"Invalid float."; Delay  = v9; return $"explosivearrow.delay → {F(Delay)}";
+                    case "t1min": if (!ParseFloat(value, out var v)) return $"Invalid float."; T1Min = v; return $"explosivearrow.t1min = {F(T1Min)}";
+                    case "t1max": if (!ParseFloat(value, out var v2)) return $"Invalid float."; T1Max = v2; return $"explosivearrow.t1max = {F(T1Max)}";
+                    case "t2min": if (!ParseFloat(value, out var v3)) return $"Invalid float."; T2Min = v3; return $"explosivearrow.t2min = {F(T2Min)}";
+                    case "t2max": if (!ParseFloat(value, out var v4)) return $"Invalid float."; T2Max = v4; return $"explosivearrow.t2max = {F(T2Max)}";
+                    case "t3min": if (!ParseFloat(value, out var v5)) return $"Invalid float."; T3Min = v5; return $"explosivearrow.t3min = {F(T3Min)}";
+                    case "t3max": if (!ParseFloat(value, out var v6)) return $"Invalid float."; T3Max = v6; return $"explosivearrow.t3max = {F(T3Max)}";
+                    case "radius": if (!ParseFloat(value, out var v7)) return $"Invalid float."; Radius = v7; return $"explosivearrow.radius = {F(Radius)}";
+                    case "height": if (!ParseFloat(value, out var v8)) return $"Invalid float."; Height = v8; return $"explosivearrow.height = {F(Height)}";
+                    case "delay":  if (!ParseFloat(value, out var v9)) return $"Invalid float."; Delay  = v9; return $"explosivearrow.delay = {F(Delay)}";
                     case "maxarrows":
                         if (!ParseInt(value, out var v10)) return $"Invalid int.";
                         if (v10 < 1 || v10 > 10) return $"Value must be between 1 and 10.";
-                        MaxArrows = v10; return $"explosivearrow.maxarrows → {MaxArrows}";
+                        MaxArrows = v10; return $"explosivearrow.maxarrows = {MaxArrows}";
                     default: return null;
                 }
             }
@@ -508,8 +514,18 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 "  maxarrows int               — max arrows allowed to detonate per shot [1-10] (default: 5)";
 
             public string Dump() =>
-                $"[explosivearrow] enabled={B(Enabled)} t1={F(T1Min)}-{F(T1Max)} t2={F(T2Min)}-{F(T2Max)} t3={F(T3Min)}-{F(T3Max)} " +
-                $"radius={F(Radius)} height={F(Height)} delay={F(Delay)} maxarrows={MaxArrows}\n";
+                "[explosivearrow] settings:\n" +
+                $"  enabled: {B(Enabled)}\n" +
+                $"  t1min: {F(T1Min)}\n" +
+                $"  t1max: {F(T1Max)}\n" +
+                $"  t2min: {F(T2Min)}\n" +
+                $"  t2max: {F(T2Max)}\n" +
+                $"  t3min: {F(T3Min)}\n" +
+                $"  t3max: {F(T3Max)}\n" +
+                $"  radius: {F(Radius)}\n" +
+                $"  height: {F(Height)}\n" +
+                $"  delay: {F(Delay)}\n" +
+                $"  maxarrows: {MaxArrows}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -518,15 +534,19 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
 
         public sealed class ShrapnelBlock : ICharmBlock
         {
-            public bool  Enabled { get; private set; } = true;
-            public float Radius  { get; private set; } = 5.8f;
-            public float Height  { get; private set; } = 7.0f;
+            public bool  Enabled      { get; private set; } = true;
+            public float Radius       { get; private set; } = 5.8f;
+            public float Height       { get; private set; } = 7.0f;
+            public float DoubleChance { get; private set; } = 0.0f;
+            public float TripleChance { get; private set; } = 0.0f;
 
             public void Reset()
             {
                 Enabled = true;
                 Radius = 5.8f;
                 Height = 7.0f;
+                DoubleChance = 0.0f;
+                TripleChance = 0.0f;
             }
 
             public string TrySet(string key, string value)
@@ -534,12 +554,22 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 switch (key)
                 {
                     case "enabled": case "on": case "off": case "true": case "false":
-                        var bKey = key == "enabled" ? value : key;
-                        if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
-                        Enabled = bv; return $"shrapnel.enabled → {B(Enabled)}";
+                        var valueToParse = key == "enabled" ? value : key;
+                        if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
+                        Enabled = bv; return $"shrapnel.enabled = {B(Enabled)}";
 
-                    case "radius": if (!ParseFloat(value, out var v)) return $"Invalid float."; Radius = v; return $"shrapnel.radius → {F(Radius)}";
-                    case "height": if (!ParseFloat(value, out var v2)) return $"Invalid float."; Height = v2; return $"shrapnel.height → {F(Height)}";
+                    case "radius": if (!ParseFloat(value, out var v)) return $"Invalid float."; Radius = v; return $"shrapnel.radius = {F(Radius)}";
+                    case "height": if (!ParseFloat(value, out var v2)) return $"Invalid float."; Height = v2; return $"shrapnel.height = {F(Height)}";
+                    case "double":
+                        if (!ParseFloat(value, out var v3)) return $"Invalid float.";
+                        v3 = Math.Clamp(v3, 0f, 1f);
+                        if (TripleChance + v3 > 1.0f) return $"double + triple must not exceed 1.0 (triple is currently {P(TripleChance)}).";
+                        DoubleChance = v3; return $"shrapnel.double = {P(DoubleChance)}";
+                    case "triple":
+                        if (!ParseFloat(value, out var v4)) return $"Invalid float.";
+                        v4 = Math.Clamp(v4, 0f, 1f);
+                        if (v4 + DoubleChance > 1.0f) return $"triple + double must not exceed 1.0 (double is currently {P(DoubleChance)}).";
+                        TripleChance = v4; return $"shrapnel.triple = {P(TripleChance)}";
                     default: return null;
                 }
             }
@@ -551,6 +581,8 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                     case "enabled": if (ParseBool(value, out var bv))  Enabled = bv; break;
                     case "radius":  if (ParseFloat(value, out var v))  Radius  = v;  break;
                     case "height":  if (ParseFloat(value, out var v2)) Height  = v2; break;
+                    case "double":  if (ParseFloat(value, out var v3)) DoubleChance = Math.Clamp(v3, 0f, Math.Max(0f, 1f - TripleChance)); break;
+                    case "triple":  if (ParseFloat(value, out var v4)) TripleChance = Math.Clamp(v4, 0f, Math.Max(0f, 1f - DoubleChance)); break;
                 }
             }
 
@@ -559,6 +591,8 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 "enabled" => B(Enabled),
                 "radius"  => F(Radius),
                 "height"  => F(Height),
+                "double"  => F(DoubleChance),
+                "triple"  => F(TripleChance),
                 _         => null
             };
 
@@ -567,39 +601,115 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 ("enabled", B(Enabled)),
                 ("radius",  F(Radius)),
                 ("height",  F(Height)),
+                ("double",  F(DoubleChance)),
+                ("triple",  F(TripleChance)),
             };
 
             public string Help() =>
                 "[shrapnel] adjustable settings:\n" +
                 "  enabled  true/false/on/off   — global kill-switch\n" +
                 "  radius  float                — Rocky Shrapnel AOE physical blast radius in meters (default: 5.8)\n" +
-                "  height  float                — Rocky Shrapnel AOE physical blast height in meters (default: 7.0)";
+                "  height  float                — Rocky Shrapnel AOE physical blast height in meters (default: 7.0)\n" +
+                "  double  float                — double proc chance (default: 0.0; triple + double ≤ 1.0)\n" +
+                "  triple  float                — triple proc chance (default: 0.0; triple + double ≤ 1.0)";
 
             public string Dump() =>
-                $"[shrapnel] enabled={B(Enabled)} radius={F(Radius)} height={F(Height)}\n";
+                "[shrapnel] settings:\n" +
+                $"  enabled: {B(Enabled)}\n" +
+                $"  radius: {F(Radius)}\n" +
+                $"  height: {F(Height)}\n" +
+                $"  double: {P(DoubleChance)}\n" +
+                $"  triple: {P(TripleChance)}\n";
         }
 
         public sealed class AgonyBlock : ICharmBlock
         {
-            public bool Enabled { get; private set; } = true;
-            public void Reset() { Enabled = true; }
+            public bool  Enabled      { get; private set; } = true;
+            public float Radius       { get; private set; } = 5.8f;
+            public float Height       { get; private set; } = 7.0f;
+            public float DoubleChance { get; private set; } = 0.0f;
+            public float TripleChance { get; private set; } = 0.0f;
+
+            public void Reset()
+            {
+                Enabled = true;
+                Radius = 5.8f;
+                Height = 7.0f;
+                DoubleChance = 0.0f;
+                TripleChance = 0.0f;
+            }
 
             public string TrySet(string key, string value)
             {
-                if (key is "enabled" or "on" or "off" or "true" or "false")
+                switch (key)
                 {
-                    var bKey = key == "enabled" ? value : key;
-                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
-                    Enabled = bv; return $"agony.enabled → {B(Enabled)}";
+                    case "enabled": case "on": case "off": case "true": case "false":
+                        var valueToParse = key == "enabled" ? value : key;
+                        if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
+                        Enabled = bv; return $"agony.enabled = {B(Enabled)}";
+
+                    case "radius": if (!ParseFloat(value, out var v)) return $"Invalid float."; Radius = v; return $"agony.radius = {F(Radius)}";
+                    case "height": if (!ParseFloat(value, out var v2)) return $"Invalid float."; Height = v2; return $"agony.height = {F(Height)}";
+                    case "double":
+                        if (!ParseFloat(value, out var v3)) return $"Invalid float.";
+                        v3 = Math.Clamp(v3, 0f, 1f);
+                        if (TripleChance + v3 > 1.0f) return $"double + triple must not exceed 1.0 (triple is currently {P(TripleChance)}).";
+                        DoubleChance = v3; return $"agony.double = {P(DoubleChance)}";
+                    case "triple":
+                        if (!ParseFloat(value, out var v4)) return $"Invalid float.";
+                        v4 = Math.Clamp(v4, 0f, 1f);
+                        if (v4 + DoubleChance > 1.0f) return $"triple + double must not exceed 1.0 (double is currently {P(DoubleChance)}).";
+                        TripleChance = v4; return $"agony.triple = {P(TripleChance)}";
+                    default: return null;
                 }
-                return null;
             }
 
-            public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
-            public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
-            public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
-            public string Help() => "[agony] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
-            public string Dump() => $"[agony] enabled={B(Enabled)} (no other tunables yet)\n";
+            public void ApplyRaw(string key, string value)
+            {
+                switch (key)
+                {
+                    case "enabled": if (ParseBool(value, out var bv))  Enabled = bv; break;
+                    case "radius":  if (ParseFloat(value, out var v))  Radius  = v;  break;
+                    case "height":  if (ParseFloat(value, out var v2)) Height  = v2; break;
+                    case "double":  if (ParseFloat(value, out var v3)) DoubleChance = Math.Clamp(v3, 0f, Math.Max(0f, 1f - TripleChance)); break;
+                    case "triple":  if (ParseFloat(value, out var v4)) TripleChance = Math.Clamp(v4, 0f, Math.Max(0f, 1f - DoubleChance)); break;
+                }
+            }
+
+            public string GetRaw(string key) => key switch
+            {
+                "enabled" => B(Enabled),
+                "radius"  => F(Radius),
+                "height"  => F(Height),
+                "double"  => F(DoubleChance),
+                "triple"  => F(TripleChance),
+                _         => null
+            };
+
+            public IEnumerable<(string, string)> GetAllRaw() => new[]
+            {
+                ("enabled", B(Enabled)),
+                ("radius",  F(Radius)),
+                ("height",  F(Height)),
+                ("double",  F(DoubleChance)),
+                ("triple",  F(TripleChance)),
+            };
+
+            public string Help() =>
+                "[agony] adjustable settings:\n" +
+                "  enabled  true/false/on/off   — global kill-switch\n" +
+                "  radius  float                — Ring of Agony AOE blast radius in meters (default: 5.8)\n" +
+                "  height  float                — Ring of Agony AOE blast height in meters (default: 7.0)\n" +
+                "  double  float                — double proc chance (default: 0.0; triple + double ≤ 1.0)\n" +
+                "  triple  float                — triple proc chance (default: 0.0; triple + double ≤ 1.0)";
+
+            public string Dump() =>
+                "[agony] settings:\n" +
+                $"  enabled: {B(Enabled)}\n" +
+                $"  radius: {F(Radius)}\n" +
+                $"  height: {F(Height)}\n" +
+                $"  double: {P(DoubleChance)}\n" +
+                $"  triple: {P(TripleChance)}\n";
         }
 
         public sealed class PrismaticBlock : ICharmBlock
@@ -611,9 +721,9 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             {
                 if (key is "enabled" or "on" or "off" or "true" or "false")
                 {
-                    var bKey = key == "enabled" ? value : key;
-                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
-                    Enabled = bv; return $"prismaticstrike.enabled → {B(Enabled)}";
+                    var valueToParse = key == "enabled" ? value : key;
+                    if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
+                    Enabled = bv; return $"prismaticstrike.enabled = {B(Enabled)}";
                 }
                 return null;
             }
@@ -622,7 +732,10 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
             public string Help() => "[prismaticstrike] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
-            public string Dump() => $"[prismaticstrike] enabled={B(Enabled)} (no other tunables yet)\n";
+            public string Dump() =>
+                "[prismaticstrike] settings:\n" +
+                $"  enabled: {B(Enabled)}\n" +
+                "  (no other tunables yet)\n";
         }
 
         public sealed class AutoRebuffBlock : ICharmBlock
@@ -634,9 +747,9 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             {
                 if (key is "enabled" or "on" or "off" or "true" or "false")
                 {
-                    var bKey = key == "enabled" ? value : key;
-                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
-                    Enabled = bv; return $"autorebuff.enabled → {B(Enabled)}";
+                    var valueToParse = key == "enabled" ? value : key;
+                    if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
+                    Enabled = bv; return $"autorebuff.enabled = {B(Enabled)}";
                 }
                 return null;
             }
@@ -645,7 +758,10 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
             public string Help() => "[autorebuff] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
-            public string Dump() => $"[autorebuff] enabled={B(Enabled)} (no other tunables yet)\n";
+            public string Dump() =>
+                "[autorebuff] settings:\n" +
+                $"  enabled: {B(Enabled)}\n" +
+                "  (no other tunables yet)\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -665,12 +781,15 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 switch (key)
                 {
                     case "enabled": case "on": case "off": case "true": case "false":
-                        var bKey = key == "enabled" ? value : key;
-                        if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
-                        Enabled = bv; return $"pentacast.enabled → {B(Enabled)}";
+                        var valueToParse = key == "enabled" ? value : key;
+                        if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
+                        Enabled = bv; return $"pentacast.enabled = {B(Enabled)}";
 
-                    case "targets": if (!ParseInt(value, out var iv)) return $"Invalid int."; Targets = iv; return $"pentacast.targets → {Targets}";
-                    case "range":   if (!ParseFloat(value, out var fv)) return $"Invalid float."; Range = fv; return $"pentacast.range → {F(Range)}";
+                    case "targets":
+                        if (!ParseInt(value, out var iv)) return $"Invalid int.";
+                        if (iv < 1 || iv > 20) return $"Value must be between 1 and 20.";
+                        Targets = iv; return $"pentacast.targets = {Targets}";
+                    case "range":   if (!ParseFloat(value, out var fv)) return $"Invalid float."; Range = fv; return $"pentacast.range = {F(Range)}";
                     default: return null;
                 }
             }
@@ -680,7 +799,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 switch (key)
                 {
                     case "enabled": if (ParseBool(value, out var bv))  Enabled = bv; break;
-                    case "targets": if (ParseInt(value, out var iv))   Targets = iv; break;
+                    case "targets": if (ParseInt(value, out var iv)) Targets = Math.Clamp(iv, 1, 20); break;
                     case "range":   if (ParseFloat(value, out var fv)) Range   = fv; break;
                 }
             }
@@ -703,11 +822,14 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public string Help() =>
                 "[pentacast] adjustable settings:\n" +
                 "  enabled  true/false/on/off   — global kill-switch\n" +
-                "  targets  int                 — number of additional targets to bounce spell to (default: 4)\n" +
+                "  targets  int                 — number of additional targets to bounce spell to [1-20] (default: 4)\n" +
                 "  range    float               — radius in meters to find bounce targets (default: 10.0)";
 
             public string Dump() =>
-                $"[pentacast] enabled={B(Enabled)} targets={Targets} range={F(Range)}\n";
+                "[pentacast] settings:\n" +
+                $"  enabled: {B(Enabled)}\n" +
+                $"  targets: {Targets}\n" +
+                $"  range: {F(Range)}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -723,9 +845,9 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             {
                 if (key is "enabled" or "on" or "off" or "true" or "false")
                 {
-                    var bKey = key == "enabled" ? value : key;
-                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
-                    Enabled = bv; return $"infinitecasting.enabled → {B(Enabled)}";
+                    var valueToParse = key == "enabled" ? value : key;
+                    if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
+                    Enabled = bv; return $"infinitecasting.enabled = {B(Enabled)}";
                 }
                 return null;
             }
@@ -734,7 +856,10 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
             public string Help() => "[infinitecasting] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
-            public string Dump() => $"[infinitecasting] enabled={B(Enabled)} (no other tunables yet)\n";
+            public string Dump() =>
+                "[infinitecasting] settings:\n" +
+                $"  enabled: {B(Enabled)}\n" +
+                "  (no other tunables yet)\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -743,25 +868,97 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
 
         public sealed class AsheronsFavorBlock : ICharmBlock
         {
-            public bool Enabled { get; private set; } = true;
-            public void Reset() { Enabled = true; }
+            public bool  Enabled  { get; private set; } = true;
+            public float T1Health { get; private set; } = 1.10f;
+            public float T1Armor  { get; private set; } = 50.0f;
+            public float T2Health { get; private set; } = 1.15f;
+            public float T2Armor  { get; private set; } = 100.0f;
+            public float T3Health { get; private set; } = 1.20f;
+            public float T3Armor  { get; private set; } = 250.0f;
+
+            public void Reset()
+            {
+                Enabled = true;
+                T1Health = 1.10f; T1Armor = 50.0f;
+                T2Health = 1.15f; T2Armor = 100.0f;
+                T3Health = 1.20f; T3Armor = 250.0f;
+            }
 
             public string TrySet(string key, string value)
             {
-                if (key is "enabled" or "on" or "off" or "true" or "false")
+                switch (key)
                 {
-                    var bKey = key == "enabled" ? value : key;
-                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
-                    Enabled = bv; return $"asheronsfavor.enabled → {B(Enabled)}";
+                    case "enabled": case "on": case "off": case "true": case "false":
+                        var valueToParse = key == "enabled" ? value : key;
+                        if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
+                        Enabled = bv; return $"asheronsfavor.enabled = {B(Enabled)}";
+
+                    case "t1health": if (!ParseFloat(value, out var v1)) return "Invalid float."; T1Health = v1; return $"asheronsfavor.t1health = {F(T1Health)}";
+                    case "t1armor":  if (!ParseFloat(value, out var v2)) return "Invalid float."; T1Armor = v2; return $"asheronsfavor.t1armor = {F(T1Armor)}";
+                    case "t2health": if (!ParseFloat(value, out var v3)) return "Invalid float."; T2Health = v3; return $"asheronsfavor.t2health = {F(T2Health)}";
+                    case "t2armor":  if (!ParseFloat(value, out var v4)) return "Invalid float."; T2Armor = v4; return $"asheronsfavor.t2armor = {F(T2Armor)}";
+                    case "t3health": if (!ParseFloat(value, out var v5)) return "Invalid float."; T3Health = v5; return $"asheronsfavor.t3health = {F(T3Health)}";
+                    case "t3armor":  if (!ParseFloat(value, out var v6)) return "Invalid float."; T3Armor = v6; return $"asheronsfavor.t3armor = {F(T3Armor)}";
+                    default: return null;
                 }
-                return null;
             }
 
-            public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
-            public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
-            public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
-            public string Help() => "[asheronsfavor] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (tier health/armor values — pending review)";
-            public string Dump() => $"[asheronsfavor] enabled={B(Enabled)} (tier values pending review)\n";
+            public void ApplyRaw(string key, string value)
+            {
+                switch (key)
+                {
+                    case "enabled":  if (ParseBool(value, out var bv))  Enabled  = bv; break;
+                    case "t1health": if (ParseFloat(value, out var v1)) T1Health = v1; break;
+                    case "t1armor":  if (ParseFloat(value, out var v2)) T1Armor  = v2; break;
+                    case "t2health": if (ParseFloat(value, out var v3)) T2Health = v3; break;
+                    case "t2armor":  if (ParseFloat(value, out var v4)) T2Armor  = v4; break;
+                    case "t3health": if (ParseFloat(value, out var v5)) T3Health = v5; break;
+                    case "t3armor":  if (ParseFloat(value, out var v6)) T3Armor  = v6; break;
+                }
+            }
+
+            public string GetRaw(string key) => key switch
+            {
+                "enabled"  => B(Enabled),
+                "t1health" => F(T1Health),
+                "t1armor"  => F(T1Armor),
+                "t2health" => F(T2Health),
+                "t2armor"  => F(T2Armor),
+                "t3health" => F(T3Health),
+                "t3armor"  => F(T3Armor),
+                _          => null
+            };
+
+            public IEnumerable<(string, string)> GetAllRaw() => new[]
+            {
+                ("enabled",  B(Enabled)),
+                ("t1health", F(T1Health)),
+                ("t1armor",  F(T1Armor)),
+                ("t2health", F(T2Health)),
+                ("t2armor",  F(T2Armor)),
+                ("t3health", F(T3Health)),
+                ("t3armor",  F(T3Armor)),
+            };
+
+            public string Help() =>
+                "[asheronsfavor] adjustable settings:\n" +
+                "  enabled   true/false/on/off — global kill-switch\n" +
+                "  t1health  float             — Tier 1 Health% multiplier (default: 1.10 = +10%)\n" +
+                "  t1armor   float             — Tier 1 Natural Armor bonus (default: 50.0)\n" +
+                "  t2health  float             — Tier 2 Health% multiplier (default: 1.15 = +15%)\n" +
+                "  t2armor   float             — Tier 2 Natural Armor bonus (default: 100.0)\n" +
+                "  t3health  float             — Tier 3 Health% multiplier (default: 1.20 = +20%)\n" +
+                "  t3armor   float             — Tier 3 Natural Armor bonus (default: 250.0)";
+
+            public string Dump() =>
+                "[asheronsfavor] settings:\n" +
+                $"  enabled: {B(Enabled)}\n" +
+                $"  t1health: {F(T1Health)}\n" +
+                $"  t1armor: {F(T1Armor)}\n" +
+                $"  t2health: {F(T2Health)}\n" +
+                $"  t2armor: {F(T2Armor)}\n" +
+                $"  t3health: {F(T3Health)}\n" +
+                $"  t3armor: {F(T3Armor)}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -770,25 +967,82 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
 
         public sealed class ArtisansBlock : ICharmBlock
         {
-            public bool Enabled { get; private set; } = true;
-            public void Reset() { Enabled = true; }
+            public bool  Enabled { get; private set; } = true;
+            public float T1      { get; private set; } = 0.04f;
+            public float T2      { get; private set; } = 0.08f;
+            public float T3      { get; private set; } = 0.12f;
+
+            public void Reset()
+            {
+                Enabled = true;
+                T1 = 0.04f;
+                T2 = 0.08f;
+                T3 = 0.12f;
+            }
 
             public string TrySet(string key, string value)
             {
-                if (key is "enabled" or "on" or "off" or "true" or "false")
+                switch (key)
                 {
-                    var bKey = key == "enabled" ? value : key;
-                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
-                    Enabled = bv; return $"artisans.enabled → {B(Enabled)}";
+                    case "enabled": case "on": case "off": case "true": case "false":
+                        var valueToParse = key == "enabled" ? value : key;
+                        if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
+                        Enabled = bv; return $"artisans.enabled = {B(Enabled)}";
+
+                    case "t1":
+                        if (!ParseFloat(value, out var f1)) return "Invalid float.";
+                        T1 = f1; return $"artisans.t1 = {P(T1)}";
+                    case "t2":
+                        if (!ParseFloat(value, out var f2)) return "Invalid float.";
+                        T2 = f2; return $"artisans.t2 = {P(T2)}";
+                    case "t3":
+                        if (!ParseFloat(value, out var f3)) return "Invalid float.";
+                        T3 = f3; return $"artisans.t3 = {P(T3)}";
+                    default: return null;
                 }
-                return null;
             }
 
-            public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
-            public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
-            public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
-            public string Help() => "[artisans] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
-            public string Dump() => $"[artisans] enabled={B(Enabled)} (no other tunables yet)\n";
+            public void ApplyRaw(string key, string value)
+            {
+                switch (key)
+                {
+                    case "enabled": if (ParseBool(value, out var bv))  Enabled = bv; break;
+                    case "t1":      if (ParseFloat(value, out var f1)) T1 = f1; break;
+                    case "t2":      if (ParseFloat(value, out var f2)) T2 = f2; break;
+                    case "t3":      if (ParseFloat(value, out var f3)) T3 = f3; break;
+                }
+            }
+
+            public string GetRaw(string key) => key switch
+            {
+                "enabled" => B(Enabled),
+                "t1"      => F(T1),
+                "t2"      => F(T2),
+                "t3"      => F(T3),
+                _         => null
+            };
+
+            public IEnumerable<(string, string)> GetAllRaw() => new[]
+            {
+                ("enabled", B(Enabled)),
+                ("t1",      F(T1)),
+                ("t2",      F(T2)),
+                ("t3",      F(T3)),
+            };
+
+            public string Help() =>
+                "[artisans] adjustable settings:\n" +
+                "  enabled  true/false/on/off — global kill-switch\n" +
+                "  t1       float             — Tier 1 success chance bonus (default: 0.04 = +4%)\n" +
+                "  t2       float             — Tier 2 success chance bonus (default: 0.08 = +8%)\n" +
+                "  t3       float             — Tier 3 success chance bonus (default: 0.12 = +12%)";
+
+            public string Dump() =>
+                "[artisans] settings:\n" +
+                $"  enabled: {B(Enabled)}\n" +
+                $"  t1: {P(T1)}\n" +
+                $"  t2: {P(T2)}\n" +
+                $"  t3: {P(T3)}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -797,25 +1051,83 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
 
         public sealed class EssenceRefillBlock : ICharmBlock
         {
-            public bool Enabled { get; private set; } = true;
-            public void Reset() { Enabled = true; }
+            public bool  Enabled { get; private set; } = true;
+            public float T1      { get; private set; } = 0.00f; // 0% discount by default
+            public float T2      { get; private set; } = 0.25f; // 25% discount by default
+            public float T3      { get; private set; } = 0.50f; // 50% discount by default
+
+            public void Reset()
+            {
+                Enabled = true;
+                T1 = 0.00f;
+                T2 = 0.25f;
+                T3 = 0.50f;
+            }
 
             public string TrySet(string key, string value)
             {
-                if (key is "enabled" or "on" or "off" or "true" or "false")
+                switch (key)
                 {
-                    var bKey = key == "enabled" ? value : key;
-                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
-                    Enabled = bv; return $"essencerefill.enabled → {B(Enabled)}";
+                    case "enabled": case "on": case "off": case "true": case "false":
+                        var valueToParse = key == "enabled" ? value : key;
+                        if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
+                        Enabled = bv; return $"essencerefill.enabled = {B(Enabled)}";
+
+                    case "t1":
+                        if (!ParseFloat(value, out var f1)) return "Invalid float.";
+                        T1 = Math.Clamp(f1, 0f, 1f); return $"essencerefill.t1 = {P(T1)}";
+                    case "t2":
+                        if (!ParseFloat(value, out var f2)) return "Invalid float.";
+                        T2 = Math.Clamp(f2, 0f, 1f); return $"essencerefill.t2 = {P(T2)}";
+                    case "t3":
+                        if (!ParseFloat(value, out var f3)) return "Invalid float.";
+                        T3 = Math.Clamp(f3, 0f, 1f); return $"essencerefill.t3 = {P(T3)}";
+                    default: return null;
                 }
-                return null;
             }
 
-            public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
-            public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
-            public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
-            public string Help() => "[essencerefill] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (pyreal cost configured via ServerConfig)";
-            public string Dump() => $"[essencerefill] enabled={B(Enabled)} (pyreal cost in ServerConfig)\n";
+            public void ApplyRaw(string key, string value)
+            {
+                switch (key)
+                {
+                    case "enabled": if (ParseBool(value, out var bv))  Enabled = bv; break;
+                    case "t1":      if (ParseFloat(value, out var f1)) T1 = Math.Clamp(f1, 0f, 1f); break;
+                    case "t2":      if (ParseFloat(value, out var f2)) T2 = Math.Clamp(f2, 0f, 1f); break;
+                    case "t3":      if (ParseFloat(value, out var f3)) T3 = Math.Clamp(f3, 0f, 1f); break;
+                }
+            }
+
+            public string GetRaw(string key) => key switch
+            {
+                "enabled" => B(Enabled),
+                "t1"      => F(T1),
+                "t2"      => F(T2),
+                "t3"      => F(T3),
+                _         => null
+            };
+
+            public IEnumerable<(string, string)> GetAllRaw() => new[]
+            {
+                ("enabled", B(Enabled)),
+                ("t1",      F(T1)),
+                ("t2",      F(T2)),
+                ("t3",      F(T3)),
+            };
+
+            public string Help() =>
+                "[essencerefill] adjustable settings:\n" +
+                "  enabled  true/false/on/off — global kill-switch\n" +
+                "  t1       float             — Tier 1 pyreal discount percentage (default: 0.0 = 0%)\n" +
+                "  t2       float             — Tier 2 pyreal discount percentage (default: 0.25 = 25%)\n" +
+                "  t3       float             — Tier 3 pyreal discount percentage (default: 0.50 = 50%)";
+
+            public string Dump() =>
+                "[essencerefill] settings:\n" +
+                $"  enabled: {B(Enabled)}\n" +
+                $"  t1: {P(T1)}\n" +
+                $"  t2: {P(T2)}\n" +
+                $"  t3: {P(T3)}\n" +
+                "  (base pyreal cost set in ServerConfig)\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -831,9 +1143,9 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             {
                 if (key is "enabled" or "on" or "off" or "true" or "false")
                 {
-                    var bKey = key == "enabled" ? value : key;
-                    if (!ParseBool(bKey == "enabled" ? value : bKey, out var bv)) return $"Invalid bool: '{value}'.";
-                    Enabled = bv; return $"universalsummoning.enabled → {B(Enabled)}";
+                    var valueToParse = key == "enabled" ? value : key;
+                    if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
+                    Enabled = bv; return $"universalsummoning.enabled = {B(Enabled)}";
                 }
                 return null;
             }
@@ -842,7 +1154,10 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
             public string Help() => "[universalsummoning] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
-            public string Dump() => $"[universalsummoning] enabled={B(Enabled)} (no other tunables yet)\n";
+            public string Dump() =>
+                "[universalsummoning] settings:\n" +
+                $"  enabled: {B(Enabled)}\n" +
+                "  (no other tunables yet)\n";
         }
     }
 }

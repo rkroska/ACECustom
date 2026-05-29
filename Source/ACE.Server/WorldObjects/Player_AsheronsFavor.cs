@@ -19,16 +19,16 @@ namespace ACE.Server.WorldObjects
 
         private static float GetAsheronsFavorHealthMod(int level) => level switch
         {
-            2 => 1.15f,
-            3 => 1.20f,
-            _ => 1.10f,  // Tier 1 default
+            2 => CharmSettingsManager.AsheronsFavor.T2Health,
+            3 => CharmSettingsManager.AsheronsFavor.T3Health,
+            _ => CharmSettingsManager.AsheronsFavor.T1Health,  // Tier 1 default
         };
 
         private static float GetAsheronsFavorArmorMod(int level) => level switch
         {
-            2 => 100f,
-            3 => 250f,
-            _ => 50f,    // Tier 1 default
+            2 => CharmSettingsManager.AsheronsFavor.T2Armor,
+            3 => CharmSettingsManager.AsheronsFavor.T3Armor,
+            _ => CharmSettingsManager.AsheronsFavor.T1Armor,    // Tier 1 default
         };
 
         /// <summary>
@@ -38,6 +38,12 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void ApplyAsheronsFavorEnchantments(WorldObject charm = null)
         {
+            if (!CharmSettingsManager.AsheronsFavor.Enabled)
+            {
+                RemoveAsheronsFavorEnchantments();
+                return;
+            }
+
             ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.AsheronsFavorAbilityId, out var level);
             if (level < 1) level = 1;
 
@@ -46,6 +52,11 @@ namespace ACE.Server.WorldObjects
             charm ??= GetAllPossessions().FirstOrDefault(i =>
                 (i.GetProperty(PropertyBool.IsAbilityCharm) ?? false) &&
                 (i.GetProperty(PropertyInt.CharmGrantsAbility) ?? 0) == CharmAbilityRegistry.AsheronsFavorAbilityId);
+
+            // Guard: charm may have been removed from inventory before this path runs
+            // (e.g. login restore race). Fall back to removing stale enchantments rather
+            // than passing a null caster into EnchantmentManager.Add.
+            if (charm == null) { RemoveAsheronsFavorEnchantments(); return; }
 
             var spell4024 = new Spell(AsheronsFavorSpell_Health);
             var spell3811 = new Spell(AsheronsFavorSpell_Armor);

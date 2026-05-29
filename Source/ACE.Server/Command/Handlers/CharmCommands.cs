@@ -76,19 +76,20 @@ namespace ACE.Server.Command.Handlers
         // Brief descriptions shown by /charms and /charm (no args)
         private static readonly string CharmList =
             "=== Available Charms ===\n" +
-            "  manabarrier          — Drains mana instead of taking damage. Higher tier = more efficient.\n" +
-            "  explosivearrow       — Arrows detonate on hit, dealing AOE blast damage to nearby enemies.\n" +
-            "  shrapnel             — Rocky Shrapnel: transforms incoming tectonic spells into physical AoE.\n" +
-            "  agony                — Ring of Agony: transforms incoming tectonic spells into fire AoE.\n" +
-            "  pentacast            — Bounces spells to additional nearby targets on cast.\n" +
-            "  prismaticstrike      — Melee attacks apply random elemental rends to the target.\n" +
-            "  autorebuff           — Automatically re-applies expiring beneficial buffs.\n" +
-            "  infinitecasting      — Removes mana cost when casting spells.\n" +
-            "  asheronsfavor        — Grants Health% and Natural Armor bonuses. Higher tier = larger bonus.\n" +
-            "  artisans             — Provides crafting and tinkering bonuses.\n" +
-            "  essencerefill        — Pays pyreals to automatically refill empty summoning essence charges.\n" +
-            "  universalsummoning   — Bypasses summoning mastery skill checks for any pet device.\n" +
+            "  • agony              — Ring of Agony: transforms incoming tectonic spells into Ring of Unspeakable Agony.\n" +
+            "  • artisans           — Provides crafting and tinkering bonuses.\n" +
+            "  • asheronsfavor      — Grants Health% and Natural Armor bonuses. Higher tier = larger bonus.\n" +
+            "  • autorebuff         — Automatically re-applies expiring beneficial buffs.\n" +
+            "  • essencerefill      — Pays pyreals to automatically refill empty summoning essence charges.\n" +
+            "  • explosivearrow     — Arrows detonate on hit, dealing AOE blast damage to nearby enemies.\n" +
+            "  • infinitecasting    — Removes mana cost when casting spells.\n" +
+            "  • manabarrier        — Drains mana instead of taking damage. Higher tier = more efficient.\n" +
+            "  • pentacast          — Bounces spells to additional nearby targets on cast.\n" +
+            "  • prismaticstrike    — Melee attacks apply random elemental rends to the target.\n" +
+            "  • shrapnel           — Rocky Shrapnel: transforms incoming tectonic spells into Rocky Shrapnel.\n" +
+            "  • universalsummoning — Bypasses summoning mastery skill checks for any pet device.\n" +
             "\nUse /charm <name> to see current settings and all adjustable keys.";
+
 
         // ── /charms ──────────────────────────────────────────────────────────
         [CommandHandler("charms", AccessLevel.Developer, CommandHandlerFlag.None, 0,
@@ -107,8 +108,6 @@ namespace ACE.Server.Command.Handlers
             "  /charm <name>                    — show current settings + all adjustable keys\n" +
             "  /charm <name> <key> <value>      — set a value (e.g. /charm manabarrier ratio 0.5)\n" +
             "  /charm <name> true|false|on|off  — enable or disable a charm\n" +
-            "  /charm reset                     — reset ALL charms to defaults\n" +
-            "  /charm reset <name>              — reset one charm to defaults\n" +
             "\nCharm names are flexible: 'manabarrier' or 'Mana Barrier' both work.")]
         public static void HandleCharm(Session session, params string[] parameters)
         {
@@ -116,30 +115,6 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length == 0)
             {
                 Reply(session, CharmList);
-                return;
-            }
-
-            var sub = parameters[0].ToLower();
-
-            // ── /charm reset [name] ───────────────────────────────────────────
-            if (sub == "reset")
-            {
-                if (parameters.Length == 1)
-                {
-                    CharmSettingsManager.ResetAll();
-                    PlayerManager.BroadcastToAuditChannel(session?.Player, "[CHARM] All charms reset to defaults.");
-                }
-                else
-                {
-                    // Support multi-word: /charm reset Mana Barrier
-                    var resetName = ResolveCharmName(parameters, 1, out _);
-                    if (resetName == null || !CharmSettingsManager.TryReset(resetName))
-                    {
-                        Reply(session, $"Unknown charm. Use /charms to see all available charms.");
-                        return;
-                    }
-                    Broadcast(session, $"[CHARM] {resetName} reset to defaults.");
-                }
                 return;
             }
 
@@ -168,13 +143,19 @@ namespace ACE.Server.Command.Handlers
             // ── /charm <name> true|false|on|off ──────────────────────────────
             if (remaining.Length == 1 && arg1 is "true" or "false" or "on" or "off")
             {
-                var result = CharmSettingsManager.TrySet(charmName, arg1, arg1, out _);
+                var result = CharmSettingsManager.TrySet(charmName, "enabled", arg1, out _);
                 if (result == null)
                 {
                     Reply(session, $"Could not set enabled state for '{charmName}'.");
                     return;
                 }
-                Broadcast(session, $"[CHARM] {result}");
+
+                var adminName = session?.Player?.Name?.TrimStart('+') ?? "Console";
+                var displayName = GetCharmDisplayName(charmName);
+                var isEnabled = arg1 is "true" or "on";
+                var action = isEnabled ? "activated" : "deactivated";
+
+                Broadcast(session, $"[CHARM] Admin {adminName} has globally {action} the {displayName} charm.");
                 return;
             }
 
@@ -227,10 +208,37 @@ namespace ACE.Server.Command.Handlers
 
         /// <summary>
         /// Broadcasts to in-game Audit channel, Discord audit channel, and server console.
+        /// Also prints directly to general chat of the player who ran the command.
         /// </summary>
         private static void Broadcast(Session session, string msg)
         {
             PlayerManager.BroadcastToAuditChannel(session?.Player, msg);
+
+            if (session?.Player != null)
+                Console.WriteLine(msg);
+
+            if (session != null)
+                session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
+        }
+
+        private static string GetCharmDisplayName(string charmName)
+        {
+            return charmName.ToLower() switch
+            {
+                "manabarrier"        => "Mana Barrier",
+                "explosivearrow"     => "Explosive Arrow",
+                "shrapnel"           => "Rocky Shrapnel",
+                "agony"              => "Ring of Agony",
+                "pentacast"          => "Penta Cast",
+                "prismaticstrike"    => "Prismatic Strike",
+                "autorebuff"         => "Auto-Rebuff",
+                "infinitecasting"    => "Infinite Casting",
+                "asheronsfavor"      => "Asheron's Favor",
+                "artisans"           => "Artisan's",
+                "essencerefill"      => "Summon Essence Refill",
+                "universalsummoning" => "Universal Summoning",
+                _                    => charmName
+            };
         }
     }
 }
