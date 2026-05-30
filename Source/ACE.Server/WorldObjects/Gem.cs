@@ -329,6 +329,26 @@ namespace ACE.Server.WorldObjects
             var abilityId = CharmGrantsAbility!.Value;
             var abilityName = CharmAbilityRegistry.GetDisplayName(abilityId) ?? Name;
 
+            if (!IsCharmActivated)
+            {
+                // Guard: only one charm per ability may be active at a time.
+                // CR-35: use GetAllPossessionsDeep so charms inside nested bags are detected —
+                // the same deep scan used by ValidateAbilityCharms() on login.
+                var duplicate = player.GetAllPossessionsDeep()
+                    .FirstOrDefault(i => i.Guid != Guid
+                        && i.IsAbilityCharm
+                        && i.CharmGrantsAbility == abilityId
+                        && i.IsCharmActivated);
+
+                if (duplicate != null)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"You already have a {abilityName} charm active. Deactivate it first.",
+                        ChatMessageType.Broadcast));
+                    return;
+                }
+            }
+
             if (abilityId == CharmAbilityRegistry.AutoRebuffAbilityId)
             {
                 var currentTime = Time.GetUnixTime();
@@ -368,22 +388,6 @@ namespace ACE.Server.WorldObjects
 
             if (!IsCharmActivated)
             {
-                // Guard: only one charm per ability may be active at a time.
-                // CR-35: use GetAllPossessionsDeep so charms inside nested bags are detected —
-                // the same deep scan used by ValidateAbilityCharms() on login.
-                var duplicate = player.GetAllPossessionsDeep()
-                    .FirstOrDefault(i => i.Guid != Guid
-                        && i.IsAbilityCharm
-                        && i.CharmGrantsAbility == abilityId
-                        && i.IsCharmActivated);
-
-                if (duplicate != null)
-                {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                        $"You already have a {abilityName} charm active. Deactivate it first.",
-                        ChatMessageType.Broadcast));
-                    return;
-                }
 
                 if (abilityId == CharmAbilityRegistry.UniversalSummoningMasteryAbilityId
                     && !ServerConfig.pet_charm_universal_summoning_mastery_enabled.Value)

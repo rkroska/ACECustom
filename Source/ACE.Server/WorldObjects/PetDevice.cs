@@ -1760,7 +1760,7 @@ namespace ACE.Server.WorldObjects
             if (Structure != 0)
                 return true;
 
-            if (!ServerConfig.pet_device_pyreal_auto_refill_enabled.Value || !player.PetDevicePyrealAutoRefillEnrolled || !CharmSettingsManager.EssenceRefill.Enabled)
+            if (!ServerConfig.pet_device_pyreal_auto_refill_enabled.Value || !player.PetDevicePyrealAutoRefillEnrolled)
                 return false;
 
             var cost = ServerConfig.pet_device_pyreal_auto_refill_cost_per_charge.Value;
@@ -1768,13 +1768,18 @@ namespace ACE.Server.WorldObjects
                 return false;
 
             // Calculate per-tier discount
-            player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.PetDevicePyrealAutoRefillAbilityId, out var tier);
-            var discount = tier switch
+            var discount = 0.0f;
+            if (CharmSettingsManager.EssenceRefill.Enabled
+                && player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.PetDevicePyrealAutoRefillAbilityId, out var tier))
             {
-                2 => CharmSettingsManager.EssenceRefill.T2,
-                3 => CharmSettingsManager.EssenceRefill.T3,
-                _ => CharmSettingsManager.EssenceRefill.T1
-            };
+                discount = tier switch
+                {
+                    1 => CharmSettingsManager.EssenceRefill.T1,
+                    2 => CharmSettingsManager.EssenceRefill.T2,
+                    3 => CharmSettingsManager.EssenceRefill.T3,
+                    _ => 0.0f
+                };
+            }
             discount = Math.Clamp(discount, 0.0f, 1.0f);
             var finalCost = (int)Math.Max(0.0f, cost * (1.0f - discount));
 

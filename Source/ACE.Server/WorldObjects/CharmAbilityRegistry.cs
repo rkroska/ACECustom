@@ -102,10 +102,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public static void Apply(Player player, int abilityId, bool enable, int level = 1)
         {
-            if (Registry.TryGetValue(abilityId, out var entry))
-                entry.Set(player, enable);
-            else
+            if (!Registry.TryGetValue(abilityId, out var entry))
+            {
                 log.Warn($"[CharmAbilityRegistry] Apply called for unregistered abilityId={abilityId} — Has* property not updated.");
+                return;
+            }
+
+            entry.Set(player, enable);
 
             if (enable)
                 player.ActiveCharmLevels[abilityId] = level;

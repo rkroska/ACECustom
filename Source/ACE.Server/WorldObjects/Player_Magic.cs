@@ -1938,7 +1938,7 @@ namespace ACE.Server.WorldObjects
 
                     // Weapon resistance mod — applies rending on wand to target resistance.
                     var weaponResistanceMod = GetWeaponResistanceModifier(weapon, this as Creature, attackSkill, spell.DamageType);
-                    var resistanceMod = (float)Math.Max(0.0f, creature.GetResistanceMod(resistanceType, null, null, weaponResistanceMod));
+                    var resistanceMod = (float)Math.Max(0.0f, creature.GetResistanceMod(resistanceType, this, weapon, weaponResistanceMod));
 
                     // Void PvP modifier (matches SpellProjectile line ~602).
                     if (isPvP && spell.DamageType == DamageType.Nether)

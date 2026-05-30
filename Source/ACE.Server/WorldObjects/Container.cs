@@ -662,19 +662,23 @@ namespace ACE.Server.WorldObjects
             {
                 var incomingAbilityIds = new System.Collections.Generic.HashSet<int>();
                 var incomingGuids      = new System.Collections.Generic.HashSet<ObjectGuid>();
-                CollectIncomingAbilityCharms(worldObject, incomingAbilityIds, incomingGuids);
+                var duplicateInIncoming = CollectIncomingAbilityCharms(worldObject, incomingAbilityIds, incomingGuids);
 
-                if (incomingAbilityIds.Count > 0)
+                if (duplicateInIncoming || incomingAbilityIds.Count > 0)
                 {
-                    var conflict = rootPlayerForCharm.GetAllPossessions().FirstOrDefault(possession =>
-                        !incomingGuids.Contains(possession.Guid) &&
-                        possession.OwnerId != null &&
-                        possession.OwnerId != 0 &&
-                        possession.IsAbilityCharm &&
-                        possession.CharmGrantsAbility.HasValue &&
-                        incomingAbilityIds.Contains(possession.CharmGrantsAbility.Value));
+                    WorldObject conflict = null;
+                    if (!duplicateInIncoming)
+                    {
+                        conflict = rootPlayerForCharm.GetAllPossessions().FirstOrDefault(possession =>
+                            !incomingGuids.Contains(possession.Guid) &&
+                            possession.OwnerId != null &&
+                            possession.OwnerId != 0 &&
+                            possession.IsAbilityCharm &&
+                            possession.CharmGrantsAbility.HasValue &&
+                            incomingAbilityIds.Contains(possession.CharmGrantsAbility.Value));
+                    }
 
-                    if (conflict != null)
+                    if (duplicateInIncoming || conflict != null)
                     {
                         var charmName = worldObject.Name ?? "Ability Charm";
                         var article   = (!string.IsNullOrEmpty(charmName) && "aeiouAEIOU".Contains(charmName[0])) ? "an" : "a";
@@ -1339,7 +1343,7 @@ namespace ACE.Server.WorldObjects
         /// IsAbilityCharm / CharmGrantsAbility properties.  Used by TryAddToInventory to enforce
         /// the one-charm-per-ability constraint against data-driven and nested charms.
         /// </summary>
-        private static void CollectIncomingAbilityCharms(WorldObject node,
+        private static bool CollectIncomingAbilityCharms(WorldObject node,
             System.Collections.Generic.HashSet<int> abilityIds,
             System.Collections.Generic.HashSet<ObjectGuid> guids)
         {
@@ -1347,19 +1351,30 @@ namespace ACE.Server.WorldObjects
 
             // Data-driven: charm declares its own ability directly
             if (node.IsAbilityCharm && node.CharmGrantsAbility.HasValue)
-                abilityIds.Add(node.CharmGrantsAbility.Value);
+            {
+                if (!abilityIds.Add(node.CharmGrantsAbility.Value))
+                    return true;
+            }
 
             // Registry fallback: charm WCID is mapped to an ability ID
             var wcidAbility = CharmAbilityRegistry.GetAbilityIdForWCID(node.WeenieClassId);
             if (wcidAbility.HasValue)
-                abilityIds.Add(wcidAbility.Value);
+            {
+                if (!abilityIds.Add(wcidAbility.Value))
+                    return true;
+            }
 
             // Recurse into nested containers (e.g. a backpack containing a charm)
             if (node is Container nested)
             {
                 foreach (var child in nested.Inventory.Values)
-                    CollectIncomingAbilityCharms(child, abilityIds, guids);
+                {
+                    if (CollectIncomingAbilityCharms(child, abilityIds, guids))
+                        return true;
+                }
             }
+
+            return false;
         }
 
         private void CheckAbilityCharmRemoval(WorldObject item)

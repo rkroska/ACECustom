@@ -379,6 +379,10 @@ namespace ACE.Server.WorldObjects
             // if player target, ensure matching PK status
             var targetPlayer = creatureTarget as Player;
 
+            var forkEligibleOnImpact = creatureTarget.IsAlive
+                && !(targetPlayer?.Invincible ?? false)
+                && !(targetPlayer?.UnderLifestoneProtection ?? false);
+
             var pkError = ProjectileSource?.CheckPKStatusVsTarget(creatureTarget, Spell);
             if (pkError != null)
             {
@@ -464,7 +468,8 @@ namespace ACE.Server.WorldObjects
             //   • The spell being resisted (CalculateDamage returns null) — the bolt
             //     still struck the creature and the fork projectiles roll their own resist.
             // Does NOT fire if CanDamage or PK checks failed (those return early above).
-            if (!IsForkProjectile && player != null && player.HasForkCharm
+            if (forkEligibleOnImpact
+                && !IsForkProjectile && player != null && player.HasForkCharm
                 && CharmSettingsManager.Fork.Enabled
                 && (SpellType == ProjectileSpellType.Streak
                     || SpellType == ProjectileSpellType.Arc

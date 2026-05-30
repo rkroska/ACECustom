@@ -119,7 +119,20 @@ namespace ACE.Server.WorldObjects
 
             var result = block.TrySet(key, value);
             if (result != null)
-                PersistKey(charmName, key, block.GetRaw(key));
+            {
+                var persistedCharmName = charmName.ToLower() switch
+                {
+                    "pentacast"       => "splitcast",
+                    "prismaticstrike" => "omnistrike",
+                    _                 => charmName.ToLower(),
+                };
+
+                var persistedKey = key.ToLower() is "on" or "off" or "true" or "false"
+                    ? "enabled"
+                    : key.ToLower();
+
+                PersistKey(persistedCharmName, persistedKey, block.GetRaw(persistedKey));
+            }
             return result;
         }
 
@@ -405,6 +418,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public string Help() =>
                 "[ManaBarrier] Adjustable Settings\n" +
                 "  • Enabled  on / off\n" +
+                "  • ratio float — Global mana cost ratio\n" +
                 "  • t1 float  — Mana Barrier: damage absorbed per mana (higher is more efficient)\n" +
                 "  • t2 float  — Greater Mana Barrier: damage absorbed per mana (higher is more efficient)\n" +
                 "  • t3 float  — Master Mana Barrier: damage absorbed per mana (higher is more efficient)\n" +
@@ -415,6 +429,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public string Dump() =>
                 "[ManaBarrier] Current Settings\n" +
                 $"  • Enabled: {B(Enabled)}\n" +
+                $"  • ratio: {Ratio.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
                 $"  • t1: {T1.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
                 $"  • t2: {T2.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
                 $"  • t3: {T3.ToString("0.0", CultureInfo.InvariantCulture)}\n";

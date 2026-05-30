@@ -913,7 +913,7 @@ namespace ACE.Server.WorldObjects
                 if (entry == null)
                     return true; // Missing — needs rebuff
 
-                var remaining = entry.Duration + entry.StartTime;
+                var remaining = (entry.StartTime + entry.Duration) - ACE.Common.Time.GetUnixTime();
                 if (remaining <= 3600.0)
                     return true; // Expiring within 60 minutes — needs rebuff
             }

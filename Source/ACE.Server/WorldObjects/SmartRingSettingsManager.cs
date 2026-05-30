@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS `smart_ring_settings` (
 
         private static string P(float v) => $"{v.ToString("G", CultureInfo.InvariantCulture)} ({(v * 100.0f).ToString("0.0", CultureInfo.InvariantCulture)}%)";
 
-        public static string TrySet(string key, string value)
+        public static (bool success, bool found, string message) TrySet(string key, string value)
         {
             lock (Sync)
             {
@@ -84,44 +84,44 @@ CREATE TABLE IF NOT EXISTS `smart_ring_settings` (
                 {
                     case "radius":
                         if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var r))
-                            return "Invalid float value for radius.";
+                            return (false, true, "Invalid float value for radius.");
                         if (r <= 0f)
-                            return "Radius must be greater than 0.";
+                            return (false, true, "Radius must be greater than 0.");
                         Radius = r;
                         PersistKey("radius", Radius.ToString(CultureInfo.InvariantCulture));
-                        return $"radius updated to {Radius.ToString("0.0", CultureInfo.InvariantCulture)}";
+                        return (true, true, $"radius updated to {Radius.ToString("0.0", CultureInfo.InvariantCulture)}");
 
                     case "height":
                         if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var h))
-                            return "Invalid float value for height.";
+                            return (false, true, "Invalid float value for height.");
                         if (h <= 0f)
-                            return "Height must be greater than 0.";
+                            return (false, true, "Height must be greater than 0.");
                         Height = h;
                         PersistKey("height", Height.ToString(CultureInfo.InvariantCulture));
-                        return $"height updated to {Height.ToString("0.0", CultureInfo.InvariantCulture)}";
+                        return (true, true, $"height updated to {Height.ToString("0.0", CultureInfo.InvariantCulture)}");
 
                     case "double":
                         if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
-                            return "Invalid float value for double.";
+                            return (false, true, "Invalid float value for double.");
                         d = Math.Clamp(d, 0f, 1f);
                         if (TripleChance + d > 1.0f)
-                            return $"double + triple must not exceed 1.0 (triple is currently {P(TripleChance)}).";
+                            return (false, true, $"double + triple must not exceed 1.0 (triple is currently {P(TripleChance)}).");
                         DoubleChance = d;
                         PersistKey("double", DoubleChance.ToString(CultureInfo.InvariantCulture));
-                        return $"double updated to {P(DoubleChance)}";
+                        return (true, true, $"double updated to {P(DoubleChance)}");
 
                     case "triple":
                         if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var t))
-                            return "Invalid float value for triple.";
+                            return (false, true, "Invalid float value for triple.");
                         t = Math.Clamp(t, 0f, 1f);
                         if (t + DoubleChance > 1.0f)
-                            return $"triple + double must not exceed 1.0 (double is currently {P(DoubleChance)}).";
+                            return (false, true, $"triple + double must not exceed 1.0 (double is currently {P(DoubleChance)}).");
                         TripleChance = t;
                         PersistKey("triple", TripleChance.ToString(CultureInfo.InvariantCulture));
-                        return $"triple updated to {P(TripleChance)}";
+                        return (true, true, $"triple updated to {P(TripleChance)}");
 
                     default:
-                        return null;
+                        return (false, false, null);
                 }
             }
         }

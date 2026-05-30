@@ -39,15 +39,21 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length >= 2)
             {
                 var value = parameters[1];
-                var result = SmartRingSettingsManager.TrySet(key, value);
+                var (success, found, message) = SmartRingSettingsManager.TrySet(key, value);
 
-                if (result == null)
+                if (!found)
                 {
                     Reply(session, $"Unknown key '{key}' for /smartring. Valid keys: radius, height, double, triple.");
                     return;
                 }
 
-                Broadcast(session, $"[Smart Ring] {result}");
+                if (!success)
+                {
+                    Reply(session, $"[Smart Ring Error] {message}");
+                    return;
+                }
+
+                Broadcast(session, $"[Smart Ring] {message}");
                 return;
             }
 

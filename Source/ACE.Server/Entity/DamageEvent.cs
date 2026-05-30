@@ -631,15 +631,18 @@ namespace ACE.Server.Entity
                 avgBaseArmor = defender.ArmorLevel.Value;
             }
 
+            var attackSkill = attacker?.GetCreatureSkill(attacker.GetCurrentWeaponSkill());
+
             foreach (var dt in elements)
             {
                 var resistType = Creature.GetResistanceType(dt);
+                var weaponResistanceMod = WorldObject.GetWeaponResistanceModifier(weapon, attacker, attackSkill, dt);
                 
                 // Pass the real attacker + weapon so rending/cleaving/WeaponResistanceMod
                 // are factored in — this mirrors what DoCalculateDamage uses and ensures
                 // Prismatic Strike / Explosive Arrow pick the element that actually deals
                 // the most damage with the current weapon equipped.
-                var resistMod = defender.GetResistanceMod(resistType, attacker, weapon, 1.0f);
+                var resistMod = defender.GetResistanceMod(resistType, attacker, weapon, weaponResistanceMod);
                 
                 // 2. Get target's armor multiplier against this element
                 var armorVsType = defender.GetArmorVsType(dt);
