@@ -782,25 +782,37 @@ namespace ACE.Server.WorldObjects
                 candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
 
                 // Launch fork projectiles toward each candidate.
-                // All three calls are made on hitTarget so spawn position AND velocity
-                // direction are both computed hitTarget → forkTarget.
-                // ProjectileSource is overridden to player for correct damage attribution.
+                //
+                // Strategy: call everything on 'player' (consistent with SplitCast, keeps
+                // ProjectileSource and XP attribution correct). Override BOTH:
+                //   originOverride    = hitTarget  → spawn position (where the bolt appears)
+                //   directionOverride = hitTarget  → rotation/facing (line 2023 in LaunchSpellProjectiles)
+                //
+                // Velocity is computed on hitTarget (this = hitTarget → PhysicsObj is hitTarget's)
+                // so startPos and endPos are both in hitTarget's landblock coordinate space.
                 foreach ((Creature forkTarget, float _) in candidates.Take(fork.Targets))
                 {
+                    // origins: offset from caster body — call on hitTarget so PhysicsRadius is
+                    // relative to the target, not the (distant) player
                     var origins  = hitTarget.CalculateProjectileOrigins(snapSpell, snapSpellType, forkTarget);
+
+                    // velocity: computed hitTarget → forkTarget in hitTarget's coordinate space
                     var velocity = hitTarget.CalculateProjectileVelocity(snapSpell, forkTarget, snapSpellType, origins[0]);
 
-                    var launched = hitTarget.LaunchSpellProjectiles(
+                    // LaunchSpellProjectiles on player — spawn at hitTarget, face hitTarget → forkTarget
+                    var launched = player.LaunchSpellProjectiles(
                         snapSpell, forkTarget, snapSpellType,
                         snapLauncher, snapWeaponSpell, fromProc: true,
-                        origins, velocity, snapLifeDmg);
+                        origins, velocity, snapLifeDmg,
+                        originOverride:    hitTarget,   // spawn AT hitTarget
+                        directionOverride: hitTarget);  // face FROM hitTarget → forkTarget
 
                     if (launched == null) continue;
                     foreach (var fp in launched)
                     {
-                        fp.ProjectileSource = player;   // damage attributed to player, not the enemy
                         fp.IsForkProjectile = true;
                         fp.ForkDamageMult   = damageMult;
+                        // ProjectileSource is already 'player' (set by LaunchSpellProjectiles on player)
                     }
                 }
             });

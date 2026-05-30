@@ -1991,7 +1991,7 @@ namespace ACE.Server.WorldObjects
             return dir * speed;
         }
 
-        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null)
+        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null)
         {
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -2020,7 +2020,8 @@ namespace ACE.Server.WorldObjects
                 var rotate = casterLoc.Rotation;
                 if (target != null)
                 {
-                    var qDir = PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
+                    var dirSource = directionOverride ?? this;
+                    var qDir = dirSource.PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
                     rotate = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, (float)Math.Atan2(-qDir.X, qDir.Y));
                 }
 
