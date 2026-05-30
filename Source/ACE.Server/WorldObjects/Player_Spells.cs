@@ -396,6 +396,8 @@ namespace ACE.Server.WorldObjects
 
         public void ApplyUltimateBlessings()
         {
+            if (!CharmSettingsManager.AutoRebuff.Enabled)
+                return;
 
             var currentTime = ACE.Common.Time.GetUnixTime();
             var dispelLockoutActive = currentTime - LastDispelTimestamp < 180.0;
@@ -913,10 +915,15 @@ namespace ACE.Server.WorldObjects
                 if (entry == null)
                     return true; // Missing — needs rebuff
 
-                // In ACE, StartTime counts downwards from 0 to -Duration, so remaining time is entry.Duration + entry.StartTime.
-                var remaining = entry.Duration + entry.StartTime;
-                if (remaining <= 3600.0 && remaining < entry.Duration - 60.0)
-                    return true; // Expiring within 60 minutes — needs rebuff
+                // Only evaluate expiration for spells with a positive duration.
+                // Infinite or permanent enchantments (Duration <= 0, e.g. -1.0) never expire.
+                if (entry.Duration > 0.0)
+                {
+                    // In ACE, StartTime counts downwards from 0 to -Duration, so remaining time is entry.Duration + entry.StartTime.
+                    var remaining = entry.Duration + entry.StartTime;
+                    if (remaining <= 3600.0 && remaining < entry.Duration - 60.0)
+                        return true; // Expiring within 60 minutes — needs rebuff
+                }
             }
 
             // If no qualifying buffs exist at all (fully gated by Option B), never auto-rebuff

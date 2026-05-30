@@ -1349,18 +1349,26 @@ namespace ACE.Server.WorldObjects
         {
             guids.Add(node.Guid);
 
+            int? incomingAbility = null;
+
             // Data-driven: charm declares its own ability directly
             if (node.IsAbilityCharm && node.CharmGrantsAbility.HasValue)
             {
-                if (!abilityIds.Add(node.CharmGrantsAbility.Value))
-                    return true;
+                incomingAbility = node.CharmGrantsAbility.Value;
+            }
+            else
+            {
+                // Registry fallback: charm WCID is mapped to an ability ID
+                var wcidAbility = CharmAbilityRegistry.GetAbilityIdForWCID(node.WeenieClassId);
+                if (wcidAbility.HasValue)
+                {
+                    incomingAbility = wcidAbility.Value;
+                }
             }
 
-            // Registry fallback: charm WCID is mapped to an ability ID
-            var wcidAbility = CharmAbilityRegistry.GetAbilityIdForWCID(node.WeenieClassId);
-            if (wcidAbility.HasValue)
+            if (incomingAbility.HasValue)
             {
-                if (!abilityIds.Add(wcidAbility.Value))
+                if (!abilityIds.Add(incomingAbility.Value))
                     return true;
             }
 

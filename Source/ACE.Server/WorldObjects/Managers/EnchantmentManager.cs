@@ -784,7 +784,7 @@ namespace ACE.Server.WorldObjects.Managers
             if (Player != null)
             {
                 var spell = new Spell(entry.SpellId);
-                if (Player.HasAutoRebuffCharm && !spell.NotFound && spell.IsBeneficial)
+                if (Player.HasAutoRebuffCharm && CharmSettingsManager.AutoRebuff.Enabled && !spell.NotFound && spell.IsBeneficial)
                 {
                     if (!Player.IsDispelMessageTriggered)
                     {
@@ -818,7 +818,7 @@ namespace ACE.Server.WorldObjects.Managers
                     return !spell.NotFound && spell.IsBeneficial;
                 });
 
-                if (Player.HasAutoRebuffCharm && removedBeneficial)
+                if (Player.HasAutoRebuffCharm && CharmSettingsManager.AutoRebuff.Enabled && removedBeneficial)
                 {
                     if (!Player.IsDispelMessageTriggered)
                     {

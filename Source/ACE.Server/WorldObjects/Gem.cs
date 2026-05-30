@@ -366,6 +366,12 @@ namespace ACE.Server.WorldObjects
                 }
 
                 // Activation (turning ON)
+                if (!CharmSettingsManager.AutoRebuff.Enabled)
+                {
+                    player.Session?.Network?.EnqueueSend(new GameMessageSystemChat("Auto-Rebuff Charm is currently disabled globally by the developer.", ChatMessageType.Broadcast));
+                    return;
+                }
+
                 IsCharmActivated = true;
                 CharmAbilityRegistry.Apply(player, abilityId, true, CharmLevel ?? 1);
                 player.IsDispelMessageTriggered = false; // Arm the dispel alert message trigger
