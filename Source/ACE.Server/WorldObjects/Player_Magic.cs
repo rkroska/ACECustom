@@ -1802,6 +1802,16 @@ namespace ACE.Server.WorldObjects
                 else if (roll < tripleChance + doubleChance)
                     procCount = 2;
             }
+            else if (!fromProc)
+            {
+                var roll = ThreadSafeRandom.Next(0.0f, 1.0f);
+                var tripleChance = SmartRingSettingsManager.TripleChance;
+                var doubleChance = SmartRingSettingsManager.DoubleChance;
+                if (roll < tripleChance)
+                    procCount = 3;
+                else if (roll < tripleChance + doubleChance)
+                    procCount = 2;
+            }
 
             // Ring radius — radiusOverride used by proc paths (e.g. Explosive Arrow); otherwise default scaled by charm.
             var radius = radiusOverride > 0f
@@ -1810,7 +1820,7 @@ namespace ACE.Server.WorldObjects
                     ? CharmSettingsManager.Shrapnel.Radius
                     : (spell.Id == SpellId_RingOfAgony
                         ? CharmSettingsManager.Agony.Radius
-                        : DefaultRingAoeRadius * (float)(GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f)));
+                        : SmartRingSettingsManager.Radius * (float)(GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f)));
 
             var attackSkill   = GetCreatureSkill(spell.School);
             var magicSkill    = attackSkill.Current;
@@ -1849,7 +1859,7 @@ namespace ACE.Server.WorldObjects
                         ? CharmSettingsManager.Shrapnel.Height
                         : (spell.Id == SpellId_RingOfAgony
                             ? CharmSettingsManager.Agony.Height
-                            : RingAoeMaxHeightDelta));
+                            : SmartRingSettingsManager.Height));
                 var dz = Math.Abs(center.PositionZ - creature.Location.PositionZ);
                 if (dz > heightCap) continue;
                 if (center.Distance2D(creature.Location) > radius) continue;
