@@ -765,7 +765,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (!seen.Add(obj.Guid)) continue;   // deduplicate across landblock + adjacents
                 if (obj is not Creature c || c == player || c == hitTarget) continue;
-                if (!c.IsAlive || c.Location == null) continue;
+                if (!c.IsAlive || c.Location == null || c.PhysicsObj == null) continue;
                 var dist = Vector3.Distance(hitGlobal, c.Location.ToGlobal(false));
                 if (dist > fork.Range) continue;
                 if (!player.CanDamage(c)) continue;

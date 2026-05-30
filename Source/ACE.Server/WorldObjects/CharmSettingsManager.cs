@@ -851,7 +851,10 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                         if (!ParseInt(value, out var iv)) return $"Invalid int.";
                         if (iv < 1 || iv > 20) return $"Value must be between 1 and 20.";
                         Targets = iv; return $"splitcast.targets = {Targets}";
-                    case "range":   if (!ParseFloat(value, out var fv)) return $"Invalid float."; Range = fv; return $"splitcast.range = {F(Range)}";
+                    case "range":
+                        if (!ParseFloat(value, out var fv)) return $"Invalid float.";
+                        if (fv < 0f) return "Value must be >= 0.";
+                        Range = fv; return $"splitcast.range = {F(Range)}";
                     default: return null;
                 }
             }
@@ -862,7 +865,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 {
                     case "enabled": if (ParseBool(value, out var bv))  Enabled = bv; break;
                     case "targets": if (ParseInt(value, out var iv)) Targets = Math.Clamp(iv, 1, 20); break;
-                    case "range":   if (ParseFloat(value, out var fv)) Range   = fv; break;
+                    case "range":   if (ParseFloat(value, out var fv)) Range   = Math.Max(0f, fv); break;
                 }
             }
 
@@ -954,7 +957,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 {
                     case "enabled":            if (ParseBool(value,  out var bv)) Enabled = bv; break;
                     case "targets":            if (ParseInt(value,   out var iv)) Targets = Math.Clamp(iv, 1, 10); break;
-                    case "range":              if (ParseFloat(value, out var fv)) Range   = fv; break;
+                    case "range":              if (ParseFloat(value, out var fv)) Range   = Math.Max(0f, fv); break;
                     case "t1": case "t1mult":  if (ParseFloat(value, out var m1)) T1Mult  = Math.Clamp(m1, 0f, 2f); break;
                     case "t2": case "t2mult":  if (ParseFloat(value, out var m2)) T2Mult  = Math.Clamp(m2, 0f, 2f); break;
                     case "t3": case "t3mult":  if (ParseFloat(value, out var m3)) T3Mult  = Math.Clamp(m3, 0f, 2f); break;

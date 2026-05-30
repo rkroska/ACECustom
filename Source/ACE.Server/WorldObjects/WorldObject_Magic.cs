@@ -1713,7 +1713,7 @@ namespace ACE.Server.WorldObjects
                     if (!seen.Add(obj.Guid)) continue;   // deduplicate across landblock + adjacents
                     if (obj is not Creature creature || creature == player || creature == target) continue;
                     if (!creature.IsAlive) continue;
-                    if (creature.Location == null) continue;
+                    if (creature.Location == null || creature.PhysicsObj == null) continue;
 
                     var creatureGlobal = creature.Location.ToGlobal(false);
                     var dist = Vector3.Distance(targetGlobal, creatureGlobal);
