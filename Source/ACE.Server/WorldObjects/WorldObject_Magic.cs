@@ -2020,8 +2020,20 @@ namespace ACE.Server.WorldObjects
                 var rotate = casterLoc.Rotation;
                 if (target != null)
                 {
-                    var dirSource = directionOverride ?? this;
-                    var qDir = dirSource.PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
+                    Vector3 qDir;
+                    if (directionOverride != null && directionOverride.Location != null && target.Location != null)
+                    {
+                        // Use stable Location.ToGlobal() coordinates — PhysicsObj.Position
+                        // can drift for dead creatures (death animation moves the physics body),
+                        // causing the direction to resolve back to the player's position.
+                        var fromGlobal = directionOverride.Location.ToGlobal(false);
+                        var toGlobal   = target.Location.ToGlobal(false);
+                        qDir = new Vector3(toGlobal.X - fromGlobal.X, toGlobal.Y - fromGlobal.Y, toGlobal.Z - fromGlobal.Z);
+                    }
+                    else
+                    {
+                        qDir = PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
+                    }
                     rotate = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, (float)Math.Atan2(-qDir.X, qDir.Y));
                 }
 

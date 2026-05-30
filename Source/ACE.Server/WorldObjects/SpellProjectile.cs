@@ -783,29 +783,38 @@ namespace ACE.Server.WorldObjects
 
                 // Launch fork projectiles toward each candidate.
                 //
-                // Strategy: call everything on 'player' (consistent with SplitCast, keeps
-                // ProjectileSource and XP attribution correct). Override BOTH:
-                //   originOverride    = hitTarget  → spawn position (where the bolt appears)
-                //   directionOverride = hitTarget  → rotation/facing (line 2023 in LaunchSpellProjectiles)
-                //
-                // Velocity is computed on hitTarget (this = hitTarget → PhysicsObj is hitTarget's)
-                // so startPos and endPos are both in hitTarget's landblock coordinate space.
+                // ALL position/direction math uses Location.ToGlobal() — NOT PhysicsObj.Position.
+                // Dead creatures' PhysicsObj positions drift (death animation moves the body),
+                // making hitTarget.CalculateProjectileVelocity return a direction relative to the
+                // player rather than hitTarget.  Location is set by the server and remains stable.
                 foreach ((Creature forkTarget, float _) in candidates.Take(fork.Targets))
                 {
-                    // origins: offset from caster body — call on hitTarget so PhysicsRadius is
-                    // relative to the target, not the (distant) player
-                    var origins  = hitTarget.CalculateProjectileOrigins(snapSpell, snapSpellType, forkTarget);
+                    // Origins: body-size offset from hitTarget's physics radius (static lookup — safe).
+                    var origins = hitTarget.CalculateProjectileOrigins(snapSpell, snapSpellType, forkTarget);
 
-                    // velocity: computed hitTarget → forkTarget in hitTarget's coordinate space
-                    var velocity = hitTarget.CalculateProjectileVelocity(snapSpell, forkTarget, snapSpellType, origins[0]);
+                    // Velocity: compute direction from stable Location coords; get speed from player
+                    // (player is alive, PhysicsObj valid) using a zero-origin reference call.
+                    var refVelocity = player.CalculateProjectileVelocity(snapSpell, forkTarget, snapSpellType, Vector3.Zero);
+                    var speed = refVelocity.Length();
 
-                    // LaunchSpellProjectiles on player — spawn at hitTarget, face hitTarget → forkTarget
+                    var fromGlobal = hitTarget.Location.ToGlobal(false);
+                    var toGlobal   = forkTarget.Location.ToGlobal(false);
+                    // Aim at target's eye level (matches vanilla height offset; Arc uses ProjHeightArc)
+                    var heightFactor = snapSpellType == ProjectileSpellType.Arc ? ProjHeightArc : ProjHeight;
+                    toGlobal.Z   += forkTarget.Height * heightFactor;
+                    fromGlobal.Z += hitTarget.Height  * heightFactor;
+                    var dirVec   = Vector3.Normalize(toGlobal - fromGlobal);
+                    var velocity = speed > 0 ? dirVec * speed : refVelocity;
+
+                    // Launch on player (ProjectileSource = player → correct damage / XP).
+                    // originOverride    → spawn position comes from hitTarget.Location
+                    // directionOverride → facing quaternion uses Location.ToGlobal (fixed above)
                     var launched = player.LaunchSpellProjectiles(
                         snapSpell, forkTarget, snapSpellType,
                         snapLauncher, snapWeaponSpell, fromProc: true,
                         origins, velocity, snapLifeDmg,
-                        originOverride:    hitTarget,   // spawn AT hitTarget
-                        directionOverride: hitTarget);  // face FROM hitTarget → forkTarget
+                        originOverride:    hitTarget,
+                        directionOverride: hitTarget);
 
                     if (launched == null) continue;
                     foreach (var fp in launched)
