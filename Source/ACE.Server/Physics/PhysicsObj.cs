@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -29,6 +30,24 @@ namespace ACE.Server.Physics
     public class PhysicsObj
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
+        private static readonly ConcurrentDictionary<string, double> _petPlayerCollisionDebugLastLog = new();
+
+        private const double PetPlayerCollisionDebugThrottleSec = 0.35;
+
+        /// <summary> Drop pet/player collision debug throttle entries past the log interval so pair keys do not accumulate forever. </summary>
+        private static void PetPlayerCollisionDebugMaybePrune(double now)
+        {
+            if (_petPlayerCollisionDebugLastLog.Count == 0)
+                return;
+
+            foreach (var kv in _petPlayerCollisionDebugLastLog.ToArray())
+            {
+                var age = now - kv.Value;
+                if (age > PetPlayerCollisionDebugThrottleSec || age < -PetPlayerCollisionDebugThrottleSec)
+                    _petPlayerCollisionDebugLastLog.TryRemove(kv.Key, out _);
+            }
+        }
 
         public uint ID;
         public ObjectGuid ObjID;
@@ -339,6 +358,13 @@ namespace ACE.Server.Physics
                             var intersects = cylSpheres[i].IntersectsSphere(Position, Scale, transition);
                             if (intersects != TransitionState.OK)
                             {
+                                if (ServerConfig.pet_player_collision_debug_console.Value
+                                    && LooksLikePetPlayerCollision(this, transition.ObjectInfo.Object)
+                                    && !IsPetVsPlayerCollision(this, transition.ObjectInfo.Object))
+                                {
+                                    TracePetPlayerCollision("FindObjCollisions.cylHit.pairFailed", this, transition.ObjectInfo.Object, transition, intersects, ethereal, isCreature, suppressed: false);
+                                }
+
                                 return FindObjCollisions_Inner(transition, intersects, ethereal, isCreature);
                             }
                         }
@@ -356,8 +382,127 @@ namespace ACE.Server.Physics
             return TransitionState.OK;
         }
 
+        /// <summary>
+        /// True when one collision participant is a summon <see cref="Pet"/> (passive or <see cref="CombatPet"/>)
+        /// and the other is any <see cref="Player"/>. Used with replicated <see cref="PhysicsState.Ethereal"/> on pets for client walk-through.
+        /// </summary>
+        private static bool IsPetVsPlayerCollision(PhysicsObj self, PhysicsObj? other)
+        {
+            if (self?.WeenieObj?.WorldObject == null || other?.WeenieObj?.WorldObject == null)
+                return false;
+            var a = self.WeenieObj.WorldObject;
+            var b = other.WeenieObj.WorldObject;
+            if (a is Pet && b is Player)
+                return true;
+            if (b is Pet && a is Player)
+                return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Pets use <see cref="PhysicsState.Ethereal"/> for client player walk-through. On the server, still block pet movement
+        /// vs doors, monsters, and other non-player objects (not <see cref="IgnoreCollisions"/> — that would skip env/object checks entirely).
+        /// </summary>
+        private static bool IsPetMustBlockNonPlayerCollision(PhysicsObj obstacle, PhysicsObj mover)
+        {
+            if (!ServerConfig.pet_block_nonplayer_collision.Value)
+                return false;
+
+            var involvesPet = obstacle.WeenieObj?.WorldObject is Pet || mover.WeenieObj?.WorldObject is Pet;
+            if (!involvesPet)
+                return false;
+
+            if (IsPetVsPlayerCollision(obstacle, mover))
+                return false;
+
+            return true;
+        }
+
+        private static bool TryGetPetPlayerPair(PhysicsObj? a, PhysicsObj? b, out Pet? pet, out Player? player)
+        {
+            pet = null;
+            player = null;
+            if (a?.WeenieObj?.WorldObject == null || b?.WeenieObj?.WorldObject == null)
+                return false;
+
+            var wa = a.WeenieObj.WorldObject;
+            var wb = b.WeenieObj.WorldObject;
+            if (wa is Pet p && wb is Player pl)
+            {
+                pet = p;
+                player = pl;
+                return true;
+            }
+            if (wb is Pet p2 && wa is Player pl2)
+            {
+                pet = p2;
+                player = pl2;
+                return true;
+            }
+            return false;
+        }
+
+        private static bool LooksLikePetPlayerCollision(PhysicsObj? a, PhysicsObj? b)
+        {
+            if (a?.WeenieObj == null || b?.WeenieObj == null)
+                return false;
+            var petSide = (a.WeenieObj.IsCreature && !a.WeenieObj.IsPlayer && a.WeenieObj.WorldObject is Pet)
+                || (b.WeenieObj.IsCreature && !b.WeenieObj.IsPlayer && b.WeenieObj.WorldObject is Pet);
+            var playerSide = a.WeenieObj.IsPlayer || b.WeenieObj.IsPlayer;
+            return petSide && playerSide;
+        }
+
+        private static string FormatPhysicsCollisionFlags(PhysicsObj obj)
+        {
+            if (obj == null)
+                return "null";
+            var s = obj.State;
+            return $"Ethereal={s.HasFlag(PhysicsState.Ethereal)} IgnoreColl={s.HasFlag(PhysicsState.IgnoreCollisions)} Static={s.HasFlag(PhysicsState.Static)} ReportColl={s.HasFlag(PhysicsState.ReportCollisions)}";
+        }
+
+        private static void TracePetPlayerCollision(string stage, PhysicsObj obstacle, PhysicsObj mover, Transition? transition, TransitionState result, bool ethereal, bool isCreature, bool suppressed)
+        {
+            if (!ServerConfig.pet_player_collision_debug_console.Value)
+                return;
+
+            if (!LooksLikePetPlayerCollision(obstacle, mover) && !IsPetVsPlayerCollision(obstacle, mover))
+                return;
+
+            var now = PhysicsTimer.CurrentTime;
+            PetPlayerCollisionDebugMaybePrune(now);
+            var key = $"{Math.Min(obstacle.ID, mover.ID):X8}:{Math.Max(obstacle.ID, mover.ID):X8}";
+            if (_petPlayerCollisionDebugLastLog.TryGetValue(key, out var last) && now - last < PetPlayerCollisionDebugThrottleSec)
+                return;
+            _petPlayerCollisionDebugLastLog[key] = now;
+
+            TryGetPetPlayerPair(obstacle, mover, out var pet, out var player);
+            var petWo = pet ?? obstacle.WeenieObj?.WorldObject as Pet ?? mover.WeenieObj?.WorldObject as Pet;
+            var playerWo = player ?? obstacle.WeenieObj?.WorldObject as Player ?? mover.WeenieObj?.WorldObject as Player;
+            var petName = petWo?.Name ?? "?";
+            var playerName = playerWo?.Name ?? "?";
+            var pairOk = IsPetVsPlayerCollision(obstacle, mover);
+            var woNull = obstacle.WeenieObj?.WorldObject == null || mover.WeenieObj?.WorldObject == null;
+            var pathDetail = transition?.SpherePath != null
+                ? $"path StepDown={transition.SpherePath.StepDown} Collide={transition.SpherePath.Collide} CheckWalkable={transition.SpherePath.CheckWalkable} ObstructionEthereal={transition.SpherePath.ObstructionEthereal}"
+                : "path n/a";
+
+            Console.WriteLine(
+                $"[PetPlayerColl] {stage} {(suppressed ? "SUPPRESSED" : "HARD")} result={result} pairOk={pairOk} woNull={woNull} " +
+                $"pet={petName} player={playerName} obs={obstacle.ID:X8} mover={mover.ID:X8} {pathDetail} " +
+                $"inner ethereal={ethereal} isCreature={isCreature} | obs({FormatPhysicsCollisionFlags(obstacle)}) mover({FormatPhysicsCollisionFlags(mover)}) " +
+                $"propEthereal pet={petWo?.Ethereal} player={playerWo?.Ethereal} | client blocks on PhysicsState.Ethereal from CreateObject, not server IsPetVsPlayer");
+        }
+
         public TransitionState FindObjCollisions_Inner(Transition transition, TransitionState result, bool ethereal, bool isCreature)
         {
+            var mover = transition.ObjectInfo.Object;
+            var looksPetPlayer = LooksLikePetPlayerCollision(this, mover) || IsPetVsPlayerCollision(this, mover);
+            var petMustBlock = IsPetMustBlockNonPlayerCollision(this, mover);
+            var allowPassThrough = !petMustBlock
+                && (ethereal
+                    || IsPetVsPlayerCollision(this, transition.ObjectInfo.Object)
+                    || isCreature && transition.ObjectInfo.State.HasFlag(ObjectInfoState.IgnoreCreatures));
+
             if (!transition.SpherePath.StepDown)
             {
                 if (State.HasFlag(PhysicsState.Static))
@@ -365,15 +510,40 @@ namespace ACE.Server.Physics
                     if (!transition.ObjectInfo.State.HasFlag(ObjectInfoState.Contact))
                         transition.CollisionInfo.CollidedWithEnvironment = true;
                 }
-                else if (ethereal || isCreature && transition.ObjectInfo.State.HasFlag(ObjectInfoState.IgnoreCreatures))
+                else if (allowPassThrough)
                 {
+                    if (looksPetPlayer)
+                        TracePetPlayerCollision("FindObjCollisions_Inner", this, mover, transition, result, ethereal, isCreature, suppressed: true);
+
                     result = TransitionState.OK;
                     transition.CollisionInfo.CollisionNormalValid = false;
                     transition.CollisionInfo.AddObject(this, TransitionState.OK);
                 }
                 else
+                {
+                    if (looksPetPlayer || (petMustBlock && ServerConfig.pet_player_collision_debug_console.Value))
+                        TracePetPlayerCollision(petMustBlock ? "FindObjCollisions_Inner.petMustBlock" : "FindObjCollisions_Inner", this, mover, transition, result, ethereal, isCreature, suppressed: false);
+
                     transition.CollisionInfo.AddObject(this, result);
+                }
             }
+            else if (allowPassThrough)
+            {
+                if (looksPetPlayer)
+                    TracePetPlayerCollision("FindObjCollisions_Inner.StepDown", this, mover, transition, result, ethereal, isCreature, suppressed: true);
+
+                result = TransitionState.OK;
+                transition.CollisionInfo.CollisionNormalValid = false;
+                transition.CollisionInfo.AddObject(this, TransitionState.OK);
+            }
+            else
+            {
+                if (looksPetPlayer || (petMustBlock && ServerConfig.pet_player_collision_debug_console.Value))
+                    TracePetPlayerCollision(petMustBlock ? "FindObjCollisions_Inner.StepDown.petMustBlock" : "FindObjCollisions_Inner.StepDown", this, mover, transition, result, ethereal, isCreature, suppressed: false);
+
+                transition.CollisionInfo.AddObject(this, result);
+            }
+
             transition.SpherePath.ObstructionEthereal = false;
             return result;
         }
@@ -2616,6 +2786,13 @@ namespace ACE.Server.Physics
 
         public bool report_object_collision(PhysicsObj obj, bool prev_has_contact)
         {
+            if (ServerConfig.pet_player_collision_debug_console.Value
+                && (IsPetVsPlayerCollision(this, obj) || LooksLikePetPlayerCollision(this, obj)))
+            {
+                TracePetPlayerCollision("report_object_collision.enter", this, obj, null, TransitionState.OK, false, false,
+                    suppressed: false);
+            }
+
             if (obj.State.HasFlag(PhysicsState.ReportCollisionsAsEnvironment))
                 return report_environment_collision(prev_has_contact);
 

@@ -44,7 +44,8 @@ namespace ACE.Server.WorldObjects
         private void SetEphemeralValues()
         {
             // Ethereal replicates to clients so players do not predict hard blockage vs pets.
-            // Do not set IgnoreCollisions — server PhysicsObj.IsPetMustBlockNonPlayerCollision keeps pets solid vs doors, monsters, and other objects.
+            // Server still blocks pet movement vs doors, monsters, and other non-players via PhysicsObj.IsPetMustBlockNonPlayerCollision (pet_block_nonplayer_collision).
+            // Do not set IgnoreCollisions — that would skip environment/object collision checks entirely.
             Ethereal = true;
             RadarBehavior = ACE.Entity.Enum.RadarBehavior.ShowNever;
             ItemUseable = Usable.No;
