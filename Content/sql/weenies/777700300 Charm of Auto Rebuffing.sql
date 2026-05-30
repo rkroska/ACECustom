@@ -56,6 +56,6 @@ INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES
 (777700300,  1, 33554556),   -- Setup (Coffer/Chest)
 (777700300,  3, 536870932),  -- SoundTable
 (777700300,  6, 67111919),   -- PaletteBase
-(777700300,  8, 100672516),  -- Icon (AC Icon Viewer 2404)
+(777700300,  8, 100666338),  -- Icon (AC Icon Viewer 3042)
 (777700300, 48, 100676435),  -- IconUnderlay
 (777700300, 50, 100667550);  -- IconOverlay (Tier 1 badge)
