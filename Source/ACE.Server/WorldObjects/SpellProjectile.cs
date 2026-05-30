@@ -762,21 +762,25 @@ namespace ACE.Server.WorldObjects
 
             candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
 
-            // Launch fork projectiles toward each candidate
+            // Launch fork projectiles toward each candidate.
+            // All three calls are made on hitTarget so that spawn position AND
+            // velocity direction are both computed from hitTarget → forkTarget.
+            // ProjectileSource is then overridden to the player so damage is
+            // attributed correctly and OnCollideObject resolves the right caster.
             foreach ((Creature forkTarget, float _) in candidates.Take(fork.Targets))
             {
-                var origins  = player.CalculateProjectileOrigins(Spell, SpellType, forkTarget);
-                var velocity = player.CalculateProjectileVelocity(Spell, forkTarget, SpellType, origins[0]);
+                var origins  = hitTarget.CalculateProjectileOrigins(Spell, SpellType, forkTarget);
+                var velocity = hitTarget.CalculateProjectileVelocity(Spell, forkTarget, SpellType, origins[0]);
 
-                var launched = player.LaunchSpellProjectiles(
+                var launched = hitTarget.LaunchSpellProjectiles(
                     Spell, forkTarget, SpellType,
                     ProjectileLauncher, IsWeaponSpell, fromProc: true,
-                    origins, velocity, LifeProjectileDamage,
-                    originOverride: hitTarget);   // spawn visually from the hit point
+                    origins, velocity, LifeProjectileDamage);
 
                 if (launched == null) continue;
                 foreach (var fp in launched)
                 {
+                    fp.ProjectileSource = player;   // damage attributed to the player, not the enemy
                     fp.IsForkProjectile = true;
                     fp.ForkDamageMult   = damageMult;
                 }
