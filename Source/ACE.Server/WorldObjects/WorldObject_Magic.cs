@@ -1692,10 +1692,10 @@ namespace ACE.Server.WorldObjects
                 if (landblock != null)
                 {
                     allObjects.AddRange(landblock.GetWorldObjectsForPhysicsHandling());
-                    foreach (var adj in landblock.Adjacents)
+                    if (landblock.Adjacents != null)
                     {
-                        if (adj != null)
-                            allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
+                        foreach (var adj in landblock.Adjacents)
+                            if (adj != null) allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
                     }
                 }
 
@@ -1707,10 +1707,10 @@ namespace ACE.Server.WorldObjects
                 var targetGlobal = target.Location.ToGlobal(false);
 
                 // Deduplicate by Guid across landblock + adjacents
-                var uniqueObjects = allObjects.GroupBy(o => o.Guid).Select(g => g.First());
-
-                foreach (var obj in uniqueObjects)
+                var seen = new HashSet<ObjectGuid>();
+                foreach (var obj in allObjects)
                 {
+                    if (!seen.Add(obj.Guid)) continue;   // deduplicate across landblock + adjacents
                     if (obj is not Creature creature || creature == player || creature == target) continue;
                     if (!creature.IsAlive) continue;
                     if (creature.Location == null) continue;
@@ -1954,7 +1954,19 @@ namespace ACE.Server.WorldObjects
 
             var crossLandblock = !strikeSpell && casterLoc.Landblock != targetLoc.Landblock;
 
-            var qDir = origin.PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
+            // When originOverride is set, use stable Location.ToGlobal() for qDir to match the
+            // directionOverride path in LaunchSpellProjectiles and avoid PhysicsObj drift on dead targets.
+            Vector3 qDir;
+            if (originOverride?.Location != null && target.Location != null)
+            {
+                var fromGlobal = originOverride.Location.ToGlobal(false);
+                var toGlobal   = target.Location.ToGlobal(false);
+                qDir = new Vector3(toGlobal.X - fromGlobal.X, toGlobal.Y - fromGlobal.Y, toGlobal.Z - fromGlobal.Z);
+            }
+            else
+            {
+                qDir = origin.PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
+            }
             var rotate = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, (float)Math.Atan2(-qDir.X, qDir.Y));
 
             var startPos = strikeSpell ? targetLoc.Pos : crossLandblock ? casterLoc.ToGlobal(false) : casterLoc.Pos;
@@ -1997,7 +2009,7 @@ namespace ACE.Server.WorldObjects
             return dir * speed;
         }
 
-        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null)
+        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f)
         {
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -2086,6 +2098,9 @@ namespace ACE.Server.WorldObjects
                 sp.SpawnPos = new Position(sp.Location);
 
                 sp.LifeProjectileDamage = lifeProjectileDamage;
+                // Fork state — set before AddObject so IsProjectileVisible-killed bolts have correct flags.
+                sp.IsForkProjectile = isForkProjectile;
+                sp.ForkDamageMult   = forkDamageMult;
 
                 if (!LandblockManager.AddObject(sp))
                 {

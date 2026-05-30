@@ -767,24 +767,22 @@ namespace ACE.Server.WorldObjects
                 candidates.Add((c, dist));
             }
 
-
             candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
 
             // Fire — same call as chain lightning: caster.CreateSpellProjectiles(..., originOverride: justHit)
             // No SyncPhysicsPosition needed — hitTarget.PhysicsObj is fresh at hit time (no drift yet).
             foreach ((Creature forkTarget, float _) in candidates.Take(fork.Targets))
             {
-                var launched = player.CreateSpellProjectiles(
-                    Spell, forkTarget,
+                // Call LaunchSpellProjectiles directly so isForkProjectile/forkDamageMult are set
+                // before LandblockManager.AddObject — IsProjectileVisible runs inside that call.
+                var forkOrigins  = player.CalculateProjectileOrigins(Spell, SpellType, forkTarget, hitTarget);
+                var forkVelocity = player.CalculateProjectileVelocity(Spell, forkTarget, SpellType, forkOrigins[0], hitTarget);
+                player.LaunchSpellProjectiles(
+                    Spell, forkTarget, SpellType,
                     ProjectileLauncher, IsWeaponSpell, fromProc: true,
-                    LifeProjectileDamage, originOverride: hitTarget);
-
-                if (launched == null) continue;
-                foreach (var fp in launched)
-                {
-                    fp.IsForkProjectile = true;
-                    fp.ForkDamageMult   = damageMult;
-                }
+                    forkOrigins, forkVelocity, LifeProjectileDamage,
+                    originOverride: hitTarget, directionOverride: hitTarget,
+                    isForkProjectile: true, forkDamageMult: damageMult);
             }
         }
 
