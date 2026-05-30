@@ -931,17 +931,17 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                         if (!ParseFloat(value, out var fv)) return $"Invalid float.";
                         Range = fv; return $"fork.range = {F(Range)}";
 
-                    case "t1mult":
+                    case "t1": case "t1mult":
                         if (!ParseFloat(value, out var m1)) return $"Invalid float.";
-                        T1Mult = Math.Clamp(m1, 0f, 2f); return $"fork.t1mult = {F(T1Mult)}";
+                        T1Mult = Math.Clamp(m1, 0f, 2f); return $"fork.t1 = {T1Mult.ToString("0.00", CultureInfo.InvariantCulture)}";
 
-                    case "t2mult":
+                    case "t2": case "t2mult":
                         if (!ParseFloat(value, out var m2)) return $"Invalid float.";
-                        T2Mult = Math.Clamp(m2, 0f, 2f); return $"fork.t2mult = {F(T2Mult)}";
+                        T2Mult = Math.Clamp(m2, 0f, 2f); return $"fork.t2 = {T2Mult.ToString("0.00", CultureInfo.InvariantCulture)}";
 
-                    case "t3mult":
+                    case "t3": case "t3mult":
                         if (!ParseFloat(value, out var m3)) return $"Invalid float.";
-                        T3Mult = Math.Clamp(m3, 0f, 2f); return $"fork.t3mult = {F(T3Mult)}";
+                        T3Mult = Math.Clamp(m3, 0f, 2f); return $"fork.t3 = {T3Mult.ToString("0.00", CultureInfo.InvariantCulture)}";
 
                     default: return null;
                 }
@@ -951,12 +951,12 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             {
                 switch (key)
                 {
-                    case "enabled": if (ParseBool(value,  out var bv)) Enabled = bv; break;
-                    case "targets": if (ParseInt(value,   out var iv)) Targets = Math.Clamp(iv, 1, 10); break;
-                    case "range":   if (ParseFloat(value, out var fv)) Range   = fv; break;
-                    case "t1mult":  if (ParseFloat(value, out var m1)) T1Mult  = Math.Clamp(m1, 0f, 2f); break;
-                    case "t2mult":  if (ParseFloat(value, out var m2)) T2Mult  = Math.Clamp(m2, 0f, 2f); break;
-                    case "t3mult":  if (ParseFloat(value, out var m3)) T3Mult  = Math.Clamp(m3, 0f, 2f); break;
+                    case "enabled":            if (ParseBool(value,  out var bv)) Enabled = bv; break;
+                    case "targets":            if (ParseInt(value,   out var iv)) Targets = Math.Clamp(iv, 1, 10); break;
+                    case "range":              if (ParseFloat(value, out var fv)) Range   = fv; break;
+                    case "t1": case "t1mult":  if (ParseFloat(value, out var m1)) T1Mult  = Math.Clamp(m1, 0f, 2f); break;
+                    case "t2": case "t2mult":  if (ParseFloat(value, out var m2)) T2Mult  = Math.Clamp(m2, 0f, 2f); break;
+                    case "t3": case "t3mult":  if (ParseFloat(value, out var m3)) T3Mult  = Math.Clamp(m3, 0f, 2f); break;
                 }
             }
 
@@ -965,9 +965,9 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 "enabled" => B(Enabled),
                 "targets" => Targets.ToString(),
                 "range"   => F(Range),
-                "t1mult"  => F(T1Mult),
-                "t2mult"  => F(T2Mult),
-                "t3mult"  => F(T3Mult),
+                "t1"      => T1Mult.ToString("0.00", CultureInfo.InvariantCulture),
+                "t2"      => T2Mult.ToString("0.00", CultureInfo.InvariantCulture),
+                "t3"      => T3Mult.ToString("0.00", CultureInfo.InvariantCulture),
                 _         => null
             };
 
@@ -976,9 +976,9 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 ("enabled", B(Enabled)),
                 ("targets", Targets.ToString()),
                 ("range",   F(Range)),
-                ("t1mult",  F(T1Mult)),
-                ("t2mult",  F(T2Mult)),
-                ("t3mult",  F(T3Mult)),
+                ("t1",      T1Mult.ToString("0.00", CultureInfo.InvariantCulture)),
+                ("t2",      T2Mult.ToString("0.00", CultureInfo.InvariantCulture)),
+                ("t3",      T3Mult.ToString("0.00", CultureInfo.InvariantCulture)),
             };
 
             public string Help() =>
@@ -986,23 +986,23 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 "  • Enabled  on / off\n" +
                 "  • targets int   — number of fork targets per hit (1 to 10)\n" +
                 "  • range float   — search radius in meters for fork targets\n" +
-                "  • t1mult float  — T1 fork damage multiplier (default 0.50)\n" +
-                "  • t2mult float  — T2 fork damage multiplier (default 0.75)\n" +
-                "  • t3mult float  — T3 fork damage multiplier (default 1.00)\n" +
+                "  • t1 float  — T1 fork damage multiplier\n" +
+                "  • t2 float  — T2 fork damage multiplier\n" +
+                "  • t3 float  — T3 fork damage multiplier\n" +
                 "\n[Examples]\n" +
                 "  • /charm fork on\n" +
                 "  • /charm fork targets 6\n" +
                 "  • /charm fork range 15.0\n" +
-                "  • /charm fork t1mult 0.60";
+                "  • /charm fork t1 0.60";
 
             public string Dump() =>
                 "[Fork] Current Settings\n" +
                 $"  • Enabled: {B(Enabled)}\n" +
                 $"  • Targets: {Targets}\n" +
                 $"  • Range: {Range.ToString("0.0", CultureInfo.InvariantCulture)} meters\n" +
-                $"  • T1 dmg mult: {F(T1Mult)} (Tier 1 fork deals {T1Mult * 100:0}% damage)\n" +
-                $"  • T2 dmg mult: {F(T2Mult)} (Tier 2 fork deals {T2Mult * 100:0}% damage)\n" +
-                $"  • T3 dmg mult: {F(T3Mult)} (Tier 3 fork deals {T3Mult * 100:0}% damage)\n";
+                $"  • T1: {T1Mult.ToString("0.00", CultureInfo.InvariantCulture)} (Deals {T1Mult * 100:0}% damage)\n" +
+                $"  • T2: {T2Mult.ToString("0.00", CultureInfo.InvariantCulture)} (Deals {T2Mult * 100:0}% damage)\n" +
+                $"  • T3: {T3Mult.ToString("0.00", CultureInfo.InvariantCulture)} (Deals {T3Mult * 100:0}% damage)\n";
         }
 
 
