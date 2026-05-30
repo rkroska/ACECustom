@@ -37,6 +37,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>Bypass pet device SummoningMastery checks (Primalist / Necromancer / Naturalist essences).</summary>
         public const int UniversalSummoningMasteryAbilityId = 25;
         public const int AutoRebuffAbilityId      = 26;
+        public const int ForkAbilityId             = 27;
 
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {
@@ -53,6 +54,7 @@ namespace ACE.Server.WorldObjects
             { PetDevicePyrealAutoRefillAbilityId, new AbilityEntry(p => p.PetDevicePyrealAutoRefillEnrolled, (p, v) => p.PetDevicePyrealAutoRefillEnrolled = v, "Summon Essence Refill") },
             { UniversalSummoningMasteryAbilityId, new AbilityEntry(p => p.HasUniversalSummoningMastery, (p, v) => p.HasUniversalSummoningMastery = v, "Universal Summoning Mastery") },
             { AutoRebuffAbilityId,      new AbilityEntry(p => p.HasAutoRebuffCharm,     (p, v) => p.HasAutoRebuffCharm = v,     "Auto-Rebuff")          },
+            { ForkAbilityId,            new AbilityEntry(p => p.HasForkCharm,           (p, v) => p.HasForkCharm           = v, "Fork")                 },
         };
 
         /// <summary>Returns all registered ability IDs. Prefer this over hardcoded numeric ranges.</summary>
@@ -83,6 +85,8 @@ namespace ACE.Server.WorldObjects
             { 78780031, UniversalSummoningMasteryAbilityId },
             // Auto-Rebuff Charm
             { 777700300, AutoRebuffAbilityId },
+            // Fork Charm (Tiers 1–3)
+            { 777700027, ForkAbilityId }, { 777710007, ForkAbilityId }, { 777720007, ForkAbilityId },
         };
 
         /// <summary>

@@ -572,6 +572,26 @@ namespace ACE.Server.WorldObjects
                     : "Omni Strike Charm deactivated. Attacks will deal damage normally.";
             }
 
+            if (abilityId == CharmAbilityRegistry.ForkAbilityId)
+            {
+                return activating
+                    ? level switch
+                    {
+                        1 => "Fork Charm activated. Your Streak, Arc, and Bolt spells will fork to nearby enemies on hit, dealing 50% damage.",
+                        2 => "Greater Fork Charm activated. Fork projectiles deal 75% damage.",
+                        3 => "Master Fork Charm activated. Fork projectiles deal full damage.",
+                        _ => $"Fork Charm (Level {level}) activated."
+                    }
+                    : level switch
+                    {
+                        1 => "Fork Charm deactivated.",
+                        2 => "Greater Fork Charm deactivated.",
+                        3 => "Master Fork Charm deactivated.",
+                        _ => "Fork Charm deactivated."
+                    };
+            }
+
+
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
             return activating ? $"{name} Level {level} activated." : $"{name} deactivated.";
         }

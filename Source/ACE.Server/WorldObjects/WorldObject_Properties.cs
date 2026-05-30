@@ -3468,6 +3468,13 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasUniversalSummoningMastery); else SetProperty(PropertyBool.HasUniversalSummoningMastery, value); }
         }
 
+        /// <summary>True while the Fork Charm is activated — Streak, Arc, and Bolt projectiles fork to nearby enemies on hit.</summary>
+        public bool HasForkCharm
+        {
+            get => GetProperty(PropertyBool.HasForkCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasForkCharm); else SetProperty(PropertyBool.HasForkCharm, value); }
+        }
+
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
         {

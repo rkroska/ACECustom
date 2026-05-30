@@ -38,6 +38,7 @@ namespace ACE.Server.WorldObjects
         public static ArtisansBlock           Artisans           { get; } = new();
         public static EssenceRefillBlock      EssenceRefill      { get; } = new();
         public static UniversalSummoningBlock UniversalSummoning { get; } = new();
+        public static ForkBlock               Fork               { get; } = new();
 
         // ─────────────────────────────────────────────────────────────────────
         //  Startup
@@ -83,6 +84,7 @@ namespace ACE.Server.WorldObjects
             sb.Append(Artisans.Dump());
             sb.Append(EssenceRefill.Dump());
             sb.Append(UniversalSummoning.Dump());
+            sb.Append(Fork.Dump());
             return sb.ToString();
         }
 
@@ -109,6 +111,7 @@ namespace ACE.Server.WorldObjects
                 "artisans"           => Artisans,
                 "essencerefill"      => EssenceRefill,
                 "universalsummoning" => UniversalSummoning,
+                "fork"               => Fork,
                 _                    => null
             };
 
@@ -137,6 +140,7 @@ namespace ACE.Server.WorldObjects
             Artisans.Reset();           PersistBlock("artisans",           Artisans);
             EssenceRefill.Reset();      PersistBlock("essencerefill",      EssenceRefill);
             UniversalSummoning.Reset(); PersistBlock("universalsummoning", UniversalSummoning);
+            Fork.Reset();               PersistBlock("fork",               Fork);
         }
 
         /// <summary>
@@ -161,6 +165,7 @@ namespace ACE.Server.WorldObjects
                 case "artisans":           Artisans.Reset();           PersistBlock("artisans",           Artisans);           return true;
                 case "essencerefill":      EssenceRefill.Reset();      PersistBlock("essencerefill",      EssenceRefill);      return true;
                 case "universalsummoning": UniversalSummoning.Reset(); PersistBlock("universalsummoning", UniversalSummoning); return true;
+                case "fork":               Fork.Reset();               PersistBlock("fork",               Fork);               return true;
                 default: return false;
             }
         }
@@ -183,6 +188,7 @@ namespace ACE.Server.WorldObjects
                 "artisans"           => Artisans.Dump(),
                 "essencerefill"      => EssenceRefill.Dump(),
                 "universalsummoning" => UniversalSummoning.Dump(),
+                "fork"               => Fork.Dump(),
                 _                    => null
             };
         }
@@ -205,6 +211,7 @@ namespace ACE.Server.WorldObjects
                 "artisans"           => Artisans.Help(),
                 "essencerefill"      => EssenceRefill.Help(),
                 "universalsummoning" => UniversalSummoning.Help(),
+                "fork"               => Fork.Help(),
                 _                    => null
             };
         }
@@ -279,6 +286,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             "artisans"           => Artisans,
             "essencerefill"      => EssenceRefill,
             "universalsummoning" => UniversalSummoning,
+            "fork"               => Fork,
             _                    => null
         };
 
@@ -891,8 +899,116 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
         }
 
         // ─────────────────────────────────────────────────────────────────────
+        //  Fork
+        // ─────────────────────────────────────────────────────────────────────
+
+        public sealed class ForkBlock : ICharmBlock
+        {
+            public bool  Enabled { get; private set; } = true;
+            public int   Targets { get; private set; } = 4;
+            public float Range   { get; private set; } = 10.0f;
+            public float T1Mult  { get; private set; } = 0.50f;
+            public float T2Mult  { get; private set; } = 0.75f;
+            public float T3Mult  { get; private set; } = 1.00f;
+
+            public void Reset() { Enabled = true; Targets = 4; Range = 10.0f; T1Mult = 0.50f; T2Mult = 0.75f; T3Mult = 1.00f; }
+
+            public string TrySet(string key, string value)
+            {
+                switch (key)
+                {
+                    case "enabled": case "on": case "off": case "true": case "false":
+                        var valueToParse = key == "enabled" ? value : key;
+                        if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
+                        Enabled = bv; return $"fork.enabled = {B(Enabled)}";
+
+                    case "targets":
+                        if (!ParseInt(value, out var iv)) return $"Invalid int.";
+                        if (iv < 1 || iv > 10) return $"Value must be between 1 and 10.";
+                        Targets = iv; return $"fork.targets = {Targets}";
+
+                    case "range":
+                        if (!ParseFloat(value, out var fv)) return $"Invalid float.";
+                        Range = fv; return $"fork.range = {F(Range)}";
+
+                    case "t1mult":
+                        if (!ParseFloat(value, out var m1)) return $"Invalid float.";
+                        T1Mult = Math.Clamp(m1, 0f, 2f); return $"fork.t1mult = {F(T1Mult)}";
+
+                    case "t2mult":
+                        if (!ParseFloat(value, out var m2)) return $"Invalid float.";
+                        T2Mult = Math.Clamp(m2, 0f, 2f); return $"fork.t2mult = {F(T2Mult)}";
+
+                    case "t3mult":
+                        if (!ParseFloat(value, out var m3)) return $"Invalid float.";
+                        T3Mult = Math.Clamp(m3, 0f, 2f); return $"fork.t3mult = {F(T3Mult)}";
+
+                    default: return null;
+                }
+            }
+
+            public void ApplyRaw(string key, string value)
+            {
+                switch (key)
+                {
+                    case "enabled": if (ParseBool(value,  out var bv)) Enabled = bv; break;
+                    case "targets": if (ParseInt(value,   out var iv)) Targets = Math.Clamp(iv, 1, 10); break;
+                    case "range":   if (ParseFloat(value, out var fv)) Range   = fv; break;
+                    case "t1mult":  if (ParseFloat(value, out var m1)) T1Mult  = Math.Clamp(m1, 0f, 2f); break;
+                    case "t2mult":  if (ParseFloat(value, out var m2)) T2Mult  = Math.Clamp(m2, 0f, 2f); break;
+                    case "t3mult":  if (ParseFloat(value, out var m3)) T3Mult  = Math.Clamp(m3, 0f, 2f); break;
+                }
+            }
+
+            public string GetRaw(string key) => key switch
+            {
+                "enabled" => B(Enabled),
+                "targets" => Targets.ToString(),
+                "range"   => F(Range),
+                "t1mult"  => F(T1Mult),
+                "t2mult"  => F(T2Mult),
+                "t3mult"  => F(T3Mult),
+                _         => null
+            };
+
+            public IEnumerable<(string, string)> GetAllRaw() => new[]
+            {
+                ("enabled", B(Enabled)),
+                ("targets", Targets.ToString()),
+                ("range",   F(Range)),
+                ("t1mult",  F(T1Mult)),
+                ("t2mult",  F(T2Mult)),
+                ("t3mult",  F(T3Mult)),
+            };
+
+            public string Help() =>
+                "[Fork] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "  • targets int   — number of fork targets per hit (1 to 10)\n" +
+                "  • range float   — search radius in meters for fork targets\n" +
+                "  • t1mult float  — T1 fork damage multiplier (default 0.50)\n" +
+                "  • t2mult float  — T2 fork damage multiplier (default 0.75)\n" +
+                "  • t3mult float  — T3 fork damage multiplier (default 1.00)\n" +
+                "\n[Examples]\n" +
+                "  • /charm fork on\n" +
+                "  • /charm fork targets 6\n" +
+                "  • /charm fork range 15.0\n" +
+                "  • /charm fork t1mult 0.60";
+
+            public string Dump() =>
+                "[Fork] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n" +
+                $"  • targets: {Targets}\n" +
+                $"  • range: {Range.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                $"  • t1mult: {F(T1Mult)}\n" +
+                $"  • t2mult: {F(T2Mult)}\n" +
+                $"  • t3mult: {F(T3Mult)}\n";
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
         //  Infinite Casting
         // ─────────────────────────────────────────────────────────────────────
+
 
         public sealed class InfiniteCastingBlock : ICharmBlock
         {

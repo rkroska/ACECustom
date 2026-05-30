@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 
 using ACE.Common;
@@ -39,6 +41,12 @@ namespace ACE.Server.WorldObjects
         public bool FromProc { get; set; }
 
         public int DebugVelocity;
+
+        /// <summary>True for Fork-spawned secondary projectiles — prevents recursive forking.</summary>
+        public bool IsForkProjectile { get; set; }
+
+        /// <summary>Damage multiplier applied at the end of CalculateDamage. Used by Fork charm tiers (0.50 / 0.75 / 1.00).</summary>
+        public float ForkDamageMult { get; set; } = 1.0f;
 
         /// <summary>
         /// Captured at spawn when <see cref="ProjectileSource"/> is set; do not re-read ClassicRingAoe at impact.
@@ -449,6 +457,17 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            // Fork Charm — spawn secondary projectiles from the hit point
+            // Fires even if the primary target was killed by this hit.
+            if (!IsForkProjectile && player != null && player.HasForkCharm
+                && CharmSettingsManager.Fork.Enabled
+                && (SpellType == ProjectileSpellType.Streak
+                    || SpellType == ProjectileSpellType.Arc
+                    || SpellType == ProjectileSpellType.Bolt))
+            {
+                TryApplyForkProc(player, creatureTarget);
+            }
+
             // also called on resist
             if (player != null && targetPlayer == null)
                 player.OnAttackMonster(creatureTarget, Spell.IsHarmful);
@@ -698,7 +717,70 @@ namespace ACE.Server.WorldObjects
                     finalDamage *= m;
             }
 
-            return finalDamage;
+            return finalDamage * ForkDamageMult;
+        }
+
+        /// <summary>
+        /// Fired after a successful spell projectile hit when the caster has the Fork Charm active.
+        /// Spawns secondary projectiles from the hit target's position toward nearby enemies.
+        /// Fork projectiles are tagged with IsForkProjectile = true to prevent chaining.
+        /// </summary>
+        private void TryApplyForkProc(Player player, Creature hitTarget)
+        {
+            var fork = CharmSettingsManager.Fork;
+
+            // Determine tier and damage multiplier
+            player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ForkAbilityId, out var tier);
+            if (tier < 1) tier = 1;
+            float damageMult = tier switch { 2 => fork.T2Mult, 3 => fork.T3Mult, _ => fork.T1Mult };
+
+            // Guard: hit target must still be in world
+            if (hitTarget.Location == null || hitTarget.CurrentLandblock == null)
+                return;
+
+            var hitGlobal = hitTarget.Location.ToGlobal(false);
+
+            // Gather candidates from hit target's landblock + adjacents
+            var allObjects = new List<WorldObject>();
+            var lb = hitTarget.CurrentLandblock;
+            allObjects.AddRange(lb.GetWorldObjectsForPhysicsHandling());
+            foreach (var adj in lb.Adjacents)
+                if (adj != null) allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
+
+            var candidates = new List<(Creature c, float dist)>();
+            foreach (var obj in allObjects.GroupBy(o => o.Guid).Select(g => g.First()))
+            {
+                if (obj is not Creature c || c == player || c == hitTarget) continue;
+                if (!c.IsAlive || c.Location == null) continue;
+                var dist = Vector3.Distance(hitGlobal, c.Location.ToGlobal(false));
+                if (dist > fork.Range) continue;
+                if (!player.CanDamage(c)) continue;
+                var pkErr = player.CheckPKStatusVsTarget(c, Spell);
+                if (pkErr != null) continue;
+                candidates.Add((c, dist));
+            }
+
+            candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
+
+            // Launch fork projectiles toward each candidate
+            foreach ((Creature forkTarget, float _) in candidates.Take(fork.Targets))
+            {
+                var origins  = player.CalculateProjectileOrigins(Spell, SpellType, forkTarget);
+                var velocity = player.CalculateProjectileVelocity(Spell, forkTarget, SpellType, origins[0]);
+
+                var launched = player.LaunchSpellProjectiles(
+                    Spell, forkTarget, SpellType,
+                    ProjectileLauncher, IsWeaponSpell, fromProc: true,
+                    origins, velocity, LifeProjectileDamage,
+                    originOverride: hitTarget);   // spawn visually from the hit point
+
+                if (launched == null) continue;
+                foreach (var fp in launched)
+                {
+                    fp.IsForkProjectile = true;
+                    fp.ForkDamageMult   = damageMult;
+                }
+            }
         }
 
         public float GetAbsorbMod(Creature target)

@@ -76,6 +76,8 @@ namespace ACE.Server.Command.Handlers
             ["essence refill"]        = "essencerefill",
             ["summon essence refill"] = "essencerefill",
             ["pyreal refill"]         = "essencerefill",
+
+            ["fork"]                  = "fork",
         };
 
         // Brief descriptions shown by /charms and /charm (no args)
@@ -93,6 +95,7 @@ namespace ACE.Server.Command.Handlers
             "  • omnistrike         — Melee attacks strike with the target's absolute weakest damage type (physical or magic).\n" +
             "  • shrapnel           — Rocky Shrapnel: transforms incoming tectonic spells into Rocky Shrapnel.\n" +
             "  • universalsummoning — Bypasses summoning mastery skill checks for any pet device.\n" +
+            "  • fork               — Spell projectiles fork to nearby enemies on hit (T1=50%, T2=75%, T3=100%).\n" +
             "\nUse /charm <name> to see current settings and all adjustable keys.";
 
 
@@ -240,6 +243,7 @@ namespace ACE.Server.Command.Handlers
                 "artisans"           => "Artisan's",
                 "essencerefill"      => "Summon Essence Refill",
                 "universalsummoning" => "Universal Summoning",
+                "fork"               => "Fork",
                 _                    => charmName
             };
         }
