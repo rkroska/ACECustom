@@ -457,8 +457,13 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            // Fork Charm — spawn secondary projectiles from the hit point
-            // Fires even if the primary target was killed by this hit.
+            // Fork Charm — spawn secondary projectiles from the hit point.
+            // Intentionally fires outside the `if (damage != null)` block so that fork
+            // triggers on physical contact regardless of:
+            //   • The primary target being killed by this very hit (dead-on-kill).
+            //   • The spell being resisted (CalculateDamage returns null) — the bolt
+            //     still struck the creature and the fork projectiles roll their own resist.
+            // Does NOT fire if CanDamage or PK checks failed (those return early above).
             if (!IsForkProjectile && player != null && player.HasForkCharm
                 && CharmSettingsManager.Fork.Enabled
                 && (SpellType == ProjectileSpellType.Streak
@@ -733,7 +738,9 @@ namespace ACE.Server.WorldObjects
         {
             var fork = CharmSettingsManager.Fork;
 
-            if (hitTarget.Location == null || hitTarget.CurrentLandblock == null)
+            // Guard against the narrow window where the landblock begins removing the
+            // creature (nulling PhysicsObj) between the collision callback and this call.
+            if (hitTarget.Location == null || hitTarget.CurrentLandblock == null || hitTarget.PhysicsObj == null)
                 return;
 
             player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ForkAbilityId, out var tier);

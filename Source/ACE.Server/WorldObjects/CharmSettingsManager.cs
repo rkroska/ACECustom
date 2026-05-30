@@ -929,6 +929,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
 
                     case "range":
                         if (!ParseFloat(value, out var fv)) return $"Invalid float.";
+                        if (fv < 0f) return "Value must be >= 0.";
                         Range = fv; return $"fork.range = {F(Range)}";
 
                     case "t1": case "t1mult":
