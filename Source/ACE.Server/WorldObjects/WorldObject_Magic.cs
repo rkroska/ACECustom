@@ -1736,6 +1736,8 @@ namespace ACE.Server.WorldObjects
                 // 4. Launch spells at all selected targets
                 // Primary target first
                 var origins = CalculateProjectileOrigins(spell, spellType, target);
+                if (origins == null || origins.Count == 0)
+                    return new List<SpellProjectile>();
                 var velocity = CalculateProjectileVelocity(spell, target, spellType, origins[0]);
                 var primaryProjectiles = LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, origins, velocity, lifeProjectileDamage);
                 if (primaryProjectiles != null)
@@ -1745,6 +1747,8 @@ namespace ACE.Server.WorldObjects
                 foreach (var extraTarget in extraTargets)
                 {
                     var extraOrigins = CalculateProjectileOrigins(spell, spellType, extraTarget);
+                    if (extraOrigins == null || extraOrigins.Count == 0)
+                        continue;
                     var extraVelocity = CalculateProjectileVelocity(spell, extraTarget, spellType, extraOrigins[0]);
                     var extraProjectiles = LaunchSpellProjectiles(spell, extraTarget, spellType, weapon, isWeaponSpell, fromProc, extraOrigins, extraVelocity, lifeProjectileDamage);
                     if (extraProjectiles != null)
@@ -1755,6 +1759,8 @@ namespace ACE.Server.WorldObjects
             }
 
             var defaultOrigins = CalculateProjectileOrigins(spell, spellType, target, originOverride);
+            if (defaultOrigins == null || defaultOrigins.Count == 0)
+                return new List<SpellProjectile>();
 
             var defaultVelocity = CalculateProjectileVelocity(spell, target, spellType, defaultOrigins[0], originOverride);
 
@@ -1773,12 +1779,12 @@ namespace ACE.Server.WorldObjects
             if (target == null)
                 return preOffset;
 
-            var startPos = new Physics.Common.Position(origin.PhysicsObj.Position);
+            var startPos = origin.Location != null ? origin.Location.PhysPosition() : new Physics.Common.Position(origin.PhysicsObj.Position);
             startPos.Frame.Origin.Z += origin.Height * startFactor;
 
             var endFactor = spellType == ProjectileSpellType.Arc ? ProjHeightArc : ProjHeight;
 
-            var endPos = new Physics.Common.Position(target.PhysicsObj.Position);
+            var endPos = target.Location != null ? target.Location.PhysPosition() : new Physics.Common.Position(target.PhysicsObj.Position);
             endPos.Frame.Origin.Z += target.Height * endFactor;
 
             var globOffset = startPos.GetOffset(endPos);
@@ -1935,7 +1941,7 @@ namespace ACE.Server.WorldObjects
         public Vector3 CalculateProjectileVelocity(Spell spell, WorldObject target, ProjectileSpellType spellType, Vector3 originPos, WorldObject originOverride = null)
         {
             var origin = originOverride ?? this;
-            var casterLoc = origin.PhysicsObj.Position.ACEPosition();
+            var casterLoc = origin.Location ?? origin.PhysicsObj.Position.ACEPosition();
 
             var speed = GetProjectileSpeed(spell);
 
@@ -1948,7 +1954,7 @@ namespace ACE.Server.WorldObjects
                 return Vector3.Transform(Vector3.UnitY, casterLoc.Rotation) * speed;
             }
 
-            var targetLoc = target.PhysicsObj.Position.ACEPosition();
+            var targetLoc = target.Location ?? target.PhysicsObj.Position.ACEPosition();
 
             var strikeSpell = spellType == ProjectileSpellType.Strike;
 
@@ -2020,8 +2026,8 @@ namespace ACE.Server.WorldObjects
             // originOverride: use a different WorldObject's position as the ring/projectile spawn point.
             // ProjectileSource is still set to 'this' below, so non-ClassicRingAoe suppression works correctly.
             var spawnOrigin = originOverride ?? this;
-            var casterLoc = spawnOrigin.PhysicsObj.Position.ACEPosition();
-            var targetLoc = target?.PhysicsObj.Position.ACEPosition();
+            var casterLoc = spawnOrigin.Location ?? spawnOrigin.PhysicsObj.Position.ACEPosition();
+            var targetLoc = target != null ? (target.Location ?? target.PhysicsObj.Position.ACEPosition()) : null;
 
             for (var i = 0; i < origins.Count; i++)
             {

@@ -776,6 +776,9 @@ namespace ACE.Server.WorldObjects
                 // Call LaunchSpellProjectiles directly so isForkProjectile/forkDamageMult are set
                 // before LandblockManager.AddObject — IsProjectileVisible runs inside that call.
                 var forkOrigins  = player.CalculateProjectileOrigins(Spell, SpellType, forkTarget, hitTarget);
+                if (forkOrigins == null || forkOrigins.Count == 0)
+                    continue;
+
                 var forkVelocity = player.CalculateProjectileVelocity(Spell, forkTarget, SpellType, forkOrigins[0], hitTarget);
                 player.LaunchSpellProjectiles(
                     Spell, forkTarget, SpellType,
