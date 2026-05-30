@@ -4299,6 +4299,7 @@ namespace ACE.Server.Command.Handlers
 
                 var output = new System.Text.StringBuilder();
                 output.Append('\n');
+                output.Append("--------------------------------------------------------------------------------\n");
                 output.Append($"[WEAKNESS ANALYSIS] {target.Name} (Level {target.Level ?? 0})\n");
                 output.Append("--------------------------------------------------------------------------------\n");
                 output.Append("MELEE / PHYSICAL WEAKNESS (Armor-Aware):\n");
