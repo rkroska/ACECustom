@@ -440,12 +440,30 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                         if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
                         Enabled = bv; return $"explosivearrow.enabled = {B(Enabled)}";
 
-                    case "t1min": if (!ParseFloat(value, out var v)) return $"Invalid float."; T1Min = v; return $"explosivearrow.t1min = {F(T1Min)}";
-                    case "t1max": if (!ParseFloat(value, out var v2)) return $"Invalid float."; T1Max = v2; return $"explosivearrow.t1max = {F(T1Max)}";
-                    case "t2min": if (!ParseFloat(value, out var v3)) return $"Invalid float."; T2Min = v3; return $"explosivearrow.t2min = {F(T2Min)}";
-                    case "t2max": if (!ParseFloat(value, out var v4)) return $"Invalid float."; T2Max = v4; return $"explosivearrow.t2max = {F(T2Max)}";
-                    case "t3min": if (!ParseFloat(value, out var v5)) return $"Invalid float."; T3Min = v5; return $"explosivearrow.t3min = {F(T3Min)}";
-                    case "t3max": if (!ParseFloat(value, out var v6)) return $"Invalid float."; T3Max = v6; return $"explosivearrow.t3max = {F(T3Max)}";
+                    case "t1min":
+                        if (!ParseFloat(value, out var v)) return "Invalid float.";
+                        if (v > T1Max) return $"t1min ({F(v)}) cannot be greater than t1max ({F(T1Max)}).";
+                        T1Min = v; return $"explosivearrow.t1min = {F(T1Min)}";
+                    case "t1max":
+                        if (!ParseFloat(value, out var v2)) return "Invalid float.";
+                        if (v2 < T1Min) return $"t1max ({F(v2)}) cannot be less than t1min ({F(T1Min)}).";
+                        T1Max = v2; return $"explosivearrow.t1max = {F(T1Max)}";
+                    case "t2min":
+                        if (!ParseFloat(value, out var v3)) return "Invalid float.";
+                        if (v3 > T2Max) return $"t2min ({F(v3)}) cannot be greater than t2max ({F(T2Max)}).";
+                        T2Min = v3; return $"explosivearrow.t2min = {F(T2Min)}";
+                    case "t2max":
+                        if (!ParseFloat(value, out var v4)) return "Invalid float.";
+                        if (v4 < T2Min) return $"t2max ({F(v4)}) cannot be less than t2min ({F(T2Min)}).";
+                        T2Max = v4; return $"explosivearrow.t2max = {F(T2Max)}";
+                    case "t3min":
+                        if (!ParseFloat(value, out var v5)) return "Invalid float.";
+                        if (v5 > T3Max) return $"t3min ({F(v5)}) cannot be greater than t3max ({F(T3Max)}).";
+                        T3Min = v5; return $"explosivearrow.t3min = {F(T3Min)}";
+                    case "t3max":
+                        if (!ParseFloat(value, out var v6)) return "Invalid float.";
+                        if (v6 < T3Min) return $"t3max ({F(v6)}) cannot be less than t3min ({F(T3Min)}).";
+                        T3Max = v6; return $"explosivearrow.t3max = {F(T3Max)}";
                     case "radius": if (!ParseFloat(value, out var v7)) return $"Invalid float."; Radius = v7; return $"explosivearrow.radius = {F(Radius)}";
                     case "height": if (!ParseFloat(value, out var v8)) return $"Invalid float."; Height = v8; return $"explosivearrow.height = {F(Height)}";
                     case "delay":  if (!ParseFloat(value, out var v9)) return $"Invalid float."; Delay  = v9; return $"explosivearrow.delay = {F(Delay)}";
