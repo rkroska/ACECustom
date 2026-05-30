@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
@@ -325,15 +325,15 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             // T1: 1.0  = 1 damage per mana (1:1)
             // T2: 1.5  = 1.5 damage per mana
             // T3: 2.0  = 2 damage per mana
-            public float T1      { get; private set; } = 1.0f;
-            public float T2      { get; private set; } = 1.5f;
+            public float T1      { get; private set; } = 0.5f;
+            public float T2      { get; private set; } = 1.0f;
             public float T3      { get; private set; } = 2.0f;
 
             public void Reset()
             {
                 Enabled = true;
                 Ratio = 1.0f;
-                T1 = 1.0f; T2 = 1.5f; T3 = 2.0f;
+                T1 = 0.5f; T2 = 1.0f; T3 = 2.0f;
             }
 
             public string TrySet(string key, string value)
@@ -385,22 +385,21 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             };
 
             public string Help() =>
-                "[manabarrier] adjustable settings:\n" +
-                "  enabled  true/false/on/off   — global kill-switch (false = full dmg passes through, silent to player)\n" +
-                "  ratio    float               — mana cost per 1 damage, all elements/physical (default: 1.0)\n" +
-                "  t1       float               — Mana Barrier: damage absorbed per mana (default: 1.0)\n" +
-                "  t2       float               — Greater Mana Barrier: damage absorbed per mana (default: 1.5)\n" +
-                "  t3       float               — Master Mana Barrier: damage absorbed per mana (default: 2.0)\n" +
-                "  Math: mana_spent = damage x ratio / tier\n" +
-                "  Examples: /charm manabarrier ratio 0.5  |  /charm manabarrier t3 3.0  |  /charm reset manabarrier";
+                "[ManaBarrier] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "  • t1 float  — Mana Barrier: damage absorbed per mana (higher is more efficient)\n" +
+                "  • t2 float  — Greater Mana Barrier: damage absorbed per mana (higher is more efficient)\n" +
+                "  • t3 float  — Master Mana Barrier: damage absorbed per mana (higher is more efficient)\n" +
+                "\n[Examples]\n" +
+                "  • /charm manabarrier on\n" +
+                "  • /charm manabarrier t1 2.5";
 
             public string Dump() =>
-                "[manabarrier] settings:\n" +
-                $"  enabled: {B(Enabled)}\n" +
-                $"  ratio: {F(Ratio)}\n" +
-                $"  t1: {F(T1)}\n" +
-                $"  t2: {F(T2)}\n" +
-                $"  t3: {F(T3)}\n";
+                "[ManaBarrier] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n" +
+                $"  • t1: {T1.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                $"  • t2: {T2.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                $"  • t3: {T3.ToString("0.0", CultureInfo.InvariantCulture)}\n";
         }
 
 
@@ -503,29 +502,36 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             };
 
             public string Help() =>
-                "[explosivearrow] adjustable settings:\n" +
-                "  enabled  true/false/on/off   — global kill-switch\n" +
-                "  t1min/t1max  float           — Explosive Arrow: blast damage range as % of arrow dmg (default: 0.10-0.15)\n" +
-                "  t2min/t2max  float           — Greater Explosive Arrow: blast damage range (default: 0.15-0.25)\n" +
-                "  t3min/t3max  float           — Master Explosive Arrow: blast damage range (default: 0.25-0.33)\n" +
-                "  radius  float               — AOE blast radius in meters (default: 15.0)\n" +
-                "  height  float               — AOE blast cylinder height (default: 10.0)\n" +
-                "  delay   float               — seconds between arrow hit and detonation (default: 1.0)\n" +
-                "  maxarrows int               — max arrows allowed to detonate per shot [1-10] (default: 5)";
+                "[ExplosiveArrow] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "  • t1min float  — Explosive Arrow: minimum blast damage percentage\n" +
+                "  • t1max float  — Explosive Arrow: maximum blast damage percentage\n" +
+                "  • t2min float  — Greater Explosive Arrow: minimum blast damage percentage\n" +
+                "  • t2max float  — Greater Explosive Arrow: maximum blast damage percentage\n" +
+                "  • t3min float  — Master Explosive Arrow: minimum blast damage percentage\n" +
+                "  • t3max float  — Master Explosive Arrow: maximum blast damage percentage\n" +
+                "  • radius float  — AOE blast radius in meters\n" +
+                "  • height float  — AOE blast cylinder height\n" +
+                "  • delay float   — seconds between arrow hit and detonation\n" +
+                "  • maxarrows int — maximum detonations per shot (1 to 10)\n" +
+                "\n[Examples]\n" +
+                "  • /charm explosivearrow on\n" +
+                "  • /charm explosivearrow t1min 0.15\n" +
+                "  • /charm explosivearrow maxarrows 3";
 
             public string Dump() =>
-                "[explosivearrow] settings:\n" +
-                $"  enabled: {B(Enabled)}\n" +
-                $"  t1min: {F(T1Min)}\n" +
-                $"  t1max: {F(T1Max)}\n" +
-                $"  t2min: {F(T2Min)}\n" +
-                $"  t2max: {F(T2Max)}\n" +
-                $"  t3min: {F(T3Min)}\n" +
-                $"  t3max: {F(T3Max)}\n" +
-                $"  radius: {F(Radius)}\n" +
-                $"  height: {F(Height)}\n" +
-                $"  delay: {F(Delay)}\n" +
-                $"  maxarrows: {MaxArrows}\n";
+                "[ExplosiveArrow] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n" +
+                $"  • t1min: {T1Min.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • t1max: {T1Max.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • t2min: {T2Min.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • t2max: {T2Max.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • t3min: {T3Min.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • t3max: {T3Max.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • radius: {Radius.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                $"  • height: {Height.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                $"  • delay: {Delay.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                $"  • maxarrows: {MaxArrows}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -606,20 +612,24 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             };
 
             public string Help() =>
-                "[shrapnel] adjustable settings:\n" +
-                "  enabled  true/false/on/off   — global kill-switch\n" +
-                "  radius  float                — Rocky Shrapnel AOE physical blast radius in meters (default: 5.8)\n" +
-                "  height  float                — Rocky Shrapnel AOE physical blast height in meters (default: 7.0)\n" +
-                "  double  float                — double proc chance (default: 0.0; triple + double ≤ 1.0)\n" +
-                "  triple  float                — triple proc chance (default: 0.0; triple + double ≤ 1.0)";
+                "[Shrapnel] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "  • radius float  — Rocky Shrapnel: AOE physical blast radius in meters\n" +
+                "  • height float  — Rocky Shrapnel: AOE physical blast height in meters\n" +
+                "  • double float  — Rocky Shrapnel: double proc chance (0.0 to 1.0)\n" +
+                "  • triple float  — Rocky Shrapnel: triple proc chance (0.0 to 1.0)\n" +
+                "\n[Examples]\n" +
+                "  • /charm shrapnel on\n" +
+                "  • /charm shrapnel radius 8.0\n" +
+                "  • /charm shrapnel double 0.5";
 
             public string Dump() =>
-                "[shrapnel] settings:\n" +
-                $"  enabled: {B(Enabled)}\n" +
-                $"  radius: {F(Radius)}\n" +
-                $"  height: {F(Height)}\n" +
-                $"  double: {P(DoubleChance)}\n" +
-                $"  triple: {P(TripleChance)}\n";
+                "[Shrapnel] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n" +
+                $"  • radius: {Radius.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                $"  • height: {Height.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                $"  • double: {DoubleChance.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • triple: {TripleChance.ToString("0.00", CultureInfo.InvariantCulture)}\n";
         }
 
         public sealed class AgonyBlock : ICharmBlock
@@ -696,20 +706,24 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             };
 
             public string Help() =>
-                "[agony] adjustable settings:\n" +
-                "  enabled  true/false/on/off   — global kill-switch\n" +
-                "  radius  float                — Ring of Agony AOE blast radius in meters (default: 5.8)\n" +
-                "  height  float                — Ring of Agony AOE blast height in meters (default: 7.0)\n" +
-                "  double  float                — double proc chance (default: 0.0; triple + double ≤ 1.0)\n" +
-                "  triple  float                — triple proc chance (default: 0.0; triple + double ≤ 1.0)";
+                "[Agony] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "  • radius float  — Ring of Agony: AOE blast radius in meters\n" +
+                "  • height float  — Ring of Agony: AOE blast height in meters\n" +
+                "  • double float  — Ring of Agony: double proc chance (0.0 to 1.0)\n" +
+                "  • triple float  — Ring of Agony: triple proc chance (0.0 to 1.0)\n" +
+                "\n[Examples]\n" +
+                "  • /charm agony on\n" +
+                "  • /charm agony radius 8.0\n" +
+                "  • /charm agony double 0.5";
 
             public string Dump() =>
-                "[agony] settings:\n" +
-                $"  enabled: {B(Enabled)}\n" +
-                $"  radius: {F(Radius)}\n" +
-                $"  height: {F(Height)}\n" +
-                $"  double: {P(DoubleChance)}\n" +
-                $"  triple: {P(TripleChance)}\n";
+                "[Agony] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n" +
+                $"  • radius: {Radius.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                $"  • height: {Height.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                $"  • double: {DoubleChance.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • triple: {TripleChance.ToString("0.00", CultureInfo.InvariantCulture)}\n";
         }
 
         public sealed class PrismaticBlock : ICharmBlock
@@ -731,11 +745,15 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
-            public string Help() => "[prismaticstrike] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
+            public string Help() =>
+                "[PrismaticStrike] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "\n[Examples]\n" +
+                "  • /charm prismaticstrike on";
+
             public string Dump() =>
-                "[prismaticstrike] settings:\n" +
-                $"  enabled: {B(Enabled)}\n" +
-                "  (no other tunables yet)\n";
+                "[PrismaticStrike] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n";
         }
 
         public sealed class AutoRebuffBlock : ICharmBlock
@@ -757,11 +775,15 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
-            public string Help() => "[autorebuff] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
+            public string Help() =>
+                "[AutoRebuff] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "\n[Examples]\n" +
+                "  • /charm autorebuff on";
+
             public string Dump() =>
-                "[autorebuff] settings:\n" +
-                $"  enabled: {B(Enabled)}\n" +
-                "  (no other tunables yet)\n";
+                "[AutoRebuff] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -820,16 +842,20 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             };
 
             public string Help() =>
-                "[pentacast] adjustable settings:\n" +
-                "  enabled  true/false/on/off   — global kill-switch\n" +
-                "  targets  int                 — number of additional targets to bounce spell to [1-20] (default: 4)\n" +
-                "  range    float               — radius in meters to find bounce targets (default: 10.0)";
+                "[PentaCast] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "  • targets int  — Penta Cast: number of additional targets to bounce to (1 to 20)\n" +
+                "  • range float  — Penta Cast: search radius in meters for bounce targets\n" +
+                "\n[Examples]\n" +
+                "  • /charm pentacast on\n" +
+                "  • /charm pentacast targets 6\n" +
+                "  • /charm pentacast range 15.0";
 
             public string Dump() =>
-                "[pentacast] settings:\n" +
-                $"  enabled: {B(Enabled)}\n" +
-                $"  targets: {Targets}\n" +
-                $"  range: {F(Range)}\n";
+                "[PentaCast] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n" +
+                $"  • targets: {Targets}\n" +
+                $"  • range: {Range.ToString("0.0", CultureInfo.InvariantCulture)}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -855,11 +881,15 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
-            public string Help() => "[infinitecasting] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
+            public string Help() =>
+                "[InfiniteCasting] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "\n[Examples]\n" +
+                "  • /charm infinitecasting on";
+
             public string Dump() =>
-                "[infinitecasting] settings:\n" +
-                $"  enabled: {B(Enabled)}\n" +
-                "  (no other tunables yet)\n";
+                "[InfiniteCasting] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -941,24 +971,28 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             };
 
             public string Help() =>
-                "[asheronsfavor] adjustable settings:\n" +
-                "  enabled   true/false/on/off — global kill-switch\n" +
-                "  t1health  float             — Tier 1 Health% multiplier (default: 1.10 = +10%)\n" +
-                "  t1armor   float             — Tier 1 Natural Armor bonus (default: 50.0)\n" +
-                "  t2health  float             — Tier 2 Health% multiplier (default: 1.15 = +15%)\n" +
-                "  t2armor   float             — Tier 2 Natural Armor bonus (default: 100.0)\n" +
-                "  t3health  float             — Tier 3 Health% multiplier (default: 1.20 = +20%)\n" +
-                "  t3armor   float             — Tier 3 Natural Armor bonus (default: 250.0)";
+                "[AsheronsFavor] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "  • t1health float — Asheron's Favor: Tier 1 Health multiplier\n" +
+                "  • t1armor float  — Asheron's Favor: Tier 1 Natural Armor bonus\n" +
+                "  • t2health float — Asheron's Favor: Tier 2 Health multiplier\n" +
+                "  • t2armor float  — Asheron's Favor: Tier 2 Natural Armor bonus\n" +
+                "  • t3health float — Asheron's Favor: Tier 3 Health multiplier\n" +
+                "  • t3armor float  — Asheron's Favor: Tier 3 Natural Armor bonus\n" +
+                "\n[Examples]\n" +
+                "  • /charm asheronsfavor on\n" +
+                "  • /charm asheronsfavor t3health 1.25\n" +
+                "  • /charm asheronsfavor t3armor 300.0";
 
             public string Dump() =>
-                "[asheronsfavor] settings:\n" +
-                $"  enabled: {B(Enabled)}\n" +
-                $"  t1health: {F(T1Health)}\n" +
-                $"  t1armor: {F(T1Armor)}\n" +
-                $"  t2health: {F(T2Health)}\n" +
-                $"  t2armor: {F(T2Armor)}\n" +
-                $"  t3health: {F(T3Health)}\n" +
-                $"  t3armor: {F(T3Armor)}\n";
+                "[AsheronsFavor] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n" +
+                $"  • t1health: {T1Health.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • t1armor: {T1Armor.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                $"  • t2health: {T2Health.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • t2armor: {T2Armor.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                $"  • t3health: {T3Health.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • t3armor: {T3Armor.ToString("0.0", CultureInfo.InvariantCulture)}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -1031,18 +1065,21 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             };
 
             public string Help() =>
-                "[artisans] adjustable settings:\n" +
-                "  enabled  true/false/on/off — global kill-switch\n" +
-                "  t1       float             — Tier 1 success chance bonus (default: 0.04 = +4%)\n" +
-                "  t2       float             — Tier 2 success chance bonus (default: 0.08 = +8%)\n" +
-                "  t3       float             — Tier 3 success chance bonus (default: 0.12 = +12%)";
+                "[Artisans] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "  • t1 float  — Artisan's Charm: Tier 1 success chance bonus\n" +
+                "  • t2 float  — Artisan's Charm: Tier 2 success chance bonus\n" +
+                "  • t3 float  — Artisan's Charm: Tier 3 success chance bonus\n" +
+                "\n[Examples]\n" +
+                "  • /charm artisans on\n" +
+                "  • /charm artisans t1 0.05";
 
             public string Dump() =>
-                "[artisans] settings:\n" +
-                $"  enabled: {B(Enabled)}\n" +
-                $"  t1: {P(T1)}\n" +
-                $"  t2: {P(T2)}\n" +
-                $"  t3: {P(T3)}\n";
+                "[Artisans] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n" +
+                $"  • t1: {T1.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • t2: {T2.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • t3: {T3.ToString("0.00", CultureInfo.InvariantCulture)}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -1115,19 +1152,21 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             };
 
             public string Help() =>
-                "[essencerefill] adjustable settings:\n" +
-                "  enabled  true/false/on/off — global kill-switch\n" +
-                "  t1       float             — Tier 1 pyreal discount percentage (default: 0.0 = 0%)\n" +
-                "  t2       float             — Tier 2 pyreal discount percentage (default: 0.25 = 25%)\n" +
-                "  t3       float             — Tier 3 pyreal discount percentage (default: 0.50 = 50%)";
+                "[EssenceRefill] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "  • t1 float  — Essence Refill: Tier 1 pyreal discount percentage\n" +
+                "  • t2 float  — Essence Refill: Tier 2 pyreal discount percentage\n" +
+                "  • t3 float  — Essence Refill: Tier 3 pyreal discount percentage\n" +
+                "\n[Examples]\n" +
+                "  • /charm essencerefill on\n" +
+                "  • /charm essencerefill t2 0.30";
 
             public string Dump() =>
-                "[essencerefill] settings:\n" +
-                $"  enabled: {B(Enabled)}\n" +
-                $"  t1: {P(T1)}\n" +
-                $"  t2: {P(T2)}\n" +
-                $"  t3: {P(T3)}\n" +
-                "  (base pyreal cost set in ServerConfig)\n";
+                "[EssenceRefill] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n" +
+                $"  • t1: {T1.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • t2: {T2.ToString("0.00", CultureInfo.InvariantCulture)}\n" +
+                $"  • t3: {T3.ToString("0.00", CultureInfo.InvariantCulture)}\n";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -1153,11 +1192,15 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public void ApplyRaw(string key, string value) { if (key == "enabled" && ParseBool(value, out var bv)) Enabled = bv; }
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
-            public string Help() => "[universalsummoning] adjustable settings:\n  enabled  true/false/on/off   — global kill-switch (no other tunables yet)";
+            public string Help() =>
+                "[UniversalSummoning] Adjustable Settings\n" +
+                "  • Enabled  on / off\n" +
+                "\n[Examples]\n" +
+                "  • /charm universalsummoning on";
+
             public string Dump() =>
-                "[universalsummoning] settings:\n" +
-                $"  enabled: {B(Enabled)}\n" +
-                "  (no other tunables yet)\n";
+                "[UniversalSummoning] Current Settings\n" +
+                $"  • Enabled: {B(Enabled)}\n";
         }
     }
 }

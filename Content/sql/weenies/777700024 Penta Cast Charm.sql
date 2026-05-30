@@ -29,8 +29,8 @@ VALUES (777700024,     1, 2048) /* ItemType - Gem */
      , (777700024,   114,    1) /* Attuned */
      , (777700024, 50000,   22) /* CharmGrantsAbility - ID 22 = Penta Cast Charm */
      , (777700024, 50005,    1) /* CharmLevel - 1 */
-     , (777700024, 50006,    1) /* CharmMaxLevel - 1 tier */
-     , (777700024, 50060, 1779768000); /* ItemExpirationTimestamp - Monday May 25, 2026 11:00 PM EST */
+     , (777700024, 50006,    1); /* CharmMaxLevel - 1 tier */
+     -- , (777700024, 50060, 1779768000); /* ItemExpirationTimestamp - Monday May 25, 2026 11:00 PM EST */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777700024,    1, 33554556)  /* Setup - Coffer/Chest */

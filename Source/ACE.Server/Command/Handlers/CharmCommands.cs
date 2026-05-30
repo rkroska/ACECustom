@@ -134,7 +134,7 @@ namespace ACE.Server.Command.Handlers
             {
                 var dump = CharmSettingsManager.DumpCharm(charmName);
                 var help = CharmSettingsManager.DumpHelp(charmName);
-                Reply(session, dump + "\n" + help);
+                Reply(session, "\u200B\n" + dump + "\n" + help);
                 return;
             }
 
