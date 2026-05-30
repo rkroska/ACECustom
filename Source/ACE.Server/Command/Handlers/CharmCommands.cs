@@ -83,19 +83,19 @@ namespace ACE.Server.Command.Handlers
         // Brief descriptions shown by /charms and /charm (no args)
         private static readonly string CharmList =
             "=== Available Charms ===\n" +
-            "  • agony              — Ring of Agony: transforms incoming tectonic spells into Ring of Unspeakable Agony.\n" +
-            "  • artisans           — Provides crafting and tinkering bonuses.\n" +
-            "  • asheronsfavor      — Grants Health% and Natural Armor bonuses. Higher tier = larger bonus.\n" +
+            "  • agony              — Tectonic (Bludgeon Ring) spells now cast Ring of Unspeakable Agony.\n" +
+            "  • artisans           — Provides Crafting and Tinkering bonuses.\n" +
+            "  • asheronsfavor      — Grants Health% and Natural Armor bonuses.\n" +
             "  • autorebuff         — Automatically re-applies expiring beneficial buffs.\n" +
-            "  • essencerefill      — Pays pyreals to automatically refill empty summoning essence charges.\n" +
+            "  • essencerefill      — Pay pyreals to automatically refill empty summoning essence charges.\n" +
             "  • explosivearrow     — Arrows detonate on hit, dealing AOE blast damage to nearby enemies.\n" +
-            "  • fork               — Spell projectiles fork to nearby enemies on hit (T1=50%, T2=75%, T3=100%).\n" +
+            "  • fork               — Spell projectiles fork to nearby enemies on hit.\n" +
             "  • infinitecasting    — Spell components are not consumed while spellcasting.\n" +
-            "  • manabarrier        — Drains mana instead of taking damage. Higher tier = more efficient.\n" +
-            "  • splitcast          — Splits Streak, Arc, and Bolt spells to target multiple nearby enemies simultaneously.\n" +
-            "  • omnistrike         — Melee attacks strike with the target's absolute weakest damage type (physical or magic).\n" +
-            "  • shrapnel           — Rocky Shrapnel: transforms incoming tectonic spells into Rocky Shrapnel.\n" +
-            "  • universalsummoning — Bypasses summoning mastery skill checks for any pet device.\n" +
+            "  • manabarrier        — Drains Mana before HP while taking damage.\n" +
+            "  • splitcast          — Streak, Arc, and Bolt spells target multiple nearby enemies simultaneously.\n" +
+            "  • omnistrike         — Melee attacks strike with the target's absolute weakest damage type.\n" +
+            "  • shrapnel           — Tectonic (Bludgeon Ring) spells now cast Rocky Shrapnel.\n" +
+            "  • universalsummoning — Bypasses summoning mastery skill checks (can use all pet types).\n" +
             "\nUse /charm <name> to see current settings and all adjustable keys.";
 
 
