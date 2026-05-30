@@ -993,18 +993,16 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 "  • /charm fork on\n" +
                 "  • /charm fork targets 6\n" +
                 "  • /charm fork range 15.0\n" +
-                "  • /charm fork delay 0.5\n" +
                 "  • /charm fork t1mult 0.60";
 
             public string Dump() =>
                 "[Fork] Current Settings\n" +
                 $"  • Enabled: {B(Enabled)}\n" +
-                $"  • targets: {Targets}\n" +
-                $"  • range: {Range.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
-
-                $"  • t1mult: {F(T1Mult)}\n" +
-                $"  • t2mult: {F(T2Mult)}\n" +
-                $"  • t3mult: {F(T3Mult)}\n";
+                $"  • Targets: {Targets}\n" +
+                $"  • Range: {Range.ToString("0.0", CultureInfo.InvariantCulture)} meters\n" +
+                $"  • T1 dmg mult: {F(T1Mult)} (Tier 1 fork deals {T1Mult * 100:0}% damage)\n" +
+                $"  • T2 dmg mult: {F(T2Mult)} (Tier 2 fork deals {T2Mult * 100:0}% damage)\n" +
+                $"  • T3 dmg mult: {F(T3Mult)} (Tier 3 fork deals {T3Mult * 100:0}% damage)\n";
         }
 
 
