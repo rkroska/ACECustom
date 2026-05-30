@@ -669,7 +669,7 @@ namespace ACE.Server.WorldObjects
                     WorldObject conflict = null;
                     if (!duplicateInIncoming)
                     {
-                        conflict = rootPlayerForCharm.GetAllPossessions().FirstOrDefault(possession =>
+                        conflict = rootPlayerForCharm.GetAllPossessionsDeep().FirstOrDefault(possession =>
                             !incomingGuids.Contains(possession.Guid) &&
                             possession.OwnerId != null &&
                             possession.OwnerId != 0 &&
