@@ -781,29 +781,32 @@ namespace ACE.Server.WorldObjects
 
                 candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
 
-                // ── Shadow Clone pattern (commit 6643c2bb3) ──────────────────────────
-                // CreateSpellProjectiles uses PhysicsObj.Position for spawn origin AND
-                // velocity direction. For creatures, Location (the server/DB position)
-                // is NOT automatically synced to PhysicsObj.Position — especially after
-                // death, when the physics body drifts with the death animation.
+                // ── Chain Lightning pattern (commit c64f10a18) ───────────────────────
+                // Call CreateSpellProjectiles on PLAYER (not hitTarget) so that
+                // IsProjectileVisible is checked against the player's physics object,
+                // not the dead creature (which would fail the LOS test and instantly
+                // destroy every fork projectile via OnCollideEnvironment).
                 //
-                // Fix: write Location fields into PhysicsObj.Position once before each
-                // launch, then call CreateSpellProjectiles on hitTarget so all math is
-                // relative to hitTarget. Override ProjectileSource = player afterward
-                // so damage / kill XP / DamageHistory still go to the player.
+                // originOverride: hitTarget → all three calculation methods
+                // (CalculatePreOffset, CalculateProjectileOrigins, CalculateProjectileVelocity
+                //  and LaunchSpellProjectiles) use hitTarget.PhysicsObj for origin + direction.
+                //
+                // SyncPhysicsPosition syncs hitTarget.PhysicsObj ← hitTarget.Location first,
+                // because the 0.5 s delay lets the death animation drift the physics body.
                 SyncPhysicsPosition(hitTarget);
 
                 foreach ((Creature forkTarget, float _) in candidates.Take(fork.Targets))
                 {
-                    var launched = hitTarget.CreateSpellProjectiles(
+                    // Exactly like chain lightning: caster.CreateSpellProjectiles(spell, nextTarget, null, originOverride: justHit)
+                    var launched = player.CreateSpellProjectiles(
                         snapSpell, forkTarget,
                         snapLauncher, snapWeaponSpell, fromProc: true,
-                        snapLifeDmg);
+                        snapLifeDmg, originOverride: hitTarget);
 
                     if (launched == null) continue;
                     foreach (var fp in launched)
                     {
-                        fp.ProjectileSource = player;   // attribute damage / XP to the player
+                        // ProjectileSource is already the player (called on player above)
                         fp.IsForkProjectile = true;
                         fp.ForkDamageMult   = damageMult;
                     }

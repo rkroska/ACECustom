@@ -1751,26 +1751,27 @@ namespace ACE.Server.WorldObjects
                 return spellProjectiles;
             }
 
-            var defaultOrigins = CalculateProjectileOrigins(spell, spellType, target);
+            var defaultOrigins = CalculateProjectileOrigins(spell, spellType, target, originOverride);
 
-            var defaultVelocity = CalculateProjectileVelocity(spell, target, spellType, defaultOrigins[0]);
+            var defaultVelocity = CalculateProjectileVelocity(spell, target, spellType, defaultOrigins[0], originOverride);
 
             return LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, defaultOrigins, defaultVelocity, lifeProjectileDamage, originOverride);
         }
 
         public static readonly float ProjHeight = 2.0f / 3.0f;
 
-        public Vector3 CalculatePreOffset(Spell spell, ProjectileSpellType spellType, WorldObject target)
+        public Vector3 CalculatePreOffset(Spell spell, ProjectileSpellType spellType, WorldObject target, WorldObject originOverride = null)
         {
+            var origin = originOverride ?? this;
             var startFactor = spellType == ProjectileSpellType.Arc ? 1.0f : ProjHeight;
 
-            var preOffset = new Vector3(0, 0, Height * startFactor);
+            var preOffset = new Vector3(0, 0, origin.Height * startFactor);
 
             if (target == null)
                 return preOffset;
 
-            var startPos = new Physics.Common.Position(PhysicsObj.Position);
-            startPos.Frame.Origin.Z += Height * startFactor;
+            var startPos = new Physics.Common.Position(origin.PhysicsObj.Position);
+            startPos.Frame.Origin.Z += origin.Height * startFactor;
 
             var endFactor = spellType == ProjectileSpellType.Arc ? ProjHeightArc : ProjHeight;
 
@@ -1786,7 +1787,7 @@ namespace ACE.Server.WorldObjects
 
             var localDir = Vector3.Normalize(offset);
 
-            var radsum = PhysicsObj.GetPhysicsRadius() + GetProjectileRadius(spell);
+            var radsum = origin.PhysicsObj.GetPhysicsRadius() + GetProjectileRadius(spell);
 
             var defaultSpawnPos = Vector3.UnitY * radsum;
 
@@ -1801,8 +1802,9 @@ namespace ACE.Server.WorldObjects
         /// Returns a list of positions to spawn projectiles for a spell,
         /// in local space relative to the caster
         /// </summary>
-        public List<Vector3> CalculateProjectileOrigins(Spell spell, ProjectileSpellType spellType, WorldObject target)
+        public List<Vector3> CalculateProjectileOrigins(Spell spell, ProjectileSpellType spellType, WorldObject target, WorldObject originOverride = null)
         {
+            var origin = originOverride ?? this;
             var origins = new List<Vector3>();
 
             var radius = GetProjectileRadius(spell);
@@ -1812,16 +1814,16 @@ namespace ACE.Server.WorldObjects
 
             var baseOffset = spell.CreateOffset;
 
-            var radsum = PhysicsObj.GetPhysicsRadius() * 2.0f + radius * 2.0f;
+            var radsum = origin.PhysicsObj.GetPhysicsRadius() * 2.0f + radius * 2.0f;
 
-            var heightOffset = CalculatePreOffset(spell, spellType, target);
+            var heightOffset = CalculatePreOffset(spell, spellType, target, originOverride);
 
             if (target != null)
             {
                 var cylDist = GetCylinderDistance(target);
                 //Console.WriteLine($"CylDist: {cylDist}");
                 if (cylDist < 0.6f)
-                    radsum = PhysicsObj.GetPhysicsRadius() + radius;
+                    radsum = origin.PhysicsObj.GetPhysicsRadius() + radius;
             }
 
             if (spell.SpreadAngle == 360)
@@ -1862,12 +1864,12 @@ namespace ACE.Server.WorldObjects
 
                         var xFactor = spell.SpreadAngle == 0 ? oddRow ? (float)Math.Ceiling(x * 0.5f) : (float)Math.Floor(x * 0.5f) : 0;
 
-                        var origin = curOffset + (vRadius * 2.0f + spell.Padding) * new Vector3(xFactor, y, z);
+                        var originPos = curOffset + (vRadius * 2.0f + spell.Padding) * new Vector3(xFactor, y, z);
 
                         if (spell.SpreadAngle == 0)
                         {
                             if (x % 2 == (oddRow ? 1 : 0))
-                                origin.X *= -1.0f;
+                                originPos.X *= -1.0f;
                         }
                         else
                         {
@@ -1882,10 +1884,10 @@ namespace ACE.Server.WorldObjects
                             var rads = curAngle.ToRadians();
 
                             var rot = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, rads);
-                            origin = Vector3.Transform(origin, rot);
+                            originPos = Vector3.Transform(originPos, rot);
                         }
 
-                        origins.Add(origin);
+                        origins.Add(originPos);
                         i++;
                     }
 
@@ -1897,8 +1899,8 @@ namespace ACE.Server.WorldObjects
                     break;
             }
 
-            /*foreach (var origin in origins)
-                Console.WriteLine(origin);*/
+            /*foreach (var originPos in origins)
+                Console.WriteLine(originPos);*/
 
             return origins;
         }
@@ -1927,13 +1929,14 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Calculates the spell projectile velocity in global space
         /// </summary>
-        public Vector3 CalculateProjectileVelocity(Spell spell, WorldObject target, ProjectileSpellType spellType, Vector3 origin)
+        public Vector3 CalculateProjectileVelocity(Spell spell, WorldObject target, ProjectileSpellType spellType, Vector3 originPos, WorldObject originOverride = null)
         {
-            var casterLoc = PhysicsObj.Position.ACEPosition();
+            var origin = originOverride ?? this;
+            var casterLoc = origin.PhysicsObj.Position.ACEPosition();
 
             var speed = GetProjectileSpeed(spell);
 
-            if (target == null && this is Creature creature && this is not Player)
+            if (target == null && origin is Creature creature && origin is not Player)
                 target = creature.AttackTarget;
 
             if (target == null)
@@ -1948,11 +1951,11 @@ namespace ACE.Server.WorldObjects
 
             var crossLandblock = !strikeSpell && casterLoc.Landblock != targetLoc.Landblock;
 
-            var qDir = PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
+            var qDir = origin.PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
             var rotate = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, (float)Math.Atan2(-qDir.X, qDir.Y));
 
             var startPos = strikeSpell ? targetLoc.Pos : crossLandblock ? casterLoc.ToGlobal(false) : casterLoc.Pos;
-            startPos += Vector3.Transform(origin, strikeSpell ? rotate * OneEighty : rotate);
+            startPos += Vector3.Transform(originPos, strikeSpell ? rotate * OneEighty : rotate);
 
             var endPos = crossLandblock ? targetLoc.ToGlobal(false) : targetLoc.Pos;
 
