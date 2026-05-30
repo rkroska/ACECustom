@@ -539,11 +539,11 @@ namespace ACE.Server.WorldObjects
                 };
             }
 
-            if (abilityId == CharmAbilityRegistry.PentaCastAbilityId)
+            if (abilityId == CharmAbilityRegistry.SplitCastAbilityId)
             {
                 return activating
-                    ? "Penta Cast Charm activated. Streak, Arc, and Bolt spells will target up to 5 distinct enemies simultaneously."
-                    : "Penta Cast Charm deactivated. Spells will cast normally.";
+                    ? "Split Cast Charm activated. Streak, Arc, and Bolt spells will split to target multiple distinct enemies simultaneously."
+                    : "Split Cast Charm deactivated. Spells will cast normally.";
             }
 
             if (abilityId == CharmAbilityRegistry.ExplosiveArrowCharmAbilityId)
@@ -565,11 +565,11 @@ namespace ACE.Server.WorldObjects
                     };
             }
 
-            if (abilityId == CharmAbilityRegistry.PrismaticStrikeAbilityId)
+            if (abilityId == CharmAbilityRegistry.OmnistrikeAbilityId)
             {
                 return activating
-                    ? "Prismatic Strike Charm activated. Your melee attacks will strike with the element or physical force your target is most vulnerable to."
-                    : "Prismatic Strike Charm deactivated. Attacks will deal damage normally.";
+                    ? "Omni Strike Charm activated. Your melee attacks will strike with the element or physical force your target is most vulnerable to."
+                    : "Omni Strike Charm deactivated. Attacks will deal damage normally.";
             }
 
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";

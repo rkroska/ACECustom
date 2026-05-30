@@ -701,7 +701,7 @@ namespace ACE.Server.Entity
             else
                 DamageType = attacker.GetDamageType(false, CombatType.Melee);
 
-            if (attacker.HasPrismaticStrike && CharmSettingsManager.Prismatic.Enabled && attacker.CombatMode == CombatMode.Melee)
+            if (attacker.HasOmnistrike && CharmSettingsManager.Omnistrike.Enabled && attacker.CombatMode == CombatMode.Melee)
             {
                 var weakestElement = GetWeakestElement(Defender, attacker, Weapon);
                 DamageType = weakestElement;

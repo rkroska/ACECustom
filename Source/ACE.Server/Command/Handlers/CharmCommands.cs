@@ -38,12 +38,17 @@ namespace ACE.Server.Command.Handlers
 
             ["agony"]             = "agony",
 
-            ["pentacast"]         = "pentacast",
-            ["penta cast"]        = "pentacast",
+            ["pentacast"]         = "splitcast",
+            ["penta cast"]        = "splitcast",
+            ["splitcast"]         = "splitcast",
+            ["split cast"]        = "splitcast",
 
-            ["prismaticstrike"]   = "prismaticstrike",
-            ["prismatic strike"]  = "prismaticstrike",
-            ["prismatic"]         = "prismaticstrike",
+            ["prismaticstrike"]   = "omnistrike",
+            ["prismatic strike"]  = "omnistrike",
+            ["prismatic"]         = "omnistrike",
+            ["omnistrike"]        = "omnistrike",
+            ["omni strike"]       = "omnistrike",
+            ["omni"]              = "omnistrike",
 
             ["universalsummoning"]    = "universalsummoning",
             ["universal summoning"]   = "universalsummoning",
@@ -82,10 +87,10 @@ namespace ACE.Server.Command.Handlers
             "  • autorebuff         — Automatically re-applies expiring beneficial buffs.\n" +
             "  • essencerefill      — Pays pyreals to automatically refill empty summoning essence charges.\n" +
             "  • explosivearrow     — Arrows detonate on hit, dealing AOE blast damage to nearby enemies.\n" +
-            "  • infinitecasting    — Removes mana cost when casting spells.\n" +
+            "  • infinitecasting    — Spell components are not consumed while spellcasting.\n" +
             "  • manabarrier        — Drains mana instead of taking damage. Higher tier = more efficient.\n" +
-            "  • pentacast          — Bounces spells to additional nearby targets on cast.\n" +
-            "  • prismaticstrike    — Melee attacks apply random elemental rends to the target.\n" +
+            "  • splitcast          — Splits Streak, Arc, and Bolt spells to target multiple nearby enemies simultaneously.\n" +
+            "  • omnistrike         — Melee attacks strike with the target's absolute weakest damage type (physical or magic).\n" +
             "  • shrapnel           — Rocky Shrapnel: transforms incoming tectonic spells into Rocky Shrapnel.\n" +
             "  • universalsummoning — Bypasses summoning mastery skill checks for any pet device.\n" +
             "\nUse /charm <name> to see current settings and all adjustable keys.";
@@ -225,8 +230,10 @@ namespace ACE.Server.Command.Handlers
                 "explosivearrow"     => "Explosive Arrow",
                 "shrapnel"           => "Rocky Shrapnel",
                 "agony"              => "Ring of Agony",
-                "pentacast"          => "Penta Cast",
-                "prismaticstrike"    => "Prismatic Strike",
+                "pentacast"          => "Split Cast",
+                "splitcast"          => "Split Cast",
+                "prismaticstrike"    => "Omni Strike",
+                "omnistrike"         => "Omni Strike",
                 "autorebuff"         => "Auto-Rebuff",
                 "infinitecasting"    => "Infinite Casting",
                 "asheronsfavor"      => "Asheron's Favor",

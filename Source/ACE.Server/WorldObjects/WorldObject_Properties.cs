@@ -3454,8 +3454,8 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasExplosiveArrowCharm); else SetProperty(PropertyBool.HasExplosiveArrowCharm, value); }
         }
 
-        /// <summary>True while the Prismatic Strike Charm is activated — melee attacks override to target's weakest element and dynamically match weapon rending.</summary>
-        public bool HasPrismaticStrike
+        /// <summary>True while the Omni Strike Charm is activated — melee attacks override to target's weakest element and dynamically match weapon rending.</summary>
+        public bool HasOmnistrike
         {
             get => GetProperty(PropertyBool.HasPrismaticStrike) ?? false;
             set { if (!value) RemoveProperty(PropertyBool.HasPrismaticStrike); else SetProperty(PropertyBool.HasPrismaticStrike, value); }

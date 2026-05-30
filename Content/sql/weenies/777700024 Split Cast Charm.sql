@@ -1,12 +1,12 @@
 -- ============================================================
--- Penta Cast Charm (Tier 1) — WCID 777700024
+-- Split Cast Charm (Tier 1) — WCID 777700024
 -- ILT Ability Charm — Ability ID 22 (HasPentaCast)
--- While active, Streak, Arc, and Bolt spells will target up to 5 distinct enemies simultaneously.
+-- While active, Streak, Arc, and Bolt spells will split to target multiple distinct enemies simultaneously.
 -- ============================================================
 
 DELETE FROM `weenie` WHERE `class_Id` = 777700024;
 INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`)
-VALUES (777700024, 'ilt_pentacastcharm', 38, NOW());
+VALUES (777700024, 'ilt_splitcastcharm', 38, NOW());
 
 INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`)
 VALUES (777700024,    11, 1)  /* IgnoreCollisions */
@@ -27,10 +27,9 @@ VALUES (777700024,     1, 2048) /* ItemType - Gem */
      , (777700024,    83,    2) /* ActivationResponse - Use */
      , (777700024,    93, 1044) /* PhysicsState */
      , (777700024,   114,    1) /* Attuned */
-     , (777700024, 50000,   22) /* CharmGrantsAbility - ID 22 = Penta Cast Charm */
+     , (777700024, 50000,   22) /* CharmGrantsAbility - ID 22 = Penta Cast / Split Cast */
      , (777700024, 50005,    1) /* CharmLevel - 1 */
      , (777700024, 50006,    1); /* CharmMaxLevel - 1 tier */
-     -- , (777700024, 50060, 1779768000); /* ItemExpirationTimestamp - Monday May 25, 2026 11:00 PM EST */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777700024,    1, 33554556)  /* Setup - Coffer/Chest */
@@ -40,7 +39,5 @@ VALUES (777700024,    1, 33554556)  /* Setup - Coffer/Chest */
      , (777700024,   50, 100667550); /* IconOverlay - Tier 1 badge */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
-VALUES (777700024,  1, 'Penta Cast Charm')
-     , (777700024, 14, '
-Double-click to activate. While active, Streak, Arc, and Bolt spells will target up to 5 distinct enemies simultaneously in alternating proximity order, starting with the main target.
-');
+VALUES (777700024,  1, 'Split Cast Charm')
+     , (777700024, 14, 'Double-click to activate. While active, Streak, Arc, and Bolt spells will split to target multiple distinct enemies simultaneously.');

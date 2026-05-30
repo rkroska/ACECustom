@@ -30,8 +30,8 @@ namespace ACE.Server.WorldObjects
         public static ExplosiveArrowBlock     ExplosiveArrow     { get; } = new();
         public static ShrapnelBlock           Shrapnel           { get; } = new();
         public static AgonyBlock              Agony              { get; } = new();
-        public static PentaCastBlock          PentaCast          { get; } = new();
-        public static PrismaticBlock          Prismatic          { get; } = new();
+        public static SplitCastBlock          SplitCast          { get; } = new();
+        public static OmnistrikeBlock         Omnistrike         { get; } = new();
         public static AutoRebuffBlock         AutoRebuff         { get; } = new();
         public static InfiniteCastingBlock    InfiniteCasting    { get; } = new();
         public static AsheronsFavorBlock      AsheronsFavor      { get; } = new();
@@ -75,8 +75,8 @@ namespace ACE.Server.WorldObjects
             sb.Append(ExplosiveArrow.Dump());
             sb.Append(Shrapnel.Dump());
             sb.Append(Agony.Dump());
-            sb.Append(PentaCast.Dump());
-            sb.Append(Prismatic.Dump());
+            sb.Append(SplitCast.Dump());
+            sb.Append(Omnistrike.Dump());
             sb.Append(AutoRebuff.Dump());
             sb.Append(InfiniteCasting.Dump());
             sb.Append(AsheronsFavor.Dump());
@@ -99,8 +99,10 @@ namespace ACE.Server.WorldObjects
                 "explosivearrow"     => ExplosiveArrow,
                 "shrapnel"           => Shrapnel,
                 "agony"              => Agony,
-                "pentacast"          => PentaCast,
-                "prismaticstrike"    => Prismatic,
+                "pentacast"          => SplitCast,
+                "splitcast"          => SplitCast,
+                "prismaticstrike"    => Omnistrike,
+                "omnistrike"         => Omnistrike,
                 "autorebuff"         => AutoRebuff,
                 "infinitecasting"    => InfiniteCasting,
                 "asheronsfavor"      => AsheronsFavor,
@@ -127,8 +129,8 @@ namespace ACE.Server.WorldObjects
             ExplosiveArrow.Reset();     PersistBlock("explosivearrow",     ExplosiveArrow);
             Shrapnel.Reset();           PersistBlock("shrapnel",           Shrapnel);
             Agony.Reset();              PersistBlock("agony",              Agony);
-            PentaCast.Reset();          PersistBlock("pentacast",          PentaCast);
-            Prismatic.Reset();          PersistBlock("prismaticstrike",    Prismatic);
+            SplitCast.Reset();          PersistBlock("splitcast",          SplitCast);
+            Omnistrike.Reset();          PersistBlock("omnistrike",         Omnistrike);
             AutoRebuff.Reset();         PersistBlock("autorebuff",         AutoRebuff);
             InfiniteCasting.Reset();    PersistBlock("infinitecasting",    InfiniteCasting);
             AsheronsFavor.Reset();      PersistBlock("asheronsfavor",      AsheronsFavor);
@@ -149,8 +151,10 @@ namespace ACE.Server.WorldObjects
                 case "explosivearrow":     ExplosiveArrow.Reset();     PersistBlock("explosivearrow",     ExplosiveArrow);     return true;
                 case "shrapnel":           Shrapnel.Reset();           PersistBlock("shrapnel",           Shrapnel);           return true;
                 case "agony":              Agony.Reset();              PersistBlock("agony",              Agony);              return true;
-                case "pentacast":          PentaCast.Reset();          PersistBlock("pentacast",          PentaCast);          return true;
-                case "prismaticstrike":    Prismatic.Reset();          PersistBlock("prismaticstrike",    Prismatic);          return true;
+                case "pentacast":
+                case "splitcast":          SplitCast.Reset();          PersistBlock("splitcast",          SplitCast);          return true;
+                case "prismaticstrike":
+                case "omnistrike":         Omnistrike.Reset();          PersistBlock("omnistrike",         Omnistrike);          return true;
                 case "autorebuff":         AutoRebuff.Reset();         PersistBlock("autorebuff",         AutoRebuff);         return true;
                 case "infinitecasting":    InfiniteCasting.Reset();    PersistBlock("infinitecasting",    InfiniteCasting);    return true;
                 case "asheronsfavor":      AsheronsFavor.Reset();      PersistBlock("asheronsfavor",      AsheronsFavor);      return true;
@@ -169,8 +173,10 @@ namespace ACE.Server.WorldObjects
                 "explosivearrow"     => ExplosiveArrow.Dump(),
                 "shrapnel"           => Shrapnel.Dump(),
                 "agony"              => Agony.Dump(),
-                "pentacast"          => PentaCast.Dump(),
-                "prismaticstrike"    => Prismatic.Dump(),
+                "pentacast"          => SplitCast.Dump(),
+                "splitcast"          => SplitCast.Dump(),
+                "prismaticstrike"    => Omnistrike.Dump(),
+                "omnistrike"         => Omnistrike.Dump(),
                 "autorebuff"         => AutoRebuff.Dump(),
                 "infinitecasting"    => InfiniteCasting.Dump(),
                 "asheronsfavor"      => AsheronsFavor.Dump(),
@@ -189,8 +195,10 @@ namespace ACE.Server.WorldObjects
                 "explosivearrow"     => ExplosiveArrow.Help(),
                 "shrapnel"           => Shrapnel.Help(),
                 "agony"              => Agony.Help(),
-                "pentacast"          => PentaCast.Help(),
-                "prismaticstrike"    => Prismatic.Help(),
+                "pentacast"          => SplitCast.Help(),
+                "splitcast"          => SplitCast.Help(),
+                "prismaticstrike"    => Omnistrike.Help(),
+                "omnistrike"         => Omnistrike.Help(),
                 "autorebuff"         => AutoRebuff.Help(),
                 "infinitecasting"    => InfiniteCasting.Help(),
                 "asheronsfavor"      => AsheronsFavor.Help(),
@@ -261,8 +269,10 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             "explosivearrow"     => ExplosiveArrow,
             "shrapnel"           => Shrapnel,
             "agony"              => Agony,
-            "pentacast"          => PentaCast,
-            "prismaticstrike"    => Prismatic,
+            "pentacast"          => SplitCast,
+            "splitcast"          => SplitCast,
+            "prismaticstrike"    => Omnistrike,
+            "omnistrike"         => Omnistrike,
             "autorebuff"         => AutoRebuff,
             "infinitecasting"    => InfiniteCasting,
             "asheronsfavor"      => AsheronsFavor,
@@ -744,7 +754,11 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 $"  • triple: {TripleChance.ToString("0.00", CultureInfo.InvariantCulture)}\n";
         }
 
-        public sealed class PrismaticBlock : ICharmBlock
+        // ─────────────────────────────────────────────────────────────────────
+        //  Omni Strike
+        // ─────────────────────────────────────────────────────────────────────
+
+        public sealed class OmnistrikeBlock : ICharmBlock
         {
             public bool Enabled { get; private set; } = true;
             public void Reset() { Enabled = true; }
@@ -755,7 +769,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 {
                     var valueToParse = key == "enabled" ? value : key;
                     if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
-                    Enabled = bv; return $"prismaticstrike.enabled = {B(Enabled)}";
+                    Enabled = bv; return $"omnistrike.enabled = {B(Enabled)}";
                 }
                 return null;
             }
@@ -764,13 +778,13 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public string GetRaw(string key) => key == "enabled" ? B(Enabled) : null;
             public IEnumerable<(string, string)> GetAllRaw() => new[] { ("enabled", B(Enabled)) };
             public string Help() =>
-                "[PrismaticStrike] Adjustable Settings\n" +
+                "[Omnistrike] Adjustable Settings\n" +
                 "  • Enabled  on / off\n" +
                 "\n[Examples]\n" +
-                "  • /charm prismaticstrike on";
+                "  • /charm omnistrike on";
 
             public string Dump() =>
-                "[PrismaticStrike] Current Settings\n" +
+                "[Omnistrike] Current Settings\n" +
                 $"  • Enabled: {B(Enabled)}\n";
         }
 
@@ -805,10 +819,10 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        //  Penta Cast
+        //  Split Cast
         // ─────────────────────────────────────────────────────────────────────
 
-        public sealed class PentaCastBlock : ICharmBlock
+        public sealed class SplitCastBlock : ICharmBlock
         {
             public bool  Enabled { get; private set; } = true;
             public int   Targets { get; private set; } = 4;
@@ -823,13 +837,13 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                     case "enabled": case "on": case "off": case "true": case "false":
                         var valueToParse = key == "enabled" ? value : key;
                         if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'";
-                        Enabled = bv; return $"pentacast.enabled = {B(Enabled)}";
+                        Enabled = bv; return $"splitcast.enabled = {B(Enabled)}";
 
                     case "targets":
                         if (!ParseInt(value, out var iv)) return $"Invalid int.";
                         if (iv < 1 || iv > 20) return $"Value must be between 1 and 20.";
-                        Targets = iv; return $"pentacast.targets = {Targets}";
-                    case "range":   if (!ParseFloat(value, out var fv)) return $"Invalid float."; Range = fv; return $"pentacast.range = {F(Range)}";
+                        Targets = iv; return $"splitcast.targets = {Targets}";
+                    case "range":   if (!ParseFloat(value, out var fv)) return $"Invalid float."; Range = fv; return $"splitcast.range = {F(Range)}";
                     default: return null;
                 }
             }
@@ -860,17 +874,17 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             };
 
             public string Help() =>
-                "[PentaCast] Adjustable Settings\n" +
+                "[SplitCast] Adjustable Settings\n" +
                 "  • Enabled  on / off\n" +
-                "  • targets int  — Penta Cast: number of additional targets to bounce to (1 to 20)\n" +
-                "  • range float  — Penta Cast: search radius in meters for bounce targets\n" +
+                "  • targets int  — Split Cast: number of additional targets to split to (1 to 20)\n" +
+                "  • range float  — Split Cast: search radius in meters for split targets\n" +
                 "\n[Examples]\n" +
-                "  • /charm pentacast on\n" +
-                "  • /charm pentacast targets 6\n" +
-                "  • /charm pentacast range 15.0";
+                "  • /charm splitcast on\n" +
+                "  • /charm splitcast targets 6\n" +
+                "  • /charm splitcast range 15.0";
 
             public string Dump() =>
-                "[PentaCast] Current Settings\n" +
+                "[SplitCast] Current Settings\n" +
                 $"  • Enabled: {B(Enabled)}\n" +
                 $"  • targets: {Targets}\n" +
                 $"  • range: {Range.ToString("0.0", CultureInfo.InvariantCulture)}\n";

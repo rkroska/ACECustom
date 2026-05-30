@@ -1676,8 +1676,8 @@ namespace ACE.Server.WorldObjects
 
             var spellType = SpellProjectile.GetProjectileSpellType(spell.Id);
 
-            // Penta Cast Charm Interception
-            if (this is Player player && player.HasPentaCast && CharmSettingsManager.PentaCast.Enabled && target != null &&
+            // Split Cast Charm Interception
+            if (this is Player player && player.HasPentaCast && CharmSettingsManager.SplitCast.Enabled && target != null &&
                 target.Location != null &&   // guard: target may have been removed from world before projectile launch
                 (spellType == ProjectileSpellType.Streak || spellType == ProjectileSpellType.Arc || spellType == ProjectileSpellType.Bolt))
             {
@@ -1714,7 +1714,7 @@ namespace ACE.Server.WorldObjects
 
                     var creatureGlobal = creature.Location.ToGlobal(false);
                     var dist = Vector3.Distance(targetGlobal, creatureGlobal);
-                    if (dist > CharmSettingsManager.PentaCast.Range) continue;
+                    if (dist > CharmSettingsManager.SplitCast.Range) continue;
 
                     if (!player.CanDamage(creature)) continue;
 
@@ -1726,8 +1726,8 @@ namespace ACE.Server.WorldObjects
 
                 allCandidates.Sort((a, b) => a.dist.CompareTo(b.dist));
 
-                // 3. Take the N closest (tunable via /charm pentacast targets <n>) — fire them in distance order (closest first).
-                var extraTargets = allCandidates.Take(CharmSettingsManager.PentaCast.Targets).Select(c => c.creature).ToList();
+                // 3. Take the N closest (tunable via /charm splitcast targets <n>) — fire them in distance order (closest first).
+                var extraTargets = allCandidates.Take(CharmSettingsManager.SplitCast.Targets).Select(c => c.creature).ToList();
 
 
                 // 4. Launch spells at all selected targets

@@ -4167,6 +4167,28 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("weakness", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Assess target creature's weaknesses ordered by damage score.", "Usage: /weakness [wcid]")]
         public static void HandleWeakness(Session session, params string[] parameters)
         {
+            string GetPaddedElementName(string name)
+            {
+                return name switch
+                {
+                    "Bludgeon" => "Bludgeon  ",
+                    "Electric" => "Electric  ",
+                    "Nether"   => "Nether    ",
+                    "Pierce"   => "Pierce    ",
+                    "Slash"    => "Slash      ",
+                    "Acid"     => "Acid       ",
+                    "Cold"     => "Cold       ",
+                    "Fire"     => "Fire       ",
+                    _          => name.PadRight(10)
+                };
+            }
+
+            string FormatPercentage(double val)
+            {
+                var formatted = val.ToString("F2");
+                return val < 100.0 ? "  " + formatted : formatted;
+            }
+
             Creature target = null;
 
             if (parameters?.Length > 0)
@@ -4176,12 +4198,12 @@ namespace ACE.Server.Command.Handlers
                     var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
                     if (weenie == null)
                     {
-                        ChatPacket.SendServerMessage(session, $"Could not find weenie WCID {wcid} in database.", ChatMessageType.Broadcast);
+                        session?.Network?.EnqueueSend(new GameMessageSystemChat($"Could not find weenie WCID {wcid} in database.", ChatMessageType.System));
                         return;
                     }
                     if (weenie.WeenieType != WeenieType.Creature)
                     {
-                        ChatPacket.SendServerMessage(session, $"Weenie {weenie.ClassName} ({wcid}) is a {weenie.WeenieType}, not a Creature.", ChatMessageType.Broadcast);
+                        session?.Network?.EnqueueSend(new GameMessageSystemChat($"Weenie {weenie.ClassName} ({wcid}) is a {weenie.WeenieType}, not a Creature.", ChatMessageType.System));
                         return;
                     }
                     
@@ -4189,23 +4211,31 @@ namespace ACE.Server.Command.Handlers
                     target = WorldObjectFactory.CreateNewWorldObject(wcid) as Creature;
                     if (target == null)
                     {
-                        ChatPacket.SendServerMessage(session, $"Failed to instantiate creature for WCID {wcid}.", ChatMessageType.Broadcast);
+                        session?.Network?.EnqueueSend(new GameMessageSystemChat($"Failed to instantiate creature for WCID {wcid}.", ChatMessageType.System));
                         return;
                     }
                 }
                 else
                 {
-                    ChatPacket.SendServerMessage(session, "Usage: /weakness [wcid] (or target a creature and type /weakness)", ChatMessageType.Broadcast);
+                    session?.Network?.EnqueueSend(new GameMessageSystemChat("Usage: /weakness [wcid] (or target a creature and type /weakness)", ChatMessageType.System));
                     return;
                 }
             }
             else
             {
-                target = CommandHandlerHelper.GetLastAppraisedObject(session) as Creature;
+                var selectedWo = CommandHandlerHelper.GetSelected(session) ?? CommandHandlerHelper.GetLastAppraisedObject(session);
+                target = selectedWo as Creature;
                 if (target == null)
                 {
-                    ChatPacket.SendServerMessage(session, "No target selected, or target is not a creature. Target a creature or specify a Weenie Class ID.", ChatMessageType.Broadcast);
+                    session?.Network?.EnqueueSend(new GameMessageSystemChat("No target selected, or target is not a creature. Target a creature or specify a Weenie Class ID.", ChatMessageType.System));
                     return;
+                }
+
+                // If they targeted a live in-world creature, automatically trigger a server-side appraisal
+                // event to force the client to load and sync the creature's full identification details.
+                if (target.Location != null)
+                {
+                    session.Player.Examine(target);
                 }
             }
 
@@ -4257,10 +4287,10 @@ namespace ACE.Server.Command.Handlers
                     // 4. Combined melee score (armor-mitigated)
                     var meleeScore = resistMod * armorMod;
 
-                    meleeResults.Add((el.Name.ToUpper(), meleeScore, resistMod, armorVsType, effectiveArmor));
+                    meleeResults.Add((el.Name, meleeScore, resistMod, armorVsType, effectiveArmor));
                     
                     // 5. Magic score (ignores armor completely)
-                    magicResults.Add((el.Name.ToUpper(), resistMod, resistMod));
+                    magicResults.Add((el.Name, resistMod, resistMod));
                 }
 
                 // Sort descending (weakest first)
@@ -4268,30 +4298,35 @@ namespace ACE.Server.Command.Handlers
                 var orderedMagic = magicResults.OrderByDescending(r => r.Score).ToList();
 
                 var output = new System.Text.StringBuilder();
-                output.AppendLine($"\n[WEAKNESS ANALYSIS] {target.Name} (Level {target.Level ?? 0})");
-                output.AppendLine("--------------------------------------------------------------------------------");
-                output.AppendLine("MELEE / PHYSICAL WEAKNESS (Armor-Aware):");
-                output.AppendLine("--------------------------------------------------------------------------------");
+                output.Append('\n');
+                output.Append($"[WEAKNESS ANALYSIS] {target.Name} (Level {target.Level ?? 0})\n");
+                output.Append("--------------------------------------------------------------------------------\n");
+                output.Append("MELEE / PHYSICAL WEAKNESS (Armor-Aware):\n");
+                output.Append("--------------------------------------------------------------------------------\n");
 
                 int idx = 1;
                 foreach (var r in orderedMelee)
                 {
-                    output.AppendLine($"{idx}. {r.Name,-8}: {r.Score * 100.0,6:F2}% dmg  (Resist: {r.ResistMod:F3} | Armor: {r.ArmorVsType:F2} | Eff. AL: {r.EffectiveArmor,3:F0})");
+                    var paddedName = GetPaddedElementName(r.Name);
+                    var pct = FormatPercentage(r.Score * 100.0);
+                    output.Append($"{idx}. {paddedName}: {pct}% dmg  (Resist: {r.ResistMod:F3} | Armor: {r.ArmorVsType:F2} | Eff. AL: {r.EffectiveArmor,3:F0})\n");
                     idx++;
                 }
-                output.AppendLine("--------------------------------------------------------------------------------");
-                output.AppendLine("SPELL / MAGIC WEAKNESS (Armor-Bypassing):");
-                output.AppendLine("--------------------------------------------------------------------------------");
+                output.Append("--------------------------------------------------------------------------------\n");
+                output.Append("SPELL / MAGIC WEAKNESS (Armor-Bypassing):\n");
+                output.Append("--------------------------------------------------------------------------------\n");
 
                 idx = 1;
                 foreach (var r in orderedMagic)
                 {
-                    output.AppendLine($"{idx}. {r.Name,-8}: {r.Score * 100.0,6:F2}% dmg  (Resist: {r.ResistMod:F3} | Armor: IGNORED)");
+                    var paddedName = GetPaddedElementName(r.Name);
+                    var pct = FormatPercentage(r.Score * 100.0);
+                    output.Append($"{idx}. {paddedName}: {pct}% dmg  (Resist: {r.ResistMod:F3} | Armor: IGNORED)\n");
                     idx++;
                 }
-                output.AppendLine("--------------------------------------------------------------------------------");
+                output.Append("--------------------------------------------------------------------------------\n");
 
-                ChatPacket.SendServerMessage(session, output.ToString(), ChatMessageType.Broadcast);
+                ChatPacket.SendServerMessage(session, output.ToString(), ChatMessageType.System);
             }
             finally
             {
