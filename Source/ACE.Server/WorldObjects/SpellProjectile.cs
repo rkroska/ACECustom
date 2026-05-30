@@ -781,52 +781,52 @@ namespace ACE.Server.WorldObjects
 
                 candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
 
-                // Launch fork projectiles toward each candidate.
+                // ── Shadow Clone pattern (commit 6643c2bb3) ──────────────────────────
+                // CreateSpellProjectiles uses PhysicsObj.Position for spawn origin AND
+                // velocity direction. For creatures, Location (the server/DB position)
+                // is NOT automatically synced to PhysicsObj.Position — especially after
+                // death, when the physics body drifts with the death animation.
                 //
-                // ALL position/direction math uses Location.ToGlobal() — NOT PhysicsObj.Position.
-                // Dead creatures' PhysicsObj positions drift (death animation moves the body),
-                // making hitTarget.CalculateProjectileVelocity return a direction relative to the
-                // player rather than hitTarget.  Location is set by the server and remains stable.
+                // Fix: write Location fields into PhysicsObj.Position once before each
+                // launch, then call CreateSpellProjectiles on hitTarget so all math is
+                // relative to hitTarget. Override ProjectileSource = player afterward
+                // so damage / kill XP / DamageHistory still go to the player.
+                SyncPhysicsPosition(hitTarget);
+
                 foreach ((Creature forkTarget, float _) in candidates.Take(fork.Targets))
                 {
-                    // Origins: body-size offset from hitTarget's physics radius (static lookup — safe).
-                    var origins = hitTarget.CalculateProjectileOrigins(snapSpell, snapSpellType, forkTarget);
-
-                    // Velocity: compute direction from stable Location coords; get speed from player
-                    // (player is alive, PhysicsObj valid) using a zero-origin reference call.
-                    var refVelocity = player.CalculateProjectileVelocity(snapSpell, forkTarget, snapSpellType, Vector3.Zero);
-                    var speed = refVelocity.Length();
-
-                    var fromGlobal = hitTarget.Location.ToGlobal(false);
-                    var toGlobal   = forkTarget.Location.ToGlobal(false);
-                    // Aim at target's eye level (matches vanilla height offset; Arc uses ProjHeightArc)
-                    var heightFactor = snapSpellType == ProjectileSpellType.Arc ? ProjHeightArc : ProjHeight;
-                    toGlobal.Z   += forkTarget.Height * heightFactor;
-                    fromGlobal.Z += hitTarget.Height  * heightFactor;
-                    var dirVec   = Vector3.Normalize(toGlobal - fromGlobal);
-                    var velocity = speed > 0 ? dirVec * speed : refVelocity;
-
-                    // Launch on player (ProjectileSource = player → correct damage / XP).
-                    // originOverride    → spawn position comes from hitTarget.Location
-                    // directionOverride → facing quaternion uses Location.ToGlobal (fixed above)
-                    var launched = player.LaunchSpellProjectiles(
-                        snapSpell, forkTarget, snapSpellType,
+                    var launched = hitTarget.CreateSpellProjectiles(
+                        snapSpell, forkTarget,
                         snapLauncher, snapWeaponSpell, fromProc: true,
-                        origins, velocity, snapLifeDmg,
-                        originOverride:    hitTarget,
-                        directionOverride: hitTarget);
+                        snapLifeDmg);
 
                     if (launched == null) continue;
                     foreach (var fp in launched)
                     {
+                        fp.ProjectileSource = player;   // attribute damage / XP to the player
                         fp.IsForkProjectile = true;
                         fp.ForkDamageMult   = damageMult;
-                        // ProjectileSource is already 'player' (set by LaunchSpellProjectiles on player)
                     }
                 }
             });
             actionChain.EnqueueChain();
         }
+
+        /// <summary>
+        /// Synchronises a WorldObject's <c>PhysicsObj.Position</c> with its current
+        /// <see cref="WorldObject.Location"/> so that <see cref="WorldObject.CreateSpellProjectiles"/>
+        /// uses the correct origin and velocity direction.
+        /// Mirrors the SyncClonePhysicsPosition helper in Player_Clones.cs.
+        /// </summary>
+        private static void SyncPhysicsPosition(WorldObject obj)
+        {
+            if (obj.PhysicsObj?.Position == null || obj.Location == null) return;
+
+            obj.PhysicsObj.Position.ObjCellID        = obj.Location.Cell;
+            obj.PhysicsObj.Position.Frame.Origin      = obj.Location.Pos;
+            obj.PhysicsObj.Position.Frame.Orientation = obj.Location.Rotation;
+        }
+
 
 
         public float GetAbsorbMod(Creature target)
