@@ -1,6 +1,6 @@
 -- ============================================================
 -- Charm of Auto Rebuffing (WCID 777700300)
--- ILT Ability Charm — Ability ID 24 (HasAutoRebuffCharm)
+-- ILT Ability Charm — Ability ID 26 (HasAutoRebuffCharm)
 -- Double-click to activate. While active and in inventory,
 -- automatically rebuffs you with Level 8s 60 mins before they expire.
 -- WeenieType 38 (AugmentationDevice) — matches all ILT charms.
@@ -56,6 +56,6 @@ INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES
 (777700300,  1, 33554556),   -- Setup (Coffer/Chest)
 (777700300,  3, 536870932),  -- SoundTable
 (777700300,  6, 67111919),   -- PaletteBase
-(777700300,  8, 100666338),  -- Icon (AC Icon Viewer 3042)
+(777700300,  8, 100675650),  -- Icon (AC Icon Viewer 3042)
 (777700300, 48, 100676435),  -- IconUnderlay
 (777700300, 50, 100667550);  -- IconOverlay (Tier 1 badge)
