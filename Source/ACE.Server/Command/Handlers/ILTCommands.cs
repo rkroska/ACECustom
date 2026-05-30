@@ -304,9 +304,9 @@ namespace ACE.Server.Command.Handlers
                 }
 
                 // Scan for all known creatures within the player's ring AOE radius.
-                const float ringRadius = Player.DefaultRingAoeRadius;
+                var ringRadius = SmartRingSettingsManager.Radius;
                 var radius = ringRadius * (float)(player.GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
-                var maxHeight = Player.RingAoeMaxHeightDelta;
+                var maxHeight = SmartRingSettingsManager.Height;
 
                 if (player.Location == null)
                 {
