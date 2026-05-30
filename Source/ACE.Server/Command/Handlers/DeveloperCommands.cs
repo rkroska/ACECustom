@@ -4223,8 +4223,9 @@ namespace ACE.Server.Command.Handlers
             }
             else
             {
-                var selectedWo = CommandHandlerHelper.GetSelected(session) ?? CommandHandlerHelper.GetLastAppraisedObject(session);
-                target = selectedWo as Creature;
+                target =
+                    CommandHandlerHelper.GetSelected(session) as Creature ??
+                    CommandHandlerHelper.GetLastAppraisedObject(session) as Creature;
                 if (target == null)
                 {
                     session?.Network?.EnqueueSend(new GameMessageSystemChat("No target selected, or target is not a creature. Target a creature or specify a Weenie Class ID.", ChatMessageType.System));
