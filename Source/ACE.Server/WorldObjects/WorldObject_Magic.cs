@@ -1677,7 +1677,7 @@ namespace ACE.Server.WorldObjects
             var spellType = SpellProjectile.GetProjectileSpellType(spell.Id);
 
             // Split Cast Charm Interception
-            if (this is Player player && player.HasPentaCast && CharmSettingsManager.SplitCast.Enabled && target != null &&
+            if (this is Player player && player.HasSplitCast && CharmSettingsManager.SplitCast.Enabled && target != null &&
                 target.Location != null &&   // guard: target may have been removed from world before projectile launch
                 (spellType == ProjectileSpellType.Streak || spellType == ProjectileSpellType.Arc || spellType == ProjectileSpellType.Bolt))
             {

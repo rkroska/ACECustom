@@ -3440,8 +3440,8 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasAgonyCharm); else SetProperty(PropertyBool.HasAgonyCharm, value); }
         }
 
-        /// <summary>True while the Penta Cast Charm is activated — Streak, Arc, and Bolt spells target up to 5 distinct enemies.</summary>
-        public bool HasPentaCast
+        /// <summary>True while the Split Cast Charm is activated — Streak, Arc, and Bolt spells target up to 5 distinct enemies.</summary>
+        public bool HasSplitCast
         {
             get => GetProperty(PropertyBool.HasPentaCast) ?? false;
             set { if (!value) RemoveProperty(PropertyBool.HasPentaCast); else SetProperty(PropertyBool.HasPentaCast, value); }
