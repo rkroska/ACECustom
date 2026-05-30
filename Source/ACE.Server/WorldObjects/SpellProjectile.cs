@@ -746,12 +746,17 @@ namespace ACE.Server.WorldObjects
             var allObjects = new List<WorldObject>();
             var lb = hitTarget.CurrentLandblock;
             allObjects.AddRange(lb.GetWorldObjectsForPhysicsHandling());
-            foreach (var adj in lb.Adjacents)
-                if (adj != null) allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
+            if (lb.Adjacents != null)
+            {
+                foreach (var adj in lb.Adjacents)
+                    if (adj != null) allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
+            }
 
             var candidates = new List<(Creature c, float dist)>();
-            foreach (var obj in allObjects.GroupBy(o => o.Guid).Select(g => g.First()))
+            var seen = new HashSet<ObjectGuid>();
+            foreach (var obj in allObjects)
             {
+                if (!seen.Add(obj.Guid)) continue;   // deduplicate across landblock + adjacents
                 if (obj is not Creature c || c == player || c == hitTarget) continue;
                 if (!c.IsAlive || c.Location == null) continue;
                 var dist = Vector3.Distance(hitGlobal, c.Location.ToGlobal(false));
@@ -761,6 +766,7 @@ namespace ACE.Server.WorldObjects
                 if (pkErr != null) continue;
                 candidates.Add((c, dist));
             }
+
 
             candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
 
