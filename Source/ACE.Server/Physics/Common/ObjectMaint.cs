@@ -487,7 +487,8 @@ namespace ACE.Server.Physics.Common
 
         public static bool InitialClamp = true;
 
-        public static float InitialClamp_Dist = 112.5f;
+        /// <summary>Max 2D distance for adding visible objects / CreateObject (~1.25 landblocks; was ACE default 112.5).</summary>
+        public static float InitialClamp_Dist = 240f;
         public static float InitialClamp_DistSq = InitialClamp_Dist * InitialClamp_Dist;
 
         /// <summary>
@@ -503,15 +504,24 @@ namespace ACE.Server.Physics.Common
                 if (!SameVariationForVisibility(PhysicsObj, obj))
                     return false;
 
-                if (VisibleObjects.ContainsKey(obj.ID))
+                var wasVisible = VisibleObjects.ContainsKey(obj.ID);
+                if (wasVisible)
                     return false;
 
-                if (InitialClamp && !KnownObjects.ContainsKey(obj.ID))
-                {
-                    var distSq = PhysicsObj.Position.Distance2DSquared(obj.Position);
+                var wasKnown = KnownObjects.ContainsKey(obj.ID);
+                var dist2DSq = PhysicsObj.Position.Distance2DSquared(obj.Position);
 
-                    if (distSq > InitialClamp_DistSq)
-                        return false;
+                // Always clamp distance — do not skip when already in KnownObjects (AddTrackedObject used to
+                // call AddKnownObject first, which bypassed clamp and sent CreateObject at 9-LB PVS range).
+                if (InitialClamp && dist2DSq > InitialClamp_DistSq)
+                {
+                    if (PhysicsObj.IsPlayer && PhysicsObj.WeenieObj.WorldObject is Player viewer && ServerConfig.visibility_create_object_diag_verbose.Value)
+                    {
+                        var dist2D = (float)Math.Sqrt(dist2DSq);
+                        VisibilityCreateObjectDiag.LogAddVisibleObject(viewer, obj, added: false, rejectedByClamp: true, dist2D, wasKnown, wasVisible);
+                    }
+
+                    return false;
                 }
 
                 //Console.WriteLine($"{PhysicsObj.Name}.AddVisibleObject({obj.Name})");
@@ -519,6 +529,12 @@ namespace ACE.Server.Physics.Common
 
                 if (obj.WeenieObj.IsMonster)
                     obj.ObjMaint.AddVisibleTarget(PhysicsObj, false);
+
+                if (PhysicsObj.IsPlayer && PhysicsObj.WeenieObj.WorldObject is Player viewerAdded && ServerConfig.visibility_create_object_diag_verbose.Value)
+                {
+                    var dist2D = (float)Math.Sqrt(dist2DSq);
+                    VisibilityCreateObjectDiag.LogAddVisibleObject(viewerAdded, obj, added: true, rejectedByClamp: false, dist2D, wasKnown, wasVisible);
+                }
 
                 return true;
             }

@@ -1746,7 +1746,7 @@ namespace ACE.Server.Physics
                         if (!PrestigeManager.SameVariationForVisibility(playerVar, PrestigeManager.GetEffectiveVariationForVisibility(wo)))
                             continue;
 
-                        player.TrackObject(wo, true);
+                        player.TrackObject(wo, true, "enqueue_objs_post_teleport_delay");
                     }
                 });
                 actionChain.EnqueueChain();
@@ -1768,11 +1768,11 @@ namespace ACE.Server.Physics
                         // ensure post-teleport position is sent
                         var actionChain = new ActionChain();
                         actionChain.AddDelayForOneTick();
-                        actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo));
+                        actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo, createObjectPath: "enqueue_objs_teleporting_tick"));
                         actionChain.EnqueueChain();
                     }
                     else
-                        player.TrackObject(wo);
+                        player.TrackObject(wo, createObjectPath: "enqueue_objs_handle_visible_cells");
                 }
             }
         }
@@ -1795,7 +1795,7 @@ namespace ACE.Server.Physics
             {
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(TeleportCreateObjectDelay.TotalSeconds);
-                actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo, true));
+                actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo, true, "enqueue_obj_post_teleport_delay"));
                 actionChain.EnqueueChain();
             }
             else
@@ -1805,11 +1805,11 @@ namespace ACE.Server.Physics
                     // ensure post-teleport position is sent
                     var actionChain = new ActionChain();
                     actionChain.AddDelayForOneTick();
-                    actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo));
+                    actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo, createObjectPath: "enqueue_obj_teleporting_tick"));
                     actionChain.EnqueueChain();
                 }
                 else
-                    player.TrackObject(wo);
+                    player.TrackObject(wo, createObjectPath: "enqueue_obj_handle_visible_obj");
             }
         }
 
@@ -2165,6 +2165,19 @@ namespace ACE.Server.Physics
             // get the list of visible objects from this cell
             var visibleObjects = ObjMaint.GetVisibleObjects(CurCell, ObjectMaint.VisibleObjectType.All, this.Position.Variation);
 
+            var maxCandidateDist2D = 0f;
+            if (IsPlayer && ServerConfig.visibility_create_object_diag_verbose.Value)
+            {
+                foreach (var o in visibleObjects)
+                {
+                    if (o?.Position == null)
+                        continue;
+                    var d = (float)Math.Sqrt(Position.Distance2DSquared(o.Position));
+                    if (d > maxCandidateDist2D)
+                        maxCandidateDist2D = d;
+                }
+            }
+
             //Console.WriteLine("Visible objects from this cell: " + visibleObjects.Count);
             //foreach (var visibleObject in visibleObjects)
             //Console.WriteLine(visibleObject.Name);
@@ -2193,6 +2206,9 @@ namespace ACE.Server.Physics
 
             // add newly occluded objects to the destruction queue
             ObjMaint.AddObjectsToBeDestroyed(newlyOccluded);
+
+            if (IsPlayer && WeenieObj.WorldObject is Player viewerCells)
+                ACE.Server.Managers.VisibilityCreateObjectDiag.LogHandleVisibleCells(viewerCells, visibleObjects.Count, createObjs.Count, newlyOccluded.Count, maxCandidateDist2D);
 
             return createObjs;
         }
