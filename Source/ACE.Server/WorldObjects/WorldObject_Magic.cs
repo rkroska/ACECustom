@@ -2035,7 +2035,7 @@ namespace ACE.Server.WorldObjects
                     }
                     else
                     {
-                        qDir = PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
+                        qDir = spawnOrigin.PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
                     }
                     rotate = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, (float)Math.Atan2(-qDir.X, qDir.Y));
                 }

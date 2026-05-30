@@ -906,13 +906,13 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
         {
             public bool  Enabled { get; private set; } = true;
             public int   Targets { get; private set; } = 4;
-            public float Range   { get; private set; } = 10.0f;
+            public float Range   { get; private set; } = 25.0f;
             public float Delay   { get; private set; } = 0.5f;
             public float T1Mult  { get; private set; } = 0.50f;
             public float T2Mult  { get; private set; } = 0.75f;
             public float T3Mult  { get; private set; } = 1.00f;
 
-            public void Reset() { Enabled = true; Targets = 4; Range = 10.0f; Delay = 0.5f; T1Mult = 0.50f; T2Mult = 0.75f; T3Mult = 1.00f; }
+            public void Reset() { Enabled = true; Targets = 4; Range = 25.0f; Delay = 0.5f; T1Mult = 0.50f; T2Mult = 0.75f; T3Mult = 1.00f; }
 
             public string TrySet(string key, string value)
             {
