@@ -721,71 +721,92 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Fired after a successful spell projectile hit when the caster has the Fork Charm active.
-        /// Spawns secondary projectiles from the hit target's position toward nearby enemies.
-        /// Fork projectiles are tagged with IsForkProjectile = true to prevent chaining.
+        /// Fires after a successful spell projectile hit when the caster has the Fork Charm active.
+        /// Schedules a delayed burst of secondary projectiles from the hit target's position.
+        /// Spell data is snapshotted immediately (this SpellProjectile is destroyed right after
+        /// OnCollideObject returns). Candidates are gathered fresh inside the delay so that any
+        /// enemies killed in the interim are not targeted.
+        /// Fork projectiles are tagged IsForkProjectile = true to prevent recursive chaining.
         /// </summary>
         private void TryApplyForkProc(Player player, Creature hitTarget)
         {
             var fork = CharmSettingsManager.Fork;
 
-            // Determine tier and damage multiplier
-            player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ForkAbilityId, out var tier);
-            if (tier < 1) tier = 1;
-            float damageMult = tier switch { 2 => fork.T2Mult, 3 => fork.T3Mult, _ => fork.T1Mult };
-
-            // Guard: hit target must still be in world
+            // Guard: hit target must be in-world at impact time
             if (hitTarget.Location == null || hitTarget.CurrentLandblock == null)
                 return;
 
-            var hitGlobal = hitTarget.Location.ToGlobal(false);
+            // --- Snapshot everything from 'this' before the delay ---
+            // The SpellProjectile (this) is cleaned up by ProjectileImpact() immediately
+            // after OnCollideObject returns, so we cannot safely access its fields later.
+            player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ForkAbilityId, out var tier);
+            if (tier < 1) tier = 1;
+            float damageMult       = tier switch { 2 => fork.T2Mult, 3 => fork.T3Mult, _ => fork.T1Mult };
+            var   snapSpell        = Spell;
+            var   snapSpellType    = SpellType;
+            var   snapLauncher     = ProjectileLauncher;
+            var   snapWeaponSpell  = IsWeaponSpell;
+            var   snapLifeDmg      = LifeProjectileDamage;
 
-            // Gather candidates from hit target's landblock + adjacents
-            var allObjects = new List<WorldObject>();
-            var lb = hitTarget.CurrentLandblock;
-            allObjects.AddRange(lb.GetWorldObjectsForPhysicsHandling());
-            foreach (var adj in lb.Adjacents)
-                if (adj != null) allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
-
-            var candidates = new List<(Creature c, float dist)>();
-            foreach (var obj in allObjects.GroupBy(o => o.Guid).Select(g => g.First()))
+            // --- Schedule the fork burst after the configured delay ---
+            var actionChain = new ActionChain();
+            actionChain.AddDelaySeconds(fork.Delay);
+            actionChain.AddAction(player, ActionType.PlayerMagic_DoCastSpell, () =>
             {
-                if (obj is not Creature c || c == player || c == hitTarget) continue;
-                if (!c.IsAlive || c.Location == null) continue;
-                var dist = Vector3.Distance(hitGlobal, c.Location.ToGlobal(false));
-                if (dist > fork.Range) continue;
-                if (!player.CanDamage(c)) continue;
-                var pkErr = player.CheckPKStatusVsTarget(c, Spell);
-                if (pkErr != null) continue;
-                candidates.Add((c, dist));
-            }
+                // Safety guards after the delay window
+                if (player.IsDead || player.IsDestroyed) return;
+                if (hitTarget.Location == null || hitTarget.CurrentLandblock == null) return;
 
-            candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
+                var hitGlobal = hitTarget.Location.ToGlobal(false);
 
-            // Launch fork projectiles toward each candidate.
-            // All three calls are made on hitTarget so that spawn position AND
-            // velocity direction are both computed from hitTarget → forkTarget.
-            // ProjectileSource is then overridden to the player so damage is
-            // attributed correctly and OnCollideObject resolves the right caster.
-            foreach ((Creature forkTarget, float _) in candidates.Take(fork.Targets))
-            {
-                var origins  = hitTarget.CalculateProjectileOrigins(Spell, SpellType, forkTarget);
-                var velocity = hitTarget.CalculateProjectileVelocity(Spell, forkTarget, SpellType, origins[0]);
+                // Gather fresh candidates — targets that died during the delay are skipped
+                var allObjects = new List<WorldObject>();
+                var lb = hitTarget.CurrentLandblock;
+                allObjects.AddRange(lb.GetWorldObjectsForPhysicsHandling());
+                foreach (var adj in lb.Adjacents)
+                    if (adj != null) allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
 
-                var launched = hitTarget.LaunchSpellProjectiles(
-                    Spell, forkTarget, SpellType,
-                    ProjectileLauncher, IsWeaponSpell, fromProc: true,
-                    origins, velocity, LifeProjectileDamage);
-
-                if (launched == null) continue;
-                foreach (var fp in launched)
+                var candidates = new List<(Creature c, float dist)>();
+                foreach (var obj in allObjects.GroupBy(o => o.Guid).Select(g => g.First()))
                 {
-                    fp.ProjectileSource = player;   // damage attributed to the player, not the enemy
-                    fp.IsForkProjectile = true;
-                    fp.ForkDamageMult   = damageMult;
+                    if (obj is not Creature c || c == player || c == hitTarget) continue;
+                    if (!c.IsAlive || c.Location == null) continue;
+                    var dist = Vector3.Distance(hitGlobal, c.Location.ToGlobal(false));
+                    if (dist > fork.Range) continue;
+                    if (!player.CanDamage(c)) continue;
+                    var pkErr = player.CheckPKStatusVsTarget(c, snapSpell);
+                    if (pkErr != null) continue;
+                    candidates.Add((c, dist));
                 }
-            }
+
+                candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
+
+                // Launch fork projectiles toward each candidate.
+                // All three calls are made on hitTarget so spawn position AND velocity
+                // direction are both computed hitTarget → forkTarget.
+                // ProjectileSource is overridden to player for correct damage attribution.
+                foreach ((Creature forkTarget, float _) in candidates.Take(fork.Targets))
+                {
+                    var origins  = hitTarget.CalculateProjectileOrigins(snapSpell, snapSpellType, forkTarget);
+                    var velocity = hitTarget.CalculateProjectileVelocity(snapSpell, forkTarget, snapSpellType, origins[0]);
+
+                    var launched = hitTarget.LaunchSpellProjectiles(
+                        snapSpell, forkTarget, snapSpellType,
+                        snapLauncher, snapWeaponSpell, fromProc: true,
+                        origins, velocity, snapLifeDmg);
+
+                    if (launched == null) continue;
+                    foreach (var fp in launched)
+                    {
+                        fp.ProjectileSource = player;   // damage attributed to player, not the enemy
+                        fp.IsForkProjectile = true;
+                        fp.ForkDamageMult   = damageMult;
+                    }
+                }
+            });
+            actionChain.EnqueueChain();
         }
+
 
         public float GetAbsorbMod(Creature target)
         {
