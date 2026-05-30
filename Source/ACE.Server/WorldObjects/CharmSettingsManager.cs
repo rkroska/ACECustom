@@ -907,12 +907,11 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public bool  Enabled { get; private set; } = true;
             public int   Targets { get; private set; } = 4;
             public float Range   { get; private set; } = 25.0f;
-            public float Delay   { get; private set; } = 0.5f;
             public float T1Mult  { get; private set; } = 0.50f;
             public float T2Mult  { get; private set; } = 0.75f;
             public float T3Mult  { get; private set; } = 1.00f;
 
-            public void Reset() { Enabled = true; Targets = 4; Range = 25.0f; Delay = 0.5f; T1Mult = 0.50f; T2Mult = 0.75f; T3Mult = 1.00f; }
+            public void Reset() { Enabled = true; Targets = 4; Range = 25.0f; T1Mult = 0.50f; T2Mult = 0.75f; T3Mult = 1.00f; }
 
             public string TrySet(string key, string value)
             {
@@ -931,10 +930,6 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                     case "range":
                         if (!ParseFloat(value, out var fv)) return $"Invalid float.";
                         Range = fv; return $"fork.range = {F(Range)}";
-
-                    case "delay":
-                        if (!ParseFloat(value, out var dv)) return $"Invalid float.";
-                        Delay = Math.Clamp(dv, 0f, 5f); return $"fork.delay = {F(Delay)}";
 
                     case "t1mult":
                         if (!ParseFloat(value, out var m1)) return $"Invalid float.";
@@ -959,7 +954,6 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                     case "enabled": if (ParseBool(value,  out var bv)) Enabled = bv; break;
                     case "targets": if (ParseInt(value,   out var iv)) Targets = Math.Clamp(iv, 1, 10); break;
                     case "range":   if (ParseFloat(value, out var fv)) Range   = fv; break;
-                    case "delay":   if (ParseFloat(value, out var dv)) Delay   = Math.Clamp(dv, 0f, 5f); break;
                     case "t1mult":  if (ParseFloat(value, out var m1)) T1Mult  = Math.Clamp(m1, 0f, 2f); break;
                     case "t2mult":  if (ParseFloat(value, out var m2)) T2Mult  = Math.Clamp(m2, 0f, 2f); break;
                     case "t3mult":  if (ParseFloat(value, out var m3)) T3Mult  = Math.Clamp(m3, 0f, 2f); break;
@@ -971,7 +965,6 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 "enabled" => B(Enabled),
                 "targets" => Targets.ToString(),
                 "range"   => F(Range),
-                "delay"   => F(Delay),
                 "t1mult"  => F(T1Mult),
                 "t2mult"  => F(T2Mult),
                 "t3mult"  => F(T3Mult),
@@ -983,7 +976,6 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 ("enabled", B(Enabled)),
                 ("targets", Targets.ToString()),
                 ("range",   F(Range)),
-                ("delay",   F(Delay)),
                 ("t1mult",  F(T1Mult)),
                 ("t2mult",  F(T2Mult)),
                 ("t3mult",  F(T3Mult)),
@@ -994,7 +986,6 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 "  • Enabled  on / off\n" +
                 "  • targets int   — number of fork targets per hit (1 to 10)\n" +
                 "  • range float   — search radius in meters for fork targets\n" +
-                "  • delay float   — seconds to wait after hit before forks launch (default 0.50)\n" +
                 "  • t1mult float  — T1 fork damage multiplier (default 0.50)\n" +
                 "  • t2mult float  — T2 fork damage multiplier (default 0.75)\n" +
                 "  • t3mult float  — T3 fork damage multiplier (default 1.00)\n" +
@@ -1010,7 +1001,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
                 $"  • Enabled: {B(Enabled)}\n" +
                 $"  • targets: {Targets}\n" +
                 $"  • range: {Range.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
-                $"  • delay: {F(Delay)}\n" +
+
                 $"  • t1mult: {F(T1Mult)}\n" +
                 $"  • t2mult: {F(T2Mult)}\n" +
                 $"  • t3mult: {F(T3Mult)}\n";

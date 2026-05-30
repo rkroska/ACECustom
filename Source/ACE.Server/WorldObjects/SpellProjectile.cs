@@ -722,112 +722,61 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// Fires after a successful spell projectile hit when the caster has the Fork Charm active.
-        /// Schedules a delayed burst of secondary projectiles from the hit target's position.
-        /// Spell data is snapshotted immediately (this SpellProjectile is destroyed right after
-        /// OnCollideObject returns). Candidates are gathered fresh inside the delay so that any
-        /// enemies killed in the interim are not targeted.
+        /// Fires synchronously (no delay) — mirrors the chain lightning pattern.
+        /// Launches secondary projectiles from the hit target's position toward nearby enemies.
         /// Fork projectiles are tagged IsForkProjectile = true to prevent recursive chaining.
         /// </summary>
         private void TryApplyForkProc(Player player, Creature hitTarget)
         {
             var fork = CharmSettingsManager.Fork;
 
-            // Guard: hit target must be in-world at impact time
             if (hitTarget.Location == null || hitTarget.CurrentLandblock == null)
                 return;
 
-            // --- Snapshot everything from 'this' before the delay ---
-            // The SpellProjectile (this) is cleaned up by ProjectileImpact() immediately
-            // after OnCollideObject returns, so we cannot safely access its fields later.
             player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ForkAbilityId, out var tier);
             if (tier < 1) tier = 1;
-            float damageMult       = tier switch { 2 => fork.T2Mult, 3 => fork.T3Mult, _ => fork.T1Mult };
-            var   snapSpell        = Spell;
-            var   snapSpellType    = SpellType;
-            var   snapLauncher     = ProjectileLauncher;
-            var   snapWeaponSpell  = IsWeaponSpell;
-            var   snapLifeDmg      = LifeProjectileDamage;
+            float damageMult = tier switch { 2 => fork.T2Mult, 3 => fork.T3Mult, _ => fork.T1Mult };
 
-            // --- Schedule the fork burst after the configured delay ---
-            var actionChain = new ActionChain();
-            actionChain.AddDelaySeconds(fork.Delay);
-            actionChain.AddAction(player, ActionType.PlayerMagic_DoCastSpell, () =>
+            var hitGlobal = hitTarget.Location.ToGlobal(false);
+
+            // Gather candidates — same landblock + adjacents, exactly like chain lightning
+            var allObjects = new List<WorldObject>();
+            var lb = hitTarget.CurrentLandblock;
+            allObjects.AddRange(lb.GetWorldObjectsForPhysicsHandling());
+            foreach (var adj in lb.Adjacents)
+                if (adj != null) allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
+
+            var candidates = new List<(Creature c, float dist)>();
+            foreach (var obj in allObjects.GroupBy(o => o.Guid).Select(g => g.First()))
             {
-                // Safety guards after the delay window
-                if (player.IsDead || player.IsDestroyed) return;
-                if (hitTarget.Location == null || hitTarget.CurrentLandblock == null) return;
+                if (obj is not Creature c || c == player || c == hitTarget) continue;
+                if (!c.IsAlive || c.Location == null) continue;
+                var dist = Vector3.Distance(hitGlobal, c.Location.ToGlobal(false));
+                if (dist > fork.Range) continue;
+                if (!player.CanDamage(c)) continue;
+                var pkErr = player.CheckPKStatusVsTarget(c, Spell);
+                if (pkErr != null) continue;
+                candidates.Add((c, dist));
+            }
 
-                var hitGlobal = hitTarget.Location.ToGlobal(false);
+            candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
 
-                // Gather fresh candidates — targets that died during the delay are skipped
-                var allObjects = new List<WorldObject>();
-                var lb = hitTarget.CurrentLandblock;
-                allObjects.AddRange(lb.GetWorldObjectsForPhysicsHandling());
-                foreach (var adj in lb.Adjacents)
-                    if (adj != null) allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
+            // Fire — same call as chain lightning: caster.CreateSpellProjectiles(..., originOverride: justHit)
+            // No SyncPhysicsPosition needed — hitTarget.PhysicsObj is fresh at hit time (no drift yet).
+            foreach ((Creature forkTarget, float _) in candidates.Take(fork.Targets))
+            {
+                var launched = player.CreateSpellProjectiles(
+                    Spell, forkTarget,
+                    ProjectileLauncher, IsWeaponSpell, fromProc: true,
+                    LifeProjectileDamage, originOverride: hitTarget);
 
-                var candidates = new List<(Creature c, float dist)>();
-                foreach (var obj in allObjects.GroupBy(o => o.Guid).Select(g => g.First()))
+                if (launched == null) continue;
+                foreach (var fp in launched)
                 {
-                    if (obj is not Creature c || c == player || c == hitTarget) continue;
-                    if (!c.IsAlive || c.Location == null) continue;
-                    var dist = Vector3.Distance(hitGlobal, c.Location.ToGlobal(false));
-                    if (dist > fork.Range) continue;
-                    if (!player.CanDamage(c)) continue;
-                    var pkErr = player.CheckPKStatusVsTarget(c, snapSpell);
-                    if (pkErr != null) continue;
-                    candidates.Add((c, dist));
+                    fp.IsForkProjectile = true;
+                    fp.ForkDamageMult   = damageMult;
                 }
-
-                candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
-
-                // ── Chain Lightning pattern (commit c64f10a18) ───────────────────────
-                // Call CreateSpellProjectiles on PLAYER (not hitTarget) so that
-                // IsProjectileVisible is checked against the player's physics object,
-                // not the dead creature (which would fail the LOS test and instantly
-                // destroy every fork projectile via OnCollideEnvironment).
-                //
-                // originOverride: hitTarget → all three calculation methods
-                // (CalculatePreOffset, CalculateProjectileOrigins, CalculateProjectileVelocity
-                //  and LaunchSpellProjectiles) use hitTarget.PhysicsObj for origin + direction.
-                //
-                // SyncPhysicsPosition syncs hitTarget.PhysicsObj ← hitTarget.Location first,
-                // because the 0.5 s delay lets the death animation drift the physics body.
-                SyncPhysicsPosition(hitTarget);
-
-                foreach ((Creature forkTarget, float _) in candidates.Take(fork.Targets))
-                {
-                    // Exactly like chain lightning: caster.CreateSpellProjectiles(spell, nextTarget, null, originOverride: justHit)
-                    var launched = player.CreateSpellProjectiles(
-                        snapSpell, forkTarget,
-                        snapLauncher, snapWeaponSpell, fromProc: true,
-                        snapLifeDmg, originOverride: hitTarget);
-
-                    if (launched == null) continue;
-                    foreach (var fp in launched)
-                    {
-                        // ProjectileSource is already the player (called on player above)
-                        fp.IsForkProjectile = true;
-                        fp.ForkDamageMult   = damageMult;
-                    }
-                }
-            });
-            actionChain.EnqueueChain();
-        }
-
-        /// <summary>
-        /// Synchronises a WorldObject's <c>PhysicsObj.Position</c> with its current
-        /// <see cref="WorldObject.Location"/> so that <see cref="WorldObject.CreateSpellProjectiles"/>
-        /// uses the correct origin and velocity direction.
-        /// Mirrors the SyncClonePhysicsPosition helper in Player_Clones.cs.
-        /// </summary>
-        private static void SyncPhysicsPosition(WorldObject obj)
-        {
-            if (obj.PhysicsObj?.Position == null || obj.Location == null) return;
-
-            obj.PhysicsObj.Position.ObjCellID        = obj.Location.Cell;
-            obj.PhysicsObj.Position.Frame.Origin      = obj.Location.Pos;
-            obj.PhysicsObj.Position.Frame.Orientation = obj.Location.Rotation;
+            }
         }
 
 
