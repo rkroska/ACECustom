@@ -697,8 +697,11 @@ namespace ACE.Server.WorldObjects
 
                 finalDamage *= elementalDamageMod * slayerMod * resistanceMod * absorbMod * attribBonus;
             }
+            // Fork Charm: reduce damage for fork projectiles based on tier multiplier.
+            if (IsForkProjectile)
+                finalDamage *= ForkDamageMult;
 
-            // show debug info
+            // show debug info (after fork mult so displayed damage matches actual dealt damage)
             if (sourceCreature != null && sourceCreature.DebugDamage.HasFlag(Creature.DebugDamageType.Attacker))
             {
                 ShowInfo(sourceCreature, Spell, attackSkill, criticalChance, criticalHit, critDefended, overpower, weaponCritDamageMod, skillBonus, baseDamage, critDamageBonus, elementalDamageMod, slayerMod, weaponResistanceMod, resistanceMod, absorbMod, LifeProjectileDamage, lifeMagicDamage, finalDamage);
@@ -717,7 +720,7 @@ namespace ACE.Server.WorldObjects
                     finalDamage *= m;
             }
 
-            return finalDamage * ForkDamageMult;
+            return finalDamage;
         }
 
         /// <summary>

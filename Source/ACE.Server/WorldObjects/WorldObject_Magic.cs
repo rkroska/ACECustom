@@ -1677,8 +1677,11 @@ namespace ACE.Server.WorldObjects
             var spellType = SpellProjectile.GetProjectileSpellType(spell.Id);
 
             // Split Cast Charm Interception
+            // originOverride != null means this is a fork/chain projectile being spawned from a hit target —
+            // SplitCast should NOT intercept these or it will hijack the origin and multiply fork bolts.
             if (this is Player player && player.HasSplitCast && CharmSettingsManager.SplitCast.Enabled && target != null &&
                 target.Location != null &&   // guard: target may have been removed from world before projectile launch
+                originOverride == null &&    // don't intercept fork/chain projectiles
                 (spellType == ProjectileSpellType.Streak || spellType == ProjectileSpellType.Arc || spellType == ProjectileSpellType.Bolt))
             {
                 var spellProjectiles = new List<SpellProjectile>();
@@ -1755,7 +1758,7 @@ namespace ACE.Server.WorldObjects
 
             var defaultVelocity = CalculateProjectileVelocity(spell, target, spellType, defaultOrigins[0], originOverride);
 
-            return LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, defaultOrigins, defaultVelocity, lifeProjectileDamage, originOverride);
+            return LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, defaultOrigins, defaultVelocity, lifeProjectileDamage, originOverride, directionOverride: originOverride);
         }
 
         public static readonly float ProjHeight = 2.0f / 3.0f;
@@ -1820,7 +1823,7 @@ namespace ACE.Server.WorldObjects
 
             if (target != null)
             {
-                var cylDist = GetCylinderDistance(target);
+                var cylDist = origin.GetCylinderDistance(target);
                 //Console.WriteLine($"CylDist: {cylDist}");
                 if (cylDist < 0.6f)
                     radsum = origin.PhysicsObj.GetPhysicsRadius() + radius;
