@@ -400,7 +400,7 @@ namespace ACE.Server.WorldObjects
             else
                 CurrentMotionState.SetForwardCommand(MotionCommand.Ready);
 
-            if (state.CommandListLength > 0)
+            if (state.Commands?.Count > 0)
             {
                 if (((uint)state.Commands[0].MotionCommand & (uint)CommandMask.SubState) != 0)
                     CurrentMotionState.SetForwardCommand(state.Commands[0].MotionCommand);

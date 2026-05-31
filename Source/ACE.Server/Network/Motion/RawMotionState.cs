@@ -92,6 +92,8 @@ namespace ACE.Server.Network.Structure
                     else
                         log.Error($"RawMotionState reader - received non-standard action {motionItem.MotionCommand}, Speed: {motionItem.Speed} for {moveToState.WorldObject?.Name}");
                 }
+
+                CommandListLength = (ushort)Commands.Count;
             }
         }
 
@@ -152,7 +154,7 @@ namespace ACE.Server.Network.Structure
             if (checkForward && (Flags & RawMotionFlags.ForwardCommand) != 0 && SoulEmote.SoulEmotes.Contains(ForwardCommand))
                 return true;
 
-            if (CommandListLength > 0 && SoulEmote.SoulEmotes.Contains(Commands[0].MotionCommand))
+            if (Commands?.Count > 0 && SoulEmote.SoulEmotes.Contains(Commands[0].MotionCommand))
                 return true;
 
             return false;
