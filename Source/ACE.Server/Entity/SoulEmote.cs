@@ -40,6 +40,7 @@ namespace ACE.Server.Entity
             MotionCommand.NudgeLeft,            // *nudge left*, *nudgeleft*
             MotionCommand.NudgeRight,           // *nudge right*, *nudgeright*
             MotionCommand.PleadState,           // *grovel*, *grovels*, *plead*, *pleads*, *please*
+            MotionCommand.Point,                // *point* (client sends Point before PointState)
             MotionCommand.PointDown,            // *point down*, *pointdown*
             MotionCommand.PointDownState,       // *point down state*, *pointdownstate*, *pointing down*, *pointingdown*, *points down*, *pointsdown*
             MotionCommand.PointLeft,            // *point left*, *pointleft*
