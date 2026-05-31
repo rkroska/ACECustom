@@ -365,7 +365,10 @@ namespace ACE.Server.Network.Structure
             if (wo is Container)
             {
                 if (PropertiesInt.ContainsKey(PropertyInt.Value))
-                    PropertiesInt[PropertyInt.Value] = DatabaseManager.World.GetCachedWeenie(wo.WeenieClassId).GetValue() ?? 0; // Value is masked to base value of Weenie
+                {
+                    var cachedWeenie = DatabaseManager.World.GetCachedWeenie(wo.WeenieClassId);
+                    PropertiesInt[PropertyInt.Value] = cachedWeenie?.GetValue() ?? 0; // Value is masked to base value of Weenie
+                }
             }
 
             if (wo is Storage)

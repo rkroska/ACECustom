@@ -292,6 +292,12 @@ namespace ACE.Server
             log.Info("Starting DatabaseManager...");
             DatabaseManager.Start();
 
+            log.Info("Initializing CharmSettingsManager...");
+            ACE.Server.WorldObjects.CharmSettingsManager.Initialize();
+
+            log.Info("Initializing SmartRingSettingsManager...");
+            ACE.Server.WorldObjects.SmartRingSettingsManager.Initialize();
+
             log.Info("Initializing Transfer Monitoring...");
             TransferLogger.InitializeTransferMonitoring();
 

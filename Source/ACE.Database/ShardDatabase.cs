@@ -872,7 +872,7 @@ namespace ACE.Database
                     .Select(r => r.Id)
                     .ToList();
 
-                Parallel.ForEach(results, result =>
+                Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
                 {
                     var biota = GetBiota(result, true);
 

@@ -264,7 +264,7 @@ namespace ACE.Server.WorldObjects
             // NOTE: GetCombatType() checks the equipped weapon's wield slot, but if the player swaps weapons mid-flight
             // or split arrows hit while stabbing, we also check damageEvent's CombatType and DamageSource's Missile status.
             if (damageEvent.HasDamage && (GetCombatType() == CombatType.Missile || damageEvent.CombatType == CombatType.Missile || (damageEvent.DamageSource?.Missile ?? false)))
-                TryApplyExplosiveArrowProc(target, damageEvent.Damage, damageEvent.DamageType);
+                TryApplyExplosiveArrowProc(target, damageEvent.Damage, damageEvent.DamageType, damageEvent.DamageSource);
 
             return damageEvent;
         }
@@ -501,7 +501,10 @@ namespace ACE.Server.WorldObjects
             var percent = (float)amount / Health.MaxValue;
 
             // G��G�� Mana Barrier G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��
+            // CR-P5: save pre-absorb value so fully-absorbed DoTs show the blocked amount, not "0 points"
+            var preAbsorbDotAmount = _amount;
             var mbDotResult = TryAbsorbWithManaBarrier(ref _amount, damageType);
+
             // G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��
 
             amount = (uint)Math.Round(_amount);
@@ -523,7 +526,9 @@ namespace ACE.Server.WorldObjects
                 var nether = damageType == DamageType.Nether ? "nether " : "";
                 var chatMessageType = damageType == DamageType.Nether ? ChatMessageType.Magic : ChatMessageType.Combat;
                 var mbSuffix = GetManaBarrierSuffix(mbDotResult);
-                var dotDisplayAmount = amount;
+                // CR-P5: show pre-absorb amount when fully blocked, so player sees what the barrier prevented
+                // instead of "You receive 0 points" — mirrors TakeDamageInternal's preAbsorbAmount pattern.
+                var dotDisplayAmount = mbDotResult.FullyAbsorbed ? (uint)Math.Round(preAbsorbDotAmount) : amount;
                 var text = $"You receive {dotDisplayAmount} points of periodic {nether}damage.{mbSuffix}";
                 SendMessage(text, chatMessageType);
             //}

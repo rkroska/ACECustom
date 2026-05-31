@@ -20,3 +20,6 @@
 *.PDF    diff=astextplain
 *.rtf    diff=astextplain
 *.RTF    diff=astextplain
+
+# Force LF endings on SQL files to prevent carriage return music note rendering glitches
+*.sql text eol=lf

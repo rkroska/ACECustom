@@ -4164,6 +4164,182 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("weakness", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Assess target creature's weaknesses ordered by damage score.", "Usage: /weakness [wcid]")]
+        public static void HandleWeakness(Session session, params string[] parameters)
+        {
+            string GetPaddedElementName(string name)
+            {
+                return name switch
+                {
+                    "Bludgeon" => "Bludgeon  ",
+                    "Electric" => "Electric  ",
+                    "Nether"   => "Nether    ",
+                    "Pierce"   => "Pierce    ",
+                    "Slash"    => "Slash      ",
+                    "Acid"     => "Acid       ",
+                    "Cold"     => "Cold       ",
+                    "Fire"     => "Fire       ",
+                    _          => name.PadRight(10)
+                };
+            }
+
+            string FormatPercentage(double val)
+            {
+                var formatted = val.ToString("F2");
+                return val < 100.0 ? "  " + formatted : formatted;
+            }
+
+            Creature target = null;
+
+            if (parameters?.Length > 0)
+            {
+                if (uint.TryParse(parameters[0], out var wcid))
+                {
+                    var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
+                    if (weenie == null)
+                    {
+                        session?.Network?.EnqueueSend(new GameMessageSystemChat($"Could not find weenie WCID {wcid} in database.", ChatMessageType.System));
+                        return;
+                    }
+                    if (weenie.WeenieType != WeenieType.Creature)
+                    {
+                        session?.Network?.EnqueueSend(new GameMessageSystemChat($"Weenie {weenie.ClassName} ({wcid}) is a {weenie.WeenieType}, not a Creature.", ChatMessageType.System));
+                        return;
+                    }
+                    
+                    // Create a temporary mock creature instance to read its properties
+                    target = WorldObjectFactory.CreateNewWorldObject(wcid) as Creature;
+                    if (target == null)
+                    {
+                        session?.Network?.EnqueueSend(new GameMessageSystemChat($"Failed to instantiate creature for WCID {wcid}.", ChatMessageType.System));
+                        return;
+                    }
+                }
+                else
+                {
+                    session?.Network?.EnqueueSend(new GameMessageSystemChat("Usage: /weakness [wcid] (or target a creature and type /weakness)", ChatMessageType.System));
+                    return;
+                }
+            }
+            else
+            {
+                target =
+                    CommandHandlerHelper.GetSelected(session) as Creature ??
+                    CommandHandlerHelper.GetLastAppraisedObject(session) as Creature;
+                if (target == null)
+                {
+                    session?.Network?.EnqueueSend(new GameMessageSystemChat("No target selected, or target is not a creature. Target a creature or specify a Weenie Class ID.", ChatMessageType.System));
+                    return;
+                }
+
+                // If they targeted a live in-world creature, automatically trigger a server-side appraisal
+                // event to force the client to load and sync the creature's full identification details.
+                if (target.Location != null)
+                {
+                    session.Player.Examine(target);
+                }
+            }
+
+            try
+            {
+                // Calculate average base armor (same as charm logic)
+                double avgBaseArmor = 100.0;
+                if (target.Biota.PropertiesBodyPart != null && target.Biota.PropertiesBodyPart.Count > 0)
+                {
+                    avgBaseArmor = target.Biota.PropertiesBodyPart.Values.Average(bp => bp.BaseArmor);
+                }
+                else if (target.ArmorLevel.HasValue)
+                {
+                    avgBaseArmor = target.ArmorLevel.Value;
+                }
+
+                var elements = new[]
+                {
+                    (Type: DamageType.Slash, Name: "Slash"),
+                    (Type: DamageType.Pierce, Name: "Pierce"),
+                    (Type: DamageType.Bludgeon, Name: "Bludgeon"),
+                    (Type: DamageType.Fire, Name: "Fire"),
+                    (Type: DamageType.Cold, Name: "Cold"),
+                    (Type: DamageType.Acid, Name: "Acid"),
+                    (Type: DamageType.Electric, Name: "Electric"),
+                    (Type: DamageType.Nether, Name: "Nether")
+                };
+
+                var meleeResults = new List<(string Name, double Score, double ResistMod, double ArmorVsType, double EffectiveArmor)>();
+                var magicResults = new List<(string Name, double Score, double ResistMod)>();
+
+                foreach (var el in elements)
+                {
+                    var resistType = Creature.GetResistanceType(el.Type);
+                    
+                    // Intentionally passes null attacker/weapon — /weakness shows *natural* base
+                    // resistances independent of the caller's current weapon (diagnostic use).
+                    // GetWeakestElement() (runtime selector for Prismatic Strike) correctly passes
+                    // the real attacker+weapon so rending/cleaving modifiers are factored in.
+                    var resistMod = target.GetResistanceMod(resistType, null, null, 1.0f);
+                    
+                    // 2. Get target's armor multiplier against this element
+                    var armorVsType = target.GetArmorVsType(el.Type);
+                    
+                    // 3. Compute effective armor and resulting damage multiplier (100 / (100 + AL))
+                    var effectiveArmor = avgBaseArmor * armorVsType;
+                    var armorMod = 100.0 / (100.0 + effectiveArmor);
+                    
+                    // 4. Combined melee score (armor-mitigated)
+                    var meleeScore = resistMod * armorMod;
+
+                    meleeResults.Add((el.Name, meleeScore, resistMod, armorVsType, effectiveArmor));
+                    
+                    // 5. Magic score (ignores armor completely)
+                    magicResults.Add((el.Name, resistMod, resistMod));
+                }
+
+                // Sort descending (weakest first)
+                var orderedMelee = meleeResults.OrderByDescending(r => r.Score).ToList();
+                var orderedMagic = magicResults.OrderByDescending(r => r.Score).ToList();
+
+                var output = new System.Text.StringBuilder();
+                output.Append('\n');
+                output.Append("--------------------------------------------------------------------------------\n");
+                output.Append($"[WEAKNESS ANALYSIS] {target.Name} (Level {target.Level ?? 0})\n");
+                output.Append("--------------------------------------------------------------------------------\n");
+                output.Append("MELEE / PHYSICAL WEAKNESS (Armor-Aware):\n");
+                output.Append("--------------------------------------------------------------------------------\n");
+
+                int idx = 1;
+                foreach (var r in orderedMelee)
+                {
+                    var paddedName = GetPaddedElementName(r.Name);
+                    var pct = FormatPercentage(r.Score * 100.0);
+                    output.Append($"{idx}. {paddedName}: {pct}% dmg  (Resist: {r.ResistMod:F3} | Armor: {r.ArmorVsType:F2} | Eff. AL: {r.EffectiveArmor,3:F0})\n");
+                    idx++;
+                }
+                output.Append("--------------------------------------------------------------------------------\n");
+                output.Append("SPELL / MAGIC WEAKNESS (Armor-Bypassing):\n");
+                output.Append("--------------------------------------------------------------------------------\n");
+
+                idx = 1;
+                foreach (var r in orderedMagic)
+                {
+                    var paddedName = GetPaddedElementName(r.Name);
+                    var pct = FormatPercentage(r.Score * 100.0);
+                    output.Append($"{idx}. {paddedName}: {pct}% dmg  (Resist: {r.ResistMod:F3} | Armor: IGNORED)\n");
+                    idx++;
+                }
+                output.Append("--------------------------------------------------------------------------------\n");
+
+                ChatPacket.SendServerMessage(session, output.ToString(), ChatMessageType.System);
+            }
+            finally
+            {
+                // Only destroy if this was a mock creature instantiated from WCID (no Location set).
+                // Live appraised creatures must NOT be destroyed.
+                if (target != null && target.Location == null)
+                {
+                    target.Destroy(false);
+                }
+            }
+        }
 
     }
 }

@@ -72,6 +72,11 @@ namespace ACE.Database.Models.World
         public virtual DbSet<WeeniePropertiesString> WeeniePropertiesString { get; set; }
         public virtual DbSet<WeeniePropertiesTextureMap> WeeniePropertiesTextureMap { get; set; }
 
+        // ILT custom tables
+        public virtual DbSet<CharmSetting> CharmSettings { get; set; }
+
+        private static ServerVersion _cachedServerVersion;
+
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
             if (!optionsBuilder.IsConfigured)
@@ -80,7 +85,9 @@ namespace ACE.Database.Models.World
 
                 var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};TreatTinyAsBoolean=False;SslMode=Disabled;AllowPublicKeyRetrieval=true;ApplicationName=ACEmulator";
 
-                optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), builder =>
+                _cachedServerVersion ??= ServerVersion.AutoDetect(connectionString);
+
+                optionsBuilder.UseMySql(connectionString, _cachedServerVersion, builder =>
                 {
                     builder.EnableRetryOnFailure(10);
                 });
@@ -2360,6 +2367,35 @@ namespace ACE.Database.Models.World
                     .WithMany(p => p.WeeniePropertiesTextureMap)
                     .HasForeignKey(d => d.ObjectId)
                     .HasConstraintName("wcid_texturemap");
+            });
+
+            // ILT: charm_settings — runtime tuning config for ability charms
+            modelBuilder.Entity<CharmSetting>(entity =>
+            {
+                entity.HasKey(e => new { e.CharmName, e.SettingKey });
+                entity.ToTable("charm_settings");
+                entity.ToTable(t => t.HasComment("Persistent runtime configuration for ILT ability charms."));
+
+                entity.Property(e => e.CharmName)
+                    .HasColumnName("charm_name")
+                    .HasMaxLength(50)
+                    .HasComment("Charm identifier (e.g. manabarrier, explosivearrow)");
+
+                entity.Property(e => e.SettingKey)
+                    .HasColumnName("setting_key")
+                    .HasMaxLength(50)
+                    .HasComment("Setting identifier (e.g. enabled, slash, radius)");
+
+                entity.Property(e => e.SettingValue)
+                    .HasColumnName("setting_value")
+                    .HasMaxLength(100)
+                    .HasComment("Value stored as string; parsed by CharmSettingsManager");
+
+                entity.Property(e => e.LastModified)
+                    .HasColumnType("datetime")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnName("last_modified")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP");
             });
 
             OnModelCreatingPartial(modelBuilder);

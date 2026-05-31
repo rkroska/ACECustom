@@ -124,6 +124,25 @@ namespace ACE.Server.WorldObjects
                 SyncLocationWithPhysics();
                 CheckPrestigeBoundary();
             }
+
+            // Staggered choreographed visual animation playout for Auto-Rebuff Charm
+            if (PendingStaggeredEvents.Count > 0)
+            {
+                var nextEvent = PendingStaggeredEvents.Peek();
+                if (currentUnixTime - StaggeredCascadeStartTime >= nextEvent.BroadcastTimeOffset)
+                {
+                    PendingStaggeredEvents.Dequeue();
+
+                    if (nextEvent.Visuals.Count > 0)
+                    {
+                        // Broadcast the bundled visuals together to the landblock
+                        EnqueueBroadcast(nextEvent.Visuals.ToArray());
+
+                        // Play a soft magic sound with each staggered step
+                        Session?.Network?.EnqueueSend(new GameMessageSound(Guid, Sound.EnchantUp));
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -163,6 +182,31 @@ namespace ACE.Server.WorldObjects
                         Session.LogOffPlayer(true);
                     else
                         LogOut();
+                }
+            }
+
+            // Auto-Rebuff Charm Tick Check
+            // Note: ApplyUltimateBlessings() populates PendingStaggeredEvents which is drained in
+            // Player_Tick() (per-frame) for smooth 1s visual stagger — intentional cross-context flow.
+            if (HasAutoRebuffCharm && CharmSettingsManager.AutoRebuff.Enabled && !IsDead)
+            {
+                if (currentUnixTime - LastAutoRebuffCheckTime >= 5.0)
+                {
+                    LastAutoRebuffCheckTime = currentUnixTime;
+
+                    // NeedsRebuff() scans all qualifying buffs: fires if any are missing or
+                    // have less than 60 minutes remaining. Returns false if the player has no
+                    // qualifying buffs at all (fully gated by Option B) — prevents infinite loop.
+                    if (NeedsRebuff())
+                    {
+                        // Enforce 3-minute Dispel Lockout
+                        bool dispelLockoutActive = currentUnixTime - LastDispelTimestamp < 180.0;
+
+                        if (!dispelLockoutActive)
+                        {
+                            ApplyUltimateBlessings();
+                        }
+                    }
                 }
             }
 

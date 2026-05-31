@@ -618,18 +618,45 @@ namespace ACE.Server.Entity
             };
 
             DamageType weakest = DamageType.Fire;
-            double maxMod = -1.0;
+            double maxScore = -1.0;
+
+            // Calculate target's average base armor level (default to 100 if none)
+            double avgBaseArmor = 100.0;
+            if (defender.Biota.PropertiesBodyPart != null && defender.Biota.PropertiesBodyPart.Count > 0)
+            {
+                avgBaseArmor = defender.Biota.PropertiesBodyPart.Values.Average(bp => bp.BaseArmor);
+            }
+            else if (defender.ArmorLevel.HasValue)
+            {
+                avgBaseArmor = defender.ArmorLevel.Value;
+            }
+
+            var attackSkill = attacker?.GetCreatureSkill(attacker.GetCurrentWeaponSkill());
 
             foreach (var dt in elements)
             {
                 var resistType = Creature.GetResistanceType(dt);
-                // CR-18: pass null attacker/weapon so the scan reads the target's *natural* resistance
-                // without rend modifiers from the current weapon. Otherwise a weapon with AcidRending
-                // artificially lowers the target's apparent Acid resistance and skews element selection.
-                var mod = defender.GetResistanceMod(resistType, null, null, 1.0f);
-                if (mod > maxMod)
+                var weaponResistanceMod = WorldObject.GetWeaponResistanceModifier(weapon, attacker, attackSkill, dt);
+                
+                // Pass the real attacker + weapon so rending/cleaving/WeaponResistanceMod
+                // are factored in — this mirrors what DoCalculateDamage uses and ensures
+                // Prismatic Strike / Explosive Arrow pick the element that actually deals
+                // the most damage with the current weapon equipped.
+                var resistMod = defender.GetResistanceMod(resistType, attacker, weapon, weaponResistanceMod);
+                
+                // 2. Get target's armor multiplier against this element
+                var armorVsType = defender.GetArmorVsType(dt);
+                
+                // 3. Compute effective armor and resulting damage multiplier (100 / (100 + AL))
+                var effectiveArmor = avgBaseArmor * armorVsType;
+                var armorMod = 100.0 / (100.0 + effectiveArmor);
+                
+                // 4. Combined score representing final damage ratio
+                var score = resistMod * armorMod;
+
+                if (score > maxScore)
                 {
-                    maxMod = mod;
+                    maxScore = score;
                     weakest = dt;
                 }
             }
@@ -677,7 +704,7 @@ namespace ACE.Server.Entity
             else
                 DamageType = attacker.GetDamageType(false, CombatType.Melee);
 
-            if (attacker.HasPrismaticStrike && attacker.CombatMode == CombatMode.Melee)
+            if (attacker.HasOmnistrike && CharmSettingsManager.Omnistrike.Enabled && attacker.CombatMode == CombatMode.Melee)
             {
                 var weakestElement = GetWeakestElement(Defender, attacker, Weapon);
                 DamageType = weakestElement;

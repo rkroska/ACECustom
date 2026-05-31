@@ -5,6 +5,9 @@ namespace ACE.Server.WorldObjects
 {
     public static class CharmAbilityRegistry
     {
+        private static readonly log4net.ILog log =
+            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         private readonly struct AbilityEntry
         {
             public readonly Func<Player, bool> Get;
@@ -27,12 +30,14 @@ namespace ACE.Server.WorldObjects
         public const int ShrapnelCharmAbilityId   = 19;
         public const int AgonyCharmAbilityId      = 20;
         public const int ExplosiveArrowCharmAbilityId = 21;
-        public const int PentaCastAbilityId       = 22;
-        public const int PrismaticStrikeAbilityId = 23;
+        public const int SplitCastAbilityId       = 22;
+        public const int OmnistrikeAbilityId       = 23;
         /// <summary>Opt-in: pay pyreals to restore one summoning essence charge when empty (PetDevice summon path).</summary>
         public const int PetDevicePyrealAutoRefillAbilityId = 24;
         /// <summary>Bypass pet device SummoningMastery checks (Primalist / Necromancer / Naturalist essences).</summary>
         public const int UniversalSummoningMasteryAbilityId = 25;
+        public const int AutoRebuffAbilityId      = 26;
+        public const int ForkAbilityId             = 27;
 
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {
@@ -44,10 +49,12 @@ namespace ACE.Server.WorldObjects
             { ShrapnelCharmAbilityId,   new AbilityEntry(p => p.HasShrapnelCharm,   (p, v) => p.HasShrapnelCharm   = v, "Shrapnel Charm")   },
             { AgonyCharmAbilityId,       new AbilityEntry(p => p.HasAgonyCharm,      (p, v) => p.HasAgonyCharm      = v, "Agony Charm")      },
             { ExplosiveArrowCharmAbilityId, new AbilityEntry(p => p.HasExplosiveArrowCharm, (p, v) => p.HasExplosiveArrowCharm = v, "Explosive Arrow Charm") },
-            { PentaCastAbilityId,       new AbilityEntry(p => p.HasPentaCast,       (p, v) => p.HasPentaCast       = v, "Penta Cast")       },
-            { PrismaticStrikeAbilityId, new AbilityEntry(p => p.HasPrismaticStrike, (p, v) => p.HasPrismaticStrike = v, "Prismatic Strike") },
+            { SplitCastAbilityId,       new AbilityEntry(p => p.HasSplitCast,       (p, v) => p.HasSplitCast       = v, "Split Cast")       },
+            { OmnistrikeAbilityId,       new AbilityEntry(p => p.HasOmnistrike, (p, v) => p.HasOmnistrike = v, "Omni Strike")       },
             { PetDevicePyrealAutoRefillAbilityId, new AbilityEntry(p => p.PetDevicePyrealAutoRefillEnrolled, (p, v) => p.PetDevicePyrealAutoRefillEnrolled = v, "Summon Essence Refill") },
             { UniversalSummoningMasteryAbilityId, new AbilityEntry(p => p.HasUniversalSummoningMastery, (p, v) => p.HasUniversalSummoningMastery = v, "Universal Summoning Mastery") },
+            { AutoRebuffAbilityId,      new AbilityEntry(p => p.HasAutoRebuffCharm,     (p, v) => p.HasAutoRebuffCharm = v,     "Auto-Rebuff")          },
+            { ForkAbilityId,            new AbilityEntry(p => p.HasForkCharm,           (p, v) => p.HasForkCharm           = v, "Fork")                 },
         };
 
         /// <summary>Returns all registered ability IDs. Prefer this over hardcoded numeric ranges.</summary>
@@ -69,13 +76,17 @@ namespace ACE.Server.WorldObjects
             { 777700023, AgonyCharmAbilityId },
             // Explosive Arrow Charm (Tiers 1–3)
             { 777700025, ExplosiveArrowCharmAbilityId }, { 777710005, ExplosiveArrowCharmAbilityId }, { 777720005, ExplosiveArrowCharmAbilityId },
-            // Penta Cast Charm (Tier 1 only)
-            { 777700024, PentaCastAbilityId },
-            // Prismatic Strike Charm
-            { 777700026, PrismaticStrikeAbilityId },
+            // Split Cast Charm (Tier 1 only)
+            { 777700024, SplitCastAbilityId },
+            // Omni Strike Charm
+            { 777700026, OmnistrikeAbilityId },
             // Summon Essence Refill Charm (pyreal auto-refill enrollment)
             { 78780030, PetDevicePyrealAutoRefillAbilityId },
             { 78780031, UniversalSummoningMasteryAbilityId },
+            // Auto-Rebuff Charm
+            { 777700300, AutoRebuffAbilityId },
+            // Fork Charm (Tiers 1–3)
+            { 777700027, ForkAbilityId }, { 777710007, ForkAbilityId }, { 777720007, ForkAbilityId },
         };
 
         /// <summary>
@@ -91,14 +102,20 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public static void Apply(Player player, int abilityId, bool enable, int level = 1)
         {
-            if (Registry.TryGetValue(abilityId, out var entry))
-                entry.Set(player, enable);
+            if (!Registry.TryGetValue(abilityId, out var entry))
+            {
+                log.Warn($"[CharmAbilityRegistry] Apply called for unregistered abilityId={abilityId} — Has* property not updated.");
+                return;
+            }
+
+            entry.Set(player, enable);
 
             if (enable)
                 player.ActiveCharmLevels[abilityId] = level;
             else
                 player.ActiveCharmLevels.Remove(abilityId);
         }
+
 
         /// <summary>
         /// Returns the display name for an ability ID, or null if not found.
