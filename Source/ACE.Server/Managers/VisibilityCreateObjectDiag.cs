@@ -19,7 +19,8 @@ namespace ACE.Server.Managers
                 return;
 
             var clampNote = rejectedByClamp ? "REJECTED_BY_CLAMP" : "CLAMP_PASSED";
-            log.Warn($"[VisibilityCO] AddVisibleObject {clampNote} viewer={FormatViewer(viewer)} target={FormatTarget(target)} dist2D={dist2D:F1}m clampMax={ObjectMaint.InitialClamp_Dist:F1}m wasKnown={wasKnown} wasVisible={wasVisible} added={added}");
+            var targetStr = target != null ? FormatTarget(target) : "<null>";
+            log.Warn($"[VisibilityCO] AddVisibleObject {clampNote} viewer={FormatViewer(viewer)} target={targetStr} dist2D={dist2D:F1}m clampMax={ObjectMaint.InitialClamp_Dist:F1}m wasKnown={wasKnown} wasVisible={wasVisible} added={added}");
         }
 
         public static void LogCreateObject(Player viewer, WorldObject target, string path, float dist2D, bool? clampWouldApply = null, string extra = null)
@@ -90,6 +91,6 @@ namespace ACE.Server.Managers
             $"{target.Name}({target.Guid.Full:X8}) wcid={target.WeenieClassId}";
 
         private static string FormatTarget(Physics.PhysicsObj target) =>
-            $"{target.Name}({target.ID:X8})";
+            target == null ? "<null>" : $"{target.Name}({target.ID:X8})";
     }
 }
