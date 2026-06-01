@@ -20,13 +20,91 @@ namespace ACE.Server.Network.GameAction.Actions
             // DEBUG LOGGING
             session.Network.EnqueueSend(new GameMessageSystemChat($"[DEBUG GameActionChatChannel] Channel: {groupChatType} (0x{(uint)groupChatType:X8}) | Msg: '{(message ?? "null")}' | Len: {message?.Length ?? 0}", ChatMessageType.Broadcast));
 
+            if (message != null)
+            {
+                // Intercept say with content to turn off sticky
+                if (message.StartsWith("/s ", StringComparison.OrdinalIgnoreCase) ||
+                    message.StartsWith("/say ", StringComparison.OrdinalIgnoreCase) ||
+                    message.StartsWith("/local ", StringComparison.OrdinalIgnoreCase) ||
+                    message.StartsWith("@s ", StringComparison.OrdinalIgnoreCase) ||
+                    message.StartsWith("@say ", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (session.Player.StickyChatMode != StickyChatType.None)
+                    {
+                        session.Player.StickyChatMode = StickyChatType.None;
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Sticky Chat: Disabled. Normal chat will go to local speech.", ChatMessageType.Broadcast));
+                    }
+                    var prefixLen = 3;
+                    if (message.StartsWith("/say ", StringComparison.OrdinalIgnoreCase) || message.StartsWith("@say ", StringComparison.OrdinalIgnoreCase))
+                        prefixLen = 5;
+                    else if (message.StartsWith("/local ", StringComparison.OrdinalIgnoreCase))
+                        prefixLen = 7;
+                    
+                    session.Player.HandleActionTalk(message.Substring(prefixLen));
+                    return;
+                }
+
+                // Intercept channels with content to trigger sticky
+                if (message.StartsWith("/a ", StringComparison.OrdinalIgnoreCase) ||
+                    message.StartsWith("/v ", StringComparison.OrdinalIgnoreCase) ||
+                    message.StartsWith("/vassals ", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (session.Player.StickyChatEnabled)
+                    {
+                        if (session.Player.StickyChatMode != StickyChatType.Allegiance)
+                        {
+                            if (session.Player.Allegiance == null)
+                            {
+                                session.Network.EnqueueSend(new GameEventWeenieError(session, WeenieError.YouAreNotInAllegiance));
+                                return;
+                            }
+                            session.Player.StickyChatMode = StickyChatType.Allegiance;
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Sticky Chat: [Allegiance] is now active. Normal chat will go to Allegiance. Type /say to disable.", ChatMessageType.Broadcast));
+                        }
+                    }
+                    var prefixLen = message.StartsWith("/vassals ", StringComparison.OrdinalIgnoreCase) ? 9 : 3;
+                    session.Player.BroadcastToAllegiance(message.Substring(prefixLen));
+                    return;
+                }
+
+                if (message.StartsWith("/f ", StringComparison.OrdinalIgnoreCase) ||
+                    message.StartsWith("/fellow ", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (session.Player.StickyChatEnabled)
+                    {
+                        if (session.Player.StickyChatMode != StickyChatType.Fellowship)
+                        {
+                            if (session.Player.Fellowship == null)
+                            {
+                                session.Network.EnqueueSend(new GameEventWeenieError(session, WeenieError.YouDoNotBelongToAFellowship));
+                                return;
+                            }
+                            session.Player.StickyChatMode = StickyChatType.Fellowship;
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Sticky Chat: [Fellowship] is now active. Normal chat will go to Fellowship. Type /say to disable.", ChatMessageType.Broadcast));
+                        }
+                    }
+                    var prefixLen = message.StartsWith("/fellow ", StringComparison.OrdinalIgnoreCase) ? 8 : 3;
+                    session.Player.BroadcastToFellowship(message.Substring(prefixLen));
+                    return;
+                }
+
+                // Bypass other commands/slashes entirely to local talk
+                if (message.StartsWith("/") || message.StartsWith("@"))
+                {
+                    session.Player.HandleActionTalk(message);
+                    return;
+                }
+            }
+
             var trimmedMsg = message?.Trim();
 
             // Disable check on any channel message
             if (string.Equals(trimmedMsg, "/say", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(trimmedMsg, "/s", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(trimmedMsg, "/local", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(trimmedMsg, "@sticky off", StringComparison.OrdinalIgnoreCase))
+                string.Equals(trimmedMsg, "@sticky off", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmedMsg, "@say", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmedMsg, "@s", StringComparison.OrdinalIgnoreCase))
             {
                 if (session.Player.StickyChatMode != StickyChatType.None)
                 {
