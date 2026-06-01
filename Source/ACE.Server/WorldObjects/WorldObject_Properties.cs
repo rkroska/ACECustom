@@ -3484,6 +3484,13 @@ namespace ACE.Server.WorldObjects
             set { if (value) RemoveProperty(PropertyBool.ShowOverkill); else SetProperty(PropertyBool.ShowOverkill, false); }
         }
 
+        /// <summary>True if player has Sticky Chat enabled. Default OFF.</summary>
+        public bool StickyChatEnabled
+        {
+            get => GetProperty(PropertyBool.StickyChatEnabled) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.StickyChatEnabled); else SetProperty(PropertyBool.StickyChatEnabled, value); }
+        }
+
         // ── ILT Player UI Preferences ────────────────────────────────────────────────
         /// <summary>0 = default (vanilla), 1 = commas, 2 = short (K/M/B/T/Q)</summary>
         public int DamageNumberFormat

@@ -43,7 +43,7 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("ilt", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
             "ILT custom server commands and player preferences.",
-            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train|smartring [on|off]|ringmode|ringrange|arrowdebug]")]
+            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train|smartring [on|off]|ringmode|ringrange|arrowdebug|stickychat [on|off]]")]
         public static void HandleILT(Session session, params string[] parameters)
         {
             var player = session.Player;
@@ -122,6 +122,39 @@ namespace ACE.Server.Command.Handlers
                     session.Network.EnqueueSend(new GameMessageSystemChat(
                         $"Usage: /ilt {usageName} [on | off]", ChatMessageType.System));
                 }
+            }
+            else if (sub == "stickychat")
+            {
+                bool newValue;
+                if (parameters.Length >= 2)
+                {
+                    var opt = parameters[1].ToLower();
+                    if (opt == "on" || opt == "true" || opt == "enable")
+                        newValue = true;
+                    else if (opt == "off" || opt == "false" || opt == "disable")
+                        newValue = false;
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"Unknown value '{parameters[1]}'. Valid options: on, off.", ChatMessageType.System));
+                        return;
+                    }
+                }
+                else
+                    newValue = !player.StickyChatEnabled; // toggle if no param
+
+                player.StickyChatEnabled = newValue;
+                player.SaveBiotaToDatabase(enqueueSave: true);
+
+                if (!newValue)
+                {
+                    player.StickyChatMode = StickyChatType.None; // Reset active state if disabled
+                }
+
+                var state = newValue ? "ON" : "OFF";
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"Sticky Chat is now {state}. {(newValue ? "Typing to Fellowship (/f) or Allegiance (/a) will automatically lock subsequent standard chat to that channel." : "Chat routing operates in standard retail mode (no lock).")}",
+                    ChatMessageType.System));
             }
             else if (sub == "dmgformat")
             {
@@ -402,9 +435,12 @@ namespace ACE.Server.Command.Handlers
                 var dmgLabel  = player.DamageNumberFormat switch { 1 => "commas", 2 => "short", _ => "default" };
                 var okLabel   = player.ShowOverkill ? "ON" : "OFF";
                 var ringLabel = (player.GetProperty(PropertyBool.ClassicRingAoe) ?? false) ? "Classic" : "New";
+                var stickyLabel = player.StickyChatEnabled ? "ON" : "OFF";
                 session.Network.EnqueueSend(new GameMessageSystemChat("=== ILT Custom Commands ===", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt features", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("      View a list of custom ILT server features.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt stickychat [on|off]", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"      Toggle Sticky Chat lock mode globally. (currently: {stickyLabel})", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt dmgformat [default|commas|short]", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"      Set your damage number display style. (currently: {dmgLabel})", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt showoverkill [on|off]", ChatMessageType.System));
