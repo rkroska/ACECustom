@@ -17,9 +17,12 @@ namespace ACE.Server.Network.GameAction.Actions
             var groupChatType = (Channel)clientMessage.Payload.ReadUInt32();
             var message = clientMessage.Payload.ReadString16L();
 
+            // DEBUG LOGGING
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[DEBUG GameActionChatChannel] Channel: {groupChatType} (0x{(uint)groupChatType:X8}) | Msg: '{(message ?? "null")}' | Len: {message?.Length ?? 0}", ChatMessageType.Broadcast));
+
             if (string.IsNullOrEmpty(message))
             {
-                if (groupChatType == Channel.Vassals)
+                if (groupChatType == Channel.Vassals || groupChatType == Channel.AllegianceBroadcast)
                 {
                     if (session.Player.StickyChatMode == StickyChatType.Allegiance)
                     {
