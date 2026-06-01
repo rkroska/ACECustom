@@ -64,7 +64,7 @@ namespace ACE.Server.Web
                 if (!Directory.Exists(distPath))
                 {
                     log.Fatal($"[WEB PORTAL] Assets NOT found at: {distPath}. Start aborted.");
-                    log.Fatal($"[WEB PORTAL] Please ensure you have run 'npm run build' in the ClientApp directory and that the 'wwwroot' folder is present.");
+                    log.Fatal($"[WEB PORTAL] Please ensure you have run 'npm run build' in Source/ACE.WebPortal/ClientApp (or rebuild ACE.Server so dist is copied to wwwroot).");
                     throw new DirectoryNotFoundException($"Web Portal assets missing at {distPath}");
                 }
 

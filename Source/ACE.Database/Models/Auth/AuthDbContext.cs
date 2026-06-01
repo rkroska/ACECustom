@@ -23,6 +23,8 @@ public partial class AuthDbContext : DbContext
 
     public virtual DbSet<Leaderboard> Leaderboard { get; set; }
 
+    public virtual DbSet<LeaderboardPlacementRow> LeaderboardPlacementQuery { get; set; }
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         if (!optionsBuilder.IsConfigured)
@@ -154,6 +156,12 @@ public partial class AuthDbContext : DbContext
             entity.ToTable("leaderboard");
 
             entity.Property(e => e.LeaderboardId).HasColumnName("LeaderboardID");
+            entity.Property(e => e.Character).HasMaxLength(255);
+        });
+
+        modelBuilder.Entity<LeaderboardPlacementRow>(entity =>
+        {
+            entity.HasNoKey();
             entity.Property(e => e.Character).HasMaxLength(255);
         });
 

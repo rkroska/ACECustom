@@ -1,11 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using log4net;
 using ACE.Common;
+using ACE.Entity.Enum.Properties;
 using System.Threading;
 
 namespace ACE.Database.Models.Auth
@@ -22,7 +24,7 @@ namespace ACE.Database.Models.Auth
         {
             try
             {
-                return await context.Leaderboard.FromSql($"CALL TopQuestBonus").AsNoTracking().ToListAsync();
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopQuestBonus).AsNoTracking().ToListAsync();
             }
             catch (Exception ex)
             {
@@ -40,7 +42,7 @@ namespace ACE.Database.Models.Auth
         {
             try
             {
-                return await context.Leaderboard.FromSql($"CALL TopLevel").AsNoTracking().ToListAsync();
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopLevel).AsNoTracking().ToListAsync();
             }
             catch (Exception ex)
             {
@@ -58,11 +60,11 @@ namespace ACE.Database.Models.Auth
         {
             try
             {
-                return await context.Leaderboard.FromSql($"CALL TopEnlightenment").AsNoTracking().ToListAsync();
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopEnlightenment).AsNoTracking().ToListAsync();
             }
             catch (Exception ex)
             {
-                log.Error($"Failed to get TopEnlightenment leaderboard: {ex.Message}");
+                log.Error($"Failed to get TopEnlightenment leaderboard: {ex.Message}", ex);
                 return new List<Leaderboard>();
             }
         }
@@ -76,7 +78,7 @@ namespace ACE.Database.Models.Auth
         {
             try
             {
-                return await context.Leaderboard.FromSql($"CALL TopTitles").AsNoTracking().ToListAsync();
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopTitles).AsNoTracking().ToListAsync();
             }
             catch (Exception ex)
             {
@@ -94,7 +96,7 @@ namespace ACE.Database.Models.Auth
         {
             try
             {
-                return await context.Leaderboard.FromSql($"CALL TopAugments").AsNoTracking().ToListAsync();
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopAugments).AsNoTracking().ToListAsync();
             }
             catch (Exception ex)
             {
@@ -112,7 +114,7 @@ namespace ACE.Database.Models.Auth
         {
             try
             {
-                return await context.Leaderboard.FromSql($"CALL TopDeaths").AsNoTracking().ToListAsync();
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopDeaths).AsNoTracking().ToListAsync();
             }
             catch (Exception ex)
             {
@@ -130,7 +132,7 @@ namespace ACE.Database.Models.Auth
         {
             try
             {
-                return await context.Leaderboard.FromSql($"CALL TopBank").AsNoTracking().ToListAsync();
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopBank).AsNoTracking().ToListAsync();
             }
             catch (Exception ex)
             {
@@ -148,7 +150,7 @@ namespace ACE.Database.Models.Auth
         {
             try
             {
-                return await context.Leaderboard.FromSql($"CALL TopLum").AsNoTracking().ToListAsync();
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopLum).AsNoTracking().ToListAsync();
             }
             catch (Exception ex)
             {
@@ -166,11 +168,25 @@ namespace ACE.Database.Models.Auth
         {
             try
             {
-                return await context.Leaderboard.FromSql($"CALL TopAttributes").AsNoTracking().ToListAsync();
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopAttributes).AsNoTracking().ToListAsync();
             }
             catch (Exception ex)
             {
-                log.Error($"Failed to get TopAttributes leaderboard: {ex.Message}");
+                log.Error($"Failed to get TopAttributes leaderboard: {ex.Message}", ex);
+                return new List<Leaderboard>();
+            }
+        }
+
+        /// <summary>Banked PropertyInt64 leaderboards (enlightened coins, keys, etc.).</summary>
+        public static async Task<List<Leaderboard>> GetTopBankedInt64LeaderboardAsync(AuthDbContext context, string sql)
+        {
+            try
+            {
+                return await context.Leaderboard.FromSqlRaw(sql).AsNoTracking().ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Failed to get banked int64 leaderboard: {ex.Message}", ex);
                 return new List<Leaderboard>();
             }
         }
@@ -186,7 +202,7 @@ namespace ACE.Database.Models.Auth
             }
             catch (Exception ex)
             {
-                log.Error($"Failed to get TopBonds leaderboard: {ex.Message}");
+                log.Error($"Failed to get TopBonds leaderboard: {ex.Message}", ex);
                 return new List<Leaderboard>();
             }
         }
@@ -202,8 +218,80 @@ namespace ACE.Database.Models.Auth
             }
             catch (Exception ex)
             {
-                log.Error($"Failed to get TopSumBonds leaderboard: {ex.Message}");
+                log.Error($"Failed to get TopSumBonds leaderboard: {ex.Message}", ex);
                 return new List<Leaderboard>();
+            }
+        }
+
+        /// <summary>
+        /// Best row for the account on this board (highest score among qualifying characters) and global rank.
+        /// Returns null if the account has no qualifying entry or the query fails.
+        /// </summary>
+        public static async Task<LeaderboardPlacementRow> GetSelfPlacementRowAsync(AuthDbContext context, string boardId, uint accountId)
+        {
+            try
+            {
+                FormattableString sql;
+                switch (boardId)
+                {
+                    case "lum":
+                        sql = LeaderboardInlineSql.SelfPlacementLum(accountId);
+                        break;
+                    case "bank":
+                        sql = LeaderboardInlineSql.SelfPlacementBank(accountId);
+                        break;
+                    case "level":
+                        sql = LeaderboardInlineSql.SelfPlacementLevel(accountId);
+                        break;
+                    case "enl":
+                        sql = LeaderboardInlineSql.SelfPlacementEnlightenment(accountId);
+                        break;
+                    case "title":
+                        sql = LeaderboardInlineSql.SelfPlacementTitles(accountId);
+                        break;
+                    case "deaths":
+                        sql = LeaderboardInlineSql.SelfPlacementDeaths(accountId);
+                        break;
+                    case "qb":
+                        sql = LeaderboardInlineSql.SelfPlacementQuestBonus(accountId);
+                        break;
+                    case "attr":
+                        sql = LeaderboardInlineSql.SelfPlacementAttributes(accountId);
+                        break;
+                    case "augs":
+                        sql = LeaderboardInlineSql.SelfPlacementAugments(accountId);
+                        break;
+                    case "enlcoins":
+                        sql = LeaderboardInlineSql.SelfPlacementBankedInt64((ushort)PropertyInt64.BankedEnlightenedCoins, accountId);
+                        break;
+                    case "wenlcoins":
+                        sql = LeaderboardInlineSql.SelfPlacementBankedInt64((ushort)PropertyInt64.BankedWeaklyEnlightenedCoins, accountId);
+                        break;
+                    case "mkeys":
+                        sql = LeaderboardInlineSql.SelfPlacementBankedInt64((ushort)PropertyInt64.BankedMythicalKeys, accountId);
+                        break;
+                    case "lkeys":
+                        sql = LeaderboardInlineSql.SelfPlacementBankedInt64((ushort)PropertyInt64.BankedLegendaryKeys, accountId);
+                        break;
+                    case "jails":
+                        sql = LeaderboardInlineSql.SelfPlacementCharacterInt((ushort)PropertyInt.TimesJailed, accountId);
+                        break;
+                    case "notguilty":
+                        sql = LeaderboardInlineSql.SelfPlacementCharacterInt((ushort)PropertyInt.TimesUcmCheckPassed, accountId);
+                        break;
+                    default:
+                        return null;
+                }
+
+                return await context.Set<LeaderboardPlacementRow>()
+                    .FromSqlInterpolated(sql)
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Failed to get self placement for board {boardId}: {ex.Message}", ex);
+                return null;
             }
         }
     }
@@ -230,6 +318,15 @@ namespace ACE.Database.Models.Auth
         private static readonly SemaphoreSlim _attrCacheSemaphore = new SemaphoreSlim(1, 1);
         private static readonly SemaphoreSlim _bondsCacheSemaphore = new SemaphoreSlim(1, 1);
         private static readonly SemaphoreSlim _sumBondsCacheSemaphore = new SemaphoreSlim(1, 1);
+
+        private sealed class BankedInt64LeaderboardSlot
+        {
+            public List<Leaderboard> Cache = new List<Leaderboard>();
+            public DateTime NextUpdate = DateTime.MinValue;
+            public readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
+        }
+
+        private readonly ConcurrentDictionary<string, BankedInt64LeaderboardSlot> _bankedInt64Slots = new ConcurrentDictionary<string, BankedInt64LeaderboardSlot>(StringComparer.OrdinalIgnoreCase);
 
         static LeaderboardCache()
         {
@@ -761,6 +858,38 @@ namespace ACE.Database.Models.Auth
                 }
             }
             return SumBondsCache;
+        }
+
+        /// <summary>Next scheduled refresh for a banked-int64 board (UTC), or now if never loaded.</summary>
+        public DateTime GetBankedInt64NextUpdate(string boardId)
+        {
+            if (_bankedInt64Slots.TryGetValue(boardId, out var slot))
+                return slot.NextUpdate;
+            return DateTime.UtcNow;
+        }
+
+        /// <summary>Cached top list for one PropertyInt64 banked counter (9020, 9027, 9021, 9015, …).</summary>
+        public async Task<List<Leaderboard>> GetTopBankedInt64Async(AuthDbContext context, string boardId, string sql)
+        {
+            var slot = _bankedInt64Slots.GetOrAdd(boardId, _ => new BankedInt64LeaderboardSlot());
+            if (slot.Cache.Count == 0 || slot.NextUpdate < DateTime.UtcNow)
+            {
+                await slot.Gate.WaitAsync();
+                try
+                {
+                    if (slot.Cache.Count == 0 || slot.NextUpdate < DateTime.UtcNow)
+                    {
+                        var result = await Leaderboard.GetTopBankedInt64LeaderboardAsync(context, sql);
+                        slot.Cache = result;
+                        slot.NextUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120));
+                    }
+                }
+                finally
+                {
+                    slot.Gate.Release();
+                }
+            }
+            return slot.Cache;
         }
     }
 }

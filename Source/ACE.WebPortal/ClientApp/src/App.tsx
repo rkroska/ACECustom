@@ -10,6 +10,7 @@ import StampSearch from './components/StampSearch'
 import LoginPage from './components/LoginPage'
 import CharacterList from './components/CharacterList'
 import CharacterDetail from './components/CharacterDetail'
+import Leaderboards from './components/Leaderboards'
 import { useAuthStore } from './store/useAuthStore'
 import PlayerList from './components/PlayerList'
 import CombatCalculator from './components/CombatCalculator'
@@ -49,6 +50,7 @@ function App() {
         {/* Character Routes */}
         <Route path="/characters" element={<CharacterList />} />
         <Route path="/characters/:guid/:tab?" element={<CharacterDetail />} />
+        <Route path="/leaderboards" element={<Leaderboards />} />
 
         {/* Admin Routes */}
         {isAdmin && (

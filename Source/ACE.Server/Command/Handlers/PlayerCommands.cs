@@ -1416,7 +1416,7 @@ namespace ACE.Server.Command.Handlers
 
         }
 
-        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "use top qb to list top quest bonus count, top level to list top character levels, enl for enlightenments; bond(s) / sumbond(s) for pet bond rankings")]
+        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "top qb|level|enl|title|augs|deaths|bank|lum|attr|bond(s)|sumbond(s)|enlcoins|wenlcoins|mkeys|lkeys|jails|notguilty|pets|shinies")]
         public static async void DisplayTop(Session session, params string[] parameters)
         {
             try
@@ -1530,6 +1530,42 @@ namespace ACE.Server.Command.Handlers
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Sum of Pet Bond Levels:", ChatMessageType.Broadcast));
                         }
+                    }
+                    else if (key == "enlcoins")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "enlcoins", LeaderboardInlineSql.TopBankedEnlightenedCoins);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Enlightened Coins:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "wenlcoins")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "wenlcoins", LeaderboardInlineSql.TopBankedWeaklyEnlightenedCoins);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Weakly Enlightened Coins:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "mkeys")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "mkeys", LeaderboardInlineSql.TopBankedMythicalKeys);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Mythic Keys:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "lkeys")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "lkeys", LeaderboardInlineSql.TopBankedLegendaryKeys);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Legendary Keys:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "jails")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "jails", LeaderboardInlineSql.TopTimesJailed);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Characters by Times Jailed:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "notguilty")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "notguilty", LeaderboardInlineSql.TopUcmChecksPassed);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Characters by Not Guilty (passed focus checks):", ChatMessageType.Broadcast));
                     }
                     else if (key == "pets")
                     {

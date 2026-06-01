@@ -412,6 +412,31 @@ namespace ACE.Server.Controllers
             return Ok(stamps);
         }
 
+        /// <summary>
+        /// Death/vitae summary from biota snapshot, live position when online, and active player corpses in loaded landblocks.
+        /// </summary>
+        [HttpGet("status/{guid}")]
+        public IActionResult GetPortalStatus(uint guid)
+        {
+            if (!IsAuthorizedForCharacter(guid, out var player))
+                return Unauthorized();
+
+            var snapshot = RetrieveBiota(player);
+            return Ok(CharacterPortalStatusHelper.BuildStatusJson(guid, snapshot));
+        }
+
+        /// <summary>
+        /// Player corpses currently in memory (loaded landblocks) for this character.
+        /// </summary>
+        [HttpGet("corpses/{guid}")]
+        public IActionResult GetPortalCorpses(uint guid)
+        {
+            if (!IsAuthorizedForCharacter(guid, out _))
+                return Unauthorized();
+
+            return Ok(new { corpses = CharacterPortalStatusHelper.FindPlayerCorpses(guid) });
+        }
+
         [HttpPost("logout/{guid}")]
         public async Task<IActionResult> ForceLogout(uint guid)
         {

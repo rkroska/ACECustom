@@ -465,6 +465,127 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
+        /// Character biota ids excluded from leaderboards.
+        /// Includes <see cref="PropertyBool.ExcludeFromLeaderboards"/> (9011) and <see cref="PropertyBool.IsMule"/> (131).
+        /// </summary>
+        private static HashSet<uint> LoadExcludedFromLeaderboardCharacterIds(ShardDbContext context)
+        {
+            return context.BiotaPropertiesBool
+                .AsNoTracking()
+                .Where(b => (b.Type == (ushort)PropertyBool.ExcludeFromLeaderboards || b.Type == (ushort)PropertyBool.IsMule) && b.Value)
+                .Select(b => b.ObjectId)
+                .ToHashSet();
+        }
+
+        /// <summary>Accounts that have at least one non-deleted excluded character (pet/QB-style account leaderboards hide the whole account).</summary>
+        private static HashSet<uint> LoadAccountIdsWithAnyExcludedCharacter(ShardDbContext context, HashSet<uint> excludedCharacterObjectIds)
+        {
+            if (excludedCharacterObjectIds.Count == 0)
+                return new HashSet<uint>();
+
+            return context.Character
+                .AsNoTracking()
+                .Where(c => !c.IsDeleted && excludedCharacterObjectIds.Contains(c.Id))
+                .Select(c => c.AccountId)
+                .Distinct()
+                .ToHashSet();
+        }
+
+        private static string MainCharacterNameHighestLogins(ShardDbContext context, uint accountId)
+        {
+            return context.Character
+                .AsNoTracking()
+                .Where(c => c.AccountId == accountId && !c.IsDeleted)
+                .OrderByDescending(c => c.TotalLogins)
+                .Select(c => c.Name)
+                .FirstOrDefault() ?? "Unknown";
+        }
+
+        /// <summary>
+        /// All accounts ordered by pet-species count (same rules as the leaderboard), excluding leaderboard-hidden accounts.
+        /// </summary>
+        private static List<(uint AccountId, int Count)> BuildOrderedPetSpeciesCounts(ShardDbContext context, bool shinyOnly, HashSet<uint> excludedAccounts)
+        {
+            var ordered = new List<(uint AccountId, int Count)>();
+
+            if (shinyOnly)
+            {
+                var ranked = context.PetRegistry
+                    .Where(p => p.IsShiny)
+                    .GroupBy(p => new { p.AccountId, p.CreatureName })
+                    .Select(g => g.Key.AccountId)
+                    .GroupBy(accountId => accountId)
+                    .Select(g => new { AccountId = g.Key, Count = g.Count() })
+                    .OrderByDescending(x => x.Count)
+                    .ToList();
+
+                foreach (var row in ranked)
+                {
+                    if (excludedAccounts.Contains(row.AccountId))
+                        continue;
+                    ordered.Add((row.AccountId, row.Count));
+                }
+
+                return ordered;
+            }
+
+            var rawData = context.PetRegistry
+                .Select(p => new { p.AccountId, p.CreatureName })
+                .ToList();
+
+            var rankedNonShiny = rawData
+                .Select(x => new
+                {
+                    x.AccountId,
+                    NormalizedName = x.CreatureName.StartsWith("Shiny ") ? x.CreatureName.Substring(6) : x.CreatureName
+                })
+                .GroupBy(p => new { p.AccountId, p.NormalizedName })
+                .Select(g => g.Key.AccountId)
+                .GroupBy(accountId => accountId)
+                .Select(g => new { AccountId = g.Key, Count = g.Count() })
+                .OrderByDescending(x => x.Count)
+                .ToList();
+
+            foreach (var row in rankedNonShiny)
+            {
+                if (excludedAccounts.Contains(row.AccountId))
+                    continue;
+                ordered.Add((row.AccountId, row.Count));
+            }
+
+            return ordered;
+        }
+
+        /// <summary>
+        /// Global rank on the pet or shiny species leaderboard for an account, if the account appears on that board.
+        /// </summary>
+        public static bool TryGetPetSpeciesPlacement(uint accountId, bool shinyOnly, out int rank, out int count, out string characterName)
+        {
+            rank = 0;
+            count = 0;
+            characterName = null;
+
+            using (var context = new ShardDbContext())
+            {
+                var excludedChars = LoadExcludedFromLeaderboardCharacterIds(context);
+                var excludedAccounts = LoadAccountIdsWithAnyExcludedCharacter(context, excludedChars);
+                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly, excludedAccounts);
+
+                for (var i = 0; i < ordered.Count; i++)
+                {
+                    if (ordered[i].AccountId != accountId)
+                        continue;
+                    rank = i + 1;
+                    count = ordered[i].Count;
+                    characterName = MainCharacterNameHighestLogins(context, accountId);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Get top accounts by unique pet count (for leaderboard) - counts distinct creature names
         /// Returns main character name (by most logins) instead of account name
         /// </summary>
@@ -472,40 +593,22 @@ namespace ACE.Server.Entity
         {
             using (var context = new ShardDbContext())
             {
-                // We need to fetch data to normalize names before grouping
-                // Fetching (AccountId, CreatureName) pairs
-                var rawData = context.PetRegistry
-                    .Select(p => new { p.AccountId, p.CreatureName })
-                    .ToList();
+                var excludedChars = LoadExcludedFromLeaderboardCharacterIds(context);
+                var excludedAccounts = LoadAccountIdsWithAnyExcludedCharacter(context, excludedChars);
+                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: false, excludedAccounts);
+                var topAccounts = ordered.Take(limit).ToList();
 
-                var topAccounts = rawData
-                    .Select(x => new { 
-                        x.AccountId, 
-                        NormalizedName = x.CreatureName.StartsWith("Shiny ") ? x.CreatureName.Substring(6) : x.CreatureName 
-                    })
-                    .GroupBy(p => new { p.AccountId, p.NormalizedName }) // Group by Account + Species
-                    .Select(g => g.Key.AccountId)             // Get AccountIds from unique species entries
-                    .GroupBy(accountId => accountId)          // Group by AccountId to count species
-                    .Select(g => new { AccountId = g.Key, Count = g.Count() })
-                    .OrderByDescending(x => x.Count)
-                    .Take(limit)
-                    .ToList();
-
-                // Get main character name (most logins) for each account
                 var results = new List<(uint AccountId, string CharacterName, int Count)>();
                 foreach (var entry in topAccounts)
                 {
-                    // Get character with most total_logins for this account
-                    var mainCharacter = context.Character
-                        .Where(c => c.AccountId == entry.AccountId && !c.IsDeleted)
-                        .OrderByDescending(c => c.TotalLogins)
-                        .Select(c => c.Name)
-                        .FirstOrDefault() ?? "Unknown";
-                    
+                    var mainCharacter = MainCharacterNameHighestLogins(context, entry.AccountId);
                     results.Add((entry.AccountId, mainCharacter, entry.Count));
                 }
 
-                return results;
+                // Keep this leaderboard player-facing: exclude staff/admin characters (commonly prefixed with '+').
+                return results
+                    .Where(r => string.IsNullOrEmpty(r.CharacterName) || !r.CharacterName.StartsWith("+"))
+                    .ToList();
             }
         }
 
@@ -529,32 +632,21 @@ namespace ACE.Server.Entity
         {
             using (var context = new ShardDbContext())
             {
-                // Count distinct shiny creature names per account
-                var topAccounts = context.PetRegistry
-                    .Where(p => p.IsShiny)
-                    .GroupBy(p => new { p.AccountId, p.CreatureName })
-                    .Select(g => g.Key.AccountId)
-                    .GroupBy(accountId => accountId)
-                    .Select(g => new { AccountId = g.Key, Count = g.Count() })
-                    .OrderByDescending(x => x.Count)
-                    .Take(limit)
-                    .ToList();
+                var excludedChars = LoadExcludedFromLeaderboardCharacterIds(context);
+                var excludedAccounts = LoadAccountIdsWithAnyExcludedCharacter(context, excludedChars);
+                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: true, excludedAccounts);
+                var topAccounts = ordered.Take(limit).ToList();
 
-                // Get main character name (most logins) for each account
                 var results = new List<(uint AccountId, string CharacterName, int Count)>();
                 foreach (var entry in topAccounts)
                 {
-                    // Get character with most total_logins for this account
-                    var mainCharacter = context.Character
-                        .Where(c => c.AccountId == entry.AccountId && !c.IsDeleted)
-                        .OrderByDescending(c => c.TotalLogins)
-                        .Select(c => c.Name)
-                        .FirstOrDefault() ?? "Unknown";
-                    
+                    var mainCharacter = MainCharacterNameHighestLogins(context, entry.AccountId);
                     results.Add((entry.AccountId, mainCharacter, entry.Count));
                 }
 
-                return results;
+                return results
+                    .Where(r => string.IsNullOrEmpty(r.CharacterName) || !r.CharacterName.StartsWith("+"))
+                    .ToList();
             }
         }
     }

@@ -1,4 +1,5 @@
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
@@ -142,6 +143,10 @@ namespace ACE.Server.WorldObjects
         private void PassActiveCheckLocked()
         {
             if (!IsChecking) return;
+
+            var passed = Self.GetProperty(PropertyInt.TimesUcmCheckPassed) ?? 0;
+            if (passed < int.MaxValue)
+                Self.SetProperty(PropertyInt.TimesUcmCheckPassed, passed + 1);
 
             int passCount = Self.QuestManager.Stamp("focus_test_passed");
             if (passCount >= 5) Self.QuestManager.StampFirst("focus_test_not_a_bot");

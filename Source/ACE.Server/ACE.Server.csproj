@@ -294,22 +294,33 @@
     <Exec Command="if [ -f &quot;$(ProjectDir)Config.js&quot; ] ; then cp &quot;$(ProjectDir)Config.js&quot; &quot;$(TargetDir)Config.js&quot; ; fi&#xD;&#xA;if [ ! -f &quot;$(ProjectDir)log4net.config&quot; ] &amp;&amp; [ -f &quot;$(TargetDir)log4net.config&quot; ] ; then cp &quot;$(TargetDir)log4net.config&quot; &quot;$(ProjectDir)log4net.config&quot; ; fi&#xD;&#xA;if [ -f &quot;$(ProjectDir)log4net.config&quot; ] ; then cp &quot;$(ProjectDir)log4net.config&quot; &quot;$(TargetDir)log4net.config&quot; ; fi" Condition="'$(OS)' != 'Windows_NT'" />
   </Target>
 
-  <!-- Web Portal SPA Build Automation -->
+  <!-- Web Portal SPA: on Build/Publish, create dist if missing, then copy to wwwroot (Release no longer requires dotnet publish only). -->
   <PropertyGroup>
     <ClientAppDir>$(ProjectDir)..\ACE.WebPortal\ClientApp\</ClientAppDir>
+    <WebPortalDistIndex>$(ClientAppDir)dist\index.html</WebPortalDistIndex>
   </PropertyGroup>
 
-  <Target Name="BuildClientApp" BeforeTargets="Publish" Condition="Exists('$(ClientAppDir)')">
-    <Message Importance="high" Text="Installing Web Portal dependencies..." />
-    <Exec Command="npm install --legacy-peer-deps" WorkingDirectory="$(ClientAppDir)" />
-    <Message Importance="high" Text="Building Web Portal SPA..." />
-    <Exec Command="npm run build" WorkingDirectory="$(ClientAppDir)" />
-    
+  <Target Name="PrepareWebPortalBuildOutput" BeforeTargets="Build" Condition="Exists('$(ClientAppDir)')">
+    <Message Importance="high" Text="Installing Web Portal dependencies..." Condition="!Exists('$(WebPortalDistIndex)')" />
+    <Exec Command="npm install --legacy-peer-deps" WorkingDirectory="$(ClientAppDir)" Condition="!Exists('$(WebPortalDistIndex)')" />
+    <Message Importance="high" Text="Building Web Portal SPA..." Condition="!Exists('$(WebPortalDistIndex)')" />
+    <Exec Command="npm run build" WorkingDirectory="$(ClientAppDir)" Condition="!Exists('$(WebPortalDistIndex)')" />
     <ItemGroup>
-      <DistFiles Include="$(ClientAppDir)dist\**\*.*" />
+      <WebPortalDistFiles Include="$(ClientAppDir)dist\**\*.*" />
     </ItemGroup>
-    
-    <Message Importance="high" Text="Deploying Web Portal assets to wwwroot..." />
-    <Copy SourceFiles="@(DistFiles)" DestinationFolder="$(PublishDir)wwwroot\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Message Importance="normal" Text="Copying Web Portal assets to $(TargetDir)wwwroot" Condition="Exists('$(WebPortalDistIndex)')" />
+    <Copy SourceFiles="@(WebPortalDistFiles)" DestinationFolder="$(TargetDir)wwwroot\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="Exists('$(WebPortalDistIndex)')" />
+  </Target>
+
+  <Target Name="PrepareWebPortalPublishOutput" BeforeTargets="Publish" Condition="Exists('$(ClientAppDir)')">
+    <Message Importance="high" Text="Installing Web Portal dependencies..." Condition="!Exists('$(WebPortalDistIndex)')" />
+    <Exec Command="npm install --legacy-peer-deps" WorkingDirectory="$(ClientAppDir)" Condition="!Exists('$(WebPortalDistIndex)')" />
+    <Message Importance="high" Text="Building Web Portal SPA..." Condition="!Exists('$(WebPortalDistIndex)')" />
+    <Exec Command="npm run build" WorkingDirectory="$(ClientAppDir)" Condition="!Exists('$(WebPortalDistIndex)')" />
+    <ItemGroup>
+      <WebPortalPublishFiles Include="$(ClientAppDir)dist\**\*.*" />
+    </ItemGroup>
+    <Message Importance="high" Text="Deploying Web Portal assets to publish wwwroot..." Condition="Exists('$(WebPortalDistIndex)')" />
+    <Copy SourceFiles="@(WebPortalPublishFiles)" DestinationFolder="$(PublishDir)wwwroot\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="Exists('$(WebPortalDistIndex)')" />
   </Target>
 </Project>
