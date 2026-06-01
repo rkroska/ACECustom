@@ -948,7 +948,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (StickyChatEnabled && StickyChatMode == StickyChatType.Allegiance)
+            if (!message.StartsWith("/") && StickyChatEnabled && StickyChatMode == StickyChatType.Allegiance)
             {
                 if (Allegiance != null)
                 {
@@ -961,7 +961,7 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageSystemChat("Sticky Chat disabled: You are not in an allegiance.", ChatMessageType.Broadcast));
                 }
             }
-            else if (StickyChatEnabled && StickyChatMode == StickyChatType.Fellowship)
+            else if (!message.StartsWith("/") && StickyChatEnabled && StickyChatMode == StickyChatType.Fellowship)
             {
                 if (Fellowship != null)
                 {
