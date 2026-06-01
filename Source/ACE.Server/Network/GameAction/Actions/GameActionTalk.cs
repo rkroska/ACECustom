@@ -6,6 +6,7 @@ using ACE.Common.Extensions;
 using ACE.Entity.Enum;
 using ACE.Server.Command;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.GameAction.Actions
 {
@@ -97,6 +98,19 @@ namespace ACE.Server.Network.GameAction.Actions
             }
             else
             {
+                if (message.Equals("/say", StringComparison.OrdinalIgnoreCase) || 
+                    message.Equals("/s", StringComparison.OrdinalIgnoreCase) ||
+                    message.Equals("/local", StringComparison.OrdinalIgnoreCase) ||
+                    message.Equals("@sticky off", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (session.Player.StickyChatMode != StickyChatType.None)
+                    {
+                        session.Player.StickyChatMode = StickyChatType.None;
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Sticky Chat: Disabled. Normal chat will go to local speech.", ChatMessageType.Broadcast));
+                        return;
+                    }
+                }
+
                 session.Player.HandleActionTalk(message);
             }
         }

@@ -32,6 +32,13 @@ using MotionTable = ACE.DatLoader.FileTypes.MotionTable;
 
 namespace ACE.Server.WorldObjects
 {
+    public enum StickyChatType
+    {
+        None,
+        Allegiance,
+        Fellowship
+    }
+
     public partial class Player : Creature, IPlayer
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
@@ -584,6 +591,8 @@ namespace ACE.Server.WorldObjects
 
         public bool IsLoggingOut;
 
+        public StickyChatType StickyChatMode { get; set; } = StickyChatType.None;
+
         /// <summary>
         /// Do the player log out work.<para />
         /// If you want to force a player to logout, use Session.LogOffPlayer().
@@ -933,14 +942,83 @@ namespace ACE.Server.WorldObjects
 
         public void HandleActionTalk(string message)
         {
-            if (!IsGagged)
+            if (IsGagged)
             {
-                EnqueueBroadcast(new GameMessageHearSpeech(message, GetNameWithSuffix(), Guid.Full, ChatMessageType.Speech), LocalBroadcastRange, ChatMessageType.Speech);
-
-                OnTalk(message);
-            }
-            else
                 SendGagError();
+                return;
+            }
+
+            if (StickyChatMode == StickyChatType.Allegiance)
+            {
+                if (Allegiance != null)
+                {
+                    BroadcastToAllegiance(message);
+                    return;
+                }
+                else
+                {
+                    StickyChatMode = StickyChatType.None;
+                    Session.Network.EnqueueSend(new GameMessageSystemChat("Sticky Chat disabled: You are not in an allegiance.", ChatMessageType.Broadcast));
+                }
+            }
+            else if (StickyChatMode == StickyChatType.Fellowship)
+            {
+                if (Fellowship != null)
+                {
+                    BroadcastToFellowship(message);
+                    return;
+                }
+                else
+                {
+                    StickyChatMode = StickyChatType.None;
+                    Session.Network.EnqueueSend(new GameMessageSystemChat("Sticky Chat disabled: You are not in a fellowship.", ChatMessageType.Broadcast));
+                }
+            }
+
+            // Fallback / standard local say
+            EnqueueBroadcast(new GameMessageHearSpeech(message, GetNameWithSuffix(), Guid.Full, ChatMessageType.Speech), LocalBroadcastRange, ChatMessageType.Speech);
+            OnTalk(message);
+        }
+
+        public void BroadcastToAllegiance(string message)
+        {
+            var allegiance = AllegianceManager.GetAllegiance(this);
+            if (allegiance == null) return;
+
+            if (!allegiance.IsMember(Guid)) return;
+            if (allegiance.IsFiltered(Guid)) return;
+
+            var gameMessageTurbineChat = new GameMessageTurbineChat(
+                ChatNetworkBlobType.NETBLOB_EVENT_BINARY, 
+                ChatNetworkBlobDispatchType.ASYNCMETHOD_SENDTOROOMBYNAME, 
+                TurbineChatChannel.Allegiance, 
+                Name, 
+                message, 
+                Guid.Full, 
+                ChatType.Allegiance);
+
+            foreach (var member in allegiance.Members.Keys)
+            {
+                var online = PlayerManager.GetOnlinePlayer(member);
+                if (online == null)
+                    continue;
+
+                if (allegiance.IsFiltered(member) || online.SquelchManager.Squelches.Contains(this, ChatMessageType.Allegiance))
+                    continue;
+
+                if (!online.GetCharacterOption(CharacterOption.ListenToAllegianceChat))
+                    continue;
+
+                online.Session.Network.EnqueueSend(gameMessageTurbineChat);
+            }
+        }
+
+        public void BroadcastToFellowship(string message)
+        {
+            if (Fellowship != null)
+            {
+                Fellowship.TellFellow(this, message);
+            }
         }
 
         public void SendGagError()
