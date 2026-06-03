@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Reflection;
 using System.IO;
 using ACE.Common;
+using ACE.Server.Managers;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -22,7 +23,11 @@ namespace ACE.Server.Web
         private static readonly System.Threading.SemaphoreSlim _hostLock = new System.Threading.SemaphoreSlim(1, 1);
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(WebPortalHost));
 
-        public static string Secret { get; } = GenerateDynamicSecret();
+        private static string _secret;
+
+        /// <summary>JWT signing key; set when the portal starts (after Config.js is loaded).</summary>
+        public static string Secret =>
+            _secret ?? throw new InvalidOperationException("Web portal has not been started.");
 
         private static string GenerateDynamicSecret()
         {
@@ -32,6 +37,22 @@ namespace ACE.Server.Web
                 rng.GetBytes(bytes);
             }
             return Convert.ToBase64String(bytes);
+        }
+
+        private static string ResolveJwtSecret()
+        {
+            var configured = ConfigManager.Config?.WebPortal?.JwtSecret?.Trim();
+            if (!string.IsNullOrEmpty(configured))
+            {
+                if (configured.Length < 16)
+                {
+                    log.Warn("[WEB PORTAL] WebPortal.JwtSecret is too short; use at least 32 random characters in production.");
+                }
+                return configured;
+            }
+
+            log.Warn("[WEB PORTAL] WebPortal.JwtSecret is not set in Config.js — a new secret is generated every restart and all portal logins expire on restart.");
+            return GenerateDynamicSecret();
         }
 
         public static async Task Start(string[] args)
@@ -53,8 +74,7 @@ namespace ACE.Server.Web
                     return;
                 }
 
-                var secret = Secret;
-
+                _secret = ResolveJwtSecret();
 
                 // Prefer ClientApp/dist from the source tree when present (npm run build).
                 // Falls back to binary-local wwwroot for deployments that only ship static assets.
@@ -88,13 +108,15 @@ namespace ACE.Server.Web
 
                 log.Info($"Web Portal using asset path: {distPath}");
 
+                PortalAccessManager.Initialize();
+
                 // Add services to the container.
                 builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
                 builder.Logging.AddFilter("System", LogLevel.Warning);
                 builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
 
                 // JWT Authentication Setup
-                var key = Encoding.ASCII.GetBytes(secret);
+                var key = Encoding.ASCII.GetBytes(_secret);
 
                 builder.Services.AddAuthentication(x =>
                 {
@@ -179,11 +201,14 @@ namespace ACE.Server.Web
                     });
                 });
 
-                // Secure Binding:
-                // Development: "*" (Accessible globally for debugging)
-                // Production: "localhost" (Restricted to loopback; assumes a TLS-terminating reverse proxy)
-                var host = isDevelopment ? "*" : "localhost";
-                var port = isDevelopment ? 5000 : 5001;
+                // Binding: Config.WebPortal overrides; else Debug *:5000, Release localhost:5001 (use reverse proxy for TLS).
+                var portalConfig = ConfigManager.Config?.WebPortal;
+                var host = !string.IsNullOrWhiteSpace(portalConfig?.BindHost)
+                    ? portalConfig.BindHost.Trim()
+                    : isDevelopment ? "*" : "localhost";
+                var port = portalConfig?.BindPort > 0
+                    ? portalConfig.BindPort
+                    : isDevelopment ? 5000 : 5001;
                 var url = $"http://{host}:{port}";
 
                 app.Urls.Clear();

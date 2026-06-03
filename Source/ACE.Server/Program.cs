@@ -298,6 +298,12 @@ namespace ACE.Server
             log.Info("Initializing Character Tracker...");
             CharacterTracker.EnsureDatabaseMigrated();
 
+            log.Info("Initializing Patch Notes...");
+            PatchNotesManager.EnsureDatabaseMigrated();
+
+            log.Info("Initializing Portal page access...");
+            PortalAccessManager.EnsureDatabaseMigrated();
+
             log.Info("Initializing Pet Registry...");
             PetRegistryManager.EnsureTableCreated();
 

@@ -1,9 +1,12 @@
 import { create } from 'zustand';
+import { canAccessPage as checkPageAccess } from '../utils/auth';
+import { resetPortalHash } from '../utils/portalNavigation';
 
 interface AuthState {
   isAuthenticated: boolean;
   user: string | null;
-  accessLevel: number | null; // Storing the numeric access level for permission checks
+  accessLevel: number | null;
+  pageAccess: Record<string, boolean> | null;
   error: string | null;
   isLoading: boolean;
   isBootstrapping: boolean;
@@ -13,17 +16,29 @@ interface AuthState {
   clearError: () => void;
   bootstrap: () => Promise<void>;
   setPortalDisabled: (disabled: boolean) => void;
+  setPageAccess: (pageAccess: Record<string, boolean>) => void;
+  canAccessPage: (pageKey: string) => boolean;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+const applyAuthPayload = (data: { username: string; accessLevel: number; pageAccess?: Record<string, boolean> }) => ({
+  isAuthenticated: true as const,
+  user: data.username,
+  accessLevel: data.accessLevel,
+  pageAccess: data.pageAccess ?? null,
+});
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   user: null,
   accessLevel: null,
+  pageAccess: null,
   error: null,
   isLoading: false,
   isBootstrapping: true,
   isPortalDisabled: false,
   setPortalDisabled: (disabled) => set({ isPortalDisabled: disabled }),
+  setPageAccess: (pageAccess) => set({ pageAccess }),
+  canAccessPage: (pageKey) => checkPageAccess(get().accessLevel, get().pageAccess, pageKey),
   login: async (username, password) => {
     set({ isLoading: true, error: null, isPortalDisabled: false });
     try {
@@ -46,21 +61,19 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
       
       set({ 
-        isAuthenticated: true, 
-        user: data.username, 
-        accessLevel: data.accessLevel,
+        ...applyAuthPayload(data),
         isLoading: false 
       });
+      resetPortalHash('/characters');
     } catch (err) {
       set({ error: 'Connection error. Please check your internet and try again.', isLoading: false });
     }
   },
   logout: async () => {
-    // Immediately clear local state for responsiveness
-    set({ isAuthenticated: false, user: null, accessLevel: null, error: null });
+    set({ isAuthenticated: false, user: null, accessLevel: null, pageAccess: null, error: null });
+    resetPortalHash('/');
 
     try {
-      // Notify backend to clear the HttpOnly cookie in the background
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch (e) {
       // Silent fail for network errors on logout
@@ -73,18 +86,13 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (response.ok) {
         const data = await response.json().catch(() => null);
         if (data && data.username && data.accessLevel !== undefined) {
-          set({ 
-            isAuthenticated: true, 
-            user: data.username, 
-            accessLevel: data.accessLevel 
-          });
+          set(applyAuthPayload(data));
           return;
         }
       }
-      // If not OK or malformed, ensure we are logged out
-      set({ isAuthenticated: false, user: null, accessLevel: null });
+      set({ isAuthenticated: false, user: null, accessLevel: null, pageAccess: null });
     } catch (err) {
-      set({ isAuthenticated: false, user: null, accessLevel: null });
+      set({ isAuthenticated: false, user: null, accessLevel: null, pageAccess: null });
     } finally {
       set({ isBootstrapping: false });
     }

@@ -7,6 +7,7 @@ using ACE.Database.Models.World;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
+using ACE.Server.Managers;
 using ACE.Server.Web;
 using Weenie = ACE.Entity.Models.Weenie;
 using Microsoft.AspNetCore.Mvc;
@@ -25,7 +26,7 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("search")]
         public IActionResult SearchItems([FromQuery] string q, [FromQuery] int limit = 30)
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Items))
                 return Forbid();
 
             if (string.IsNullOrWhiteSpace(q))
@@ -88,7 +89,7 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("{wcid}/references")]
         public IActionResult GetItemReferences(uint wcid, [FromQuery] int shardLimit = 50, [FromQuery] int shardOffset = 0)
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Items))
                 return Forbid();
 
             shardLimit = Math.Clamp(shardLimit, 1, 200);

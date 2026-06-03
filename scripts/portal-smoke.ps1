@@ -1,0 +1,99 @@
+# Smoke-test a running ACE web portal (local or prod).
+# Usage:
+#   .\scripts\portal-smoke.ps1
+#   .\scripts\portal-smoke.ps1 -BaseUrl "http://76.237.151.184:5002"
+#   .\scripts\portal-smoke.ps1 -BaseUrl "http://localhost:5001" -Username admin -Password secret
+#
+# Exit code: 0 = all checks passed, 1 = one or more failed
+
+param(
+    [string]$BaseUrl = "http://localhost:5001",
+    [string]$Username = "",
+    [string]$Password = "",
+    [switch]$SkipAuth
+)
+
+$ErrorActionPreference = "Stop"
+$BaseUrl = $BaseUrl.TrimEnd("/")
+$failed = 0
+$passed = 0
+$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+
+function Test-Endpoint {
+    param(
+        [string]$Name,
+        [string]$Method = "GET",
+        [string]$Path,
+        [int[]]$ExpectStatus = @(200),
+        [object]$Body = $null,
+        [switch]$UseSession
+    )
+
+    $uri = "$BaseUrl$Path"
+    try {
+        $params = @{
+            Uri             = $uri
+            Method          = $Method
+            UseBasicParsing = $true
+            TimeoutSec      = 30
+        }
+        if ($UseSession) { $params.WebSession = $session }
+        if ($Body) {
+            $params.Body = ($Body | ConvertTo-Json -Compress)
+            $params.ContentType = "application/json"
+        }
+
+        $resp = Invoke-WebRequest @params
+        if ($ExpectStatus -notcontains $resp.StatusCode) {
+            Write-Host "[FAIL] $Name — expected $($ExpectStatus -join '|') got $($resp.StatusCode)" -ForegroundColor Red
+            $script:failed++
+            return
+        }
+        Write-Host "[OK]   $Name ($($resp.StatusCode))" -ForegroundColor Green
+        $script:passed++
+    }
+    catch {
+        $status = $null
+        if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode }
+        if ($status -and ($ExpectStatus -contains $status)) {
+            Write-Host "[OK]   $Name ($status)" -ForegroundColor Green
+            $script:passed++
+            return
+        }
+        Write-Host "[FAIL] $Name — $($_.Exception.Message)" -ForegroundColor Red
+        $script:failed++
+    }
+}
+
+Write-Host "Portal smoke: $BaseUrl" -ForegroundColor Cyan
+
+Test-Endpoint -Name "Health" -Path "/api/health"
+Test-Endpoint -Name "Patch notes meta (public)" -Path "/api/patch-notes/meta"
+Test-Endpoint -Name "Patch notes list (public)" -Path "/api/patch-notes?page=1&pageSize=5"
+Test-Endpoint -Name "Portal index (SPA)" -Path "/" -ExpectStatus @(200)
+
+# Hash-route SPA shell (optional; some hosts return 200 for /)
+Test-Endpoint -Name "Patch notes SPA route" -Path "/index.html"
+
+if (-not $SkipAuth -and $Username -and $Password) {
+    Test-Endpoint -Name "Login" -Method POST -Path "/api/auth/login" -Body @{
+        username = $Username
+        password = $Password
+    } -UseSession
+
+    Test-Endpoint -Name "Auth me" -Path "/api/auth/me" -UseSession -ExpectStatus @(200, 401)
+
+    if ($passed -gt 0) {
+        Test-Endpoint -Name "Portal access pages (auth)" -Path "/api/portal-access/pages" -UseSession -ExpectStatus @(200, 403)
+        Test-Endpoint -Name "Audit transfers (auth)" -Path "/api/audit/transfers?page=1&pageSize=1&days=7" -UseSession -ExpectStatus @(200, 403)
+        Test-Endpoint -Name "Patch notes admin list (auth)" -Path "/api/patch-notes/admin/all?pageSize=5" -UseSession -ExpectStatus @(200, 403)
+    }
+}
+else {
+    Write-Host "[SKIP] Auth checks (pass -Username and -Password or use -SkipAuth)" -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "Passed: $passed  Failed: $failed"
+if ($failed -gt 0) { exit 1 }
+exit 0

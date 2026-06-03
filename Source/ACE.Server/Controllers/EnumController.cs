@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
+using ACE.Server.Managers;
+
 namespace ACE.Server.Web.Controllers
 {
     [ApiController]
@@ -13,7 +15,7 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("list")]
         public IActionResult GetEnumList()
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Lookup))
                 return Forbid();
 
             try
@@ -53,7 +55,7 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("detail/{typeName}")]
         public IActionResult GetEnumDetail(string typeName)
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Lookup))
                 return Forbid();
 
             try

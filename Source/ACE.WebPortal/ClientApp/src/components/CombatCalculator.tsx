@@ -21,6 +21,8 @@ import {
   fmt,
   fmtPct,
   asNumberOrUndefined,
+  appraisalBonusPctToDefenseMod,
+  defenseModToAppraisalBonusPct,
   tripletWithDeltas,
   skillRole,
   skillLabel,
@@ -31,6 +33,20 @@ function applyConfigToMode(cfg: CombatConfig | null, mode: CombatMode) {
   if (!cfg) return base
   const live = cfg[mode]
   return { ...base, serverDefaultAgg: live.defaultAggression }
+}
+
+function displayedSkill(overrideVal: string, previewBase?: number) {
+  if (overrideVal !== '') return overrideVal
+  if (previewBase != null) return String(previewBase)
+  return ''
+}
+
+function syncModFromResponse(value: number | undefined, setter: (v: string) => void) {
+  if (value != null && Number.isFinite(value)) setter(String(value))
+}
+
+function syncIntFromResponse(value: number | undefined, setter: (v: string) => void) {
+  if (value != null && Number.isFinite(value)) setter(String(Math.round(value)))
 }
 
 export default function CombatCalculator() {
@@ -51,7 +67,14 @@ export default function CombatCalculator() {
 
   const [playerAccuracyMod, setPlayerAccuracyMod] = useState('1')
   const [playerOffenseMod, setPlayerOffenseMod] = useState('1')
+  const [playerDefenseMod, setPlayerDefenseMod] = useState('1')
+  const [playerDefenseFlat, setPlayerDefenseFlat] = useState('0')
   const [monsterOffenseMod, setMonsterOffenseMod] = useState('1')
+  const [playerAccuracyModDirty, setPlayerAccuracyModDirty] = useState(false)
+  const [playerOffenseModDirty, setPlayerOffenseModDirty] = useState(false)
+  const [playerDefenseModDirty, setPlayerDefenseModDirty] = useState(false)
+  const [playerDefenseFlatDirty, setPlayerDefenseFlatDirty] = useState(false)
+  const [monsterOffenseModDirty, setMonsterOffenseModDirty] = useState(false)
   const [overridePlayerAttack, setOverridePlayerAttack] = useState('')
   const [overridePlayerDefense, setOverridePlayerDefense] = useState('')
   const [overrideMonsterAttack, setOverrideMonsterAttack] = useState('')
@@ -67,6 +90,13 @@ export default function CombatCalculator() {
   const [copyStatus, setCopyStatus] = useState('')
   const [showDiscordPreview, setShowDiscordPreview] = useState(false)
   const [showMonsterSkills, setShowMonsterSkills] = useState(false)
+
+  const clearPlayerModDirtyFlags = () => {
+    setPlayerAccuracyModDirty(false)
+    setPlayerOffenseModDirty(false)
+    setPlayerDefenseModDirty(false)
+    setPlayerDefenseFlatDirty(false)
+  }
 
   const activeCfg = useMemo(() => applyConfigToMode(config, mode), [config, mode])
   const scalingEnabled = config?.[mode]?.enabled ?? false
@@ -129,23 +159,29 @@ export default function CombatCalculator() {
     api.get<WeenieCombat>(`/api/combat/weenie/${selectedMonster.wcid}`).then((w) => setWeenieDetail(w ?? null))
   }, [selectedMonster])
 
-  const runPreview = useCallback(async () => {
-    if (!selectedPlayer && !selectedMonster) return
+  const runPreview = useCallback(async (useFormValues = false) => {
     setLoading(true)
     setError(null)
     try {
+      const sendMod = (dirty: boolean, value: string) =>
+        useFormValues || !selectedPlayer || dirty ? asNumberOrUndefined(value) : undefined
+      const sendMonsterMod = (dirty: boolean, value: string) =>
+        useFormValues || !selectedMonster || dirty ? asNumberOrUndefined(value) : undefined
+
       const body: CombatPreviewRequest = {
         playerGuid: selectedPlayer?.guid,
         monsterWcid: selectedMonster?.wcid,
         mode,
         direction,
-        playerAccuracyMod: asNumberOrUndefined(playerAccuracyMod),
-        playerOffenseMod: asNumberOrUndefined(playerOffenseMod),
-        monsterOffenseMod: asNumberOrUndefined(monsterOffenseMod),
-        overridePlayerAttack: asNumberOrUndefined(overridePlayerAttack),
-        overridePlayerDefense: asNumberOrUndefined(overridePlayerDefense),
-        overrideMonsterAttack: asNumberOrUndefined(overrideMonsterAttack),
-        overrideMonsterDefense: asNumberOrUndefined(overrideMonsterDefense),
+        playerAccuracyMod: sendMod(playerAccuracyModDirty, playerAccuracyMod),
+        playerOffenseMod: sendMod(playerOffenseModDirty, playerOffenseMod),
+        playerDefenseMod: sendMod(playerDefenseModDirty, playerDefenseMod),
+        playerDefenseFlat: sendMod(playerDefenseFlatDirty, playerDefenseFlat),
+        monsterOffenseMod: sendMonsterMod(monsterOffenseModDirty, monsterOffenseMod),
+        overridePlayerAttack: asNumberOrUndefined(displayedSkill(overridePlayerAttack, preview?.playerAttackBase)),
+        overridePlayerDefense: asNumberOrUndefined(displayedSkill(overridePlayerDefense, preview?.playerDefenseBase)),
+        overrideMonsterAttack: asNumberOrUndefined(displayedSkill(overrideMonsterAttack, preview?.monsterAttackBase)),
+        overrideMonsterDefense: asNumberOrUndefined(displayedSkill(overrideMonsterDefense, preview?.monsterDefenseBase)),
         testAggression: asNumberOrUndefined(testAggression),
         rangeMin: asNumberOrUndefined(rangeMin),
         rangeMax: asNumberOrUndefined(rangeMax),
@@ -158,9 +194,13 @@ export default function CombatCalculator() {
         return
       }
       setPreview(res)
-      setPlayerAccuracyMod(String(res.playerAccuracyMod))
-      setPlayerOffenseMod(String(res.playerOffenseMod))
-      setMonsterOffenseMod(String(res.monsterOffenseMod))
+      syncModFromResponse(res.playerAccuracyMod, setPlayerAccuracyMod)
+      syncModFromResponse(res.playerOffenseMod, setPlayerOffenseMod)
+      syncModFromResponse(res.playerDefenseMod, setPlayerDefenseMod)
+      syncIntFromResponse(res.playerDefenseFlat, setPlayerDefenseFlat)
+      syncModFromResponse(res.monsterOffenseMod, setMonsterOffenseMod)
+      clearPlayerModDirtyFlags()
+      setMonsterOffenseModDirty(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Preview request failed.')
       setPreview(null)
@@ -174,7 +214,14 @@ export default function CombatCalculator() {
     direction,
     playerAccuracyMod,
     playerOffenseMod,
+    playerDefenseMod,
+    playerDefenseFlat,
     monsterOffenseMod,
+    playerAccuracyModDirty,
+    playerOffenseModDirty,
+    playerDefenseModDirty,
+    playerDefenseFlatDirty,
+    monsterOffenseModDirty,
     overridePlayerAttack,
     overridePlayerDefense,
     overrideMonsterAttack,
@@ -183,14 +230,42 @@ export default function CombatCalculator() {
     rangeMin,
     rangeMax,
     rangeStep,
+    preview,
   ])
 
   useEffect(() => {
-    if (selectedPlayer || selectedMonster) runPreview()
+    if (selectedPlayer || selectedMonster) runPreview(false)
   }, [selectedPlayer, selectedMonster, mode, direction])
 
+  const playerDefenseBaseDisplay = asNumberOrUndefined(
+    displayedSkill(overridePlayerDefense, preview?.playerDefenseBase)
+  )
+  const localEffectivePlayerDefense = useMemo(() => {
+    if (playerDefenseBaseDisplay == null) return undefined
+    const mod = asNumberOrUndefined(playerDefenseMod) ?? 1
+    const flat = asNumberOrUndefined(playerDefenseFlat) ?? 0
+    return Math.round(playerDefenseBaseDisplay * mod + flat)
+  }, [playerDefenseBaseDisplay, playerDefenseMod, playerDefenseFlat])
+
+  const defenseInputsDirty =
+    playerDefenseModDirty || playerDefenseFlatDirty || overridePlayerDefense !== ''
+  const displayedEffectivePlayerDefense = defenseInputsDirty
+    ? localEffectivePlayerDefense
+    : (preview?.effectivePlayerDefense ?? localEffectivePlayerDefense)
+
+  const playerDefenseBonusPct = useMemo(() => {
+    const mod = asNumberOrUndefined(playerDefenseMod)
+    if (mod == null) return ''
+    return String(defenseModToAppraisalBonusPct(mod))
+  }, [playerDefenseMod])
+
+  const playerDefenseModTotal = asNumberOrUndefined(playerDefenseMod)
+
   const atk = preview?.attackSkill ?? 0
-  const def = preview?.defenseSkill ?? 0
+  const def =
+    direction === 'monsterAttacksPlayer'
+      ? (displayedEffectivePlayerDefense ?? preview?.effectivePlayerDefense ?? preview?.defenseSkill ?? 0)
+      : (preview?.defenseSkill ?? 0)
   const testAgg = preview?.testAggression ?? asNumberOrUndefined(testAggression) ?? activeCfg.serverDefaultAgg
 
   const triplet = useMemo(
@@ -248,26 +323,13 @@ export default function CombatCalculator() {
     setRangeStep(String(c >= 10_000 ? stepLarge : stepSmall))
   }
 
-  const contestedPlayerAttack = overridePlayerAttack
-    ? asNumberOrUndefined(overridePlayerAttack)
-    : preview?.effectivePlayerAttack
-  const contestedPlayerDefense = overridePlayerDefense
-    ? asNumberOrUndefined(overridePlayerDefense)
-    : preview?.effectivePlayerDefense
-  const contestedMonsterAttack = overrideMonsterAttack
-    ? asNumberOrUndefined(overrideMonsterAttack)
-    : preview?.effectiveMonsterAttack
-  const contestedMonsterDefense = overrideMonsterDefense
-    ? asNumberOrUndefined(overrideMonsterDefense)
-    : preview?.effectiveMonsterDefense
-
   return (
     <div className="flex-1 overflow-y-auto custom-scrollbar p-8 space-y-6">
       <PageHeader title="Combat Calculator" icon={Swords} />
 
       <p className="text-neutral-400 text-sm max-w-3xl">
-        Admin tool: compare a player vs a creature weenie using live server SkillCheck math and defense_scaling config.
-        Values come from read-only DB lookups (online players use exact equipped skills).
+        Admin tool: compare attack vs defense using live server SkillCheck math and defense_scaling config.
+        Enter skills manually below, or search for a player / creature to auto-fill.
       </p>
 
       {config && (
@@ -286,7 +348,7 @@ export default function CombatCalculator() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 space-y-3">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">1 · Player</h3>
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider">1 · Player <span className="text-neutral-500 font-normal normal-case">(optional)</span></h3>
           <input
             className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-sm"
             placeholder="Name or character id"
@@ -314,6 +376,7 @@ export default function CombatCalculator() {
                       setPlayerQuery(p.name)
                       setOverridePlayerAttack('')
                       setOverridePlayerDefense('')
+                      clearPlayerModDirtyFlags()
                     }}
                   >
                     Select
@@ -333,7 +396,7 @@ export default function CombatCalculator() {
         </div>
 
         <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 space-y-3">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">1 · Monster</h3>
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider">1 · Monster <span className="text-neutral-500 font-normal normal-case">(optional)</span></h3>
           <input
             className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-sm"
             placeholder="WCID or name"
@@ -357,6 +420,7 @@ export default function CombatCalculator() {
                     setMonsterQuery(m.name)
                     setOverrideMonsterAttack('')
                     setOverrideMonsterDefense('')
+                    setMonsterOffenseModDirty(false)
                   }}
                 >
                   Select
@@ -440,7 +504,7 @@ export default function CombatCalculator() {
             type="button"
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm disabled:opacity-50"
             disabled={loading}
-            onClick={runPreview}
+            onClick={() => runPreview(true)}
           >
             {loading ? 'Calculating…' : 'Recalculate'}
           </button>
@@ -466,17 +530,20 @@ export default function CombatCalculator() {
                 <label className="text-xs text-neutral-500 block">Attack skill (base)</label>
                 <input
                   className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-sm"
-                  value={overridePlayerAttack !== '' ? overridePlayerAttack : String(preview?.playerAttackBase ?? '')}
+                  value={displayedSkill(overridePlayerAttack, preview?.playerAttackBase)}
                   onChange={(e) => setOverridePlayerAttack(e.target.value)}
-                  placeholder={String(preview?.playerAttackBase ?? '')}
+                  placeholder="Base attack skill"
                 />
-                <div className="flex gap-3 text-sm">
+                <div className="flex flex-wrap gap-3 text-sm">
                   <label>
                     <span className="text-neutral-500 text-xs">accuracy</span>
                     <input
                       className="block w-20 mt-1 bg-neutral-950 border border-neutral-700 rounded px-2 py-1"
                       value={playerAccuracyMod}
-                      onChange={(e) => setPlayerAccuracyMod(e.target.value)}
+                      onChange={(e) => {
+                        setPlayerAccuracyModDirty(true)
+                        setPlayerAccuracyMod(e.target.value)
+                      }}
                     />
                   </label>
                   <label>
@@ -484,29 +551,91 @@ export default function CombatCalculator() {
                     <input
                       className="block w-20 mt-1 bg-neutral-950 border border-neutral-700 rounded px-2 py-1"
                       value={playerOffenseMod}
-                      onChange={(e) => setPlayerOffenseMod(e.target.value)}
+                      onChange={(e) => {
+                        setPlayerOffenseModDirty(true)
+                        setPlayerOffenseMod(e.target.value)
+                      }}
                     />
                   </label>
                 </div>
                 <p className="text-xs text-neutral-400">
                   Effective {activeCfg.playerAtkShort}:{' '}
-                  <span className="text-white font-medium">{fmt(contestedPlayerAttack ?? preview?.effectivePlayerAttack)}</span>
+                  <span className="text-white font-medium">{fmt(preview?.effectivePlayerAttack)}</span>
                 </p>
               </>
             ) : (
               <>
-                <label className="text-xs text-neutral-500 block">Defense skill (contested)</label>
+                <label className="text-xs text-neutral-500 block">Defense skill (base)</label>
                 <input
                   className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-sm"
-                  value={overridePlayerDefense !== '' ? overridePlayerDefense : String(preview?.effectivePlayerDefense ?? '')}
+                  value={displayedSkill(overridePlayerDefense, preview?.playerDefenseBase)}
                   onChange={(e) => setOverridePlayerDefense(e.target.value)}
+                  placeholder="Base defense skill"
                 />
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <label>
+                    <span
+                      className="text-neutral-500 text-xs"
+                      title="Bonus % shown on weapon appraisal (+405). Standing is 100%; this adds on top."
+                    >
+                      weapon +MD %
+                    </span>
+                    <input
+                      className="block w-24 mt-1 bg-neutral-950 border border-neutral-700 rounded px-2 py-1"
+                      value={playerDefenseBonusPct}
+                      onChange={(e) => {
+                        setPlayerDefenseModDirty(true)
+                        const pct = asNumberOrUndefined(e.target.value)
+                        if (pct == null) {
+                          setPlayerDefenseMod('')
+                          return
+                        }
+                        setPlayerDefenseMod(String(appraisalBonusPctToDefenseMod(pct)))
+                      }}
+                      placeholder="0"
+                    />
+                  </label>
+                  <label>
+                    <span className="text-neutral-500 text-xs" title="Total combat multiplier sent to SkillCheck (1 + weapon % / 100)">
+                      total ×
+                    </span>
+                    <input
+                      className="block w-20 mt-1 bg-neutral-950 border border-neutral-700 rounded px-2 py-1"
+                      value={playerDefenseMod}
+                      onChange={(e) => {
+                        setPlayerDefenseModDirty(true)
+                        setPlayerDefenseMod(e.target.value)
+                      }}
+                      placeholder="1.0"
+                    />
+                  </label>
+                  <label>
+                    <span className="text-neutral-500 text-xs" title="Flat bonus from +MeleeD imbues and luminance aug">
+                      flat +def
+                    </span>
+                    <input
+                      className="block w-20 mt-1 bg-neutral-950 border border-neutral-700 rounded px-2 py-1"
+                      value={playerDefenseFlat}
+                      onChange={(e) => {
+                        setPlayerDefenseFlatDirty(true)
+                        setPlayerDefenseFlat(e.target.value)
+                      }}
+                      placeholder="0"
+                    />
+                  </label>
+                </div>
+                <p className="text-xs text-neutral-500">
+                  Standing = 100% (×1.0). Appraisal +405% → total ×5.05 (505%) · EMD = base × total × burden × stance + flat
+                  {playerDefenseModTotal != null && playerDefenseModTotal > 1 && (
+                    <span className="text-neutral-400">
+                      {' '}
+                      · {playerDefenseModTotal.toFixed(2)}× = {Math.round(playerDefenseModTotal * 100)}% of base skill
+                    </span>
+                  )}
+                </p>
                 <p className="text-xs text-neutral-400">
                   Effective {activeCfg.playerDefShort}:{' '}
-                  <span className="text-white font-medium">{fmt(preview?.playerDefenseBase)}</span>
-                  {contestedPlayerDefense !== preview?.playerDefenseBase && (
-                    <span className="text-amber-400"> · contested override {fmt(contestedPlayerDefense)}</span>
-                  )}
+                  <span className="text-white font-medium">{fmt(displayedEffectivePlayerDefense)}</span>
                 </p>
               </>
             )}
@@ -521,12 +650,13 @@ export default function CombatCalculator() {
                 </label>
                 <input
                   className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-sm"
-                  value={overrideMonsterDefense !== '' ? overrideMonsterDefense : String(preview?.monsterDefenseBase ?? '')}
+                  value={displayedSkill(overrideMonsterDefense, preview?.monsterDefenseBase)}
                   onChange={(e) => setOverrideMonsterDefense(e.target.value)}
+                  placeholder="Base defense skill"
                 />
                 <p className="text-xs text-neutral-400">
                   Effective {activeCfg.monsterDefShort}:{' '}
-                  <span className="text-white font-medium">{fmt(contestedMonsterDefense ?? preview?.effectiveMonsterDefense)}</span>
+                  <span className="text-white font-medium">{fmt(preview?.effectiveMonsterDefense)}</span>
                 </p>
               </>
             ) : (
@@ -534,20 +664,24 @@ export default function CombatCalculator() {
                 <label className="text-xs text-neutral-500 block">Attack skill (base)</label>
                 <input
                   className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-sm"
-                  value={overrideMonsterAttack !== '' ? overrideMonsterAttack : String(preview?.monsterAttackBase ?? '')}
+                  value={displayedSkill(overrideMonsterAttack, preview?.monsterAttackBase)}
                   onChange={(e) => setOverrideMonsterAttack(e.target.value)}
+                  placeholder="Base attack skill"
                 />
                 <label className="text-sm">
                   <span className="text-neutral-500 text-xs">offense</span>
                   <input
                     className="block w-20 mt-1 bg-neutral-950 border border-neutral-700 rounded px-2 py-1"
                     value={monsterOffenseMod}
-                    onChange={(e) => setMonsterOffenseMod(e.target.value)}
+                    onChange={(e) => {
+                      setMonsterOffenseModDirty(true)
+                      setMonsterOffenseMod(e.target.value)
+                    }}
                   />
                 </label>
                 <p className="text-xs text-neutral-400">
                   Effective {activeCfg.monsterAtkShort}:{' '}
-                  <span className="text-white font-medium">{fmt(contestedMonsterAttack ?? preview?.effectiveMonsterAttack)}</span>
+                  <span className="text-white font-medium">{fmt(preview?.effectiveMonsterAttack)}</span>
                 </p>
               </>
             )}
@@ -568,7 +702,7 @@ export default function CombatCalculator() {
         {error && <p className="text-sm text-red-400">{error}</p>}
 
         {!preview && !error && (
-          <p className="text-sm text-neutral-500">Select a player and/or monster, then recalculate.</p>
+          <p className="text-sm text-neutral-500">Enter skills in section 2 and click Recalculate.</p>
         )}
 
         {triplet && (
@@ -613,8 +747,8 @@ export default function CombatCalculator() {
             <div className="space-y-2 pt-2 border-t border-neutral-800">
               <p className="text-sm font-medium text-white">
                 {direction === 'playerAttacksMonster'
-                  ? `Attack sweep — fixed mob ${activeCfg.monsterDefShort} ${fmt(def)}, vary ${activeCfg.playerAtkShort}`
-                  : `Defense sweep — fixed mob atk ${fmt(atk)}, vary ${activeCfg.playerDefShort}`}
+                  ? `Attack sweep — fixed mob ${activeCfg.monsterDefShort} ${fmt(def)}, vary ${activeCfg.playerAtkShort} (effective)`
+                  : `Defense sweep — fixed mob atk ${fmt(atk)}, vary effective ${activeCfg.playerDefShort}`}
               </p>
               <div className="flex flex-wrap gap-2 items-center text-sm">
                 <input
@@ -647,7 +781,10 @@ export default function CombatCalculator() {
                   type="button"
                   className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 rounded text-xs"
                   onClick={() => {
-                    const center = direction === 'playerAttacksMonster' ? atk : def
+                    const center =
+                      direction === 'playerAttacksMonster'
+                        ? atk
+                        : (displayedEffectivePlayerDefense ?? preview?.effectivePlayerDefense ?? 0)
                     const span = direction === 'playerAttacksMonster' ? 750 : 2500
                     const step = direction === 'playerAttacksMonster' ? 100 : 500
                     setRangeMin(String(Math.max(0, center - span)))
@@ -655,9 +792,9 @@ export default function CombatCalculator() {
                     setRangeStep(String(step))
                   }}
                 >
-                  {direction === 'playerAttacksMonster' ? `±750 atk` : '±2500 def'}
+                  {direction === 'playerAttacksMonster' ? `±750 atk` : `±2500 ${activeCfg.playerDefShort}`}
                 </button>
-                <button type="button" className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs" onClick={runPreview}>
+                <button type="button" className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs" onClick={() => runPreview(true)}>
                   Update table
                 </button>
               </div>

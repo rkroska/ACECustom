@@ -43,9 +43,13 @@ class ApiClient {
 
       // Handle Global Status Codes
       if (response.status === 401) {
-        console.warn('Unauthorized: Session expired or invalid. Logging out.');
-        logout();
-        throw new Error('Session expired. Please log in again.');
+        const isAuthMe = endpoint.includes('/api/auth/me');
+        const { isAuthenticated } = useAuthStore.getState();
+        if (!isAuthMe || isAuthenticated) {
+          console.warn('Unauthorized: Session expired or invalid. Logging out.');
+          logout();
+        }
+        throw new Error(isAuthMe ? 'Not signed in.' : 'Session expired. Please log in again.');
       }
 
       if (response.status === 503) {
@@ -123,6 +127,14 @@ class ApiClient {
     return this.request<T>(url, {
       ...options,
       method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+
+  async put<T>(url: string, body?: any, options?: RequestInit): Promise<T | null> {
+    return this.request<T>(url, {
+      ...options,
+      method: 'PUT',
       body: body ? JSON.stringify(body) : undefined,
     });
   }

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using ACE.Database.Models.Auth;
 using ACE.Server.Entity;
+using ACE.Server.Managers;
 using ACE.Server.Web.Controllers;
 using Microsoft.AspNetCore.Mvc;
 
@@ -31,6 +32,8 @@ namespace ACE.Server.Controllers
                 ["shinies"] = "Shiny pets",
                 ["jails"] = "Times jailed",
                 ["notguilty"] = "Not guilty (focus checks passed)",
+                ["bond"] = "Max pet bond",
+                ["sumbond"] = "Sum pet bonds",
             };
 
         /// <summary>PropertyInt player discipline stats (9044–9045).</summary>
@@ -57,6 +60,9 @@ namespace ACE.Server.Controllers
         [HttpGet("boards")]
         public IActionResult GetBoardCatalog()
         {
+            if (!HasPortalAccess(PortalPages.Leaderboards))
+                return Forbid();
+
             var boards = BoardTitles
                 .OrderBy(kv => kv.Key)
                 .Select(kv => new { id = kv.Key, title = kv.Value })
@@ -70,6 +76,9 @@ namespace ACE.Server.Controllers
         [HttpGet("pet-registry/{accountId:long}")]
         public IActionResult GetPetRegistryDetails(long accountId, [FromQuery] bool shiniesOnly = false)
         {
+            if (!HasPortalAccess(PortalPages.Leaderboards))
+                return Forbid();
+
             if (accountId < 0 || accountId > uint.MaxValue)
                 return BadRequest(new { message = "Invalid account id.", code = "invalid_account_id" });
 
@@ -98,8 +107,19 @@ namespace ACE.Server.Controllers
         [HttpGet("{boardId}")]
         public async Task<IActionResult> GetBoard(string boardId)
         {
+            if (!HasPortalAccess(PortalPages.Leaderboards))
+                return Forbid();
+
             var norm = boardId?.Trim().ToLowerInvariant();
-            if (string.IsNullOrEmpty(norm) || !BoardTitles.TryGetValue(norm, out var title))
+            if (string.IsNullOrEmpty(norm))
+                return NotFound(new { message = "Unknown leaderboard.", code = "unknown_board" });
+
+            if (norm is "bonds")
+                norm = "bond";
+            else if (norm is "sumbonds")
+                norm = "sumbond";
+
+            if (!BoardTitles.TryGetValue(norm, out var title))
             {
                 return NotFound(new { message = "Unknown leaderboard.", code = "unknown_board" });
             }
@@ -253,33 +273,62 @@ namespace ACE.Server.Controllers
                 });
             }
 
-            List<Leaderboard> data = norm switch
-            {
-                "qb" => await cache.GetTopQBAsync(context),
-                "level" => await cache.GetTopLevelAsync(context),
-                "enl" => await cache.GetTopEnlAsync(context),
-                "title" => await cache.GetTopTitleAsync(context),
-                "augs" => await cache.GetTopAugsAsync(context),
-                "deaths" => await cache.GetTopDeathsAsync(context),
-                "bank" => await cache.GetTopBankAsync(context),
-                "lum" => await cache.GetTopLumAsync(context),
-                "attr" => await cache.GetTopAttrAsync(context),
-                _ => new List<Leaderboard>(),
-            };
+            List<Leaderboard> data;
+            DateTime nextRefresh;
 
-            DateTime nextRefresh = norm switch
+            switch (norm)
             {
-                "qb" => cache.QBLastUpdate,
-                "level" => cache.LevelLastUpdate,
-                "enl" => cache.EnlLastUpdate,
-                "title" => cache.TitleLastUpdate,
-                "augs" => cache.AugsLastUpdate,
-                "deaths" => cache.DeathsLastUpdate,
-                "bank" => cache.BanksLastUpdate,
-                "lum" => cache.LumLastUpdate,
-                "attr" => cache.AttrLastUpdate,
-                _ => DateTime.UtcNow,
-            };
+                case "qb":
+                    data = await cache.GetTopQBAsync(context);
+                    nextRefresh = cache.QBLastUpdate;
+                    break;
+                case "level":
+                    data = await cache.GetTopLevelAsync(context);
+                    nextRefresh = cache.LevelLastUpdate;
+                    break;
+                case "enl":
+                    data = await cache.GetTopEnlAsync(context);
+                    nextRefresh = cache.EnlLastUpdate;
+                    break;
+                case "title":
+                    data = await cache.GetTopTitleAsync(context);
+                    nextRefresh = cache.TitleLastUpdate;
+                    break;
+                case "augs":
+                    data = await cache.GetTopAugsAsync(context);
+                    nextRefresh = cache.AugsLastUpdate;
+                    break;
+                case "deaths":
+                    data = await cache.GetTopDeathsAsync(context);
+                    nextRefresh = cache.DeathsLastUpdate;
+                    break;
+                case "bank":
+                    data = await cache.GetTopBankAsync(context);
+                    nextRefresh = cache.BanksLastUpdate;
+                    break;
+                case "lum":
+                    data = await cache.GetTopLumAsync(context);
+                    nextRefresh = cache.LumLastUpdate;
+                    break;
+                case "attr":
+                    data = await cache.GetTopAttrAsync(context);
+                    nextRefresh = cache.AttrLastUpdate;
+                    break;
+                case "bond":
+                case "bonds":
+                    data = await cache.GetTopBondsAsync(context);
+                    nextRefresh = cache.BondsLastUpdate;
+                    break;
+                case "sumbond":
+                case "sumbonds":
+                    data = await cache.GetTopSumBondsAsync(context);
+                    nextRefresh = cache.SumBondsLastUpdate;
+                    break;
+                default:
+                    data = new List<Leaderboard>();
+                    nextRefresh = DateTime.UtcNow;
+                    break;
+            }
 
             var sqlRows = data.Select((x, i) => new
             {

@@ -169,6 +169,15 @@ export function asNumberOrUndefined(s: string): number | undefined {
   return Number.isFinite(v) ? v : undefined;
 }
 
+/** Weapon appraisal +MD % (e.g. 405) → total combat multiplier (5.05). Includes standing 100%. */
+export function appraisalBonusPctToDefenseMod(pct: number): number {
+  return 1 + pct / 100;
+}
+
+export function defenseModToAppraisalBonusPct(mod: number): number {
+  return Math.round((mod - 1) * 100);
+}
+
 function clamp01(x: number): number {
   if (Number.isNaN(x)) return 0;
   return Math.min(1, Math.max(0, x));

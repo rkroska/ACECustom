@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
+using ACE.Server.Managers;
 using ACE.Server.Managers.QuestBuilder;
 using ACE.Server.Web.Controllers;
 using Microsoft.AspNetCore.Authorization;
@@ -16,14 +17,14 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("templates")]
         public IActionResult GetTemplates()
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.QuestBuilder)) return Forbid();
             return Ok(QuestBuilderTemplates.List());
         }
 
         [HttpGet("template/{id}")]
         public IActionResult GetTemplate(string id)
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.QuestBuilder)) return Forbid();
             var next = QuestBuilderCompiler.FindNextWcid();
             if (next == 0)
                 return BadRequest(new { message = "No free WCIDs in range 78780090-78780199." });
@@ -33,7 +34,7 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("next-wcid")]
         public IActionResult GetNextWcid([FromQuery] uint start = 78780090, [FromQuery] uint end = 78780199)
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.QuestBuilder)) return Forbid();
             var wcid = QuestBuilderCompiler.FindNextWcid(start, end);
             if (wcid == 0)
                 return Ok(new NextWcidResultDto { Wcid = 0, RangeStart = start, RangeEnd = end });
@@ -43,14 +44,14 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("creature-search")]
         public IActionResult SearchCreatures([FromQuery] string q, [FromQuery] int limit = 40)
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.QuestBuilder)) return Forbid();
             return Ok(QuestBuilderCreatureSearch.Search(q, limit));
         }
 
         [HttpGet("creature/{wcid}")]
         public IActionResult GetCreature(uint wcid)
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.QuestBuilder)) return Forbid();
             var result = QuestBuilderCreatureSearch.Get(wcid);
             if (result == null)
                 return NotFound(new { message = $"No creature weenie found for WCID {wcid}." });
@@ -60,28 +61,23 @@ namespace ACE.Server.Web.Controllers
         [HttpPost("validate")]
         public IActionResult Validate([FromBody] QuestPackageDto package)
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.QuestBuilder)) return Forbid();
             return Ok(QuestBuilderCompiler.Validate(package));
         }
 
-        /// <summary>No auth — use in a browser to verify the server binary includes Quest Builder v2.</summary>
-        [AllowAnonymous]
+        /// <summary>Probe endpoint (portal session required).</summary>
         [HttpGet("ping")]
-        public IActionResult Ping() =>
-            Ok(new
-            {
-                ok = true,
-                importNpc = true,
-                importStamp = true,
-                updateOnlyExport = true,
-                actorShellExport = true,
-            });
+        public IActionResult Ping()
+        {
+            if (!HasPortalAccess(PortalPages.QuestBuilder)) return Forbid();
+            return Ok(new { ok = true });
+        }
 
-        /// <summary>Probe endpoint (admin session required) — same flags as ping.</summary>
+        /// <summary>Capability flags for the Quest Builder UI.</summary>
         [HttpGet("capabilities")]
         public IActionResult GetCapabilities()
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.QuestBuilder)) return Forbid();
             return Ok(new
             {
                 importNpc = true,
@@ -94,7 +90,7 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("import/npc/{wcid}")]
         public IActionResult ImportFromNpc(uint wcid, [FromQuery] bool includeRelated = true)
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.QuestBuilder)) return Forbid();
             var result = QuestBuilderImporter.ImportFromNpcWcid(wcid, includeRelated);
             if (!result.Ok)
                 return BadRequest(new { message = result.Message, warnings = result.Warnings });
@@ -104,7 +100,7 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("import/stamp")]
         public IActionResult ImportFromStamp([FromQuery] string name)
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.QuestBuilder)) return Forbid();
             var result = QuestBuilderImporter.ImportFromStampName(name);
             if (!result.Ok)
                 return BadRequest(new { message = result.Message, warnings = result.Warnings });
@@ -114,7 +110,7 @@ namespace ACE.Server.Web.Controllers
         [HttpPost("import/package")]
         public IActionResult ImportPackage([FromBody] QuestPackageDto package)
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.QuestBuilder)) return Forbid();
             if (package?.Actors == null || package.Actors.Count == 0)
                 return BadRequest(new { message = "Package needs at least one actor." });
             return Ok(new QuestImportResultDto
@@ -128,7 +124,7 @@ namespace ACE.Server.Web.Controllers
         [HttpPost("export")]
         public IActionResult Export([FromBody] QuestPackageDto package, [FromQuery] bool updateOnly = false)
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.QuestBuilder)) return Forbid();
             try
             {
                 var result = QuestBuilderCompiler.Export(package, updateOnly);

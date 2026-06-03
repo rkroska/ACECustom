@@ -13,6 +13,9 @@ namespace ACE.Common
         public ChatConfiguration Chat { get; set; } = new ChatConfiguration();
 
         public DDDConfiguration DDD { get; set; } = new DDDConfiguration();
-        
+
+        public PatchNotesConfiguration PatchNotes { get; set; } = new PatchNotesConfiguration();
+
+        public WebPortalConfiguration WebPortal { get; set; } = new WebPortalConfiguration();
     }
 }

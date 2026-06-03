@@ -74,6 +74,8 @@ export interface CombatPreviewResponse {
   effectiveMonsterDefense: number
   playerAccuracyMod: number
   playerOffenseMod: number
+  playerDefenseMod: number
+  playerDefenseFlat: number
   monsterOffenseMod: number
   testAggression: number
   triplet: TripletDto
@@ -91,6 +93,8 @@ export interface CombatPreviewRequest {
   overrideMonsterDefense?: number
   playerAccuracyMod?: number
   playerOffenseMod?: number
+  playerDefenseMod?: number
+  playerDefenseFlat?: number
   monsterOffenseMod?: number
   testAggression?: number
   rangeMin?: number

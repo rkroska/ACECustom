@@ -5,6 +5,7 @@ using ACE.Common;
 using ACE.Database;
 using ACE.Database.Models.Auth;
 using ACE.Database.Models.Shard;
+using ACE.Server.Managers;
 using ACE.Server.Web;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -18,7 +19,7 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("suggest")]
         public IActionResult SuggestStamps([FromQuery] string q, [FromQuery] int limit = 30)
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Stamps))
                 return Forbid();
 
             if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 2)
@@ -58,7 +59,7 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("lookup")]
         public IActionResult LookupStamp([FromQuery] string stamp, [FromQuery] int limit = 50, [FromQuery] int offset = 0)
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Stamps))
                 return Forbid();
 
             if (string.IsNullOrWhiteSpace(stamp))

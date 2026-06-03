@@ -15,7 +15,7 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("list")]
         public IActionResult GetEvents()
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Events))
                 return Forbid();
 
             try

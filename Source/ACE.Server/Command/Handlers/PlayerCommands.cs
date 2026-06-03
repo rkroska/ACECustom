@@ -3979,5 +3979,19 @@ namespace ACE.Server.Command.Handlers
         {
             session.Network.EnqueueSend(new GameMessageSystemChat($"Your location is: {session.Player.Location}", ChatMessageType.Broadcast));
         }
+
+        [CommandHandler("patchnotes", AccessLevel.Player, CommandHandlerFlag.None, 0, "Shows where to read server patch notes.")]
+        public static void HandlePatchNotes(Session session, params string[] parameters)
+        {
+            var lines = PatchNotesManager.BuildMotdLines();
+            if (lines.Length == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "No patch notes have been published yet.", ChatMessageType.System);
+                return;
+            }
+
+            foreach (var line in lines)
+                CommandHandlerHelper.WriteOutputInfo(session, line, ChatMessageType.System);
+        }
     }
 }

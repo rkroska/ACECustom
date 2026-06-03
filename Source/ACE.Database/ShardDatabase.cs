@@ -1079,7 +1079,173 @@ namespace ACE.Database
             }
         }
 
+        public PagedResult<TransferLog> SearchTransferLogs(AuditLogSearchCriteria criteria)
+        {
+            criteria.Normalize();
+            var cutoff = DateTime.UtcNow.AddDays(-criteria.Days);
 
+            using (var context = new ShardDbContext())
+            {
+                var query = context.TransferLogs.AsNoTracking().Where(t => t.Timestamp >= cutoff);
+                query = ApplyTransferLogFilters(query, criteria);
+
+                var totalCount = query.Count();
+                var items = query
+                    .OrderByDescending(t => t.Timestamp)
+                    .Skip((criteria.Page - 1) * criteria.PageSize)
+                    .Take(criteria.PageSize)
+                    .ToList();
+
+                return new PagedResult<TransferLog>
+                {
+                    Items = items,
+                    TotalCount = totalCount,
+                    Page = criteria.Page,
+                    PageSize = criteria.PageSize
+                };
+            }
+        }
+
+        public PagedResult<CharTracker> SearchCharTrackerLogins(AuditLogSearchCriteria criteria)
+        {
+            criteria.Normalize();
+            var cutoff = DateTime.UtcNow.AddDays(-criteria.Days);
+
+            using (var context = new ShardDbContext())
+            {
+                var query = context.CharTracker.AsNoTracking().Where(c => c.LoginTimestamp >= cutoff);
+                query = ApplyCharTrackerFilters(query, criteria);
+
+                var totalCount = query.Count();
+                var items = query
+                    .OrderByDescending(c => c.LoginTimestamp)
+                    .Skip((criteria.Page - 1) * criteria.PageSize)
+                    .Take(criteria.PageSize)
+                    .ToList();
+
+                return new PagedResult<CharTracker>
+                {
+                    Items = items,
+                    TotalCount = totalCount,
+                    Page = criteria.Page,
+                    PageSize = criteria.PageSize
+                };
+            }
+        }
+
+        public PagedResult<TransferSummary> SearchTransferSummaries(AuditLogSearchCriteria criteria)
+        {
+            criteria.Normalize();
+            var cutoff = DateTime.UtcNow.AddDays(-criteria.Days);
+
+            using (var context = new ShardDbContext())
+            {
+                var query = context.TransferSummaries.AsNoTracking().Where(s => s.LastTransfer >= cutoff);
+                query = ApplyTransferSummaryFilters(query, criteria);
+
+                var totalCount = query.Count();
+                var items = query
+                    .OrderByDescending(s => s.LastTransfer)
+                    .ThenByDescending(s => s.TotalTransfers)
+                    .Skip((criteria.Page - 1) * criteria.PageSize)
+                    .Take(criteria.PageSize)
+                    .ToList();
+
+                return new PagedResult<TransferSummary>
+                {
+                    Items = items,
+                    TotalCount = totalCount,
+                    Page = criteria.Page,
+                    PageSize = criteria.PageSize
+                };
+            }
+        }
+
+        private static IQueryable<TransferLog> ApplyTransferLogFilters(IQueryable<TransferLog> query, AuditLogSearchCriteria criteria)
+        {
+            if (!string.IsNullOrEmpty(criteria.Ip))
+            {
+                var ip = criteria.Ip;
+                query = query.Where(t => t.FromPlayerIP == ip || t.ToPlayerIP == ip);
+            }
+
+            if (!string.IsNullOrEmpty(criteria.Account))
+            {
+                var account = criteria.Account.ToLower();
+                query = query.Where(t =>
+                    (t.FromPlayerAccount != null && t.FromPlayerAccount.ToLower().Contains(account)) ||
+                    (t.ToPlayerAccount != null && t.ToPlayerAccount.ToLower().Contains(account)));
+            }
+
+            if (!string.IsNullOrEmpty(criteria.Character))
+            {
+                var character = criteria.Character.ToLower();
+                query = query.Where(t =>
+                    t.FromPlayerName.ToLower().Contains(character) ||
+                    t.ToPlayerName.ToLower().Contains(character));
+            }
+
+            if (!string.IsNullOrEmpty(criteria.TransferType))
+            {
+                var transferType = criteria.TransferType.ToLower();
+                query = query.Where(t => t.TransferType.ToLower().Contains(transferType));
+            }
+
+            if (!string.IsNullOrEmpty(criteria.ItemContains))
+            {
+                var item = criteria.ItemContains.ToLower();
+                query = query.Where(t => t.ItemName.ToLower().Contains(item));
+            }
+
+            return query;
+        }
+
+        private static IQueryable<CharTracker> ApplyCharTrackerFilters(IQueryable<CharTracker> query, AuditLogSearchCriteria criteria)
+        {
+            if (!string.IsNullOrEmpty(criteria.Ip))
+                query = query.Where(c => c.LoginIP == criteria.Ip);
+
+            if (!string.IsNullOrEmpty(criteria.Account))
+            {
+                var account = criteria.Account.ToLower();
+                query = query.Where(c => c.AccountName != null && c.AccountName.ToLower().Contains(account));
+            }
+
+            if (!string.IsNullOrEmpty(criteria.Character))
+            {
+                var character = criteria.Character.ToLower();
+                query = query.Where(c => c.CharacterName != null && c.CharacterName.ToLower().Contains(character));
+            }
+
+            return query;
+        }
+
+        private static IQueryable<TransferSummary> ApplyTransferSummaryFilters(IQueryable<TransferSummary> query, AuditLogSearchCriteria criteria)
+        {
+            if (!string.IsNullOrEmpty(criteria.Account))
+            {
+                var account = criteria.Account.ToLower();
+                query = query.Where(s =>
+                    (s.FromPlayerAccount != null && s.FromPlayerAccount.ToLower().Contains(account)) ||
+                    (s.ToPlayerAccount != null && s.ToPlayerAccount.ToLower().Contains(account)));
+            }
+
+            if (!string.IsNullOrEmpty(criteria.Character))
+            {
+                var character = criteria.Character.ToLower();
+                query = query.Where(s =>
+                    s.FromPlayerName.ToLower().Contains(character) ||
+                    s.ToPlayerName.ToLower().Contains(character));
+            }
+
+            if (!string.IsNullOrEmpty(criteria.TransferType))
+            {
+                var transferType = criteria.TransferType.ToLower();
+                query = query.Where(s => s.TransferType.ToLower().Contains(transferType));
+            }
+
+            return query;
+        }
 
         // Cleanup methods
         public void CleanupOldTransferLogs(int daysToKeep)

@@ -51,7 +51,7 @@ namespace ACE.Server.Controllers
         [HttpGet("config")]
         public IActionResult GetConfig()
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.CombatCalculator)) return Forbid();
 
             return Ok(new CombatConfigDto
             {
@@ -64,7 +64,7 @@ namespace ACE.Server.Controllers
         [HttpGet("weenie/search")]
         public IActionResult SearchWeenies([FromQuery] string q, [FromQuery] int limit = 50)
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.CombatCalculator)) return Forbid();
             if (string.IsNullOrWhiteSpace(q)) return Ok(Array.Empty<WeenieSearchResultDto>());
 
             q = q.Trim();
@@ -110,7 +110,7 @@ namespace ACE.Server.Controllers
         [HttpGet("weenie/{wcid}")]
         public IActionResult GetWeenie(uint wcid)
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.CombatCalculator)) return Forbid();
 
             var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
             if (weenie == null) return NotFound();
@@ -121,7 +121,7 @@ namespace ACE.Server.Controllers
         [HttpPost("preview")]
         public IActionResult Preview([FromBody] CombatPreviewRequest request)
         {
-            if (!IsAdmin) return Forbid();
+            if (!HasPortalAccess(PortalPages.CombatCalculator)) return Forbid();
             if (request == null) return BadRequest();
 
             var mode = NormalizeMode(request.Mode);
@@ -133,6 +133,8 @@ namespace ACE.Server.Controllers
             var skillSource = "manual";
             var playerAccuracyMod = request.PlayerAccuracyMod ?? 1.0;
             var playerOffenseMod = request.PlayerOffenseMod ?? 1.0;
+            var playerDefenseMod = request.PlayerDefenseMod ?? 1.0;
+            var playerDefenseFlat = request.PlayerDefenseFlat ?? 0;
             var monsterOffenseMod = request.MonsterOffenseMod ?? 1.0;
 
             int playerAttackBase = 0;
@@ -140,13 +142,26 @@ namespace ACE.Server.Controllers
             int monsterAttackBase = 0;
             int monsterDefenseBase = 0;
 
+            Player onlinePlayer = null;
             if (request.PlayerGuid.HasValue && request.PlayerGuid.Value > 0)
             {
-                var resolved = ResolvePlayerSkills(request.PlayerGuid.Value, mode, ref playerAccuracyMod, ref playerOffenseMod);
+                var resolved = ResolvePlayerSkills(
+                    request.PlayerGuid.Value,
+                    mode,
+                    request.PlayerAccuracyMod,
+                    request.PlayerOffenseMod,
+                    request.PlayerDefenseMod,
+                    out playerAccuracyMod,
+                    out playerOffenseMod,
+                    out playerDefenseMod);
                 if (resolved == null) return NotFound(new { message = "Character not found." });
                 skillSource = resolved.Value.Source;
                 playerAttackBase = resolved.Value.PlayerAttackBase;
                 playerDefenseBase = resolved.Value.PlayerDefense;
+                onlinePlayer = resolved.Value.OnlinePlayer;
+
+                if (onlinePlayer != null && !request.PlayerDefenseFlat.HasValue)
+                    playerDefenseFlat = GetPlayerDefenseFlatBonus(onlinePlayer, mode);
             }
 
             if (request.MonsterWcid.HasValue && request.MonsterWcid.Value > 0)
@@ -157,19 +172,21 @@ namespace ACE.Server.Controllers
                 monsterDefenseBase = GetModeDefense(mob, mode);
             }
 
+            if (request.OverridePlayerAttack.HasValue)
+                playerAttackBase = request.OverridePlayerAttack.Value;
+            if (request.OverridePlayerDefense.HasValue)
+                playerDefenseBase = request.OverridePlayerDefense.Value;
+            if (request.OverrideMonsterAttack.HasValue)
+                monsterAttackBase = request.OverrideMonsterAttack.Value;
+            if (request.OverrideMonsterDefense.HasValue)
+                monsterDefenseBase = request.OverrideMonsterDefense.Value;
+
             var effectivePlayerAttack = (int)Math.Round(playerAttackBase * playerAccuracyMod * playerOffenseMod);
-            var effectivePlayerDefense = playerDefenseBase;
+            var effectivePlayerDefense = onlinePlayer != null
+                ? ComputeEffectivePlayerDefense(onlinePlayer, mode, playerDefenseMod, (uint)playerDefenseBase, playerDefenseFlat)
+                : (int)Math.Round(playerDefenseBase * playerDefenseMod + playerDefenseFlat);
             var effectiveMonsterAttack = (int)Math.Round(monsterAttackBase * monsterOffenseMod);
             var effectiveMonsterDefense = monsterDefenseBase;
-
-            if (request.OverridePlayerAttack.HasValue)
-                effectivePlayerAttack = request.OverridePlayerAttack.Value;
-            if (request.OverridePlayerDefense.HasValue)
-                effectivePlayerDefense = request.OverridePlayerDefense.Value;
-            if (request.OverrideMonsterAttack.HasValue)
-                effectiveMonsterAttack = request.OverrideMonsterAttack.Value;
-            if (request.OverrideMonsterDefense.HasValue)
-                effectiveMonsterDefense = request.OverrideMonsterDefense.Value;
 
             var attackSkill = playerAttacks ? effectivePlayerAttack : effectiveMonsterAttack;
             var defenseSkill = playerAttacks ? effectiveMonsterDefense : effectivePlayerDefense;
@@ -181,7 +198,11 @@ namespace ACE.Server.Controllers
             {
                 var lo = Math.Min(request.RangeMin.Value, request.RangeMax.Value);
                 var hi = Math.Max(request.RangeMin.Value, request.RangeMax.Value);
-                rangeRows = BuildRangeRows(mode, testAgg, lo, hi, request.RangeStep.Value, direction, attackSkill, defenseSkill, cfg);
+                rangeRows = BuildRangeRows(
+                    mode, testAgg, lo, hi, request.RangeStep.Value, direction,
+                    attackSkill, defenseSkill, cfg,
+                    onlinePlayer, playerDefenseMod, playerDefenseFlat,
+                    playerAccuracyMod, playerOffenseMod);
             }
 
             return Ok(new CombatPreviewResponse
@@ -203,6 +224,8 @@ namespace ACE.Server.Controllers
                 EffectiveMonsterDefense = effectiveMonsterDefense,
                 PlayerAccuracyMod = playerAccuracyMod,
                 PlayerOffenseMod = playerOffenseMod,
+                PlayerDefenseMod = playerDefenseMod,
+                PlayerDefenseFlat = playerDefenseFlat,
                 MonsterOffenseMod = monsterOffenseMod,
                 TestAggression = testAgg,
                 Triplet = triplet,
@@ -310,22 +333,40 @@ namespace ACE.Server.Controllers
             public string Source;
             public int PlayerAttackBase;
             public int PlayerDefense;
+            public Player OnlinePlayer;
         }
 
-        private static ResolvedPlayerSkills? ResolvePlayerSkills(uint guid, string mode, ref double accuracyMod, ref double offenseMod)
+        private static ResolvedPlayerSkills? ResolvePlayerSkills(
+            uint guid,
+            string mode,
+            double? requestAccuracyMod,
+            double? requestOffenseMod,
+            double? requestDefenseMod,
+            out double accuracyMod,
+            out double offenseMod,
+            out double defenseMod)
         {
+            accuracyMod = requestAccuracyMod ?? 1.0;
+            offenseMod = requestOffenseMod ?? 1.0;
+            defenseMod = requestDefenseMod ?? 1.0;
+
             var online = PlayerManager.GetOnlinePlayer(guid);
             if (online != null)
             {
                 var weapon = online.GetEquippedWeapon();
                 var attackBase = (int)GetPlayerAttackBase(online, mode);
-                accuracyMod = online.GetAccuracyMod(weapon);
-                offenseMod = WorldObject.GetWeaponOffenseModifier(online);
+                if (!requestAccuracyMod.HasValue)
+                    accuracyMod = online.GetAccuracyMod(weapon);
+                if (!requestOffenseMod.HasValue)
+                    offenseMod = WorldObject.GetWeaponOffenseModifier(online);
+                if (!requestDefenseMod.HasValue)
+                    defenseMod = GetPlayerDefenseMod(online, mode);
                 return new ResolvedPlayerSkills
                 {
                     Source = "online-exact",
                     PlayerAttackBase = attackBase,
                     PlayerDefense = (int)GetPlayerDefense(online, mode),
+                    OnlinePlayer = online,
                 };
             }
 
@@ -337,7 +378,55 @@ namespace ACE.Server.Controllers
                 Source = "offline-approximate",
                 PlayerAttackBase = (int)GetOfflineAttackBest(offline, mode),
                 PlayerDefense = (int)GetOfflineSkillTotal(offline, DefenseSkillForMode(mode)),
+                OnlinePlayer = null,
             };
+        }
+
+        private static int GetPlayerDefenseFlatBonus(Player player, string mode)
+        {
+            if (mode == "magic")
+            {
+                return player.GetDefenseImbues(ImbuedEffectType.MagicDefense)
+                    + (int)(player.LuminanceAugmentMagicDefenseCount ?? 0);
+            }
+
+            if (mode == "missile")
+            {
+                return player.GetDefenseImbues(ImbuedEffectType.MissileDefense)
+                    + (int)(player.LuminanceAugmentMissileDefenseCount ?? 0);
+            }
+
+            return player.GetDefenseImbues(ImbuedEffectType.MeleeDefense)
+                + (int)(player.LuminanceAugmentMeleeDefenseCount ?? 0);
+        }
+
+        private static float GetPlayerDefenseMod(Player player, string mode) => mode switch
+        {
+            "magic" => WorldObject.GetWeaponMagicDefenseModifierForPreview(player),
+            "missile" => WorldObject.GetWeaponMissileDefenseModifierForPreview(player),
+            _ => WorldObject.GetWeaponMeleeDefenseModifierForPreview(player),
+        };
+
+        /// <summary>
+        /// Mirrors Creature.GetEffectiveDefenseSkill / GetEffectiveMagicDefense for preview math.
+        /// defenseMod is the full multiplier (standing 1.0 + weapon bonus); loot rolls add +1.0 before storing WeaponDefense.
+        /// </summary>
+        private static int ComputeEffectivePlayerDefense(Player player, string mode, double defenseMod, uint skillBase, int flatBonus)
+        {
+            if (mode == "magic")
+            {
+                return (int)Math.Round(skillBase * defenseMod + flatBonus);
+            }
+
+            var burdenMod = player.GetBurdenMod();
+            var stanceMod = player.GetDefenseStanceMod();
+
+            var effectiveDefense = (int)Math.Round(
+                skillBase * defenseMod * burdenMod * stanceMod + flatBonus);
+
+            if (player.IsExhausted) effectiveDefense = 0;
+
+            return effectiveDefense;
         }
 
         private static Skill DefenseSkillForMode(string mode) => mode switch
@@ -480,19 +569,27 @@ namespace ACE.Server.Controllers
             string direction,
             int fixedAtk,
             int fixedDef,
-            ScalingModeDto cfg)
+            ScalingModeDto cfg,
+            Player onlinePlayer,
+            double playerDefenseMod,
+            int playerDefenseFlat,
+            double playerAccuracyMod,
+            double playerOffenseMod)
         {
             var rows = new List<RangeRowDto>();
             var sweepAttack = direction == "playerAttacksMonster";
             for (var sweep = lo; sweep <= hi && rows.Count < 120; sweep += step)
             {
-                var atk = sweepAttack ? sweep : fixedAtk;
+                var atk = sweepAttack
+                    ? (int)Math.Round(sweep * playerAccuracyMod * playerOffenseMod)
+                    : fixedAtk;
                 var def = sweepAttack ? fixedDef : sweep;
+                var sweepLabel = sweep;
                 var evA = ToEvadePct(atk, def, mode, direction, false, cfg.DefaultAggression, cfg.DefaultAggression);
                 var evB = ToEvadePct(atk, def, mode, direction, true, cfg.DefaultAggression, cfg.DefaultAggression);
                 var evC = ToEvadePct(atk, def, mode, direction, true, cfg.DefaultAggression, testAgg);
                 var toPrimary = (double ev) => Math.Round((sweepAttack ? 100 - ev : ev) * 10) / 10;
-                rows.Add(new RangeRowDto { Sweep = sweep, A = toPrimary(evA), B = toPrimary(evB), C = toPrimary(evC) });
+                rows.Add(new RangeRowDto { Sweep = sweepLabel, A = toPrimary(evA), B = toPrimary(evB), C = toPrimary(evC) });
             }
             return rows;
         }
@@ -551,6 +648,8 @@ namespace ACE.Server.Controllers
             public int? OverrideMonsterDefense { get; set; }
             public double? PlayerAccuracyMod { get; set; }
             public double? PlayerOffenseMod { get; set; }
+            public double? PlayerDefenseMod { get; set; }
+            public int? PlayerDefenseFlat { get; set; }
             public double? MonsterOffenseMod { get; set; }
             public double? TestAggression { get; set; }
             public int? RangeMin { get; set; }
@@ -597,6 +696,8 @@ namespace ACE.Server.Controllers
             public int EffectiveMonsterDefense { get; set; }
             public double PlayerAccuracyMod { get; set; }
             public double PlayerOffenseMod { get; set; }
+            public double PlayerDefenseMod { get; set; }
+            public int PlayerDefenseFlat { get; set; }
             public double MonsterOffenseMod { get; set; }
             public double TestAggression { get; set; }
             public TripletDto Triplet { get; set; }

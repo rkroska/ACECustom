@@ -25,6 +25,10 @@ public partial class AuthDbContext : DbContext
 
     public virtual DbSet<LeaderboardPlacementRow> LeaderboardPlacementQuery { get; set; }
 
+    public virtual DbSet<PortalPageAccess> PortalPageAccess { get; set; }
+
+    public virtual DbSet<PatchNote> PatchNotes { get; set; }
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         if (!optionsBuilder.IsConfigured)
@@ -163,6 +167,42 @@ public partial class AuthDbContext : DbContext
         {
             entity.HasNoKey();
             entity.Property(e => e.Character).HasMaxLength(255);
+        });
+
+        modelBuilder.Entity<PortalPageAccess>(entity =>
+        {
+            entity.HasKey(e => e.PageKey).HasName("PRIMARY");
+
+            entity.ToTable("portal_page_access");
+
+            entity.Property(e => e.PageKey)
+                .HasMaxLength(64)
+                .HasColumnName("page_key");
+            entity.Property(e => e.MinLevel).HasColumnName("min_level");
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("datetime")
+                .HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<PatchNote>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+
+            entity.ToTable("patch_notes");
+
+            entity.HasIndex(e => e.Slug, "UX_patch_notes_slug").IsUnique();
+
+            entity.Property(e => e.Slug).HasColumnName("slug").HasMaxLength(128).IsRequired();
+            entity.Property(e => e.Title).HasColumnName("title").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.Summary).HasColumnName("summary").HasMaxLength(1000);
+            entity.Property(e => e.Body).HasColumnName("body").HasColumnType("mediumtext").IsRequired();
+            entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(16).IsRequired();
+            entity.Property(e => e.PublishedAt).HasColumnName("published_at").HasColumnType("datetime(6)");
+            entity.Property(e => e.PublishedByAccountId).HasColumnName("published_by_account_id");
+            entity.Property(e => e.PostToDiscord).HasColumnName("post_to_discord");
+            entity.Property(e => e.DiscordMessageId).HasColumnName("discord_message_id");
+            entity.Property(e => e.CreatedAt).HasColumnType("datetime(6)").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnType("datetime(6)").HasColumnName("updated_at");
         });
 
         OnModelCreatingPartial(modelBuilder);

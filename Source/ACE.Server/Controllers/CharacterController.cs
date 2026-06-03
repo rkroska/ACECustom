@@ -185,7 +185,7 @@ namespace ACE.Server.Controllers
         [HttpGet("all-online")]
         public async Task<IActionResult> GetAllOnline()
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Players))
                 return Unauthorized();
 
             var online = PlayerManager.GetAllOnline();
@@ -226,7 +226,7 @@ namespace ACE.Server.Controllers
         [HttpGet("lookup/{id}")]
         public async Task<IActionResult> Lookup(uint id)
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Players))
                 return Unauthorized();
 
             var stub = DatabaseManager.Shard.BaseDatabase.GetCharacterStubByGuid(id);
@@ -273,7 +273,7 @@ namespace ACE.Server.Controllers
         [HttpGet("search-all/{name}")]
         public async Task<IActionResult> SearchAll(string name)
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Players))
                 return Unauthorized();
 
             if (string.IsNullOrWhiteSpace(name))
@@ -440,7 +440,7 @@ namespace ACE.Server.Controllers
         [HttpPost("logout/{guid}")]
         public async Task<IActionResult> ForceLogout(uint guid)
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Players))
                 return Unauthorized();
 
             var player = PlayerManager.GetOnlinePlayer(guid);
@@ -457,9 +457,17 @@ namespace ACE.Server.Controllers
             if (CurrentAccountId == null) return false;
             IPlayer p = PlayerManager.FindByGuid(guid);
             if (p == null || p.Account == null) return false;
-            if (!IsAuthorizedForAccount(p.Account.AccountId)) return false;
-            player = p;
-            return true;
+            if (p.Account.AccountId == CurrentAccountId.Value)
+            {
+                player = p;
+                return true;
+            }
+            if (HasPortalAccess(PortalPages.Players))
+            {
+                player = p;
+                return true;
+            }
+            return false;
         }
 
         private static Dictionary<string, long> GetBankedProperties(Biota biota)
