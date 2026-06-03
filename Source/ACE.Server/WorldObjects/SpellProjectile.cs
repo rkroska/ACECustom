@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 
 using ACE.Common;
@@ -39,6 +41,12 @@ namespace ACE.Server.WorldObjects
         public bool FromProc { get; set; }
 
         public int DebugVelocity;
+
+        /// <summary>True for Fork-spawned secondary projectiles — prevents recursive forking.</summary>
+        public bool IsForkProjectile { get; set; }
+
+        /// <summary>Damage multiplier applied at the end of CalculateDamage. Used by Fork charm tiers (0.50 / 0.75 / 1.00).</summary>
+        public float ForkDamageMult { get; set; } = 1.0f;
 
         /// <summary>
         /// Captured at spawn when <see cref="ProjectileSource"/> is set; do not re-read ClassicRingAoe at impact.
@@ -371,6 +379,10 @@ namespace ACE.Server.WorldObjects
             // if player target, ensure matching PK status
             var targetPlayer = creatureTarget as Player;
 
+            var forkEligibleOnImpact = creatureTarget.IsAlive
+                && !(targetPlayer?.Invincible ?? false)
+                && !(targetPlayer?.UnderLifestoneProtection ?? false);
+
             var pkError = ProjectileSource?.CheckPKStatusVsTarget(creatureTarget, Spell);
             if (pkError != null)
             {
@@ -447,6 +459,23 @@ namespace ACE.Server.WorldObjects
                         // But, to keep it simple, we will just ignore it and not bother with TryProcEquippedItems for this particular impact.
                     }
                 }
+            }
+
+            // Fork Charm — spawn secondary projectiles from the hit point.
+            // Intentionally fires outside the `if (damage != null)` block so that fork
+            // triggers on physical contact regardless of:
+            //   • The primary target being killed by this very hit (dead-on-kill).
+            //   • The spell being resisted (CalculateDamage returns null) — the bolt
+            //     still struck the creature and the fork projectiles roll their own resist.
+            // Does NOT fire if CanDamage or PK checks failed (those return early above).
+            if (forkEligibleOnImpact
+                && !IsForkProjectile && player != null && player.HasForkCharm
+                && CharmSettingsManager.Fork.Enabled
+                && (SpellType == ProjectileSpellType.Streak
+                    || SpellType == ProjectileSpellType.Arc
+                    || SpellType == ProjectileSpellType.Bolt))
+            {
+                TryApplyForkProc(player, creatureTarget);
             }
 
             // also called on resist
@@ -678,8 +707,11 @@ namespace ACE.Server.WorldObjects
 
                 finalDamage *= elementalDamageMod * slayerMod * resistanceMod * absorbMod * attribBonus;
             }
+            // Fork Charm: reduce damage for fork projectiles based on tier multiplier.
+            if (IsForkProjectile)
+                finalDamage *= ForkDamageMult;
 
-            // show debug info
+            // show debug info (after fork mult so displayed damage matches actual dealt damage)
             if (sourceCreature != null && sourceCreature.DebugDamage.HasFlag(Creature.DebugDamageType.Attacker))
             {
                 ShowInfo(sourceCreature, Spell, attackSkill, criticalChance, criticalHit, critDefended, overpower, weaponCritDamageMod, skillBonus, baseDamage, critDamageBonus, elementalDamageMod, slayerMod, weaponResistanceMod, resistanceMod, absorbMod, LifeProjectileDamage, lifeMagicDamage, finalDamage);
@@ -700,6 +732,76 @@ namespace ACE.Server.WorldObjects
 
             return finalDamage;
         }
+
+        /// <summary>
+        /// Fires after a successful spell projectile hit when the caster has the Fork Charm active.
+        /// Fires synchronously (no delay) — mirrors the chain lightning pattern.
+        /// Launches secondary projectiles from the hit target's position toward nearby enemies.
+        /// Fork projectiles are tagged IsForkProjectile = true to prevent recursive chaining.
+        /// </summary>
+        private void TryApplyForkProc(Player player, Creature hitTarget)
+        {
+            var fork = CharmSettingsManager.Fork;
+
+            // Guard against the narrow window where the landblock begins removing the
+            // creature (nulling PhysicsObj) between the collision callback and this call.
+            if (hitTarget.Location == null || hitTarget.CurrentLandblock == null || hitTarget.PhysicsObj == null)
+                return;
+
+            player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ForkAbilityId, out var tier);
+            if (tier < 1) tier = 1;
+            float damageMult = tier switch { 2 => fork.T2Mult, 3 => fork.T3Mult, _ => fork.T1Mult };
+
+            var hitGlobal = hitTarget.Location.ToGlobal(false);
+
+            // Gather candidates — same landblock + adjacents, exactly like chain lightning
+            var allObjects = new List<WorldObject>();
+            var lb = hitTarget.CurrentLandblock;
+            allObjects.AddRange(lb.GetWorldObjectsForPhysicsHandling());
+            if (lb.Adjacents != null)
+            {
+                foreach (var adj in lb.Adjacents)
+                    if (adj != null) allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
+            }
+
+            var candidates = new List<(Creature c, float dist)>();
+            var seen = new HashSet<ObjectGuid>();
+            foreach (var obj in allObjects)
+            {
+                if (!seen.Add(obj.Guid)) continue;   // deduplicate across landblock + adjacents
+                if (obj is not Creature c || c == player || c == hitTarget) continue;
+                if (!c.IsAlive || c.Location == null || c.PhysicsObj == null) continue;
+                var dist = Vector3.Distance(hitGlobal, c.Location.ToGlobal(false));
+                if (dist > fork.Range) continue;
+                if (!player.CanDamage(c)) continue;
+                var pkErr = player.CheckPKStatusVsTarget(c, Spell);
+                if (pkErr != null) continue;
+                candidates.Add((c, dist));
+            }
+
+            candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
+
+            // Fire — same call as chain lightning: caster.CreateSpellProjectiles(..., originOverride: justHit)
+            // No SyncPhysicsPosition needed — hitTarget.PhysicsObj is fresh at hit time (no drift yet).
+            foreach ((Creature forkTarget, float _) in candidates.Take(fork.Targets))
+            {
+                // Call LaunchSpellProjectiles directly so isForkProjectile/forkDamageMult are set
+                // before LandblockManager.AddObject — IsProjectileVisible runs inside that call.
+                var forkOrigins  = player.CalculateProjectileOrigins(Spell, SpellType, forkTarget, hitTarget);
+                if (forkOrigins == null || forkOrigins.Count == 0)
+                    continue;
+
+                var forkVelocity = player.CalculateProjectileVelocity(Spell, forkTarget, SpellType, forkOrigins[0], hitTarget);
+                player.LaunchSpellProjectiles(
+                    Spell, forkTarget, SpellType,
+                    ProjectileLauncher, IsWeaponSpell, fromProc: true,
+                    forkOrigins, forkVelocity, LifeProjectileDamage,
+                    originOverride: hitTarget, directionOverride: hitTarget,
+                    isForkProjectile: true, forkDamageMult: damageMult);
+            }
+        }
+
+
 
         public float GetAbsorbMod(Creature target)
         {

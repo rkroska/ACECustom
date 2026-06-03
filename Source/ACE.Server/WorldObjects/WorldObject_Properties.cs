@@ -3440,8 +3440,8 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasAgonyCharm); else SetProperty(PropertyBool.HasAgonyCharm, value); }
         }
 
-        /// <summary>True while the Penta Cast Charm is activated — Streak, Arc, and Bolt spells target up to 5 distinct enemies.</summary>
-        public bool HasPentaCast
+        /// <summary>True while the Split Cast Charm is activated — Streak, Arc, and Bolt spells target up to 5 distinct enemies.</summary>
+        public bool HasSplitCast
         {
             get => GetProperty(PropertyBool.HasPentaCast) ?? false;
             set { if (!value) RemoveProperty(PropertyBool.HasPentaCast); else SetProperty(PropertyBool.HasPentaCast, value); }
@@ -3454,11 +3454,25 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasExplosiveArrowCharm); else SetProperty(PropertyBool.HasExplosiveArrowCharm, value); }
         }
 
-        /// <summary>True while the Prismatic Strike Charm is activated — melee attacks override to target's weakest element and dynamically match weapon rending.</summary>
-        public bool HasPrismaticStrike
+        /// <summary>True while the Omni Strike Charm is activated — melee attacks override to target's weakest element and dynamically match weapon rending.</summary>
+        public bool HasOmnistrike
         {
             get => GetProperty(PropertyBool.HasPrismaticStrike) ?? false;
             set { if (!value) RemoveProperty(PropertyBool.HasPrismaticStrike); else SetProperty(PropertyBool.HasPrismaticStrike, value); }
+        }
+
+        /// <summary>Universal Summoning Mastery charm: bypass pet device SummoningMastery requirement (Primalist / Necromancer / Naturalist).</summary>
+        public bool HasUniversalSummoningMastery
+        {
+            get => GetProperty(PropertyBool.HasUniversalSummoningMastery) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasUniversalSummoningMastery); else SetProperty(PropertyBool.HasUniversalSummoningMastery, value); }
+        }
+
+        /// <summary>True while the Fork Charm is activated — Streak, Arc, and Bolt projectiles fork to nearby enemies on hit.</summary>
+        public bool HasForkCharm
+        {
+            get => GetProperty(PropertyBool.HasForkCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasForkCharm); else SetProperty(PropertyBool.HasForkCharm, value); }
         }
 
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>

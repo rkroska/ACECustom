@@ -240,11 +240,17 @@ namespace ACE.Server.Managers
                 if (player.AugmentationBonusImbueChance > 0)
                     successChance += player.AugmentationBonusImbueChance * 0.05f;
 
-                // Artisan's Charm: +4% per tier (T1 +4%, T2 +8%, T3 +12%)
-                if (player.HasArtisanCharm)
+                // Artisan's Charm: per-tier success chance bonus
+                if (player.HasArtisanCharm && CharmSettingsManager.Artisans.Enabled)
                 {
                     player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ArtisansCharmAbilityId, out var artisanTier);
-                    successChance += artisanTier * 0.04f;
+                    var artisanBonus = artisanTier switch
+                    {
+                        2 => CharmSettingsManager.Artisans.T2,
+                        3 => CharmSettingsManager.Artisans.T3,
+                        _ => CharmSettingsManager.Artisans.T1
+                    };
+                    successChance += artisanBonus;
                 }
             }
 

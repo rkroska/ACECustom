@@ -543,9 +543,9 @@ namespace ACE.Server.WorldObjects
             {
                 hasRending = true;
             }
-            else if (weapon != null && wielder is Player player && player.HasPrismaticStrike && player.CombatMode == CombatMode.Melee)
+            else if (weapon != null && wielder is Player player && player.HasOmnistrike && CharmSettingsManager.Omnistrike.Enabled && player.CombatMode == CombatMode.Melee)
             {
-                // Prismatic Strike design intent: while the charm is active, any rend imbue on the weapon
+                // Omni Strike design intent: while the charm is active, any rend imbue on the weapon
                 // applies its rend bonus to the target's weakest element — regardless of which element the
                 // rend was originally imbued for. The charm makes the weapon "adapt" its rend to match
                 // whatever vulnerability was chosen by GetWeakestElement() in DamageEvent.

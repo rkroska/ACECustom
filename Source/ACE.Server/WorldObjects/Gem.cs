@@ -9,6 +9,7 @@ using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Server.Entity;
 using ACE.Server.Factories;
+using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Physics;
@@ -135,7 +136,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            // â”€â”€ Ability Charm Toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Ability Charm Toggle ──────────────────────────────────────────────────────────
             if (IsAbilityCharm && CharmGrantsAbility.HasValue)
             {
                 HandleAbilityCharmToggle(player);
@@ -346,6 +347,63 @@ namespace ACE.Server.WorldObjects
                         ChatMessageType.Broadcast));
                     return;
                 }
+            }
+
+            if (abilityId == CharmAbilityRegistry.AutoRebuffAbilityId)
+            {
+                var currentTime = Time.GetUnixTime();
+
+                // Deactivation (turning OFF) is always free and instantly allowed
+                if (IsCharmActivated)
+                {
+                    IsCharmActivated = false;
+                    CharmAbilityRegistry.Apply(player, abilityId, false);
+                    player.Session?.Network?.EnqueueSend(new GameMessageSystemChat("Auto-Rebuff Charm deactivated.", ChatMessageType.Broadcast));
+                    player.Session?.Network?.EnqueueSend(new GameMessageSound(player.Guid, Sound.ShieldDown));
+                    SaveBiotaToDatabase();
+                    player.SaveBiotaToDatabase(enqueueSave: true);
+                    return;
+                }
+
+                // Activation (turning ON)
+                if (!CharmSettingsManager.AutoRebuff.Enabled)
+                {
+                    player.Session?.Network?.EnqueueSend(new GameMessageSystemChat("Auto-Rebuff Charm is currently disabled globally by the developer.", ChatMessageType.Broadcast));
+                    return;
+                }
+
+                IsCharmActivated = true;
+                CharmAbilityRegistry.Apply(player, abilityId, true, CharmLevel ?? 1);
+                player.IsDispelMessageTriggered = false; // Arm the dispel alert message trigger
+
+                var dispelLockoutActive = currentTime - player.LastDispelTimestamp < 180.0;
+                if (dispelLockoutActive)
+                {
+                    var remainingSeconds = (int)Math.Ceiling(180.0 - (currentTime - player.LastDispelTimestamp));
+                    player.Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Auto-Rebuff Charm activated. Because you were recently dispelled, buffs will automatically apply in {remainingSeconds}s after your lockout expires.", ChatMessageType.Broadcast));
+                }
+                else
+                {
+                    player.ApplyUltimateBlessings();
+                }
+                
+                SaveBiotaToDatabase();
+                player.SaveBiotaToDatabase(enqueueSave: true);
+                return;
+            }
+
+            if (!IsCharmActivated)
+            {
+
+                if (abilityId == CharmAbilityRegistry.UniversalSummoningMasteryAbilityId
+                    && !ServerConfig.pet_charm_universal_summoning_mastery_enabled.Value)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "Universal Summoning Mastery is not enabled on this server.",
+                        ChatMessageType.Broadcast));
+                    return;
+                }
+
                 // Activate
                 IsCharmActivated = true;
                 CharmAbilityRegistry.Apply(player, abilityId, true, CharmLevel ?? 1);
@@ -491,11 +549,11 @@ namespace ACE.Server.WorldObjects
                 };
             }
 
-            if (abilityId == CharmAbilityRegistry.PentaCastAbilityId)
+            if (abilityId == CharmAbilityRegistry.SplitCastAbilityId)
             {
                 return activating
-                    ? "Penta Cast Charm activated. Streak, Arc, and Bolt spells will target up to 5 distinct enemies simultaneously."
-                    : "Penta Cast Charm deactivated. Spells will cast normally.";
+                    ? "Split Cast Charm activated. Streak, Arc, and Bolt spells will split to target multiple distinct enemies simultaneously."
+                    : "Split Cast Charm deactivated. Spells will cast normally.";
             }
 
             if (abilityId == CharmAbilityRegistry.ExplosiveArrowCharmAbilityId)
@@ -517,12 +575,32 @@ namespace ACE.Server.WorldObjects
                     };
             }
 
-            if (abilityId == CharmAbilityRegistry.PrismaticStrikeAbilityId)
+            if (abilityId == CharmAbilityRegistry.OmnistrikeAbilityId)
             {
                 return activating
-                    ? "Prismatic Strike Charm activated. Your melee attacks will strike with the element or physical force your target is most vulnerable to."
-                    : "Prismatic Strike Charm deactivated. Attacks will deal damage normally.";
+                    ? "Omni Strike Charm activated. Your melee attacks will strike with the element or physical force your target is most vulnerable to."
+                    : "Omni Strike Charm deactivated. Attacks will deal damage normally.";
             }
+
+            if (abilityId == CharmAbilityRegistry.ForkAbilityId)
+            {
+                return activating
+                    ? level switch
+                    {
+                        1 => "Fork Charm activated. Your Streak, Arc, and Bolt spells will fork to nearby enemies on hit, dealing 50% damage.",
+                        2 => "Greater Fork Charm activated. Fork projectiles deal 75% damage.",
+                        3 => "Master Fork Charm activated. Fork projectiles deal full damage.",
+                        _ => $"Fork Charm (Level {level}) activated."
+                    }
+                    : level switch
+                    {
+                        1 => "Fork Charm deactivated.",
+                        2 => "Greater Fork Charm deactivated.",
+                        3 => "Master Fork Charm deactivated.",
+                        _ => "Fork Charm deactivated."
+                    };
+            }
+
 
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
             return activating ? $"{name} Level {level} activated." : $"{name} deactivated.";

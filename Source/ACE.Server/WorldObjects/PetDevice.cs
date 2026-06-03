@@ -692,8 +692,11 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            // verify summoning mastery
-            if (SummoningMastery != null && player.SummoningMastery != SummoningMastery)
+            // Mastery: essence/player PropertyInt 362; universal charm = bool 50038 (see docs/ADMIN_PET_SUMMON_CHARMS.md).
+            // global:: required — PetDevice.SummoningMastery property shadows ACE.Entity.Enum.SummoningMastery.
+            if (SummoningMastery != null && SummoningMastery != global::ACE.Entity.Enum.SummoningMastery.Undef
+                && player.SummoningMastery != SummoningMastery
+                && !(ServerConfig.pet_charm_universal_summoning_mastery_enabled.Value && player.HasUniversalSummoningMastery && CharmSettingsManager.UniversalSummoning.Enabled))
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be a {SummoningMastery} to use the {Name}", ChatMessageType.Broadcast));
                 return new ActivationResult(false);
@@ -1063,10 +1066,6 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            MotionStance? captureSkinCombatStance = null;
-            var baselineMotionTableId = pet.MotionTableId;
-            var baselineCombatTableDid = pet.CombatTableDID;
-
             // Monster Capture System - Apply visual overrides if set
             if (VisualOverrideSetup.HasValue)
             {
@@ -1247,8 +1246,6 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                if (pet is CombatPet combatPetForSync && IsCombatPetDevice())
-                    captureSkinCombatStance = TryApplyCaptureSkinCombatSync(combatPetForSync, player, wcid, baselineMotionTableId, baselineCombatTableDid);
             }
 
             var success = pet.Init(player, this);
@@ -1256,15 +1253,7 @@ namespace ACE.Server.WorldObjects
             if (success == true)
             {
                 if (pet is CombatPet combatPet)
-                {
-                    if (captureSkinCombatStance.HasValue)
-                        combatPet.SetCaptureSkinCombatStance(captureSkinCombatStance);
-
-                    if (VisualOverrideSetup.HasValue)
-                        combatPet.ReconfigureMeleeMotionDpsAfterCaptureSkin();
-
                     RefreshCombatPetEssenceDisplayNameForSummonedPet(combatPet, player);
-                }
                 else
                     TryNotifySummonerNameProperty(player);
             }
@@ -1778,16 +1767,32 @@ namespace ACE.Server.WorldObjects
             if (cost < 0)
                 return false;
 
-            if (cost == 0)
+            // Calculate per-tier discount
+            var discount = 0.0f;
+            if (CharmSettingsManager.EssenceRefill.Enabled
+                && player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.PetDevicePyrealAutoRefillAbilityId, out var tier))
+            {
+                discount = tier switch
+                {
+                    1 => CharmSettingsManager.EssenceRefill.T1,
+                    2 => CharmSettingsManager.EssenceRefill.T2,
+                    3 => CharmSettingsManager.EssenceRefill.T3,
+                    _ => 0.0f
+                };
+            }
+            discount = Math.Clamp(discount, 0.0f, 1.0f);
+            var finalCost = (int)Math.Max(0.0f, cost * (1.0f - discount));
+
+            if (finalCost == 0)
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(
                     "You restore one charge on your summoning essence at no cost.",
                     ChatMessageType.Broadcast));
             }
-            else if (!player.TrySpendPyreals(cost))
+            else if (!player.TrySpendPyreals(finalCost))
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"You need {cost:N0} pyreals to auto-replenish your summoning essence. You do not have enough pyreals.",
+                    $"You need {finalCost:N0} pyreals to auto-replenish your summoning essence. You do not have enough pyreals.",
                     ChatMessageType.Broadcast));
                 return false;
             }
@@ -1795,10 +1800,10 @@ namespace ACE.Server.WorldObjects
             Structure = 1;
             player.UpdateProperty(this, PropertyInt.Structure, Structure.Value);
 
-            if (cost > 0)
+            if (finalCost > 0)
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"You spend {cost:N0} pyreals to restore one charge on your summoning essence.",
+                    $"You spend {finalCost:N0} pyreals to restore one charge on your summoning essence.",
                     ChatMessageType.Broadcast));
             }
 

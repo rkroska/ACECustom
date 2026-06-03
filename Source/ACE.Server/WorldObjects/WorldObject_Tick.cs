@@ -383,7 +383,7 @@ namespace ACE.Server.WorldObjects
                         if (spellProjectile.ProjectileSource is Player playerCaster && !(playerCaster.GetProperty(PropertyBool.ClassicRingAoe) ?? false))
                         {
                             var multiplier = (float)(playerCaster.GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
-                            maxRange = Player.DefaultRingAoeRadius * multiplier;
+                            maxRange = SmartRingSettingsManager.Radius * multiplier;
                         }
                         else
                             maxRange = spellProjectile.Spell.BaseRangeConstant;

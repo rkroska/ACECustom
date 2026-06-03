@@ -394,13 +394,161 @@ namespace ACE.Server.WorldObjects
             });
         }
 
+        public void ApplyUltimateBlessings()
+        {
+            if (!CharmSettingsManager.AutoRebuff.Enabled)
+                return;
+
+            var currentTime = ACE.Common.Time.GetUnixTime();
+            var dispelLockoutActive = currentTime - LastDispelTimestamp < 180.0;
+            if (dispelLockoutActive)
+            {
+                var remainingSeconds = (int)Math.Ceiling(180.0 - (currentTime - LastDispelTimestamp));
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"You cannot use the Auto-Rebuff Charm while under a dispel lockout. Try again in {remainingSeconds}s.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var maxSpellLevel = 8;
+            // Make sure level 8s are installed in the world DB (fallback to 7 if missing)
+            if (DatabaseManager.World.GetCachedSpell((uint)SpellId.ArmorOther8) == null)
+                maxSpellLevel = 7;
+
+            var tySpell = typeof(SpellId);
+            List<BuffMessage> buffMessages = new List<BuffMessage>();
+
+            foreach (var spell in Buffs)
+            {
+                var spellNamPrefix = spell;
+                bool isBane = false;
+                if (spellNamPrefix.StartsWith("@"))
+                {
+                    isBane = true;
+                    spellNamPrefix = spellNamPrefix.Substring(1);
+                }
+
+                // Gems always target "Self" for buffs (Attributes, Vitals, Protections, Masteries)
+                string fullSpellEnumName = spellNamPrefix + ((isBane) ? string.Empty : "Self") + maxSpellLevel;
+                string fullSpellEnumNameAlt = spellNamPrefix + ((isBane) ? string.Empty : "Other") + maxSpellLevel;
+
+                uint spellID = 0;
+                if (Enum.TryParse(tySpell, fullSpellEnumName, out object parsedId))
+                {
+                    spellID = (uint)parsedId;
+                }
+                else if (Enum.TryParse(tySpell, fullSpellEnumNameAlt, out object parsedIdAlt))
+                {
+                    spellID = (uint)parsedIdAlt;
+                }
+                else
+                {
+                    continue;
+                }
+
+                var buffMsg = BuildBuffMessage(spellID);
+                if (buffMsg != null)
+                {
+                    buffMsg.Bane = isBane;
+
+                    // Enforce Option B: Check magic requirements to cast this spell
+                    var spellObj = buffMsg.Spell;
+                    var school = spellObj.School;
+
+                    // 1. Skill check: Magic School must be trained or specialized
+                    var skill = GetCreatureSkill(school);
+                    if (skill == null || skill.AdvancementClass < SkillAdvancementClass.Trained)
+                        continue;
+
+                    // 2. Foci / Augment check: Player must have focus or augment
+                    if (FociWCIDs.ContainsKey(school) && !HasFoci(school))
+                        continue;
+
+                    // 3. Spellbook check: Player must have learned the specific spell
+                    if (!SpellIsKnown(spellID))
+                        continue;
+
+                    buffMessages.Add(buffMsg);
+                }
+            }
+
+            // 1. Buff Player
+            var playerBuffs = buffMessages.Where(k => !k.Bane).ToList();
+            if (playerBuffs.Count > 0)
+            {
+                playerBuffs.ForEach(k => k.SetTargetPlayer(this));
+                // update client-side enchantments
+                Session?.Network?.EnqueueSend(playerBuffs.Select(k => k.SessionMessage).ToArray());
+
+                // Queue client-side effect scripts to stagger them sequentially
+                PendingStaggeredEvents.Clear();
+
+                var lifePrefixes = new[] { "Fire Protection", "Acid Protection", "Cold Protection", "Lightning Protection", "Bludgeon", "Blade Protection", "Piercing Protection", "Magic Resistance" };
+
+                var lifeVisuals = new List<GameMessageScript>();
+
+                foreach (var prefix in lifePrefixes)
+                {
+                    var buff = playerBuffs.FirstOrDefault(b => b.Spell.Name.Contains(prefix, StringComparison.OrdinalIgnoreCase));
+                    if (buff != null) lifeVisuals.Add(buff.LandblockMessage);
+                }
+
+                // Only enqueue slots for visuals that actually matched — no empty-slot churn
+                for (int i = 0; i < lifeVisuals.Count; i++)
+                {
+                    var evt = new StaggeredVisualEvent { BroadcastTimeOffset = i * 1.0 };
+                    evt.Visuals.Add(lifeVisuals[i]);
+                    PendingStaggeredEvents.Enqueue(evt);
+                }
+
+                StaggeredCascadeStartTime = ACE.Common.Time.GetUnixTime();
+                
+                // update server-side enchantments
+                var buffsForPlayer = playerBuffs.Select(k => k.Enchantment).ToList();
+                var lifeBuffs = buffsForPlayer.Where(k => k.Spell.School == MagicSchool.LifeMagic).ToList();
+                var critterBuffs = buffsForPlayer.Where(k => k.Spell.School == MagicSchool.CreatureEnchantment).ToList();
+                var itemBuffs = buffsForPlayer.Where(k => k.Spell.School == MagicSchool.ItemEnchantment).ToList();
+
+                lifeBuffs.ForEach(spl => CreateEnchantmentSilent(spl.Spell, this));
+                critterBuffs.ForEach(spl => CreateEnchantmentSilent(spl.Spell, this));
+                itemBuffs.ForEach(spl => CreateEnchantmentSilent(spl.Spell, this));
+            }
+
+            // 2. Cast Banes and Impen on all gear (both equipped and in all bags recursively)
+            var itemBuffsList = buffMessages.Where(k => k.Bane).ToList();
+            if (itemBuffsList.Count > 0)
+            {
+                var allGear = GetAllPossessionsDeep()
+                    .Where(item => (item.WeenieType == WeenieType.Clothing || item.IsShield) && item.IsEnchantable)
+                    .ToList();
+
+                foreach (var itemBuff in itemBuffsList)
+                {
+                    foreach (var item in allGear)
+                    {
+                        CreateEnchantmentSilent(itemBuff.Spell, item);
+                    }
+                }
+            }
+
+            // Send chat confirmation immediately
+            bool appliedAny = playerBuffs.Count > 0 || itemBuffsList.Count > 0;
+            if (appliedAny)
+            {
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat("You feel a surge of ultimate blessings flow through you and all your gear!", ChatMessageType.Broadcast));
+            }
+            else
+            {
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat("The Auto-Rebuff Charm is active, but you do not meet the magic requirements (trained school, focus/augment, learned spell) for any of its buffs.", ChatMessageType.Broadcast));
+            }
+        }
+
         private void CreateEnchantmentSilent(Spell spell, WorldObject target)
         {
             var addResult = target.EnchantmentManager.Add(spell, this, null);
 
             if (target is Player targetPlayer)
             {
-                targetPlayer.Session.Network.EnqueueSend(new GameEventMagicUpdateEnchantment(targetPlayer.Session, new Enchantment(targetPlayer, addResult.Enchantment)));
+                // Use safe navigation: player may disconnect mid-loop (e.g., during multi-item bane application)
+                targetPlayer.Session?.Network?.EnqueueSend(new GameEventMagicUpdateEnchantment(targetPlayer.Session, new Enchantment(targetPlayer, addResult.Enchantment)));
 
                 targetPlayer.HandleSpellHooks(spell);
             }
@@ -582,8 +730,10 @@ namespace ACE.Server.WorldObjects
                     break;
             }
 
+            // Use GetAllPossessionsDeep() so Focus Stones inside nested bags are detected.
+            // Inventory.Values only covers the top-level bag — a foci in a bag-in-a-bag would be invisible.
             var wcid = FociWCIDs[school];
-            return Inventory.Values.FirstOrDefault(i => i.WeenieClassId == wcid) != null;
+            return GetAllPossessionsDeep().FirstOrDefault(i => i.WeenieClassId == wcid) != null;
         }
 
         public void HandleSpellHooks(Spell spell)
@@ -692,6 +842,92 @@ namespace ACE.Server.WorldObjects
                     }
                 }
             }
+        }
+
+        // ── Auto-Rebuff Charm Support ──────────────────────────────────────────
+        public bool HasAutoRebuffCharm { get; set; }
+        public double LastDispelTimestamp { get; set; }
+        public double LastAutoRebuffCheckTime { get; set; }
+        public bool IsDispelMessageTriggered { get; set; }
+
+        public class StaggeredVisualEvent
+        {
+            public double BroadcastTimeOffset { get; set; }
+            public List<GameMessageScript> Visuals { get; } = new();
+        }
+
+        public Queue<StaggeredVisualEvent> PendingStaggeredEvents { get; } = new();
+        public double StaggeredCascadeStartTime { get; set; }
+
+        /// <summary>
+        /// Returns true if any buff the player qualifies for (per Option B: trained skill, foci,
+        /// spellbook) is either completely missing from their enchantment registry, or has less
+        /// than 60 minutes (3600s) remaining. Banes are excluded — they are re-applied
+        /// automatically whenever the player buff scan triggers a full rebuff.
+        /// Returns false only when every qualifying buff is present and has >60 min remaining.
+        /// </summary>
+        public bool NeedsRebuff()
+        {
+            var maxSpellLevel = 8;
+            if (DatabaseManager.World.GetCachedSpell((uint)SpellId.ArmorOther8) == null)
+                maxSpellLevel = 7;
+
+            var tySpell = typeof(SpellId);
+
+            foreach (var spellPrefix in Buffs)
+            {
+                // Skip banes — they target gear items, not the player.
+                // Banes are re-applied in the same ApplyUltimateBlessings() call when needed.
+                if (spellPrefix.StartsWith("@"))
+                    continue;
+
+                // Resolve the spell ID the same way ApplyUltimateBlessings does
+                string fullEnumName = spellPrefix + "Self"  + maxSpellLevel;
+                string altEnumName  = spellPrefix + "Other" + maxSpellLevel;
+
+                uint spellID = 0;
+                if (Enum.TryParse(tySpell, fullEnumName, out object parsed))
+                    spellID = (uint)parsed;
+                else if (Enum.TryParse(tySpell, altEnumName, out object parsedAlt))
+                    spellID = (uint)parsedAlt;
+                else
+                    continue;
+
+                // Resolve the spell object to check school
+                var spell = new Spell(spellID);
+                if (spell.NotFound) continue;
+
+                var school = spell.School;
+
+                // Option B: only consider spells the player is qualified to receive
+                var skill = GetCreatureSkill(school);
+                if (skill == null || skill.AdvancementClass < SkillAdvancementClass.Trained)
+                    continue;
+
+                if (FociWCIDs.ContainsKey(school) && !HasFoci(school))
+                    continue;
+
+                if (!SpellIsKnown(spellID))
+                    continue;
+
+                // Check if the buff is missing entirely or expiring within 60 minutes
+                var entry = EnchantmentManager.GetEnchantment(spellID);
+                if (entry == null)
+                    return true; // Missing — needs rebuff
+
+                // Only evaluate expiration for spells with a positive duration.
+                // Infinite or permanent enchantments (Duration <= 0, e.g. -1.0) never expire.
+                if (entry.Duration > 0.0)
+                {
+                    // In ACE, StartTime counts downwards from 0 to -Duration, so remaining time is entry.Duration + entry.StartTime.
+                    var remaining = entry.Duration + entry.StartTime;
+                    if (remaining <= 3600.0 && remaining < entry.Duration - 60.0)
+                        return true; // Expiring within 60 minutes — needs rebuff
+                }
+            }
+
+            // If no qualifying buffs exist at all (fully gated by Option B), never auto-rebuff
+            return false;
         }
     }
 }

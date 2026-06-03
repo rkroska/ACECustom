@@ -782,7 +782,19 @@ namespace ACE.Server.WorldObjects.Managers
                 WorldObject.ChangesDetected = true;
 
             if (Player != null)
-                Player.Session.Network.EnqueueSend(new GameEventMagicDispelEnchantment(Player.Session, (ushort)entry.SpellId, entry.LayerId));
+            {
+                var spell = new Spell(entry.SpellId);
+                if (Player.HasAutoRebuffCharm && CharmSettingsManager.AutoRebuff.Enabled && !spell.NotFound && spell.IsBeneficial)
+                {
+                    if (!Player.IsDispelMessageTriggered)
+                    {
+                        Player.IsDispelMessageTriggered = true;
+                        Player.Session?.Network?.EnqueueSend(new GameMessageSystemChat("You have been dispelled! The Auto-Rebuff Charm will not auto-rebuff you until 3 minutes after your last dispel.", ChatMessageType.Broadcast));
+                    }
+                    Player.LastDispelTimestamp = Time.GetUnixTime();
+                }
+                Player.Session?.Network?.EnqueueSend(new GameEventMagicDispelEnchantment(Player.Session, (ushort)entry.SpellId, entry.LayerId));
+            }
         }
 
         /// <summary>
@@ -799,7 +811,24 @@ namespace ACE.Server.WorldObjects.Managers
                     WorldObject.ChangesDetected = true;
             }
             if (Player != null)
-                Player.Session.Network.EnqueueSend(new GameEventMagicDispelMultipleEnchantments(Player.Session, entries));
+            {
+                var removedBeneficial = entries.Any(e =>
+                {
+                    var spell = new Spell(e.SpellId);
+                    return !spell.NotFound && spell.IsBeneficial;
+                });
+
+                if (Player.HasAutoRebuffCharm && CharmSettingsManager.AutoRebuff.Enabled && removedBeneficial)
+                {
+                    if (!Player.IsDispelMessageTriggered)
+                    {
+                        Player.IsDispelMessageTriggered = true;
+                        Player.Session?.Network?.EnqueueSend(new GameMessageSystemChat("You have been dispelled! The Auto-Rebuff Charm will not auto-rebuff you until 3 minutes after your last dispel.", ChatMessageType.Broadcast));
+                    }
+                    Player.LastDispelTimestamp = Time.GetUnixTime();
+                }
+                Player.Session?.Network?.EnqueueSend(new GameEventMagicDispelMultipleEnchantments(Player.Session, entries));
+            }
         }
 
         /// <summary>

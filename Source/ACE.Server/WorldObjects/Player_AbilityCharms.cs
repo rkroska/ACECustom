@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ACE.Server.WorldObjects
 {
@@ -98,34 +99,17 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        /// <summary>
-        /// Recursively searches for a charm granting the specified ability within a world object.
-        /// If the object is a container, it scans all contents.
-        /// </summary>
-        public static WorldObject FindCharmInObject(WorldObject obj, int abilityId)
-        {
-            if (obj.IsAbilityCharm && obj.CharmGrantsAbility == abilityId)
-                return obj;
-
-            if (obj is Container container)
-            {
-                foreach (var child in container.Inventory.Values)
-                {
-                    var found = FindCharmInObject(child, abilityId);
-                    if (found != null) return found;
-                }
-            }
-
-            return null;
-        }
 
         /// <summary>
         /// Returns all items in the player's possession, recursively descending into nested containers.
         /// Unlike <see cref="GetAllPossessions"/>, this includes items inside bags-within-bags.
+        /// Items are yielded exactly once — no duplicates even for multi-level nesting.
         /// </summary>
         public IEnumerable<WorldObject> GetAllPossessionsDeep()
         {
-            foreach (var item in GetAllPossessions())
+            // Yield every top-level item (main pack slots + side pack slots themselves)
+            // then recurse into each container to pick up nested contents.
+            foreach (var item in Inventory.Values)
             {
                 yield return item;
 
@@ -135,7 +119,12 @@ namespace ACE.Server.WorldObjects
                         yield return nested;
                 }
             }
+
+            // Equipped items (weapons, armor, etc.) — Distinct() in case of dual-ref slots.
+            foreach (var item in EquippedObjects.Values.Distinct())
+                yield return item;
         }
+
 
         private static IEnumerable<WorldObject> GetContainerContentsDeep(Container container)
         {

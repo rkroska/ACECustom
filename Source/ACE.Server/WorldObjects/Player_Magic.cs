@@ -25,6 +25,8 @@ namespace ACE.Server.WorldObjects
         private const uint SpellId_RingOfAgony     = 2673u;
         private const uint SpellId_FlameRing       = (uint)ACE.Entity.Enum.SpellId.FlameRing;
 
+        private readonly Dictionary<int, int> _explosiveArrowProcsPerAttack = new();
+
         // ── Explosive Arrow proc ring spells (Tier II, one per damage type) ────
         private const uint SpellId_NuhmudiraSpinesII   = 6192u; // Pierce
         private const uint SpellId_HorizonsBladesII    = 6190u; // Slash
@@ -1173,10 +1175,41 @@ namespace ACE.Server.WorldObjects
         /// Fires Ring of Exploding Magma as a server-side radius AOE centered on the caster,
         /// mirroring the ring spell AOE system used by Rocky Shrapnel / Ring of Agony.
         /// </summary>
-        internal void TryApplyExplosiveArrowProc(Creature target, float arrowDamage, DamageType arrowDamageType)
+        internal void TryApplyExplosiveArrowProc(Creature target, float arrowDamage, DamageType arrowDamageType, WorldObject projectile = null)
         {
+            // Global kill-switch — /charm explosivearrow false|off disables the charm server-wide
+            if (!CharmSettingsManager.ExplosiveArrow.Enabled)
+                return;
+
             if (!HasExplosiveArrowCharm)
                 return;
+
+            var ea = CharmSettingsManager.ExplosiveArrow;
+
+            // Enforce max arrows per shot limit if projectile has an attack sequence
+            if (projectile != null && projectile.ProjectileAttackSequence.HasValue)
+            {
+                var seq = projectile.ProjectileAttackSequence.Value;
+                _explosiveArrowProcsPerAttack.TryGetValue(seq, out var count);
+
+                if (count >= ea.MaxArrows)
+                    return; // Reached limit for this shot!
+
+                // Keep the dictionary small: prune sequences older than the current attack sequence - 2
+                if (_explosiveArrowProcsPerAttack.Count > 10)
+                {
+                    var keysToRemove = new List<int>();
+                    foreach (var key in _explosiveArrowProcsPerAttack.Keys)
+                    {
+                        if (key < AttackSequence - 2)
+                            keysToRemove.Add(key);
+                    }
+                    foreach (var key in keysToRemove)
+                        _explosiveArrowProcsPerAttack.Remove(key);
+                }
+
+                _explosiveArrowProcsPerAttack[seq] = count + 1;
+            }
 
             var spellId = GetRingSpellForDamageType(arrowDamageType);
             if (spellId == 0) return; // unsupported damage type — no matching ring spell
@@ -1186,28 +1219,29 @@ namespace ACE.Server.WorldObjects
             ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ExplosiveArrowCharmAbilityId, out var level);
             if (level < 1) level = 1;
 
+            // Read tier multipliers from CharmSettingsManager (tunable at runtime via /charm explosivearrow)
             float minMult, maxMult;
             if (level == 2)
             {
-                minMult = 0.65f;
-                maxMult = 0.85f;
+                minMult = ea.T2Min;
+                maxMult = ea.T2Max;
             }
             else if (level == 3)
             {
-                minMult = 0.90f;
-                maxMult = 1.10f;
+                minMult = ea.T3Min;
+                maxMult = ea.T3Max;
             }
             else
             {
-                minMult = 0.40f;
-                maxMult = 0.60f;
+                minMult = ea.T1Min;
+                maxMult = ea.T1Max;
             }
 
             var flatDmg = (float)(arrowDamage * ThreadSafeRandom.Next(minMult, maxMult));
 
-            // 1 second delay between arrow hit and ring detonation.
+            // Delay between arrow hit and ring detonation (tunable via /charm explosivearrow delay <seconds>)
             var actionChain = new ActionChain();
-            actionChain.AddDelaySeconds(1.0);
+            actionChain.AddDelaySeconds(ea.Delay);
             actionChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () =>
             {
                 // Guard: player or target may have died/logged out/been destroyed during the delay.
@@ -1217,8 +1251,8 @@ namespace ACE.Server.WorldObjects
                 // so the ring always detonates where the target actually is at fire time.
                 CreateSpellProjectiles(spell, null, null, false, true, 0, originOverride: target);
                 ApplyRingSpellAreaDamage(spell, target.Location,
-                    radiusOverride: 15f,
-                    heightOverride: 10f,
+                    radiusOverride: ea.Radius,
+                    heightOverride: ea.Height,
                     flatDamage:     flatDmg,
                     scanOrigin:     this,    // Scan the player's reliable ObjMaint (always populated) instead of target's (empty on static dummies like Winning Idol)
                     fromProc:       true);   // CR-4: suppress War Magic proficiency tick for procs
@@ -1237,10 +1271,11 @@ namespace ACE.Server.WorldObjects
             if (spell.Id != SpellId_TectonicRiftsI && spell.Id != SpellId_TectonicRiftsII)
                 return spell;
 
-            if (HasShrapnelCharm && SpellIsKnown(SpellId_RockyShrapnel))
+            // Global kill-switch checks — /charm shrapnel false|off or /charm agony false|off
+            if (HasShrapnelCharm && CharmSettingsManager.Shrapnel.Enabled && SpellIsKnown(SpellId_RockyShrapnel))
                 return new Spell(SpellId_RockyShrapnel);   // Rocky Shrapnel — priority
 
-            if (HasAgonyCharm && SpellIsKnown(SpellId_RingOfAgony))
+            if (HasAgonyCharm && CharmSettingsManager.Agony.Enabled && SpellIsKnown(SpellId_RingOfAgony))
                 return new Spell(SpellId_RingOfAgony);     // Ring of Unspeakable Agony — fallback
 
             return spell;
@@ -1453,7 +1488,7 @@ namespace ACE.Server.WorldObjects
                 return;
 
             // ILT: Infinite Casting Stone — passive bypass while charm is in inventory
-            if (HasInfiniteCasting)
+            if (HasInfiniteCasting && CharmSettingsManager.InfiniteCasting.Enabled)
                 return;
 
             var burned = spell.TryBurnComponents(this);
@@ -1511,7 +1546,7 @@ namespace ACE.Server.WorldObjects
                 return true;
 
             // ILT: Infinite Casting Stone — passive bypass while charm is in inventory
-            if (HasInfiniteCasting)
+            if (HasInfiniteCasting && CharmSettingsManager.InfiniteCasting.Enabled)
                 return true;
 
             var requiredComps = spell.Formula.GetRequiredComps();
@@ -1745,10 +1780,47 @@ namespace ACE.Server.WorldObjects
             var center = centerOverride ?? Location;
             if (center == null) return;
 
+            // Determine proc count based on spell ID and chance
+            var procCount = 1;
+            if (spell.Id == SpellId_RockyShrapnel)
+            {
+                var roll = ThreadSafeRandom.Next(0.0f, 1.0f);
+                var tripleChance = CharmSettingsManager.Shrapnel.TripleChance;
+                var doubleChance = CharmSettingsManager.Shrapnel.DoubleChance;
+                if (roll < tripleChance)
+                    procCount = 3;
+                else if (roll < tripleChance + doubleChance)
+                    procCount = 2;
+            }
+            else if (spell.Id == SpellId_RingOfAgony)
+            {
+                var roll = ThreadSafeRandom.Next(0.0f, 1.0f);
+                var tripleChance = CharmSettingsManager.Agony.TripleChance;
+                var doubleChance = CharmSettingsManager.Agony.DoubleChance;
+                if (roll < tripleChance)
+                    procCount = 3;
+                else if (roll < tripleChance + doubleChance)
+                    procCount = 2;
+            }
+            else if (!fromProc)
+            {
+                var roll = ThreadSafeRandom.Next(0.0f, 1.0f);
+                var tripleChance = SmartRingSettingsManager.TripleChance;
+                var doubleChance = SmartRingSettingsManager.DoubleChance;
+                if (roll < tripleChance)
+                    procCount = 3;
+                else if (roll < tripleChance + doubleChance)
+                    procCount = 2;
+            }
+
             // Ring radius — radiusOverride used by proc paths (e.g. Explosive Arrow); otherwise default scaled by charm.
             var radius = radiusOverride > 0f
                 ? radiusOverride
-                : DefaultRingAoeRadius * (float)(GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
+                : (spell.Id == SpellId_RockyShrapnel
+                    ? CharmSettingsManager.Shrapnel.Radius
+                    : (spell.Id == SpellId_RingOfAgony
+                        ? CharmSettingsManager.Agony.Radius
+                        : SmartRingSettingsManager.Radius * (float)(GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f)));
 
             var attackSkill   = GetCreatureSkill(spell.School);
             var magicSkill    = attackSkill.Current;
@@ -1781,7 +1853,13 @@ namespace ACE.Server.WorldObjects
                 if (creature.Location == null)            continue;
 
                 // Height and distance gate — heightOverride used by proc paths.
-                var heightCap = heightOverride > 0f ? heightOverride : RingAoeMaxHeightDelta;
+                var heightCap = heightOverride > 0f
+                    ? heightOverride
+                    : (spell.Id == SpellId_RockyShrapnel
+                        ? CharmSettingsManager.Shrapnel.Height
+                        : (spell.Id == SpellId_RingOfAgony
+                            ? CharmSettingsManager.Agony.Height
+                            : SmartRingSettingsManager.Height));
                 var dz = Math.Abs(center.PositionZ - creature.Location.PositionZ);
                 if (dz > heightCap) continue;
                 if (center.Distance2D(creature.Location) > radius) continue;
@@ -1792,185 +1870,178 @@ namespace ACE.Server.WorldObjects
                 var pkError = CheckPKStatusVsTarget(creature, spell);
                 if (pkError != null) continue;
 
-                // Resist check — sends the resist message automatically.
-                var resisted = TryResistSpell(creature, spell, null, true);
-
                 // Notify the creature that it was attacked (triggers aggro) whether or not it resisted.
                 if (creature is not Player)
                     OnAttackMonster(creature, spell.IsHarmful);
 
-                if (resisted) { dbgResist++; continue; }
-
-                // --- 1. Intercept Enchantment Projectiles (e.g., debuffs like Shroud of Darkness) ---
-                if (spell.MetaSpellType == ACE.Entity.Enum.SpellType.EnchantmentProjectile)
+                // Run the loop for multi-procs
+                for (var procIdx = 0; procIdx < procCount; procIdx++)
                 {
-                    CreateEnchantment(creature, this, weapon, spell, false, fromProc);
-                    DoSpellEffects(spell, this, creature, true);
+                    if (!creature.IsAlive) break; // target died on a previous proc!
+
+                    // Resist check — sends the resist message automatically.
+                    var resisted = TryResistSpell(creature, spell, null, true);
+                    if (resisted) { dbgResist++; continue; }
+
+                    // --- 1. Intercept Enchantment Projectiles (e.g., debuffs like Shroud of Darkness) ---
+                    if (spell.MetaSpellType == ACE.Entity.Enum.SpellType.EnchantmentProjectile)
+                    {
+                        CreateEnchantment(creature, this, weapon, spell, false, fromProc);
+                        DoSpellEffects(spell, this, creature, true);
+                        dbgHit++;
+                        continue;
+                    }
+
+                    // ── War-magic damage calculation (exact parity with SpellProjectile.CalculateDamage) ──
+                    var criticalHit      = false;
+                    var critDamageBonus  = 0.0f;
+                    var skillBonus       = 0.0f;
+                    var isPvP            = creature is Player;
+
+                    // Crit chance — 5% base + player crit rating, mitigated by target resist rating.
+                    var critChance = GetWeaponMagicCritFrequency(weapon, this as Creature, attackSkill, creature);
+                    if (ThreadSafeRandom.Next(0.0f, 1.0f) < critChance)
+                    {
+                        // AugmentationCriticalDefense check (PvP only — 5% per aug rank vs player attacker).
+                        var critDefended = false;
+                        if (creature is Player tgtPlayer && tgtPlayer.AugmentationCriticalDefense > 0)
+                        {
+                            var critDefChance = tgtPlayer.AugmentationCriticalDefense * 0.05f; // sourcePlayer != null → 5%
+                            if (critDefChance > ThreadSafeRandom.Next(0.0f, 1.0f))
+                                critDefended = true;
+                        }
+
+                        if (!critDefended)
+                        {
+                            criticalHit = true;
+                            // PvE: +50% of MaxDamage.  PvP: +50% of MinDamage.
+                            critDamageBonus  = isPvP ? spell.MinDamage * 0.5f : spell.MaxDamage * 0.5f;
+                            critDamageBonus *= GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
+                        }
+                    }
+
+                    // Skill-based damage bonus.
+                    if (magicSkill > spell.Power)
+                        skillBonus = spell.MinDamage * (magicSkill - spell.Power) / 1000.0f;
+
+                    long baseDamage = ThreadSafeRandom.Next(spell.MinDamage, spell.MaxDamage);
+
+                    // Luminance War augment.
+                    if (LuminanceAugmentWarCount.HasValue && LuminanceAugmentWarCount >= 1)
+                        baseDamage += LuminanceAugmentWarCount.Value;
+
+                    // Elemental modifier (wand element vs target).
+                    var elementalMod = GetCasterElementalDamageModifier(weapon, this as Creature, creature, spell.DamageType);
+
+                    // Slayer modifier — respects wand/creature slayer properties.
+                    var slayerMod = GetWeaponCreatureSlayerModifier(weapon, this as Creature, creature);
+
+                    // Weapon resistance mod — applies rending on wand to target resistance.
+                    var weaponResistanceMod = GetWeaponResistanceModifier(weapon, this as Creature, attackSkill, spell.DamageType);
+                    var resistanceMod = (float)Math.Max(0.0f, creature.GetResistanceMod(resistanceType, this, weapon, weaponResistanceMod));
+
+                    // Void PvP modifier (matches SpellProjectile line ~602).
+                    if (isPvP && spell.DamageType == DamageType.Nether)
+                        resistanceMod *= (float)ServerConfig.void_pvp_modifier.Value;
+
+                    // Absorb mod — Aegis shield / magic-absorbing items on target.
+                    // Uses caster position as directional source (ring radiates from caster).
+                    var absorbMod = SpellProjectile.GetAbsorbMod(this, creature);
+                    if (isPvP && (creature.CombatMode == CombatMode.Melee || creature.CombatMode == CombatMode.Missile))
+                    {
+                        // Aegis is 72% effective in PvP (Forces of Nature patch).
+                        absorbMod  = 1 - absorbMod;
+                        absorbMod *= 0.72f;
+                        absorbMod  = 1 - absorbMod;
+                    }
+
+                    // Damage selection:
+                    var finalDamage = flatDamage > 0f
+                        ? flatDamage
+                        : (baseDamage + critDamageBonus + skillBonus) * elementalMod * slayerMod * resistanceMod * absorbMod * attribBonus;
+
+                    // Sneak attack & heritage mods (mirrors SpellProjectile.DamageTarget).
+                    if (flatDamage <= 0f)
+                    {
+                        var sneakAttackMod = GetSneakAttackMod(creature);
+                        var damageRatingMod = Creature.AdditiveCombine(baseDamageRatingMod, heritageMod, sneakAttackMod);
+
+                        var damageResistRatingMod = creature.GetDamageResistRatingMod(CombatType.Magic);
+
+                        if (criticalHit)
+                        {
+                            var critDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetCritDamageResistRating());
+
+                            damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
+                            damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, critDamageResistRatingMod);
+                        }
+
+                        if (isPvP)
+                        {
+                            var pkDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetPKDamageResistRating());
+
+                            damageRatingMod = Creature.AdditiveCombine(damageRatingMod, pkDamageRatingMod);
+                            damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, pkDamageResistRatingMod);
+                        }
+
+                        finalDamage *= damageRatingMod * damageResistRatingMod;
+                    }
+
+                    // Apply enrage damage reduction for the defender.
+                    if (creature.IsEnraged)
+                    {
+                        var enrageReduction = creature.EnrageDamageReduction ?? 0.0f;
+                        finalDamage *= (1.0f - enrageReduction);
+                    }
+
+                    // CombatPet mitigation — extra spell-only damage reduction from owner's summon aug.
+                    if (finalDamage > 0 && spell.IsHarmful && creature is CombatPet combatPet)
+                    {
+                        var petMit = combatPet.GetSpellProjectileDamageTakenMultiplier();
+                        if (petMit < 1.0f) finalDamage *= petMit;
+                    }
+
+                    if (finalDamage <= 0) continue;
+
+                    // --- 2. Cloak Damage Reduction Proc ---
+                    var equippedCloak = creature.EquippedCloak;
+                    var percent = finalDamage / creature.Health.MaxValue;
+
+                    if (equippedCloak != null && Cloak.HasDamageProc(equippedCloak) && Cloak.RollProc(equippedCloak, percent))
+                    {
+                        var reducedDamage = Cloak.GetReducedAmount(this, finalDamage);
+                        Cloak.ShowMessage(creature, this, finalDamage, reducedDamage);
+                        finalDamage = reducedDamage;
+                        percent = finalDamage / creature.Health.MaxValue;
+                    }
+
+                    creature.TakeDamage(this, spell.DamageType, finalDamage, criticalHit);
+
+                    // Only send "You hit X for Y" if the target survived
+                    if (creature.IsAlive)
+                    {
+                        var displayAmt  = (uint)Math.Round(finalDamage);
+                        var amtStr      = Creature.FormatDamage(displayAmt, DamageNumberFormat);
+                        var pct         = (float)displayAmt / creature.Health.MaxValue;
+                        string verb = null, plural = null;
+                        Strings.GetAttackVerb(spell.DamageType, pct, ref verb, ref plural);
+                        var critMsg     = criticalHit ? "Critical hit! " : "";
+                        var attackerMsg = $"{critMsg}You {verb} {creature.Name} for {amtStr} points with {spell.Name}.";
+                        if (!SquelchManager.Squelches.Contains(creature, ACE.Entity.Enum.ChatMessageType.Magic))
+                            Session?.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ACE.Entity.Enum.ChatMessageType.Magic));
+
+                        // --- 3. Cloak Spell Proc ---
+                        if (!fromProc && equippedCloak != null && Cloak.HasProcSpell(equippedCloak))
+                        {
+                            Cloak.TryProcSpell(creature, this, equippedCloak, percent);
+                        }
+                    }
+
                     dbgHit++;
-                    continue;
                 }
-
-                // ── War-magic damage calculation (exact parity with SpellProjectile.CalculateDamage) ──
-                var criticalHit      = false;
-                var critDamageBonus  = 0.0f;
-                var skillBonus       = 0.0f;
-                var isPvP            = creature is Player;
-
-                // Crit chance — 5% base + player crit rating, mitigated by target resist rating.
-                var critChance = GetWeaponMagicCritFrequency(weapon, this as Creature, attackSkill, creature);
-                if (ThreadSafeRandom.Next(0.0f, 1.0f) < critChance)
-                {
-                    // AugmentationCriticalDefense check (PvP only — 5% per aug rank vs player attacker).
-                    var critDefended = false;
-                    if (creature is Player tgtPlayer && tgtPlayer.AugmentationCriticalDefense > 0)
-                    {
-                        var critDefChance = tgtPlayer.AugmentationCriticalDefense * 0.05f; // sourcePlayer != null → 5%
-                        if (critDefChance > ThreadSafeRandom.Next(0.0f, 1.0f))
-                            critDefended = true;
-                    }
-
-                    if (!critDefended)
-                    {
-                        criticalHit = true;
-                        // PvE: +50% of MaxDamage.  PvP: +50% of MinDamage.
-                        critDamageBonus  = isPvP ? spell.MinDamage * 0.5f : spell.MaxDamage * 0.5f;
-                        critDamageBonus *= GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
-                    }
-                }
-
-                // Skill-based damage bonus.
-                if (magicSkill > spell.Power)
-                    skillBonus = spell.MinDamage * (magicSkill - spell.Power) / 1000.0f;
-
-                long baseDamage = ThreadSafeRandom.Next(spell.MinDamage, spell.MaxDamage);
-
-                // Luminance War augment.
-                if (LuminanceAugmentWarCount.HasValue && LuminanceAugmentWarCount >= 1)
-                    baseDamage += LuminanceAugmentWarCount.Value;
-
-                // Elemental modifier (wand element vs target).
-                var elementalMod = GetCasterElementalDamageModifier(weapon, this as Creature, creature, spell.DamageType);
-
-                // Slayer modifier — respects wand/creature slayer properties.
-                var slayerMod = GetWeaponCreatureSlayerModifier(weapon, this as Creature, creature);
-
-                // Weapon resistance mod — applies rending on wand to target resistance.
-                var weaponResistanceMod = GetWeaponResistanceModifier(weapon, this as Creature, attackSkill, spell.DamageType);
-                var resistanceMod = (float)Math.Max(0.0f, creature.GetResistanceMod(resistanceType, null, null, weaponResistanceMod));
-
-                // Void PvP modifier (matches SpellProjectile line ~602).
-                if (isPvP && spell.DamageType == DamageType.Nether)
-                    resistanceMod *= (float)ServerConfig.void_pvp_modifier.Value;
-
-                // Absorb mod — Aegis shield / magic-absorbing items on target.
-                // Uses caster position as directional source (ring radiates from caster).
-                var absorbMod = SpellProjectile.GetAbsorbMod(this, creature);
-                if (isPvP && (creature.CombatMode == CombatMode.Melee || creature.CombatMode == CombatMode.Missile))
-                {
-                    // Aegis is 72% effective in PvP (Forces of Nature patch).
-                    absorbMod  = 1 - absorbMod;
-                    absorbMod *= 0.72f;
-                    absorbMod  = 1 - absorbMod;
-                }
-
-                // Damage selection:
-                // • flatDamage path (Explosive Arrow proc): pure percentage of the triggering arrow hit.
-                //   Resistances and absorb are intentionally NOT applied — the proc damage is an extension
-                //   of the arrow's physical impact, not an independent magic attack. The arrow already
-                //   penetrated the target's defenses; the elemental ring reflects that, not the target's
-                //   magic resistance or shield.
-                // • War-magic path: full crit/skill/attribute/resistance/absorb scaling as normal.
-                var finalDamage = flatDamage > 0f
-                    ? flatDamage
-                    : (baseDamage + critDamageBonus + skillBonus) * elementalMod * slayerMod * resistanceMod * absorbMod * attribBonus;
-
-                // Sneak attack & heritage mods (mirrors SpellProjectile.DamageTarget).
-                if (flatDamage <= 0f)
-                {
-                    var sneakAttackMod = GetSneakAttackMod(creature);
-                    var damageRatingMod = Creature.AdditiveCombine(baseDamageRatingMod, heritageMod, sneakAttackMod);
-
-                    var damageResistRatingMod = creature.GetDamageResistRatingMod(CombatType.Magic);
-
-                    if (criticalHit)
-                    {
-                        var critDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetCritDamageResistRating());
-
-                        damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
-                        damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, critDamageResistRatingMod);
-                    }
-
-                    if (isPvP)
-                    {
-                        var pkDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetPKDamageResistRating());
-
-                        damageRatingMod = Creature.AdditiveCombine(damageRatingMod, pkDamageRatingMod);
-                        damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, pkDamageResistRatingMod);
-                    }
-
-                    finalDamage *= damageRatingMod * damageResistRatingMod;
-                }
-
-                // Apply enrage damage reduction for the defender.
-                if (creature.IsEnraged)
-                {
-                    var enrageReduction = creature.EnrageDamageReduction ?? 0.0f;
-                    finalDamage *= (1.0f - enrageReduction);
-                }
-
-                // CombatPet mitigation — extra spell-only damage reduction from owner's summon aug.
-                // Vanilla also gates this on pet_combat_summon_aug_spell_mitigation_players_only; since
-                // ring AOE is always cast by a Player, sourcePlayer != null is unconditionally true here.
-                if (finalDamage > 0 && spell.IsHarmful && creature is CombatPet combatPet)
-                {
-                    var petMit = combatPet.GetSpellProjectileDamageTakenMultiplier();
-                    if (petMit < 1.0f) finalDamage *= petMit;
-                }
-
-                if (finalDamage <= 0) continue;
-
-                // --- 2. Cloak Damage Reduction Proc ---
-                var equippedCloak = creature.EquippedCloak;
-                var percent = finalDamage / creature.Health.MaxValue;
-
-                if (equippedCloak != null && Cloak.HasDamageProc(equippedCloak) && Cloak.RollProc(equippedCloak, percent))
-                {
-                    var reducedDamage = Cloak.GetReducedAmount(this, finalDamage);
-                    Cloak.ShowMessage(creature, this, finalDamage, reducedDamage);
-                    finalDamage = reducedDamage;
-                    percent = finalDamage / creature.Health.MaxValue;
-                }
-
-                creature.TakeDamage(this, spell.DamageType, finalDamage, criticalHit);
-
-                // Only send "You hit X for Y" if the target survived — mirrors SpellProjectile.DamageTarget
-                // which gates the attacker message on target.IsAlive (line 920).
-                // On a kill, TakeDamage already sent the quest counter and overkill message.
-                if (creature.IsAlive)
-                {
-                    var displayAmt  = (uint)Math.Round(finalDamage);
-                    var amtStr      = Creature.FormatDamage(displayAmt, DamageNumberFormat);
-                    var pct         = (float)displayAmt / creature.Health.MaxValue;
-                    string verb = null, plural = null;
-                    Strings.GetAttackVerb(spell.DamageType, pct, ref verb, ref plural);
-                    var critMsg     = criticalHit ? "Critical hit! " : "";
-                    var attackerMsg = $"{critMsg}You {verb} {creature.Name} for {amtStr} points with {spell.Name}.";
-                    if (!SquelchManager.Squelches.Contains(creature, ACE.Entity.Enum.ChatMessageType.Magic))
-                        Session?.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ACE.Entity.Enum.ChatMessageType.Magic));
-
-                    // --- 3. Cloak Spell Proc ---
-                    if (!fromProc && equippedCloak != null && Cloak.HasProcSpell(equippedCloak))
-                    {
-                        Cloak.TryProcSpell(creature, this, equippedCloak, percent);
-                    }
-                }
-
-                dbgHit++;
             }
 
             // Award one proficiency tick for the cast if at least one target was hit.
-            // Intentionally outside the loop — ring spells should not award N ticks for N targets.
-            // CR-4: fromProc suppresses the tick so Explosive Arrow hits don't grant free War Magic XP.
             if (dbgHit > 0 && !fromProc)
                 Proficiency.OnSuccessUse(this, GetCreatureSkill(spell.School), spell.PowerMod);
         }

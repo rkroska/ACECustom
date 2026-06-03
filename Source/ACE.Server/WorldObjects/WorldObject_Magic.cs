@@ -1676,9 +1676,12 @@ namespace ACE.Server.WorldObjects
 
             var spellType = SpellProjectile.GetProjectileSpellType(spell.Id);
 
-            // Penta Cast Charm Interception
-            if (this is Player player && player.HasPentaCast && target != null &&
+            // Split Cast Charm Interception
+            // originOverride != null means this is a fork/chain projectile being spawned from a hit target —
+            // SplitCast should NOT intercept these or it will hijack the origin and multiply fork bolts.
+            if (this is Player player && player.HasSplitCast && CharmSettingsManager.SplitCast.Enabled && target != null &&
                 target.Location != null &&   // guard: target may have been removed from world before projectile launch
+                originOverride == null &&    // don't intercept fork/chain projectiles
                 (spellType == ProjectileSpellType.Streak || spellType == ProjectileSpellType.Arc || spellType == ProjectileSpellType.Bolt))
             {
                 var spellProjectiles = new List<SpellProjectile>();
@@ -1689,10 +1692,10 @@ namespace ACE.Server.WorldObjects
                 if (landblock != null)
                 {
                     allObjects.AddRange(landblock.GetWorldObjectsForPhysicsHandling());
-                    foreach (var adj in landblock.Adjacents)
+                    if (landblock.Adjacents != null)
                     {
-                        if (adj != null)
-                            allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
+                        foreach (var adj in landblock.Adjacents)
+                            if (adj != null) allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
                     }
                 }
 
@@ -1704,17 +1707,17 @@ namespace ACE.Server.WorldObjects
                 var targetGlobal = target.Location.ToGlobal(false);
 
                 // Deduplicate by Guid across landblock + adjacents
-                var uniqueObjects = allObjects.GroupBy(o => o.Guid).Select(g => g.First());
-
-                foreach (var obj in uniqueObjects)
+                var seen = new HashSet<ObjectGuid>();
+                foreach (var obj in allObjects)
                 {
+                    if (!seen.Add(obj.Guid)) continue;   // deduplicate across landblock + adjacents
                     if (obj is not Creature creature || creature == player || creature == target) continue;
                     if (!creature.IsAlive) continue;
-                    if (creature.Location == null) continue;
+                    if (creature.Location == null || creature.PhysicsObj == null) continue;
 
                     var creatureGlobal = creature.Location.ToGlobal(false);
                     var dist = Vector3.Distance(targetGlobal, creatureGlobal);
-                    if (dist > 10.0f) continue;
+                    if (dist > CharmSettingsManager.SplitCast.Range) continue;
 
                     if (!player.CanDamage(creature)) continue;
 
@@ -1726,13 +1729,15 @@ namespace ACE.Server.WorldObjects
 
                 allCandidates.Sort((a, b) => a.dist.CompareTo(b.dist));
 
-                // 3. Take the 4 closest — fire them in distance order (closest first).
-                var extraTargets = allCandidates.Take(4).Select(c => c.creature).ToList();
+                // 3. Take the N closest (tunable via /charm splitcast targets <n>) — fire them in distance order (closest first).
+                var extraTargets = allCandidates.Take(CharmSettingsManager.SplitCast.Targets).Select(c => c.creature).ToList();
 
 
                 // 4. Launch spells at all selected targets
                 // Primary target first
                 var origins = CalculateProjectileOrigins(spell, spellType, target);
+                if (origins == null || origins.Count == 0)
+                    return new List<SpellProjectile>();
                 var velocity = CalculateProjectileVelocity(spell, target, spellType, origins[0]);
                 var primaryProjectiles = LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, origins, velocity, lifeProjectileDamage);
                 if (primaryProjectiles != null)
@@ -1742,6 +1747,8 @@ namespace ACE.Server.WorldObjects
                 foreach (var extraTarget in extraTargets)
                 {
                     var extraOrigins = CalculateProjectileOrigins(spell, spellType, extraTarget);
+                    if (extraOrigins == null || extraOrigins.Count == 0)
+                        continue;
                     var extraVelocity = CalculateProjectileVelocity(spell, extraTarget, spellType, extraOrigins[0]);
                     var extraProjectiles = LaunchSpellProjectiles(spell, extraTarget, spellType, weapon, isWeaponSpell, fromProc, extraOrigins, extraVelocity, lifeProjectileDamage);
                     if (extraProjectiles != null)
@@ -1751,30 +1758,33 @@ namespace ACE.Server.WorldObjects
                 return spellProjectiles;
             }
 
-            var defaultOrigins = CalculateProjectileOrigins(spell, spellType, target);
+            var defaultOrigins = CalculateProjectileOrigins(spell, spellType, target, originOverride);
+            if (defaultOrigins == null || defaultOrigins.Count == 0)
+                return new List<SpellProjectile>();
 
-            var defaultVelocity = CalculateProjectileVelocity(spell, target, spellType, defaultOrigins[0]);
+            var defaultVelocity = CalculateProjectileVelocity(spell, target, spellType, defaultOrigins[0], originOverride);
 
-            return LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, defaultOrigins, defaultVelocity, lifeProjectileDamage, originOverride);
+            return LaunchSpellProjectiles(spell, target, spellType, weapon, isWeaponSpell, fromProc, defaultOrigins, defaultVelocity, lifeProjectileDamage, originOverride, directionOverride: originOverride);
         }
 
         public static readonly float ProjHeight = 2.0f / 3.0f;
 
-        public Vector3 CalculatePreOffset(Spell spell, ProjectileSpellType spellType, WorldObject target)
+        public Vector3 CalculatePreOffset(Spell spell, ProjectileSpellType spellType, WorldObject target, WorldObject originOverride = null)
         {
+            var origin = originOverride ?? this;
             var startFactor = spellType == ProjectileSpellType.Arc ? 1.0f : ProjHeight;
 
-            var preOffset = new Vector3(0, 0, Height * startFactor);
+            var preOffset = new Vector3(0, 0, origin.Height * startFactor);
 
             if (target == null)
                 return preOffset;
 
-            var startPos = new Physics.Common.Position(PhysicsObj.Position);
-            startPos.Frame.Origin.Z += Height * startFactor;
+            var startPos = origin.Location != null ? origin.Location.PhysPosition() : new Physics.Common.Position(origin.PhysicsObj.Position);
+            startPos.Frame.Origin.Z += origin.Height * startFactor;
 
             var endFactor = spellType == ProjectileSpellType.Arc ? ProjHeightArc : ProjHeight;
 
-            var endPos = new Physics.Common.Position(target.PhysicsObj.Position);
+            var endPos = target.Location != null ? target.Location.PhysPosition() : new Physics.Common.Position(target.PhysicsObj.Position);
             endPos.Frame.Origin.Z += target.Height * endFactor;
 
             var globOffset = startPos.GetOffset(endPos);
@@ -1786,7 +1796,7 @@ namespace ACE.Server.WorldObjects
 
             var localDir = Vector3.Normalize(offset);
 
-            var radsum = PhysicsObj.GetPhysicsRadius() + GetProjectileRadius(spell);
+            var radsum = origin.PhysicsObj.GetPhysicsRadius() + GetProjectileRadius(spell);
 
             var defaultSpawnPos = Vector3.UnitY * radsum;
 
@@ -1801,8 +1811,9 @@ namespace ACE.Server.WorldObjects
         /// Returns a list of positions to spawn projectiles for a spell,
         /// in local space relative to the caster
         /// </summary>
-        public List<Vector3> CalculateProjectileOrigins(Spell spell, ProjectileSpellType spellType, WorldObject target)
+        public List<Vector3> CalculateProjectileOrigins(Spell spell, ProjectileSpellType spellType, WorldObject target, WorldObject originOverride = null)
         {
+            var origin = originOverride ?? this;
             var origins = new List<Vector3>();
 
             var radius = GetProjectileRadius(spell);
@@ -1812,16 +1823,16 @@ namespace ACE.Server.WorldObjects
 
             var baseOffset = spell.CreateOffset;
 
-            var radsum = PhysicsObj.GetPhysicsRadius() * 2.0f + radius * 2.0f;
+            var radsum = origin.PhysicsObj.GetPhysicsRadius() * 2.0f + radius * 2.0f;
 
-            var heightOffset = CalculatePreOffset(spell, spellType, target);
+            var heightOffset = CalculatePreOffset(spell, spellType, target, originOverride);
 
             if (target != null)
             {
-                var cylDist = GetCylinderDistance(target);
+                var cylDist = origin.GetCylinderDistance(target);
                 //Console.WriteLine($"CylDist: {cylDist}");
                 if (cylDist < 0.6f)
-                    radsum = PhysicsObj.GetPhysicsRadius() + radius;
+                    radsum = origin.PhysicsObj.GetPhysicsRadius() + radius;
             }
 
             if (spell.SpreadAngle == 360)
@@ -1862,12 +1873,12 @@ namespace ACE.Server.WorldObjects
 
                         var xFactor = spell.SpreadAngle == 0 ? oddRow ? (float)Math.Ceiling(x * 0.5f) : (float)Math.Floor(x * 0.5f) : 0;
 
-                        var origin = curOffset + (vRadius * 2.0f + spell.Padding) * new Vector3(xFactor, y, z);
+                        var originPos = curOffset + (vRadius * 2.0f + spell.Padding) * new Vector3(xFactor, y, z);
 
                         if (spell.SpreadAngle == 0)
                         {
                             if (x % 2 == (oddRow ? 1 : 0))
-                                origin.X *= -1.0f;
+                                originPos.X *= -1.0f;
                         }
                         else
                         {
@@ -1882,10 +1893,10 @@ namespace ACE.Server.WorldObjects
                             var rads = curAngle.ToRadians();
 
                             var rot = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, rads);
-                            origin = Vector3.Transform(origin, rot);
+                            originPos = Vector3.Transform(originPos, rot);
                         }
 
-                        origins.Add(origin);
+                        origins.Add(originPos);
                         i++;
                     }
 
@@ -1897,8 +1908,8 @@ namespace ACE.Server.WorldObjects
                     break;
             }
 
-            /*foreach (var origin in origins)
-                Console.WriteLine(origin);*/
+            /*foreach (var originPos in origins)
+                Console.WriteLine(originPos);*/
 
             return origins;
         }
@@ -1927,13 +1938,14 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Calculates the spell projectile velocity in global space
         /// </summary>
-        public Vector3 CalculateProjectileVelocity(Spell spell, WorldObject target, ProjectileSpellType spellType, Vector3 origin)
+        public Vector3 CalculateProjectileVelocity(Spell spell, WorldObject target, ProjectileSpellType spellType, Vector3 originPos, WorldObject originOverride = null)
         {
-            var casterLoc = PhysicsObj.Position.ACEPosition();
+            var origin = originOverride ?? this;
+            var casterLoc = origin.Location ?? origin.PhysicsObj.Position.ACEPosition();
 
             var speed = GetProjectileSpeed(spell);
 
-            if (target == null && this is Creature creature && this is not Player)
+            if (target == null && origin is Creature creature && origin is not Player)
                 target = creature.AttackTarget;
 
             if (target == null)
@@ -1942,17 +1954,29 @@ namespace ACE.Server.WorldObjects
                 return Vector3.Transform(Vector3.UnitY, casterLoc.Rotation) * speed;
             }
 
-            var targetLoc = target.PhysicsObj.Position.ACEPosition();
+            var targetLoc = target.Location ?? target.PhysicsObj.Position.ACEPosition();
 
             var strikeSpell = spellType == ProjectileSpellType.Strike;
 
             var crossLandblock = !strikeSpell && casterLoc.Landblock != targetLoc.Landblock;
 
-            var qDir = PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
+            // When originOverride is set, use stable Location.ToGlobal() for qDir to match the
+            // directionOverride path in LaunchSpellProjectiles and avoid PhysicsObj drift on dead targets.
+            Vector3 qDir;
+            if (originOverride?.Location != null && target.Location != null)
+            {
+                var fromGlobal = originOverride.Location.ToGlobal(false);
+                var toGlobal   = target.Location.ToGlobal(false);
+                qDir = new Vector3(toGlobal.X - fromGlobal.X, toGlobal.Y - fromGlobal.Y, toGlobal.Z - fromGlobal.Z);
+            }
+            else
+            {
+                qDir = origin.PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
+            }
             var rotate = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, (float)Math.Atan2(-qDir.X, qDir.Y));
 
             var startPos = strikeSpell ? targetLoc.Pos : crossLandblock ? casterLoc.ToGlobal(false) : casterLoc.Pos;
-            startPos += Vector3.Transform(origin, strikeSpell ? rotate * OneEighty : rotate);
+            startPos += Vector3.Transform(originPos, strikeSpell ? rotate * OneEighty : rotate);
 
             var endPos = crossLandblock ? targetLoc.ToGlobal(false) : targetLoc.Pos;
 
@@ -1991,7 +2015,7 @@ namespace ACE.Server.WorldObjects
             return dir * speed;
         }
 
-        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null)
+        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f)
         {
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -2002,8 +2026,8 @@ namespace ACE.Server.WorldObjects
             // originOverride: use a different WorldObject's position as the ring/projectile spawn point.
             // ProjectileSource is still set to 'this' below, so non-ClassicRingAoe suppression works correctly.
             var spawnOrigin = originOverride ?? this;
-            var casterLoc = spawnOrigin.PhysicsObj.Position.ACEPosition();
-            var targetLoc = target?.PhysicsObj.Position.ACEPosition();
+            var casterLoc = spawnOrigin.Location ?? spawnOrigin.PhysicsObj.Position.ACEPosition();
+            var targetLoc = target != null ? (target.Location ?? target.PhysicsObj.Position.ACEPosition()) : null;
 
             for (var i = 0; i < origins.Count; i++)
             {
@@ -2020,7 +2044,20 @@ namespace ACE.Server.WorldObjects
                 var rotate = casterLoc.Rotation;
                 if (target != null)
                 {
-                    var qDir = PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
+                    Vector3 qDir;
+                    if (directionOverride != null && directionOverride.Location != null && target.Location != null)
+                    {
+                        // Use stable Location.ToGlobal() coordinates — PhysicsObj.Position
+                        // can drift for dead creatures (death animation moves the physics body),
+                        // causing the direction to resolve back to the player's position.
+                        var fromGlobal = directionOverride.Location.ToGlobal(false);
+                        var toGlobal   = target.Location.ToGlobal(false);
+                        qDir = new Vector3(toGlobal.X - fromGlobal.X, toGlobal.Y - fromGlobal.Y, toGlobal.Z - fromGlobal.Z);
+                    }
+                    else
+                    {
+                        qDir = spawnOrigin.PhysicsObj.Position.GetOffset(target.PhysicsObj.Position);
+                    }
                     rotate = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, (float)Math.Atan2(-qDir.X, qDir.Y));
                 }
 
@@ -2067,6 +2104,9 @@ namespace ACE.Server.WorldObjects
                 sp.SpawnPos = new Position(sp.Location);
 
                 sp.LifeProjectileDamage = lifeProjectileDamage;
+                // Fork state — set before AddObject so IsProjectileVisible-killed bolts have correct flags.
+                sp.IsForkProjectile = isForkProjectile;
+                sp.ForkDamageMult   = forkDamageMult;
 
                 if (!LandblockManager.AddObject(sp))
                 {

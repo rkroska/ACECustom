@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using ACE.DatLoader;
@@ -42,13 +43,20 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("ilt", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
             "ILT custom server commands and player preferences.",
-            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train|ringmode|ringrange|arrowdebug]")]
+            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train|smartring [on|off]|ringmode|ringrange|arrowdebug]")]
         public static void HandleILT(Session session, params string[] parameters)
         {
             var player = session.Player;
             if (player == null) return;
 
             var sub = parameters.Length > 0 ? parameters[0].ToLower() : "help";
+            var argIndex = 1;
+
+            if (sub == "smart" && parameters.Length >= 2 && parameters[1].ToLower() == "ring")
+            {
+                sub = "smartring";
+                argIndex = 2;
+            }
 
             // Aliases: /ilt xp level  and  /ilt xp  both map to levelskills
             if (sub == "xp" && (parameters.Length < 2 || parameters[1].ToLower() == "level"))
@@ -63,22 +71,57 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat("=== ILT Custom Features ===", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("  Coming Soon", ChatMessageType.System));
             }
-            else if (sub == "ringmode")
+            else if (sub == "ringmode" || sub == "smartring")
             {
                 var classic = player.GetProperty(PropertyBool.ClassicRingAoe) ?? false;
-                classic = !classic;  // toggle
 
-                if (classic)
-                    player.SetProperty(PropertyBool.ClassicRingAoe, true);
+                if (parameters.Length > argIndex)
+                {
+                    var opt = parameters[argIndex].ToLower();
+                    if (opt == "on" || opt == "true" || opt == "enable")
+                        classic = false;
+                    else if (opt == "off" || opt == "false" || opt == "disable")
+                        classic = true;
+                    else
+                    {
+                        var usageName = sub == "ringmode" ? "ringmode" : (argIndex == 2 ? "smart ring" : "smartring");
+                        session.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"Unknown option '{parameters[argIndex]}'. Usage: /ilt {usageName} [on | off]", ChatMessageType.System));
+                        return;
+                    }
+
+                    if (classic)
+                        player.SetProperty(PropertyBool.ClassicRingAoe, true);
+                    else
+                        player.RemoveProperty(PropertyBool.ClassicRingAoe);  // absent = New mode (default)
+
+                    player.SaveBiotaToDatabase(enqueueSave: true);
+
+                    if (classic)
+                    {
+                        var msg = "[Smart Ring] Disabled\n" +
+                                  "  • Reverted to Classic Physics Mode\n" +
+                                  "  • Allows multi-hits\n" +
+                                  "  • Fixed number of projectiles\n" +
+                                  "  • Rings can miss targets";
+                        session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.System));
+                    }
+                    else
+                    {
+                        var msg = "[Smart Ring] Enabled\n" +
+                                  $"  • Radius: {SmartRingSettingsManager.Radius.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                                  $"  • Height: {SmartRingSettingsManager.Height.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
+                                  $"  • Double Proc Chance: {(SmartRingSettingsManager.DoubleChance * 100.0f).ToString("0.0", CultureInfo.InvariantCulture)}%\n" +
+                                  $"  • Triple Proc Chance: {(SmartRingSettingsManager.TripleChance * 100.0f).ToString("0.0", CultureInfo.InvariantCulture)}%";
+                        session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.System));
+                    }
+                }
                 else
-                    player.RemoveProperty(PropertyBool.ClassicRingAoe);  // absent = New mode (default)
-
-                player.SaveBiotaToDatabase(enqueueSave: true);
-
-                var msg = classic
-                    ? "Ring Spell Mode: Classic (physics collision \u2014 can multi-hit, rings may miss monsters)"
-                    : "Ring Spell Mode: New (all targets in range guaranteed to hit once, no multi-hit)";
-                session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.System));
+                {
+                    var usageName = sub == "ringmode" ? "ringmode" : (argIndex == 2 ? "smart ring" : "smartring");
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"Usage: /ilt {usageName} [on | off]", ChatMessageType.System));
+                }
             }
             else if (sub == "dmgformat")
             {
@@ -261,9 +304,9 @@ namespace ACE.Server.Command.Handlers
                 }
 
                 // Scan for all known creatures within the player's ring AOE radius.
-                const float ringRadius = Player.DefaultRingAoeRadius;
+                var ringRadius = SmartRingSettingsManager.Radius;
                 var radius = ringRadius * (float)(player.GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
-                var maxHeight = Player.RingAoeMaxHeightDelta;
+                var maxHeight = SmartRingSettingsManager.Height;
 
                 if (player.Location == null)
                 {
@@ -370,8 +413,8 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat("      Spend all available XP into trained and specialized skills, in priority order.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt trainskills  |  /ilt train", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("      Train all affordable untrained skills using skill credits, in priority order.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt ringmode", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"      Toggle ring spell mode between New (guaranteed AOE) and Classic (physics multi-hit). (currently: {ringLabel})", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt smartring [on|off]  (or /ilt smart ring [on|off])", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"      Configure smart ring spell mode between Enabled (guaranteed AOE) and Disabled (classic physics). (currently: {(ringLabel == "New" ? "Enabled" : "Disabled")})", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt ringrange", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"      View all valid targets and parameters for your next ring spell.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt arrowdebug  [Admin only]", ChatMessageType.System));

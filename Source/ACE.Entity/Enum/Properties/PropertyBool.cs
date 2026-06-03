@@ -254,7 +254,7 @@ namespace ACE.Entity.Enum.Properties
         PetBondAttuned                   = 9047,
         /// <summary>Combat pet uses captured creature weapon appearance/skin.</summary>
         CombatPetCaptureSkinWeapon       = 9048,
-        /// <summary>Player account flag: opt-in for pyreal auto-refill on pet summoning devices.</summary>
+        /// <summary>While active (Summon Essence Refill charm WCID 78780030), opt-in for per-charge pyreal refill on summon. See docs/ADMIN_PET_SUMMON_CHARMS.md.</summary>
         PetDevicePyrealAutoRefillEnrolled = 9049,
 
         // -- ILT Ability Charm System (50000-50099) ---------------------------------
@@ -310,6 +310,12 @@ namespace ACE.Entity.Enum.Properties
 
         /// <summary>ILT Skill #22: Melee attacks scan target resistances, override damage to weakest element, and dynamically match weapon rends.</summary>
         HasPrismaticStrike = 50037,
+
+        /// <summary>While active (Universal Summoning Mastery charm WCID 78780031), bypass PetDevice vs player PropertyInt 362 check. Does not change player mastery 362. See docs/ADMIN_PET_SUMMON_CHARMS.md.</summary>
+        HasUniversalSummoningMastery = 50038,
+
+        /// <summary>Player has the Fork Charm active — Streak, Arc, and Bolt projectiles fork to nearby enemies on hit.</summary>
+        HasForkCharm = 50039,
 
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }

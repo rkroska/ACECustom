@@ -223,20 +223,6 @@ namespace ACE.Server.WorldObjects
 
         internal float MeleeMotionDpsFactor => _meleeMotionDpsFactor;
 
-        private MotionStance? _captureSkinCombatStance;
-
-        internal void SetCaptureSkinCombatStance(MotionStance? stance) => _captureSkinCombatStance = stance;
-
-        public override MotionStance GetCombatStance()
-        {
-            if (_captureSkinCombatStance.HasValue)
-                return _captureSkinCombatStance.Value;
-
-            return base.GetCombatStance();
-        }
-
-        internal void ReconfigureMeleeMotionDpsAfterCaptureSkin() => ConfigureMeleeMotionDpsNormalization();
-
         public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
         {
             RemoveAiDebugThrottleKeysForCombatPet(Guid.Full);
@@ -267,8 +253,6 @@ namespace ACE.Server.WorldObjects
 
         public override bool? Init(Player player, PetDevice petDevice)
         {
-            _captureSkinCombatStance = null;
-
             // Before Pet.Init -> EnterWorld: weenie defaults are creature/gold on radar; clients never get a later blip update unless we set this now so the create packet includes RadarBlipColor.
             this.RadarColor = ACE.Entity.Enum.RadarColor.Pink;
 
@@ -569,11 +553,11 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// When the combat pet deals physical damage (melee, cleave, or missile), arms the same recall/stow block as incoming damage.
-        /// When <see cref="ServerConfig.pet_combat_damage_debug_chat"/> is enabled, tells the owner the pet dealt that damage.
+        /// When <see cref="ServerConfig.pet_combat_damage_debug_chat"/> is enabled, tells the owner about hits and evades.
         /// </summary>
-        internal static void TryNotifyOwnerOutgoingPhysical(CombatPet pet, WorldObject target, float damage, DamageType damageType, string channel)
+        internal static void TryNotifyOwnerOutgoingPhysical(CombatPet pet, WorldObject target, float damage, DamageType damageType, string channel, bool evaded = false)
         {
-            if (pet != null)
+            if (pet != null && !evaded)
             {
                 var dealt = (uint)Math.Max(0, Math.Round(damage));
                 if (dealt > 0)
@@ -585,10 +569,18 @@ namespace ACE.Server.WorldObjects
             var owner = pet.P_PetOwner;
             if (owner?.Session == null) return;
 
+            var tname = target?.Name ?? "?";
+
+            if (evaded)
+            {
+                owner.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"[Pet] {pet.Name} {channel} evaded by {tname}.", ChatMessageType.System));
+                return;
+            }
+
             var dmg = (uint)Math.Max(0, Math.Round(damage));
             if (dmg == 0) return;
 
-            var tname = target?.Name ?? "?";
             owner.Session.Network.EnqueueSend(new GameMessageSystemChat(
                 $"[Pet] {pet.Name} {channel} hit {tname} for {dmg} ({damageType}).", ChatMessageType.System));
         }
@@ -1351,10 +1343,64 @@ namespace ACE.Server.WorldObjects
             item.SetProperty(PropertyFloat.DamageMod, 1.0f);
         }
 
-        private static BaseDamageMod BaseDamageModFromBodyPart(PropertiesBodyPart attackPart) =>
-            attackPart == null
-                ? new BaseDamageMod(new BaseDamage(0, 0.0f))
-                : new BaseDamageMod(new BaseDamage(attackPart.DVal, attackPart.DVar));
+        private static BaseDamageMod BaseDamageModFromBodyPart(PropertiesBodyPart attackPart)
+        {
+            if (attackPart == null || attackPart.DVal <= 0)
+                return new BaseDamageMod(new BaseDamage(0, 0.0f));
+
+            return new BaseDamageMod(new BaseDamage(attackPart.DVal, attackPart.DVar));
+        }
+
+        /// <summary>
+        /// Capture skins strip template weapons and may equip cosmetic 0-DMG items. Damage must come from the
+        /// pet-class body-part table (same as unarmed), not from wielded item stats — otherwise only luminance melee
+        /// flat bonus produces any damage.
+        /// </summary>
+        private static bool ShouldUseBodyPartForDamage(WorldObject weapon)
+        {
+            if (weapon == null)
+                return true;
+
+            if (weapon.GetProperty(PropertyBool.CombatPetCaptureSkinWeapon) ?? false)
+                return true;
+
+            return (weapon.GetProperty(PropertyInt.Damage) ?? 0) <= 0;
+        }
+
+        /// <summary>
+        /// When motion/body-part keys disagree (capture skins), fall back to the highest-DVal attack part on the pet.
+        /// </summary>
+        private PropertiesBodyPart ResolveMeleeAttackBodyPart(PropertiesBodyPart attackPart)
+        {
+            if (attackPart != null && attackPart.DVal > 0)
+                return attackPart;
+
+            if (Biota.PropertiesBodyPart == null || Biota.PropertiesBodyPart.Count == 0)
+                return attackPart;
+
+            PropertiesBodyPart best = null;
+            var bestDVal = 0;
+
+            foreach (var kvp in Biota.PropertiesBodyPart)
+            {
+                if (kvp.Key == CombatBodyPart.Breath || kvp.Value.DVal <= 0)
+                    continue;
+
+                if (kvp.Value.DVal > bestDVal)
+                {
+                    bestDVal = kvp.Value.DVal;
+                    best = kvp.Value;
+                }
+            }
+
+            if (best == null && (attackPart == null || attackPart.DVal <= 0))
+            {
+                RecallBlockDbgLog.Warn(
+                    $"{Name} ({Guid}) has no body part with DVal > 0 for melee damage (petWcid={WeenieClassId}); hits will deal no damage until template data is fixed.");
+            }
+
+            return best ?? attackPart;
+        }
 
         /// <summary>
         /// Override GetBaseDamage to ALWAYS apply item augmentation bonuses,
@@ -1367,22 +1413,18 @@ namespace ACE.Server.WorldObjects
             if (CurrentAttack == CombatType.Missile && GetMissileAmmo() != null)
             {
                 var launcher = GetEquippedMissileWeapon();
-                // Cosmetic capture-skin launcher: same rule as melee — use body-part damage, not stripped weapon/ammo DM.
-                if (launcher != null && (launcher.GetProperty(PropertyBool.CombatPetCaptureSkinWeapon) ?? false))
-                    baseDamageMod = BaseDamageModFromBodyPart(attackPart);
+                if (ShouldUseBodyPartForDamage(launcher))
+                    baseDamageMod = BaseDamageModFromBodyPart(ResolveMeleeAttackBodyPart(attackPart));
                 else
                     baseDamageMod = GetMissileDamage();
             }
             else
             {
                 var weapon = GetEquippedMeleeWeapon();
-                // Capture-skin weapons are cosmetic: use body-part damage like unarmed (do not use item weapon stats).
-                if (weapon != null && (weapon.GetProperty(PropertyBool.CombatPetCaptureSkinWeapon) ?? false))
-                    baseDamageMod = BaseDamageModFromBodyPart(attackPart);
-                else if (weapon != null)
-                    baseDamageMod = weapon.GetDamageMod(this);
+                if (ShouldUseBodyPartForDamage(weapon))
+                    baseDamageMod = BaseDamageModFromBodyPart(ResolveMeleeAttackBodyPart(attackPart));
                 else
-                    baseDamageMod = BaseDamageModFromBodyPart(attackPart);
+                    baseDamageMod = weapon.GetDamageMod(this);
             }
 
             // ALWAYS apply item augmentation damage bonus directly, regardless of weapon type or enchantability

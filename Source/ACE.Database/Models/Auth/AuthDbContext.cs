@@ -29,6 +29,8 @@ public partial class AuthDbContext : DbContext
 
     public virtual DbSet<PatchNote> PatchNotes { get; set; }
 
+    private static ServerVersion _cachedServerVersion;
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         if (!optionsBuilder.IsConfigured)
@@ -37,7 +39,9 @@ public partial class AuthDbContext : DbContext
 
             var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};TreatTinyAsBoolean=False;SslMode=Disabled;AllowPublicKeyRetrieval=true;ApplicationName=ACEmulator";
 
-            optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), builder =>
+            _cachedServerVersion ??= ServerVersion.AutoDetect(connectionString);
+
+            optionsBuilder.UseMySql(connectionString, _cachedServerVersion, builder =>
             {
                 builder.EnableRetryOnFailure(10);
             });
