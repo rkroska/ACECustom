@@ -33,11 +33,22 @@ namespace ACE.Server.WorldObjects
         public Dictionary<int, DateTime> LastUseTracker { get; set; }
 
         /// <summary>
-        /// Debounce for <see cref="TryResendCreateObjectForStaleKnown"/> (post-teleport reconcile only).
+        /// Last time a CreateObject was sent to this client per target guid (TickCount64).
+        /// Used to suppress duplicate CO from post-teleport reconcile (#467) after delayed physics enqueue.
         /// </summary>
-        private readonly Dictionary<uint, long> _lastStaleKnownResendMs = new();
+        private readonly Dictionary<uint, long> _lastCreateObjectSentMs = new();
+
+        private readonly Dictionary<uint, string> _lastCreateObjectPath = new();
 
         private const int StaleKnownResendDebounceMs = 750;
+
+        /// <summary>
+        /// Skip StaleKnownResend when another path (e.g. enqueue_obj_post_teleport_delay) sent CO recently.
+        /// Slightly longer than the 1.05s reconcile delay after the 1s physics CO delay.
+        /// </summary>
+        private const int CreateObjectResendSuppressMs = 2500;
+
+        private bool _postTeleportReconcileScheduled;
 
         /// <summary>
         /// The link to this player's Object Maintenance
@@ -87,6 +98,11 @@ namespace ACE.Server.WorldObjects
 
             Session.Network.EnqueueSend(new GameMessageCreateObject(worldObject, Adminvision, Adminvision));
 
+            var coKey = worldObject.Guid.Full;
+            _lastCreateObjectSentMs[coKey] = Environment.TickCount64;
+            if (!string.IsNullOrEmpty(createObjectPath))
+                _lastCreateObjectPath[coKey] = createObjectPath;
+
             //Console.WriteLine($"Player {Name} - TrackObject({worldObject.Name})");
 
             // add creature equipped objects / wielded items
@@ -120,7 +136,8 @@ namespace ACE.Server.WorldObjects
                                  $"effVar_viewer={myVar?.ToString() ?? "null"} effVar_target={objVar?.ToString() ?? "null"}");
                     }
 
-                    _lastStaleKnownResendMs.Remove(worldObject.Guid.Full);
+                    _lastCreateObjectSentMs.Remove(worldObject.Guid.Full);
+                    _lastCreateObjectPath.Remove(worldObject.Guid.Full);
 
                     worldObject.PhysicsObj.ObjMaint?.RemoveObject(PhysicsObj);
                     if (worldObject is Player knownPlayer)
@@ -183,11 +200,19 @@ namespace ACE.Server.WorldObjects
 
             var key = worldObject.Guid.Full;
             var now = Environment.TickCount64;
-            if (_lastStaleKnownResendMs.TryGetValue(key, out var last) && now - last < StaleKnownResendDebounceMs)
-                return false;
+            if (_lastCreateObjectSentMs.TryGetValue(key, out var lastCo))
+            {
+                var elapsed = now - lastCo;
+                if (_lastCreateObjectPath.TryGetValue(key, out var lastPath) &&
+                    lastPath != "StaleKnownResend_#467" &&
+                    elapsed < CreateObjectResendSuppressMs)
+                    return false;
+
+                if (elapsed < StaleKnownResendDebounceMs)
+                    return false;
+            }
 
             TrackObject(worldObject, createObjectPath: "StaleKnownResend_#467");
-            _lastStaleKnownResendMs[key] = now;
             return true;
         }
 
@@ -251,6 +276,11 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void SchedulePostTeleportVisibilityReconcile()
         {
+            if (_postTeleportReconcileScheduled)
+                return;
+
+            _postTeleportReconcileScheduled = true;
+
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(1.05);
             actionChain.AddAction(this, ActionType.PlayerTracking_PostTeleportVisibilityReconcile, ReconcileVisibilityAfterArrival);
@@ -262,7 +292,10 @@ namespace ACE.Server.WorldObjects
             //log.Info($"{Name}.RemoveTrackedObject({wo.Name} ({wo.Guid}), {fromPickup})");
 
             if (wo != null)
-                _lastStaleKnownResendMs.Remove(wo.Guid.Full);
+            {
+                _lastCreateObjectSentMs.Remove(wo.Guid.Full);
+                _lastCreateObjectPath.Remove(wo.Guid.Full);
+            }
 
             if (fromPickup)
             {
@@ -421,7 +454,9 @@ namespace ACE.Server.WorldObjects
             if (Location.Cell == newPosition.Cell && Location.Variation == newPosition.Variation)
                 return;
 
-            _lastStaleKnownResendMs.Clear();
+            _lastCreateObjectSentMs.Clear();
+            _lastCreateObjectPath.Clear();
+            _postTeleportReconcileScheduled = false;
 
             var knownObjs = GetKnownObjects();
 
