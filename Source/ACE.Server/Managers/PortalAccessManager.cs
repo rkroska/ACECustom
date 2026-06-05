@@ -278,7 +278,6 @@ namespace ACE.Server.Managers
             }
 
             var validKeys = PageDefinitions.Select(p => p.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var merged = new Dictionary<string, int>(_minLevels, StringComparer.OrdinalIgnoreCase);
 
             foreach (var (key, level) in updates)
             {
@@ -293,12 +292,15 @@ namespace ACE.Server.Managers
                     error = $"Invalid access level {level} for page '{key}'. Must be 0-5.";
                     return false;
                 }
-
-                merged[key] = level;
             }
 
             lock (_lock)
             {
+                var merged = new Dictionary<string, int>(_minLevels, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var (key, level) in updates)
+                    merged[key] = level;
+
                 try
                 {
                     EnsureDatabaseMigrated();

@@ -167,6 +167,8 @@ export default function CombatCalculator() {
         useFormValues || !selectedPlayer || dirty ? asNumberOrUndefined(value) : undefined
       const sendMonsterMod = (dirty: boolean, value: string) =>
         useFormValues || !selectedMonster || dirty ? asNumberOrUndefined(value) : undefined
+      const sendOverride = (value: string) =>
+        value.trim() === '' ? undefined : asNumberOrUndefined(value)
 
       const body: CombatPreviewRequest = {
         playerGuid: selectedPlayer?.guid,
@@ -178,10 +180,10 @@ export default function CombatCalculator() {
         playerDefenseMod: sendMod(playerDefenseModDirty, playerDefenseMod),
         playerDefenseFlat: sendMod(playerDefenseFlatDirty, playerDefenseFlat),
         monsterOffenseMod: sendMonsterMod(monsterOffenseModDirty, monsterOffenseMod),
-        overridePlayerAttack: asNumberOrUndefined(displayedSkill(overridePlayerAttack, preview?.playerAttackBase)),
-        overridePlayerDefense: asNumberOrUndefined(displayedSkill(overridePlayerDefense, preview?.playerDefenseBase)),
-        overrideMonsterAttack: asNumberOrUndefined(displayedSkill(overrideMonsterAttack, preview?.monsterAttackBase)),
-        overrideMonsterDefense: asNumberOrUndefined(displayedSkill(overrideMonsterDefense, preview?.monsterDefenseBase)),
+        overridePlayerAttack: sendOverride(overridePlayerAttack),
+        overridePlayerDefense: sendOverride(overridePlayerDefense),
+        overrideMonsterAttack: sendOverride(overrideMonsterAttack),
+        overrideMonsterDefense: sendOverride(overrideMonsterDefense),
         testAggression: asNumberOrUndefined(testAggression),
         rangeMin: asNumberOrUndefined(rangeMin),
         rangeMax: asNumberOrUndefined(rangeMax),

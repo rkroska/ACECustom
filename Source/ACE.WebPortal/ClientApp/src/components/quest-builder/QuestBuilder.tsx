@@ -180,8 +180,26 @@ export default function QuestBuilder() {
 
   if (!journey) {
     return (
-      <div className="p-8 text-neutral-400 flex items-center gap-2">
-        <RefreshCw className="w-4 h-4 animate-spin" /> Loading quest builder…
+      <div className="p-8">
+        {error ? (
+          <div className="rounded-lg bg-red-950/50 border border-red-800 text-red-200 text-sm p-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => loadTemplate(selectedTemplate)}
+              className="px-3 py-1.5 rounded-lg bg-neutral-800 text-white hover:bg-neutral-700"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <div className="text-neutral-400 flex items-center gap-2">
+            <RefreshCw className="w-4 h-4 animate-spin" /> Loading quest builder…
+          </div>
+        )}
       </div>
     )
   }

@@ -103,7 +103,7 @@ namespace ACE.Server.Managers.QuestBuilder
             {
                 Package = packageName,
                 Description = $"Imported from database (NPC {npcWcid}).",
-                CooldownSeconds = stamps.FirstOrDefault()?.MinDelta is > 0 ? stamps.First(s => s.MinDelta > 0).MinDelta : 86400,
+                CooldownSeconds = stamps.FirstOrDefault(s => s.MinDelta > 0)?.MinDelta ?? 86400,
                 Stamps = stamps,
                 Items = items,
                 Actors = actors,

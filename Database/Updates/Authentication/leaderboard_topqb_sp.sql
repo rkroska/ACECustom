@@ -26,7 +26,7 @@ BEGIN
            WHERE cex.account_Id = a.accountId
              AND cex.is_Deleted = 0
        )
-    ORDER BY COUNT(*) DESC
+    ORDER BY Score DESC
     LIMIT 25;
 END$$
 

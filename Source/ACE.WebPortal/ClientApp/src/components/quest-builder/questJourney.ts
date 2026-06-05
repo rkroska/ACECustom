@@ -21,15 +21,18 @@ function findFlow(actor: QuestActor | undefined, trigger: string): QuestFlow | u
 }
 
 function extractRewardFromGiveSteps(steps: QuestStep[]): { wcid: number; stack: number } {
-  for (const step of steps) {
-    if (step.type === 'Give' && step.wcid) return { wcid: step.wcid, stack: step.stack ?? 1 }
-    if (step.branches) {
-      for (const branch of [...(step.branches.canComplete ?? []), ...(step.branches.onCooldown ?? [])]) {
-        if (branch.type === 'Give' && branch.wcid) return { wcid: branch.wcid, stack: branch.stack ?? 1 }
+  const visit = (list: QuestStep[]): { wcid: number; stack: number } | null => {
+    for (const step of list) {
+      if (step.type === 'Give' && step.wcid) return { wcid: step.wcid, stack: step.stack ?? 1 }
+      if (step.branches) {
+        const nested = visit(step.branches.canComplete ?? []) ?? visit(step.branches.onCooldown ?? [])
+        if (nested) return nested
       }
     }
+    return null
   }
-  return { wcid: 300004, stack: 10 }
+
+  return visit(steps) ?? { wcid: 300004, stack: 10 }
 }
 
 function isLandscapeActor(actor: QuestActor): boolean {
@@ -251,7 +254,7 @@ export function packageToJourney(pkg: QuestPackage): QuestJourney {
   if (creature) {
     obtainSource = { kind: 'corpse', creature: { ...creature } }
   } else if (landscapeActor) {
-    const hasInq = parsedPickup.pickupSteps.some((s) => s.type === 'InqQuest')
+    const hasInq = findStampInSteps(parsedPickup.pickupSteps, new Set(['InqQuest'])) != null
     obtainSource = {
       kind: 'landscape',
       objectWcid: landscapeActor.wcid,
@@ -378,6 +381,10 @@ function syncCompletionGiveSteps(
   return steps
 }
 
+export function effectiveTurnInGiveSteps(journey: QuestJourney): QuestStep[] {
+  return syncCompletionGiveSteps(journey.turnIn, journey.meta.completionStamp, journey.obtainItem.itemWcid)
+}
+
 function stampConfigToRow(config: QuestStampConfig): QuestStamp {
   return {
     name: config.name,
@@ -432,7 +439,18 @@ export function journeyToPackage(journey: QuestJourney): QuestPackage {
     const landscapeFlow: QuestFlow = { trigger: ls.trigger, steps: pickupSteps }
 
     if (ls.objectWcid === giver.wcid) {
-      giver.flows = [...giver.flows.filter((f) => f.trigger !== ls.trigger), landscapeFlow]
+      if (ls.trigger === 'Use') {
+        const existing = giver.flows.find((f) => f.trigger === 'Use')
+        if (existing) {
+          giver.flows = giver.flows.map((f) =>
+            f.trigger === 'Use' ? { ...f, steps: [...f.steps, ...landscapeFlow.steps] } : f
+          )
+        } else {
+          giver.flows = [...giver.flows, landscapeFlow]
+        }
+      } else {
+        giver.flows = [...giver.flows.filter((f) => f.trigger !== ls.trigger), landscapeFlow]
+      }
       giver.role = 'questGiver'
     } else {
       actors.push({

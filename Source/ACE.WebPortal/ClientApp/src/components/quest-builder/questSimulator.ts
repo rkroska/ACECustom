@@ -1,4 +1,4 @@
-import { effectiveIntroSteps, effectiveLandscapePickupSteps, journeyToPackage } from './questJourney'
+import { effectiveIntroSteps, effectiveLandscapePickupSteps, effectiveTurnInGiveSteps, journeyToPackage } from './questJourney'
 import type { QuestJourney, QuestStep } from '../../types/questBuilder'
 
 export type SimLogLevel = 'info' | 'success' | 'warn' | 'error'
@@ -190,7 +190,7 @@ export function simGiveToNpc(journey: QuestJourney, state: SimPlayerState, itemW
     return log
   }
 
-  runSteps(journey.turnIn.giveSteps, state, deltas, log)
+  runSteps(effectiveTurnInGiveSteps(journey), state, deltas, log)
   return log
 }
 

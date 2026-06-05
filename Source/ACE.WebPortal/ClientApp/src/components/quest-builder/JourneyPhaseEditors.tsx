@@ -191,7 +191,32 @@ export function ObtainPhaseEditor({
             label="Quest item WCID (new)"
             wcid={obtain.itemWcid}
             displayName={obtain.itemName}
-            onWcidChange={(itemWcid) => onChange({ itemWcid })}
+            onWcidChange={(itemWcid) => {
+              if (obtain.source.kind === 'corpse') {
+                onChange({
+                  itemWcid,
+                  source: {
+                    kind: 'corpse',
+                    creature: { ...obtain.source.creature, dropItemWcid: itemWcid },
+                  },
+                })
+                return
+              }
+
+              const stamp = pickupStamp ?? defaultPickupStamp(packageSlug)
+              onChange({
+                itemWcid,
+                source: {
+                  ...obtain.source,
+                  pickupSteps: syncPickupSteps(
+                    obtain.source.pickupSteps,
+                    stamp,
+                    itemWcid,
+                    obtain.source.useQuestGate,
+                  ),
+                },
+              })
+            }}
           />
           <WcidField
             label="Clone item from"

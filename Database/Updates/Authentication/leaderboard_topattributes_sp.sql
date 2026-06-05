@@ -26,4 +26,5 @@ where c.is_Deleted = 0
 having Score > 0
 order by Score desc
 LIMIT 25;
-END $$ DELIMITER;
+END $$
+DELIMITER ;

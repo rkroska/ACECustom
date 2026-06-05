@@ -556,6 +556,9 @@ namespace ACE.Server.Entity
             return ordered;
         }
 
+        private static bool IsStaffLeaderboardCharacter(string name) =>
+            !string.IsNullOrEmpty(name) && name.StartsWith("+");
+
         /// <summary>
         /// Global rank on the pet or shiny species leaderboard for an account, if the account appears on that board.
         /// </summary>
@@ -571,13 +574,20 @@ namespace ACE.Server.Entity
                 var excludedAccounts = LoadAccountIdsWithAnyExcludedCharacter(context, excludedChars);
                 var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly, excludedAccounts);
 
+                var visibleRank = 0;
                 for (var i = 0; i < ordered.Count; i++)
                 {
+                    var mainCharacter = MainCharacterNameHighestLogins(context, ordered[i].AccountId);
+                    if (IsStaffLeaderboardCharacter(mainCharacter))
+                        continue;
+
+                    visibleRank++;
                     if (ordered[i].AccountId != accountId)
                         continue;
-                    rank = i + 1;
+
+                    rank = visibleRank;
                     count = ordered[i].Count;
-                    characterName = MainCharacterNameHighestLogins(context, accountId);
+                    characterName = mainCharacter;
                     return true;
                 }
             }
@@ -596,19 +606,21 @@ namespace ACE.Server.Entity
                 var excludedChars = LoadExcludedFromLeaderboardCharacterIds(context);
                 var excludedAccounts = LoadAccountIdsWithAnyExcludedCharacter(context, excludedChars);
                 var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: false, excludedAccounts);
-                var topAccounts = ordered.Take(limit).ToList();
 
                 var results = new List<(uint AccountId, string CharacterName, int Count)>();
-                foreach (var entry in topAccounts)
+                foreach (var entry in ordered)
                 {
+                    if (results.Count >= limit)
+                        break;
+
                     var mainCharacter = MainCharacterNameHighestLogins(context, entry.AccountId);
+                    if (IsStaffLeaderboardCharacter(mainCharacter))
+                        continue;
+
                     results.Add((entry.AccountId, mainCharacter, entry.Count));
                 }
 
-                // Keep this leaderboard player-facing: exclude staff/admin characters (commonly prefixed with '+').
-                return results
-                    .Where(r => string.IsNullOrEmpty(r.CharacterName) || !r.CharacterName.StartsWith("+"))
-                    .ToList();
+                return results;
             }
         }
 
@@ -635,18 +647,21 @@ namespace ACE.Server.Entity
                 var excludedChars = LoadExcludedFromLeaderboardCharacterIds(context);
                 var excludedAccounts = LoadAccountIdsWithAnyExcludedCharacter(context, excludedChars);
                 var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: true, excludedAccounts);
-                var topAccounts = ordered.Take(limit).ToList();
 
                 var results = new List<(uint AccountId, string CharacterName, int Count)>();
-                foreach (var entry in topAccounts)
+                foreach (var entry in ordered)
                 {
+                    if (results.Count >= limit)
+                        break;
+
                     var mainCharacter = MainCharacterNameHighestLogins(context, entry.AccountId);
+                    if (IsStaffLeaderboardCharacter(mainCharacter))
+                        continue;
+
                     results.Add((entry.AccountId, mainCharacter, entry.Count));
                 }
 
-                return results
-                    .Where(r => string.IsNullOrEmpty(r.CharacterName) || !r.CharacterName.StartsWith("+"))
-                    .ToList();
+                return results;
             }
         }
     }

@@ -172,14 +172,16 @@ namespace ACE.Server.Web
 
                 app.UseRouting();
 
-                // Enable support for reverse proxies (NGINX) by preserving client IP and protocol
-                // This must be placed before UseAuthentication/UseAuthorization
+                // Enable support for reverse proxies (Caddy/NGINX) by preserving client IP and protocol.
+                // Trust only loopback so X-Forwarded-Proto cannot be spoofed by external clients.
                 var forwardedHeadersOptions = new ForwardedHeadersOptions
                 {
                     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
                 };
                 forwardedHeadersOptions.KnownProxies.Clear();
                 forwardedHeadersOptions.KnownNetworks.Clear();
+                forwardedHeadersOptions.KnownNetworks.Add(new IPNetwork(System.Net.IPAddress.Loopback, 8));
+                forwardedHeadersOptions.KnownNetworks.Add(new IPNetwork(System.Net.IPAddress.IPv6Loopback, 128));
                 app.UseForwardedHeaders(forwardedHeadersOptions);
 
                 app.UseAuthentication();

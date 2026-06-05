@@ -440,8 +440,8 @@ namespace ACE.Server.Controllers
         [HttpPost("logout/{guid}")]
         public async Task<IActionResult> ForceLogout(uint guid)
         {
-            if (!HasPortalAccess(PortalPages.Players))
-                return Unauthorized();
+            if (!IsPortalAdmin)
+                return Forbid();
 
             var player = PlayerManager.GetOnlinePlayer(guid);
             if (player == null) return NotFound(new { message = "Character is not online" });

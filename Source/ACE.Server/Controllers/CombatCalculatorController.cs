@@ -145,6 +145,9 @@ namespace ACE.Server.Controllers
             Player onlinePlayer = null;
             if (request.PlayerGuid.HasValue && request.PlayerGuid.Value > 0)
             {
+                if (!IsAuthorizedForPlayerGuid(request.PlayerGuid.Value))
+                    return Forbid();
+
                 var resolved = ResolvePlayerSkills(
                     request.PlayerGuid.Value,
                     mode,
@@ -231,6 +234,21 @@ namespace ACE.Server.Controllers
                 Triplet = triplet,
                 RangeRows = rangeRows,
             });
+        }
+
+        private bool IsAuthorizedForPlayerGuid(uint guid)
+        {
+            if (CurrentAccountId == null)
+                return false;
+
+            var p = PlayerManager.FindByGuid(guid);
+            if (p?.Account == null)
+                return false;
+
+            if (p.Account.AccountId == CurrentAccountId.Value)
+                return true;
+
+            return HasPortalAccess(PortalPages.Players);
         }
 
         private static string NormalizeMode(string mode) =>

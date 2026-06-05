@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using ACE.Database;
 using ACE.Database.Models.World;
 using Microsoft.EntityFrameworkCore;
@@ -683,7 +684,7 @@ VALUES ({item.Wcid}, 1, 0x02000181)
                     a.Message = step.Stamp;
                     break;
                 case "Motion":
-                    a.Motion = step.Motion ?? "0x41000003";
+                    a.Motion = ValidateMotionLiteral(step.Motion ?? "0x41000003");
                     break;
                 case "Give":
                 case "TakeItems":
@@ -699,6 +700,10 @@ VALUES ({item.Wcid}, 1, 0x02000181)
             var sb = new StringBuilder();
             foreach (var es in sets)
             {
+                if (es.Actions.Count == 0)
+                    throw new InvalidOperationException(
+                        $"Emote category {es.Category} for WCID {es.ObjectId} has no actions.");
+
                 var wcidCol = es.WeenieClassId?.ToString() ?? "NULL";
                 var questCol = es.Quest != null ? SqlStr(es.Quest) : "NULL";
                 sb.AppendLine($"-- Emote category {es.Category}");
@@ -720,7 +725,7 @@ VALUES ({item.Wcid}, 1, 0x02000181)
         {
             var comment = ActionType.FirstOrDefault(kv => kv.Value == a.TypeId).Key ?? a.TypeId.ToString();
             var msg = SqlStr(a.Message);
-            var motion = a.Motion != null ? a.Motion : "NULL";
+            var motion = SqlHexLiteralOrNull(a.Motion);
             var wcid = a.WeenieClassId?.ToString() ?? "NULL";
             var stack = a.StackSize?.ToString() ?? "NULL";
             return $"(@parent_id, {a.Order}, {a.TypeId} /* {comment} */, {a.Delay}, 1, {motion}, {msg}, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, {wcid}, {stack}, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)";
@@ -747,6 +752,28 @@ VALUES ({item.Wcid}, 1, 0x02000181)
 
         private static string SqlStr(string s) =>
             s == null ? "NULL" : $"'{EscapeSql(s)}'";
+
+        private static string ValidateMotionLiteral(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return "0x41000003";
+
+            if (!Regex.IsMatch(value, "^0x[0-9A-Fa-f]+$"))
+                throw new InvalidOperationException($"Invalid motion literal: {value}");
+
+            return value;
+        }
+
+        private static string SqlHexLiteralOrNull(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return "NULL";
+
+            if (!Regex.IsMatch(value, "^0x[0-9A-Fa-f]+$"))
+                throw new InvalidOperationException($"Invalid motion literal: {value}");
+
+            return value;
+        }
 
         private static string EscapeSql(string s) => s?.Replace("'", "''") ?? "";
 

@@ -13,9 +13,7 @@ export function normalizePatchNotesBrowserUrl(): void {
 
   const hashPath = hash.startsWith('#/patch-notes')
     ? hash
-    : hash.startsWith('#')
-      ? hash
-      : `#${pathname}`
+    : `#${pathname}`
 
   const target = `${origin}${search}${hashPath}`
   if (window.location.href !== target)

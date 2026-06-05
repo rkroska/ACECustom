@@ -111,7 +111,7 @@ public static class LeaderboardInlineSql
             INNER JOIN ace_shard.biota_properties_bool bm ON bm.object_id = cm.id AND bm.type = 131 AND bm.value <> 0
             WHERE cm.account_Id = a.accountId AND cm.is_Deleted = 0
         )
-        ORDER BY COUNT(*) DESC
+        ORDER BY Score DESC
         LIMIT 25
         """;
 

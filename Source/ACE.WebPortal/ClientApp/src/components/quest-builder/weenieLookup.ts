@@ -64,7 +64,7 @@ export async function lookupWeenieName(wcid: number): Promise<string | null> {
 
   try {
     const items = await api.get<unknown>(`/api/item/search?q=${wcid}&limit=1`)
-    const hit = normalizeItemList(items).find((r) => r.wcid === wcid) ?? normalizeItemList(items)[0]
+    const hit = normalizeItemList(items).find((r) => r.wcid === wcid)
     if (hit?.name) {
       nameCache.set(wcid, hit.name)
       return hit.name

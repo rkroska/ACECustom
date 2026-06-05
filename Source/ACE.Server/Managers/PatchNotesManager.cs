@@ -185,6 +185,9 @@ namespace ACE.Server.Managers
 
         public static async Task<PatchNotesDiscordResult> PostToDiscordAsync(PatchNote note)
         {
+            if (note.DiscordMessageId is > 0)
+                return PatchNotesDiscordResult.AlreadyPosted((ulong)note.DiscordMessageId.Value);
+
             var config = ConfigManager.Config.PatchNotes;
             if (config == null)
             {

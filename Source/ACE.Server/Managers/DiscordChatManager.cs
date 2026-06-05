@@ -189,18 +189,19 @@ namespace ACE.Server.Managers
 
                 foreach (var x in messages)
                 {
-                    if(x.Content == identifier)
-                    {
-                        if(x.Attachments.Count == 1)
-                        {
-                            IAttachment attachment = x.Attachments.First();
-                            if (attachment.Filename.Contains(".sql", StringComparison.InvariantCultureIgnoreCase))
-                            {
-                                res = await _httpClient.GetStringAsync(attachment.Url);
-                                return res;
-                            }
-                        }
-                    }    
+                    if (!MessageMatchesSqlIdentifier(x, identifier))
+                        continue;
+
+                    if (x.Attachments.Count != 1)
+                        continue;
+
+                    var attachment = x.Attachments.First();
+                    if (!attachment.Filename.Contains(".sql", StringComparison.InvariantCultureIgnoreCase))
+                        continue;
+
+                    res = await DownloadAttachmentTextAsync(attachment);
+                    if (!string.IsNullOrEmpty(res))
+                        return res;
                 }
             }
             catch (Exception ex)
@@ -229,18 +230,19 @@ namespace ACE.Server.Managers
 
                 foreach (var x in messages)
                 {
-                    if (x.Content == identifier)
-                    {
-                        if (x.Attachments.Count == 1)
-                        {
-                            IAttachment attachment = x.Attachments.First();
-                            if (attachment.Filename.Contains(".json", StringComparison.InvariantCultureIgnoreCase))
-                            {
-                                res = await _httpClient.GetStringAsync(attachment.Url);
-                                return res;
-                            }
-                        }
-                    }
+                    if (!MessageMatchesAttachmentIdentifier(x, identifier, ".json"))
+                        continue;
+
+                    if (x.Attachments.Count != 1)
+                        continue;
+
+                    var attachment = x.Attachments.First();
+                    if (!attachment.Filename.Contains(".json", StringComparison.InvariantCultureIgnoreCase))
+                        continue;
+
+                    res = await DownloadAttachmentTextAsync(attachment);
+                    if (!string.IsNullOrEmpty(res))
+                        return res;
                 }
             }
             catch (Exception ex)
@@ -253,9 +255,56 @@ namespace ACE.Server.Managers
 
 
 
+        /// <summary>
+        /// Matches Discord import identifier against message text or attachment name.
+        /// export-discord posts content like "Player : 19853087.sql".
+        /// </summary>
+        private static bool MessageMatchesSqlIdentifier(IMessage x, string identifier) =>
+            MessageMatchesAttachmentIdentifier(x, identifier, ".sql");
+
+        private static bool MessageMatchesAttachmentIdentifier(IMessage x, string identifier, string extension)
+        {
+            if (string.IsNullOrWhiteSpace(identifier))
+                return false;
+
+            if (string.Equals(x.Content?.Trim(), identifier, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            var expectedFile = $"{identifier}{extension}";
+            if (x.Attachments.Count == 1 &&
+                string.Equals(x.Attachments.First().Filename, expectedFile, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            var content = x.Content?.Trim();
+            if (!string.IsNullOrEmpty(content) &&
+                content.EndsWith(expectedFile, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return false;
+        }
+
+        private static async Task<string> DownloadAttachmentTextAsync(IAttachment attachment)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, attachment.Url);
+                if (!string.IsNullOrWhiteSpace(ConfigManager.Config.Chat.DiscordToken))
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bot", ConfigManager.Config.Chat.DiscordToken);
+
+                using var response = await _httpClient.SendAsync(request);
+                response.EnsureSuccessStatusCode();
+                return await response.Content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error downloading discord attachment {attachment.Filename}: {ex.Message}");
+                return string.Empty;
+            }
+        }
+
         public static void Initialize()
         {
-            _httpClient.Timeout = TimeSpan.FromSeconds(10); // CodeRabbit: Prevent long hangs if Discord is down
+            _httpClient.Timeout = TimeSpan.FromSeconds(10);
 
             _discordSocketClient = new DiscordSocketClient();
             

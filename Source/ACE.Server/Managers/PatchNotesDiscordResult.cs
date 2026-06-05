@@ -28,6 +28,13 @@ namespace ACE.Server.Managers
             Message = message
         };
 
+        public static PatchNotesDiscordResult AlreadyPosted(ulong messageId) => new()
+        {
+            Status = "already_posted",
+            Message = "Already posted to Discord.",
+            MessageId = messageId
+        };
+
         public static PatchNotesDiscordResult Failed(string message) => new()
         {
             Status = "failed",

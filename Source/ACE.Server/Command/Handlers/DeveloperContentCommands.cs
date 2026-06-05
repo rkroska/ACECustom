@@ -1183,8 +1183,20 @@ namespace ACE.Server.Command.Handlers.Processors
             if (idx != -1)
                 sqlCommands = sqlCommands.Substring(0, idx);
 
-            using (var ctx = new WorldDbContext())
-                ctx.Database.ExecuteSqlRaw(sqlCommands);
+            ExecuteWorldSqlRaw(sqlCommands);
+        }
+
+        private static void ExecuteWorldSqlRaw(string sql)
+        {
+            sql = sql.Replace("\r\n", "\n");
+
+            var idx = sql.IndexOf("/* Lifestoned Changelog:");
+            if (idx != -1)
+                sql = sql.Substring(0, idx);
+
+            using var ctx = new WorldDbContext();
+            ctx.Database.SetCommandTimeout(0);
+            ctx.Database.ExecuteSqlRaw(sql);
         }
 
         public static LandblockInstanceWriter LandblockInstanceWriter;
@@ -1491,7 +1503,6 @@ namespace ACE.Server.Command.Handlers.Processors
                 File.Delete(sqlFilename);
                 if (variationId.HasValue)
                 {
-                    // handle special case: deleting the last instance from landblock
                     using (var ctx = new WorldDbContext())
                         ctx.Database.ExecuteSqlRaw($"DELETE FROM landblock_instance WHERE landblock={landblock} and variation_Id={variationId};");
                 }
@@ -2180,7 +2191,6 @@ namespace ACE.Server.Command.Handlers.Processors
             }
             else
             {
-                // handle special case: deleting the last encounter from landblock
                 File.Delete(sqlFilename);
 
                 using (var ctx = new WorldDbContext())
@@ -2532,10 +2542,15 @@ namespace ACE.Server.Command.Handlers.Processors
                     return;
                 }
 
-                using (var ctx = new WorldDbContext())
-                    ctx.Database.ExecuteSqlRaw(sql);
+                if (uint.TryParse(identifier, out var importWcid))
+                    DatabaseManager.World.ClearCachedWeenie(importWcid);
 
-                CommandHandlerHelper.WriteOutputInfo(session, $"Imported {identifier} from discord.");
+                CommandHandlerHelper.WriteOutputInfo(session, $"Applying SQL for {identifier} ({sql.Length:N0} chars)…");
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                ExecuteWorldSqlRaw(sql);
+                sw.Stop();
+
+                CommandHandlerHelper.WriteOutputInfo(session, $"Imported {identifier} from discord ({sw.Elapsed.TotalSeconds:F1}s).");
 
                 // Try to reload as event (if it's an event, this will refresh EventManager)
                 if (Managers.EventManager.ReloadEvent(identifier))

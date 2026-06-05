@@ -31,10 +31,6 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void SendToJail()
         {
-            var jailCount = GetProperty(PropertyInt.TimesJailed) ?? 0;
-            if (jailCount < int.MaxValue)
-                SetProperty(PropertyInt.TimesJailed, jailCount + 1);
-
             TimeSpan jailTime = TimeSpan.FromSeconds(ServerConfig.ucm_jail_duration_seconds.Value);
             DateTime releaseTime = DateTime.UtcNow.Add(jailTime);
 
@@ -45,6 +41,10 @@ namespace ACE.Server.WorldObjects
             }
 
             // Apply jail effects (newly jailed).
+            var jailCount = GetProperty(PropertyInt.TimesJailed) ?? 0;
+            if (jailCount < int.MaxValue)
+                SetProperty(PropertyInt.TimesJailed, jailCount + 1);
+
             QuestManager.Stamp("jail_fresh_meat");
             RedrawPlayerWithUpdates();
             Teleport(GetJailTeleportLocation());

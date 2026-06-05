@@ -142,12 +142,15 @@ def patch_shell_sql(text: str) -> str:
 def ordered_sql_files(folder: Path) -> list[Path]:
     files = sorted(folder.glob("*.sql"))
     numbered = []
+    unnumbered = []
     for f in files:
         m = re.match(r"^(\d+)_", f.name)
         if m:
             numbered.append((int(m.group(1)), f))
+        else:
+            unnumbered.append(f)
     if numbered:
-        return [f for _, f in sorted(numbered)]
+        return [f for _, f in sorted(numbered)] + sorted(unnumbered)
     return sorted(files)
 
 
