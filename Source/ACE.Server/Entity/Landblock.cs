@@ -384,57 +384,69 @@ namespace ACE.Server.Entity
             if (log.IsDebugEnabled)
                 log.Debug($"[Prestige] Landblock {Id.Landblock:X4} (Var {VariationId}, Tier {tier}): Checking boundary markers...");
 
-            // Check if this landblock is allowed for this tier
-            bool thisAllowed = PrestigeManager.IsLandblockAllowed(VariationId, Id.Landblock);
+            // Check if this landblock is allowed for this tier and retrieve metadata
+            var lbInfo = PrestigeManager.GetAllowedLandblockInfo(VariationId, Id.Landblock);
 
             // Only spawn markers in approved landblocks
-            if (!thisAllowed)
+            if (lbInfo == null)
             {
                 if (log.IsDebugEnabled)
                     log.Debug($"[Prestige] Landblock {Id.Landblock:X4} is NOT allowed - skipping boundary markers.");
                 return;
             }
 
-            var weenie = DatabaseManager.World.GetCachedWeenie((uint)ACE.Entity.Enum.WeenieClassName.W_SHOLANTERN_CLASS);
-            if (weenie == null)
-            {
-                log.Warn($"[Prestige] SpawnPrestigeBoundaryMarkers: W_SHOLANTERN_CLASS weenie not found!");
-                return;
-            }
+            var wcid = lbInfo.BoundaryWcid ?? (uint)ServerConfig.prestige_boundary_marker_weenie_class_id.Value;
+            var scale = lbInfo.BoundaryScale ?? (float)ServerConfig.prestige_boundary_marker_scale.Value;
+            var scriptId = lbInfo.BoundaryScriptId ?? (uint)ServerConfig.prestige_boundary_marker_script_id.Value;
 
             // Edge boundaries (inset 10m from actual edge)
             const float edgeMin = 10.0f;
             const float edgeMax = 182.0f;
-            const int markersPerEdge = 6;
+            const int markersPerEdge = 15;
             
             // Calculate evenly spaced positions including corners
             float edgeLength = edgeMax - edgeMin;
             float spacing = edgeLength / (markersPerEdge - 1);
 
-            void SpawnMarkerAtPosition(float x, float y)
+            void SpawnSingleMarker(uint markerWcid, float x, float y, string name, float markerScale, uint markerScriptId)
             {
-                const float cornerEpsilon = 0.25f;
-                foreach (var existing in _prestigeBoundaryMarkers)
+                var markerWeenie = DatabaseManager.World.GetCachedWeenie(markerWcid);
+                if (markerWeenie == null)
                 {
-                    if (existing?.Location == null)
-                        continue;
-                    if (Math.Abs(existing.Location.PositionX - x) < cornerEpsilon && Math.Abs(existing.Location.PositionY - y) < cornerEpsilon)
-                        return;
-                }
-
-                var marker = WorldObjectFactory.CreateNewWorldObject(weenie);
-                if (marker == null)
-                {
-                    log.Warn($"[Prestige] Failed to create marker WorldObject");
+                    log.Warn($"[Prestige] SpawnSingleMarker: Weenie with WCID {markerWcid} not found!");
                     return;
                 }
 
-                marker.Name = "Prestige Boundary";
-                marker.SetProperty(PropertyFloat.DefaultScale, 2.5f);
+                var marker = WorldObjectFactory.CreateNewWorldObject(markerWeenie);
+                if (marker == null)
+                {
+                    log.Warn($"[Prestige] Failed to create marker WorldObject for WCID {markerWcid}");
+                    return;
+                }
+
+                if (markerScriptId != 0)
+                {
+                    marker.Name = $"{name} ({(PlayScript)markerScriptId})";
+                    marker.DefaultScriptId = markerScriptId;
+                    marker.DefaultScriptIntensity = 1.0f;
+                }
+                else
+                {
+                    marker.Name = name;
+                    marker.DefaultScriptId = null;
+                    marker.DefaultScriptIntensity = null;
+                }
+
+                marker.SetProperty(PropertyFloat.DefaultScale, markerScale);
                 
                 // Prevent despawning - make it persistent like static objects
                 marker.SetProperty(PropertyBool.Stuck, true);
                 marker.TimeToRot = -1;  // Never rot/despawn
+
+                // Make boundary markers solid and prevent them from persisting to the shard DB
+                marker.Ethereal = true;
+                marker.IgnoreCollisions = true;
+                marker.Generator = marker;
 
                 // Use physics system to calculate proper position (like encounters do)
                 var pos = new Physics.Common.Position();
@@ -443,8 +455,8 @@ namespace ACE.Server.Entity
                 pos.Frame = new Physics.Animation.AFrame(new Vector3(x, y, 0), Quaternion.Identity);
                 pos.adjust_to_outside();
 
-                // Get terrain Z height
-                pos.Frame.Origin.Z = PhysicsLandblock.GetZ(pos.Frame.Origin);
+                // Get terrain Z height and make it float a bit above the ground (+1.5m)
+                pos.Frame.Origin.Z = PhysicsLandblock.GetZ(pos.Frame.Origin) + 1.5f;
 
                 marker.Location = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation, pos.Variation);
                 marker.Location.Variation = VariationId;
@@ -459,6 +471,20 @@ namespace ACE.Server.Entity
                 }
             }
 
+            void SpawnMarkerAtPosition(float x, float y)
+            {
+                const float cornerEpsilon = 0.25f;
+                foreach (var existing in _prestigeBoundaryMarkers)
+                {
+                    if (existing?.Location == null)
+                        continue;
+                    if (Math.Abs(existing.Location.PositionX - x) < cornerEpsilon && Math.Abs(existing.Location.PositionY - y) < cornerEpsilon)
+                        return;
+                }
+
+                SpawnSingleMarker(wcid, x, y, "Prestige Boundary", scale, scriptId);
+            }
+
             void SpawnMarkersOnEdge(float fixedCoord, bool isXFixed)
             {
                 for (int i = 0; i < markersPerEdge; i++)
@@ -466,6 +492,7 @@ namespace ACE.Server.Entity
                     float offset = edgeMin + (i * spacing);
                     float x = isXFixed ? fixedCoord : offset;
                     float y = isXFixed ? offset : fixedCoord;
+
                     SpawnMarkerAtPosition(x, y);
                 }
             }

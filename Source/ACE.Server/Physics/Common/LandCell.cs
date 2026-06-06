@@ -97,8 +97,8 @@ namespace ACE.Server.Physics.Common
                     var lcoord = LandDefs.gid_to_lcoord(cellPoint);
                     if (lcoord != null)
                     {
-                        add_outside_cell(cellArray, lcoord.Value);
-                        check_add_cell_boundary(cellArray, point, lcoord.Value, minRad, maxRad);
+                        add_outside_cell(cellArray, lcoord.Value, position.Variation);
+                        check_add_cell_boundary(cellArray, point, lcoord.Value, minRad, maxRad, position.Variation);
                     }
                 }
             }
@@ -108,7 +108,7 @@ namespace ACE.Server.Physics.Common
 
                 var lcoord = LandDefs.gid_to_lcoord(position.ObjCellID);
                 if (lcoord != null)
-                    add_outside_cell(cellArray, lcoord.Value);
+                    add_outside_cell(cellArray, lcoord.Value, position.Variation);
             }
         }
 
@@ -203,7 +203,7 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public static void add_outside_cell(CellArray cellArray, float _x, float _y)
+        public static void add_outside_cell(CellArray cellArray, float _x, float _y, int? variationId = null)
         {
             var x = (uint)_x;
             var y = (uint)_y;
@@ -211,46 +211,46 @@ namespace ACE.Server.Physics.Common
             if (x >= 0 && y >= 0 && x < 2040 && y < 2040)
             {
                 var cellID = (((y >> 3) | 32 * (x & 0xFFFFFFF8)) << 16) | ((y & 7) + 8 * (x & 7) + 1);
-                var landCell = Get(cellID, null);
+                var landCell = Get(cellID, variationId);
                 if (landCell != null)
                     cellArray.add_cell(cellID, landCell);
             }
         }
 
-        public static void add_outside_cell(CellArray cellArray, Vector2 lcoord)
+        public static void add_outside_cell(CellArray cellArray, Vector2 lcoord, int? variationId = null)
         {
-            add_outside_cell(cellArray, lcoord.X, lcoord.Y);
+            add_outside_cell(cellArray, lcoord.X, lcoord.Y, variationId);
         }
 
         /// <summary>
         /// Checks if this sphere exceeds the boundaries of the cell
         /// if it does, adds the neighboring cells to cellArray
         /// </summary>
-        public static void check_add_cell_boundary(CellArray cellArray, Vector2 point, Vector2 lcoord, float minRad, float maxRad)
+        public static void check_add_cell_boundary(CellArray cellArray, Vector2 point, Vector2 lcoord, float minRad, float maxRad, int? variationId = null)
         {
             float x = lcoord.X, y = lcoord.Y;
 
             if (point.X > maxRad)
             {
-                add_outside_cell(cellArray, x + 1, y);
+                add_outside_cell(cellArray, x + 1, y, variationId);
                 if (point.Y > maxRad)
-                    add_outside_cell(cellArray, x + 1, y + 1);
+                    add_outside_cell(cellArray, x + 1, y + 1, variationId);
                 if (point.Y < minRad)
-                    add_outside_cell(cellArray, x + 1, y - 1);
+                    add_outside_cell(cellArray, x + 1, y - 1, variationId);
             }
             if (point.X < minRad)
             {
-                add_outside_cell(cellArray, x - 1, y);
+                add_outside_cell(cellArray, x - 1, y, variationId);
                 if (point.Y > maxRad)
-                    add_outside_cell(cellArray, x - 1, y + 1);
+                    add_outside_cell(cellArray, x - 1, y + 1, variationId);
                 if (point.Y < minRad)
-                    add_outside_cell(cellArray, x - 1, y - 1);
+                    add_outside_cell(cellArray, x - 1, y - 1, variationId);
             }
             if (point.Y > maxRad)
-                add_outside_cell(cellArray, x, y + 1);
+                add_outside_cell(cellArray, x, y + 1, variationId);
 
             if (point.Y < minRad)
-                add_outside_cell(cellArray, x, y - 1);
+                add_outside_cell(cellArray, x, y - 1, variationId);
         }
 
         public bool find_terrain_poly(Vector3 origin, ref Polygon walkable)
