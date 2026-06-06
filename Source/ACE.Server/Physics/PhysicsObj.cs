@@ -1899,14 +1899,14 @@ namespace ACE.Server.Physics
             if (!IsPlayer || WeenieObj.WorldObject is not Player player)
                 return;
 
-            var playerVar = PrestigeManager.GetEffectiveVariationForVisibility(player);
-
             if (DateTime.UtcNow - player.LastTeleportTime < TeleportCreateObjectDelay)
             {
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(TeleportCreateObjectDelay.TotalSeconds);
                 actionChain.AddAction(player, ActionType.PhysicsObj_TrackObjects, () =>
                 {
+                    var playerVar = PrestigeManager.GetEffectiveVariationForVisibility(player);
+
                     foreach (var obj in newlyVisible)
                     {
                         var wo = obj.WeenieObj.WorldObject;
@@ -1923,6 +1923,8 @@ namespace ACE.Server.Physics
             }
             else
             {
+                var playerVar = PrestigeManager.GetEffectiveVariationForVisibility(player);
+
                 foreach (var obj in newlyVisible)
                 {
                     var wo = obj.WeenieObj.WorldObject;
@@ -1956,17 +1958,26 @@ namespace ACE.Server.Physics
             if (wo == null)
                 return;
 
-            if (!PrestigeManager.SameVariationForVisibility(
-                    PrestigeManager.GetEffectiveVariationForVisibility(player),
-                    PrestigeManager.GetEffectiveVariationForVisibility(wo)))
-                return;
-
             if (DateTime.UtcNow - player.LastTeleportTime < TeleportCreateObjectDelay)
             {
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(TeleportCreateObjectDelay.TotalSeconds);
-                actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo, true, "enqueue_obj_post_teleport_delay"));
+                actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () =>
+                {
+                    if (!PrestigeManager.SameVariationForVisibility(
+                            PrestigeManager.GetEffectiveVariationForVisibility(player),
+                            PrestigeManager.GetEffectiveVariationForVisibility(wo)))
+                        return;
+
+                    player.TrackObject(wo, true, "enqueue_obj_post_teleport_delay");
+                });
                 actionChain.EnqueueChain();
+            }
+            else if (!PrestigeManager.SameVariationForVisibility(
+                    PrestigeManager.GetEffectiveVariationForVisibility(player),
+                    PrestigeManager.GetEffectiveVariationForVisibility(wo)))
+            {
+                return;
             }
             else
             {
@@ -2010,8 +2021,8 @@ namespace ACE.Server.Physics
             enter_cell(newCell);
             RequestPos.ObjCellID = newCell.ID;      // document this control flow better
 
-            // sync location for initial CO
-            if (entering_world)
+            // sync location for initial CO / post-teleport visibility (Location lags physics during Teleport())
+            if (entering_world || (IsPlayer && WeenieObj.WorldObject is Player tp && tp.Teleporting))
                 WeenieObj.WorldObject.SyncLocation(newCell.VariationId);
 
             // handle self

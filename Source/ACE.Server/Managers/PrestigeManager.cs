@@ -503,6 +503,12 @@ namespace ACE.Server.Managers
             if (wo == null)
                 return null;
 
+            // During server teleports, set_current_pos / enter_cell_server run before
+            // WorldObject.Location is committed in UpdatePosition. Prefer physics so
+            // prestige→retail arrivals do not keep filtering on the source variation.
+            if (wo is Player teleportingPlayer && teleportingPlayer.Teleporting && wo.PhysicsObj != null)
+                return wo.PhysicsObj.Position.Variation;
+
             // Most world objects have a location (or physics position) with a variation.
             // However, non-spatial objects (inventory items, escrow items, etc.) may not.
             // For networking boundaries we still need a deterministic "effective variation"

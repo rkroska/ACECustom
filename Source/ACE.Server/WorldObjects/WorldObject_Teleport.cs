@@ -116,7 +116,10 @@ namespace ACE.Server.WorldObjects
             {
                 if (knownObj.PhysicsObj == null) continue;
                 if (knownObj.Location == null) continue;
-                if (knownObj.Location.Variation == destinationVariation) continue;
+                if (PrestigeManager.SameVariationForVisibility(
+                        PrestigeManager.GetEffectiveVariationForVisibility(knownObj),
+                        destinationVariation))
+                    continue;
 
                 knownObj.PhysicsObj.ObjMaint?.RemoveObject(PhysicsObj);
                 PhysicsObj?.ObjMaint?.RemoveObject(knownObj.PhysicsObj);
