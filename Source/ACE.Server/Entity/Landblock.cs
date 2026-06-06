@@ -100,7 +100,7 @@ namespace ACE.Server.Entity
         private readonly ConcurrentDictionary<ObjectGuid, WorldObject> worldObjects = new ConcurrentDictionary<ObjectGuid, WorldObject>();
         private readonly ConcurrentDictionary<ObjectGuid, WorldObject> pendingAdditions = new ConcurrentDictionary<ObjectGuid, WorldObject>();
         private readonly object pendingRemovalsLock = new object();
-        private readonly List<ObjectGuid> pendingRemovals = new List<ObjectGuid>();
+        private readonly HashSet<ObjectGuid> pendingRemovals = new HashSet<ObjectGuid>();
 
         // Cache used for Tick efficiency
         public readonly List<Player> players = new List<Player>();
