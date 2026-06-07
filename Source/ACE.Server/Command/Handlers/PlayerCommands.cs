@@ -3935,13 +3935,13 @@ namespace ACE.Server.Command.Handlers
                      Console.WriteLine($"Error in RemoveItemFromPlayer for player {player.Name}: {ex.Message}");
                  }
              }*/
-
-        // Returns a player's current location. This is distinct from `/loc`, which is client-side.
-        // This should generally mirror the client-side implementation but includes additional server details.
-        [CommandHandler("location", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Shows your current server-side location.")]
+        // Returns a player's current location including variation (e.g. .v11 for prestige zones).
+        // @loc is intentionally NOT registered here — the client intercepts it before it reaches the server.
+        [CommandHandler("location", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Shows your current server-side location including variation.")]
         public static void HandleLocation(Session session, params string[] parameters)
         {
             session.Network.EnqueueSend(new GameMessageSystemChat($"Your location is: {session.Player.Location}", ChatMessageType.Broadcast));
         }
+
     }
 }

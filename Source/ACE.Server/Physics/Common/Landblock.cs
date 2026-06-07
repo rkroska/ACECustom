@@ -487,7 +487,10 @@ namespace ACE.Server.Physics.Common
         {
             // should be length SideCellCount ^ 2
             foreach (var landCell in LandCells.Values)
+            {
                 landCell.CurLandblock = this;
+                landCell.VariationId = VariationId;
+            }
         }
 
         public void init_static_objs()

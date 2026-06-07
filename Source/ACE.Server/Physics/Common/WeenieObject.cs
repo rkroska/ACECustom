@@ -199,6 +199,12 @@ namespace ACE.Server.Physics.Common
             if (wo.Guid.Equals(targetWO.Guid))
                 return -1;
 
+            // Check if the objects share variation visibility (e.g. players in variation 11 shouldn't collide with portals in variation 0).
+            var woVar = ACE.Server.Managers.PrestigeManager.GetEffectiveVariationForVisibility(wo);
+            var targetVar = ACE.Server.Managers.PrestigeManager.GetEffectiveVariationForVisibility(targetWO);
+            if (!ACE.Server.Managers.PrestigeManager.SameVariationForVisibility(woVar, targetVar))
+                return -1;
+
             /*Console.WriteLine("ObjCollisionProfile");
             Console.WriteLine("Source: " + WorldObject.Name);
             Console.WriteLine("Target: " + obj.WeenieObj.WorldObject.Name);*/
@@ -238,7 +244,14 @@ namespace ACE.Server.Physics.Common
             var target = wo.CurrentLandblock?.GetObject(targetGuid);
 
             if (target != null)
+            {
+                var woVar = ACE.Server.Managers.PrestigeManager.GetEffectiveVariationForVisibility(wo);
+                var targetVar = ACE.Server.Managers.PrestigeManager.GetEffectiveVariationForVisibility(target);
+                if (!ACE.Server.Managers.PrestigeManager.SameVariationForVisibility(woVar, targetVar))
+                    return;
+
                 wo.OnCollideObjectEnd(target);
+            }
         }
 
         public void OnMotionDone(uint motionID, bool success)

@@ -487,8 +487,12 @@ namespace ACE.Server.Physics.Common
 
             // init for landcell
             LandCells = new ConcurrentDictionary<VariantCacheId, ObjCell>();
-            LandCells = new ConcurrentDictionary<VariantCacheId, ObjCell>();
-            for (uint i = 0; i < 64; i++) LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = variationId }, new LandCell((i)));
+            for (uint i = 0; i < 64; i++)
+            {
+                var cell = new LandCell(i);
+                cell.VariationId = variationId;
+                LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = variationId }, cell);
+            }
         }
 
         /// <summary>
@@ -515,7 +519,11 @@ namespace ACE.Server.Physics.Common
 
             LandCells = new ConcurrentDictionary<VariantCacheId, ObjCell>(1, numCells);
             for (uint i = 0; i < numCells; i++)
-                LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = VariationId }, new LandCell((ID & LandDefs.BlockMask) + i));
+            {
+                var cell = new LandCell((ID & LandDefs.BlockMask) + i);
+                cell.VariationId = VariationId;
+                LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = VariationId }, cell);
+            }
         }
 
         /// <summary>

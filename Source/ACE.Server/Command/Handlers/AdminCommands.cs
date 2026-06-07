@@ -492,44 +492,222 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("prestigezone", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+        [CommandHandler("pz", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
             "Manage allowed prestige landblocks.",
-            "add <tier> <landblockHex|landblockDec>\nremove <tier> <landblockHex|landblockDec>\nlist [tier]\nreload\nrefresh [variation]")]
+            "add <tier> <landblockHex|landblockDec> <areaName> [boundaryWcid] [boundaryScale] [boundaryScriptId] [isWiped]\nremove <tier> <landblockHex|landblockDec> [areaName]\nlist [tier]\nreload\nrefresh [variation]\nwipe <[tier]> <landblock|areaName>\nrestore <[tier]> <landblock|areaName>")]
+        [CommandHandler("prestige", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
+            "Manage allowed prestige landblocks.",
+            "add <tier> <landblockHex|landblockDec> <areaName> [boundaryWcid] [boundaryScale] [boundaryScriptId] [isWiped]\nremove <tier> <landblockHex|landblockDec> [areaName]\nlist [tier]\nreload\nrefresh [variation]\nwipe <[tier]> <landblock|areaName>\nrestore <[tier]> <landblock|areaName>")]
+        [CommandHandler("prestigezone", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
+            "Manage allowed prestige landblocks.",
+            "add <tier> <landblockHex|landblockDec> <areaName> [boundaryWcid] [boundaryScale] [boundaryScriptId] [isWiped]\nremove <tier> <landblockHex|landblockDec> [areaName]\nlist [tier]\nreload\nrefresh [variation]\nwipe <[tier]> <landblock|areaName>\nrestore <[tier]> <landblock|areaName>")]
         public static void HandlePrestigeZone(Session session, params string[] parameters)
         {
+            if (parameters.Length == 0)
+            {
+                var helpMsg = "=== Prestige Zone Commands ===\n" +
+                              "• /pz list [tier] - Lists allowed landblocks for prestige tiers.\n" +
+                              "• /pz add <tier> <landblockHex|landblockDec> <areaName> [boundaryWcid] [boundaryScale] [boundaryScriptId] [isWiped] - Registers a landblock to a prestige tier.\n" +
+                              "• /pz remove <tier> <landblockHex|landblockDec> - Removes a landblock from a prestige tier.\n" +
+                              "• /pz wipe <[tier]> <landblockHex|landblockDec|areaName> - Wipes retail spawns from allowed landblock(s).\n" +
+                              "• /pz restore <[tier]> <landblockHex|landblockDec|areaName> - Restores retail spawns to allowed landblock(s), side-by-side with custom content.\n" +
+                              "• /pz reload - Reloads all allowed prestige landblocks from the database.\n" +
+                              "• /pz refresh [variation] - Refreshes boundary markers for all loaded prestige landblocks.";
+
+                CommandHandlerHelper.WriteOutputInfo(session, helpMsg);
+                return;
+            }
+
             var subcommand = parameters[0].ToLowerInvariant();
 
             switch (subcommand)
             {
                 case "add":
-                    if (parameters.Length < 3 || !TryParsePrestigeTier(parameters[1], out var addTier) || !TryParseLandblock(parameters[2], out var addLandblock))
+                    if (parameters.Length < 4 || !TryParsePrestigeTier(parameters[1], out var addTier) || !TryParseLandblock(parameters[2], out var addLandblock))
                     {
-                        CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone add <tier> <landblockHex|landblockDec>");
+                        CommandHandlerHelper.WriteOutputInfo(session, "Usage: /pz add <tier> <landblockHex|landblockDec> <areaName> [boundaryWcid] [boundaryScale] [boundaryScriptId] [isWiped]");
                         return;
                     }
 
-                    PrestigeManager.AddAllowedLandblock(addTier, addLandblock);
-                    CommandHandlerHelper.WriteOutputInfo(session, $"Added landblock {addLandblock:X4} to prestige tier {addTier}.");
-                    PlayerManager.BroadcastToAuditChannel(session.Player,
-                        $"[PrestigeZone] {session.Player.Name} added landblock {addLandblock:X4} to prestige tier {addTier}.");
+                    if (addTier > 100)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Invalid tier {addTier}. Tier must be between 1 and 100.");
+                        return;
+                    }
+
+                    string areaName = parameters[3];
+                    uint? boundaryWcid = null;
+                    float? boundaryScale = null;
+                    uint? boundaryScriptId = null;
+                    bool isWiped = false;
+
+                    if (parameters.Length >= 5)
+                    {
+                        if (uint.TryParse(parameters[4], out var wcidVal))
+                            boundaryWcid = wcidVal;
+                        else
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, "Invalid boundaryWcid. Must be a positive integer.");
+                            return;
+                        }
+                    }
+
+                    if (parameters.Length >= 6)
+                    {
+                        if (float.TryParse(parameters[5], out var scaleVal))
+                            boundaryScale = scaleVal;
+                        else
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, "Invalid boundaryScale. Must be a decimal number.");
+                            return;
+                        }
+                    }
+
+                    if (parameters.Length >= 7)
+                    {
+                        if (uint.TryParse(parameters[6], out var scriptVal))
+                            boundaryScriptId = scriptVal;
+                        else
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, "Invalid boundaryScriptId. Must be a non-negative integer.");
+                            return;
+                        }
+                    }
+
+                    if (parameters.Length >= 8)
+                    {
+                        if (bool.TryParse(parameters[7], out var wipedVal))
+                            isWiped = wipedVal;
+                        else if (int.TryParse(parameters[7], out var wipedInt))
+                            isWiped = wipedInt != 0;
+                        else
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, "Invalid isWiped. Must be true/false or 1/0.");
+                            return;
+                        }
+                    }
+
+                    PrestigeManager.AddAllowedLandblock(addTier, addLandblock, areaName, boundaryWcid, boundaryScale, boundaryScriptId, isWiped);
+                    
+                    var infoStr = $"[Prestige] Successfully registered Landblock 0x{addLandblock:X4} under Tier {addTier} (Area: \"{areaName}\", Wiped: {isWiped}) to the prestige database";
+                    var overrideParts = new System.Collections.Generic.List<string>();
+                    if (boundaryWcid.HasValue) overrideParts.Add($"WCID: {boundaryWcid.Value}");
+                    if (boundaryScale.HasValue) overrideParts.Add($"Scale: {boundaryScale.Value}");
+                    if (boundaryScriptId.HasValue) overrideParts.Add($"Script: {boundaryScriptId.Value}");
+                    if (overrideParts.Count > 0)
+                        infoStr += $" (Overrides - {string.Join(", ", overrideParts)})";
+                    infoStr += ".";
+
+                    CommandHandlerHelper.WriteOutputInfo(session, infoStr);
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"[PrestigeZone] {session.Player.Name} {infoStr}");
                     break;
 
                 case "remove":
                     if (parameters.Length < 3 || !TryParsePrestigeTier(parameters[1], out var removeTier) || !TryParseLandblock(parameters[2], out var removeLandblock))
                     {
-                        CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone remove <tier> <landblockHex|landblockDec>");
+                        CommandHandlerHelper.WriteOutputInfo(session, "Usage: /pz remove <tier> <landblockHex|landblockDec>");
                         return;
                     }
 
                     var removed = PrestigeManager.RemoveAllowedLandblock(removeTier, removeLandblock);
-                    CommandHandlerHelper.WriteOutputInfo(session, removed
-                        ? $"Removed landblock {removeLandblock:X4} from prestige tier {removeTier}."
-                        : $"No active mapping found for tier {removeTier}, landblock {removeLandblock:X4}.");
-                    PlayerManager.BroadcastToAuditChannel(session.Player,
-                        removed
-                            ? $"[PrestigeZone] {session.Player.Name} removed landblock {removeLandblock:X4} from prestige tier {removeTier}."
-                            : $"[PrestigeZone] {session.Player.Name} attempted remove tier {removeTier} landblock {removeLandblock:X4} (no active row).");
+                    var removeMsg = removed
+                        ? $"[Prestige] Successfully removed Landblock 0x{removeLandblock:X4} from Tier {removeTier} in the prestige database."
+                        : $"[Prestige] Failed to remove: No active landblock mapping found for Landblock 0x{removeLandblock:X4} on Tier {removeTier}.";
+
+                    CommandHandlerHelper.WriteOutputInfo(session, removeMsg);
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"[PrestigeZone] {session.Player.Name} {removeMsg}");
                     break;
+
+                case "wipe":
+                case "restore":
+                {
+                    if (parameters.Length < 2)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Usage: /pz {subcommand} <[tier]> <landblockHex|landblockDec|areaName>");
+                        return;
+                    }
+
+                    int tier = 1;
+                    int startIdx = 1;
+                    if (parameters.Length >= 3 && int.TryParse(parameters[1], out var parsedTier) && parsedTier >= 1 && parsedTier <= 100)
+                    {
+                        tier = parsedTier;
+                        startIdx = 2;
+                    }
+                    else
+                    {
+                        var playerVar = session.Player?.Location?.Variation;
+                        var curTier = PrestigeManager.GetTier(playerVar);
+                        tier = curTier > 0 ? curTier : 1;
+                    }
+
+                    var targetTokens = new System.Collections.Generic.List<string>();
+                    for (int i = startIdx; i < parameters.Length; i++)
+                    {
+                        targetTokens.Add(parameters[i]);
+                    }
+                    var targetToken = string.Join(" ", targetTokens).Trim('"', ' ');
+
+                    bool setWiped = (subcommand == "wipe");
+                    var landblocksToReload = new System.Collections.Generic.List<ushort>();
+                    bool success = false;
+                    int dbCount = 0;
+
+                    if (targetTokens.Count == 1 && TryParseLandblock(targetToken, out var wipeLandblock))
+                    {
+                        success = PrestigeManager.UpdateWipeStatus(tier, wipeLandblock, setWiped);
+                        if (success)
+                        {
+                            dbCount = 1;
+                            landblocksToReload.Add(wipeLandblock);
+                        }
+                    }
+                    else
+                    {
+                        var allInfos = PrestigeManager.GetAllAllowedLandblockInfos();
+                        if (allInfos.TryGetValue(tier, out var allowedDict))
+                        {
+                            foreach (var kvp in allowedDict)
+                            {
+                                if (string.Equals(kvp.Value.AreaName, targetToken, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    landblocksToReload.Add(kvp.Key);
+                                }
+                            }
+                        }
+
+                        dbCount = PrestigeManager.UpdateWipeStatusByAreaName(tier, targetToken, setWiped);
+                        success = dbCount > 0;
+                    }
+
+                    if (success)
+                     {
+                        var reloadedCount = 0;
+                        foreach (var lbId in landblocksToReload)
+                        {
+                            var cacheKey = new VariantCacheId { Landblock = lbId, Variant = tier + 10 };
+                            if (LandblockManager.loadedLandblocks.TryGetValue(cacheKey, out var loadedLb))
+                            {
+                                loadedLb.DestroyAllNonPlayerObjects();
+                                DatabaseManager.World.ClearCachedInstancesByLandblock(lbId, tier + 10);
+                                 
+                                WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_Init, () =>
+                                {
+                                    loadedLb.Init(tier + 10, true);
+                                }));
+                                reloadedCount++;
+                            }
+                        }
+
+                        var label = setWiped ? "wiped" : "restored";
+                        CommandHandlerHelper.WriteOutputInfo(session, $"[Prestige] Successfully {label} {dbCount} landblocks in the DB. Reloaded {reloadedCount} active landblocks in-game.");
+                    }
+                    else
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, $"[Prestige] Target \"{targetToken}\" (Tier {tier}) not found in the allowed list.");
+                    }
+                    break;
+                }
 
                 case "list":
                     if (parameters.Length >= 2)
@@ -540,28 +718,51 @@ namespace ACE.Server.Command.Handlers
                             return;
                         }
 
-                        var singleSet = PrestigeManager.GetAllAllowedLandblocks();
-                        if (!singleSet.TryGetValue(singleTier, out var lbs) || lbs.Count == 0)
+                        var allInfos = PrestigeManager.GetAllAllowedLandblockInfos();
+                        if (!allInfos.TryGetValue(singleTier, out var lbs) || lbs.Count == 0)
                         {
                             CommandHandlerHelper.WriteOutputInfo(session, $"Tier {singleTier}: no allowed landblocks configured.");
                             return;
                         }
 
-                        CommandHandlerHelper.WriteOutputInfo(session, FormatPreview($"Tier {singleTier} allowed landblocks", lbs.OrderBy(x => x).Select(x => x.ToString("X4"))));
+                        CommandHandlerHelper.WriteOutputInfo(session, $"=== Tier {singleTier} Allowed Landblocks ===");
+                        var grouped = lbs.Values.GroupBy(x => x.AreaName).OrderBy(g => g.Key == "Default" ? 0 : 1).ThenBy(g => g.Key);
+                        foreach (var group in grouped)
+                        {
+                            var sortedLbs = group.OrderBy(x => x.Landblock).Select(x => x.Landblock.ToString("X4")).ToList();
+                            const int chunkSize = 20;
+                            for (int ci = 0; ci < sortedLbs.Count; ci += chunkSize)
+                            {
+                                var chunk = sortedLbs.Skip(ci).Take(chunkSize);
+                                var prefix = ci == 0 ? $"  {group.Key}: " : "    ";
+                                CommandHandlerHelper.WriteOutputInfo(session, prefix + string.Join(", ", chunk));
+                            }
+                        }
                         return;
                     }
 
-                    var all = PrestigeManager.GetAllAllowedLandblocks();
-                    if (all.Count == 0)
+                    var allTiers = PrestigeManager.GetAllAllowedLandblockInfos();
+                    if (allTiers.Count == 0)
                     {
                         CommandHandlerHelper.WriteOutputInfo(session, "No prestige zone mappings configured.");
                         return;
                     }
 
-                    foreach (var kvp in all.OrderBy(x => x.Key))
+                    foreach (var kvp in allTiers.OrderBy(x => x.Key))
                     {
-                        var lbList = kvp.Value.OrderBy(x => x).Select(x => x.ToString("X4"));
-                        CommandHandlerHelper.WriteOutputInfo(session, FormatPreview($"Tier {kvp.Key}", lbList));
+                        CommandHandlerHelper.WriteOutputInfo(session, $"=== Tier {kvp.Key} Allowed Landblocks ===");
+                        var grouped = kvp.Value.Values.GroupBy(x => x.AreaName).OrderBy(g => g.Key == "Default" ? 0 : 1).ThenBy(g => g.Key);
+                        foreach (var group in grouped)
+                        {
+                            var sortedLbs = group.OrderBy(x => x.Landblock).Select(x => x.Landblock.ToString("X4")).ToList();
+                            const int chunkSize = 20;
+                            for (int ci = 0; ci < sortedLbs.Count; ci += chunkSize)
+                            {
+                                var chunk = sortedLbs.Skip(ci).Take(chunkSize);
+                                var prefix = ci == 0 ? $"  {group.Key}: " : "    ";
+                                CommandHandlerHelper.WriteOutputInfo(session, prefix + string.Join(", ", chunk));
+                            }
+                        }
                     }
                     break;
 
@@ -605,13 +806,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("pz", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
-            "Alias for prestigezone.",
-            "add|remove|list|reload|refresh")]
-        public static void HandlePz(Session session, params string[] parameters)
-        {
-            HandlePrestigeZone(session, parameters);
-        }
+
 
         private static bool TryParsePrestigeTier(string input, out int tier)
         {
@@ -2858,7 +3053,7 @@ namespace ACE.Server.Command.Handlers
         }
 
         // televariant variation (other /tele* live in TeleportCommands on master)
-        [CommandHandler("televariant", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+        [CommandHandler("televariant", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Teleport yourself to the specified variation at your current location.",
             "variation — retail | default | null (unlayered base, same as omitting variation), or an integer id (use 0 for variation 0)\n" +
             "Example: @televariant 1\n" +
@@ -2896,12 +3091,13 @@ namespace ACE.Server.Command.Handlers
                                         false, variation);
 
             session.Player.Teleport(newPos);
-            var variationLabel = variation.HasValue ? variation.Value.ToString() : "base (retail / default / null)";
-            CommandHandlerHelper.WriteOutputInfo(session, $"Teleporting to variation {variationLabel}.");
+            var variationLabel = PrestigeManager.GetVariationLabel(variation);
+            var returnTip = variation.HasValue ? " (Use '@tv retail' to return to the base world.)" : "";
+            CommandHandlerHelper.WriteOutputInfo(session, $"Teleporting to variation {variationLabel}.{returnTip}");
         }
 
         // tv {variation} - Alias for televariant
-        [CommandHandler("tv", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+        [CommandHandler("tv", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Teleport yourself to the specified variation at your current location (alias for televariant).",
             "variation — retail | default | null (unlayered base), or an integer id (use 0 for variation 0)\n" +
             "Example: @tv 1\n" +

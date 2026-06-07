@@ -317,6 +317,9 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Player has the Fork Charm active — Streak, Arc, and Bolt projectiles fork to nearby enemies on hit.</summary>
         HasForkCharm = 50039,
 
+        /// <summary>Player has the Far Shot Charm active — increases missile weapon attack range and final damage.</summary>
+        HasFarShotCharm = 50040,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }

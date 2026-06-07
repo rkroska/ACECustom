@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 
 using ACE.Common;
@@ -538,8 +539,18 @@ namespace ACE.Server.WorldObjects
             {
                 // PUNISHMENT ZONE
                 var nowOob = Time.GetUnixTime();
-                if (_outOfBoundsEntryTime == 0) _outOfBoundsEntryTime = nowOob;
+                if (_outOfBoundsEntryTime == 0)
+                {
+                    _outOfBoundsEntryTime = nowOob;
+                    // Send instant warning on entry
+                    Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
+                        Session, 
+                        "!!! YOU ARE LEAVING THE PRESTIGE ZONE! RETURN IMMEDIATELY! !!!"));
+                }
                 _lastDangerTime = nowOob;
+
+                // Wisp spawn immediately on enter (only spawns once due to wisp == null guard)
+                UpdateGuideWisp(true, variation);
 
                 // Enqueue everything to ensure thread safety (AddWorldObjectInternal must be main thread)
                 WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
@@ -571,7 +582,7 @@ namespace ACE.Server.WorldObjects
                     // 1. Visuals: Void Particles (no fog — avoids fog/teleport interaction with prestige boundary)
                     Session.Network.EnqueueSend(new GameMessageScript(Guid, ACE.Entity.Enum.PlayScript.HealthDownVoid));
 
-                    // 2. Text: Center Screen (Yellow) ONLY
+                    // 2. Text: Center Screen (Yellow) repeat warning on damage tick
                     Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
                         Session, 
                         "!!! YOU ARE LEAVING THE PRESTIGE ZONE! RETURN IMMEDIATELY! !!!"));
@@ -582,8 +593,6 @@ namespace ACE.Server.WorldObjects
                     
                     UpdateVitalDelta(Health, -dmg);
                     Session.Network.EnqueueSend(new ACE.Server.Network.GameMessages.Messages.GameMessagePrivateUpdateVital(this, Health));
-
-                    UpdateGuideWisp(true, variation);
                     
                     if (Health.Current <= 0 && !IsInDeathProcess)
                     {
@@ -730,33 +739,19 @@ namespace ACE.Server.WorldObjects
                                 bool nAllowed = lbId.LandblockY < 255 && PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock);
                                 bool sAllowed = lbId.LandblockY > 0 && PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock);
 
-                                if (eAllowed)
+                                var candidates = new List<(string Dir, float Dist, uint Cell, float X, float Y)>();
+                                if (eAllowed) candidates.Add(("East", 192.0f - playerPos.X, lbId.East.Raw, 5.0f, playerPos.Y));
+                                if (wAllowed) candidates.Add(("West", playerPos.X, lbId.West.Raw, 187.0f, playerPos.Y));
+                                if (nAllowed) candidates.Add(("North", 192.0f - playerPos.Y, lbId.North.Raw, playerPos.X, 5.0f));
+                                if (sAllowed) candidates.Add(("South", playerPos.Y, lbId.South.Raw, playerPos.X, 187.0f));
+
+                                if (candidates.Count > 0)
                                 {
-                                    targetCell = lbId.East.Raw;
-                                    targetX = 5.0f; 
-                                    targetY = playerPos.Y;
-                                    safeDir = "East";
-                                }
-                                else if (wAllowed)
-                                {
-                                    targetCell = lbId.West.Raw;
-                                    targetX = 187.0f;
-                                    targetY = playerPos.Y;
-                                    safeDir = "West";
-                                }
-                                else if (nAllowed)
-                                {
-                                    targetCell = lbId.North.Raw;
-                                    targetX = playerPos.X;
-                                    targetY = 5.0f;
-                                    safeDir = "North";
-                                }
-                                else if (sAllowed)
-                                {
-                                    targetCell = lbId.South.Raw;
-                                    targetX = playerPos.X;
-                                    targetY = 187.0f;
-                                    safeDir = "South";
+                                    var best = candidates.OrderBy(c => c.Dist).First();
+                                    targetCell = best.Cell;
+                                    targetX = best.X;
+                                    targetY = best.Y;
+                                    safeDir = best.Dir;
                                 }
                                 else
                                 {

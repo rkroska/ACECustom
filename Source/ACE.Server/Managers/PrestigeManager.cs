@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using log4net;
 using ACE.Database.Models.World;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -12,11 +14,23 @@ namespace ACE.Server.Managers
 {
     public static class PrestigeManager
     {
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         // Tier 1 starts at Variation 11
         // Retail is 0-10 (technically 0 is main world, others are specialized)
         public const int PRESTIGE_VAR_OFFSET = 10;
         public const int PRESTIGE_BASE_VARIATION = PRESTIGE_VAR_OFFSET + 1;
         private const int DEFAULT_PRESTIGE_MAX_TIER = 10;
+
+        public class AllowedLandblockInfo
+        {
+            public ushort Landblock { get; set; }
+            public string AreaName { get; set; }
+            public uint? BoundaryWcid { get; set; }
+            public float? BoundaryScale { get; set; }
+            public uint? BoundaryScriptId { get; set; }
+            public bool IsWiped { get; set; }
+        }
 
         /// <summary>
         /// Defines allowed landblocks for each prestige tier.
@@ -38,10 +52,29 @@ namespace ACE.Server.Managers
             [9] = new HashSet<ushort> { 0xEAEA },
             [10] = new HashSet<ushort> { 0xEAEA },
         };
-        private static Dictionary<int, HashSet<ushort>> _tierAllowedLandblocks = CloneAllowedLandblocks(_defaultTierAllowedLandblocks);
+        private static Dictionary<int, Dictionary<ushort, AllowedLandblockInfo>> _tierAllowedLandblocks = GetDefaultAllowedLandblocks();
         private static readonly object _allowedLandblocksLock = new object();
         private static readonly object _migrationLock = new object();
         private static volatile bool _databaseInitialized;
+
+        private static Dictionary<int, Dictionary<ushort, AllowedLandblockInfo>> GetDefaultAllowedLandblocks()
+        {
+            var result = new Dictionary<int, Dictionary<ushort, AllowedLandblockInfo>>();
+            foreach (var kvp in _defaultTierAllowedLandblocks)
+            {
+                var dict = new Dictionary<ushort, AllowedLandblockInfo>();
+                foreach (var lb in kvp.Value)
+                {
+                    dict[lb] = new AllowedLandblockInfo
+                    {
+                        Landblock = lb,
+                        AreaName = "Default"
+                    };
+                }
+                result[kvp.Key] = dict;
+            }
+            return result;
+        }
 
         /// <summary>
         /// Checks if a landblock is allowed for the given variation.
@@ -56,12 +89,39 @@ namespace ACE.Server.Managers
 
             lock (_allowedLandblocksLock)
             {
-                if (!_tierAllowedLandblocks.TryGetValue(tier, out var allowed))
+                if (!_tierAllowedLandblocks.TryGetValue(tier, out var allowedDict))
                     return true; // No restrictions configured for this tier
 
-                if (allowed.Count == 0) return true; // Empty list = no restrictions
+                if (allowedDict.Count == 0) return true; // Empty list = no restrictions
 
-                return allowed.Contains(landblockId);
+                var allowed = allowedDict.ContainsKey(landblockId);
+                if (!allowed && log.IsDebugEnabled)
+                {
+                    log.Debug($"[PrestigeZone] IsLandblockAllowed MISS: variation={variation} -> tier={tier}, landblock=0x{landblockId:X4} not in allowed list.");
+                }
+                return allowed;
+            }
+        }
+
+        /// <summary>
+        /// Retrieves the custom allowed landblock info for a landblock.
+        /// </summary>
+        public static AllowedLandblockInfo GetAllowedLandblockInfo(int? variation, ushort landblockId)
+        {
+            EnsureDatabaseInitialized();
+
+            var tier = GetTier(variation);
+            if (tier <= 0) return null;
+
+            lock (_allowedLandblocksLock)
+            {
+                if (!_tierAllowedLandblocks.TryGetValue(tier, out var allowedDict))
+                    return null;
+
+                if (allowedDict.TryGetValue(landblockId, out var info))
+                    return info;
+
+                return null;
             }
         }
 
@@ -82,6 +142,21 @@ namespace ACE.Server.Managers
             return GetTier(variation.Value);
         }
 
+        public static string GetVariationLabel(int? variation)
+        {
+            if (!variation.HasValue)
+                return "base (retail / default / null)";
+
+            if (variation.Value == 0)
+                return "0 (retail base)";
+
+            if (variation.Value > 0 && variation.Value <= PRESTIGE_VAR_OFFSET)
+                return $"{variation.Value} (retail variation)";
+
+            var tier = GetTier(variation.Value);
+            return $"{variation.Value} (Prestige Tier {tier})";
+        }
+
         /// <summary>
         /// Tier passed into kill XP / luminance / loot scaling: from the creature's <see cref="WorldObject.Location"/> variation only
         /// (<see cref="GetTier(int?)"/> — null and 0–10 → 0, 11+ → prestige). Retail instances are never scaled from a stale <see cref="PropertyInt.PrestigeLevel"/>.
@@ -98,10 +173,10 @@ namespace ACE.Server.Managers
 
             lock (_allowedLandblocksLock)
             {
-                if (!_tierAllowedLandblocks.TryGetValue(tier, out var allowed))
+                if (!_tierAllowedLandblocks.TryGetValue(tier, out var allowedDict))
                     return null;
 
-                return new HashSet<ushort>(allowed);
+                return new HashSet<ushort>(allowedDict.Keys);
             }
         }
 
@@ -110,7 +185,33 @@ namespace ACE.Server.Managers
             EnsureDatabaseInitialized();
 
             lock (_allowedLandblocksLock)
-                return CloneAllowedLandblocks(_tierAllowedLandblocks);
+            {
+                return _tierAllowedLandblocks.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => new HashSet<ushort>(kvp.Value.Keys)
+                );
+            }
+        }
+
+        public static Dictionary<int, Dictionary<ushort, AllowedLandblockInfo>> GetAllAllowedLandblockInfos()
+        {
+            EnsureDatabaseInitialized();
+
+            lock (_allowedLandblocksLock)
+            {
+                return _tierAllowedLandblocks.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value.ToDictionary(k => k.Key, k => new AllowedLandblockInfo
+                    {
+                        Landblock = k.Value.Landblock,
+                        AreaName = k.Value.AreaName,
+                        BoundaryWcid = k.Value.BoundaryWcid,
+                        BoundaryScale = k.Value.BoundaryScale,
+                        BoundaryScriptId = k.Value.BoundaryScriptId,
+                        IsWiped = k.Value.IsWiped
+                    })
+                );
+            }
         }
 
         private static long CountRowsForTier(WorldDbContext context, int tier)
@@ -123,6 +224,8 @@ namespace ACE.Server.Managers
             {
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = "SELECT COUNT(*) FROM prestige_allowed_landblocks WHERE tier = @tier";
+                if (context.Database.CurrentTransaction != null)
+                    cmd.Transaction = context.Database.CurrentTransaction.GetDbTransaction();
                 var p = cmd.CreateParameter();
                 p.ParameterName = "@tier";
                 p.Value = tier;
@@ -145,28 +248,34 @@ namespace ACE.Server.Managers
             if (CountRowsForTier(context, tier) > 0)
                 return;
 
-            HashSet<ushort> snapshot;
+            Dictionary<ushort, AllowedLandblockInfo> snapshot;
             lock (_allowedLandblocksLock)
             {
-                if (!_tierAllowedLandblocks.TryGetValue(tier, out var set) || set.Count == 0)
+                if (!_tierAllowedLandblocks.TryGetValue(tier, out var allowedDict) || allowedDict.Count == 0)
                     return;
 
-                snapshot = new HashSet<ushort>(set);
+                snapshot = new Dictionary<ushort, AllowedLandblockInfo>(allowedDict);
             }
 
-            foreach (var lb in snapshot)
+            foreach (var kvp in snapshot)
             {
+                var info = kvp.Value;
                 context.Database.ExecuteSqlRaw(@"
-                    INSERT INTO prestige_allowed_landblocks (tier, landblock, is_active, updated_at)
-                    VALUES ({0}, {1}, 1, UTC_TIMESTAMP())
+                    INSERT INTO prestige_allowed_landblocks (tier, landblock, area_name, boundary_wcid, boundary_scale, boundary_script_id, is_wiped, is_active, updated_at)
+                    VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, 1, UTC_TIMESTAMP())
                     ON DUPLICATE KEY UPDATE
+                        area_name = {2},
+                        boundary_wcid = {3},
+                        boundary_scale = {4},
+                        boundary_script_id = {5},
+                        is_wiped = {6},
                         is_active = 1,
                         updated_at = UTC_TIMESTAMP()",
-                    tier, (int)lb);
+                    tier, (int)kvp.Key, info.AreaName, (int?)info.BoundaryWcid, (double?)info.BoundaryScale, (int?)info.BoundaryScriptId, info.IsWiped ? 1 : 0);
             }
         }
 
-        public static bool AddAllowedLandblock(int tier, ushort landblock)
+        public static bool AddAllowedLandblock(int tier, ushort landblock, string areaName = "Unnamed Zone", uint? boundaryWcid = null, float? boundaryScale = null, uint? boundaryScriptId = null, bool isWiped = false)
         {
             EnsureDatabaseInitialized();
 
@@ -180,12 +289,17 @@ namespace ACE.Server.Managers
                 EnsureTierSeededFromEffectiveSet(context, tier);
 
                 context.Database.ExecuteSqlRaw(@"
-                    INSERT INTO prestige_allowed_landblocks (tier, landblock, is_active, updated_at)
-                    VALUES ({0}, {1}, 1, UTC_TIMESTAMP())
+                    INSERT INTO prestige_allowed_landblocks (tier, landblock, area_name, boundary_wcid, boundary_scale, boundary_script_id, is_wiped, is_active, updated_at)
+                    VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, 1, UTC_TIMESTAMP())
                     ON DUPLICATE KEY UPDATE
+                        area_name = {2},
+                        boundary_wcid = {3},
+                        boundary_scale = {4},
+                        boundary_script_id = {5},
+                        is_wiped = {6},
                         is_active = 1,
                         updated_at = UTC_TIMESTAMP()",
-                    tier, landblock);
+                    tier, landblock, areaName, (int?)boundaryWcid, (double?)boundaryScale, (int?)boundaryScriptId, isWiped ? 1 : 0);
 
                 transaction.Commit();
             }
@@ -229,10 +343,74 @@ namespace ACE.Server.Managers
             }
         }
 
+        public static bool UpdateWipeStatus(int tier, ushort landblock, bool isWiped)
+        {
+            EnsureDatabaseInitialized();
+
+            if (tier <= 0)
+                return false;
+
+            using var context = new WorldDbContext();
+            using var transaction = context.Database.BeginTransaction();
+            try
+            {
+                var updated = context.Database.ExecuteSqlRaw(@"
+                    UPDATE prestige_allowed_landblocks
+                    SET is_wiped = {2}, updated_at = UTC_TIMESTAMP()
+                    WHERE tier = {0} AND landblock = {1} AND is_active = 1",
+                    tier, landblock, isWiped ? 1 : 0);
+
+                transaction.Commit();
+                if (updated > 0)
+                {
+                    ReloadAllowedLandblocksFromDatabase();
+                    return true;
+                }
+                return false;
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+
+        public static int UpdateWipeStatusByAreaName(int tier, string areaName, bool isWiped)
+        {
+            EnsureDatabaseInitialized();
+
+            if (tier <= 0 || string.IsNullOrEmpty(areaName))
+                return 0;
+
+            using var context = new WorldDbContext();
+            using var transaction = context.Database.BeginTransaction();
+            try
+            {
+                var updated = context.Database.ExecuteSqlRaw(@"
+                    UPDATE prestige_allowed_landblocks
+                    SET is_wiped = {2}, updated_at = UTC_TIMESTAMP()
+                    WHERE tier = {0} AND LOWER(area_name) = LOWER({1}) AND is_active = 1",
+                    tier, areaName, isWiped ? 1 : 0);
+
+                transaction.Commit();
+                if (updated > 0)
+                {
+                    ReloadAllowedLandblocksFromDatabase();
+                }
+                return updated;
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+
         /// <summary>Loads active rows from <c>prestige_allowed_landblocks</c> into <see cref="_tierAllowedLandblocks"/>.</summary>
         private static void ReloadAllowedLandblocksFromDatabaseInternal()
         {
-            var fromDb = new Dictionary<int, HashSet<ushort>>();
+            log.Info("[PrestigeZone] Reloading prestige allowed landblocks from database...");
+            var fromDb = new Dictionary<int, Dictionary<ushort, AllowedLandblockInfo>>();
             var seededTiers = new HashSet<int>();
             using var context = new WorldDbContext();
             context.Database.OpenConnection();
@@ -250,50 +428,71 @@ namespace ACE.Server.Managers
 
                 using var command = connection.CreateCommand();
                 command.CommandText = @"
-                    SELECT tier, landblock
+                    SELECT tier, landblock, area_name, boundary_wcid, boundary_scale, boundary_script_id, is_wiped
                     FROM prestige_allowed_landblocks
                     WHERE is_active = 1
                     ORDER BY tier, landblock";
 
                 using var reader = command.ExecuteReader();
+                int count = 0;
                 while (reader.Read())
                 {
+                    count++;
                     var tier = reader.GetInt32(0);
                     var landblock = Convert.ToUInt16(reader.GetInt32(1));
+                    var areaName = reader.IsDBNull(2) ? "Unnamed Zone" : reader.GetString(2);
+                    uint? boundaryWcid = reader.IsDBNull(3) ? null : (uint?)reader.GetInt32(3);
+                    float? boundaryScale = reader.IsDBNull(4) ? null : (float?)reader.GetFloat(4);
+                    uint? boundaryScriptId = reader.IsDBNull(5) ? null : (uint?)reader.GetInt32(5);
+                    bool isWiped = reader.IsDBNull(6) ? false : reader.GetInt32(6) != 0;
 
-                    if (!fromDb.TryGetValue(tier, out var set))
+                    if (!fromDb.TryGetValue(tier, out var dict))
                     {
-                        set = new HashSet<ushort>();
-                        fromDb[tier] = set;
+                        dict = new Dictionary<ushort, AllowedLandblockInfo>();
+                        fromDb[tier] = dict;
                     }
-                    set.Add(landblock);
+
+                    dict[landblock] = new AllowedLandblockInfo
+                    {
+                        Landblock = landblock,
+                        AreaName = areaName,
+                        BoundaryWcid = boundaryWcid,
+                        BoundaryScale = boundaryScale,
+                        BoundaryScriptId = boundaryScriptId,
+                        IsWiped = isWiped
+                    };
                 }
+                log.Info($"[PrestigeZone] Read {count} active landblock rows from database (tiers: {string.Join(", ", fromDb.Keys)})");
             }
             finally
             {
                 context.Database.CloseConnection();
             }
 
-            var loaded = CloneAllowedLandblocks(_defaultTierAllowedLandblocks);
+            var loaded = GetDefaultAllowedLandblocks();
             foreach (var tier in seededTiers)
-                loaded[tier] = new HashSet<ushort>();
+                loaded[tier] = new Dictionary<ushort, AllowedLandblockInfo>();
+
             foreach (var kvp in fromDb)
             {
-                if (!loaded.TryGetValue(kvp.Key, out var set))
+                if (!loaded.TryGetValue(kvp.Key, out var dict))
                 {
-                    set = new HashSet<ushort>();
-                    loaded[kvp.Key] = set;
+                    dict = new Dictionary<ushort, AllowedLandblockInfo>();
+                    loaded[kvp.Key] = dict;
                 }
                 else
                 {
-                    set.Clear();
+                    dict.Clear();
                 }
-                foreach (var lb in kvp.Value)
-                    set.Add(lb);
+                foreach (var inner in kvp.Value)
+                    dict[inner.Key] = inner.Value;
             }
 
             lock (_allowedLandblocksLock)
+            {
                 _tierAllowedLandblocks = loaded;
+                log.Info($"[PrestigeZone] Cache updated: {string.Join(" | ", _tierAllowedLandblocks.Select(k => $"T{k.Key}={k.Value.Count}"))}");
+            }
         }
 
         public static void ReloadAllowedLandblocksFromDatabase()
@@ -304,35 +503,35 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Returns the HP multiplier for a given tier.
-        /// Baseline: 1.0
+        /// Baseline: 1.0 (Tier 1 is the baseline, no scaling)
         /// </summary>
         public static float GetHPModifier(int tier)
         {
             if (tier <= 0) return 1.0f;
-            // +25% HP per tier
-            return 1.0f + (tier * 0.25f);
+            // +25% HP per tier above Tier 1
+            return 1.0f + ((tier - 1) * 0.25f);
         }
 
         /// <summary>
         /// Returns the Damage multiplier for a given tier.
-        /// Baseline: 1.0
+        /// Baseline: 1.0 (Tier 1 is the baseline, no scaling)
         /// </summary>
         public static float GetDamageModifier(int tier)
         {
              if (tier <= 0) return 1.0f;
-             // +15% Damage per tier
-             return 1.0f + (tier * 0.15f);
+             // +15% Damage per tier above Tier 1
+             return 1.0f + ((tier - 1) * 0.15f);
         }
 
         /// <summary>
         /// Returns the XP multiplier for a given tier.
-        /// Baseline: 1.0
+        /// Baseline: 1.0 (Tier 1 is the baseline, no scaling)
         /// </summary>
         public static float GetXPRewardModifier(int tier)
         {
             if (tier <= 0) return 1.0f;
-            // +10% XP per tier
-            return 1.0f + (tier * 0.10f);
+            // +10% XP per tier above Tier 1
+            return 1.0f + ((tier - 1) * 0.10f);
         }
 
         /// <summary>
@@ -357,8 +556,8 @@ namespace ACE.Server.Managers
         public static float GetLootValueModifier(int tier)
         {
             if (tier <= 0) return 1.0f;
-            // +20% Value per tier
-            return 1.0f + (tier * 0.20f);
+            // +20% Value per tier above Tier 1
+            return 1.0f + ((tier - 1) * 0.20f);
         }
 
         /// <summary>
@@ -369,10 +568,10 @@ namespace ACE.Server.Managers
         {
             if (tier <= 0) return;
 
-            // 1. Mana bonus (10% more max mana per tier)
+            // 1. Mana bonus (10% more max mana per tier above Tier 1)
             if (wo.ItemMaxMana.HasValue)
             {
-                wo.ItemMaxMana = (int?)Math.Round(wo.ItemMaxMana.Value * (1.0f + tier * 0.1f));
+                wo.ItemMaxMana = (int?)Math.Round(wo.ItemMaxMana.Value * (1.0f + (tier - 1) * 0.1f));
                 wo.ItemCurMana = wo.ItemMaxMana; // Fill it up
             }
 
@@ -651,36 +850,72 @@ namespace ACE.Server.Managers
             context.Database.OpenConnection();
             try
             {
-                using var cmd = context.Database.GetDbConnection().CreateCommand();
-                cmd.CommandText = @"
-                    SELECT COUNT(*) FROM information_schema.tables
-                    WHERE table_schema = DATABASE() AND table_name = 'prestige_allowed_landblocks'";
-                var count = Convert.ToInt64(cmd.ExecuteScalar());
-                if (count > 0)
-                    return;
+                var connection = context.Database.GetDbConnection();
+                using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT COUNT(*) FROM information_schema.tables
+                        WHERE table_schema = DATABASE() AND table_name = 'prestige_allowed_landblocks'";
+                    var count = Convert.ToInt64(cmd.ExecuteScalar());
+                    if (count == 0)
+                    {
+                        context.Database.ExecuteSqlRaw(@"
+                            CREATE TABLE `prestige_allowed_landblocks` (
+                                `id` int(11) NOT NULL AUTO_INCREMENT,
+                                `tier` int(11) NOT NULL,
+                                `landblock` int(11) NOT NULL,
+                                `area_name` varchar(100) NOT NULL DEFAULT 'Unnamed Zone',
+                                `boundary_wcid` int(11) NULL DEFAULT NULL,
+                                `boundary_scale` float NULL DEFAULT NULL,
+                                `boundary_script_id` int(11) NULL DEFAULT NULL,
+                                `is_active` tinyint(1) NOT NULL DEFAULT 1,
+                                `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                PRIMARY KEY (`id`),
+                                UNIQUE KEY `ux_prestige_tier_landblock` (`tier`, `landblock`),
+                                KEY `ix_prestige_tier_active` (`tier`, `is_active`),
+                                KEY `ix_prestige_landblock_active` (`landblock`, `is_active`)
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                        return;
+                    }
+                }
 
-                context.Database.ExecuteSqlRaw(@"
-                    CREATE TABLE IF NOT EXISTS `prestige_allowed_landblocks` (
-                        `id` int(11) NOT NULL AUTO_INCREMENT,
-                        `tier` int(11) NOT NULL,
-                        `landblock` int(11) NOT NULL,
-                        `is_active` tinyint(1) NOT NULL DEFAULT 1,
-                        `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                        PRIMARY KEY (`id`),
-                        UNIQUE KEY `ux_prestige_tier_landblock` (`tier`, `landblock`),
-                        KEY `ix_prestige_tier_active` (`tier`, `is_active`),
-                        KEY `ix_prestige_landblock_active` (`landblock`, `is_active`)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                // If table already exists, make sure columns exist
+                var existingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT COLUMN_NAME FROM information_schema.columns
+                        WHERE table_schema = DATABASE() AND table_name = 'prestige_allowed_landblocks'";
+                    using var reader = cmd.ExecuteReader();
+                    while (reader.Read())
+                        existingColumns.Add(reader.GetString(0));
+                }
+
+                if (!existingColumns.Contains("area_name"))
+                {
+                    context.Database.ExecuteSqlRaw("ALTER TABLE `prestige_allowed_landblocks` ADD COLUMN `area_name` varchar(100) NOT NULL DEFAULT 'Unnamed Zone'");
+                }
+                if (!existingColumns.Contains("boundary_wcid"))
+                {
+                    context.Database.ExecuteSqlRaw("ALTER TABLE `prestige_allowed_landblocks` ADD COLUMN `boundary_wcid` int(11) NULL DEFAULT NULL");
+                }
+                if (!existingColumns.Contains("boundary_scale"))
+                {
+                    context.Database.ExecuteSqlRaw("ALTER TABLE `prestige_allowed_landblocks` ADD COLUMN `boundary_scale` float NULL DEFAULT NULL");
+                }
+                if (!existingColumns.Contains("boundary_script_id"))
+                {
+                    context.Database.ExecuteSqlRaw("ALTER TABLE `prestige_allowed_landblocks` ADD COLUMN `boundary_script_id` int(11) NULL DEFAULT NULL");
+                }
+                if (!existingColumns.Contains("is_wiped"))
+                {
+                    context.Database.ExecuteSqlRaw("ALTER TABLE `prestige_allowed_landblocks` ADD COLUMN `is_wiped` tinyint(1) NOT NULL DEFAULT 0");
+                }
             }
             finally
             {
                 context.Database.CloseConnection();
             }
-        }
-
-        private static Dictionary<int, HashSet<ushort>> CloneAllowedLandblocks(Dictionary<int, HashSet<ushort>> source)
-        {
-            return source.ToDictionary(kvp => kvp.Key, kvp => new HashSet<ushort>(kvp.Value));
         }
     }
 }

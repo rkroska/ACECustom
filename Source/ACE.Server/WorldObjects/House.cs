@@ -289,6 +289,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool HasPermission(Player player, bool storage = false)
         {
+            if (player.Session?.AccessLevel >= AccessLevel.Developer)
+                return true;
+
             if (HouseOwner == null)
                 return false;
 

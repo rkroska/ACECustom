@@ -78,6 +78,8 @@ namespace ACE.Server.Command.Handlers
             ["pyreal refill"]         = "essencerefill",
 
             ["fork"]                  = "fork",
+            ["farshot"]               = "farshot",
+            ["far shot"]              = "farshot",
         };
 
         // Brief descriptions shown by /charms and /charm (no args)
@@ -89,6 +91,7 @@ namespace ACE.Server.Command.Handlers
             "  • autorebuff         — Automatically re-applies expiring beneficial buffs.\n" +
             "  • essencerefill      — Pay pyreals to automatically refill empty summoning essence charges.\n" +
             "  • explosivearrow     — Arrows detonate on hit, dealing AOE blast damage to nearby enemies.\n" +
+            "  • farshot            — Increases missile weapon attack range and final damage.\n" +
             "  • fork               — Spell projectiles fork to nearby enemies on hit.\n" +
             "  • infinitecasting    — Spell components are not consumed while spellcasting.\n" +
             "  • manabarrier        — Drains Mana before HP while taking damage.\n" +
@@ -244,6 +247,7 @@ namespace ACE.Server.Command.Handlers
                 "essencerefill"      => "Summon Essence Refill",
                 "universalsummoning" => "Universal Summoning",
                 "fork"               => "Fork",
+                "farshot"            => "Far Shot",
                 _                    => charmName
             };
         }

@@ -275,7 +275,8 @@ namespace ACE.Server.Command.Handlers
                 if (int.TryParse(a, out var variant))
                 {
                     pos.Variation = variant;
-                    name = $"variant {variant}";
+                    var label = PrestigeManager.GetVariationLabel(variant);
+                    name = $"variant {label} (Use '@tv retail' to return to the base world)";
                     return true;
                 }
             }
