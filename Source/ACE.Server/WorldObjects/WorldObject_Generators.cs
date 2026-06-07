@@ -416,7 +416,7 @@ namespace ACE.Server.WorldObjects
 
                         // If now is before the shifted start, the event may be in the Jan 1–endDate window
                         // of the previous shift (e.g. a Dec–Jan straddling event). Roll back by one year.
-                        if (now < candidateStart && yearDiff > 1)
+                        if (now < candidateStart)
                         {
                             shiftedStart   = startDateTime.AddYears(yearDiff - 1);
                             shiftedEnd     = endDateTime.AddYears(yearDiff - 1);

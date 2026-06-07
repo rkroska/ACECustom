@@ -29,6 +29,7 @@ namespace ACE.Server.Managers
             public uint? BoundaryWcid { get; set; }
             public float? BoundaryScale { get; set; }
             public uint? BoundaryScriptId { get; set; }
+            public bool IsWiped { get; set; }
         }
 
         /// <summary>
@@ -94,9 +95,9 @@ namespace ACE.Server.Managers
                 if (allowedDict.Count == 0) return true; // Empty list = no restrictions
 
                 var allowed = allowedDict.ContainsKey(landblockId);
-                if (!allowed)
+                if (!allowed && log.IsDebugEnabled)
                 {
-                    log.Info($"[PrestigeZone] IsLandblockAllowed CHECK FAILED: variation={variation} -> tier={tier}, landblock=0x{landblockId:X4} ({landblockId}) is NOT in allowed list ({string.Join(", ", allowedDict.Keys.Select(k => k.ToString("X4")))})");
+                    log.Debug($"[PrestigeZone] IsLandblockAllowed MISS: variation={variation} -> tier={tier}, landblock=0x{landblockId:X4} not in allowed list.");
                 }
                 return allowed;
             }
@@ -198,8 +199,6 @@ namespace ACE.Server.Managers
 
             lock (_allowedLandblocksLock)
             {
-                var readSummary = string.Join(" | ", _tierAllowedLandblocks.Select(k => $"T{k.Key}={k.Value.Count}"));
-                Console.WriteLine($"[PRESTIGE-READ] GetAllAllowedLandblockInfos: {readSummary}");
                 return _tierAllowedLandblocks.ToDictionary(
                     kvp => kvp.Key,
                     kvp => kvp.Value.ToDictionary(k => k.Key, k => new AllowedLandblockInfo
@@ -208,7 +207,8 @@ namespace ACE.Server.Managers
                         AreaName = k.Value.AreaName,
                         BoundaryWcid = k.Value.BoundaryWcid,
                         BoundaryScale = k.Value.BoundaryScale,
-                        BoundaryScriptId = k.Value.BoundaryScriptId
+                        BoundaryScriptId = k.Value.BoundaryScriptId,
+                        IsWiped = k.Value.IsWiped
                     })
                 );
             }
@@ -261,20 +261,21 @@ namespace ACE.Server.Managers
             {
                 var info = kvp.Value;
                 context.Database.ExecuteSqlRaw(@"
-                    INSERT INTO prestige_allowed_landblocks (tier, landblock, area_name, boundary_wcid, boundary_scale, boundary_script_id, is_active, updated_at)
-                    VALUES ({0}, {1}, {2}, {3}, {4}, {5}, 1, UTC_TIMESTAMP())
+                    INSERT INTO prestige_allowed_landblocks (tier, landblock, area_name, boundary_wcid, boundary_scale, boundary_script_id, is_wiped, is_active, updated_at)
+                    VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, 1, UTC_TIMESTAMP())
                     ON DUPLICATE KEY UPDATE
                         area_name = {2},
                         boundary_wcid = {3},
                         boundary_scale = {4},
                         boundary_script_id = {5},
+                        is_wiped = {6},
                         is_active = 1,
                         updated_at = UTC_TIMESTAMP()",
-                    tier, (int)kvp.Key, info.AreaName, (int?)info.BoundaryWcid, (double?)info.BoundaryScale, (int?)info.BoundaryScriptId);
+                    tier, (int)kvp.Key, info.AreaName, (int?)info.BoundaryWcid, (double?)info.BoundaryScale, (int?)info.BoundaryScriptId, info.IsWiped ? 1 : 0);
             }
         }
 
-        public static bool AddAllowedLandblock(int tier, ushort landblock, string areaName = "Unnamed Zone", uint? boundaryWcid = null, float? boundaryScale = null, uint? boundaryScriptId = null)
+        public static bool AddAllowedLandblock(int tier, ushort landblock, string areaName = "Unnamed Zone", uint? boundaryWcid = null, float? boundaryScale = null, uint? boundaryScriptId = null, bool isWiped = false)
         {
             EnsureDatabaseInitialized();
 
@@ -288,16 +289,17 @@ namespace ACE.Server.Managers
                 EnsureTierSeededFromEffectiveSet(context, tier);
 
                 context.Database.ExecuteSqlRaw(@"
-                    INSERT INTO prestige_allowed_landblocks (tier, landblock, area_name, boundary_wcid, boundary_scale, boundary_script_id, is_active, updated_at)
-                    VALUES ({0}, {1}, {2}, {3}, {4}, {5}, 1, UTC_TIMESTAMP())
+                    INSERT INTO prestige_allowed_landblocks (tier, landblock, area_name, boundary_wcid, boundary_scale, boundary_script_id, is_wiped, is_active, updated_at)
+                    VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, 1, UTC_TIMESTAMP())
                     ON DUPLICATE KEY UPDATE
                         area_name = {2},
                         boundary_wcid = {3},
                         boundary_scale = {4},
                         boundary_script_id = {5},
+                        is_wiped = {6},
                         is_active = 1,
                         updated_at = UTC_TIMESTAMP()",
-                    tier, landblock, areaName, (int?)boundaryWcid, (double?)boundaryScale, (int?)boundaryScriptId);
+                    tier, landblock, areaName, (int?)boundaryWcid, (double?)boundaryScale, (int?)boundaryScriptId, isWiped ? 1 : 0);
 
                 transaction.Commit();
             }
@@ -341,12 +343,72 @@ namespace ACE.Server.Managers
             }
         }
 
+        public static bool UpdateWipeStatus(int tier, ushort landblock, bool isWiped)
+        {
+            EnsureDatabaseInitialized();
+
+            if (tier <= 0)
+                return false;
+
+            using var context = new WorldDbContext();
+            using var transaction = context.Database.BeginTransaction();
+            try
+            {
+                var updated = context.Database.ExecuteSqlRaw(@"
+                    UPDATE prestige_allowed_landblocks
+                    SET is_wiped = {2}, updated_at = UTC_TIMESTAMP()
+                    WHERE tier = {0} AND landblock = {1} AND is_active = 1",
+                    tier, landblock, isWiped ? 1 : 0);
+
+                transaction.Commit();
+                if (updated > 0)
+                {
+                    ReloadAllowedLandblocksFromDatabase();
+                    return true;
+                }
+                return false;
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+
+        public static int UpdateWipeStatusByAreaName(int tier, string areaName, bool isWiped)
+        {
+            EnsureDatabaseInitialized();
+
+            if (tier <= 0 || string.IsNullOrEmpty(areaName))
+                return 0;
+
+            using var context = new WorldDbContext();
+            using var transaction = context.Database.BeginTransaction();
+            try
+            {
+                var updated = context.Database.ExecuteSqlRaw(@"
+                    UPDATE prestige_allowed_landblocks
+                    SET is_wiped = {2}, updated_at = UTC_TIMESTAMP()
+                    WHERE tier = {0} AND LOWER(area_name) = LOWER({1}) AND is_active = 1",
+                    tier, areaName, isWiped ? 1 : 0);
+
+                transaction.Commit();
+                if (updated > 0)
+                {
+                    ReloadAllowedLandblocksFromDatabase();
+                }
+                return updated;
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+
         /// <summary>Loads active rows from <c>prestige_allowed_landblocks</c> into <see cref="_tierAllowedLandblocks"/>.</summary>
         private static void ReloadAllowedLandblocksFromDatabaseInternal()
         {
-            var stack = new System.Diagnostics.StackTrace(true).ToString();
-            Console.WriteLine($"[PRESTIGE-RELOAD] Called from:\n{stack}");
-            Console.WriteLine("[PRESTIGE-INIT] ReloadAllowedLandblocksFromDatabaseInternal: starting...");
             log.Info("[PrestigeZone] Reloading prestige allowed landblocks from database...");
             var fromDb = new Dictionary<int, Dictionary<ushort, AllowedLandblockInfo>>();
             var seededTiers = new HashSet<int>();
@@ -355,25 +417,18 @@ namespace ACE.Server.Managers
             try
             {
                 var connection = context.Database.GetDbConnection();
-                Console.WriteLine($"[PRESTIGE-INIT] Connected to: DataSource={connection.DataSource}, Database={connection.Database}");
-                log.Info($"[PrestigeZone] Connected to database: DataSource={connection.DataSource}, Database={connection.Database}");
 
                 using (var tierCmd = connection.CreateCommand())
                 {
                     tierCmd.CommandText = "SELECT DISTINCT tier FROM prestige_allowed_landblocks";
                     using var tierReader = tierCmd.ExecuteReader();
                     while (tierReader.Read())
-                    {
-                        var tier = tierReader.GetInt32(0);
-                        seededTiers.Add(tier);
-                        Console.WriteLine($"[PRESTIGE-INIT] Found seeded tier in DB: {tier}");
-                        log.Info($"[PrestigeZone] Found seeded tier in database: {tier}");
-                    }
+                        seededTiers.Add(tierReader.GetInt32(0));
                 }
 
                 using var command = connection.CreateCommand();
                 command.CommandText = @"
-                    SELECT tier, landblock, area_name, boundary_wcid, boundary_scale, boundary_script_id
+                    SELECT tier, landblock, area_name, boundary_wcid, boundary_scale, boundary_script_id, is_wiped
                     FROM prestige_allowed_landblocks
                     WHERE is_active = 1
                     ORDER BY tier, landblock";
@@ -389,28 +444,25 @@ namespace ACE.Server.Managers
                     uint? boundaryWcid = reader.IsDBNull(3) ? null : (uint?)reader.GetInt32(3);
                     float? boundaryScale = reader.IsDBNull(4) ? null : (float?)reader.GetFloat(4);
                     uint? boundaryScriptId = reader.IsDBNull(5) ? null : (uint?)reader.GetInt32(5);
-
-                    if (count <= 5 || tier != 1) // Print first 5 rows and any non-tier-1 rows
-                        Console.WriteLine($"[PRESTIGE-INIT] Row {count}: Tier={tier}, LB=0x{landblock:X4}, Area={areaName}");
-                    log.Info($"[PrestigeZone] Loaded active allowed landblock: Tier={tier}, Landblock=0x{landblock:X4} (Area: {areaName})");
+                    bool isWiped = reader.IsDBNull(6) ? false : reader.GetInt32(6) != 0;
 
                     if (!fromDb.TryGetValue(tier, out var dict))
                     {
                         dict = new Dictionary<ushort, AllowedLandblockInfo>();
                         fromDb[tier] = dict;
                     }
-                    
+
                     dict[landblock] = new AllowedLandblockInfo
                     {
                         Landblock = landblock,
                         AreaName = areaName,
                         BoundaryWcid = boundaryWcid,
                         BoundaryScale = boundaryScale,
-                        BoundaryScriptId = boundaryScriptId
+                        BoundaryScriptId = boundaryScriptId,
+                        IsWiped = isWiped
                     };
                 }
-                Console.WriteLine($"[PRESTIGE-INIT] Total active rows read: {count}. fromDb tiers: {string.Join(", ", fromDb.Keys)}");
-                log.Info($"[PrestigeZone] Finished reading from database. Total active rows: {count}");
+                log.Info($"[PrestigeZone] Read {count} active landblock rows from database (tiers: {string.Join(", ", fromDb.Keys)})");
             }
             finally
             {
@@ -418,11 +470,9 @@ namespace ACE.Server.Managers
             }
 
             var loaded = GetDefaultAllowedLandblocks();
-            Console.WriteLine($"[PRESTIGE-INIT] seededTiers={string.Join(",", seededTiers)}");
             foreach (var tier in seededTiers)
-            {
                 loaded[tier] = new Dictionary<ushort, AllowedLandblockInfo>();
-            }
+
             foreach (var kvp in fromDb)
             {
                 if (!loaded.TryGetValue(kvp.Key, out var dict))
@@ -441,15 +491,8 @@ namespace ACE.Server.Managers
             lock (_allowedLandblocksLock)
             {
                 _tierAllowedLandblocks = loaded;
-                var summary = string.Join(" | ", _tierAllowedLandblocks.Select(k => $"T{k.Key}={k.Value.Count}"));
-                Console.WriteLine($"[PRESTIGE-INIT] Cache set: {summary}");
-                log.Info($"[PrestigeZone] Updated cache. Active tiers in memory: {string.Join(", ", _tierAllowedLandblocks.Keys)}");
-                foreach (var kvp in _tierAllowedLandblocks)
-                {
-                    log.Info($"[PrestigeZone] Cache tier {kvp.Key} has {kvp.Value.Count} items: {string.Join(", ", kvp.Value.Keys.Select(k => k.ToString("X4")))}");
-                }
+                log.Info($"[PrestigeZone] Cache updated: {string.Join(" | ", _tierAllowedLandblocks.Select(k => $"T{k.Key}={k.Value.Count}"))}");
             }
-            Console.WriteLine("[PRESTIGE-INIT] ReloadAllowedLandblocksFromDatabaseInternal: done.");
         }
 
         public static void ReloadAllowedLandblocksFromDatabase()
@@ -795,12 +838,10 @@ namespace ACE.Server.Managers
             {
                 if (_databaseInitialized) return;
 
-                Console.WriteLine("[PRESTIGE-INIT] EnsureDatabaseInitialized: starting...");
                 using var context = new WorldDbContext();
                 EnsurePrestigeAllowedLandblocksTable(context);
                 ReloadAllowedLandblocksFromDatabaseInternal();
                 _databaseInitialized = true;
-                Console.WriteLine("[PRESTIGE-INIT] EnsureDatabaseInitialized: complete.");
             }
         }
 
@@ -865,6 +906,10 @@ namespace ACE.Server.Managers
                 if (!existingColumns.Contains("boundary_script_id"))
                 {
                     context.Database.ExecuteSqlRaw("ALTER TABLE `prestige_allowed_landblocks` ADD COLUMN `boundary_script_id` int(11) NULL DEFAULT NULL");
+                }
+                if (!existingColumns.Contains("is_wiped"))
+                {
+                    context.Database.ExecuteSqlRaw("ALTER TABLE `prestige_allowed_landblocks` ADD COLUMN `is_wiped` tinyint(1) NOT NULL DEFAULT 0");
                 }
             }
             finally

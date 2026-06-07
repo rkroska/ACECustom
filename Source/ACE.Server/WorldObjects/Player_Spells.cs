@@ -450,6 +450,9 @@ namespace ACE.Server.WorldObjects
                     continue;
 
                 var buffMsg = BuildBuffMessage(spellID);
+                // If primary ID is not found (e.g. spell not in world DB), try the Other-variant ID.
+                if (buffMsg == null && spellIDAlt > 0)
+                    buffMsg = BuildBuffMessage(spellIDAlt);
                 if (buffMsg != null)
                 {
                     buffMsg.Bane = isBane;
@@ -912,8 +915,14 @@ namespace ACE.Server.WorldObjects
                 if (spellID == 0)
                     continue;
 
-                // Resolve the spell object to check school
+                // Resolve the spell object to check school — prefer primary ID, fall back to alt
+                var resolvedSpellId = spellID;
                 var spell = new Spell(spellID);
+                if (spell.NotFound && spellIDAlt > 0)
+                {
+                    resolvedSpellId = spellIDAlt;
+                    spell = new Spell(spellIDAlt);
+                }
                 if (spell.NotFound) continue;
 
                 var school = spell.School;

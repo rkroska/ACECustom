@@ -678,6 +678,7 @@ namespace ACE.Server.Entity
 
             GeneratedTreasureItem = false;
             Generator.GeneratedTreasureItem = false;
+            ConsecutiveSpawnFailures = 0;
         }
     }
 }

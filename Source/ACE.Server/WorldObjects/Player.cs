@@ -734,6 +734,11 @@ namespace ACE.Server.WorldObjects
 
         private void FinalizeLogout()
         {
+            // Clean up any active prestige guide wisp before leaving the world.
+            // This covers all logout paths (normal, forced, abrupt disconnect).
+            // On-death cleanup is handled separately by CheckPrestigeBoundary → OnDeath.
+            CleanupPrestigeEffects();
+
             CurrentLandblock?.RemoveWorldObject(Guid, false);
             SetPropertiesAtLogOut();
             SavePlayerToDatabase(true);

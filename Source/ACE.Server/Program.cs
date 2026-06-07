@@ -434,6 +434,7 @@ namespace ACE.Server
                 PropertyManager.StopUpdating();
                 //ServerManager.DoShutdownNow();
                 DatabaseManager.Stop();
+                EventManager.Shutdown();
                 MetricsManager.Shutdown();
 
                 // Do system specific cleanup here
@@ -453,6 +454,7 @@ namespace ACE.Server
             {
                 ServerManager.DoShutdownNow();
                 DatabaseManager.Stop();
+                EventManager.Shutdown();
                 MetricsManager.Shutdown();
             }
         }

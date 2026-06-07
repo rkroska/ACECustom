@@ -321,8 +321,38 @@ namespace ACE.Server.Entity
                 
             //    Console.WriteLine($"From: {new StackTrace()}");
             //}
-            var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, variationId);
-            var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, variationId);
+            List<ACE.Database.Models.World.LandblockInstance> objects;
+            List<ACE.Database.Models.Shard.Biota> shardObjects;
+
+            var lbInfo = PrestigeManager.IsPrestigeVariation(variationId) ? PrestigeManager.GetAllowedLandblockInfo(variationId, Id.Landblock) : null;
+            bool shouldLoadPrestigeSpawns = PrestigeManager.IsPrestigeVariation(variationId);
+            bool shouldLoadRetailSpawns = !PrestigeManager.IsPrestigeVariation(variationId) || lbInfo == null || !lbInfo.IsWiped;
+
+            if (shouldLoadRetailSpawns && shouldLoadPrestigeSpawns)
+            {
+                var baseObjects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, null);
+                var prestigeObjects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, variationId);
+                objects = new List<ACE.Database.Models.World.LandblockInstance>(baseObjects.Count + prestigeObjects.Count);
+                objects.AddRange(baseObjects);
+                objects.AddRange(prestigeObjects);
+
+                var baseShard = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, null);
+                var prestigeShard = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, variationId);
+                shardObjects = new List<ACE.Database.Models.Shard.Biota>(baseShard.Count + prestigeShard.Count);
+                shardObjects.AddRange(baseShard);
+                shardObjects.AddRange(prestigeShard);
+            }
+            else if (shouldLoadRetailSpawns)
+            {
+                objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, null);
+                shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, null);
+            }
+            else
+            {
+                objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, variationId);
+                shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, variationId);
+            }
+
             var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, variationId);
 
 
@@ -443,10 +473,10 @@ namespace ACE.Server.Entity
                 marker.SetProperty(PropertyBool.Stuck, true);
                 marker.TimeToRot = -1;  // Never rot/despawn
 
-                // Make boundary markers solid and prevent them from persisting to the shard DB
+                // Make boundary markers ethereal (visual-only) so players can walk through them.
+                // Shard persistence is prevented by Stuck=true + TimeToRot=-1 above (no save trigger).
                 marker.Ethereal = true;
                 marker.IgnoreCollisions = true;
-                marker.Generator = marker;
 
                 // Use physics system to calculate proper position (like encounters do)
                 var pos = new Physics.Common.Position();
@@ -573,7 +603,11 @@ namespace ACE.Server.Entity
 
             // encounter rows have no variation_Id; optionally skip only prestige layers (not retail 1–10)
             if (ServerConfig.encounter_spawn_base_variation_only.Value && PrestigeManager.IsPrestigeVariation(VariationId))
-                return;
+            {
+                var lbInfo = PrestigeManager.GetAllowedLandblockInfo(VariationId, Id.Landblock);
+                if (lbInfo != null && lbInfo.IsWiped)
+                    return;
+            }
 
             // get the encounter spawns for this landblock
             var encounters = DatabaseManager.World.GetCachedEncountersByLandblock(Id.Landblock);

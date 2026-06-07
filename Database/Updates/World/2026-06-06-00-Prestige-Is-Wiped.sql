@@ -1,14 +1,10 @@
--- Add area name and custom boundary fields to prestige_allowed_landblocks table
+-- Add is_wiped column to prestige_allowed_landblocks table
 ALTER TABLE `prestige_allowed_landblocks`
-ADD COLUMN `area_name` varchar(100) NOT NULL DEFAULT 'Default',
-ADD COLUMN `boundary_wcid` int(11) NULL DEFAULT NULL,
-ADD COLUMN `boundary_scale` float NULL DEFAULT NULL,
-ADD COLUMN `boundary_script_id` int(11) NULL DEFAULT NULL,
 ADD COLUMN `is_wiped` tinyint(1) NOT NULL DEFAULT 0;
 
--- Update the existing Tou Tou v11 landblocks to use 'Tou Tou' as their area_name
+-- Set Tou Tou landblocks to be wiped (is_wiped = 1) under tier 1
 UPDATE `prestige_allowed_landblocks`
-SET `area_name` = 'Tou Tou'
+SET `is_wiped` = 1
 WHERE `tier` = 1 AND `landblock` IN (
     62809, 63064, 63320, 63576, 63575, 63319, 63318, 63062, 63063, 62807, 
     62806, 62551, 62552, 62297, 62296, 62295, 62039, 62040, 62041, 62042, 

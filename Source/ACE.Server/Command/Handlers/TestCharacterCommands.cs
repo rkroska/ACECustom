@@ -114,7 +114,7 @@ namespace ACE.Server.Command.Handlers
                 var arrow = WorldObjectFactory.CreateNewWorldObject(4395100);
                 if (arrow != null)
                 {
-                    ForceEquipItem(player, arrow);
+                    AddItemToInventory(player, arrow);
                 }
 
                 // Add Aetherias
@@ -174,7 +174,7 @@ namespace ACE.Server.Command.Handlers
                     var arrow = WorldObjectFactory.CreateNewWorldObject(4395100);
                     if (arrow != null)
                     {
-                        ForceEquipItem(player, arrow);
+                        AddItemToInventory(player, arrow);
                     }
 
                     // Add Aetherias
@@ -345,15 +345,15 @@ namespace ACE.Server.Command.Handlers
             player.Enlightenment = 0;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Enlightenment, 0));
 
-            // 11. Clear all inventory items
-            player.ClearInventory(false);
-
-            // 12. Clear all equipped objects
+            // 11. Dequip and destroy all equipped objects first (before clearing inventory)
             var equippedGuids = new List<ObjectGuid>(player.EquippedObjects.Keys);
             foreach (var guid in equippedGuids)
             {
                 player.TryDequipObjectWithNetworking(guid, out _, Player.DequipObjectAction.ConsumeItem);
             }
+
+            // 12. Clear all remaining inventory items
+            player.ClearInventory(false);
         }
 
         private static void ConfigureStatsAndSpells(Player player)
@@ -542,7 +542,7 @@ namespace ACE.Server.Command.Handlers
                     item.SetProperty(PropertyInt.MaterialType, 0); // Suppress material prefix
  
                     // Auto-equip all 9 pieces
-                    ForceEquipItem(player, item);
+                    AddItemToInventory(player, item);
                 }
             }
         }
@@ -583,7 +583,7 @@ namespace ACE.Server.Command.Handlers
                 shirt.ChangesDetected = true;
                 shirt.UiEffects = UiEffects.Magical;
  
-                ForceEquipItem(player, shirt);
+                AddItemToInventory(player, shirt);
             }
  
             // 2. Pants: "T11 Pants (Test)" (WCID 2599)
@@ -620,7 +620,7 @@ namespace ACE.Server.Command.Handlers
                 pants.ChangesDetected = true;
                 pants.UiEffects = UiEffects.Magical;
  
-                ForceEquipItem(player, pants);
+                AddItemToInventory(player, pants);
             }
  
             // 3. Cloak: "T11 Cloak (Test)" (WCID 227190032)
@@ -651,7 +651,7 @@ namespace ACE.Server.Command.Handlers
                 cloak.ChangesDetected = true;
                 cloak.UiEffects = UiEffects.Magical;
  
-                ForceEquipItem(player, cloak);
+                AddItemToInventory(player, cloak);
             }
         }
  
@@ -688,7 +688,7 @@ namespace ACE.Server.Command.Handlers
                 leftBracelet.ChangesDetected = true;
                 leftBracelet.UiEffects = UiEffects.Magical;
  
-                ForceEquipItem(player, leftBracelet);
+                AddItemToInventory(player, leftBracelet);
             }
  
             // 2. Right Bracelet: "T11 Bracelet (Test)" (WCID 21392)
@@ -722,7 +722,7 @@ namespace ACE.Server.Command.Handlers
                 rightBracelet.ChangesDetected = true;
                 rightBracelet.UiEffects = UiEffects.Magical;
  
-                ForceEquipItem(player, rightBracelet);
+                AddItemToInventory(player, rightBracelet);
             }
  
             // 3. Left Ring: "T11 Ring (Test)" (WCID 21394)
@@ -756,7 +756,7 @@ namespace ACE.Server.Command.Handlers
                 leftRing.ChangesDetected = true;
                 leftRing.UiEffects = UiEffects.Magical;
  
-                ForceEquipItem(player, leftRing);
+                AddItemToInventory(player, leftRing);
             }
  
             // 4. Right Ring: "T11 Ring (Test)" (WCID 21394)
@@ -790,7 +790,7 @@ namespace ACE.Server.Command.Handlers
                 rightRing.ChangesDetected = true;
                 rightRing.UiEffects = UiEffects.Magical;
  
-                ForceEquipItem(player, rightRing);
+                AddItemToInventory(player, rightRing);
             }
  
             // 5. Necklace: "T11 Necklace (Test)" (WCID 27445)
@@ -824,7 +824,7 @@ namespace ACE.Server.Command.Handlers
                 necklace.ChangesDetected = true;
                 necklace.UiEffects = UiEffects.Magical;
  
-                ForceEquipItem(player, necklace);
+                AddItemToInventory(player, necklace);
             }
  
             // 6. Trinket: "T11 Trinket (Test)" (WCID 41483)
@@ -858,11 +858,11 @@ namespace ACE.Server.Command.Handlers
                 trinket.ChangesDetected = true;
                 trinket.UiEffects = UiEffects.Magical;
  
-                ForceEquipItem(player, trinket);
+                AddItemToInventory(player, trinket);
             }
         }
 
-        private static void ForceEquipItem(Player player, WorldObject item)
+        private static void AddItemToInventory(Player player, WorldObject item)
         {
             player.TryCreateInInventoryWithNetworking(item);
         }
@@ -897,7 +897,7 @@ namespace ACE.Server.Command.Handlers
                 blueAetheria.WieldDifficulty = 725;
                 blueAetheria.SetProperty(PropertyInt.MaterialType, 0); // Suppress material prefix
 
-                ForceEquipItem(player, blueAetheria);
+                AddItemToInventory(player, blueAetheria);
             }
 
             // 2. Yellow Aetheria of Fury (Level 8)
@@ -925,7 +925,7 @@ namespace ACE.Server.Command.Handlers
                 yellowAetheria.WieldDifficulty = 725;
                 yellowAetheria.SetProperty(PropertyInt.MaterialType, 0); // Suppress material prefix
 
-                ForceEquipItem(player, yellowAetheria);
+                AddItemToInventory(player, yellowAetheria);
             }
 
             // 3. Red Aetheria of Fury (Level 8)
@@ -953,7 +953,7 @@ namespace ACE.Server.Command.Handlers
                 redAetheria.WieldDifficulty = 725;
                 redAetheria.SetProperty(PropertyInt.MaterialType, 0); // Suppress material prefix
 
-                ForceEquipItem(player, redAetheria);
+                AddItemToInventory(player, redAetheria);
             }
         }
 
