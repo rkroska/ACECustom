@@ -198,6 +198,8 @@ namespace ACE.Server.Managers
 
             lock (_allowedLandblocksLock)
             {
+                var readSummary = string.Join(" | ", _tierAllowedLandblocks.Select(k => $"T{k.Key}={k.Value.Count}"));
+                Console.WriteLine($"[PRESTIGE-READ] GetAllAllowedLandblockInfos: {readSummary}");
                 return _tierAllowedLandblocks.ToDictionary(
                     kvp => kvp.Key,
                     kvp => kvp.Value.ToDictionary(k => k.Key, k => new AllowedLandblockInfo
@@ -342,6 +344,9 @@ namespace ACE.Server.Managers
         /// <summary>Loads active rows from <c>prestige_allowed_landblocks</c> into <see cref="_tierAllowedLandblocks"/>.</summary>
         private static void ReloadAllowedLandblocksFromDatabaseInternal()
         {
+            var stack = new System.Diagnostics.StackTrace(true).ToString();
+            Console.WriteLine($"[PRESTIGE-RELOAD] Called from:\n{stack}");
+            Console.WriteLine("[PRESTIGE-INIT] ReloadAllowedLandblocksFromDatabaseInternal: starting...");
             log.Info("[PrestigeZone] Reloading prestige allowed landblocks from database...");
             var fromDb = new Dictionary<int, Dictionary<ushort, AllowedLandblockInfo>>();
             var seededTiers = new HashSet<int>();
@@ -350,6 +355,7 @@ namespace ACE.Server.Managers
             try
             {
                 var connection = context.Database.GetDbConnection();
+                Console.WriteLine($"[PRESTIGE-INIT] Connected to: DataSource={connection.DataSource}, Database={connection.Database}");
                 log.Info($"[PrestigeZone] Connected to database: DataSource={connection.DataSource}, Database={connection.Database}");
 
                 using (var tierCmd = connection.CreateCommand())
@@ -360,6 +366,7 @@ namespace ACE.Server.Managers
                     {
                         var tier = tierReader.GetInt32(0);
                         seededTiers.Add(tier);
+                        Console.WriteLine($"[PRESTIGE-INIT] Found seeded tier in DB: {tier}");
                         log.Info($"[PrestigeZone] Found seeded tier in database: {tier}");
                     }
                 }
@@ -383,6 +390,8 @@ namespace ACE.Server.Managers
                     float? boundaryScale = reader.IsDBNull(4) ? null : (float?)reader.GetFloat(4);
                     uint? boundaryScriptId = reader.IsDBNull(5) ? null : (uint?)reader.GetInt32(5);
 
+                    if (count <= 5 || tier != 1) // Print first 5 rows and any non-tier-1 rows
+                        Console.WriteLine($"[PRESTIGE-INIT] Row {count}: Tier={tier}, LB=0x{landblock:X4}, Area={areaName}");
                     log.Info($"[PrestigeZone] Loaded active allowed landblock: Tier={tier}, Landblock=0x{landblock:X4} (Area: {areaName})");
 
                     if (!fromDb.TryGetValue(tier, out var dict))
@@ -400,6 +409,7 @@ namespace ACE.Server.Managers
                         BoundaryScriptId = boundaryScriptId
                     };
                 }
+                Console.WriteLine($"[PRESTIGE-INIT] Total active rows read: {count}. fromDb tiers: {string.Join(", ", fromDb.Keys)}");
                 log.Info($"[PrestigeZone] Finished reading from database. Total active rows: {count}");
             }
             finally
@@ -408,6 +418,7 @@ namespace ACE.Server.Managers
             }
 
             var loaded = GetDefaultAllowedLandblocks();
+            Console.WriteLine($"[PRESTIGE-INIT] seededTiers={string.Join(",", seededTiers)}");
             foreach (var tier in seededTiers)
             {
                 loaded[tier] = new Dictionary<ushort, AllowedLandblockInfo>();
@@ -430,12 +441,15 @@ namespace ACE.Server.Managers
             lock (_allowedLandblocksLock)
             {
                 _tierAllowedLandblocks = loaded;
+                var summary = string.Join(" | ", _tierAllowedLandblocks.Select(k => $"T{k.Key}={k.Value.Count}"));
+                Console.WriteLine($"[PRESTIGE-INIT] Cache set: {summary}");
                 log.Info($"[PrestigeZone] Updated cache. Active tiers in memory: {string.Join(", ", _tierAllowedLandblocks.Keys)}");
                 foreach (var kvp in _tierAllowedLandblocks)
                 {
                     log.Info($"[PrestigeZone] Cache tier {kvp.Key} has {kvp.Value.Count} items: {string.Join(", ", kvp.Value.Keys.Select(k => k.ToString("X4")))}");
                 }
             }
+            Console.WriteLine("[PRESTIGE-INIT] ReloadAllowedLandblocksFromDatabaseInternal: done.");
         }
 
         public static void ReloadAllowedLandblocksFromDatabase()
@@ -781,10 +795,12 @@ namespace ACE.Server.Managers
             {
                 if (_databaseInitialized) return;
 
+                Console.WriteLine("[PRESTIGE-INIT] EnsureDatabaseInitialized: starting...");
                 using var context = new WorldDbContext();
                 EnsurePrestigeAllowedLandblocksTable(context);
                 ReloadAllowedLandblocksFromDatabaseInternal();
                 _databaseInitialized = true;
+                Console.WriteLine("[PRESTIGE-INIT] EnsureDatabaseInitialized: complete.");
             }
         }
 

@@ -1405,11 +1405,6 @@ namespace ACE.Server.WorldObjects
                     {
                         if (player.Session == null) return;
 
-                        // Guard: item may have been destroyed/GC'd during the 1-second window
-                        // (e.g. consumed by a recipe tick before this chain fired).
-                        // Traversing a destroyed Container graph via GetRootOwner can NRE.
-                        if (item.IsDestroyed) return;
-
                         // Use GetRootOwner() — depth-bounded, consistent with TryAddToInventory
                         var current = (item.Container as Container)?.GetRootOwner() ?? item;
 
@@ -1432,16 +1427,19 @@ namespace ACE.Server.WorldObjects
 
                         CharmAbilityRegistry.Apply(player, id, false);
 
-                        // Only clear the item's activation flag when the new holder hasn't already
-                        // re-activated it — avoids clobbering state after a trade during the delay.
-                        var newOwner = (item.Container as Container)?.GetRootOwner() as Player;
-                        var reactivatedByNewOwner = newOwner != null
-                            && newOwner.Guid != player.Guid
-                            && item.IsCharmActivated;
-                        if (!reactivatedByNewOwner)
+                        if (!item.IsDestroyed)
                         {
-                            item.IsCharmActivated = false;
-                            item.SaveBiotaToDatabase();
+                            // Only clear the item's activation flag when the new holder hasn't already
+                            // re-activated it — avoids clobbering state after a trade during the delay.
+                            var newOwner = (item.Container as Container)?.GetRootOwner() as Player;
+                            var reactivatedByNewOwner = newOwner != null
+                                && newOwner.Guid != player.Guid
+                                && item.IsCharmActivated;
+                            if (!reactivatedByNewOwner)
+                            {
+                                item.IsCharmActivated = false;
+                                item.SaveBiotaToDatabase();
+                            }
                         }
 
                         // ILT: Infinite Casting — restore client comp requirement when stone leaves inventory

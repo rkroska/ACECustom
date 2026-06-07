@@ -931,7 +931,7 @@ namespace ACE.Server.WorldObjects
         {
             var name = stackSize != null && stackSize != 1 ? GetPluralName() : Name;
 
-            if (MaterialType == null)
+            if (MaterialType == null || MaterialType == ACE.Entity.Enum.MaterialType.Unknown)
                 return name;
 
             var material = RecipeManager.GetMaterialName(MaterialType ?? 0);
@@ -3473,6 +3473,13 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyBool.HasForkCharm) ?? false;
             set { if (!value) RemoveProperty(PropertyBool.HasForkCharm); else SetProperty(PropertyBool.HasForkCharm, value); }
+        }
+
+        /// <summary>True while the Far Shot Charm is activated.</summary>
+        public bool HasFarShotCharm
+        {
+            get => GetProperty(PropertyBool.HasFarShotCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasFarShotCharm); else SetProperty(PropertyBool.HasFarShotCharm, value); }
         }
 
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>

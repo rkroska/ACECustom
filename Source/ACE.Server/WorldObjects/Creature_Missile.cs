@@ -250,12 +250,20 @@ namespace ACE.Server.WorldObjects
 
             if (maxVelocity == 0.0f)
             {
-                log.Warn($"{Name}.GetMissileSpeed() - {missileLauncher.Name} ({missileLauncher.Guid}) has speed 0");
+                if (missileLauncher != null)
+                    log.Warn($"{Name}.GetMissileSpeed() - {missileLauncher.Name} ({missileLauncher.Guid}) has speed 0");
 
                 maxVelocity = DefaultProjectileSpeed;
             }
 
-            if (this is Player player && player.GetCharacterOption(CharacterOption.UseFastMissiles))
+            if (this is Player player && player.HasFarShotCharm && CharmSettingsManager.FarShot.Enabled)
+            {
+                player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.FarShotAbilityId, out var tier);
+                var mult = tier switch { 2 => CharmSettingsManager.FarShot.T2Range, 3 => CharmSettingsManager.FarShot.T3Range, _ => CharmSettingsManager.FarShot.T1Range };
+                maxVelocity *= mult;
+            }
+
+            if (this is Player playerOpt && playerOpt.GetCharacterOption(CharacterOption.UseFastMissiles))
             {
                 maxVelocity *= ServerConfig.fast_missile_modifier.Value;
             }
@@ -440,31 +448,23 @@ namespace ACE.Server.WorldObjects
 
         public float GetMaxMissileRange()
         {
-            var weapon = GetEquippedMissileWeapon();
-            var maxVelocity = weapon?.MaximumVelocity ?? DefaultMaxVelocity;
+            // GetProjectileSpeed() already applies the Far Shot tier speed multiplier, so missileRange
+            // (which scales as velocity²) grows accordingly. We also raise the cap by the same multiplier
+            // so that the server actually allows target acquisition at the extended distance.
+            // Both adjustments must happen together: raising speed alone would be clipped by the original cap.
+            var maxVelocity = GetProjectileSpeed();
 
             var missileRange = (float)Math.Pow(maxVelocity, 2.0f) * 0.1020408163265306f;
-            //var missileRange = (float)Math.Pow(maxVelocity, 2.0f) * 0.0682547266398198f;
 
-            //var strengthMod = SkillFormula.GetAttributeMod((int)Strength.Current);
-            //var maxRange = Math.Min(missileRange * strengthMod, MissileRangeCap);
-            var maxRange = Math.Min(missileRange, MissileRangeCap);
+            var rangeCap = MissileRangeCap;
+            if (this is Player player && player.HasFarShotCharm && CharmSettingsManager.FarShot.Enabled)
+            {
+                player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.FarShotAbilityId, out var tier);
+                var mult = tier switch { 2 => CharmSettingsManager.FarShot.T2Range, 3 => CharmSettingsManager.FarShot.T3Range, _ => CharmSettingsManager.FarShot.T1Range };
+                rangeCap *= mult;
+            }
 
-            // any kind of other caps for monsters specifically?
-            // throwing lugian rocks @ 85 yards seems a bit far...
-
-            //Console.WriteLine($"{Name}.GetMaxMissileRange(): maxVelocity={maxVelocity}, strengthMod={strengthMod}, maxRange={maxRange}");
-
-            // for client display
-            /*var maxRangeYards = maxRange * MetersToYards;
-            if (maxRangeYards >= 10.0f)
-                maxRangeYards -= maxRangeYards % 5.0f;
-            else
-                maxRangeYards = (float)Math.Ceiling(maxRangeYards);
-
-            Console.WriteLine($"Max range: {maxRange} ({maxRangeYards} yds.)");*/
-
-            return maxRange;
+            return Math.Min(missileRange, rangeCap);
         }
 
         public static MotionCommand GetAimLevel(Vector3 velocity)

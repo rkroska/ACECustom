@@ -431,18 +431,23 @@ namespace ACE.Server.WorldObjects
                 string fullSpellEnumNameAlt = spellNamPrefix + ((isBane) ? string.Empty : "Other") + maxSpellLevel;
 
                 uint spellID = 0;
+                uint spellIDAlt = 0;
+
                 if (Enum.TryParse(tySpell, fullSpellEnumName, out object parsedId))
                 {
                     spellID = (uint)parsedId;
                 }
-                else if (Enum.TryParse(tySpell, fullSpellEnumNameAlt, out object parsedIdAlt))
+
+                if (Enum.TryParse(tySpell, fullSpellEnumNameAlt, out object parsedIdAlt))
                 {
-                    spellID = (uint)parsedIdAlt;
+                    if (spellID == 0)
+                        spellID = (uint)parsedIdAlt;
+                    else if (spellID != (uint)parsedIdAlt)
+                        spellIDAlt = (uint)parsedIdAlt;
                 }
-                else
-                {
+
+                if (spellID == 0)
                     continue;
-                }
 
                 var buffMsg = BuildBuffMessage(spellID);
                 if (buffMsg != null)
@@ -462,8 +467,8 @@ namespace ACE.Server.WorldObjects
                     if (FociWCIDs.ContainsKey(school) && !HasFoci(school))
                         continue;
 
-                    // 3. Spellbook check: Player must have learned the specific spell
-                    if (!SpellIsKnown(spellID))
+                    // 3. Spellbook check: Player must have learned the specific spell (or the Other variant)
+                    if (!SpellIsKnown(spellID) && (spellIDAlt == 0 || !SpellIsKnown(spellIDAlt)))
                         continue;
 
                     buffMessages.Add(buffMsg);
@@ -623,6 +628,7 @@ namespace ACE.Server.WorldObjects
             "HeartSeeker",
             "HermeticLink",
             "SpiritDrinker",
+            "ShieldMastery",
             "DualWieldMastery",
             "TwoHandedMastery",
             "DirtyFightingMastery",
@@ -786,7 +792,9 @@ namespace ACE.Server.WorldObjects
             // cleans up bugged chars with dangling item set spells
             // from previous bugs
 
-            var allPossessions = GetAllPossessions().ToDictionary(i => i.Guid, i => i);
+            var allPossessions = new Dictionary<ObjectGuid, WorldObject>();
+            foreach (var item in GetAllPossessions())
+                allPossessions[item.Guid] = item;
 
             // this is a legacy method, but is still a decent failsafe to catch any existing issues
 
@@ -886,11 +894,22 @@ namespace ACE.Server.WorldObjects
                 string altEnumName  = spellPrefix + "Other" + maxSpellLevel;
 
                 uint spellID = 0;
+                uint spellIDAlt = 0;
+
                 if (Enum.TryParse(tySpell, fullEnumName, out object parsed))
+                {
                     spellID = (uint)parsed;
-                else if (Enum.TryParse(tySpell, altEnumName, out object parsedAlt))
-                    spellID = (uint)parsedAlt;
-                else
+                }
+
+                if (Enum.TryParse(tySpell, altEnumName, out object parsedAlt))
+                {
+                    if (spellID == 0)
+                        spellID = (uint)parsedAlt;
+                    else if (spellID != (uint)parsedAlt)
+                        spellIDAlt = (uint)parsedAlt;
+                }
+
+                if (spellID == 0)
                     continue;
 
                 // Resolve the spell object to check school
@@ -907,7 +926,7 @@ namespace ACE.Server.WorldObjects
                 if (FociWCIDs.ContainsKey(school) && !HasFoci(school))
                     continue;
 
-                if (!SpellIsKnown(spellID))
+                if (!SpellIsKnown(spellID) && (spellIDAlt == 0 || !SpellIsKnown(spellIDAlt)))
                     continue;
 
                 // Check if the buff is missing entirely or expiring within 60 minutes

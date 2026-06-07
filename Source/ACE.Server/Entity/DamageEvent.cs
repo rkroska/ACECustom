@@ -547,6 +547,38 @@ namespace ACE.Server.Entity
                 Damage *= splitMultiplier;
             }
 
+            // Apply Far Shot Charm final damage percentage multiplier
+            if (CombatType == CombatType.Missile && Attacker is Player player && player.HasFarShotCharm && CharmSettingsManager.FarShot.Enabled)
+            {
+                player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.FarShotAbilityId, out var tier);
+                var damageMultiplier = tier switch
+                {
+                    2 => CharmSettingsManager.FarShot.T2Damage,
+                    3 => CharmSettingsManager.FarShot.T3Damage,
+                    _ => CharmSettingsManager.FarShot.T1Damage
+                };
+
+                // Calculate global distance between attacker and defender.
+                // Guard against null Location — a creature can lose its location between the damage roll
+                // and this point (e.g. it died/despawned in the same tick). Skip the distance penalty
+                // in that case; the base damage multiplier still applies.
+                if (Attacker.Location != null && Defender.Location != null)
+                {
+                    var attackerPos = Attacker.Location.ToGlobal(false);
+                    var defenderPos = Defender.Location.ToGlobal(false);
+                    var distanceInMeters = System.Numerics.Vector3.Distance(attackerPos, defenderPos);
+                    var distanceInYards = distanceInMeters * Creature.MetersToYards;
+
+                    // Apply configurable damage penalty if the target is within penalty range and is a mob (not a player)
+                    if (distanceInYards < CharmSettingsManager.FarShot.PenaltyRange && !(Defender is Player))
+                    {
+                        damageMultiplier *= (1.0f - CharmSettingsManager.FarShot.Penalty);
+                    }
+                }
+
+                Damage *= damageMultiplier;
+            }
+
             // NEW: Apply enrage damage reduction to the final output damage if the defender is a mob and enraged
             if (defender.IsEnraged && !(defender is Player))
             {

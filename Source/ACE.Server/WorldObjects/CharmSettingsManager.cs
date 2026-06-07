@@ -39,6 +39,7 @@ namespace ACE.Server.WorldObjects
         public static EssenceRefillBlock      EssenceRefill      { get; } = new();
         public static UniversalSummoningBlock UniversalSummoning { get; } = new();
         public static ForkBlock               Fork               { get; } = new();
+        public static FarShotBlock            FarShot            { get; } = new();
 
         // ─────────────────────────────────────────────────────────────────────
         //  Startup
@@ -85,6 +86,7 @@ namespace ACE.Server.WorldObjects
             sb.Append(EssenceRefill.Dump());
             sb.Append(UniversalSummoning.Dump());
             sb.Append(Fork.Dump());
+            sb.Append(FarShot.Dump());
             return sb.ToString();
         }
 
@@ -112,6 +114,7 @@ namespace ACE.Server.WorldObjects
                 "essencerefill"      => EssenceRefill,
                 "universalsummoning" => UniversalSummoning,
                 "fork"               => Fork,
+                "farshot"            => FarShot,
                 _                    => null
             };
 
@@ -154,6 +157,7 @@ namespace ACE.Server.WorldObjects
             EssenceRefill.Reset();      PersistBlock("essencerefill",      EssenceRefill);
             UniversalSummoning.Reset(); PersistBlock("universalsummoning", UniversalSummoning);
             Fork.Reset();               PersistBlock("fork",               Fork);
+            FarShot.Reset();            PersistBlock("farshot",            FarShot);
         }
 
         /// <summary>
@@ -179,6 +183,7 @@ namespace ACE.Server.WorldObjects
                 case "essencerefill":      EssenceRefill.Reset();      PersistBlock("essencerefill",      EssenceRefill);      return true;
                 case "universalsummoning": UniversalSummoning.Reset(); PersistBlock("universalsummoning", UniversalSummoning); return true;
                 case "fork":               Fork.Reset();               PersistBlock("fork",               Fork);               return true;
+                case "farshot":            FarShot.Reset();            PersistBlock("farshot",            FarShot);            return true;
                 default: return false;
             }
         }
@@ -202,6 +207,7 @@ namespace ACE.Server.WorldObjects
                 "essencerefill"      => EssenceRefill.Dump(),
                 "universalsummoning" => UniversalSummoning.Dump(),
                 "fork"               => Fork.Dump(),
+                "farshot"            => FarShot.Dump(),
                 _                    => null
             };
         }
@@ -225,6 +231,7 @@ namespace ACE.Server.WorldObjects
                 "essencerefill"      => EssenceRefill.Help(),
                 "universalsummoning" => UniversalSummoning.Help(),
                 "fork"               => Fork.Help(),
+                "farshot"            => FarShot.Help(),
                 _                    => null
             };
         }
@@ -300,6 +307,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             "essencerefill"      => EssenceRefill,
             "universalsummoning" => UniversalSummoning,
             "fork"               => Fork,
+            "farshot"            => FarShot,
             _                    => null
         };
 
@@ -1369,6 +1377,115 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             public string Dump() =>
                 "[UniversalSummoning] Current Settings\n" +
                 $"  • Enabled: {B(Enabled)}\n";
+        }
+        
+        public sealed class FarShotBlock : ICharmBlock
+        {
+            public bool Enabled { get; private set; } = true;
+            
+            // Range/Velocity multipliers (Default: +15% / +30% / +41% to reach 120 yards cap)
+            public float T1Range { get; private set; } = 1.15f;
+            public float T2Range { get; private set; } = 1.30f;
+            public float T3Range { get; private set; } = 1.4117f;
+
+            // Final Damage percentage multipliers (Default: +5% / +10% / +20%)
+            public float T1Damage { get; private set; } = 1.05f;
+            public float T2Damage { get; private set; } = 1.10f;
+            public float T3Damage { get; private set; } = 1.20f;
+
+            // Close-range penalty configurations
+            public float PenaltyRange { get; private set; } = 10.0f;
+            public float Penalty { get; private set; } = 0.5f;
+
+            public void Reset()
+            {
+                Enabled = true;
+                T1Range = 1.15f; T2Range = 1.30f; T3Range = 1.4117f;
+                T1Damage = 1.05f; T2Damage = 1.10f; T3Damage = 1.20f;
+                PenaltyRange = 10.0f;
+                Penalty = 0.5f;
+            }
+
+            public string TrySet(string key, string value)
+            {
+                switch (key)
+                {
+                    case "enabled": case "on": case "off": case "true": case "false":
+                         var valueToParse = key == "enabled" ? value : key;
+                         if (!ParseBool(valueToParse, out var bv)) return $"Invalid bool: '{value}'.";
+                         Enabled = bv; return $"farshot.enabled = {B(Enabled)}";
+
+                    case "t1range":  if (!ParseFloat(value, out var v1)) return "Invalid float."; T1Range = v1; return $"farshot.t1range = {F(T1Range)}";
+                    case "t2range":  if (!ParseFloat(value, out var v2)) return "Invalid float."; T2Range = v2; return $"farshot.t2range = {F(T2Range)}";
+                    case "t3range":  if (!ParseFloat(value, out var v3)) return "Invalid float."; T3Range = v3; return $"farshot.t3range = {F(T3Range)}";
+
+                    case "t1damage": if (!ParseFloat(value, out var d1)) return "Invalid float."; T1Damage = d1; return $"farshot.t1damage = {F(T1Damage)}";
+                    case "t2damage": if (!ParseFloat(value, out var d2)) return "Invalid float."; T2Damage = d2; return $"farshot.t2damage = {F(T2Damage)}";
+                    case "t3damage": if (!ParseFloat(value, out var d3)) return "Invalid float."; T3Damage = d3; return $"farshot.t3damage = {F(T3Damage)}";
+
+                    case "penaltyrange": if (!ParseFloat(value, out var pr)) return "Invalid float."; PenaltyRange = pr; return $"farshot.penaltyrange = {F(PenaltyRange)}";
+                    case "penalty":      if (!ParseFloat(value, out var p)) return "Invalid float."; Penalty = p; return $"farshot.penalty = {F(Penalty)}";
+                    default: return null;
+                }
+            }
+
+            public void ApplyRaw(string key, string value)
+            {
+                switch (key)
+                {
+                    case "enabled":  if (ParseBool(value, out var bv))  Enabled  = bv; break;
+                    case "t1range":  if (ParseFloat(value, out var v1)) T1Range  = v1; break;
+                    case "t2range":  if (ParseFloat(value, out var v2)) T2Range  = v2; break;
+                    case "t3range":  if (ParseFloat(value, out var v3)) T3Range  = v3; break;
+                    case "t1damage": if (ParseFloat(value, out var d1)) T1Damage = d1; break;
+                    case "t2damage": if (ParseFloat(value, out var d2)) T2Damage = d2; break;
+                    case "t3damage": if (ParseFloat(value, out var d3)) T3Damage = d3; break;
+                    case "penaltyrange": if (ParseFloat(value, out var pr)) PenaltyRange = pr; break;
+                    case "penalty":      if (ParseFloat(value, out var p))  Penalty = p; break;
+                }
+            }
+
+            public string GetRaw(string key) => key switch
+            {
+                "enabled"  => B(Enabled),
+                "t1range"  => F(T1Range),
+                "t2range"  => F(T2Range),
+                "t3range"  => F(T3Range),
+                "t1damage" => F(T1Damage),
+                "t2damage" => F(T2Damage),
+                "t3damage" => F(T3Damage),
+                "penaltyrange" => F(PenaltyRange),
+                "penalty"      => F(Penalty),
+                _          => null
+            };
+
+            public IEnumerable<(string, string)> GetAllRaw() => new[]
+            {
+                ("enabled", B(Enabled)),
+                ("t1range", F(T1Range)), ("t2range", F(T2Range)), ("t3range", F(T3Range)),
+                ("t1damage", F(T1Damage)), ("t2damage", F(T2Damage)), ("t3damage", F(T3Damage)),
+                ("penaltyrange", F(PenaltyRange)), ("penalty", F(Penalty)),
+            };
+
+            public string Help() =>
+                "[FarShot] Adjustable Settings\n" +
+                "  • Enabled   on / off\n" +
+                "  • t1range float  — T1 maximum range cap multiplier\n" +
+                "  • t2range float  — T2 maximum range cap multiplier\n" +
+                "  • t3range float  — T3 maximum range cap multiplier\n" +
+                "  • t1damage float — T1 final damage multiplier (1.05 = +5% damage)\n" +
+                "  • t2damage float — T2 final damage multiplier (1.10 = +10% damage)\n" +
+                "  • t3damage float — T3 final damage multiplier (1.20 = +20% damage)\n" +
+                "  • penaltyrange float — Close-range penalty distance in yards (Default: 10.0)\n" +
+                "  • penalty float — Close-range damage penalty percentage (Default: 0.5 = 50% penalty)";
+
+            public string Dump() =>
+                "[FarShot] Current Settings\n" +
+                $"  • Enabled:  {B(Enabled)}\n" +
+                $"  • t1range:  {T1Range:F2}x | t1damage: {T1Damage:F2}x\n" +
+                $"  • t2range:  {T2Range:F2}x | t2damage: {T2Damage:F2}x\n" +
+                $"  • t3range:  {T3Range:F2}x | t3damage: {T3Damage:F2}x\n" +
+                $"  • penaltyrange: {PenaltyRange:F2} yards | penalty: {Penalty:F2} ({(Penalty * 100.0f):F0}% reduction)\n";
         }
     }
 }

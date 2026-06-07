@@ -1271,7 +1271,7 @@ namespace ACE.Server.Command.Handlers
 
         private static void CreateCustomWand(Player player, DamageType element, Container destination = null)
         {
-            uint baseWcid = 6132; // Peerless Atlan Staff template to avoid material prefix
+            uint baseWcid = 46122; // Atlan Wand template to avoid material prefix
 
             var wand = WorldObjectFactory.CreateNewWorldObject(baseWcid);
             if (wand == null) return;
@@ -1450,7 +1450,8 @@ namespace ACE.Server.Command.Handlers
                 227190153,  // Mellas Court Recall Gem
                 227190155,  // Valorya Gate Recall Gem
                 227190156,  // Vesper Gate Recall Gem
-                227190157   // Winthur Gate Recall Gem
+                227190157,  // Winthur Gate Recall Gem
+                777700029   // Tou Tou Prestige Portal Gem
             };
 
             foreach (var wcid in gemWcids)

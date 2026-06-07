@@ -90,7 +90,17 @@ namespace ACE.Server.Network.GameAction.Actions
                             session.Network.EnqueueSend(new GameMessageSystemChat($"@{commandHandler.Attribute.Command} - {commandHandler.Attribute.Description}", ChatMessageType.Broadcast));
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Usage: @{commandHandler.Attribute.Command} {commandHandler.Attribute.Usage}", ChatMessageType.Broadcast));
                             break;
+                        case CommandHandlerResponse.NotAuthorized:
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have the required access level to use this command.", ChatMessageType.Help));
+                            break;
+                        case CommandHandlerResponse.NotInWorld:
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"This command can only be used when in the world.", ChatMessageType.Help));
+                            break;
+                        case CommandHandlerResponse.NoConsoleInvoke:
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"This command cannot be used from the game client.", ChatMessageType.Help));
+                            break;
                         default:
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Command failed with response: {response}", ChatMessageType.Help));
                             break;
                     }
                 }

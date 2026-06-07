@@ -578,17 +578,6 @@ namespace ACE.Server.Command.Handlers
                     break;
 
                 case "list":
-                    // DIAGNOSTICS:
-                    var prestigeType = typeof(PrestigeManager);
-                    CommandHandlerHelper.WriteOutputInfo(session, $"[DIAGNOSTICS] PrestigeManager Assembly: {prestigeType.Assembly.Location}");
-                    
-                    var diagTiers = PrestigeManager.GetAllAllowedLandblockInfos();
-                    CommandHandlerHelper.WriteOutputInfo(session, $"[DIAGNOSTICS] Memory Cache Tiers: {string.Join(", ", diagTiers.Keys)}");
-                    foreach (var kvp in diagTiers)
-                    {
-                        CommandHandlerHelper.WriteOutputInfo(session, $"[DIAGNOSTICS] Tier {kvp.Key} has {kvp.Value.Count} items.");
-                    }
-
                     if (parameters.Length >= 2)
                     {
                         if (!TryParsePrestigeTier(parameters[1], out var singleTier))
@@ -608,8 +597,14 @@ namespace ACE.Server.Command.Handlers
                         var grouped = lbs.Values.GroupBy(x => x.AreaName).OrderBy(g => g.Key == "Default" ? 0 : 1).ThenBy(g => g.Key);
                         foreach (var group in grouped)
                         {
-                            var listStr = string.Join(", ", group.OrderBy(x => x.Landblock).Select(x => x.Landblock.ToString("X4")));
-                            CommandHandlerHelper.WriteOutputInfo(session, $"  {group.Key}: {listStr}");
+                            var sortedLbs = group.OrderBy(x => x.Landblock).Select(x => x.Landblock.ToString("X4")).ToList();
+                            const int chunkSize = 20;
+                            for (int ci = 0; ci < sortedLbs.Count; ci += chunkSize)
+                            {
+                                var chunk = sortedLbs.Skip(ci).Take(chunkSize);
+                                var prefix = ci == 0 ? $"  {group.Key}: " : "    ";
+                                CommandHandlerHelper.WriteOutputInfo(session, prefix + string.Join(", ", chunk));
+                            }
                         }
                         return;
                     }
@@ -627,8 +622,14 @@ namespace ACE.Server.Command.Handlers
                         var grouped = kvp.Value.Values.GroupBy(x => x.AreaName).OrderBy(g => g.Key == "Default" ? 0 : 1).ThenBy(g => g.Key);
                         foreach (var group in grouped)
                         {
-                            var listStr = string.Join(", ", group.OrderBy(x => x.Landblock).Select(x => x.Landblock.ToString("X4")));
-                            CommandHandlerHelper.WriteOutputInfo(session, $"  {group.Key}: {listStr}");
+                            var sortedLbs = group.OrderBy(x => x.Landblock).Select(x => x.Landblock.ToString("X4")).ToList();
+                            const int chunkSize = 20;
+                            for (int ci = 0; ci < sortedLbs.Count; ci += chunkSize)
+                            {
+                                var chunk = sortedLbs.Skip(ci).Take(chunkSize);
+                                var prefix = ci == 0 ? $"  {group.Key}: " : "    ";
+                                CommandHandlerHelper.WriteOutputInfo(session, prefix + string.Join(", ", chunk));
+                            }
                         }
                     }
                     break;
