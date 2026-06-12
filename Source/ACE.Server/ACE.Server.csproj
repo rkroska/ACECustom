@@ -29,6 +29,9 @@
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="ACE.Server.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <None Remove="Entity\Mutations\ArmorLevel\armor_level_extremity.txt" />
     <None Remove="Entity\Mutations\ArmorLevel\armor_level_non_extremity.txt" />
     <None Remove="Entity\Mutations\ArmorLevel\covenant_armor.txt" />

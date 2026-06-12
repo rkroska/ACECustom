@@ -1,6 +1,9 @@
+using System.Collections.Generic;
 using System.Reflection;
 using ACE.Database;
 using ACE.Database.Models.Auth;
+using ACE.Server.Web.Controllers;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace ACE.Server.Tests
@@ -42,9 +45,34 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void PublicListEndpoint_ForcesPublishedOnly_InController()
         {
-            var criteria = new PatchNotesSearchCriteria { PublishedOnly = false };
-            criteria.PrepareForPublicList();
-            Assert.IsTrue(criteria.PublishedOnly);
+            PatchNotesSearchCriteria captured = null;
+            PatchNotesController.EnsureMigratedForTests = () => { };
+            PatchNotesController.SearchForTests = criteria =>
+            {
+                captured = criteria;
+                return new PagedResult<PatchNote>
+                {
+                    Items = new List<PatchNote>(),
+                    TotalCount = 0,
+                    Page = criteria.Page,
+                    PageSize = criteria.PageSize,
+                };
+            };
+
+            try
+            {
+                var controller = new PatchNotesController();
+                var response = controller.List(new PatchNotesSearchCriteria { PublishedOnly = false });
+
+                Assert.IsInstanceOfType(response, typeof(OkObjectResult));
+                Assert.IsNotNull(captured);
+                Assert.IsTrue(captured.PublishedOnly);
+            }
+            finally
+            {
+                PatchNotesController.SearchForTests = null;
+                PatchNotesController.EnsureMigratedForTests = null;
+            }
         }
     }
 }

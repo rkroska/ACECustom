@@ -13,6 +13,27 @@ namespace ACE.Server.Web.Controllers
     [Route("api/patch-notes")]
     public class PatchNotesController : BaseController
     {
+        /// <summary>Test seam: capture criteria passed to search without hitting ace_auth.</summary>
+        internal static System.Func<PatchNotesSearchCriteria, PagedResult<PatchNote>> SearchForTests;
+
+        /// <summary>Test seam: skip DB migration during unit tests.</summary>
+        internal static System.Action EnsureMigratedForTests;
+
+        private static void EnsurePatchNotesReady()
+        {
+            if (EnsureMigratedForTests != null)
+                EnsureMigratedForTests();
+            else
+                PatchNotesManager.EnsureDatabaseMigrated();
+        }
+
+        private static PagedResult<PatchNote> SearchPatchNotes(PatchNotesSearchCriteria criteria)
+        {
+            if (SearchForTests != null)
+                return SearchForTests(criteria);
+            return PatchNotesDatabase.Search(criteria);
+        }
+
         [HttpGet("meta", Order = 0)]
         [AllowAnonymous]
         public IActionResult GetMeta()
@@ -45,9 +66,9 @@ namespace ACE.Server.Web.Controllers
 
             try
             {
-                PatchNotesManager.EnsureDatabaseMigrated();
+                EnsurePatchNotesReady();
                 criteria.PrepareForPublicList();
-                var result = PatchNotesDatabase.Search(criteria);
+                var result = SearchPatchNotes(criteria);
                 return Ok(MapPaged(result, MapPublic));
             }
             catch (Exception ex)
