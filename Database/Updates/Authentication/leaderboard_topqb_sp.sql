@@ -1,3 +1,6 @@
+-- REFERENCE ONLY: runtime uses LeaderboardInlineSql.TopQuestBonus in ACE.Database (portal + /top qb).
+-- Not required for the server to run.
+
 USE `ace_auth`;
 DROP procedure IF EXISTS `ace_auth`.`TopQuestBonus`;
 

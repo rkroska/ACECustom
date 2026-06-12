@@ -73,6 +73,14 @@ Test-Endpoint -Name "Patch notes list (public)" -Path "/api/patch-notes?page=1&p
 Test-Endpoint -Name "Portal index (SPA)" -Path "/" -ExpectStatus @(200)
 Test-Endpoint -Name "Patch notes SPA shell" -Path "/index.html"
 
+# Anonymous requests must not reach authenticated admin APIs (401 Unauthorized or 403 Forbidden).
+Test-Endpoint -Name "Patch notes admin (no auth)" -Path "/api/patch-notes/admin/all?pageSize=5" -ExpectStatus @(401, 403)
+Test-Endpoint -Name "Portal access pages (no auth)" -Path "/api/portal-access/pages" -ExpectStatus @(401, 403)
+Test-Endpoint -Name "Audit transfers (no auth)" -Path "/api/audit/transfers?page=1&pageSize=1&days=7" -ExpectStatus @(401, 403)
+Test-Endpoint -Name "Quest builder ping (no auth)" -Path "/api/quest-builder/ping" -ExpectStatus @(401, 403)
+Test-Endpoint -Name "Combat config (no auth)" -Path "/api/combat/config" -ExpectStatus @(401, 403)
+Test-Endpoint -Name "Leaderboards catalog (no auth)" -Path "/api/leaderboards/boards" -ExpectStatus @(401, 403)
+
 if (-not $SkipAuth -and $Username -and $Password) {
     Test-Endpoint -Name "Login" -Method POST -Path "/api/auth/login" -Body @{
         username = $Username
@@ -83,6 +91,11 @@ if (-not $SkipAuth -and $Username -and $Password) {
     Test-Endpoint -Name "Portal access pages (auth)" -Path "/api/portal-access/pages" -UseSession -ExpectStatus @(200, 403)
     Test-Endpoint -Name "Audit transfers (auth)" -Path "/api/audit/transfers?page=1&pageSize=1&days=7" -UseSession -ExpectStatus @(200, 403)
     Test-Endpoint -Name "Patch notes admin list (auth)" -Path "/api/patch-notes/admin/all?pageSize=5" -UseSession -ExpectStatus @(200, 403)
+    Test-Endpoint -Name "Leaderboards catalog (auth)" -Path "/api/leaderboards/boards" -UseSession -ExpectStatus @(200, 403)
+    Test-Endpoint -Name "Leaderboard level board (auth)" -Path "/api/leaderboards/level" -UseSession -ExpectStatus @(200, 403)
+    Test-Endpoint -Name "Combat config (auth)" -Path "/api/combat/config" -UseSession -ExpectStatus @(200, 403)
+    Test-Endpoint -Name "Quest builder ping (auth)" -Path "/api/quest-builder/ping" -UseSession -ExpectStatus @(200, 403)
+    Test-Endpoint -Name "Quest builder capabilities (auth)" -Path "/api/quest-builder/capabilities" -UseSession -ExpectStatus @(200, 403)
 }
 else {
     Write-Host '[SKIP] Auth checks (pass -Username and -Password or use -SkipAuth)' -ForegroundColor Yellow

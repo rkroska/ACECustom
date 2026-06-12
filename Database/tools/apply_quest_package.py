@@ -154,13 +154,25 @@ def ordered_sql_files(folder: Path) -> list[Path]:
     return sorted(files)
 
 
+def safe_extract_zip(zf: zipfile.ZipFile, dest_dir: Path) -> None:
+    root = dest_dir.resolve()
+    for member in zf.infolist():
+        member_path = Path(member.filename)
+        if member_path.is_absolute() or member_path.drive:
+            raise SystemExit(f"ZIP contains absolute path: {member.filename}")
+        target = (root / member_path).resolve()
+        if root not in target.parents and target != root:
+            raise SystemExit(f"ZIP contains unsafe path: {member.filename}")
+    zf.extractall(root)
+
+
 def resolve_package(path: Path) -> tuple[Path, tempfile.TemporaryDirectory | None]:
     if path.is_dir():
         return path, None
     if path.suffix.lower() == ".zip":
         tmp = tempfile.TemporaryDirectory(prefix="quest_pkg_")
         with zipfile.ZipFile(path) as zf:
-            zf.extractall(tmp.name)
+            safe_extract_zip(zf, Path(tmp.name))
         return Path(tmp.name), tmp
     raise SystemExit(f"Not a directory or .zip: {path}")
 

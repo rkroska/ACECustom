@@ -198,7 +198,7 @@ namespace ACE.Database.Models.Auth
         {
             try
             {
-                return await context.Leaderboard.FromSql($"CALL TopBonds").AsNoTracking().ToListAsync();
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopBonds).AsNoTracking().ToListAsync();
             }
             catch (Exception ex)
             {
@@ -214,7 +214,7 @@ namespace ACE.Database.Models.Auth
         {
             try
             {
-                return await context.Leaderboard.FromSql($"CALL TopSumBonds").AsNoTracking().ToListAsync();
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopSumBonds).AsNoTracking().ToListAsync();
             }
             catch (Exception ex)
             {
@@ -278,6 +278,14 @@ namespace ACE.Database.Models.Auth
                         break;
                     case "notguilty":
                         sql = LeaderboardInlineSql.SelfPlacementCharacterInt((ushort)PropertyInt.TimesUcmCheckPassed, accountId);
+                        break;
+                    case "bond":
+                    case "bonds":
+                        sql = LeaderboardInlineSql.SelfPlacementBonds(accountId);
+                        break;
+                    case "sumbond":
+                    case "sumbonds":
+                        sql = LeaderboardInlineSql.SelfPlacementSumBonds(accountId);
                         break;
                     default:
                         return null;

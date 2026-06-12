@@ -1,3 +1,6 @@
+-- REFERENCE ONLY: runtime uses LeaderboardInlineSql.TopLevel in ACE.Database (portal + /top level).
+-- Not required for the server to run.
+
 USE `ace_auth`;
 DROP procedure IF EXISTS `TopLevel`;
 

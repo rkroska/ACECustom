@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 
 using ACE.Database;
+using ACE.Database.Models.Auth;
 using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -465,16 +466,34 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Character biota ids excluded from leaderboards.
-        /// Includes <see cref="PropertyBool.ExcludeFromLeaderboards"/> (9011) and <see cref="PropertyBool.IsMule"/> (131).
+        /// Character biota ids excluded from leaderboards via <see cref="PropertyBool.ExcludeFromLeaderboards"/> (9011).
         /// </summary>
         private static HashSet<uint> LoadExcludedFromLeaderboardCharacterIds(ShardDbContext context)
         {
             return context.BiotaPropertiesBool
                 .AsNoTracking()
-                .Where(b => (b.Type == (ushort)PropertyBool.ExcludeFromLeaderboards || b.Type == (ushort)PropertyBool.IsMule) && b.Value)
+                .Where(b => b.Type == (ushort)PropertyBool.ExcludeFromLeaderboards && b.Value)
                 .Select(b => b.ObjectId)
                 .ToHashSet();
+        }
+
+        /// <summary>Staff and currently-banned accounts hidden from pet-species leaderboards.</summary>
+        private static HashSet<uint> LoadLeaderboardHiddenAccountIds(ShardDbContext shardContext)
+        {
+            var hidden = LoadAccountIdsWithAnyExcludedCharacter(shardContext, LoadExcludedFromLeaderboardCharacterIds(shardContext));
+
+            using var authContext = new AuthDbContext();
+            var now = DateTime.UtcNow;
+            var authHidden = authContext.Account
+                .AsNoTracking()
+                .Where(a => a.AccessLevel > 0 || (a.BanExpireTime != null && a.BanExpireTime > now))
+                .Select(a => a.AccountId)
+                .ToList();
+
+            foreach (var accountId in authHidden)
+                hidden.Add(accountId);
+
+            return hidden;
         }
 
         /// <summary>Accounts that have at least one non-deleted excluded character (pet/QB-style account leaderboards hide the whole account).</summary>
@@ -570,8 +589,7 @@ namespace ACE.Server.Entity
 
             using (var context = new ShardDbContext())
             {
-                var excludedChars = LoadExcludedFromLeaderboardCharacterIds(context);
-                var excludedAccounts = LoadAccountIdsWithAnyExcludedCharacter(context, excludedChars);
+                var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
                 var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly, excludedAccounts);
 
                 var visibleRank = 0;
@@ -603,8 +621,7 @@ namespace ACE.Server.Entity
         {
             using (var context = new ShardDbContext())
             {
-                var excludedChars = LoadExcludedFromLeaderboardCharacterIds(context);
-                var excludedAccounts = LoadAccountIdsWithAnyExcludedCharacter(context, excludedChars);
+                var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
                 var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: false, excludedAccounts);
 
                 var results = new List<(uint AccountId, string CharacterName, int Count)>();
@@ -644,8 +661,7 @@ namespace ACE.Server.Entity
         {
             using (var context = new ShardDbContext())
             {
-                var excludedChars = LoadExcludedFromLeaderboardCharacterIds(context);
-                var excludedAccounts = LoadAccountIdsWithAnyExcludedCharacter(context, excludedChars);
+                var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
                 var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: true, excludedAccounts);
 
                 var results = new List<(uint AccountId, string CharacterName, int Count)>();

@@ -1,3 +1,6 @@
+-- REFERENCE ONLY: runtime uses LeaderboardInlineSql.TopEnlightenment in ACE.Database (portal + /top enl).
+-- Not required for the server to run.
+
 USE `ace_auth`;
 DROP procedure IF EXISTS `ace_auth`.`TopEnlightenment`;
 ;

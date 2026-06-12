@@ -1,3 +1,6 @@
+-- REFERENCE ONLY: runtime uses LeaderboardInlineSql.TopAttributes in ACE.Database (portal + /top attr).
+-- Not required for the server to run.
+
 USE `ace_auth`;
 DROP procedure IF EXISTS `TopAttributes`;
 DELIMITER $$ USE `ace_auth` $$ CREATE PROCEDURE `TopAttributes` () BEGIN
