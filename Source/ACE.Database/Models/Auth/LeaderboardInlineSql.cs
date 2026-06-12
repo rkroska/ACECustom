@@ -30,7 +30,7 @@ public static class LeaderboardInlineSql
         INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = 9005
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
-        ORDER BY i.value DESC
+        ORDER BY i.value DESC, c.id DESC
         LIMIT 25
         """;
 
@@ -41,7 +41,7 @@ public static class LeaderboardInlineSql
         INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = 9004
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
-        ORDER BY i.value DESC
+        ORDER BY i.value DESC, c.id DESC
         LIMIT 25
         """;
 
@@ -52,7 +52,7 @@ public static class LeaderboardInlineSql
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 25
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
-        ORDER BY i.value DESC
+        ORDER BY i.value DESC, c.id DESC
         LIMIT 25
         """;
 
@@ -63,7 +63,7 @@ public static class LeaderboardInlineSql
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 390
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
-        ORDER BY i.value DESC
+        ORDER BY i.value DESC, c.id DESC
         LIMIT 25
         """;
 
@@ -85,7 +85,7 @@ public static class LeaderboardInlineSql
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 43
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
-        ORDER BY i.value DESC
+        ORDER BY i.value DESC, c.id DESC
         LIMIT 25
         """;
 
@@ -106,7 +106,7 @@ public static class LeaderboardInlineSql
             INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
             WHERE cex.account_Id = a.accountId AND cex.is_Deleted = 0
         )
-        ORDER BY Score DESC
+        ORDER BY Score DESC, a.accountId DESC
         LIMIT 25
         """;
 
@@ -131,7 +131,7 @@ public static class LeaderboardInlineSql
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
         HAVING Score > 0
-        ORDER BY Score DESC
+        ORDER BY Score DESC, c.id DESC
         LIMIT 25
         """;
 
@@ -177,7 +177,7 @@ public static class LeaderboardInlineSql
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
         HAVING Score > 0
-        ORDER BY Score DESC
+        ORDER BY Score DESC, c.id DESC
         LIMIT 25
         """;
 
@@ -189,7 +189,7 @@ public static class LeaderboardInlineSql
         INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = {int64PropertyType}
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = {ExcludeFromLeaderboardsBoolType}
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
-        ORDER BY i.value DESC
+        ORDER BY i.value DESC, c.id DESC
         LIMIT 25
         """;
 
@@ -450,7 +450,7 @@ public static class LeaderboardInlineSql
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = {intPropertyType}
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = {ExcludeFromLeaderboardsBoolType}
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
-        ORDER BY i.value DESC
+        ORDER BY i.value DESC, c.id DESC
         LIMIT 25
         """;
 
@@ -490,7 +490,7 @@ public static class LeaderboardInlineSql
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
         GROUP BY c.id, c.account_Id, c.name
-        ORDER BY Score DESC, c.name ASC
+        ORDER BY Score DESC, c.name ASC, c.id DESC
         LIMIT 25
         """;
 
@@ -508,7 +508,7 @@ public static class LeaderboardInlineSql
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
         GROUP BY c.id, c.account_Id, c.name
         HAVING SUM(COALESCE(bond.value, 1)) > 0
-        ORDER BY Score DESC, c.name ASC
+        ORDER BY Score DESC, c.name ASC, c.id DESC
         LIMIT 25
         """;
 

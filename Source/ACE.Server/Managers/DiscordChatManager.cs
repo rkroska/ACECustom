@@ -196,7 +196,7 @@ namespace ACE.Server.Managers
                         continue;
 
                     var attachment = x.Attachments.First();
-                    if (!attachment.Filename.Contains(".sql", StringComparison.InvariantCultureIgnoreCase))
+                    if (!attachment.Filename.EndsWith(".sql", StringComparison.InvariantCultureIgnoreCase))
                         continue;
 
                     res = await DownloadAttachmentTextAsync(attachment);
@@ -237,7 +237,7 @@ namespace ACE.Server.Managers
                         continue;
 
                     var attachment = x.Attachments.First();
-                    if (!attachment.Filename.Contains(".json", StringComparison.InvariantCultureIgnoreCase))
+                    if (!attachment.Filename.EndsWith(".json", StringComparison.InvariantCultureIgnoreCase))
                         continue;
 
                     res = await DownloadAttachmentTextAsync(attachment);

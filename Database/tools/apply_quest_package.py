@@ -171,8 +171,12 @@ def resolve_package(path: Path) -> tuple[Path, tempfile.TemporaryDirectory | Non
         return path, None
     if path.suffix.lower() == ".zip":
         tmp = tempfile.TemporaryDirectory(prefix="quest_pkg_")
-        with zipfile.ZipFile(path) as zf:
-            safe_extract_zip(zf, Path(tmp.name))
+        try:
+            with zipfile.ZipFile(path) as zf:
+                safe_extract_zip(zf, Path(tmp.name))
+        except BaseException:
+            tmp.cleanup()
+            raise
         return Path(tmp.name), tmp
     raise SystemExit(f"Not a directory or .zip: {path}")
 

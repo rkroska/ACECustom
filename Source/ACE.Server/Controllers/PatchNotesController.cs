@@ -46,8 +46,7 @@ namespace ACE.Server.Web.Controllers
             try
             {
                 PatchNotesManager.EnsureDatabaseMigrated();
-                criteria.PublishedOnly = true;
-                criteria.Normalize();
+                criteria.PrepareForPublicList();
                 var result = PatchNotesDatabase.Search(criteria);
                 return Ok(MapPaged(result, MapPublic));
             }

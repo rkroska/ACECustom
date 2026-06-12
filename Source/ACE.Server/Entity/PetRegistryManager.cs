@@ -512,12 +512,26 @@ namespace ACE.Server.Entity
 
         private static string MainCharacterNameHighestLogins(ShardDbContext context, uint accountId)
         {
+            return LoadMainCharacterNames(context, new[] { accountId }).TryGetValue(accountId, out var name)
+                ? name
+                : "Unknown";
+        }
+
+        private static Dictionary<uint, string> LoadMainCharacterNames(ShardDbContext context, IEnumerable<uint> accountIds)
+        {
+            var ids = accountIds.Distinct().ToList();
+            if (ids.Count == 0)
+                return new Dictionary<uint, string>();
+
             return context.Character
                 .AsNoTracking()
-                .Where(c => c.AccountId == accountId && !c.IsDeleted)
-                .OrderByDescending(c => c.TotalLogins)
-                .Select(c => c.Name)
-                .FirstOrDefault() ?? "Unknown";
+                .Where(c => ids.Contains(c.AccountId) && !c.IsDeleted)
+                .Select(c => new { c.AccountId, c.Name, c.TotalLogins })
+                .ToList()
+                .GroupBy(c => c.AccountId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderByDescending(c => c.TotalLogins).Select(c => c.Name).FirstOrDefault() ?? "Unknown");
         }
 
         /// <summary>
@@ -591,11 +605,13 @@ namespace ACE.Server.Entity
             {
                 var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
                 var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly, excludedAccounts);
+                var mainCharacters = LoadMainCharacterNames(context, ordered.Select(o => o.AccountId));
 
                 var visibleRank = 0;
                 for (var i = 0; i < ordered.Count; i++)
                 {
-                    var mainCharacter = MainCharacterNameHighestLogins(context, ordered[i].AccountId);
+                    if (!mainCharacters.TryGetValue(ordered[i].AccountId, out var mainCharacter))
+                        mainCharacter = "Unknown";
                     if (IsStaffLeaderboardCharacter(mainCharacter))
                         continue;
 
@@ -623,6 +639,7 @@ namespace ACE.Server.Entity
             {
                 var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
                 var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: false, excludedAccounts);
+                var mainCharacters = LoadMainCharacterNames(context, ordered.Select(o => o.AccountId));
 
                 var results = new List<(uint AccountId, string CharacterName, int Count)>();
                 foreach (var entry in ordered)
@@ -630,7 +647,8 @@ namespace ACE.Server.Entity
                     if (results.Count >= limit)
                         break;
 
-                    var mainCharacter = MainCharacterNameHighestLogins(context, entry.AccountId);
+                    if (!mainCharacters.TryGetValue(entry.AccountId, out var mainCharacter))
+                        mainCharacter = "Unknown";
                     if (IsStaffLeaderboardCharacter(mainCharacter))
                         continue;
 
@@ -663,6 +681,7 @@ namespace ACE.Server.Entity
             {
                 var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
                 var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: true, excludedAccounts);
+                var mainCharacters = LoadMainCharacterNames(context, ordered.Select(o => o.AccountId));
 
                 var results = new List<(uint AccountId, string CharacterName, int Count)>();
                 foreach (var entry in ordered)
@@ -670,7 +689,8 @@ namespace ACE.Server.Entity
                     if (results.Count >= limit)
                         break;
 
-                    var mainCharacter = MainCharacterNameHighestLogins(context, entry.AccountId);
+                    if (!mainCharacters.TryGetValue(entry.AccountId, out var mainCharacter))
+                        mainCharacter = "Unknown";
                     if (IsStaffLeaderboardCharacter(mainCharacter))
                         continue;
 

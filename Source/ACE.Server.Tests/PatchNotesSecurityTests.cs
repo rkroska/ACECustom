@@ -42,10 +42,9 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void PublicListEndpoint_ForcesPublishedOnly_InController()
         {
-            // PatchNotesController.List sets criteria.PublishedOnly = true before Search().
-            // AdminList sets criteria.PublishedOnly = false — gated by HasPortalAccess(PatchNotesAdmin).
-            // Live check: scripts/portal-smoke.ps1 — /api/patch-notes/admin/all without auth → 401/403.
-            Assert.IsTrue(new PatchNotesSearchCriteria().PublishedOnly);
+            var criteria = new PatchNotesSearchCriteria { PublishedOnly = false };
+            criteria.PrepareForPublicList();
+            Assert.IsTrue(criteria.PublishedOnly);
         }
     }
 }

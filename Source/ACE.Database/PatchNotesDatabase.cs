@@ -20,6 +20,13 @@ namespace ACE.Database
             if (PageSize < 1) PageSize = 1;
             if (PageSize > 100) PageSize = 100;
         }
+
+        /// <summary>Public list API must never honor client-supplied draft visibility.</summary>
+        public void PrepareForPublicList()
+        {
+            PublishedOnly = true;
+            Normalize();
+        }
     }
 
     public static class PatchNotesDatabase
