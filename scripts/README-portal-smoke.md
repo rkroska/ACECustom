@@ -8,7 +8,7 @@ From repo root:
 dotnet test Source\ACE.Server.Tests\ACE.Server.Tests.csproj --filter "FullyQualifiedName~PatchNotesManagerTests|FullyQualifiedName~PatchNotesSecurityTests|FullyQualifiedName~PortalAccessManagerTests|FullyQualifiedName~SkillFormulaTests"
 ```
 
-Covers hash URLs, MOTD template tokens, slugify, portal page registry defaults, patch-notes published-only defaults, combat calculator formula parity, and portal access defaults.
+Covers hash URLs, MOTD template tokens, slugify, portal page registry defaults, patch-notes published-only defaults (including `PatchNotesController.List`), combat calculator formula parity, and portal access defaults.
 
 ## Live smoke script (server must be up)
 
