@@ -4,6 +4,9 @@ import { HashRouter } from 'react-router-dom';
 import App from './App.tsx';
 import { useAuthStore } from './store/useAuthStore';
 import './index.css';
+import { normalizePatchNotesBrowserUrl } from './utils/patchNotesPublicUrl';
+
+normalizePatchNotesBrowserUrl();
 
 // Session is now bootstrapped asynchronously in App.tsx
 

@@ -40,7 +40,40 @@ The portal is designed with a **Zero-Config** architecture:
     - **Development**: Binds to all interfaces (`*`) on port **5000**.
     - **Production**: Binds to **loopback only** (`localhost`) on port **5001**, ensuring administrative traffic remains private and is only accessible via the local reverse proxy.
 - **Reverse Proxy Requirement**: In production, a reverse proxy (e.g., NGINX or IIS) is required to terminate SSL/TLS and forward requests to `http://localhost:5001`.
-- **Dynamic Secret**: Automatically generated each time the server starts (`WebPortalHost.Secret`).
+- **JWT secret**: Set `WebPortal.JwtSecret` in `Config.js` (32+ random characters) in production so sessions survive restarts. If omitted, a new secret is generated each start.
+
+## Production checklist (`Config.js` on the **running server**)
+
+Edit the `Config.js` next to `ACE.Server.dll`, not only the copy under `Source/`.
+
+### `PatchNotes` (required for MOTD / Discord / links)
+
+| Setting | Production value |
+|--------|-------------------|
+| `PublicBaseUrl` | Player-facing portal root **with hash routes**, e.g. `http://76.237.151.184:5002/` (Caddy URL). Used in MOTD, Discord, `/patchnotes`. |
+| `MotdEnabled` | `true` if you want in-game login lines |
+| `MotdTemplate` | Tokens: `{url}`, `{lastUpdated}`, `{lastUpdatedUtc}`, `{lastUpdatedRelative}` |
+| `MotdTimeZoneId` | Optional, e.g. `"Central Standard Time"` — empty + `MotdUseHostLocalTime: true` uses server local time |
+| `DiscordChannelId` | Your Discord channel snowflake |
+| `DiscordEnabled` | `true` |
+
+Also ensure `Chat.EnableDiscordConnection` is `true` and `Chat.DiscordToken` / `ServerId` are set (Discord bot).
+
+### `WebPortal` (recommended)
+
+| Setting | Production value |
+|--------|-------------------|
+| `JwtSecret` | Long random string (32+ chars). **Do not leave empty in prod.** |
+| `BindHost` | Leave empty for `localhost:5001` behind Caddy, or `*` only if you know you need direct bind |
+| `BindPort` | `0` = default 5001 in Release |
+
+### Server + deploy (not in `Config.js`)
+
+1. `enable_web_portal` server property = true  
+2. `cd Source/ACE.WebPortal/ClientApp && npm run build` then `dotnet publish` / copy `wwwroot`  
+3. Reverse proxy (Caddy) → `http://127.0.0.1:5001` with TLS on the public port  
+4. `ace_auth` tables: `portal_page_access` and `patch_notes` auto-create on startup if the DB user can `CREATE`; otherwise run `Database/Updates/Authentication/2026-05-31-00-Portal-Page-Access.sql` and `2026-05-31-01-Patch-Notes.sql`  
+5. Restart ACE after changing `Config.js`
 
 ## Production Deployment (HTTPS)
 
@@ -55,11 +88,30 @@ This guide covers:
 - Hardening NGINX with security headers and large-buffer support.
 - Automated SSL certificate management via Certbot.
 
+### Web portal bind (`Config.WebPortal`)
+
+Optional in `Config.js`:
+
+- `BindHost`: empty = Debug `*`, Release `localhost`. Set `*` or `0.0.0.0` to listen on all interfaces (e.g. LAN testing without a reverse proxy).
+- `BindPort`: `0` = Debug `5000`, Release `5001`.
+
+Production should still use a reverse proxy (Caddy/NGINX) for TLS when exposed to the internet.
+
+### Portal page access (`PortalAccessManager`)
+
+Per-page minimum access levels (0–5) gate both the React UI and API controllers via `HasPortalAccess(pageKey)`.
+
+- **Code defaults**: `characters`, `leaderboards`, and `patch-notes` = 0 (all logged-in users); every other page = **4** (Developer) until overridden.
+- **Runtime overrides**: Stored in **`ace_auth.portal_page_access`**. The table is **auto-created on server startup** (same pattern as `patch_notes`); the SQL file under `Database/Updates/Authentication/` is for manual/CI deploys. Changes from the Portal Security UI take effect **immediately** in memory — no restart, no JSON file on disk.
+- **Deploy safety**: Settings live in the auth database with accounts and leaderboards; deploying a new binary does not reset them. New portal pages added in code use default level 4 until an admin saves a row.
+- **Legacy JSON**: If a row-free table is found and `portal_page_access.json` exists from an older build, values are imported once into the database.
+- **Editing**: Portal Security UI (`/portal-security`) or `PUT /api/portal-access/pages` with `{ "levels": { "quest-builder": 4 } }` — **Admin (5)** only.
+
 ### Account Scoping
 Controllers inherit from `BaseController` to ensure standardized account-scoped authorization and logging:
-- `IsAuthorizedForAccount(accountId)`: Automatically extracts the `AccountId` claim from the user's JWT and compares it against the provided `accountId`. 
-- `IsAdmin`: A helper property that verifies if the `CurrentAccessLevel` is greater than `Player`. When `true`, all account-scoping checks for character details, stats, and skills are bypassed, allowing global administrative visibility.
-- `AccessLevel` checking: Extends authorization to verify specific administrative roles (e.g., `Admin`, `Developer`) for sensitive operations like global player searches.
+- `HasPortalAccess(pageKey)`: Per-page minimum level from `PortalAccessManager` (preferred for portal routes).
+- `IsAuthorizedForCharacter(guid)`: Own characters always; other accounts require `players` page access.
+- `IsAdmin`: `CurrentAccessLevel > Player` (legacy helper; prefer page keys for new endpoints).
 
 ## Controller Reference
 

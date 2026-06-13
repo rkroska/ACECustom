@@ -185,7 +185,7 @@ namespace ACE.Server.Controllers
         [HttpGet("all-online")]
         public async Task<IActionResult> GetAllOnline()
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Players))
                 return Unauthorized();
 
             var online = PlayerManager.GetAllOnline();
@@ -223,10 +223,57 @@ namespace ACE.Server.Controllers
             return Ok(result);
         }
 
+        [HttpGet("lookup/{id}")]
+        public async Task<IActionResult> Lookup(uint id)
+        {
+            if (!HasPortalAccess(PortalPages.Players))
+                return Unauthorized();
+
+            var stub = DatabaseManager.Shard.BaseDatabase.GetCharacterStubByGuid(id);
+            if (stub == null)
+                return NotFound();
+
+            var player = PlayerManager.FindByGuid(id);
+            var isAdmin = (player?.Account?.AccessLevel ?? 0) > 0;
+            var charName = stub.Name;
+            if (isAdmin && !charName.StartsWith("+"))
+                charName = $"+{charName}";
+
+            var online = PlayerManager.GetOnlinePlayer(id);
+            WorldLocationDto location = null;
+            if (online != null)
+            {
+                var lbRaw = online.Location.LandblockId.Raw;
+                var variation = online.Location.Variation;
+                var coords = online.Location.GetMapCoordStr();
+                var isDungeon = online.CurrentLandblock?.IsDungeon ?? false;
+                var res = await LocationResolver.ResolveLocationAsync(lbRaw, variation, isDungeon);
+                location = new WorldLocationDto
+                {
+                    Landblock = lbRaw,
+                    Variation = variation,
+                    Coordinates = coords,
+                    IsDungeon = isDungeon,
+                    CategoryName = res.CategoryName,
+                    CategoryOrdinal = res.CategoryOrdinal,
+                    Name = res.Name,
+                };
+            }
+
+            return Ok(new PlayerStubDto
+            {
+                Guid = stub.Id,
+                Name = charName,
+                IsOnline = online != null,
+                IsAdmin = isAdmin,
+                Location = location,
+            });
+        }
+
         [HttpGet("search-all/{name}")]
         public async Task<IActionResult> SearchAll(string name)
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Players))
                 return Unauthorized();
 
             if (string.IsNullOrWhiteSpace(name))
@@ -365,11 +412,36 @@ namespace ACE.Server.Controllers
             return Ok(stamps);
         }
 
+        /// <summary>
+        /// Death/vitae summary from biota snapshot, live position when online, and active player corpses in loaded landblocks.
+        /// </summary>
+        [HttpGet("status/{guid}")]
+        public IActionResult GetPortalStatus(uint guid)
+        {
+            if (!IsAuthorizedForCharacter(guid, out var player))
+                return Unauthorized();
+
+            var snapshot = RetrieveBiota(player);
+            return Ok(CharacterPortalStatusHelper.BuildStatusJson(guid, snapshot));
+        }
+
+        /// <summary>
+        /// Player corpses currently in memory (loaded landblocks) for this character.
+        /// </summary>
+        [HttpGet("corpses/{guid}")]
+        public IActionResult GetPortalCorpses(uint guid)
+        {
+            if (!IsAuthorizedForCharacter(guid, out _))
+                return Unauthorized();
+
+            return Ok(new { corpses = CharacterPortalStatusHelper.FindPlayerCorpses(guid) });
+        }
+
         [HttpPost("logout/{guid}")]
         public async Task<IActionResult> ForceLogout(uint guid)
         {
-            if (!IsAdmin)
-                return Unauthorized();
+            if (!IsPortalAdmin)
+                return Forbid();
 
             var player = PlayerManager.GetOnlinePlayer(guid);
             if (player == null) return NotFound(new { message = "Character is not online" });
@@ -385,9 +457,17 @@ namespace ACE.Server.Controllers
             if (CurrentAccountId == null) return false;
             IPlayer p = PlayerManager.FindByGuid(guid);
             if (p == null || p.Account == null) return false;
-            if (!IsAuthorizedForAccount(p.Account.AccountId)) return false;
-            player = p;
-            return true;
+            if (p.Account.AccountId == CurrentAccountId.Value)
+            {
+                player = p;
+                return true;
+            }
+            if (HasPortalAccess(PortalPages.Players))
+            {
+                player = p;
+                return true;
+            }
+            return false;
         }
 
         private static Dictionary<string, long> GetBankedProperties(Biota biota)

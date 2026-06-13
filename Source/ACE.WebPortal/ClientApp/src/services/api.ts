@@ -43,9 +43,13 @@ class ApiClient {
 
       // Handle Global Status Codes
       if (response.status === 401) {
-        console.warn('Unauthorized: Session expired or invalid. Logging out.');
-        logout();
-        throw new Error('Session expired. Please log in again.');
+        const isAuthMe = endpoint.includes('/api/auth/me');
+        const { isAuthenticated } = useAuthStore.getState();
+        if (!isAuthMe || isAuthenticated) {
+          console.warn('Unauthorized: Session expired or invalid. Logging out.');
+          logout();
+        }
+        throw new Error(isAuthMe ? 'Not signed in.' : 'Session expired. Please log in again.');
       }
 
       if (response.status === 503) {
@@ -127,8 +131,53 @@ class ApiClient {
     });
   }
 
+  async put<T>(url: string, body?: any, options?: RequestInit): Promise<T | null> {
+    return this.request<T>(url, {
+      ...options,
+      method: 'PUT',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+
   async delete<T>(url: string, options?: RequestInit): Promise<T | null> {
     return this.request<T>(url, { ...options, method: 'DELETE' });
+  }
+
+  /** POST and download binary response (e.g. zip export). */
+  async postBlob(url: string, body: unknown, filename: string): Promise<void> {
+    const { logout, setPortalDisabled } = useAuthStore.getState();
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+
+    if (response.status === 401) {
+      logout();
+      throw new Error('Session expired.');
+    }
+    if (response.status === 503) {
+      setPortalDisabled(true);
+      throw new Error('Web Portal is offline.');
+    }
+    if (!response.ok) {
+      let message = `Export failed (${response.status})`;
+      try {
+        const data = await response.json();
+        if (data?.message) message = data.message;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(message);
+    }
+
+    const blob = await response.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
   }
 }
 

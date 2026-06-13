@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Reflection;
 using System.IO;
 using ACE.Common;
+using ACE.Server.Managers;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -22,7 +23,11 @@ namespace ACE.Server.Web
         private static readonly System.Threading.SemaphoreSlim _hostLock = new System.Threading.SemaphoreSlim(1, 1);
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(WebPortalHost));
 
-        public static string Secret { get; } = GenerateDynamicSecret();
+        private static string _secret;
+
+        /// <summary>JWT signing key; set when the portal starts (after Config.js is loaded).</summary>
+        public static string Secret =>
+            _secret ?? throw new InvalidOperationException("Web portal has not been started.");
 
         private static string GenerateDynamicSecret()
         {
@@ -32,6 +37,22 @@ namespace ACE.Server.Web
                 rng.GetBytes(bytes);
             }
             return Convert.ToBase64String(bytes);
+        }
+
+        private static string ResolveJwtSecret()
+        {
+            var configured = ConfigManager.Config?.WebPortal?.JwtSecret?.Trim();
+            if (!string.IsNullOrEmpty(configured))
+            {
+                if (configured.Length < 16)
+                {
+                    log.Warn("[WEB PORTAL] WebPortal.JwtSecret is too short; use at least 32 random characters in production.");
+                }
+                return configured;
+            }
+
+            log.Warn("[WEB PORTAL] WebPortal.JwtSecret is not set in Config.js — a new secret is generated every restart and all portal logins expire on restart.");
+            return GenerateDynamicSecret();
         }
 
         public static async Task Start(string[] args)
@@ -53,30 +74,17 @@ namespace ACE.Server.Web
                     return;
                 }
 
-                var secret = Secret;
+                _secret = ResolveJwtSecret();
 
-
-                // Environment-Aware Resolution:
-                // Development fallback: Crawl for Source tree dist (Vite build)
-                // Production fallback: Use binary-local 'wwwroot'
-
-                string? distPath = null;
-                if (isDevelopment || isDebuggerAttached)
-                {
-                    distPath = FindSourceDist();
-                }
-
-                // If not in dev, or crawler failed, look for binary-local wwwroot
-                if (string.IsNullOrEmpty(distPath))
-                {
-                    distPath = Path.Combine(AppContext.BaseDirectory, "wwwroot");
-                }
+                // Prefer ClientApp/dist from the source tree when present (npm run build).
+                // Falls back to binary-local wwwroot for deployments that only ship static assets.
+                var distPath = ResolveWebPortalAssetPath();
 
                 // Fail Fast: If the assets are missing, the Web Portal cannot function.
                 if (!Directory.Exists(distPath))
                 {
                     log.Fatal($"[WEB PORTAL] Assets NOT found at: {distPath}. Start aborted.");
-                    log.Fatal($"[WEB PORTAL] Please ensure you have run 'npm run build' in the ClientApp directory and that the 'wwwroot' folder is present.");
+                    log.Fatal($"[WEB PORTAL] Please ensure you have run 'npm run build' in Source/ACE.WebPortal/ClientApp (or rebuild ACE.Server so dist is copied to wwwroot).");
                     throw new DirectoryNotFoundException($"Web Portal assets missing at {distPath}");
                 }
 
@@ -100,13 +108,15 @@ namespace ACE.Server.Web
 
                 log.Info($"Web Portal using asset path: {distPath}");
 
+                PortalAccessManager.Initialize();
+
                 // Add services to the container.
                 builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
                 builder.Logging.AddFilter("System", LogLevel.Warning);
                 builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
 
                 // JWT Authentication Setup
-                var key = Encoding.ASCII.GetBytes(secret);
+                var key = Encoding.ASCII.GetBytes(_secret);
 
                 builder.Services.AddAuthentication(x =>
                 {
@@ -162,14 +172,16 @@ namespace ACE.Server.Web
 
                 app.UseRouting();
 
-                // Enable support for reverse proxies (NGINX) by preserving client IP and protocol
-                // This must be placed before UseAuthentication/UseAuthorization
+                // Enable support for reverse proxies (Caddy/NGINX) by preserving client IP and protocol.
+                // Trust only loopback so X-Forwarded-Proto cannot be spoofed by external clients.
                 var forwardedHeadersOptions = new ForwardedHeadersOptions
                 {
                     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
                 };
                 forwardedHeadersOptions.KnownProxies.Clear();
                 forwardedHeadersOptions.KnownNetworks.Clear();
+                forwardedHeadersOptions.KnownNetworks.Add(new IPNetwork(System.Net.IPAddress.Loopback, 8));
+                forwardedHeadersOptions.KnownNetworks.Add(new IPNetwork(System.Net.IPAddress.IPv6Loopback, 128));
                 app.UseForwardedHeaders(forwardedHeadersOptions);
 
                 app.UseAuthentication();
@@ -191,11 +203,14 @@ namespace ACE.Server.Web
                     });
                 });
 
-                // Secure Binding:
-                // Development: "*" (Accessible globally for debugging)
-                // Production: "localhost" (Restricted to loopback; assumes a TLS-terminating reverse proxy)
-                var host = isDevelopment ? "*" : "localhost";
-                var port = isDevelopment ? 5000 : 5001;
+                // Binding: Config.WebPortal overrides; else Debug *:5000, Release localhost:5001 (use reverse proxy for TLS).
+                var portalConfig = ConfigManager.Config?.WebPortal;
+                var host = !string.IsNullOrWhiteSpace(portalConfig?.BindHost)
+                    ? portalConfig.BindHost.Trim()
+                    : isDevelopment ? "*" : "localhost";
+                var port = portalConfig?.BindPort > 0
+                    ? portalConfig.BindPort
+                    : isDevelopment ? 5000 : 5001;
                 var url = $"http://{host}:{port}";
 
                 app.Urls.Clear();
@@ -235,6 +250,36 @@ namespace ACE.Server.Web
             }
         }
 
+        /// <summary>
+        /// Locates portal static files. Uses source-tree <c>ClientApp/dist</c> when built (local dev);
+        /// otherwise uses <c>wwwroot</c> next to the server binary (published deployments).
+        /// </summary>
+        private static string ResolveWebPortalAssetPath()
+        {
+            var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+            var sourceDist = FindSourceDist();
+
+            if (sourceDist != null && File.Exists(Path.Combine(sourceDist, "index.html")))
+            {
+                if (Directory.Exists(wwwroot) && File.Exists(Path.Combine(wwwroot, "index.html")))
+                {
+                    var sourceBuilt = File.GetLastWriteTimeUtc(Path.Combine(sourceDist, "index.html"));
+                    var wwwrootBuilt = File.GetLastWriteTimeUtc(Path.Combine(wwwroot, "index.html"));
+                    if (wwwrootBuilt > sourceBuilt)
+                    {
+                        log.Info($"[WEB PORTAL] Using wwwroot (newer than source dist): {wwwroot}");
+                        return wwwroot;
+                    }
+                }
+
+                log.Info($"[WEB PORTAL] Using source-tree ClientApp/dist: {sourceDist}");
+                return sourceDist;
+            }
+
+            log.Info($"[WEB PORTAL] Using binary wwwroot: {wwwroot}");
+            return wwwroot;
+        }
+
         private static string? FindSourceDist()
         {
             // Crawl up to find the project root (Source/ACE.WebPortal/ClientApp)
@@ -243,9 +288,13 @@ namespace ACE.Server.Web
             {
                 // Path 1: Source tree is a child of the current directory (Development)
                 // Looking for Source/ACE.WebPortal/ClientApp
-                var projectRoot = Path.Combine(dir.FullName, "ACE.WebPortal", "ClientApp");
+                var projectRoot = Path.Combine(dir.FullName, "Source", "ACE.WebPortal", "ClientApp");
                 if (Directory.Exists(projectRoot))
                     return Path.Combine(projectRoot, "dist");
+
+                var legacyProjectRoot = Path.Combine(dir.FullName, "ACE.WebPortal", "ClientApp");
+                if (Directory.Exists(legacyProjectRoot))
+                    return Path.Combine(legacyProjectRoot, "dist");
 
                 // Path 2: Source tree is in a peer directory 'Server/Source' (Production Build Target)
                 // Looking for Server/Source/ACE.WebPortal/ClientApp

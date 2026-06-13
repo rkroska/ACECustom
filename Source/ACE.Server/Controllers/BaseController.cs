@@ -55,9 +55,13 @@ namespace ACE.Server.Web.Controllers
 
         protected bool IsAdmin => CurrentAccessLevel > AccessLevel.Player;
 
+        protected bool IsPortalAdmin => CurrentAccessLevel == AccessLevel.Admin;
+
+        protected bool HasPortalAccess(string pageKey) => PortalAccessManager.CanAccess(CurrentAccessLevel, pageKey);
+
         protected bool IsAuthorizedForAccount(uint accountId)
         {
-            return CurrentAccountId == accountId || IsAdmin;
+            return CurrentAccountId == accountId || HasPortalAccess(PortalPages.Players);
         }
     }
 }

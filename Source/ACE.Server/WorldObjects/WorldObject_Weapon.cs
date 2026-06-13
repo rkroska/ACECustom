@@ -82,6 +82,25 @@ namespace ACE.Server.WorldObjects
         private const float defaultModifier = 1.0f;
 
         /// <summary>
+        /// Like GetWeaponMeleeDefenseModifier but reads equipped weapon stats even in NonCombat (calculator / admin preview).
+        /// </summary>
+        public static float GetWeaponMeleeDefenseModifierForPreview(Creature wielder)
+        {
+            if (wielder == null)
+                return defaultModifier;
+
+            var mainhand = GetWeapon(wielder, true);
+            var offhand = wielder.GetDualWieldWeapon();
+
+            if (offhand == null)
+                return GetWeaponMeleeDefenseModifier(wielder, mainhand);
+
+            return Math.Max(
+                GetWeaponMeleeDefenseModifier(wielder, mainhand),
+                GetWeaponMeleeDefenseModifier(wielder, offhand));
+        }
+
+        /// <summary>
         /// Returns the Melee Defense skill modifier for the current weapon
         /// </summary>
         public static float GetWeaponMeleeDefenseModifier(Creature wielder)
@@ -130,6 +149,25 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Like GetWeaponMissileDefenseModifier but reads equipped weapon stats even in NonCombat (calculator / admin preview).
+        /// </summary>
+        public static float GetWeaponMissileDefenseModifierForPreview(Creature wielder)
+        {
+            if (wielder == null)
+                return defaultModifier;
+
+            WorldObject weapon = GetWeapon(wielder as Player);
+            if (weapon == null)
+                return defaultModifier;
+
+            var baseWepDef = (float)(weapon.WeaponMissileDefense ?? 1.0f);
+            if (weapon.WeaponMissileDefense > 0 && weapon.WeaponMissileDefense < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 1) == 1)
+                baseWepDef += 1;
+
+            return baseWepDef;
+        }
+
+        /// <summary>
         /// Returns the Missile Defense skill modifier for the current weapon
         /// </summary>
         public static float GetWeaponMissileDefenseModifier(Creature wielder)
@@ -151,6 +189,25 @@ namespace ACE.Server.WorldObjects
                 baseWepDef += 1;
 
             // no enchantments?
+            return baseWepDef;
+        }
+
+        /// <summary>
+        /// Like GetWeaponMagicDefenseModifier but reads equipped weapon stats even in NonCombat (calculator / admin preview).
+        /// </summary>
+        public static float GetWeaponMagicDefenseModifierForPreview(Creature wielder)
+        {
+            if (wielder == null)
+                return defaultModifier;
+
+            WorldObject weapon = GetWeapon(wielder as Player);
+            if (weapon == null)
+                return defaultModifier;
+
+            var baseWepDef = (float)(weapon.WeaponMagicDefense ?? 1.0f);
+            if (weapon.WeaponMagicDefense > 0 && weapon.WeaponMagicDefense < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 1) == 1)
+                baseWepDef += 1;
+
             return baseWepDef;
         }
 

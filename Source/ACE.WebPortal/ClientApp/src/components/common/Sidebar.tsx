@@ -1,14 +1,34 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { NavLink } from 'react-router-dom';
-import { User, Users, Globe, Search, Book, FileCode, Terminal, Settings, LogOut } from 'lucide-react';
+import { User, LogOut } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { getRoleName } from '../../utils/auth';
 import { cn } from '../../utils/cn';
+import { PORTAL_ROUTES, PortalRouteDefinition } from '../../portalRoutes';
 import logo from '../../assets/logo.svg';
 
 const Sidebar: React.FC = () => {
-  const { user, logout, accessLevel } = useAuthStore();
-  const isAdmin = accessLevel !== null && accessLevel > 0;
+  const { user, logout, accessLevel, canAccessPage } = useAuthStore();
+  const isStaff = accessLevel !== null && accessLevel > 0;
+
+  const visibleRoutes = useMemo(
+    () => PORTAL_ROUTES.filter(r => canAccessPage(r.key)),
+    [canAccessPage, accessLevel]
+  );
+
+  const charactersRoute = visibleRoutes.find(r => r.key === 'characters');
+  const leaderboardsRoute = visibleRoutes.find(r => r.key === 'leaderboards');
+  const adminRoutes = visibleRoutes.filter(r => r.key !== 'characters' && r.key !== 'leaderboards');
+
+  const sections = useMemo(() => {
+    const grouped = new Map<string, PortalRouteDefinition[]>();
+    for (const route of adminRoutes) {
+      const section = route.section ?? 'Other';
+      if (!grouped.has(section)) grouped.set(section, []);
+      grouped.get(section)!.push(route);
+    }
+    return Array.from(grouped.entries());
+  }, [adminRoutes]);
 
   return (
     <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col z-10 shadow-2xl">
@@ -20,49 +40,55 @@ const Sidebar: React.FC = () => {
       </div>
       
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto custom-scrollbar">
-        <SidebarItem to="/characters" icon={<User className="w-4 h-4" />} label="Characters" />
+        {charactersRoute && (
+          <SidebarItem to={charactersRoute.path} icon={<User className="w-4 h-4" />} label={charactersRoute.label} />
+        )}
+        {leaderboardsRoute && (
+          <SidebarItem to={leaderboardsRoute.path} icon={(() => {
+            const Icon = leaderboardsRoute.icon;
+            return Icon ? <Icon className="w-4 h-4" /> : null;
+          })()} label={leaderboardsRoute.label} />
+        )}
 
-        <div className="h-px bg-neutral-800/50 my-6 mx-2" />
-
-        {isAdmin && (
+        {sections.length > 0 && (
           <>
+            <div className="h-px bg-neutral-800/50 my-6 mx-2" />
             <div className="mt-10 mb-4 px-4">
               <h2 className="text-[14px] font-black text-blue-400 uppercase tracking-[0.1em]">
                 Admin Tools
               </h2>
             </div>
-            
-            <NavSection label="Monitoring" />
-            <div className="space-y-1">
-              <SidebarItem to="/players" icon={<Users className="w-4 h-4" />} label="Player List" />
-              <SidebarItem to="/map" icon={<Globe className="w-4 h-4" />} label="World Map" />
-            </div>
 
-            <NavSection label="Content Tools" />
-            <div className="space-y-1">
-              <SidebarItem to="/properties" icon={<Search className="w-4 h-4" />} label="Property Explorer" />
-              <SidebarItem to="/lookup" icon={<Book className="w-4 h-4" />} label="Lookup Tables" />
-              <SidebarItem to="/weenie" icon={<FileCode className="w-4 h-4" />} label="Weenie Editor" />
-            </div>
-
-            <NavSection label="Server Management" />
-            <div className="space-y-1">
-              <SidebarItem to="/console" icon={<Terminal className="w-4 h-4" />} label="Console" />
-              <SidebarItem to="/params" icon={<Settings className="w-4 h-4" />} label="Server Params" />
-            </div>
+            {sections.map(([section, routes]) => (
+              <div key={section}>
+                <NavSection label={section} />
+                <div className="space-y-1">
+                  {routes.map(route => {
+                    const Icon = route.icon;
+                    return (
+                      <SidebarItem
+                        key={route.key}
+                        to={route.path}
+                        icon={Icon ? <Icon className="w-4 h-4" /> : null}
+                        label={route.label}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </>
         )}
       </nav>
       
       <div className="p-4 border-t border-neutral-800 space-y-5">
-        {/* User Profile Card */}
         <div className="flex items-center gap-3 px-2 py-1">
           <div className="w-10 h-10 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-sm tracking-tighter">
             {user?.substring(0, 2).toUpperCase() || 'U'}
           </div>
           <div className="flex flex-col min-w-0">
             <span className="text-sm font-semibold text-white truncate leading-tight">{user}</span>
-            {isAdmin && (
+            {isStaff && (
               <span className="text-[10px] text-blue-400/80 font-bold uppercase tracking-wider">
                 {getRoleName(accessLevel!)}
               </span>
