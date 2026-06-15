@@ -641,7 +641,7 @@ namespace ACE.Server.WorldObjects.Managers
                         {
                             var la = emoteSet.PropertiesEmoteAction[i];
                             if ((EmoteType)la.Type != EmoteType.Give || la.WeenieClassId == null)
-                                break; // stop at the first non-Give action
+                                continue; // skip non-Give actions but keep scanning for later Gives
                             var laAmt = la.StackSize ?? 1;
                             if (laAmt > 0 && (la.WeenieClassId == 300004 || la.WeenieClassId == 300003))
                             {
@@ -3605,18 +3605,17 @@ namespace ACE.Server.WorldObjects.Managers
                 var preCheckPlayer = targetObject as Player;
                 if (preCheckPlayer != null)
                 {
-                    var upcomingGives = emoteSet.PropertiesEmoteAction
-                        .Skip(emoteIdx)
-                        .Where(a => (EmoteType)a.Type == EmoteType.Give && a.WeenieClassId != null)
-                        .ToList();
-
-                    if (upcomingGives.Count > 0)
+                    var batchItems = new ItemsToReceive(preCheckPlayer);
+                    var hasUpcomingGives = false;
+                    for (var scanIdx = emoteIdx; scanIdx < emoteSet.PropertiesEmoteAction.Count; scanIdx++)
                     {
-                        var batchItems = new ItemsToReceive(preCheckPlayer);
-                        foreach (var g in upcomingGives)
+                        var scanEmote = emoteSet.PropertiesEmoteAction[scanIdx];
+                        var scanType = (EmoteType)scanEmote.Type;
+                        if (scanType == EmoteType.Give && scanEmote.WeenieClassId != null)
                         {
-                            var gAmt = g.StackSize ?? 1;
-                            if (gAmt > 0 && (g.WeenieClassId == 300004 || g.WeenieClassId == 300003))
+                            hasUpcomingGives = true;
+                            var gAmt = scanEmote.StackSize ?? 1;
+                            if (gAmt > 0 && (scanEmote.WeenieClassId == 300004 || scanEmote.WeenieClassId == 300003))
                             {
                                 var laCoinMult = ServerConfig.coin_reward_mult.Value;
                                 if (double.IsNaN(laCoinMult) || double.IsInfinity(laCoinMult))
@@ -3624,8 +3623,18 @@ namespace ACE.Server.WorldObjects.Managers
                                 laCoinMult = Math.Max(0, laCoinMult);
                                 gAmt = (int)(gAmt * laCoinMult);
                             }
-                            batchItems.Add(g.WeenieClassId.Value, gAmt > 0 ? gAmt : 1);
+                            batchItems.Add(scanEmote.WeenieClassId.Value, gAmt > 0 ? gAmt : 1);
                         }
+                        else if (scanType == EmoteType.TakeItems && scanEmote.WeenieClassId != null)
+                        {
+                            // Simulate items being taken — they free slots/burden for subsequent Gives
+                            var tAmt = scanEmote.StackSize ?? 1;
+                            batchItems.Remove(scanEmote.WeenieClassId.Value, tAmt > 0 ? tAmt : 1);
+                        }
+                    }
+
+                    if (hasUpcomingGives)
+                    {
 
                         if (batchItems.PlayerExceedsLimits)
                         {
@@ -3642,7 +3651,10 @@ namespace ACE.Server.WorldObjects.Managers
                             AbortEmoteChain = true;
                             Nested--;
                             if (Nested == 0)
+                            {
+                                AbortEmoteChain = false;
                                 IsBusy = false;
+                            }
                             return;
                         }
                     }
@@ -3666,6 +3678,7 @@ namespace ACE.Server.WorldObjects.Managers
                     delayChain.AddDelaySeconds(nextDelay);
                     delayChain.AddAction(WorldObject, ActionType.EmoteManager_ReduceNested, () =>
                     {
+                        AbortEmoteChain = false; // safety reset on delayed chain completion
                         Nested--;
 
                         if (Nested == 0)

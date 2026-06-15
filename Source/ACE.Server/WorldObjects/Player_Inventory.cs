@@ -4193,8 +4193,8 @@ namespace ACE.Server.WorldObjects
             {
                 // Tell the player specifically why they can't receive the item
                 var itemBeingGiven = DatabaseManager.World.GetCachedWeenie(weenieClassId);
-                var itemName = itemStacks > 1 ? itemBeingGiven.GetPluralName() : itemBeingGiven.GetName();
-                var countPrefix = itemStacks > 1 ? $"{itemStacks} " : "";
+                var itemName = amount > 1 ? itemBeingGiven.GetPluralName() : itemBeingGiven.GetName();
+                var countPrefix = amount > 1 ? $"{amount:N0} " : "";
 
                 if (itemsToReceive.PlayerExceedsAvailableBurden)
                     Session.Network.EnqueueSend(new GameMessageSystemChat(
