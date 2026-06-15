@@ -64,8 +64,12 @@ namespace ACE.Server.Network
         }
 
         /// <summary>
-        /// Applies (or reverts) the UDP socket send/receive buffer sizes. Safe to call on a live bound socket.
+        /// Applies (or reverts) the UDP socket send/receive buffer sizes.
         /// When <paramref name="enabled"/> is false, restores the OS defaults captured at bind time.
+        /// Intended to run at startup before I/O begins; it may also be invoked at runtime to honor a live
+        /// config toggle. Setting these sizes on a bound UDP socket with receives in flight is tolerated here
+        /// (setsockopt is atomic in the kernel and any failure is caught and logged), but it is not a documented
+        /// guarantee — callers should not rely on it for correctness.
         /// </summary>
         public void ApplyBufferSettings(bool enabled, int size)
         {
