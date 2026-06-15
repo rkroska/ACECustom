@@ -487,8 +487,8 @@ namespace ACE.Server.Physics.Common
 
         public static bool InitialClamp = true;
 
-        /// <summary>Max 2D distance for adding visible objects / CreateObject (~1.25 landblocks; was ACE default 112.5).</summary>
-        public static float InitialClamp_Dist = 240f;
+        /// <summary>Max 2D distance for adding visible objects / CreateObject. Matches upstream ACE default (112.5).</summary>
+        public static float InitialClamp_Dist = 112.5f;
         public static float InitialClamp_DistSq = InitialClamp_Dist * InitialClamp_Dist;
 
         /// <summary>
