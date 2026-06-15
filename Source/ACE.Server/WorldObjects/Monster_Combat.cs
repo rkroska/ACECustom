@@ -408,6 +408,31 @@ namespace ACE.Server.WorldObjects
 
             // **Broadcast an enrage message**
             BroadcastMessage($"{Name} becomes enraged and starts attacking fiercely!", 250.0f);
+
+            // Tag the name so players can tell at a glance the creature is enraged
+            // (e.g. normal capture lenses won't work on it). Stays until death/capture.
+            PrependEnragedNameTag();
+        }
+
+        // Matches the "Shiny " variant convention (prefix). See CreatureVariantHelper.ApplyVariant.
+        public const string EnragedNamePrefix = "Enraged ";
+
+        /// <summary>
+        /// Prepends an "Enraged " tag to the creature's display name and pushes the change to nearby
+        /// players. Enrage has no revert path, so this is never undone (the creature dies or is captured).
+        /// </summary>
+        private void PrependEnragedNameTag()
+        {
+            if (string.IsNullOrEmpty(Name) || Name.StartsWith(EnragedNamePrefix, StringComparison.Ordinal))
+                return;
+
+            Name = EnragedNamePrefix + Name;
+
+            // A PublicUpdatePropertyString does NOT refresh a creature's selection/health-bar
+            // nameplate (the client builds that from the full object). Re-send the object so the
+            // new name is shown live to everyone nearby.
+            if (CurrentLandblock != null)
+                EnqueueBroadcast(new GameMessageUpdateObject(this));
         }
 
         private void EnsureVisibility()
