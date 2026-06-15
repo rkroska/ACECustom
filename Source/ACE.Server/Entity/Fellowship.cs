@@ -106,6 +106,12 @@ namespace ACE.Server.Entity
             }
             else
             {
+                if (newMember.IsLoggingOut)
+                {
+                    inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($"{newMember.Name} is not available.", ChatMessageType.Broadcast));
+                    return;
+                }
+
                 if (ServerConfig.fellow_busy_no_recruit.Value && newMember.IsBusy)
                 {
                     inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($"{newMember.Name} is busy.", ChatMessageType.Broadcast));
@@ -134,6 +140,11 @@ namespace ACE.Server.Entity
         public void AddConfirmedMember(Player inviter, Player player, bool response)
         {
             if (inviter == null || inviter.Session == null || inviter.Session.Player == null || player == null) return;
+
+            // Do not add a player who is in the middle of logging out.
+            // This closes the race where FellowshipQuit fires during logout, then an auto-accept
+            // or a previously-queued confirmation dialog re-adds the departing player.
+            if (player.IsLoggingOut) return;
 
             if (!response)
             {

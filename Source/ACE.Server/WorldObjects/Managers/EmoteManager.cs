@@ -48,6 +48,13 @@ namespace ACE.Server.WorldObjects.Managers
         public bool IsBusy { get; set; }
         public int Nested { get; set; }
 
+        /// <summary>
+        /// When set to true, the current emote chain will abort before firing the next action.
+        /// Used by GiveFromEmote/TryCreateForGive to halt the chain if an item cannot be delivered,
+        /// preventing StampQuest from firing after a failed Give.
+        /// </summary>
+        public bool AbortEmoteChain { get; set; } = false;
+
         public bool Debug = false;
         private readonly HashSet<string> _singleLocalBroadcastsSent = new HashSet<string>();
 
@@ -607,7 +614,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                     bool success = false;
 
-                    var stackSize = emote.StackSize ?? 1;                        
+                    var stackSize = emote.StackSize ?? 1;
 
                     if (player != null && emote.WeenieClassId != null)
                     {
@@ -619,7 +626,53 @@ namespace ACE.Server.WorldObjects.Managers
                             coinMult = Math.Max(0, coinMult);
                             stackSize = (int)(stackSize * coinMult);
                         }
-                            
+
+                        // ── Look-ahead batch pre-check ───────────────────────────────────────────
+                        // DoEnqueue processes all emotes synchronously when delay == 0, meaning
+                        // StampQuest (and subsequent Gives) are scheduled BEFORE any ActionChain
+                        // has fired. Checking only the current Give item is not enough for
+                        // multi-Give emote sets — we must check the player can receive the ENTIRE
+                        // bundle before scheduling anything. Scanning from the current emote's
+                        // index forward captures all remaining Gives without touching earlier
+                        // Gives that already fired in previous interactions.
+                        var batchItems = new ItemsToReceive(player);
+                        var currentEmoteIdx = emoteSet.PropertiesEmoteAction.IndexOf(emote);
+                        for (var i = currentEmoteIdx; i < emoteSet.PropertiesEmoteAction.Count; i++)
+                        {
+                            var la = emoteSet.PropertiesEmoteAction[i];
+                            if ((EmoteType)la.Type != EmoteType.Give || la.WeenieClassId == null)
+                                continue; // skip non-Give actions but keep scanning for later Gives
+                            var laAmt = la.StackSize ?? 1;
+                            if (laAmt > 0 && (la.WeenieClassId == 300004 || la.WeenieClassId == 300003))
+                            {
+                                var laCoinMult = ServerConfig.coin_reward_mult.Value;
+                                if (double.IsNaN(laCoinMult) || double.IsInfinity(laCoinMult))
+                                    laCoinMult = 0;
+                                laCoinMult = Math.Max(0, laCoinMult);
+                                laAmt = (int)(laAmt * laCoinMult);
+                            }
+                            batchItems.Add(la.WeenieClassId.Value, laAmt > 0 ? laAmt : 1);
+                        }
+
+                        if (batchItems.PlayerExceedsLimits)
+                        {
+                            var slotsNeeded = batchItems.RequiredSlots;
+                            if (batchItems.PlayerExceedsAvailableBurden)
+                                player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                    $"{WorldObject.Name} has rewards for you, but you are too encumbered to carry them! Drop some items and try again.",
+                                    ChatMessageType.Broadcast));
+                            else
+                                player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                    $"{WorldObject.Name} has rewards for you, but you need {slotsNeeded} free inventory slot(s). Free up some space and try again.",
+                                    ChatMessageType.Broadcast));
+
+                            AbortEmoteChain = true;
+                            break;
+                        }
+                        // ────────────────────────────────────────────────────────────────────────
+
+
+                        var giveAmount = stackSize > 0 ? stackSize : 1;
                         var motionChain = new ActionChain();
 
                         if (!WorldObject.DontTurnOrMoveWhenGiving && creature != null && targetCreature != null)
@@ -627,7 +680,7 @@ namespace ACE.Server.WorldObjects.Managers
                             delay = creature.Rotate(targetCreature);
                             motionChain.AddDelaySeconds(delay);
                         }
-                        motionChain.AddAction(WorldObject, ActionType.EmoteManager_Give, () => player.GiveFromEmote(WorldObject, emote.WeenieClassId ?? 0, stackSize > 0 ? stackSize : 1, emote.Palette ?? 0, emote.Shade ?? 0));
+                        motionChain.AddAction(WorldObject, ActionType.EmoteManager_Give, () => player.GiveFromEmote(WorldObject, emote.WeenieClassId ?? 0, giveAmount, emote.Palette ?? 0, emote.Shade ?? 0));
                         motionChain.EnqueueChain();
                     }
 
@@ -3524,22 +3577,93 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         private void DoEnqueue(PropertiesEmote emoteSet, WorldObject targetObject, int emoteIdx, PropertiesEmoteAction emote)
         {
+            // If a previous emote in this chain (e.g. a failed Give) requested an abort,
+            // stop here before firing this action. This prevents StampQuest from running
+            // after a Give that failed due to full inventory or over-burden.
+            if (AbortEmoteChain)
+            {
+                AbortEmoteChain = false;
+                Nested--;
+                if (Nested == 0)
+                    IsBusy = false;
+                return;
+            }
+
             if (Debug)
                 Console.Write($"{(EmoteType)emote.Type}");
 
-            //if (!string.IsNullOrEmpty(emoteSet.Quest) && emoteSet.Quest == emote.Message && EmoteIsBranchingType(emote))
-            //{
-            //    log.Error($"[EMOTE] {WorldObject.Name}.EmoteManager.DoEnqueue(): Infinite loop detected on 0x{WorldObject.Guid}:{WorldObject.WeenieClassId}\n-> {emoteSet.Category}: {emoteSet.Quest} to {(EmoteType)emote.Type}: {emote.Message}");
+            // ── Pre-emote scan-ahead for upcoming Gives ──────────────────────────────
+            // When this emote is NOT itself a Give (e.g. Tell, AwardXP, AwardLuminance),
+            // scan forward for any upcoming Give emotes in this emote set. If the player
+            // can't receive the full bundle (full inventory OR cumulative burden would
+            // push them over the limit), abort the entire chain NOW — before any XP,
+            // Luminance, or Tell fires. The Give case handles this same check internally
+            // for chains where the first emote IS a Give; this block covers chains where
+            // non-Give rewards precede the Give emotes.
+            if ((EmoteType)emote.Type != EmoteType.Give)
+            {
+                var preCheckPlayer = targetObject as Player;
+                if (preCheckPlayer != null)
+                {
+                    var batchItems = new ItemsToReceive(preCheckPlayer);
+                    var hasUpcomingGives = false;
+                    for (var scanIdx = emoteIdx; scanIdx < emoteSet.PropertiesEmoteAction.Count; scanIdx++)
+                    {
+                        var scanEmote = emoteSet.PropertiesEmoteAction[scanIdx];
+                        var scanType = (EmoteType)scanEmote.Type;
+                        if (scanType == EmoteType.Give && scanEmote.WeenieClassId != null)
+                        {
+                            hasUpcomingGives = true;
+                            var gAmt = scanEmote.StackSize ?? 1;
+                            if (gAmt > 0 && (scanEmote.WeenieClassId == 300004 || scanEmote.WeenieClassId == 300003))
+                            {
+                                var laCoinMult = ServerConfig.coin_reward_mult.Value;
+                                if (double.IsNaN(laCoinMult) || double.IsInfinity(laCoinMult))
+                                    laCoinMult = 0;
+                                laCoinMult = Math.Max(0, laCoinMult);
+                                gAmt = (int)(gAmt * laCoinMult);
+                            }
+                            batchItems.Add(scanEmote.WeenieClassId.Value, gAmt > 0 ? gAmt : 1);
+                        }
+                        else if (scanType == EmoteType.TakeItems && scanEmote.WeenieClassId != null)
+                        {
+                            // Simulate items being taken — they free slots/burden for subsequent Gives
+                            var tAmt = scanEmote.StackSize ?? 1;
+                            batchItems.Remove(scanEmote.WeenieClassId.Value, tAmt > 0 ? tAmt : 1);
+                        }
+                    }
 
-            //    Nested--;
+                    if (hasUpcomingGives)
+                    {
 
-            //    if (Nested == 0)
-            //        IsBusy = false;
+                        if (batchItems.PlayerExceedsLimits)
+                        {
+                            var slotsNeeded = batchItems.RequiredSlots;
+                            if (batchItems.PlayerExceedsAvailableBurden)
+                                preCheckPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                    $"{WorldObject.Name} has rewards for you, but you are too encumbered to carry them! Drop some items and try again.",
+                                    ChatMessageType.Broadcast));
+                            else
+                                preCheckPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                    $"{WorldObject.Name} has rewards for you, but you need {slotsNeeded} free inventory slot(s). Free up some space and try again.",
+                                    ChatMessageType.Broadcast));
 
-            //    return;
-            //}
+                            AbortEmoteChain = true;
+                            Nested--;
+                            if (Nested == 0)
+                            {
+                                AbortEmoteChain = false;
+                                IsBusy = false;
+                            }
+                            return;
+                        }
+                    }
+                }
+            }
+            // ────────────────────────────────────────────────────────────────────────
 
             var nextDelay = ExecuteEmote(emoteSet, emote, targetObject);
+
 
             if (Debug)
                 Console.WriteLine($" - {nextDelay}");
@@ -3554,6 +3678,7 @@ namespace ACE.Server.WorldObjects.Managers
                     delayChain.AddDelaySeconds(nextDelay);
                     delayChain.AddAction(WorldObject, ActionType.EmoteManager_ReduceNested, () =>
                     {
+                        AbortEmoteChain = false; // safety reset on delayed chain completion
                         Nested--;
 
                         if (Nested == 0)
@@ -3563,6 +3688,7 @@ namespace ACE.Server.WorldObjects.Managers
                 }
                 else
                 {
+                    AbortEmoteChain = false; // safety reset on natural chain completion
                     Nested--;
 
                     if (Nested == 0)

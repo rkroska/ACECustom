@@ -4191,17 +4191,23 @@ namespace ACE.Server.WorldObjects
 
             if (itemsToReceive.PlayerExceedsLimits)
             {
-                //if (itemsToReceive.PlayerExceedsAvailableBurden)
-                //    Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "You are too encumbered to use that!"));
-                //else if (itemsToReceive.PlayerOutOfInventorySlots)
-                //    Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "You do not have enough pack space to use that!"));
-                //else if (itemsToReceive.PlayerOutOfContainerSlots)
-                //    Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "You do not have enough container slots to use that!"));
-
-                // Font of Enlightenment and Rebirth tries to give you Attribute Reset Certificate.
+                // Tell the player specifically why they can't receive the item
                 var itemBeingGiven = DatabaseManager.World.GetCachedWeenie(weenieClassId);
-                var msg = new GameMessageSystemChat($"{emoter.Name} tries to give you {(itemStacks > 1 ? $"{itemStacks} " : "")}{(itemStacks > 1 ? itemBeingGiven.GetPluralName() : itemBeingGiven.GetName())}.", ChatMessageType.Broadcast);
-                Session.Network.EnqueueSend(msg);
+                var itemName = amount > 1 ? itemBeingGiven.GetPluralName() : itemBeingGiven.GetName();
+                var countPrefix = amount > 1 ? $"{amount:N0} " : "";
+
+                if (itemsToReceive.PlayerExceedsAvailableBurden)
+                    Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"{emoter.Name} tries to give you {countPrefix}{itemName}, but you are too encumbered to carry it! Drop some items and try again.",
+                        ChatMessageType.Broadcast));
+                else
+                    Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"{emoter.Name} tries to give you {countPrefix}{itemName}, but your inventory is full! Free up some space and try again.",
+                        ChatMessageType.Broadcast));
+
+                // Abort the NPC's emote chain so StampQuest (or any following action) does not fire
+                if (emoter?.EmoteManager != null)
+                    emoter.EmoteManager.AbortEmoteChain = true;
 
                 return;
             }
@@ -4257,8 +4263,22 @@ namespace ACE.Server.WorldObjects
 
             if (!TryCreateInInventoryWithNetworking(itemBeingGiven))
             {
-                var msg = new GameMessageSystemChat($"{giver.Name} tries to give you {(itemBeingGiven.StackSize > 1 ? $"{itemBeingGiven.StackSize} " : "")}{itemBeingGiven.GetNameWithMaterial(itemBeingGiven.StackSize)}.", ChatMessageType.Broadcast);
-                Session.Network.EnqueueSend(msg);
+                // Determine why the give failed and tell the player
+                if (!HasEnoughBurdenToAddToInventory(itemBeingGiven))
+                    Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"{giver.Name} tries to give you {(itemBeingGiven.StackSize > 1 ? $"{itemBeingGiven.StackSize} " : "")}{itemBeingGiven.GetNameWithMaterial(itemBeingGiven.StackSize)}, but you are too encumbered to carry it! Drop some items and try again.",
+                        ChatMessageType.Broadcast));
+                else
+                    Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"{giver.Name} tries to give you {(itemBeingGiven.StackSize > 1 ? $"{itemBeingGiven.StackSize} " : "")}{itemBeingGiven.GetNameWithMaterial(itemBeingGiven.StackSize)}, but your inventory is full! Free up some space and try again.",
+                        ChatMessageType.Broadcast));
+
+                // Abort the giver's emote chain so StampQuest (or any following action) does not fire
+                if (giver?.EmoteManager != null)
+                    giver.EmoteManager.AbortEmoteChain = true;
+
+                // Destroy the orphaned item — previously it was silently discarded with no cleanup
+                itemBeingGiven.Destroy();
                 return false;
             }
 
