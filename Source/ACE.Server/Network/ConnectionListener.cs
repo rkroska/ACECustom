@@ -26,6 +26,11 @@ namespace ACE.Server.Network
 
         private readonly IPAddress listeningHost;
 
+        // OS default socket buffer sizes, captured at bind so we can restore them if the override is toggled off.
+        private int defaultSendBufferSize;
+        private int defaultReceiveBufferSize;
+        private bool capturedDefaults;
+
         public ConnectionListener(IPAddress host, uint port)
         {
             log.DebugFormat("ConnectionListener ctor, host {0} port {1}", host, port);
@@ -44,11 +49,51 @@ namespace ACE.Server.Network
                 Socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
                 Socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
                 Socket.Bind(ListenerEndpoint);
+
+                // Capture the OS default buffer sizes before any override, so they can be restored on toggle-off.
+                defaultSendBufferSize = Socket.SendBufferSize;
+                defaultReceiveBufferSize = Socket.ReceiveBufferSize;
+                capturedDefaults = true;
+
                 Listen();
             }
             catch (Exception exception)
             {
                 log.FatalFormat("Network Socket has thrown: {0}", exception.Message);
+            }
+        }
+
+        /// <summary>
+        /// Applies (or reverts) the UDP socket send/receive buffer sizes. Safe to call on a live bound socket.
+        /// When <paramref name="enabled"/> is false, restores the OS defaults captured at bind time.
+        /// </summary>
+        public void ApplyBufferSettings(bool enabled, int size)
+        {
+            if (Socket == null)
+                return;
+
+            try
+            {
+                if (enabled)
+                {
+                    Socket.SendBufferSize = size;
+                    Socket.ReceiveBufferSize = size;
+                }
+                else if (capturedDefaults)
+                {
+                    Socket.SendBufferSize = defaultSendBufferSize;
+                    Socket.ReceiveBufferSize = defaultReceiveBufferSize;
+                }
+                else
+                {
+                    return;
+                }
+
+                log.Info($"[NETWORK] {ListenerEndpoint}: socket buffers {(enabled ? "override" : "default")} applied -> SendBufferSize={Socket.SendBufferSize}, ReceiveBufferSize={Socket.ReceiveBufferSize}" + (enabled ? $" (requested {size})" : ""));
+            }
+            catch (Exception ex)
+            {
+                log.Warn($"[NETWORK] {ListenerEndpoint}: failed to set socket buffer sizes (enabled={enabled}, size={size}): {ex.Message}");
             }
         }
 

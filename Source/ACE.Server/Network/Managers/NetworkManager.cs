@@ -386,9 +386,18 @@ namespace ACE.Server.Network.Managers
         /// Dispatches all outgoing messages.<para />
         /// Removes dead sessions.
         /// </summary>
+        private static DateTime nextSocketBufferReconcile = DateTime.MinValue;
+
         public static int DoSessionWork()
         {
             int sessionCount = 0;
+
+            // Cheap, time-gated check so net_socket_buffer_* toggles take effect live (~2s) without a restart.
+            if (DateTime.UtcNow >= nextSocketBufferReconcile)
+            {
+                nextSocketBufferReconcile = DateTime.UtcNow.AddSeconds(2);
+                SocketManager.ReconcileSocketBuffers();
+            }
 
             sessionLock.EnterUpgradeableReadLock();
             try
