@@ -479,7 +479,7 @@ namespace ACE.Server.Command.Handlers
                 skill.InitLevel = 10;
 
                 var skillXPTable = Player.GetSkillXPTable(SkillAdvancementClass.Specialized);
-                if (skillXPTable != null)
+                if (skillXPTable != null && skillXPTable.Count > 0)
                 {
                     skill.Ranks = (ushort)(skillXPTable.Count - 1);
                     skill.ExperienceSpent = skillXPTable[skillXPTable.Count - 1];
@@ -1670,8 +1670,7 @@ namespace ACE.Server.Command.Handlers
                 227190153,  // Mellas Court Recall Gem
                 227190155,  // Valorya Gate Recall Gem
                 227190156,  // Vesper Gate Recall Gem
-                227190157,  // Winthur Gate Recall Gem
-                777700029   // Tou Tou Prestige Portal Gem
+                227190157   // Winthur Gate Recall Gem
             };
 
             var playerWcids = new HashSet<uint>(player.GetAllPossessionsDeep().Select(i => i.WeenieClassId));
