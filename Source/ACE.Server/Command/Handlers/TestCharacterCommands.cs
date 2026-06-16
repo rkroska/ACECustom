@@ -540,6 +540,16 @@ namespace ACE.Server.Command.Handlers
             // 7. Set Enlightenment to 325
             player.Enlightenment = 325;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Enlightenment, 325));
+
+            // 8. Spawn Eternal Mana Charge (Infinite Mana Stone)
+            if (!player.GetAllPossessionsDeep().Any(i => i.WeenieClassId == 30254))
+            {
+                var manaCharge = WorldObjectFactory.CreateNewWorldObject(30254);
+                if (manaCharge != null)
+                {
+                    player.TryCreateInInventoryWithNetworking(manaCharge);
+                }
+            }
         }
 
         private static void ConfigureStatsAndSpellsT10(Player player)
@@ -975,44 +985,61 @@ namespace ACE.Server.Command.Handlers
 
         private static void SpawnCharms(Player player)
         {
+            if (HasItemNamed(player, "Ability Charms Pack")) return;
+
+            var rucksack = WorldObjectFactory.CreateNewWorldObject(310025) as Container;
+            if (rucksack != null)
+            {
+                rucksack.Name = "Ability Charms Pack";
+                rucksack.SetProperty(PropertyString.Name, "Ability Charms Pack");
+                rucksack.SetProperty(PropertyInt.MaterialType, 0);
+            }
+
             var charmWcids = new List<uint>()
             {
-                777700001,  // Mana Barrier Charm (T1)
-                777700020,  // Asheron's Favor Charm (T1)
+                777700001,  // Mana Barrier (T1)
+                777700019,  // Infinite Casting (T1)
+                777700020,  // Asheron's Favor (T1)
                 777700021,  // Artisan's Charm (T1)
-                777700022,  // Shrapnel Charm
-                777700023,  // Agony Charm
-                777700024,  // Split Cast Charm
-                777700025,  // Explosive Arrow Charm (T1)
-                777700026,  // Omni Strike Charm
-                777700027,  // Fork Charm (T1)
-                777700300,  // Charm of Auto Rebuffing
-                777700019,  // Infinite Casting Stone
+                777700022,  // Shrapnel (T1)
+                777700023,  // Agony (T1)
+                777700025,  // Explosive Arrow (T1)
+                777700024,  // Split Cast (T1)
+                777700026,  // Omni Strike (T1)
+                78780030,   // Summon Essence Refill (T1)
+                78780031,   // Universal Summoning Mastery (T1)
+                777700300,  // Auto-Rebuff (T1)
+                777700027,  // Fork (T1)
+                777700028   // Far Shot (T1)
             };
-
-            var playerPossessions = player.GetAllPossessionsDeep().ToList();
-            var playerWcids = new HashSet<uint>(playerPossessions.Select(i => i.WeenieClassId));
 
             foreach (var wcid in charmWcids)
             {
-                if (playerWcids.Contains(wcid)) continue;
-
                 var charm = WorldObjectFactory.CreateNewWorldObject(wcid);
                 if (charm != null)
-                    player.TryCreateInInventoryWithNetworking(charm);
+                {
+                    if (rucksack != null)
+                        rucksack.TryAddToInventory(charm);
+                    else
+                        player.TryCreateInInventoryWithNetworking(charm);
+                }
             }
 
-            // 20x Charm Catalyst — skip if player already has any
-            bool hasCatalyst = playerWcids.Contains(777700010);
-            if (!hasCatalyst)
+            // 1000x Charm Catalyst
+            var catalyst = WorldObjectFactory.CreateNewWorldObject(777700010);
+            if (catalyst != null)
             {
-                var catalyst = WorldObjectFactory.CreateNewWorldObject(777700010);
-                if (catalyst != null)
-                {
-                    catalyst.SetProperty(PropertyInt.StackSize, 20);
-                    catalyst.SetProperty(PropertyInt.EncumbranceVal, (catalyst.StackUnitEncumbrance ?? 5) * 20);
+                catalyst.SetProperty(PropertyInt.StackSize, 1000);
+                catalyst.SetProperty(PropertyInt.EncumbranceVal, (catalyst.StackUnitEncumbrance ?? 5) * 1000);
+                if (rucksack != null)
+                    rucksack.TryAddToInventory(catalyst);
+                else
                     player.TryCreateInInventoryWithNetworking(catalyst);
-                }
+            }
+
+            if (rucksack != null)
+            {
+                player.TryCreateInInventoryWithNetworking(rucksack);
             }
 
             SpawnSpellcastingConsumables(player);
@@ -1673,7 +1700,8 @@ namespace ACE.Server.Command.Handlers
                 227190153,  // Mellas Court Recall Gem
                 227190155,  // Valorya Gate Recall Gem
                 227190156,  // Vesper Gate Recall Gem
-                227190157   // Winthur Gate Recall Gem
+                227190157,  // Winthur Gate Recall Gem
+                777700029   // Tou Tou Prestige Portal Gem
             };
 
             var playerWcids = new HashSet<uint>(player.GetAllPossessionsDeep().Select(i => i.WeenieClassId));
