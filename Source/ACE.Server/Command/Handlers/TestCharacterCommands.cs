@@ -129,7 +129,7 @@ namespace ACE.Server.Command.Handlers
                     SpawnTeleportGems(player, bag1);
                 }
 
-                var gearTier = isT10 ? "T10" : "T11";
+                var gearTier = "T10";
                 SpawnOlthoiShadowArmor(player, gearTier);
                 SpawnCustomUndergarmentsAndCloak(player, gearTier);
                 SpawnCustomJewelry(player, gearTier);
@@ -202,7 +202,7 @@ namespace ACE.Server.Command.Handlers
                 }
                 else if (sub == "gear")
                 {
-                    var gearTier = isT10 ? "T10" : "T11";
+                    var gearTier = "T10";
                     SpawnArmor(player);
                     SpawnOlthoiShadowArmor(player, gearTier);
                     SpawnCustomUndergarmentsAndCloak(player, gearTier);
@@ -1107,13 +1107,13 @@ namespace ACE.Server.Command.Handlers
             player.UpdateProperty(player, PropertyInt.AetheriaBitfield, (int)AetheriaBitfield.All);
 
             // 1. Blue Aetheria
-            if (!HasItemNamed(player, "Blue Aetheria"))
+            if (!HasItemNamed(player, "T10 Blue Aetheria"))
             {
             var blueAetheria = WorldObjectFactory.CreateNewWorldObject(42635);
             if (blueAetheria != null)
             {
-                blueAetheria.Name = "Blue Aetheria";
-                blueAetheria.SetProperty(PropertyString.Name, "Blue Aetheria");
+                blueAetheria.Name = "T10 Blue Aetheria";
+                blueAetheria.SetProperty(PropertyString.Name, "T10 Blue Aetheria");
                 blueAetheria.SetProperty(PropertyString.LongDesc, "This aetheria's sigil now shows on the surface.");
                 blueAetheria.SetProperty(PropertyInt.EquipmentSetId, (int)EquipmentSet.AetheriaGrowth);
                 blueAetheria.SetProperty(PropertyDataId.Icon, 100690944); // 0x06006C00 Blue Growth icon
@@ -1138,13 +1138,13 @@ namespace ACE.Server.Command.Handlers
             }
 
             // 2. Yellow Aetheria
-            if (!HasItemNamed(player, "Yellow Aetheria"))
+            if (!HasItemNamed(player, "T10 Yellow Aetheria"))
             {
             var yellowAetheria = WorldObjectFactory.CreateNewWorldObject(42637);
             if (yellowAetheria != null)
             {
-                yellowAetheria.Name = "Yellow Aetheria";
-                yellowAetheria.SetProperty(PropertyString.Name, "Yellow Aetheria");
+                yellowAetheria.Name = "T10 Yellow Aetheria";
+                yellowAetheria.SetProperty(PropertyString.Name, "T10 Yellow Aetheria");
                 yellowAetheria.SetProperty(PropertyString.LongDesc, "This aetheria's sigil now shows on the surface.");
                 yellowAetheria.SetProperty(PropertyInt.EquipmentSetId, (int)EquipmentSet.AetheriaFury);
                 yellowAetheria.SetProperty(PropertyDataId.Icon, 100690931); // 0x06006BF3 Yellow Fury icon
@@ -1169,13 +1169,13 @@ namespace ACE.Server.Command.Handlers
             }
 
             // 3. Red Aetheria
-            if (!HasItemNamed(player, "Red Aetheria"))
+            if (!HasItemNamed(player, "T10 Red Aetheria"))
             {
             var redAetheria = WorldObjectFactory.CreateNewWorldObject(42636);
             if (redAetheria != null)
             {
-                redAetheria.Name = "Red Aetheria";
-                redAetheria.SetProperty(PropertyString.Name, "Red Aetheria");
+                redAetheria.Name = "T10 Red Aetheria";
+                redAetheria.SetProperty(PropertyString.Name, "T10 Red Aetheria");
                 redAetheria.SetProperty(PropertyString.LongDesc, "This aetheria's sigil now shows on the surface.");
                 redAetheria.SetProperty(PropertyInt.EquipmentSetId, (int)EquipmentSet.AetheriaFury);
                 redAetheria.SetProperty(PropertyDataId.Icon, 100690948); // 0x06006C04 Red Fury icon
