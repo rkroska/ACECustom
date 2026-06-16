@@ -15,8 +15,7 @@ VALUES (777720005,    11, 1)  /* IgnoreCollisions */
      , (777720005,    14, 1)  /* GravityStatus */
      , (777720005,    63, 1)  /* UnlimitedUse */
      , (777720005,  9040, 1)  /* IsCharm */
-     , (777720005, 50000, 1)  /* IsAbilityCharm */
-     , (777720005, 50002, 1); /* IsTestCharm */
+     , (777720005, 50000, 1); /* IsAbilityCharm */
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (777720005,     1, 2048) /* ItemType - Gem */
