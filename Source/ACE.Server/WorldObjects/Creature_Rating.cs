@@ -5,6 +5,7 @@ using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
+using ACE.Server.Network.GameMessages.Messages;
 
 namespace ACE.Server.WorldObjects
 {
@@ -227,7 +228,21 @@ namespace ACE.Server.WorldObjects
             }
 
             // heritage / weapon type bonus factored in elsewhere?
-            return damageRating + equipment + enchantments - weaknessRating + augBonus + lumAugBonus + enlightenmentBonus;
+            var rating = damageRating + equipment + enchantments - weaknessRating + augBonus + lumAugBonus + enlightenmentBonus;
+
+            if (this is Player strainPlayer)
+            {
+                var strain = PetPotency.GetBondStrainRating(strainPlayer);
+                if (strain > 0)
+                {
+                    rating -= strain;
+                    if (ServerConfig.pet_strain_debug_chat.Value && strainPlayer.Session != null)
+                        strainPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"[Bond Strain] −{strain:N0} damage rating ({rating:N0} effective).", ChatMessageType.System));
+                }
+            }
+
+            return rating;
         }
 
         public int GetDamageResistRating(CombatType? combatType = null, bool directDamage = true)

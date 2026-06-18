@@ -295,6 +295,15 @@ namespace ACE.Server.Network.Structure
                         else
                             PropertiesString[PropertyString.LongDesc] = summonDur;
                     }
+
+                    var potencyMsg = ACE.Server.Entity.PetPotency.BuildPotencyAppraisalBlock(petDevice);
+                    if (!string.IsNullOrWhiteSpace(potencyMsg))
+                    {
+                        if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                            PropertiesString[PropertyString.LongDesc] += $"\n\n{potencyMsg}";
+                        else
+                            PropertiesString[PropertyString.LongDesc] = potencyMsg;
+                    }
                 }
 
                 var minLumAugSummon = petDevice.GetProperty(PropertyInt.PetDeviceMinLumAugSummonCount);

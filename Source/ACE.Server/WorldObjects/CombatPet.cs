@@ -548,6 +548,8 @@ namespace ACE.Server.WorldObjects
             Stamina.Current = Stamina.MaxValue;
             Mana.Current = Mana.MaxValue;
 
+            PetPotency.ApplyBodyPartPotencyScaling(this, petDevice);
+
             return true;
         }
 

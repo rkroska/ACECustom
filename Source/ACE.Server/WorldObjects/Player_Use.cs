@@ -138,7 +138,12 @@ namespace ACE.Server.WorldObjects
             }
 
             // re-verify client checks
-            if (((sourceItem.TargetType ?? ItemType.None) & target.ItemType) == ItemType.None)
+            var skipTargetTypeCheck = PetPotency.IsPotencyUseOnTargetTool(sourceItem.WeenieClassId);
+            var sourceTargetType = sourceItem.TargetType ?? ItemType.None;
+            var targetItemType = target.ItemType;
+            var targetTypeMatch = (sourceTargetType & targetItemType) != ItemType.None;
+
+            if (!skipTargetTypeCheck && !targetTypeMatch)
             {
                 // ItemHolder::TargetCompatibleWithObject
                 SendTransientError($"Cannot use the {sourceItem.Name} with the {target.Name}");

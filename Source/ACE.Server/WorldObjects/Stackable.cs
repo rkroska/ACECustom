@@ -2,6 +2,7 @@ using System;
 
 using ACE.Entity;
 using ACE.Entity.Models;
+using ACE.Server.Entity;
 using ACE.Server.Managers;
 
 namespace ACE.Server.WorldObjects
@@ -66,6 +67,38 @@ namespace ACE.Server.WorldObjects
         public override void ActOnUse(WorldObject wo)
         {
             // Do nothing
+        }
+
+        public override void HandleActionUseOnTarget(Player player, WorldObject target)
+        {
+            if (WeenieClassId == PetPotency.EssenceResidueWcid)
+            {
+                if (target is PetDevice essence)
+                {
+                    if (PetPotency.TrySpendResidueOnEssence(player, this, essence))
+                    {
+                        player.SendUseDoneEvent();
+                        return;
+                    }
+
+                    player.SendUseDoneEvent();
+                    return;
+                }
+            }
+
+            if (WeenieClassId == PetPotency.EssenceResonatorWcid)
+            {
+                if (PetPotency.TrySalvageCapturedEssence(player, this, target))
+                {
+                    player.SendUseDoneEvent();
+                    return;
+                }
+
+                player.SendUseDoneEvent();
+                return;
+            }
+
+            base.HandleActionUseOnTarget(player, target);
         }
     }
 }

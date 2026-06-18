@@ -64,6 +64,13 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.PetBondAttunedCharacterId); else SetProperty(PropertyInt64.PetBondAttunedCharacterId, value.Value); }
         }
 
+        /// <summary>Stored potency levels (Essence Residue spent on this essence). PropertyInt 9056.</summary>
+        public int? PetPotencyStored
+        {
+            get => GetProperty(PropertyInt.PetPotencyStored);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PetPotencyStored); else SetProperty(PropertyInt.PetPotencyStored, value.Value); }
+        }
+
         public bool IsPetBondAttuned => PetBondAttuned ?? false;
 
         /// <summary>
@@ -171,20 +178,31 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Pushes bond fields to the owning client via <see cref="Player.UpdateProperty"/> (and includes them on identify
+        /// Pushes bond + potency fields to the owning client via <see cref="Player.UpdateProperty"/> (and includes them on identify
         /// when marked <see cref="AssessmentPropertyAttribute"/>). Property IDs: PetBondAttuned 9047, PetBondXp 9050,
-        /// PetBondXpTotal 9051, PetBondAttunedCharacterId 9052, PetBondLevel 9053.
+        /// PetBondXpTotal 9051, PetBondAttunedCharacterId 9052, PetBondLevel 9053, PetPotencyStored 9056.
         /// </summary>
         public void SyncPetBondPropertiesToOwner(Player owner, bool broadcast = false)
         {
-            if (owner == null || !ServerConfig.pet_bond_enabled.Value || !IsCombatPetDevice())
+            SyncPetProgressPropertiesToOwner(owner, broadcast);
+        }
+
+        public void SyncPetProgressPropertiesToOwner(Player owner, bool broadcast = false)
+        {
+            if (owner == null || !IsCombatPetDevice())
                 return;
 
-            owner.UpdateProperty(this, PropertyBool.PetBondAttuned, PetBondAttuned, broadcast);
-            owner.UpdateProperty(this, PropertyInt.PetBondLevel, PetBondLevel ?? 1, broadcast);
-            owner.UpdateProperty(this, PropertyInt64.PetBondXp, PetBondXp ?? 0, broadcast);
-            owner.UpdateProperty(this, PropertyInt64.PetBondXpTotal, PetBondXpTotal ?? 0, broadcast);
-            owner.UpdateProperty(this, PropertyInt64.PetBondAttunedCharacterId, PetBondAttunedCharacterId, broadcast);
+            if (ServerConfig.pet_bond_enabled.Value && IsPetBondAttuned)
+            {
+                owner.UpdateProperty(this, PropertyBool.PetBondAttuned, PetBondAttuned, broadcast);
+                owner.UpdateProperty(this, PropertyInt.PetBondLevel, PetBondLevel ?? 1, broadcast);
+                owner.UpdateProperty(this, PropertyInt64.PetBondXp, PetBondXp ?? 0, broadcast);
+                owner.UpdateProperty(this, PropertyInt64.PetBondXpTotal, PetBondXpTotal ?? 0, broadcast);
+                owner.UpdateProperty(this, PropertyInt64.PetBondAttunedCharacterId, PetBondAttunedCharacterId, broadcast);
+            }
+
+            if (ServerConfig.pet_potency_enabled.Value)
+                owner.UpdateProperty(this, PropertyInt.PetPotencyStored, PetPotencyStored ?? 0, broadcast);
         }
 
         public bool TryAwardBondXp(Player owner, long amount, out bool leveledUp)

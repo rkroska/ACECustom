@@ -759,6 +759,10 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         PetDeviceMinLumAugSummonCount           = 9055,
 
+        /// <summary>Stored potency levels bought with Essence Residue on this combat essence (server/custom).</summary>
+        [AssessmentProperty]
+        PetPotencyStored                        = 9056,
+
         /// <summary>
         /// The absolute Unix timestamp (in seconds since epoch) when the item expires.
         /// </summary>
