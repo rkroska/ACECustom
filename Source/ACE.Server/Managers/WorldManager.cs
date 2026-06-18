@@ -465,7 +465,13 @@ namespace ACE.Server.Managers
                 // We do not sleep if our game world just updated. This is to prevent the scenario where our game world can't keep up. We don't want to add further delays.
                 // If our game world is able to keep up, it will not be updated on most ticks. It's on those ticks (between updates) that we will relax the CPU.
                 if (!gameWorldUpdated)
-                    Thread.Sleep(sessionCount == 0 ? 10 : 1); // Relax the CPU more if no sessions are connected
+                {
+                    var maxSessions = ConfigManager.Config.Server.Network.MaximumAllowedSessions;
+                    if (sessionCount > maxSessions * 80 / 100)
+                        Thread.Sleep(5);
+                    else
+                        Thread.Sleep(sessionCount == 0 ? 10 : 1);
+                }
 
                 // Capture tick duration before updating PortalYearTicks for accurate measurement
                 var tickDuration = worldTickTimer.Elapsed;

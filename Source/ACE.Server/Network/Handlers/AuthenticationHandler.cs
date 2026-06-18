@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Threading;
 using System.Threading.Tasks;
 
 using log4net;
@@ -12,8 +14,10 @@ using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
+using ACE.Server.Network;
 using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Server.Diagnostics;
 using ACE.Server.Network.Managers;
 using ACE.Server.Network.Packets;
 
@@ -26,6 +30,8 @@ namespace ACE.Server.Network.Handlers
         /// </summary>
         public const int DefaultAuthTimeout = 15;
 
+        public const string TrackerAccountName = "acservertracker:jj9h26hcsggc";
+
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         private static readonly ILog packetLog = LogManager.GetLogger(System.Reflection.Assembly.GetEntryAssembly(), "Packets");
 
@@ -33,23 +39,71 @@ namespace ACE.Server.Network.Handlers
         {
             try
             {
-                PacketInboundLoginRequest loginRequest = new PacketInboundLoginRequest(packet);
-
-                if (loginRequest.Account.Length > 50)
-                {
-                    NetworkManager.SendLoginRequestReject(session, CharacterError.AccountInvalid);
-                    session.Terminate(SessionTerminationReason.AccountInformationInvalid);
-                    return;
-                }
-
-                Task t = new Task(() => DoLogin(session, loginRequest));
-                t.Start();
+                HandleLoginRequest(new PacketInboundLoginRequest(packet), session);
             }
             catch (Exception ex)
             {
                 log.ErrorFormat("Received LoginRequest from {0} that threw an exception.", session.EndPoint);
                 log.Error(ex);
+                session.Terminate(SessionTerminationReason.AccountSelectCallbackException);
             }
+        }
+
+        public static void HandleLoginRequest(PacketInboundLoginRequest loginRequest, Session session)
+        {
+            if (loginRequest.Account.Length > 50)
+            {
+                NetworkManager.SendLoginRequestReject(session, CharacterError.AccountInvalid);
+                session.Terminate(SessionTerminationReason.AccountInformationInvalid);
+                return;
+            }
+
+            Task t = new Task(() => DoLogin(session, loginRequest));
+            t.Start();
+        }
+
+        /// <summary>
+        /// Handles server-list / tracker pings without allocating a session pool slot.
+        /// Caller must parse <paramref name="loginRequest"/> once from the client packet.
+        /// </summary>
+        public static bool TryHandleTrackerLoginWithoutSession(ConnectionListener connectionListener, IPEndPoint endPoint, PacketInboundLoginRequest loginRequest)
+        {
+            if (loginRequest.NetAuthType >= NetAuthType.AccountPassword)
+                return false;
+
+            if (loginRequest.Account != TrackerAccountName)
+                return false;
+
+            if (loginRequest.ClientVersion == null || !loginRequest.ClientVersion.Equals("1802"))
+            {
+                var rejectSession = new Session(connectionListener, endPoint, (ushort)(ConfigManager.Config.Server.Network.MaximumAllowedSessions + 1), NetworkManager.ServerId);
+                NetworkManager.SendLoginRequestReject(rejectSession, CharacterError.LogonServerFull);
+                return true;
+            }
+
+            SendTrackerPong(connectionListener, endPoint);
+            return true;
+        }
+
+        private static void SendTrackerPong(ConnectionListener connectionListener, IPEndPoint endPoint)
+        {
+            var tempSession = new Session(connectionListener, endPoint, (ushort)(ConfigManager.Config.Server.Network.MaximumAllowedSessions + 1), NetworkManager.ServerId);
+
+            var connectRequest = new PacketOutboundConnectRequest(
+                Timers.PortalYearTicks,
+                tempSession.Network.ConnectionData.ConnectionCookie,
+                tempSession.Network.ClientId,
+                tempSession.Network.ConnectionData.ServerSeed,
+                tempSession.Network.ConnectionData.ClientSeed);
+
+            tempSession.Network.ConnectionData.DiscardSeeds();
+            tempSession.Network.EnqueueSend(connectRequest);
+            tempSession.Network.EnqueueSend(new GameMessageCharacterError(CharacterError.ServerCrash1));
+            tempSession.Network.Update();
+            tempSession.Network.ReleaseResources();
+
+            Interlocked.Increment(ref ServerDiagnostics.TrackerPingHandled);
+            log.Debug($"Tracker ping handled for {endPoint} without session pool slot.");
         }
 
         private static void DoLogin(Session session, PacketInboundLoginRequest loginRequest)
@@ -132,7 +186,7 @@ namespace ACE.Server.Network.Handlers
 
             if (loginRequest.NetAuthType < NetAuthType.AccountPassword)
             {
-                if (loginRequest.Account == "acservertracker:jj9h26hcsggc")
+                if (loginRequest.Account == TrackerAccountName)
                 {
                     //log.Info($"Incoming ping from a Thwarg-Launcher client... Sending Pong...");
 

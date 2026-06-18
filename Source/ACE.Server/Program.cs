@@ -395,6 +395,20 @@ namespace ACE.Server
             log.Info("Initializing CommandManager...");
             CommandManager.Initialize();
 
+            Console.CancelKeyPress += (sender, e) =>
+            {
+                e.Cancel = true;
+                log.Info("Ctrl+C received — initiating cooperative shutdown...");
+                try
+                {
+                    ServerManager.DoShutdownNow();
+                }
+                catch (Exception ex)
+                {
+                    log.Error("Error during cooperative shutdown from Ctrl+C", ex);
+                }
+            };
+
             //Register mod commands
             log.Info("Registering ModManager commands...");
             ModManager.RegisterCommands();
