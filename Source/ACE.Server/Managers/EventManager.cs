@@ -19,6 +19,11 @@ namespace ACE.Server.Managers
 
         public static bool Debug = false;
 
+        private static System.Threading.Timer _scheduleTimer;
+        private static int _lastMonthVal = -1;
+        private static int _lastWeekVal = -1;
+        private static int _lastQuarterVal = -1;
+
         static EventManager()
         {
             Events = new Dictionary<string, Event>(StringComparer.OrdinalIgnoreCase);
@@ -37,6 +42,16 @@ namespace ACE.Server.Managers
             }
 
             log.DebugFormat("EventManager Initalized.");
+
+            try
+            {
+                CheckCalendarEvents();
+                _scheduleTimer = new System.Threading.Timer(OnScheduleTimer, null, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[EventManager] Failed to initialize calendar scheduler: {ex}");
+            }
         }
 
         /// <summary>
@@ -240,6 +255,84 @@ namespace ACE.Server.Managers
 
             var eventName = eventFormat.Substring(0, idx);
             return eventName;
+        }
+
+        private static void OnScheduleTimer(object state)
+        {
+            try
+            {
+                CheckCalendarEvents();
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[EventManager] Error in calendar scheduler timer tick: {ex}");
+            }
+        }
+
+        public static void CheckCalendarEvents()
+        {
+            var utcNow = DateTime.UtcNow;
+            var currentMonthVal = utcNow.Month;
+            var currentQuarterVal = (currentMonthVal - 1) / 3 + 1;
+            var currentWeekVal = System.Globalization.CultureInfo.InvariantCulture.Calendar.GetWeekOfYear(
+                utcNow, System.Globalization.CalendarWeekRule.FirstDay, DayOfWeek.Sunday);
+            // Cap at 53: GetWeekOfYear with FirstDay rule can return 53 in years where Jan 1 falls late in the week.
+            // Clamping to 52 would incorrectly fire Week52 events during that last week.
+            if (currentWeekVal > 53) currentWeekVal = 53;
+
+            if (currentMonthVal == _lastMonthVal && currentWeekVal == _lastWeekVal && currentQuarterVal == _lastQuarterVal)
+                return;
+
+            _lastMonthVal = currentMonthVal;
+            _lastWeekVal = currentWeekVal;
+            _lastQuarterVal = currentQuarterVal;
+
+            var currentMonthEvent = $"Month{currentMonthVal}";
+            var currentQuarterEvent = $"Quarter{currentQuarterVal}";
+            var currentWeekEvent = $"Week{currentWeekVal}";
+
+            log.Info($"[EventManager] Updating seasonal event states. Month: {currentMonthVal}, Quarter: {currentQuarterVal}, Week: {currentWeekVal}");
+
+            List<string> eventNames;
+            lock (_eventsLock)
+            {
+                eventNames = new List<string>(Events.Keys);
+            }
+
+            foreach (var name in eventNames)
+            {
+                if (System.Text.RegularExpressions.Regex.IsMatch(name, @"^Month\d+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                {
+                    if (name.Equals(currentMonthEvent, StringComparison.OrdinalIgnoreCase))
+                        StartEvent(name, null, null);
+                    else
+                        StopEvent(name, null, null);
+                }
+                else if (System.Text.RegularExpressions.Regex.IsMatch(name, @"^Quarter\d+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                {
+                    if (name.Equals(currentQuarterEvent, StringComparison.OrdinalIgnoreCase))
+                        StartEvent(name, null, null);
+                    else
+                        StopEvent(name, null, null);
+                }
+                else if (System.Text.RegularExpressions.Regex.IsMatch(name, @"^Week\d+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                {
+                    if (name.Equals(currentWeekEvent, StringComparison.OrdinalIgnoreCase))
+                        StartEvent(name, null, null);
+                    else
+                        StopEvent(name, null, null);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Disposes the background calendar timer. Should be called during server shutdown
+        /// to prevent the timer from firing against stale state after the world is torn down.
+        /// </summary>
+        public static void Shutdown()
+        {
+            _scheduleTimer?.Dispose();
+            _scheduleTimer = null;
         }
     }
 }
