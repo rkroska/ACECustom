@@ -277,6 +277,7 @@ namespace ACE.Server.Command.Handlers
                                 player.SendMessage($"  DataId {prop.Key} ({(int)prop.Key}): {prop.Value}");
                             foreach (var prop in wo.GetAllPropertyString())
                                 player.SendMessage($"  String {prop.Key} ({(int)prop.Key}): {prop.Value}");
+                            wo.Destroy();
                         }
                         else
                         {
@@ -331,6 +332,8 @@ namespace ACE.Server.Command.Handlers
 
             // 4. Reset Experience and Luminance to 0
             player.AvailableExperience = 0;
+            player.TotalExperience = 0;
+            player.TotalExperienceDouble = 0;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.AvailableExperience, 0));
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.TotalExperience, 0));
 
