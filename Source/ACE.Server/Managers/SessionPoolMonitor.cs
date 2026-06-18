@@ -30,14 +30,14 @@ namespace ACE.Server.Managers
             var max = (int)ConfigManager.Config.Server.Network.MaximumAllowedSessions;
             var configured = ServerConfig.session_pool_emergency_threshold.Value;
             if (configured > 0)
-                return (int)Math.Min(configured, max);
+                return Math.Max(1, (int)Math.Min(configured, max));
 
-            return max * 90 / 100;
+            return Math.Max(1, max * 90 / 100);
         }
 
         public static bool ShouldRejectLoginEarly(int sessionCount)
         {
-            var pct = ServerConfig.session_pool_early_reject_threshold_percent.Value;
+            var pct = (int)Math.Clamp(ServerConfig.session_pool_early_reject_threshold_percent.Value, 0, 100);
             if (pct <= 0)
                 return false;
 
@@ -130,10 +130,13 @@ namespace ACE.Server.Managers
 
             Interlocked.Increment(ref ServerDiagnostics.SessionPoolEmergencyShutdownTriggered);
 
-            var discordMsg = $"🔴 **SESSION POOL EMERGENCY**: Active sessions at **{sessionCount}** (threshold: **{threshold}**). **{unauthCount}** unauthenticated, **{authCount}** authenticated. Closing world and initiating **{shutdownSeconds}s** graceful shutdown.";
+            var willCloseWorld = ServerConfig.session_pool_emergency_close_world.Value && WorldManager.WorldStatus == WorldManager.WorldStatusState.Open;
+            var discordMsg = willCloseWorld
+                ? $"🔴 **SESSION POOL EMERGENCY**: Active sessions at **{sessionCount}** (threshold: **{threshold}**). **{unauthCount}** unauthenticated, **{authCount}** authenticated. Closing world and initiating **{shutdownSeconds}s** graceful shutdown."
+                : $"🔴 **SESSION POOL EMERGENCY**: Active sessions at **{sessionCount}** (threshold: **{threshold}**). **{unauthCount}** unauthenticated, **{authCount}** authenticated. Initiating **{shutdownSeconds}s** graceful shutdown (world not closed).";
             SendDiscordAlert(discordMsg);
 
-            if (ServerConfig.session_pool_emergency_close_world.Value && WorldManager.WorldStatus == WorldManager.WorldStatusState.Open)
+            if (willCloseWorld)
                 WorldManager.Close(null);
 
             PlayerManager.BroadcastToAuditChannel(null,

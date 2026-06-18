@@ -39,6 +39,8 @@ namespace ACE.Server
 
         private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
+        private static int ctrlCShutdownStarted;
+
         public static readonly bool IsRunningInContainer = Convert.ToBoolean(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"));
 
         public static async Task Main(string[] args)
@@ -398,6 +400,9 @@ namespace ACE.Server
             Console.CancelKeyPress += (sender, e) =>
             {
                 e.Cancel = true;
+                if (Interlocked.CompareExchange(ref ctrlCShutdownStarted, 1, 0) != 0)
+                    return;
+
                 log.Info("Ctrl+C received — initiating cooperative shutdown...");
                 try
                 {

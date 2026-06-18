@@ -58,8 +58,7 @@ namespace ACE.Server.Network.Handlers
                 return;
             }
 
-            Task t = new Task(() => DoLogin(session, loginRequest));
-            t.Start();
+            Task.Run(() => DoLogin(session, loginRequest));
         }
 
         /// <summary>
@@ -78,6 +77,7 @@ namespace ACE.Server.Network.Handlers
             {
                 var rejectSession = new Session(connectionListener, endPoint, (ushort)(ConfigManager.Config.Server.Network.MaximumAllowedSessions + 1), NetworkManager.ServerId);
                 NetworkManager.SendLoginRequestReject(rejectSession, CharacterError.LogonServerFull);
+                rejectSession.Network.ReleaseResources();
                 return true;
             }
 
