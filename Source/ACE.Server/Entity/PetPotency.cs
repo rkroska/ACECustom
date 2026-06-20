@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 
 using ACE.Database;
 using ACE.Entity;
@@ -16,6 +17,14 @@ namespace ACE.Server.Entity
     /// </summary>
     public static class PetPotency
     {
+        private struct CachedStrain
+        {
+            public int Rating;
+            public double ExpiryTime;
+        }
+
+        private static readonly ConcurrentDictionary<uint, CachedStrain> _strainCache = new();
+
         public const uint EssenceResidueWcid = 78780013;
         public const uint EssenceResonatorWcid = 78780014;
         /// <summary>Player-facing stack name (weenie string type 1). Code alias: Essence Residue.</summary>
@@ -88,6 +97,26 @@ namespace ACE.Server.Entity
             if (ServerConfig.pet_strain_combat_pet_only.Value && player.CurrentActivePet is not CombatPet)
                 return 0;
 
+            var guid = player.Guid.Full;
+            var now = ACE.Common.Time.GetUnixTime();
+
+            if (_strainCache.TryGetValue(guid, out var cached) && now < cached.ExpiryTime)
+                return cached.Rating;
+
+            var rating = CalculateBondStrainRating(player);
+
+            var newCached = new CachedStrain
+            {
+                Rating = rating,
+                ExpiryTime = now + 1.0 // 1 second TTL
+            };
+            _strainCache[guid] = newCached;
+
+            return rating;
+        }
+
+        private static int CalculateBondStrainRating(Player player)
+        {
             var device = TryGetStrainPetDevice(player);
             if (device == null)
                 return 0;
@@ -185,18 +214,16 @@ namespace ACE.Server.Entity
             try
             {
                 var previousActive = GetActivePotency(essence);
-                essence.PetPotencyStored = stored + 1;
-                essence.SaveBiotaToDatabase();
-                essence.SyncPetProgressPropertiesToOwner(player, broadcast: true);
 
                 if (!player.TryConsumeFromInventoryWithNetworking(EssenceResidueWcid, (int)cost))
                 {
-                    // Persistence already succeeded; roll back the stored increment to keep data consistent.
-                    essence.PetPotencyStored = stored;
-                    essence.SaveBiotaToDatabase();
                     player.SendTransientError("Could not consume Savage Echo.");
                     return false;
                 }
+
+                essence.PetPotencyStored = stored + 1;
+                essence.SaveBiotaToDatabase();
+                essence.SyncPetProgressPropertiesToOwner(player, broadcast: true);
 
                 var newActive = GetActivePotency(essence);
                 var dormant = GetDormantPotency(essence);
@@ -261,6 +288,8 @@ namespace ACE.Server.Entity
             var creatureName = essence.GetProperty(PropertyString.CapturedCreatureName) ?? essence.Name;
             var creatureOverride = GetCapturedCreatureSalvageOverride(essence);
 
+            // TODO: pass isHollow to GetSalvageExpectedAmount once hollow_mult tuning is finalised.
+            // Hollow and siphoned currently yield the same amount by design (pet_residue_hollow_mult reserved).
             var expectedAmount = PetPotencyMath.GetSalvageExpectedAmount(
                 isShiny,
                 ServerConfig.pet_residue_salvage_base.Value,
@@ -328,6 +357,9 @@ namespace ACE.Server.Entity
             if (pet == null || device == null || !ServerConfig.pet_potency_enabled.Value)
                 return;
 
+            if (pet.PotencyApplied)
+                return;
+
             var active = GetActivePotency(device);
             if (active <= 0)
                 return;
@@ -348,6 +380,8 @@ namespace ACE.Server.Entity
                 if (scaleDvar && part.DVar > 0)
                     part.DVar *= mult;
             }
+
+            pet.PotencyApplied = true;
         }
 
         public static void TryAwardResidueOnKill(Creature creature)

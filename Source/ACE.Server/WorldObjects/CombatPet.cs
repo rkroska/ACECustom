@@ -185,6 +185,8 @@ namespace ACE.Server.WorldObjects
         public float LifeAugProtectionRating => _lifeAugProtectionRating;
         public ImbuedEffectType GemImbuedEffects => _gemImbuedEffects;
 
+        public bool PotencyApplied { get; set; }
+
         /// <summary>
         /// Checks if the pet has a specific imbued effect from the gem
         /// </summary>

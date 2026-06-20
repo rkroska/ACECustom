@@ -182,6 +182,8 @@ namespace ACE.Server.WorldObjects
         /// when marked <see cref="AssessmentPropertyAttribute"/>). Property IDs: PetBondAttuned 9047, PetBondXp 9050,
         /// PetBondXpTotal 9051, PetBondAttunedCharacterId 9052, PetBondLevel 9053, PetPotencyStored 9056.
         /// </summary>
+        // Delegates to SyncPetProgressPropertiesToOwner.
+        // Note: potency syncs independently of pet_bond_enabled (intentional).
         public void SyncPetBondPropertiesToOwner(Player owner, bool broadcast = false)
         {
             SyncPetProgressPropertiesToOwner(owner, broadcast);

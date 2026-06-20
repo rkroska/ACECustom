@@ -68,10 +68,5 @@ namespace ACE.Server.WorldObjects
         {
             // Do nothing
         }
-
-        public override void HandleActionUseOnTarget(Player player, WorldObject target)
-        {
-            base.HandleActionUseOnTarget(player, target);
-        }
     }
 }

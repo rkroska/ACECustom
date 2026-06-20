@@ -6,7 +6,7 @@ namespace ACE.Server.Tests
     [TestClass]
     public class PetPotencyFormulaTests
     {
-        [DataTestMethod]
+        [TestMethod]
         [DataRow(0, 0, 0)]
         [DataRow(0, 344, 0)]
         [DataRow(100, 0, 0)]
@@ -28,7 +28,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(0, PetPotencyMath.GetActivePotency(100, 344, potencyEnabled: false));
         }
 
-        [DataTestMethod]
+        [TestMethod]
         [DataRow(0, 1.0f)]
         [DataRow(35, 1.7f)]
         [DataRow(50, 2.0f)]
@@ -38,7 +38,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(expectedMult, PetPotencyMath.GetBodyPartDamageMult(active), 0.001f);
         }
 
-        [DataTestMethod]
+        [TestMethod]
         [DataRow(0, 10)]
         [DataRow(1, 20)]
         [DataRow(49, 500)]
@@ -47,8 +47,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(expectedCost, PetPotencyMath.GetUpgradeCost(currentStored));
         }
 
-
-        [DataTestMethod]
+        [TestMethod]
         [DataRow(50, 0)]
         [DataRow(75, 25)]
         [DataRow(100, 50)]
@@ -65,7 +64,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(0.15, PetPotencyMath.GetExpectedResiduePerKill(0.10, 1.5), 0.0001);
         }
 
-        [DataTestMethod]
+        [TestMethod]
         [DataRow(0.0, 0.0, 0)]
         [DataRow(0.35, 0.2, 1)]   // roll < 0.35 → +1
         [DataRow(0.35, 0.5, 0)]   // roll >= 0.35 → 0
@@ -89,17 +88,17 @@ namespace ACE.Server.Tests
             Assert.AreEqual(25_500, PetPotencyMath.GetTotalUpgradeCost(50, costBase: 20));
         }
 
-        [DataTestMethod]
-        [DataRow(100, false, false, 5.0)]   // (5 + 5) * 0.5
-        [DataRow(200, false, false, 7.5)]   // (5 + 10) * 0.5
-        [DataRow(200, true, false, 5.625)]  // 7.5 * 0.75 hollow
-        [DataRow(200, false, true, 37.5)]   // 7.5 * 5 shiny
-        public void GetSalvageExpectedAmount_MatchesSpec(int level, bool hollow, bool shiny, double expected)
+        [TestMethod]
+        [DataRow(false, 5, 5.0, 0, 5.0)]     // Normal essence, base 5
+        [DataRow(true, 5, 5.0, 0, 25.0)]     // Shiny essence, base 5, shinyMult 5
+        [DataRow(false, 5, 5.0, 12, 12.0)]   // DB Override normal, override 12
+        [DataRow(true, 5, 5.0, 12, 60.0)]    // DB Override shiny, override 12, shinyMult 5
+        public void GetSalvageExpectedAmount_MatchesSpec(bool isShiny, long salvageBase, double shinyMult, int creatureOverride, double expected)
         {
-            Assert.AreEqual(expected, PetPotencyMath.GetSalvageExpectedAmount(level, hollow, shiny), 0.0001);
+            Assert.AreEqual(expected, PetPotencyMath.GetSalvageExpectedAmount(isShiny, salvageBase, shinyMult, creatureOverride), 0.0001);
         }
 
-        [DataTestMethod]
+        [TestMethod]
         [DataRow(7.5, 0.3, 8)]
         [DataRow(2.4, 0.5, 2)]
         public void RoundResidueDropAmount_SalvageFractions(double expected, double roll, int awarded)
