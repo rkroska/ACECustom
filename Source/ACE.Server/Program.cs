@@ -471,7 +471,10 @@ namespace ACE.Server
             }
             else
             {
-                ServerManager.DoShutdownNow();
+                if (!ServerManager.ShutdownInitiated)
+                {
+                    ServerManager.DoShutdownNow();
+                }
                 DatabaseManager.Stop();
                 EventManager.Shutdown();
                 MetricsManager.Shutdown();

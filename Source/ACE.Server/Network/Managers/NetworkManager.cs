@@ -465,7 +465,10 @@ namespace ACE.Server.Network.Managers
 
         public static int DoSessionWork()
         {
-            GetSessionPoolStats(out int sessionCount, out int authCount, out int unauthCount, out int terminatingCount);
+            int sessionCount = 0;
+            int authCount = 0;
+            int unauthCount = 0;
+            int terminatingCount = 0;
 
             // Cheap, time-gated check so net_socket_buffer_* toggles take effect live (~2s) without a restart.
             if (DateTime.UtcNow >= nextSocketBufferReconcile)
@@ -474,11 +477,13 @@ namespace ACE.Server.Network.Managers
                 SocketManager.ReconcileSocketBuffers();
             }
 
-            var underStress = SessionPoolMonitor.IsUnderSessionStress(sessionCount);
-
             sessionLock.EnterUpgradeableReadLock();
             try
             {
+                GetSessionPoolStats(out sessionCount, out authCount, out unauthCount, out terminatingCount);
+
+                var underStress = SessionPoolMonitor.IsUnderSessionStress(sessionCount);
+
                 SessionPoolMonitor.SweepStaleSessions(sessionMap);
 
                 // The session tick outbound processes pending actions and handles outgoing messages

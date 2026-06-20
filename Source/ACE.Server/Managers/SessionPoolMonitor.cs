@@ -83,7 +83,7 @@ namespace ACE.Server.Managers
                         continue;
 
                     if (session.PendingTermination.TerminationStatus == SessionTerminationPhase.Initialized &&
-                        now - new DateTime(session.PendingTermination.TerminationStartTicks) > stuckTermination)
+                        now.Ticks - session.PendingTermination.TerminationStartTicks > stuckTermination.Ticks)
                     {
                         session.PendingTermination.TerminationStatus = SessionTerminationPhase.SessionWorkCompleted;
                         Interlocked.Increment(ref ServerDiagnostics.SessionStuckTerminationForced);
@@ -172,7 +172,7 @@ namespace ACE.Server.Managers
             var max = ConfigManager.Config.Server.Network.MaximumAllowedSessions;
             log.Info($"[SESSION] pool active={sessionCount}/{max} auth={authCount} unauth={unauthCount} terminating={terminatingCount} peakUnauth={peakUnauthenticated} poolFullRejects={Interlocked.Read(ref ServerDiagnostics.SessionLoginRejectedSessionPoolFull)} trackerPings={Interlocked.Read(ref ServerDiagnostics.TrackerPingHandled)}");
 
-            if (unauthCount >= GetEmergencyThreshold() * 80 / 100 && unauthCount > authCount && DateTime.UtcNow - lastHighPoolDiscordUtc >= TimeSpan.FromMinutes(5))
+            if (sessionCount >= GetEmergencyThreshold() * 80 / 100 && DateTime.UtcNow - lastHighPoolDiscordUtc >= TimeSpan.FromMinutes(5))
             {
                 lastHighPoolDiscordUtc = DateTime.UtcNow;
                 var warnMsg = $"⚠️ **SESSION POOL HIGH**: **{sessionCount}** active (**{unauthCount}** unauthenticated, **{authCount}** authenticated). Threshold for emergency shutdown: **{GetEmergencyThreshold()}**.";
