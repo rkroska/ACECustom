@@ -51,7 +51,7 @@ namespace ACE.Server.Managers
             return sessionCount > max * 80 / 100;
         }
 
-        public static void OnSessionCreated(int activeCount)
+        public static void OnSessionCreated()
         {
             Interlocked.Increment(ref ServerDiagnostics.SessionCreatedTotal);
         }

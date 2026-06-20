@@ -377,7 +377,7 @@ namespace ACE.Server.Network.Managers
                         log.DebugFormat("Creating new session for {0} with id {1}", endPoint, i);
                         session = new Session(connectionListener, endPoint, i, ServerId);
                         sessionMap[i] = session;
-                        SessionPoolMonitor.OnSessionCreated(sessionMap.Count(s => s != null));
+                        SessionPoolMonitor.OnSessionCreated();
                         break;
                     }
                 }
