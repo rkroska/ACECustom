@@ -390,11 +390,49 @@ namespace ACE.Server.WorldObjects
 
             var now = (int)Time.GetUnixTime();
 
-            var start = (now < GeneratorStartTime) && (GeneratorStartTime > 0);
-            var end = (now > GeneratorEndTime) && (GeneratorEndTime > 0);
+            var startTime = GeneratorStartTime;
+            var endTime = GeneratorEndTime;
 
-            //GeneratorDisabled = ((now < GeneratorStartTime) && (GeneratorStartTime > 0)) || ((now > GeneratorEndTime) && (GeneratorEndTime > 0));
-            //HandleStatus(prevDisabled);
+            // Shift years dynamically if start time is in the past to repeat seasonal real-time events.
+            // Also handles events that straddle the year boundary (e.g. Dec 15 – Jan 5):
+            //   After shifting by yearDiff, if now < startTime the event hasn't started in the current year yet.
+            //   Try yearDiff-1 in case we're in the Jan 1–endDate window of the previous year's shifted range.
+            if (startTime > 0 && endTime > 0)
+            {
+                var startDateTime = Time.GetDateTimeFromTimestamp(startTime);
+                var endDateTime   = Time.GetDateTimeFromTimestamp(endTime);
+                var currentYear   = DateTime.UtcNow.Year;
+
+                if (startDateTime.Year < currentYear)
+                {
+                    var yearDiff = currentYear - startDateTime.Year;
+                    try
+                    {
+                        var shiftedStart = startDateTime.AddYears(yearDiff);
+                        var shiftedEnd   = endDateTime.AddYears(yearDiff);
+
+                        var candidateStart = (int)Time.GetUnixTime(shiftedStart);
+                        var candidateEnd   = (int)Time.GetUnixTime(shiftedEnd);
+
+                        // If now is before the shifted start, the event may be in the Jan 1–endDate window
+                        // of the previous shift (e.g. a Dec–Jan straddling event). Roll back by one year.
+                        if (now < candidateStart)
+                        {
+                            shiftedStart   = startDateTime.AddYears(yearDiff - 1);
+                            shiftedEnd     = endDateTime.AddYears(yearDiff - 1);
+                            candidateStart = (int)Time.GetUnixTime(shiftedStart);
+                            candidateEnd   = (int)Time.GetUnixTime(shiftedEnd);
+                        }
+
+                        startTime = candidateStart;
+                        endTime   = candidateEnd;
+                    }
+                    catch (ArgumentOutOfRangeException) { }
+                }
+            }
+
+            var start = (now < startTime) && (startTime > 0);
+            var end = (now > endTime) && (endTime > 0);
 
             HandleStatusStaged(prevDisabled, start, end);
         }
@@ -827,6 +865,7 @@ namespace ACE.Server.WorldObjects
 
         public virtual void ResetGenerator()
         {
+            GeneratorServerFaulted = false;
             foreach (var generator in GeneratorProfiles)
             {
                 generator.Reset();

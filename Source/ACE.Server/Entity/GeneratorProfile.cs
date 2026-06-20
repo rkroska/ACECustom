@@ -104,6 +104,11 @@ namespace ACE.Server.Entity
         public bool FirstSpawn { get; set; } = true;
 
         /// <summary>
+        /// The number of consecutive spawn failures for this profile (e.g. due to missing weenies)
+        /// </summary>
+        public int ConsecutiveSpawnFailures { get; set; } = 0;
+
+        /// <summary>
         /// The delay for respawning objects
         /// </summary>
         public float Delay
@@ -276,6 +281,7 @@ namespace ACE.Server.Entity
                 var wo = WorldObjectFactory.CreateNewWorldObject(Biota.WeenieClassId);
                 if (wo == null)
                 {
+                    ConsecutiveSpawnFailures++;
                     Interlocked.Increment(ref ServerDiagnostics.GeneratorSpawnFailuresRecorded);
                     if (LogRateLimiter.ShouldEmit($"gen_spawn_fail:{Generator.Guid.Full}:{Biota.WeenieClassId}", TimeSpan.FromSeconds(30), out var suppressed))
                     {
@@ -283,8 +289,13 @@ namespace ACE.Server.Entity
                         if (suppressed > 0)
                             log.Warn($"[GENERATOR] Rate-limiter: {suppressed} similar \"failed to create wcid\" messages were suppressed for this generator/wcid in the last 30s.");
                     }
+                    if (ConsecutiveSpawnFailures >= 5)
+                    {
+                        Generator.FaultGeneratorServer($"Consecutive spawn failures ({ConsecutiveSpawnFailures}) for WCID {Biota.WeenieClassId} (missing from database)");
+                    }
                     return null;
                 }
+                ConsecutiveSpawnFailures = 0;
                 if (wo is Creature creature && creature.IsMonster && creature.Attackable)
                 {
                     CreatureVariantHelper.MaybeApplyRandomVariant(creature, (float)ServerConfig.creature_variant_chance.Value);
@@ -667,6 +678,7 @@ namespace ACE.Server.Entity
 
             GeneratedTreasureItem = false;
             Generator.GeneratedTreasureItem = false;
+            ConsecutiveSpawnFailures = 0;
         }
     }
 }
