@@ -106,8 +106,11 @@ namespace ACE.Server.Network
 
         public DateTime LoginTime { get; set; }
 
+        public DateTime CreatedAt { get; }
+
         public Session(ConnectionListener connectionListener, IPEndPoint endPoint, ushort clientId, ushort serverId)
         {
+            CreatedAt = DateTime.UtcNow;
             EndPoint = endPoint;
             Network = new NetworkSession(this, connectionListener, clientId, serverId);
         }
@@ -360,6 +363,8 @@ namespace ACE.Server.Network
             }
 
             NetworkManager.RemoveSession(this);
+
+            SessionPoolMonitor.OnSessionRemoved(PendingTermination.Reason);
 
             // This is a temp fix to mark the Session.Network portion of the Session as released
             // What this means is that we will release any network related resources, as well as avoid taking on additional resources

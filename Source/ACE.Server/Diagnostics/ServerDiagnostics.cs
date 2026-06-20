@@ -11,6 +11,16 @@ namespace ACE.Server.Diagnostics
     public static class ServerDiagnostics
     {
         public static long SessionLoginRejectedSessionPoolFull;
+        public static long SessionPoolRejectEarly;
+        public static long SessionCreatedTotal;
+        public static long SessionRemovedTotal;
+        public static long SessionStaleSweeperRemoved;
+        public static long SessionStuckTerminationForced;
+        public static long SessionPoolEmergencyShutdownTriggered;
+        public static long TrackerPingHandled;
+        public static long SessionUnauthenticatedPeak;
+
+        public static readonly long[] SessionRemovedByReason = new long[64];
 
         public static long GeneratorInitSelectStallAborts;
 
@@ -26,6 +36,14 @@ namespace ACE.Server.Diagnostics
         /// <summary>Atomically read all counters plus rate-limiter key estimate.</summary>
         public static ServerDiagnosticsSnapshot GetSnapshot() => new ServerDiagnosticsSnapshot(
             Interlocked.Read(ref SessionLoginRejectedSessionPoolFull),
+            Interlocked.Read(ref SessionPoolRejectEarly),
+            Interlocked.Read(ref SessionCreatedTotal),
+            Interlocked.Read(ref SessionRemovedTotal),
+            Interlocked.Read(ref SessionStaleSweeperRemoved),
+            Interlocked.Read(ref SessionStuckTerminationForced),
+            Interlocked.Read(ref SessionPoolEmergencyShutdownTriggered),
+            Interlocked.Read(ref TrackerPingHandled),
+            Interlocked.Read(ref SessionUnauthenticatedPeak),
             Interlocked.Read(ref GeneratorInitSelectStallAborts),
             Interlocked.Read(ref GeneratorInitZeroTotalProbabilityObserved),
             Interlocked.Read(ref GeneratorInitSelectMaxIterationsHit),
@@ -46,6 +64,14 @@ namespace ACE.Server.Diagnostics
     public readonly struct ServerDiagnosticsSnapshot
     {
         public long SessionLoginRejectedSessionPoolFull { get; }
+        public long SessionPoolRejectEarly { get; }
+        public long SessionCreatedTotal { get; }
+        public long SessionRemovedTotal { get; }
+        public long SessionStaleSweeperRemoved { get; }
+        public long SessionStuckTerminationForced { get; }
+        public long SessionPoolEmergencyShutdownTriggered { get; }
+        public long TrackerPingHandled { get; }
+        public long SessionUnauthenticatedPeak { get; }
         public long GeneratorInitSelectStallAborts { get; }
         public long GeneratorInitZeroTotalProbabilityObserved { get; }
         public long GeneratorInitSelectMaxIterationsHit { get; }
@@ -56,6 +82,14 @@ namespace ACE.Server.Diagnostics
 
         public ServerDiagnosticsSnapshot(
             long sessionLoginRejectedSessionPoolFull,
+            long sessionPoolRejectEarly,
+            long sessionCreatedTotal,
+            long sessionRemovedTotal,
+            long sessionStaleSweeperRemoved,
+            long sessionStuckTerminationForced,
+            long sessionPoolEmergencyShutdownTriggered,
+            long trackerPingHandled,
+            long sessionUnauthenticatedPeak,
             long generatorInitSelectStallAborts,
             long generatorInitZeroTotalProbabilityObserved,
             long generatorInitSelectMaxIterationsHit,
@@ -65,6 +99,14 @@ namespace ACE.Server.Diagnostics
             int logRateLimiterApproximateEntries)
         {
             SessionLoginRejectedSessionPoolFull = sessionLoginRejectedSessionPoolFull;
+            SessionPoolRejectEarly = sessionPoolRejectEarly;
+            SessionCreatedTotal = sessionCreatedTotal;
+            SessionRemovedTotal = sessionRemovedTotal;
+            SessionStaleSweeperRemoved = sessionStaleSweeperRemoved;
+            SessionStuckTerminationForced = sessionStuckTerminationForced;
+            SessionPoolEmergencyShutdownTriggered = sessionPoolEmergencyShutdownTriggered;
+            TrackerPingHandled = trackerPingHandled;
+            SessionUnauthenticatedPeak = sessionUnauthenticatedPeak;
             GeneratorInitSelectStallAborts = generatorInitSelectStallAborts;
             GeneratorInitZeroTotalProbabilityObserved = generatorInitZeroTotalProbabilityObserved;
             GeneratorInitSelectMaxIterationsHit = generatorInitSelectMaxIterationsHit;
@@ -78,9 +120,17 @@ namespace ACE.Server.Diagnostics
         public string ToDisplayString()
         {
             static string L(long v) => v.ToString(CultureInfo.InvariantCulture);
-            var sb = new StringBuilder(384);
+            var sb = new StringBuilder(512);
             sb.AppendLine("[ServerDiagnostics snapshot]");
+            sb.AppendLine("SessionCreatedTotal: " + L(SessionCreatedTotal));
+            sb.AppendLine("SessionRemovedTotal: " + L(SessionRemovedTotal));
             sb.AppendLine("SessionLoginRejectedSessionPoolFull: " + L(SessionLoginRejectedSessionPoolFull));
+            sb.AppendLine("SessionPoolRejectEarly: " + L(SessionPoolRejectEarly));
+            sb.AppendLine("SessionStaleSweeperRemoved: " + L(SessionStaleSweeperRemoved));
+            sb.AppendLine("SessionStuckTerminationForced: " + L(SessionStuckTerminationForced));
+            sb.AppendLine("SessionPoolEmergencyShutdownTriggered: " + L(SessionPoolEmergencyShutdownTriggered));
+            sb.AppendLine("TrackerPingHandled: " + L(TrackerPingHandled));
+            sb.AppendLine("SessionUnauthenticatedPeak: " + L(SessionUnauthenticatedPeak));
             sb.AppendLine("GeneratorInitSelectStallAborts: " + L(GeneratorInitSelectStallAborts));
             sb.AppendLine("GeneratorInitZeroTotalProbabilityObserved: " + L(GeneratorInitZeroTotalProbabilityObserved));
             sb.AppendLine("GeneratorInitSelectMaxIterationsHit: " + L(GeneratorInitSelectMaxIterationsHit));
