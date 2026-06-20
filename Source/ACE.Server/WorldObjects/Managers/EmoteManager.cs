@@ -691,7 +691,12 @@ namespace ACE.Server.WorldObjects.Managers
 
                     // TODO: revisit if nested chains need to back-propagate timers
                     var gotoSet = GetEmoteSet(EmoteCategory.GotoSet, emote.Message);
-                    ExecuteEmoteSet(gotoSet, targetObject, true);
+                    if (gotoSet != null)
+                    {
+                        var actionChain = new ActionChain();
+                        actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => ExecuteEmoteSet(gotoSet, targetObject, true));
+                        actionChain.EnqueueChain();
+                    }
                     break;
 
                 /* increments a PropertyInt stat by some amount */
@@ -3475,16 +3480,24 @@ namespace ACE.Server.WorldObjects.Managers
 
             if (emoteSet == null) return;
 
-            try
+            if (nested)
             {
-                ExecuteEmoteSet(emoteSet, targetObject, nested);
+                var actionChain = new ActionChain();
+                actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => ExecuteEmoteSet(emoteSet, targetObject, true));
+                actionChain.EnqueueChain();
             }
-            catch (StackOverflowException)
+            else
             {
-                log.Error($"Stack Overflow while ExecuteEmoteSet - Weenie: {WorldObject.WeenieClassId}, {category}, {quest}");
-                return;
+                try
+                {
+                    ExecuteEmoteSet(emoteSet, targetObject, false);
+                }
+                catch (StackOverflowException)
+                {
+                    log.Error($"Stack Overflow while ExecuteEmoteSet - Weenie: {WorldObject.WeenieClassId}, {category}, {quest}");
+                    return;
+                }
             }
-
         }
 
         /// <summary>
