@@ -256,6 +256,11 @@ namespace ACE.Entity.Enum.Properties
         CombatPetCaptureSkinWeapon       = 9048,
         /// <summary>While active (Summon Essence Refill charm WCID 78780030), opt-in for per-charge pyreal refill on summon. See docs/ADMIN_PET_SUMMON_CHARMS.md.</summary>
         PetDevicePyrealAutoRefillEnrolled = 9049,
+        /// <summary>
+        /// Player preference: show a chat notification when a kill drop awards Savage Echo.
+        /// Default OFF — players opt in via @echo-notify. Prevents spam during long hunts.
+        /// </summary>
+        ShowPetEchoDrops                  = 9050,
 
         // -- ILT Ability Charm System (50000-50099) ---------------------------------
         /// <summary>On an ability charm item: marks it as an ability-granting charm.</summary>

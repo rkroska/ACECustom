@@ -759,6 +759,18 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         PetDeviceMinLumAugSummonCount           = 9055,
 
+        /// <summary>Stored potency levels bought with Essence Residue on this combat essence (server/custom).</summary>
+        [AssessmentProperty]
+        PetPotencyStored                        = 9056,
+
+        /// <summary>
+        /// Optional per-creature override for Essence Resonator salvage yield.
+        /// Set this on a creature weenie to make salvaging essences from that creature
+        /// award a fixed amount of Savage Echo (before shiny multiplier) instead of the
+        /// default formula. 0 or absent = use formula.
+        /// </summary>
+        EssenceSalvageYield                     = 9057,
+
         /// <summary>
         /// The absolute Unix timestamp (in seconds since epoch) when the item expires.
         /// </summary>

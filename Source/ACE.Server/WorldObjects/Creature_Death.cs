@@ -344,6 +344,8 @@ namespace ACE.Server.WorldObjects
                         owner.SendMessage($"Your bond with {device.GetBondMessageDisplayName()} deepens. (Bond Level {device.PetBondLevel:N0})");
                 }
             }
+
+            PetPotency.TryAwardResidueOnKill(this);
         }
 
         /// <summary>

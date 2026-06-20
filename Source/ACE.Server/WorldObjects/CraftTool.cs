@@ -30,6 +30,33 @@ namespace ACE.Server.WorldObjects
 
         public override void HandleActionUseOnTarget(Player player, WorldObject target)
         {
+            if (WeenieClassId == PetPotency.EssenceResidueWcid)
+            {
+                if (target is PetDevice essence)
+                {
+                    if (PetPotency.TrySpendResidueOnEssence(player, this, essence))
+                    {
+                        player.SendUseDoneEvent();
+                        return;
+                    }
+
+                    player.SendUseDoneEvent();
+                    return;
+                }
+            }
+
+            if (WeenieClassId == PetPotency.EssenceResonatorWcid)
+            {
+                if (PetPotency.TrySalvageCapturedEssence(player, this, target))
+                {
+                    player.SendUseDoneEvent();
+                    return;
+                }
+
+                player.SendUseDoneEvent();
+                return;
+            }
+
             if (PetDevice.IsEncapsulatedSpirit(this) && target is PetDevice petDevice)
             {
                 petDevice.Refill(player, this);
