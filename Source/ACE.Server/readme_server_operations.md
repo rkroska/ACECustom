@@ -184,16 +184,21 @@ tail -n 50 /ace/logs/ace.console.log
 If the logs have stopped moving and there is no database thread activity, the database queue is likely idle, which reduces the risk of data loss.
 
 #### Step 2: Attempt Graceful Termination (SIGTERM)
-Send a standard terminate signal. The server intercepts this signal to execute a clean, cooperative shutdown (logging off players and flushing databases):
+Send a standard terminate signal. The server intercepts this and stops the property, database, and event managers before the OS exits the process:
 ```bash
 # Find the process ID (PID)
 pgrep -f ACE.Server.dll
 
-# Send SIGTERM (graceful)
+# Send SIGTERM
 kill <PID>
 ```
 *(Alternatively, stop the systemd watchdog service: `sudo systemctl stop ace-watchdog`)*
+
+> [!NOTE]
+> SIGTERM does **not** broadcast a shutdown warning to players or wait for the full database queue to flush. For a fully graceful shutdown (player logoff, landblock unload, full DB flush), issue the `/shutdown` command in-game or via the server console *before* sending SIGTERM.
+
 Wait 15–30 seconds for the database thread to flush the queue and the process to exit cleanly.
+
 
 #### Step 3: Hard Force-Kill (SIGKILL)
 If the server is completely locked (e.g., a deadlock on the database thread or main loop) and does not close after Step 2, run a force-kill:
