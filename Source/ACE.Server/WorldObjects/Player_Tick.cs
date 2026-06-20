@@ -353,7 +353,7 @@ namespace ACE.Server.WorldObjects
             var allowJump = MotionInterp.motion_allows_jump(minterp.InterpretedState.ForwardCommand) == WeenieError.None;
 
             ApplyTeleportJumpGate(ref allowJump, "MoveToState",
-                $"StandingLongJump={moveToState.StandingLongJump} rawFwd=0x{moveToState.RawMotionState.ForwardCommand:X8} rawFlags={moveToState.RawMotionState.Flags} interpFwd=0x{minterp.InterpretedState.ForwardCommand:X8}",
+                $"StandingLongJump={moveToState.StandingLongJump} rawFwd=0x{(uint)moveToState.RawMotionState.ForwardCommand:X8} rawFlags={moveToState.RawMotionState.Flags} interpFwd=0x{minterp.InterpretedState.ForwardCommand:X8}",
                 throttleMotionLog: true);
 
             //PhysicsObj.cancel_moveto();
