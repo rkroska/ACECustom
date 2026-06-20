@@ -304,6 +304,11 @@ docker.env
 docker-compose.yml
 /httplocalhost8000contentuser=rudy&p.txt
 
+# Build scratch output files
+Source/ACE.Server/build_*.txt
+Source/ACE.Server/build_output.txt
+Source/ACE.Server/build_errors.txt
+
 # Frontend build results
 dist/
 **/dist/

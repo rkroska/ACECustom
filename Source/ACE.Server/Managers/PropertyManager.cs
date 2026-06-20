@@ -498,8 +498,8 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> pet_residue_salvage_enabled { get; private set; } = new(true, "If TRUE, spare captured essences can be salvaged for residue (requires pet_potency_enabled).");
         public static ConfigProperty<bool> pet_strain_enabled { get; private set; } = new(false, "If TRUE, player damage rating is reduced while a combat pet is summoned based on active potency.");
         public static ConfigProperty<double> pet_potency_damage_per_level { get; private set; } = new(0.02, "Fraction of body-part DVal added per active potency level (0.02 = +2%/level). Resummon pet after change.");
-        public static ConfigProperty<long> pet_potency_active_cap { get; private set; } = new(150, "Hard cap on active potency (0 = unlimited). Resummon pet after change.");
-        public static ConfigProperty<long> pet_potency_bond_divisor { get; private set; } = new(10, "Active potency cap from bond = ceil(bond / divisor). Resummon pet after change.");
+        public static ConfigProperty<long> pet_potency_active_cap { get; private set; } = new(0, "Hard cap on active potency (0 = unlimited). Resummon pet after change.");
+        public static ConfigProperty<long> pet_potency_bond_divisor { get; private set; } = new(2, "Active potency cap from bond = ceil(bond / divisor). Resummon pet after change.");
         public static ConfigProperty<long> pet_potency_bond_offense_min_active { get; private set; } = new(1, "When stored > 0 and bond >= 1, bond offense cap is at least this. Resummon after change.");
         public static ConfigProperty<bool> pet_potency_scale_dvar { get; private set; } = new(false, "If TRUE, also multiply body-part DVar by potency mult. Resummon after change.");
         public static ConfigProperty<long> pet_potency_cost_base { get; private set; } = new(20, "Residue cost for stored L -> L+1 = cost_base * (L+1)^exponent.");
@@ -514,11 +514,11 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> pet_residue_shiny_mult { get; private set; } = new(5.0, "Multiplies residue drop amount for shiny creatures.");
         public static ConfigProperty<double> pet_residue_global_mult { get; private set; } = new(1.0, "Multiplies final residue drop amount.");
         public static ConfigProperty<bool> pet_residue_require_bond_attuned { get; private set; } = new(true, "Only award kill drops for bond-attuned combat essences.");
-        public static ConfigProperty<long> pet_residue_salvage_base { get; private set; } = new(5, "Flat component of essence salvage yield.");
-        public static ConfigProperty<double> pet_residue_salvage_per_creature_level { get; private set; } = new(0.05, "Salvage: base + floor(level * per_level) before mults.");
-        public static ConfigProperty<double> pet_residue_salvage_mult { get; private set; } = new(0.5, "Global salvage yield multiplier.");
-        public static ConfigProperty<double> pet_residue_hollow_mult { get; private set; } = new(0.75, "Hollow essence salvage vs normal.");
-        public static ConfigProperty<double> pet_residue_salvage_shiny_mult { get; private set; } = new(5.0, "Salvage shiny mult from CapturedCreatureVariant.");
+        public static ConfigProperty<long> pet_residue_salvage_base { get; private set; } = new(5, "Flat Savage Echo yield per salvage (Siphoned and Hollow give this amount; shiny multiplier still applies on top).");
+        public static ConfigProperty<double> pet_residue_salvage_per_creature_level { get; private set; } = new(0.0, "Legacy: per-level scaling added to salvage base. 0 = disabled (flat yield).");
+        public static ConfigProperty<double> pet_residue_salvage_mult { get; private set; } = new(1.0, "Legacy: global salvage yield multiplier. 1.0 = no reduction.");
+        public static ConfigProperty<double> pet_residue_hollow_mult { get; private set; } = new(0.75, "Hollow essence salvage multiplier vs Siphoned. 1.0 = same yield.");
+        public static ConfigProperty<double> pet_residue_salvage_shiny_mult { get; private set; } = new(5.0, "Shiny essence salvage multiplier (applied on top of base or creature override).");
         public static ConfigProperty<long> pet_strain_potency_threshold { get; private set; } = new(50, "No bond strain at or below this active potency.");
         public static ConfigProperty<double> pet_strain_per_potency_level { get; private set; } = new(1.0, "Player DR penalty per active level above strain threshold.");
         public static ConfigProperty<long> pet_strain_max_rating { get; private set; } = new(0, "Cap bond strain magnitude (0 = no cap).");

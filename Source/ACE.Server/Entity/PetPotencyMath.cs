@@ -173,37 +173,23 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Expected Savage Echo from salvaging a spare captured essence (before probabilistic round).
-        /// Formula: (base + floor(level × perLevel)) × salvageMult × hollowMult? × shinyMult?
+        /// Expected Savage Echo from salvaging a spare captured essence.
+        /// Siphoned and Hollow both yield <paramref name="salvageBase"/> echoes (flat, no level scaling).
+        /// Shiny applies <paramref name="shinyMult"/> on top of the base.
+        /// If <paramref name="creatureOverride"/> is &gt; 0 it replaces the base entirely
+        /// (shiny multiplier still applies); used for per-creature DB overrides.
         /// </summary>
         public static double GetSalvageExpectedAmount(
-            int creatureLevel,
-            bool isHollow,
             bool isShiny,
-            long salvageBase = 5,
-            double perCreatureLevel = 0.05,
-            double salvageMult = 0.5,
-            double hollowMult = 0.75,
-            double shinyMult = 5.0)
+            long salvageBase = 1,
+            double shinyMult = 10.0,
+            int creatureOverride = 0)
         {
-            if (salvageBase < 0)
-                salvageBase = 0;
-            if (perCreatureLevel < 0)
-                perCreatureLevel = 0;
-            if (salvageMult < 0)
-                salvageMult = 0;
-            if (hollowMult < 0)
-                hollowMult = 0;
-            if (shinyMult < 0)
-                shinyMult = 0;
+            if (salvageBase < 0) salvageBase = 0;
+            if (shinyMult < 0) shinyMult = 0;
 
-            var level = Math.Max(0, creatureLevel);
-            var raw = salvageBase + Math.Floor(level * perCreatureLevel);
-            var expected = raw * salvageMult;
-            if (isHollow)
-                expected *= hollowMult;
-            if (isShiny)
-                expected *= shinyMult;
+            var raw = creatureOverride > 0 ? (double)creatureOverride : (double)salvageBase;
+            var expected = isShiny ? raw * shinyMult : raw;
             return Math.Max(0, expected);
         }
     }

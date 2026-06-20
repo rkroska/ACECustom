@@ -246,19 +246,17 @@ namespace ACE.Server.Entity
                 return false;
             }
 
-            var creatureLevel = GetCapturedCreatureLevel(essence);
+            // Snapshot all essence properties before any destructive operation.
             var isHollow = essence.WeenieClassId == HollowEssenceWcid;
             var isShiny = essence.GetProperty(PropertyInt.CapturedCreatureVariant) == (int)CreatureVariant.Shiny;
+            var creatureName = essence.GetProperty(PropertyString.CapturedCreatureName) ?? essence.Name;
+            var creatureOverride = GetCapturedCreatureSalvageOverride(essence);
 
             var expectedAmount = PetPotencyMath.GetSalvageExpectedAmount(
-                creatureLevel,
-                isHollow,
                 isShiny,
                 ServerConfig.pet_residue_salvage_base.Value,
-                ServerConfig.pet_residue_salvage_per_creature_level.Value,
-                ServerConfig.pet_residue_salvage_mult.Value,
-                ServerConfig.pet_residue_hollow_mult.Value,
-                ServerConfig.pet_residue_salvage_shiny_mult.Value);
+                ServerConfig.pet_residue_salvage_shiny_mult.Value,
+                creatureOverride);
 
             var amount = PetPotencyMath.RoundResidueDropAmount(expectedAmount);
             if (amount <= 0)
@@ -267,42 +265,53 @@ namespace ACE.Server.Entity
                 return false;
             }
 
-            if (!player.TryConsumeFromInventoryWithNetworking(essence))
-            {
-                player.SendTransientError("Could not consume the captured essence.");
-                return false;
-            }
-
+            // Award residue BEFORE consuming the essence so that a full-inventory failure
+            // leaves the essence intact rather than silently destroying it.
             if (!TryAwardResidueToPlayer(player, amount, out var awarded) || awarded <= 0)
             {
-                log.Error($"[Potency] Salvage award failed for {player.Name} after consuming {essence.Name} (expected {expectedAmount:F2}, amount {amount}).");
-                player.SendTransientError("You do not have enough pack space for the Savage Echo.");
+                player.SendTransientError($"You do not have enough pack space for the {CurrencyDisplayName}.");
                 return false;
             }
 
-            var creatureName = essence.GetProperty(PropertyString.CapturedCreatureName) ?? essence.Name;
-            player.SendMessage($"You salvage {creatureName} into {awarded:N0} {CurrencyDisplayName}.");
+            if (!player.TryConsumeFromInventoryWithNetworking(essence))
+            {
+                // Extremely unlikely — items were already awarded. Log it but don't take back the echoes.
+                log.Error($"[Potency] Salvage consume failed for {player.Name} on {creatureName} after awarding {awarded} Savage Echo. Items kept by player.");
+                player.SendTransientError("Salvage failed (server error); your Savage Echo was kept.");
+                return false;
+            }
+
+            var hollowLabel = isHollow ? " (hollow)" : string.Empty;
+            player.SendMessage($"You salvage {creatureName}{hollowLabel} into {awarded:N0} {CurrencyDisplayName}.");
 
             if (ServerConfig.pet_potency_debug_chat.Value)
-                player.SendMessage($"[Potency] Salvage expected {expectedAmount:F2}, awarded {awarded:N0} (level {creatureLevel}, hollow={isHollow}, shiny={isShiny}).");
+                player.SendMessage($"[Potency] Salvage expected {expectedAmount:F2}, awarded {awarded:N0} (hollow={isHollow}, shiny={isShiny}, override={creatureOverride}).");
 
             if (ServerConfig.pet_potency_debug_log.Value)
-                log.Info($"[Potency] {player.Name} salvaged {essence.Name} -> {awarded} Savage Echo (expected {expectedAmount:F2}, level {creatureLevel}).");
+                log.Info($"[Potency] {player.Name} salvaged {creatureName} -> {awarded} Savage Echo (expected {expectedAmount:F2}, override={creatureOverride}).");
 
             return true;
         }
 
-        private static int GetCapturedCreatureLevel(WorldObject essence)
+        /// <summary>
+        /// Returns the per-creature salvage yield override (PropertyInt.EssenceSalvageYield) from
+        /// the source creature's weenie. Returns 0 if absent, meaning use the formula default.
+        /// Admins set this directly on a creature weenie in the DB to fix its salvage yield.
+        /// </summary>
+        private static int GetCapturedCreatureSalvageOverride(WorldObject essence)
         {
             var creatureWcid = essence.GetProperty(PropertyInt.CapturedCreatureWCID);
             if (!creatureWcid.HasValue)
-                return 1;
+                return 0;
 
             var weenie = DatabaseManager.World.GetCachedWeenie((uint)creatureWcid.Value);
             if (weenie == null)
-                return 1;
+            {
+                log.Warn($"[Potency] GetCapturedCreatureSalvageOverride: weenie {creatureWcid.Value} not found in DB for essence '{essence.Name}' ({essence.WeenieClassId}). Using formula default.");
+                return 0;
+            }
 
-            return weenie.GetProperty(PropertyInt.Level) ?? 1;
+            return weenie.GetProperty(PropertyInt.EssenceSalvageYield) ?? 0;
         }
 
         public static void ApplyBodyPartPotencyScaling(CombatPet pet, PetDevice device)
@@ -409,8 +418,13 @@ namespace ACE.Server.Entity
                 var (owner, amount, expectedAmount) = kv.Value;
                 if (TryAwardResidueToPlayer(owner, amount, out var awarded) && awarded > 0)
                 {
+                    // Per-character opt-in: off by default to avoid spam during long hunts.
+                    // Players toggle via @echo-notify command.
+                    if (owner.GetProperty(PropertyBool.ShowPetEchoDrops) ?? false)
+                        owner.SendMessage($"Your pet earns you {awarded:N0} {CurrencyDisplayName}.");
+
                     if (ServerConfig.pet_potency_debug_chat.Value)
-                        owner.SendMessage($"You receive {awarded:N0} {CurrencyDisplayName} (expected {expectedAmount:F2}).");
+                        owner.SendMessage($"[Potency] You receive {awarded:N0} {CurrencyDisplayName} (expected {expectedAmount:F2}).");
 
                     if (ServerConfig.pet_potency_debug_log.Value)
                         log.Info($"[Potency] {owner.Name} awarded {awarded} Savage Echo (expected {expectedAmount:F2}) from {creature.Name} kill.");
@@ -437,7 +451,10 @@ namespace ACE.Server.Entity
             var remaining = amount;
             while (remaining > 0)
             {
-                var stackSize = Math.Min(remaining, 1000);
+                // Chunk at 10,000 to match the weenie MaxStackSize, minimising the number of
+                // inventory slots consumed and reducing the chance of a partial-award on a
+                // nearly-full inventory.
+                var stackSize = Math.Min(remaining, 10000);
                 var item = WorldObjectFactory.CreateNewWorldObject(EssenceResidueWcid);
                 if (item == null)
                     return awarded > 0;
