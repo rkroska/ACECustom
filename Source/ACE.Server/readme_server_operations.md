@@ -173,6 +173,36 @@ If you encounter **400 Bad Request** errors (Header Too Large), you must adjust 
 3.  **Error Logs**: Review `/ace/logs/ace.stderr.log` for unhandled exceptions.
 4.  **Binary Path**: Verify `ACE.Server.dll` exists in `/ace/serverbuild/`.
 
+### Safe Termination & Handling Server Hangs
+If the server becomes unresponsive or hangs, always attempt a graceful shutdown first before resorting to a hard termination. This prevents database corruption and missing character biota.
+
+#### Step 1: Check Database Activity
+Before terminating the process, inspect the server log file to verify if the database queue is active:
+```bash
+tail -n 50 /ace/logs/ace.console.log
+```
+If the logs have stopped moving and there is no database thread activity, the database queue is likely idle, which reduces the risk of data loss.
+
+#### Step 2: Attempt Graceful Termination (SIGTERM)
+Send a standard terminate signal. The server intercepts this signal to execute a clean, cooperative shutdown (logging off players and flushing databases):
+```bash
+# Find the process ID (PID)
+pgrep -f ACE.Server.dll
+
+# Send SIGTERM (graceful)
+kill <PID>
+```
+*(Alternatively, stop the systemd watchdog service: `sudo systemctl stop ace-watchdog`)*
+Wait 15–30 seconds for the database thread to flush the queue and the process to exit cleanly.
+
+#### Step 3: Hard Force-Kill (SIGKILL)
+If the server is completely locked (e.g., a deadlock on the database thread or main loop) and does not close after Step 2, run a force-kill:
+```bash
+kill -9 <PID>
+```
+> [!WARNING]
+> Running `kill -9` instantly halts the process and does not allow any cleanup code to run. Use this only as a last resort if standard `kill` fails to stop the server after 30 seconds.
+
 ### Crash Handling
 If the server crashes, collect the following for review:
 - The specific crash dump in `/ace/crashdumps/`.
