@@ -48,7 +48,7 @@ Imagine each **combat essence** is a **fighter** with two separate progress bars
 
 ## Player journey (content view)
 
-```
+```text
 Bond combat essence → summon pet → kill mobs
         ↓
 Savage Echo drops (RNG, pet share × tier)
@@ -74,16 +74,16 @@ Bond level-ups gradually unlock more dormant → active
 | **Active** | No (computed) | Yes | `min(stored, bondCap, hardCap)` — drives damage |
 | **Dormant** | No (computed) | Yes | `stored - active` — waiting on bond |
 
-**Bond cap formula (default divisor 10):**
+**Bond cap formula (default divisor 2):**
 
-```
-bondCap = ceil(bondLevel / 10)   // with soft-start: at least 1 active when stored > 0 and bond >= 1
-active  = min(stored, bondCap, 150)
+```text
+bondCap = ceil(bondLevel / 2)   // with soft-start: at least 1 active when stored > 0 and bond >= 1
+active  = min(stored, bondCap)  // no hard cap by default (pet_potency_active_cap = 0)
 ```
 
 **Damage multiplier (default):**
 
-```
+```text
 mult = 1 + active × 0.02     // +2% per active level → 50 active = ×2.0 damage
 ```
 
@@ -115,7 +115,7 @@ On each creature death, for each combat pet in the damage log:
 
 ### Spending — potency upgrades
 
-```
+```text
 cost to go from stored L → L+1 = cost_base × (L + 1)^exponent
 ```
 
@@ -132,7 +132,7 @@ cost to go from stored L → L+1 = cost_base × (L + 1)^exponent
 | 50 (+100% dmg if fully active) | 25,500 |
 | 150 | 226,500 |
 
-**Important:** Reaching stored 50 does **not** mean +100% damage unless bond ≥ ~491 (active cap 50). Content messaging should emphasize **active**, not stored alone.
+**Important:** Reaching stored 50 does **not** mean +100% damage unless bond ≥ 100 (active cap 50, divisor 2). Content messaging should emphasize **active**, not stored alone.
 
 ### Rough farm sanity (T10, launch defaults)
 
@@ -151,13 +151,13 @@ All via in-game modify commands — **no restart** for most knobs.
 
 ### Turn the system on
 
-```
+```bash
 /modifybool pet_potency_enabled true
 ```
 
 ### Drop rate (how fast echoes enter the world)
 
-```
+```bash
 /modifydouble pet_residue_drop_default 0.3
 /modifydouble pet_residue_drop_t9 0.8
 /modifydouble pet_residue_drop_t10 1.5
@@ -168,29 +168,29 @@ All via in-game modify commands — **no restart** for most knobs.
 
 ### Spend cost (how fast echoes leave the economy)
 
-```
+```bash
 /modifylong pet_potency_cost_base 20
 /modifydouble pet_potency_cost_exponent 1.0
 ```
 
 ### Power caps
 
-```
+```bash
 /modifydouble pet_potency_damage_per_level 0.02   # 0.02 = 2%/level; resummon pet
-/modifylong pet_potency_active_cap 150            # resummon pet
-/modifylong pet_potency_bond_divisor 10           # lower = bond unlocks active faster; resummon
+/modifylong pet_potency_active_cap 0              # 0 = unlimited; resummon pet
+/modifylong pet_potency_bond_divisor 2            # lower = bond unlocks active faster; resummon
 ```
 
 ### Debug during playtests
 
-```
+```bash
 /modifybool pet_potency_debug_chat true   # chat on drop: "You receive 1 Savage Echo (expected 0.35)."
 /modifybool pet_potency_debug_log true    # server log
 ```
 
 ### Disable farm, test spend only
 
-```
+```bash
 /modifybool pet_residue_drops_enabled false
 ```
 

@@ -159,10 +159,13 @@ namespace ACE.Server.Entity
             if (expectedAmount <= 0)
                 return 0;
 
+            if (!double.IsFinite(expectedAmount))
+                return expectedAmount > 0 ? int.MaxValue : 0;
+
             var d = (decimal)expectedAmount;
             var whole = (int)Math.Min(int.MaxValue, Math.Floor(d));
             var fraction = (double)(d - whole);
-            if (fraction > 0)
+            if (fraction > 0 && whole < int.MaxValue)
             {
                 var roll = randomUnit ?? Random.Shared.NextDouble();
                 if (roll < fraction)

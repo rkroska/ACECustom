@@ -170,15 +170,15 @@ namespace ACE.Server.Entity
                 return false;
             }
 
-            if (available < cost)
+            if (cost > int.MaxValue)
             {
-                player.SendTransientError($"You need {cost:N0} {CurrencyDisplayName} to increase potency (you have {available:N0}).");
+                player.SendTransientError("Potency upgrade cost is too large to process.");
                 return false;
             }
 
-            if (!player.TryConsumeFromInventoryWithNetworking(EssenceResidueWcid, (int)cost))
+            if (available < cost)
             {
-                player.SendTransientError("Could not consume Savage Echo.");
+                player.SendTransientError($"You need {cost:N0} {CurrencyDisplayName} to increase potency (you have {available:N0}).");
                 return false;
             }
 
@@ -188,6 +188,15 @@ namespace ACE.Server.Entity
                 essence.PetPotencyStored = stored + 1;
                 essence.SaveBiotaToDatabase();
                 essence.SyncPetProgressPropertiesToOwner(player, broadcast: true);
+
+                if (!player.TryConsumeFromInventoryWithNetworking(EssenceResidueWcid, (int)cost))
+                {
+                    // Persistence already succeeded; roll back the stored increment to keep data consistent.
+                    essence.PetPotencyStored = stored;
+                    essence.SaveBiotaToDatabase();
+                    player.SendTransientError("Could not consume Savage Echo.");
+                    return false;
+                }
 
                 var newActive = GetActivePotency(essence);
                 var dormant = GetDormantPotency(essence);

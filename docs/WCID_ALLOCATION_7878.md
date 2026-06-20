@@ -13,9 +13,9 @@ Do **not** use bare `7878` (legacy stub).
 | `78780001`–`78780006` | Siphon / capture core | Lenses tier 1–3, siphoned essence, monster dex, hollow essence |
 | `78780007`–`78780009` | **Spare (utility)** | Small gap; OK for one-off gems, avoid for charm series |
 | `78780010`–`78780012` | Siphon lenses (extended) | Resonance, Shimmering Echo, Asheron's lens |
-| `78780013` | **Savage Echo** (pet potency currency; internal doc alias: Essence Residue) |
-| `78780014` | **Essence Resonator** (salvage spare captured essences → Savage Echo) |
-| `78780015`–`78780019` | **Spare** | |
+| `78780013` | **Savage Echo** | Pet potency currency; internal doc alias: Essence Residue |
+| `78780014` | **Essence Resonator** | Salvage tool: converts spare captured essences → Savage Echo |
+| `78780015`–`78780019` | **Spare** | Reserved |
 | `78780020`–`78780029` | World / NPC / generators | Echo Weaver, Lens Collector, Crystal Gen, etc. |
 | **`78780030`–`78780089`** | **Ability charms (ILT)** | **Allocate new toggle charms here only** |
 | `78780090`–`78780098` | **Spare buffer** | Emergency items; stay below debug |

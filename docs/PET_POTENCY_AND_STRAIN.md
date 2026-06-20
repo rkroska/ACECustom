@@ -48,25 +48,25 @@ Bond and potency are **per essence**, not per character. A veteran’s bond 900 
 
 ### 2) Active potency formula
 
-```
-bondOffenseCap = bondLevel <= 0 ? 0 : ceil(bondLevel / 10)
-                 // implementation: (bondLevel + 9) / 10  for integer bondLevel >= 1
+```text
+bondOffenseCap = bondLevel <= 0 ? 0 : ceil(bondLevel / 2)
+                 // implementation: (bondLevel + 1) / 2  for integer bondLevel >= 1
 
 activePotency  = min(storedPotency, bondOffenseCap, pet_potency_active_cap)
-                 // pet_potency_active_cap default 150
+                 // pet_potency_active_cap default 0 (unlimited)
 
 dormantPotency = storedPotency - activePotency   // paid but not yet unlocked by bond
 ```
 
 **Soft start:** bond 1 with stored potency 100 → active **1**, not 0.
 
-**Hard cap:** even at bond 1,500, active potency never exceeds **150** (configurable).
+**Hard cap:** configurable via `pet_potency_active_cap` (default 0 = unlimited).
 
 ### 3) Damage application (body parts)
 
 At `CombatPet.Init`, after loading the summon weenie:
 
-```
+```text
 mult = 1 + activePotency * (pet_potency_damage_per_level / 100)   // default 2% per level
 
 For each PropertiesBodyPart on the pet:
@@ -100,7 +100,7 @@ Reference hits (Fire pet, observed potency 0):
 
 On creature death, for each combat pet that contributed to `DamageHistory`:
 
-```
+```text
 petShare = petDamageOnMob / mobMaxHealth   // clamp 0..1, same family as bond XP share
 
 if petShare <= 0 OR device not bond-attuned: skip
@@ -142,13 +142,13 @@ Map tier from creature `DeathTreasureType` / level band — exact mapping in imp
 
 Cost to go from stored potency `L` → `L+1`:
 
-```
+```text
 cost(L → L+1) = pet_potency_cost_base * (L + 1)     // default cost_base = 20
 ```
 
 Total currency to reach stored potency **N**:
 
-```
+```text
 total(N) = cost_base * N * (N + 1) / 2
 ```
 
@@ -169,7 +169,7 @@ Examples (`cost_base = 20`):
 
 While `player.CurrentActivePet is CombatPet` and player is alive:
 
-```
+```text
 if !pet_strain_enabled: strain = 0
 else if activePotency <= pet_strain_potency_threshold: strain = 0   // default threshold 50
 else:
@@ -255,8 +255,8 @@ Implementation rule: **read ServerConfig at point of use**, not cached on item a
 | Property | Type | Default | Effect when changed |
 |----------|------|---------|---------------------|
 | `pet_potency_damage_per_level` | double | **0.02** | **Resummon pet.** +fraction of DVal per active level (0.02 = +2%/level). Clamped e.g. 0–0.25 server-side. |
-| `pet_potency_active_cap` | long | **150** | **Resummon pet.** Hard max on active potency. 0 = treat as unlimited. |
-| `pet_potency_bond_divisor` | long | **10** | **Resummon pet.** `bondOffenseCap = ceil(bond / divisor)`. Lower = bond unlocks offense faster. |
+| `pet_potency_active_cap` | long | **0** | **Resummon pet.** Hard max on active potency. 0 = treat as unlimited. |
+| `pet_potency_bond_divisor` | long | **2** | **Resummon pet.** `bondOffenseCap = ceil(bond / divisor)`. Lower = bond unlocks offense faster. |
 | `pet_potency_bond_offense_min_active` | long | **1** | **Resummon pet.** When stored > 0 and bond ≥ 1, active cap is at least this (soft start). Set 0 to allow zero active at bond 1. |
 | `pet_potency_scale_dvar` | bool | **false** | **Resummon pet.** If true, also multiply body-part `DVar` by potency mult (wider hit variance). Default false = DVal only. |
 
@@ -289,8 +289,8 @@ Implementation rule: **read ServerConfig at point of use**, not cached on item a
 | Property | Type | Default | Effect when changed |
 |----------|------|---------|---------------------|
 | `pet_residue_salvage_base` | long | **5** | **Instant.** Flat component of salvage yield. |
-| `pet_residue_salvage_per_creature_level` | double | **0.05** | **Instant.** `base + floor(level × per_level)` before mults. |
-| `pet_residue_salvage_mult` | double | **0.5** | **Instant.** Global salvage nerf (supplement vs farm). |
+| `pet_residue_salvage_per_creature_level` | double | **0.0** | **Instant.** Legacy per-level scaling added to salvage base. 0 = disabled (flat yield). |
+| `pet_residue_salvage_mult` | double | **1.0** | **Instant.** Global salvage yield multiplier. 1.0 = no reduction. |
 | `pet_residue_hollow_mult` | double | **0.75** | **Instant.** Hollow (78780006) × this vs normal salvage. |
 | `pet_residue_salvage_shiny_mult` | double | **5.0** | **Instant.** From `CapturedCreatureVariant` on essence. |
 
@@ -425,7 +425,7 @@ Mirror naming: `pet_potency_*`, `pet_residue_*`, `pet_strain_*` — consistent g
 | Goal | Knobs |
 |------|-------|
 | Potency 50 takes ~2× longer | ↑ `pet_potency_cost_base` or ↓ `pet_residue_drop_*` / `pet_residue_drop_chance_mult` |
-| Veterans unlock offense faster | ↓ `pet_potency_bond_divisor` (10→5) |
+| Veterans unlock offense faster | ↓ `pet_potency_bond_divisor` (2→1) |
 | Cap endgame pet damage | ↓ `pet_potency_active_cap` or ↓ `pet_potency_damage_per_level` |
 | Pet-only farmers earn more | ↑ `pet_residue_drop_chance_mult` or ↑ tier drop amounts |
 | Reduce player+pet double DPS | ↑ `pet_strain_per_potency_level` or ↓ `pet_strain_potency_threshold` |
@@ -434,12 +434,12 @@ Mirror naming: `pet_potency_*`, `pet_residue_*`, `pet_strain_*` — consistent g
 
 Expected residue/hr (T10, 430 kills/hr, 10% pet share):
 
-```
+```text
 430 × min(share, max_share) × drop_chance_mult × drop_t10 × global_mult
 = 430 × 0.10 × 1.0 × 1.5 × 1.0 ≈ 64.5/hr
 ```
 
-Hours to stored potency 50: `25500 / 64.5 ≈ 395 hr` at 10% share on T10 (before salvage). Full +100% damage also requires bond 491+ for 50 active.
+Hours to stored potency 50: `25500 / 64.5 ≈ 395 hr` at 10% share on T10 (before salvage). Full +100% damage also requires bond 101+ for 50 active (divisor 2).
 
 ---
 
@@ -451,9 +451,9 @@ See **Live tuning — ServerConfig registry** above for the full list. Core defa
 |----------|------|---------|
 | `pet_potency_enabled` | bool | false |
 | `pet_potency_damage_per_level` | double | 0.02 |
-| `pet_potency_active_cap` | long | 150 |
+| `pet_potency_active_cap` | long | 0 |
 | `pet_potency_cost_base` | long | 20 |
-| `pet_potency_bond_divisor` | long | 10 |
+| `pet_potency_bond_divisor` | long | 2 |
 | `pet_residue_drop_default` / `t9` / `t10` | double | 0.3 / 0.8 / 1.5 |
 | `pet_strain_enabled` | bool | false |
 | `pet_strain_potency_threshold` | long | 50 |
@@ -464,7 +464,7 @@ See **Live tuning — ServerConfig registry** above for the full list. Core defa
 
 On **combat essence** (identify / assess):
 
-```
+```text
 Potency: 100 stored (75 active, 25 dormant)
 Bond: 750
 Body Training: +150% damage from potency (active)

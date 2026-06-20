@@ -78,18 +78,18 @@ Think of Potency like **gym training paid for in advance**, with **belt rank** d
 
 ### Bond unlocks active Potency
 
-Rough rule: **every 10 bond levels unlocks 1 active Potency level**, with a minimum of **1 active** once you have any stored Potency and at least bond 1.
+Rough rule: **every 2 bond levels unlocks 1 active Potency level**, with a minimum of **1 active** once you have any stored Potency and at least bond 1.
 
 | Bond level | Max active Potency (approx.) |
 |------------|------------------------------|
-| 10 | 1 |
-| 100 | 10 |
-| 250 | 25 |
-| 500 | 50 |
-| 1,000 | 100 |
-| 1,500+ | **150** (hard cap) |
+| 2 | 1 |
+| 20 | 10 |
+| 50 | 25 |
+| 100 | 50 |
+| 200 | 100 |
+| 300+ | **150**, **200**, etc. (no hard cap by default) |
 
-**Example:** You spend echoes until you have **50 stored**, but your bond is only **100**. You have **10 active** and **40 dormant**. Your pet gets the damage boost for 10 levels now; the other 40 “turn on” automatically as bond grows — you do not pay again.
+**Example:** You spend echoes until you have **50 stored**, but your bond is only **20**. You have **10 active** and **40 dormant**. Your pet gets the damage boost for 10 levels now; the other 40 "turn on" automatically as bond grows — you do not pay again.
 
 ### Damage boost
 
@@ -113,9 +113,9 @@ Potency **stacks with** bond damage bonuses and gear on the essence. It does not
 
 When you assess a bonded **combat** essence, you may see something like:
 
-```
+```text
 Potency: 25 stored (10 active, 15 dormant)
-Bond: 100
+Bond: 20
 Body Training: +20% damage from potency (active)
 ```
 
