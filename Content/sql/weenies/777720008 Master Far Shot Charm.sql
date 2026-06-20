@@ -29,8 +29,7 @@ VALUES (777720008,     1, 2048) /* ItemType - Gem */
      , (777720008,   114,    1) /* Attuned */
      , (777720008, 50000,   28) /* CharmGrantsAbility - ID 28 = Far Shot */
      , (777720008, 50005,    3) /* CharmLevel - 3 */
-     , (777720008, 50006,    3) /* CharmMaxLevel - 3 tiers */
-     , (777720008, 50060, 1780887600); /* ItemExpirationTimestamp - Sunday June 7, 2026 11:00 PM EST */
+     , (777720008, 50006,    3); /* CharmMaxLevel - 3 tiers */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777720008,    1, 33554556)  /* Setup - Coffer/Chest */
