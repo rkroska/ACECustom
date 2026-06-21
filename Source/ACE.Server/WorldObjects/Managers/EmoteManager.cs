@@ -4060,8 +4060,25 @@ namespace ACE.Server.WorldObjects.Managers
             var bands = SelectWoundedTauntBands(
                 _worldObject.Biota.PropertiesEmote, prev, curr, () => ThreadSafeRandom.Next(0.0f, 1.0f));
 
+            // Bands are returned highest-first and executed in that order. Each set runs as its own
+            // nested chain; ordering holds as long as phase-transition actions use delay 0 (true for
+            // all known WoundedTaunt phase scripts, e.g. Aerbax). If a band ever needs delayed
+            // StartEvent/StopEvent actions across multiple crossed bands, this would need to become a
+            // single ordered continuation instead of independent chains.
             foreach (var band in bands)
                 ExecuteEmoteSet(band, attacker, nested: true);
+        }
+
+        /// <summary>
+        /// Keeps the WoundedTaunt phase tracker fresh when the creature's health RISES (heal/regen).
+        /// Damage-driven lowering is handled in <see cref="TriggerWoundedTaunt"/>; without this, a boss
+        /// healed above a band and then re-damaged through it would not re-fire that band, because the
+        /// tracker would still hold the lower pre-heal value. Invoked from the UpdateVital chokepoint.
+        /// </summary>
+        public void OnHealthRaised()
+        {
+            if (_worldObject is Creature creature && creature.Health.Percent > _lastWoundedTauntHealthPercent)
+                _lastWoundedTauntHealthPercent = creature.Health.Percent;
         }
 
         /// <summary>
