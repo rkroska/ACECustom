@@ -1890,9 +1890,21 @@ namespace ACE.Server.Physics
 
         /// <summary>
         /// This is to mitigate possible decal crashes w/ CO messages being sent
-        /// for objects when the client landblock is very early in the loading state
+        /// for objects when the client landblock is very early in the loading state.
+        /// Tunable live via teleport_create_object_delay_ms (0 = send immediately, no delay).
         /// </summary>
-        private static TimeSpan TeleportCreateObjectDelay = TimeSpan.FromSeconds(1);
+        private static TimeSpan TeleportCreateObjectDelay
+        {
+            get
+            {
+                var ms = ServerConfig.teleport_create_object_delay_ms.Value;
+                if (ms < 0)
+                    ms = 0;
+                else if (ms > 10000)
+                    ms = 10000;
+                return TimeSpan.FromMilliseconds(ms);
+            }
+        }
 
         public void enqueue_objs(IEnumerable<PhysicsObj> newlyVisible)
         {

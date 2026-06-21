@@ -138,7 +138,19 @@ namespace ACE.Server.WorldObjects
             }
 
             // re-verify client checks
-            if (((sourceItem.TargetType ?? ItemType.None) & target.ItemType) == ItemType.None)
+            // Potency tools have non-standard source/target ItemType combinations, so we skip the
+            // generic type check only for confirmed valid pairings — not for any potency tool on any target.
+            var skipTargetTypeCheck = false;
+            if (sourceItem.WeenieClassId == PetPotency.EssenceResidueWcid && target is PetDevice)
+                skipTargetTypeCheck = true;
+            else if (sourceItem.WeenieClassId == PetPotency.EssenceResonatorWcid && PetPotency.IsSalvageableCapturedEssence(target))
+                skipTargetTypeCheck = true;
+
+            var sourceTargetType = sourceItem.TargetType ?? ItemType.None;
+            var targetItemType = target.ItemType;
+            var targetTypeMatch = (sourceTargetType & targetItemType) != ItemType.None;
+
+            if (!skipTargetTypeCheck && !targetTypeMatch)
             {
                 // ItemHolder::TargetCompatibleWithObject
                 SendTransientError($"Cannot use the {sourceItem.Name} with the {target.Name}");

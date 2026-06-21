@@ -129,6 +129,30 @@ namespace ACE.Server.Network.Managers
                         var connectedSessionsAllowedPerIPAddress = ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress + 1;
                         if (ipAllowsUnlimited || ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress == -1 || GetSessionEndpointTotalByAddressCount(endPoint.Address) < connectedSessionsAllowedPerIPAddress)
                         {
+                            PacketInboundLoginRequest loginRequest;
+                            try
+                            {
+                                loginRequest = new PacketInboundLoginRequest(packet);
+                            }
+                            catch (Exception ex)
+                            {
+                                log.WarnFormat("Malformed LoginRequest from {0}: {1}", endPoint, ex.Message);
+                                SendLoginRequestReject(connectionListener, endPoint, CharacterError.AccountInvalid);
+                                return;
+                            }
+
+                            if (AuthenticationHandler.TryHandleTrackerLoginWithoutSession(connectionListener, endPoint, loginRequest))
+                                return;
+
+                            var currentSessionCount = GetSessionCount();
+                            if (SessionPoolMonitor.ShouldRejectLoginEarly(currentSessionCount))
+                            {
+                                Interlocked.Increment(ref ServerDiagnostics.SessionPoolRejectEarly);
+                                log.InfoFormat("Login Request from {0} rejected. Session pool nearing capacity ({1}/{2}).", endPoint, currentSessionCount, sessionMap.Length);
+                                SendLoginRequestReject(connectionListener, endPoint, CharacterError.LogonServerFull);
+                                return;
+                            }
+
                             var session = FindOrCreateSession(connectionListener, endPoint);
                             if (session != null)
                             {
@@ -136,11 +160,12 @@ namespace ACE.Server.Network.Managers
                                 {
                                     // connect request packet sent to the client was corrupted in transit and session entered an unspecified state.
                                     // ignore the request and remove the broken session and the client will start a new session.
-                                    RemoveSession(session);
                                     log.Warn($"Bad handshake from {endPoint}, aborting session.");
+                                    session.Terminate(SessionTerminationReason.BadHandshake);
+                                    return;
                                 }
 
-                                session.ProcessPacket(packet);
+                                AuthenticationHandler.HandleLoginRequest(loginRequest, session);
                             }
                             else
                             {
@@ -214,6 +239,55 @@ namespace ACE.Server.Network.Managers
             finally
             {
                 sessionLock.ExitReadLock();
+            }
+        }
+
+        public static int GetUnauthenticatedSessionCount()
+        {
+            sessionLock.EnterReadLock();
+            try
+            {
+                return sessionMap.Count(s => s != null && s.AccountId == 0);
+            }
+            finally
+            {
+                sessionLock.ExitReadLock();
+            }
+        }
+
+        public static int GetTerminatingSessionCount()
+        {
+            sessionLock.EnterReadLock();
+            try
+            {
+                return sessionMap.Count(s => s != null && s.PendingTermination != null);
+            }
+            finally
+            {
+                sessionLock.ExitReadLock();
+            }
+        }
+
+        private static void GetSessionPoolStats(out int sessionCount, out int authCount, out int unauthCount, out int terminatingCount)
+        {
+            sessionCount = 0;
+            authCount = 0;
+            unauthCount = 0;
+            terminatingCount = 0;
+
+            foreach (var s in sessionMap)
+            {
+                if (s == null)
+                    continue;
+
+                sessionCount++;
+                if (s.AccountId != 0)
+                    authCount++;
+                else
+                    unauthCount++;
+
+                if (s.PendingTermination != null)
+                    terminatingCount++;
             }
         }
 
@@ -303,6 +377,7 @@ namespace ACE.Server.Network.Managers
                         log.DebugFormat("Creating new session for {0} with id {1}", endPoint, i);
                         session = new Session(connectionListener, endPoint, i, ServerId);
                         sessionMap[i] = session;
+                        SessionPoolMonitor.OnSessionCreated();
                         break;
                     }
                 }
@@ -386,25 +461,59 @@ namespace ACE.Server.Network.Managers
         /// Dispatches all outgoing messages.<para />
         /// Removes dead sessions.
         /// </summary>
+        private static DateTime nextSocketBufferReconcile = DateTime.MinValue;
+
         public static int DoSessionWork()
         {
             int sessionCount = 0;
+            int authCount = 0;
+            int unauthCount = 0;
+            int terminatingCount = 0;
+
+            // Cheap, time-gated check so net_socket_buffer_* toggles take effect live (~2s) without a restart.
+            if (DateTime.UtcNow >= nextSocketBufferReconcile)
+            {
+                nextSocketBufferReconcile = DateTime.UtcNow.AddSeconds(2);
+                SocketManager.ReconcileSocketBuffers();
+            }
 
             sessionLock.EnterUpgradeableReadLock();
             try
             {
+                GetSessionPoolStats(out sessionCount, out authCount, out unauthCount, out terminatingCount);
+
+                var underStress = SessionPoolMonitor.IsUnderSessionStress(sessionCount);
+
+                SessionPoolMonitor.SweepStaleSessions(sessionMap);
+
                 // The session tick outbound processes pending actions and handles outgoing messages
                 ServerPerformanceMonitor.RestartEvent(ServerPerformanceMonitor.MonitorType.DoSessionWork_TickOutbound);
                 // Limit parallel degree to prevent thread pool exhaustion and hanging.
-                // ProcessorCount * 2 balances concurrency (for I/O-bound network operations) with thread pool safety.
-                // This prevents unbounded parallelism that could starve the thread pool and hang UpdateWorld.
-                // Adjust multiplier up (3-4x) for more sessions or down (1x) for CPU-bound workloads.
-                var options = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 2 };
-                Parallel.ForEach(sessionMap, options, s => s?.TickOutbound());
+                var options = new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = underStress
+                        ? Math.Max(1, Environment.ProcessorCount)
+                        : Environment.ProcessorCount * 2
+                };
+                Parallel.ForEach(sessionMap, options, s =>
+                {
+                    if (s == null)
+                        return;
+
+                    if (s.PendingTermination?.TerminationStatus == SessionTerminationPhase.SessionWorkCompleted)
+                        return;
+
+                    s.TickOutbound();
+                });
                 ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.DoSessionWork_TickOutbound);
 
                 // Removes sessions in the NetworkTimeout state, including sessions that have reached a timeout limit.
                 ServerPerformanceMonitor.RestartEvent(ServerPerformanceMonitor.MonitorType.DoSessionWork_RemoveSessions);
+                sessionCount = 0;
+                authCount = 0;
+                unauthCount = 0;
+                terminatingCount = 0;
+
                 foreach (var session in sessionMap.Where(k => !Equals(null, k)))
                 {
                     if (session.PendingTermination != null && session.PendingTermination.TerminationStatus == SessionTerminationPhase.SessionWorkCompleted)
@@ -414,6 +523,13 @@ namespace ACE.Server.Network.Managers
                     }
 
                     sessionCount++;
+                    if (session.AccountId != 0)
+                        authCount++;
+                    else
+                        unauthCount++;
+
+                    if (session.PendingTermination != null)
+                        terminatingCount++;
                 }
                 ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.DoSessionWork_RemoveSessions);
             }
@@ -421,6 +537,10 @@ namespace ACE.Server.Network.Managers
             {
                 sessionLock.ExitUpgradeableReadLock();
             }
+
+            SessionPoolMonitor.CheckEmergencyShutdown(sessionCount, authCount, unauthCount);
+            SessionPoolMonitor.MaybeLogPeriodicSummary(sessionCount, authCount, unauthCount, terminatingCount);
+
             return sessionCount;
         }
 

@@ -25,7 +25,7 @@ namespace ACE.Server.Entity
     /// - Tier 2 (Pristine): 10-20% base capture rate  
     /// - Tier 3 (Perfect): 15-30% base capture rate
     /// - Tier 4 (Debug): 100% capture, not consumed (admin only)
-    /// - Tier 5 (Resonance): Second-chance lens for failed shiny captures only
+    /// - Tier 5 (Resonance): Second-chance lens for any failed capture (shiny or non-shiny)
     /// - Tier 6 (Asheron's): Guaranteed 100% capture, consumed on use
     /// </summary>
     public static class MonsterCapture
@@ -196,14 +196,16 @@ namespace ACE.Server.Entity
             }
             else
             {
-                // Check if this was a shiny creature - track for Resonance Lens second chance
-                var isShiny = targetCreature.CreatureVariant == CreatureVariant.Shiny;
-                if (isShiny)
-                {
-                    SetFailedShinyCaptureState(player, targetCreature);
+                // Track this failed capture so a Resonance Lens can grant a single second chance.
+                // Applies to BOTH shiny and non-shiny creatures. After the creature enrages below,
+                // only the Resonance Lens (this stored target) or Asheron's Lens can attempt it again.
+                SetFailedShinyCaptureState(player, targetCreature);
+
+                if (targetCreature.CreatureVariant == CreatureVariant.Shiny)
                     player.SendMessage("The shiny creature resisted your capture! You may use a Resonance Lens for a second chance.");
-                }
-                
+                else
+                    player.SendMessage("The creature resisted your capture! You may use a Resonance Lens for a second chance.");
+
                 ExecuteCaptureFail(player, targetCreature);
             }
         }
@@ -222,7 +224,7 @@ namespace ACE.Server.Entity
 
             if (!failedWcid.HasValue || !failedGuidInt.HasValue)
             {
-                errorMessage = "The Resonance Lens hums quietly but finds no echo to follow. You haven't failed a shiny capture recently.";
+                errorMessage = "The Resonance Lens hums quietly but finds no echo to follow. You haven't failed a capture recently.";
                 return false;
             }
 
@@ -248,7 +250,7 @@ namespace ACE.Server.Entity
             {
                 // Clear the stale state
                 ClearFailedShinyCaptureState(player);
-                errorMessage = "The echo has faded. The shiny creature you failed to capture is no longer nearby.";
+                errorMessage = "The echo has faded. The creature you failed to capture is no longer nearby.";
                 return false;
             }
 
@@ -267,6 +269,22 @@ namespace ACE.Server.Entity
             {
                 ClearFailedShinyCaptureState(player);
                 errorMessage = "This creature is already being captured!";
+                return false;
+            }
+
+            // Health threshold check - mirror the base capture path (resonance lens does NOT bypass it).
+            // Do NOT clear the failed state here: the creature healed to full when it enraged on the
+            // first failure, so the player should be able to weaken it back below the threshold and retry.
+            if (targetCreature.Health.MaxValue <= 0)
+            {
+                errorMessage = "Unable to assess creature health.";
+                return false;
+            }
+
+            var healthPercent = (float)targetCreature.Health.Current / targetCreature.Health.MaxValue;
+            if (healthPercent > 0.20f && targetCreature.Health.Current >= 20)
+            {
+                errorMessage = $"The creature is too strong! Weaken it below 20% health or 20 HP first. (Currently {healthPercent:P0})";
                 return false;
             }
 
@@ -335,7 +353,8 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Records a failed shiny capture on the player for Resonance Lens second-chance
+        /// Records a failed capture on the player for Resonance Lens second-chance.
+        /// Applies to both shiny and non-shiny creatures (the property name is historical).
         /// </summary>
         private static void SetFailedShinyCaptureState(Player player, Creature creature)
         {
@@ -515,6 +534,12 @@ namespace ACE.Server.Entity
             
             // Get the base creature name (strip ALL "Player's" prefixes - may be nested)
             var creatureName = creature.Name;
+
+            // Strip the live "Enraged " combat tag so the essence/skin uses the clean creature name.
+            // (Asheron's/Resonance lenses can capture enraged creatures, so the tag may be present.)
+            if (creatureName != null && creatureName.StartsWith(Creature.EnragedNamePrefix, StringComparison.Ordinal))
+                creatureName = creatureName.Substring(Creature.EnragedNamePrefix.Length);
+
             int apostropheIdx;
             while ((apostropheIdx = creatureName.IndexOf("'s ")) > 0)
             {

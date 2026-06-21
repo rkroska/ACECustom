@@ -491,6 +491,43 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> pet_bond_cdr_cap { get; private set; } = new(0.0, "Bond level bonus cap for cooldown reduction (interpreted by PetDevice).");
         public static ConfigProperty<double> pet_bond_cd_cap { get; private set; } = new(0.0, "Bond level bonus cap for cooldown (seconds or fraction per design).");
         public static ConfigProperty<double> pet_bond_vitality_per_level { get; private set; } = new(0.0, "Vitality scaling per bond level.");
+
+        // Pet potency / essence residue / bond strain (custom)
+        public static ConfigProperty<bool> pet_potency_enabled { get; private set; } = new(false, "If TRUE, enables potency spend, body-part scaling, residue drops, and bond strain hooks.");
+        public static ConfigProperty<bool> pet_residue_drops_enabled { get; private set; } = new(true, "If TRUE, combat pets can award Essence Residue on kills (requires pet_potency_enabled).");
+        public static ConfigProperty<bool> pet_residue_salvage_enabled { get; private set; } = new(true, "If TRUE, spare captured essences can be salvaged for residue (requires pet_potency_enabled).");
+        public static ConfigProperty<bool> pet_strain_enabled { get; private set; } = new(false, "If TRUE, player damage rating is reduced while a combat pet is summoned based on active potency.");
+        public static ConfigProperty<double> pet_potency_damage_per_level { get; private set; } = new(0.02, "Fraction of body-part DVal added per active potency level (0.02 = +2%/level). Resummon pet after change.");
+        public static ConfigProperty<long> pet_potency_active_cap { get; private set; } = new(0, "Hard cap on active potency (0 = unlimited). Resummon pet after change.");
+        public static ConfigProperty<long> pet_potency_bond_divisor { get; private set; } = new(2, "Active potency cap from bond = ceil(bond / divisor). Resummon pet after change.");
+        public static ConfigProperty<long> pet_potency_bond_offense_min_active { get; private set; } = new(1, "When stored > 0 and bond >= 1, bond offense cap is at least this. Resummon after change.");
+        public static ConfigProperty<bool> pet_potency_scale_dvar { get; private set; } = new(false, "If TRUE, also multiply body-part DVar by potency mult. Resummon after change.");
+        public static ConfigProperty<long> pet_potency_cost_base { get; private set; } = new(20, "Residue cost for stored L -> L+1 = cost_base * (L+1)^exponent.");
+        public static ConfigProperty<double> pet_potency_cost_exponent { get; private set; } = new(1.0, "Exponent for per-level residue cost.");
+        public static ConfigProperty<long> pet_potency_max_stored { get; private set; } = new(0, "Cap stored potency (0 = unlimited).");
+        public static ConfigProperty<double> pet_residue_drop_t9 { get; private set; } = new(0.8, "Expected Savage Echo on successful T9-tier drop (fractional OK; probabilistically rounded to whole echoes). /modifydouble");
+        public static ConfigProperty<double> pet_residue_drop_t10 { get; private set; } = new(1.5, "Expected Savage Echo on successful T10-tier drop (fractional OK). /modifydouble");
+        public static ConfigProperty<double> pet_residue_drop_default { get; private set; } = new(0.3, "Expected Savage Echo when tier unknown / below T9 (fractional OK). /modifydouble");
+        public static ConfigProperty<double> pet_residue_drop_chance_mult { get; private set; } = new(1.0, "Multiplies pet damage share before residue drop RNG.");
+        public static ConfigProperty<double> pet_residue_drop_min_pet_share { get; private set; } = new(0.0, "Skip residue drop if pet share below this.");
+        public static ConfigProperty<double> pet_residue_drop_max_pet_share { get; private set; } = new(1.0, "Cap pet share used for drop chance.");
+        public static ConfigProperty<double> pet_residue_shiny_mult { get; private set; } = new(5.0, "Multiplies residue drop amount for shiny creatures.");
+        public static ConfigProperty<double> pet_residue_global_mult { get; private set; } = new(1.0, "Multiplies final residue drop amount.");
+        public static ConfigProperty<bool> pet_residue_require_bond_attuned { get; private set; } = new(true, "Only award kill drops for bond-attuned combat essences.");
+        public static ConfigProperty<long> pet_residue_salvage_base { get; private set; } = new(5, "Flat Savage Echo yield per salvage (Siphoned and Hollow give this amount; shiny multiplier still applies on top).");
+        public static ConfigProperty<double> pet_residue_salvage_per_creature_level { get; private set; } = new(0.0, "Legacy: per-level scaling added to salvage base. 0 = disabled (flat yield).");
+        public static ConfigProperty<double> pet_residue_salvage_mult { get; private set; } = new(1.0, "Legacy: global salvage yield multiplier. 1.0 = no reduction.");
+        public static ConfigProperty<double> pet_residue_hollow_mult { get; private set; } = new(0.75, "Hollow essence salvage multiplier vs Siphoned. 1.0 = same yield.");
+        public static ConfigProperty<double> pet_residue_salvage_shiny_mult { get; private set; } = new(5.0, "Shiny essence salvage multiplier (applied on top of base or creature override).");
+        public static ConfigProperty<long> pet_strain_potency_threshold { get; private set; } = new(50, "No bond strain at or below this active potency.");
+        public static ConfigProperty<double> pet_strain_per_potency_level { get; private set; } = new(1.0, "Player DR penalty per active level above strain threshold.");
+        public static ConfigProperty<long> pet_strain_max_rating { get; private set; } = new(0, "Cap bond strain magnitude (0 = no cap).");
+        public static ConfigProperty<bool> pet_strain_while_player_dead { get; private set; } = new(false, "If FALSE, no strain when player is dead.");
+        public static ConfigProperty<bool> pet_strain_combat_pet_only { get; private set; } = new(true, "If TRUE, passive pets never apply strain.");
+        public static ConfigProperty<bool> pet_potency_debug_chat { get; private set; } = new(false, "Owner chat on residue drops and potency spends.");
+        public static ConfigProperty<bool> pet_potency_debug_log { get; private set; } = new(false, "Server log for residue drops and potency spends.");
+        public static ConfigProperty<bool> pet_strain_debug_chat { get; private set; } = new(false, "Owner chat showing bond strain DR (spammy).");
+
         public static ConfigProperty<long> pet_device_pyreal_auto_refill_cost_per_charge { get; private set; } = new(1, "Pyreal cost per restored essence charge when auto-refill is enabled.");
         public static ConfigProperty<double> pet_combat_owner_recall_distance_m { get; private set; } = new(0.0, "Pet-to-owner tether (m): pet farther than this from owner may defer acquire or drop target (Monster_Tick). 0 = use pet_combat_leash_radius_m for tether via GetCombatPetOwnerTetherM. Does not widen owner-side mob acquire radius (that uses leash only). Set higher than leash so pets can fight while owner kites.");
         public static ConfigProperty<double> pet_combat_leash_radius_m { get; private set; } = new(0.0, "Foe must be within this distance (m) of the pet or of the owner to acquire (owner-side check uses leash radius only, not recall tether). 0 = disabled.");
@@ -527,6 +564,10 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> universal_masteries { get; private set; } = new(true, "if TRUE, matches end of retail masteries - players wielding almost any weapon get +5 DR, except if the weapon \"seems tough to master\". " +
                                                                                                  "if FALSE, players start with mastery of 1 melee and 1 ranged weapon type based on heritage, and can later re-select these 2 masteries");
         public static ConfigProperty<bool> generator_spawn_failure_warn_logging { get; private set; } = new(false, "If TRUE, generator placement failures (EnterWorld returned false) log at WARN instead of DEBUG. Use to diagnose missing bell/NPC spawns without noisy logs in production.");
+        public static ConfigProperty<bool> log_inventory_load_debug { get; private set; } = new(false, "If TRUE, enables verbose [LOAD DEBUG] logs during player login and container/inventory item loading.");
+        public static ConfigProperty<bool> log_loot_cantrip_debug { get; private set; } = new(false, "If TRUE, enables [LOOT][EPIC] and [LOOT][LEGENDARY] logs when creatures generate epic/legendary cantrips on death.");
+        public static ConfigProperty<bool> log_bank_debug { get; private set; } = new(false, "If TRUE, enables verbose [BANK_DEBUG] logging for player deposits, withdrawals, and currency scanning.");
+        public static ConfigProperty<bool> log_generator_debug { get; private set; } = new(false, "If TRUE, enables verbose generator randomization and failed spawning logs.");
         public static ConfigProperty<bool> prestige_interaction_diag_verbose { get; private set; } = new(false, "If TRUE, emits WARN-level [PrestigeInteraction] traces for: TrackObject/AddTrackedObject variation blocks, FindObject visibility blocks, UseItem/UseWithTarget player resolution, and trade open/close. Toggle live: /modifybool prestige_interaction_diag_verbose true");
         public static ConfigProperty<bool> visibility_create_object_diag_verbose { get; private set; } = new(false, "If TRUE, emits WARN-level [VisibilityCO] traces for CreateObject paths: handle_visible_cells, AddVisibleObject clamp accept/reject, TrackObject/enqueue_objs, post-teleport ReconcileVisibilityAfterArrival (#467). Use to find where distance limits are bypassed. Toggle live: /modifybool visibility_create_object_diag_verbose true");
         public static ConfigProperty<long> visibility_create_object_diag_min_distance { get; private set; } = new(240, "With visibility_create_object_diag_verbose: only log when 2D distance (m) is >= this value (reduces spam). 0 = log all. Default 240 matches InitialClamp_Dist.");
@@ -543,6 +584,14 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> action_queue_tracking_enabled { get; private set; } = new(false, "if TRUE, enables runtime performance tracking for ActionQueue to identify slow actions. Zero overhead when disabled.");
         public static ConfigProperty<bool> siphon_lens_enabled { get; private set; } = new(false, "if TRUE, enables siphon lens drops from all creature deaths. Use /modifybool siphon_lens_enabled true to activate.");
         public static ConfigProperty<bool> enable_web_portal { get; private set; } = new(true, "If FALSE, the web portal API is disabled and all requests will return an error.");
+        public static ConfigProperty<bool> session_pool_emergency_shutdown_enabled { get; private set; } = new(false, "If TRUE, closes world and begins graceful shutdown when total session count reaches session_pool_emergency_threshold. Toggle live: /modifybool session_pool_emergency_shutdown_enabled true");
+        public static ConfigProperty<bool> session_pool_emergency_close_world { get; private set; } = new(true, "When session pool emergency shutdown triggers, close world immediately to block new logins.");
+        public static ConfigProperty<bool> session_pool_stale_sweeper_enabled { get; private set; } = new(true, "If TRUE, forcibly removes stale unauthenticated sessions that missed normal cleanup. Does not affect authenticated or in-world sessions.");
+        public static ConfigProperty<long> session_pool_emergency_threshold { get; private set; } = new(0, "Total session count that triggers emergency shutdown. 0 = 90% of MaximumAllowedSessions (e.g. 900 when max is 1000).");
+        public static ConfigProperty<long> session_pool_emergency_shutdown_seconds { get; private set; } = new(300, "Grace period in seconds before process exit when session pool emergency shutdown triggers.");
+        public static ConfigProperty<long> session_pool_early_reject_threshold_percent { get; private set; } = new(95, "Reject new login requests when session pool is at or above this percent of MaximumAllowedSessions. 0 = disabled.");
+        public static ConfigProperty<long> session_pool_stale_unauth_max_age_seconds { get; private set; } = new(30, "Remove unauthenticated AuthLoginRequest sessions older than this many seconds (stale sweeper).");
+        public static ConfigProperty<long> session_pool_stuck_termination_max_age_seconds { get; private set; } = new(10, "Force-drop unauthenticated sessions stuck in termination grace longer than this many seconds.");
         public static ConfigProperty<long> char_delete_time { get; private set; } = new(3600, "the amount of time in seconds a deleted character can be restored");
         public static ConfigProperty<long> chat_requires_account_time_seconds { get; private set; } = new(0, "the amount of time in seconds an account is required to have existed for for global chat privileges");
         public static ConfigProperty<long> chat_requires_player_age { get; private set; } = new(0, "the amount of time in seconds a player is required to have played for global chat privileges");
@@ -667,9 +716,14 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> discord_performance_level { get; private set; } = new(1, "Controls Performance Alerts. 0=None, 1=Info (Overload/Queue), 2=Verbose (ActionLag/SlowSave).");
 
         // Network Throttle Configuration
-        public static ConfigProperty<long> net_max_packets_per_tick { get; private set; } = new(50, "Maximum UDP packets sent to a single client per server tick. Default: 50 (vanilla). Lower values reduce burst during mass spawns at the cost of latency. Use /modifylong net_max_packets_per_tick <value>.");
+        public static ConfigProperty<long> net_max_packets_per_tick { get; private set; } = new(0, "Maximum UDP packets sent to a single client per server tick. 0 = unlimited (drain the whole queue each tick, matching base ACE) and is the default. A burst of CreateObject packets on landblock entry/teleport must not be trickled out over many ticks or objects pop in slowly. Set a positive value ONLY as an emergency throttle during mass-spawn incidents. Use /modifylong net_max_packets_per_tick <value>.");
         public static ConfigProperty<long> net_min_bundle_interval_ms { get; private set; } = new(5, "Minimum milliseconds between outbound network bundle flushes per session. Default: 5 (vanilla). Higher values pace packet flow during heavy events. Use /modifylong net_min_bundle_interval_ms <value>.");
         public static ConfigProperty<long> net_retransmit_warn_threshold { get; private set; } = new(75, "Log a RETRANSMIT warning when ACK prunes more than this many cached packets. Default: 75. Lower to 20 (vanilla) for stricter monitoring, or raise further during events with mass spawns. Use /modifylong net_retransmit_warn_threshold <value>.");
+
+        public static ConfigProperty<long> teleport_create_object_delay_ms { get; private set; } = new(0, "Milliseconds after a teleport (including death->lifestone respawn) before the server sends CreateObject for surrounding objects. 0 = send immediately (no delay) and is the default. A positive value delays CreateObject to mitigate client/Decal crashes when objects arrive before the destination landblock has finished loading (the original behavior was 1000). Effective value is clamped to [0, 10000]. Use /modifylong teleport_create_object_delay_ms <value>.");
+
+        public static ConfigProperty<bool> net_socket_buffer_enabled { get; private set; } = new(false, "If TRUE, overrides the OS default UDP send/receive buffer sizes on the server's listener sockets with net_socket_buffer_size, reducing dropped packets (and the resulting retransmits/disconnects) during outbound bursts. FALSE (default) = use OS defaults. Applied live within ~2s of toggling, no restart needed. Use /modifybool net_socket_buffer_enabled <true/false>.");
+        public static ConfigProperty<long> net_socket_buffer_size { get; private set; } = new(4194304, "Send/receive buffer size in bytes applied to listener sockets when net_socket_buffer_enabled is TRUE. Default 4194304 (4 MB). The OS may clamp this to its own maximum; the actually-accepted size is logged. Effective value is clamped to [65536, 67108864]. Use /modifylong net_socket_buffer_size <value>.");
 
         /// <summary>If the client never sends LoginComplete after this many seconds in Teleporting state, the server forces materialize. 0=off. Stored value when &gt;0 is clamped to 15–3600s at runtime. Default 45. Use /modifylong portal_stuck_recovery_seconds.</summary>
         public static ConfigProperty<long> portal_stuck_recovery_seconds { get; private set; } = new(45, "Seconds without LoginComplete before server forces materialize. 0=off. When enabled, effective range 15–3600s. Default 45.");

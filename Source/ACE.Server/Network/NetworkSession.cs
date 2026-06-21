@@ -727,9 +727,22 @@ namespace ACE.Server.Network
         {
             int packetsSent = 0;
             var rawMax = ServerConfig.net_max_packets_per_tick.Value;
-            if (rawMax < 1 || rawMax > 500)
-                log.Warn($"[NETWORK] net_max_packets_per_tick has unsafe value {rawMax}; clamping to [1, 500]. Use /modifylong net_max_packets_per_tick to correct.");
-            var maxPacketsPerTick = (int)Math.Clamp(rawMax, 1, 500);
+
+            // 0 (or negative) = unlimited: drain the entire queue each tick, matching base ACE.
+            // This is the default. Capping this causes bursts (e.g. CreateObject on landblock entry)
+            // to trickle out over multiple ticks, which manifests as slow/"weird" object loading.
+            int maxPacketsPerTick;
+            if (rawMax <= 0)
+            {
+                maxPacketsPerTick = int.MaxValue;
+            }
+            else
+            {
+                if (rawMax > 10000)
+                    log.Warn($"[NETWORK] net_max_packets_per_tick has unsafe value {rawMax}; clamping to 10000. Use /modifylong net_max_packets_per_tick to correct (0 = unlimited).");
+                maxPacketsPerTick = (int)Math.Clamp(rawMax, 1, 10000);
+            }
+
             while (packetsSent < maxPacketsPerTick && packetQueue.TryDequeue(out var packet))
             {
                 packetsSent++;
@@ -781,7 +794,9 @@ namespace ACE.Server.Network
 
                 packet.CreateReadyToSendPacket(buffer, out var size);
 
-                packetLog.Debug(packet.ToString());
+                // DebugFormat defers packet.ToString() until packet logging is actually enabled.
+                // The previous packet.ToString() ran for every outbound packet even with logging off.
+                packetLog.DebugFormat("{0}", packet);
 
                 if (packetLog.IsDebugEnabled)
                 {

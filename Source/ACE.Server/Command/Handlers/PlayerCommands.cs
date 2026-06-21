@@ -1704,8 +1704,27 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
-        /// Rate limiter for /passwd command
+        /// Toggles the per-character Savage Echo kill drop notification.
+        /// Off by default — players opt in to avoid spam during long hunts.
         /// </summary>
+        [CommandHandler("echo-notify", AccessLevel.Player, CommandHandlerFlag.RequiresWorld,
+            "Toggle Savage Echo kill drop notifications. Off by default.",
+            "Usage: /echo-notify")]
+        public static void HandleEchoNotify(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+            var current = player.GetProperty(PropertyBool.ShowPetEchoDrops) ?? false;
+            var next = !current;
+            player.SetProperty(PropertyBool.ShowPetEchoDrops, next);
+            player.SaveBiotaToDatabase();
+
+            var msg = next
+                ? "Savage Echo drop notifications enabled. Your pet will notify you when it earns Savage Echo."
+                : "Savage Echo drop notifications disabled.";
+            session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
+        }
+
+
         private static readonly TimeSpan MyQuests = TimeSpan.FromSeconds(60);
 
         // quest info (uses GDLe formatting to match plugin expectations)

@@ -39,6 +39,8 @@ namespace ACE.Server
 
         private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
+        private static int ctrlCShutdownStarted;
+
         public static readonly bool IsRunningInContainer = Convert.ToBoolean(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"));
 
         public static async Task Main(string[] args)
@@ -401,6 +403,23 @@ namespace ACE.Server
             log.Info("Initializing CommandManager...");
             CommandManager.Initialize();
 
+            Console.CancelKeyPress += (sender, e) =>
+            {
+                e.Cancel = true;
+                if (Interlocked.CompareExchange(ref ctrlCShutdownStarted, 1, 0) != 0)
+                    return;
+
+                log.Info("Ctrl+C received — initiating cooperative shutdown...");
+                try
+                {
+                    ServerManager.DoShutdownNow();
+                }
+                catch (Exception ex)
+                {
+                    log.Error("Error during cooperative shutdown from Ctrl+C", ex);
+                }
+            };
+
             //Register mod commands
             log.Info("Registering ModManager commands...");
             ModManager.RegisterCommands();
@@ -447,6 +466,7 @@ namespace ACE.Server
                 PropertyManager.StopUpdating();
                 //ServerManager.DoShutdownNow();
                 DatabaseManager.Stop();
+                EventManager.Shutdown();
                 MetricsManager.Shutdown();
 
                 // Do system specific cleanup here
@@ -464,8 +484,12 @@ namespace ACE.Server
             }
             else
             {
-                ServerManager.DoShutdownNow();
+                if (!ServerManager.ShutdownInitiated)
+                {
+                    ServerManager.DoShutdownNow();
+                }
                 DatabaseManager.Stop();
+                EventManager.Shutdown();
                 MetricsManager.Shutdown();
             }
         }

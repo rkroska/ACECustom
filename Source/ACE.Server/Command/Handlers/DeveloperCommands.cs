@@ -1155,7 +1155,7 @@ namespace ACE.Server.Command.Handlers
                 }
                 else if (bowInfo.imbuedEffect == ImbuedEffectType.NetherRending)
                 {
-                    bow.IconUnderlayId = 0x06006E3D; // Nether Rending underlay icon
+                    bow.IconUnderlayId = 0x060067A1; // Nether Rending underlay icon
                 }
 
                 // Apply Split Arrow x3 properties
@@ -1241,7 +1241,7 @@ namespace ACE.Server.Command.Handlers
                 }
                 else if (uaInfo.imbuedEffect == ImbuedEffectType.NetherRending)
                 {
-                    katar.IconUnderlayId = 0x06006E3D; // Nether Rending underlay icon
+                    katar.IconUnderlayId = 0x060067A1; // Nether Rending underlay icon
                 }
 
                 // Add to player's inventory
