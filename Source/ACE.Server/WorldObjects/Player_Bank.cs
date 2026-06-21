@@ -96,13 +96,13 @@ namespace ACE.Server.WorldObjects
         private void LogDebug(string message)
         {
             if (ServerConfig.log_bank_debug.Value)
-                LogDebug(message);
+                log.Debug(message);
         }
 
         private void LogInfo(string message)
         {
             if (ServerConfig.log_bank_debug.Value)
-                LogInfo(message);
+                log.Info(message);
         }
 
         /// <summary>
