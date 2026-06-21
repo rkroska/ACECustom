@@ -186,7 +186,7 @@ namespace ACE.Server.Controllers
         public async Task<IActionResult> GetAllOnline()
         {
             if (!HasPortalAccess(PortalPages.Players))
-                return Unauthorized();
+                return Forbid();
 
             var online = PlayerManager.GetAllOnline();
             var tasks = online.Select(async p => {
@@ -227,7 +227,7 @@ namespace ACE.Server.Controllers
         public async Task<IActionResult> Lookup(uint id)
         {
             if (!HasPortalAccess(PortalPages.Players))
-                return Unauthorized();
+                return Forbid();
 
             var stub = DatabaseManager.Shard.BaseDatabase.GetCharacterStubByGuid(id);
             if (stub == null)
@@ -274,7 +274,7 @@ namespace ACE.Server.Controllers
         public async Task<IActionResult> SearchAll(string name)
         {
             if (!HasPortalAccess(PortalPages.Players))
-                return Unauthorized();
+                return Forbid();
 
             if (string.IsNullOrWhiteSpace(name))
                 return Ok(new List<object>());
@@ -327,7 +327,7 @@ namespace ACE.Server.Controllers
         [HttpGet("detail/{guid}")]
         public async Task<IActionResult> GetDetail(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Forbid();
             
             var isAdmin = (player?.Account?.AccessLevel ?? 0) > 0;
             var charName = isAdmin && !player?.Name.StartsWith("+") == true ? $"+{player?.Name}" : player?.Name;
@@ -367,7 +367,7 @@ namespace ACE.Server.Controllers
         [HttpGet("stats/{guid}")]
         public IActionResult GetStats(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Forbid();
 
             if (player is Player online)
                 return Ok(GetOnlineStats(online));
@@ -378,7 +378,7 @@ namespace ACE.Server.Controllers
         [HttpGet("skills/{guid}")]
         public IActionResult GetSkills(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Forbid();
 
             if (player is Player online)
                 return Ok(GetOnlineSkills(online));
@@ -389,7 +389,7 @@ namespace ACE.Server.Controllers
         [HttpGet("inventory/{guid}")]
         public IActionResult GetInventory(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Forbid();
 
             if (player is Player online)
                 return Ok(GetOnlineInventory(online));
@@ -400,7 +400,7 @@ namespace ACE.Server.Controllers
         [HttpGet("stamps/{guid}")]
         public IActionResult GetStamps(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Forbid();
 
             var stamps = DatabaseManager.Authentication.GetAccountQuests(player.Account.AccountId)
                 .Where(q => q.NumTimesCompleted >= 1)
@@ -419,7 +419,7 @@ namespace ACE.Server.Controllers
         public IActionResult GetPortalStatus(uint guid)
         {
             if (!IsAuthorizedForCharacter(guid, out var player))
-                return Unauthorized();
+                return Forbid();
 
             var snapshot = RetrieveBiota(player);
             return Ok(CharacterPortalStatusHelper.BuildStatusJson(guid, snapshot));
@@ -432,7 +432,7 @@ namespace ACE.Server.Controllers
         public IActionResult GetPortalCorpses(uint guid)
         {
             if (!IsAuthorizedForCharacter(guid, out _))
-                return Unauthorized();
+                return Forbid();
 
             return Ok(new { corpses = CharacterPortalStatusHelper.FindPlayerCorpses(guid) });
         }
@@ -777,6 +777,130 @@ namespace ACE.Server.Controllers
                 foreach (var eq in creature.EquippedObjects.Values)
                     items.Add(MapToDto(eq.Biota, true, (uint)container.Guid.Full));
             }
+        }
+
+        [HttpGet("admin/corpses")]
+        public IActionResult GetAdminCorpses([FromQuery] string query)
+        {
+            if (!HasPortalAccess(PortalPages.CorpseFinder))
+                return Forbid();
+
+            var result = new List<object>();
+
+            using (var shard = new ShardDbContext())
+            {
+                var queryText = (query ?? "").Trim();
+                
+                var queryList = (from corpse in shard.Biota
+                                 join victim in shard.BiotaPropertiesIID on corpse.Id equals victim.ObjectId
+                                 join charName in shard.BiotaPropertiesString on victim.Value equals charName.ObjectId
+                                 where corpse.WeenieType == (int)WeenieType.Corpse
+                                    && victim.Type == (ushort)PropertyInstanceId.Victim
+                                    && charName.Type == (ushort)PropertyString.Name
+                                 select new
+                                 {
+                                     CorpseId = corpse.Id,
+                                     CharacterId = victim.Value,
+                                     CharacterName = charName.Value
+                                 });
+
+                if (!string.IsNullOrEmpty(queryText))
+                {
+                    queryList = queryList.Where(c => c.CharacterName.Contains(queryText));
+                }
+
+                var list = queryList.OrderByDescending(c => c.CorpseId).Take(200).ToList();
+
+                foreach (var item in list)
+                {
+                    var isLoaded = false;
+                    ACE.Entity.Position locObj = null;
+                    string corpseName = "Corpse";
+                    double? timeToRotSeconds = null;
+                    int? creationTimestamp = null;
+                    uint? killerId = null;
+
+                    var activeCorpse = FindActiveCorpseInMemory(item.CorpseId);
+                    if (activeCorpse != null)
+                    {
+                        isLoaded = true;
+                        locObj = activeCorpse.Location;
+                        corpseName = activeCorpse.Name;
+                        timeToRotSeconds = activeCorpse.TimeToRot;
+                        creationTimestamp = activeCorpse.CreationTimestamp;
+                        killerId = activeCorpse.KillerId;
+                    }
+                    else
+                    {
+                        corpseName = shard.BiotaPropertiesString
+                            .Where(s => s.ObjectId == item.CorpseId && s.Type == (ushort)PropertyString.Name)
+                            .Select(s => s.Value)
+                            .FirstOrDefault() ?? "Corpse";
+
+                        var dbPos = shard.BiotaPropertiesPosition
+                            .FirstOrDefault(p => p.ObjectId == item.CorpseId && p.PositionType == (ushort)PositionType.Location);
+
+                        if (dbPos != null)
+                        {
+                            locObj = new ACE.Entity.Position(dbPos.ObjCellId, dbPos.OriginX, dbPos.OriginY, dbPos.OriginZ, dbPos.AnglesX, dbPos.AnglesY, dbPos.AnglesZ, dbPos.AnglesW, false, dbPos.VariationId);
+                        }
+
+                        timeToRotSeconds = shard.BiotaPropertiesFloat
+                            .Where(f => f.ObjectId == item.CorpseId && f.Type == (ushort)PropertyFloat.TimeToRot)
+                            .Select(f => f.Value)
+                            .FirstOrDefault();
+
+                        creationTimestamp = shard.BiotaPropertiesInt
+                            .Where(i => i.ObjectId == item.CorpseId && i.Type == (ushort)PropertyInt.CreationTimestamp)
+                            .Select(i => i.Value)
+                            .FirstOrDefault();
+
+                        var dbKiller = shard.BiotaPropertiesIID
+                            .Where(i => i.ObjectId == item.CorpseId && i.Type == (ushort)PropertyInstanceId.Killer)
+                            .Select(i => i.Value)
+                            .FirstOrDefault();
+                        killerId = dbKiller == 0 ? (uint?)null : dbKiller;
+                    }
+
+                    object serializedPos = null;
+                    if (locObj != null)
+                    {
+                        serializedPos = CharacterPortalStatusHelper.SerializePosition(locObj);
+                    }
+
+                    result.Add(new
+                    {
+                        corpseId = item.CorpseId,
+                        characterId = item.CharacterId,
+                        characterName = item.CharacterName,
+                        name = corpseName,
+                        position = serializedPos,
+                        timeToRotSeconds = timeToRotSeconds,
+                        creationTimestamp = creationTimestamp == 0 ? (int?)null : creationTimestamp,
+                        killerId = killerId,
+                        isLoaded = isLoaded
+                    });
+                }
+            }
+
+            return Ok(result);
+        }
+
+        private static Corpse FindActiveCorpseInMemory(uint corpseGuid)
+        {
+            var landblocks = LandblockManager.loadedLandblocks.Values.ToList();
+            foreach (var lb in landblocks)
+            {
+                if (lb == null) continue;
+                IEnumerable<WorldObject> objects;
+                try { objects = lb.GetWorldObjectsForDiagnostics(); } catch { continue; }
+                foreach (var wo in objects)
+                {
+                    if (wo is Corpse corpse && corpse.Guid.Full == corpseGuid)
+                        return corpse;
+                }
+            }
+            return null;
         }
     }
 }

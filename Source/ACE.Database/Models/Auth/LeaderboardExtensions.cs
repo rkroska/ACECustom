@@ -224,6 +224,22 @@ namespace ACE.Database.Models.Auth
         }
 
         /// <summary>
+        /// Max pet potency level (per attuned essence) per character.
+        /// </summary>
+        public static async Task<List<Leaderboard>> GetTopPotencyLeaderboardAsync(AuthDbContext context)
+        {
+            try
+            {
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopPotency).AsNoTracking().ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Failed to get TopPotency leaderboard: {ex.Message}", ex);
+                return new List<Leaderboard>();
+            }
+        }
+
+        /// <summary>
         /// Best row for the account on this board (highest score among qualifying characters) and global rank.
         /// Returns null if the account has no qualifying entry or the query fails.
         /// </summary>
@@ -287,6 +303,9 @@ namespace ACE.Database.Models.Auth
                     case "sumbonds":
                         sql = LeaderboardInlineSql.SelfPlacementSumBonds(accountId);
                         break;
+                    case "potency":
+                        sql = LeaderboardInlineSql.SelfPlacementPotency(accountId);
+                        break;
                     default:
                         return null;
                 }
@@ -326,6 +345,7 @@ namespace ACE.Database.Models.Auth
         private static readonly SemaphoreSlim _attrCacheSemaphore = new SemaphoreSlim(1, 1);
         private static readonly SemaphoreSlim _bondsCacheSemaphore = new SemaphoreSlim(1, 1);
         private static readonly SemaphoreSlim _sumBondsCacheSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _potencyCacheSemaphore = new SemaphoreSlim(1, 1);
 
         private sealed class BankedInt64LeaderboardSlot
         {
@@ -366,6 +386,7 @@ namespace ACE.Database.Models.Auth
         public List<Leaderboard> AttrCache = new List<Leaderboard>();
         public List<Leaderboard> BondsCache = new List<Leaderboard>();
         public List<Leaderboard> SumBondsCache = new List<Leaderboard>();
+        public List<Leaderboard> PotencyCache = new List<Leaderboard>();
 
         /// <summary>
         /// Timestamp indicating when the cache was last updated (UTC). This represents the time when the cache was refreshed with new data from the database.
@@ -381,6 +402,7 @@ namespace ACE.Database.Models.Auth
         public DateTime AttrLastUpdate = DateTime.UtcNow;
         public DateTime BondsLastUpdate = DateTime.UtcNow;
         public DateTime SumBondsLastUpdate = DateTime.UtcNow;
+        public DateTime PotencyLastUpdate = DateTime.UtcNow;
 
         /// <summary>
         /// Updates the QB cache with new data and sets the next update time with variance to prevent database load spikes.
@@ -482,6 +504,12 @@ namespace ACE.Database.Models.Auth
         {
             SumBondsCache = list;
             SumBondsLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120));
+        }
+
+        public void UpdatePotencyCache(List<Leaderboard> list)
+        {
+            PotencyCache = list;
+            PotencyLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120));
         }
 
         /// <summary>
@@ -866,6 +894,27 @@ namespace ACE.Database.Models.Auth
                 }
             }
             return SumBondsCache;
+        }
+
+        public async Task<List<Leaderboard>> GetTopPotencyAsync(AuthDbContext context)
+        {
+            if (PotencyCache.Count == 0 || PotencyLastUpdate < DateTime.UtcNow)
+            {
+                await _potencyCacheSemaphore.WaitAsync();
+                try
+                {
+                    if (PotencyCache.Count == 0 || PotencyLastUpdate < DateTime.UtcNow)
+                    {
+                        var result = await Leaderboard.GetTopPotencyLeaderboardAsync(context);
+                        UpdatePotencyCache(result);
+                    }
+                }
+                finally
+                {
+                    _potencyCacheSemaphore.Release();
+                }
+            }
+            return PotencyCache;
         }
 
         /// <summary>Next scheduled refresh for a banked-int64 board (UTC), or now if never loaded.</summary>

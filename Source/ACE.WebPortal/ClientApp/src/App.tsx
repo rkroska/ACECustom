@@ -35,6 +35,7 @@ import QuestBuilder from './components/quest-builder/QuestBuilder'
 import PortalSecurity from './components/PortalSecurity'
 
 import AuditLog from './components/AuditLog'
+import CorpseFinder from './components/CorpseFinder'
 
 import MainLayout from './layouts/MainLayout'
 
@@ -207,6 +208,16 @@ function App() {
           <ProtectedRoute pageKey="audit-log">
 
             <AuditLog />
+
+          </ProtectedRoute>
+
+        } />
+
+        <Route path="/corpse-finder" element={
+
+          <ProtectedRoute pageKey="corpse-finder">
+
+            <CorpseFinder />
 
           </ProtectedRoute>
 

@@ -17,6 +17,7 @@ import {
   Trophy,
   ClipboardList,
   FileText,
+  Skull,
 } from 'lucide-react'
 
 export interface PortalRouteDefinition {
@@ -34,6 +35,7 @@ export const PORTAL_ROUTES: PortalRouteDefinition[] = [
   { key: 'leaderboards', path: '/leaderboards', label: 'Leaderboards', section: 'Player', icon: Trophy },
   { key: 'patch-notes', path: '/patch-notes', label: 'Patch Notes', section: 'Player', icon: FileText },
   { key: 'players', path: '/players', label: 'Player List', section: 'Monitoring', icon: Users },
+  { key: 'corpse-finder', path: '/corpse-finder', label: 'Corpse Finder', section: 'Monitoring', icon: Skull },
   { key: 'audit-log', path: '/audit', label: 'Audit Log', section: 'Monitoring', icon: ClipboardList },
   { key: 'map', path: '/map', label: 'World Map', section: 'Monitoring', icon: Globe, placeholder: true },
   { key: 'combat-calculator', path: '/combat-calculator', label: 'Combat Calculator', section: 'Content Tools', icon: Swords },

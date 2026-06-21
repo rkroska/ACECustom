@@ -68,6 +68,7 @@ namespace ACE.Server.Controllers
             if (string.IsNullOrWhiteSpace(q)) return Ok(Array.Empty<WeenieSearchResultDto>());
 
             q = q.Trim();
+            limit = Math.Clamp(limit, 1, 100);
             var results = new List<WeenieSearchResultDto>();
 
             if (uint.TryParse(q, out var wcid))
@@ -596,6 +597,7 @@ namespace ACE.Server.Controllers
         {
             var rows = new List<RangeRowDto>();
             var sweepAttack = direction == "playerAttacksMonster";
+            step = Math.Max(1, step);
             for (var sweep = lo; sweep <= hi && rows.Count < 120; sweep += step)
             {
                 var atk = sweepAttack

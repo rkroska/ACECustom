@@ -34,6 +34,7 @@ namespace ACE.Server.Controllers
                 ["notguilty"] = "Not guilty (focus checks passed)",
                 ["bond"] = "Max pet bond",
                 ["sumbond"] = "Sum pet bonds",
+                ["potency"] = "Max pet potency",
             };
 
         /// <summary>PropertyInt player discipline stats (9044–9045).</summary>
@@ -118,6 +119,8 @@ namespace ACE.Server.Controllers
                 norm = "bond";
             else if (norm is "sumbonds")
                 norm = "sumbond";
+            else if (norm is "potency" || norm is "toppotency")
+                norm = "potency";
 
             if (!BoardTitles.TryGetValue(norm, out var title))
             {
@@ -323,6 +326,10 @@ namespace ACE.Server.Controllers
                 case "sumbonds":
                     data = await cache.GetTopSumBondsAsync(context);
                     nextRefresh = cache.SumBondsLastUpdate;
+                    break;
+                case "potency":
+                    data = await cache.GetTopPotencyAsync(context);
+                    nextRefresh = cache.PotencyLastUpdate;
                     break;
                 default:
                     data = new List<Leaderboard>();

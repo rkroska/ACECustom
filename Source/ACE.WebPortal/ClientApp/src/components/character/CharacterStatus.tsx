@@ -13,6 +13,7 @@ export interface AcePosition {
   positionZ: number
   variation: number | null
   indoors: boolean
+  description?: string | null
 }
 
 export interface PortalCorpseRow {
@@ -23,6 +24,7 @@ export interface PortalCorpseRow {
   position: AcePosition | null
   timeToRotSeconds: number | null
   creationTimestamp: number | null
+  isLoaded?: boolean
 }
 
 export interface CharacterPortalStatus {
@@ -57,8 +59,19 @@ function formatUtc(iso: string | null) {
   }
 }
 
-function positionClipboard(p: AcePosition) {
-  return `0x${p.cell.toString(16)} ${p.positionX.toFixed(3)} ${p.positionY.toFixed(3)} ${p.positionZ.toFixed(3)}`
+export function formatTimeToRot(seconds: number | null) {
+  if (seconds == null || seconds <= 0) return '—'
+  if (seconds < 60) return `${Math.floor(seconds)}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.floor(seconds % 60)
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return `${hours}h ${remainingMinutes}m`
+}
+
+export function positionClipboard(p: AcePosition) {
+  return `/tele loc 0x${p.cell.toString(16)} [${p.positionX.toFixed(3)} ${p.positionY.toFixed(3)} ${p.positionZ.toFixed(3)}]`
 }
 
 export default function CharacterStatus({ guid, isAdmin }: { guid: number; isAdmin?: boolean }) {
@@ -169,6 +182,11 @@ export default function CharacterStatus({ guid, isAdmin }: { guid: number; isAdm
         <p className="text-xs text-neutral-500">{data.live.note}</p>
         {data.live.position ? (
           <div className="space-y-3">
+            {data.live.position.description && (
+              <div className="text-neutral-200 text-sm font-medium">
+                Location: <span className="text-emerald-400 font-semibold">{data.live.position.description}</span>
+              </div>
+            )}
             <pre className="text-xs font-mono text-neutral-300 bg-neutral-900/80 rounded-lg p-3 overflow-x-auto border border-neutral-800">
               {JSON.stringify(data.live.position, null, 2)}
             </pre>
@@ -198,20 +216,32 @@ export default function CharacterStatus({ guid, isAdmin }: { guid: number; isAdm
       </section>
 
       <section className="rounded-2xl border border-neutral-800 bg-neutral-950/40 p-6 space-y-4">
-        <div className="text-white font-bold text-sm uppercase tracking-wider">Active corpses (loaded landblocks)</div>
+        <div className="text-white font-bold text-sm uppercase tracking-wider">Active corpses</div>
         {data.corpses.length === 0 ? (
-          <p className="text-sm text-neutral-500">No player corpse found in memory for this character.</p>
+          <p className="text-sm text-neutral-500">No player corpse found for this character.</p>
         ) : (
           <ul className="space-y-4">
             {data.corpses.map((c) => (
               <li key={c.objectGuid} className="border border-neutral-800 rounded-xl p-4 bg-neutral-900/30 space-y-2">
-                <div className="text-sm text-neutral-200 font-medium">{c.name ?? 'Corpse'}</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm text-neutral-200 font-medium">{c.name ?? 'Corpse'}</div>
+                  {c.isLoaded !== undefined && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${c.isLoaded ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/10' : 'bg-amber-500/10 text-amber-400 border-amber-500/10'}`}>
+                      {c.isLoaded ? 'Active Area' : 'Inactive Area (Frozen)'}
+                    </span>
+                  )}
+                </div>
+                {c.position?.description && (
+                  <div className="text-xs text-neutral-300">
+                    Location: <span className="text-emerald-400 font-medium">{c.position.description}</span>
+                  </div>
+                )}
                 {c.longDesc && <div className="text-xs text-neutral-400">{c.longDesc}</div>}
                 <div className="text-[10px] text-neutral-600 font-mono">
                   Object 0x{c.objectGuid.toString(16)} · Killer IID {c.killerId != null ? `0x${c.killerId.toString(16)}` : '—'}
                 </div>
                 {c.timeToRotSeconds != null && (
-                  <div className="text-xs text-neutral-500">Time to rot (sec): {c.timeToRotSeconds}</div>
+                  <div className="text-xs text-neutral-500">Time to rot: {formatTimeToRot(c.timeToRotSeconds)}</div>
                 )}
                 {c.position && (
                   <div className="flex flex-wrap gap-2 pt-1">

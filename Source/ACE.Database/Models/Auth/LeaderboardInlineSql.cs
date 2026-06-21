@@ -560,4 +560,45 @@ public static class LeaderboardInlineSql
         ORDER BY ranked.Score DESC
         LIMIT 1
         """;
+
+    /// <summary>Max pet potency level per character (PropertyInt64 9052 attuned character, PropertyInt 9056 potency level).</summary>
+    public const string TopPotency = """
+        SELECT MAX(COALESCE(pot.value, 0)) AS Score,
+               c.account_Id AS Account,
+               c.name AS `Character`,
+               c.id AS LeaderboardID
+        FROM ace_shard.biota_properties_int64 att
+        INNER JOIN ace_shard.character c ON c.id = CAST(att.value AS UNSIGNED) AND att.type = 9052
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        LEFT JOIN ace_shard.biota_properties_int pot ON pot.object_id = att.object_id AND pot.type = 9056
+        LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        GROUP BY c.id, c.account_Id, c.name
+        ORDER BY Score DESC, c.name ASC, c.id DESC
+        LIMIT 25
+        """;
+
+    public static FormattableString SelfPlacementPotency(uint accountId) => $"""
+        SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
+        FROM (
+          SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
+                 ROW_NUMBER() OVER (ORDER BY innerq.Score DESC, innerq.Character ASC, innerq.LeaderboardID DESC) AS PlacementRank
+          FROM (
+            SELECT MAX(COALESCE(pot.value, 0)) AS Score,
+                   c.account_Id AS Account,
+                   c.name AS `Character`,
+                   c.id AS LeaderboardID
+            FROM ace_shard.biota_properties_int64 att
+            INNER JOIN ace_shard.character c ON c.id = CAST(att.value AS UNSIGNED) AND att.type = 9052
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            LEFT JOIN ace_shard.biota_properties_int pot ON pot.object_id = att.object_id AND pot.type = 9056
+            LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
+            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+            GROUP BY c.id, c.account_Id, c.name
+          ) innerq
+        ) ranked
+        WHERE ranked.Account = {accountId}
+        ORDER BY ranked.Score DESC
+        LIMIT 1
+        """;
 }

@@ -526,6 +526,16 @@ export function parseWeenieSkillsFromSql(sql: string): WeenieSkill[] {
     .sort((a, b) => b.initLevel - a.initLevel);
 }
 
+export type MockPlayerBundle = {
+  guid: number;
+  name: string;
+  isOnline: boolean;
+  weaponBonusPct: number;
+  effectiveAttackByMode: Record<DefenseMode, number>;
+  defenseByMode: Record<DefenseMode, number>;
+  buffedDefByMode: Record<DefenseMode, number>;
+};
+
 /** Build combat inputs from weenie skills + mock player bundle. */
 export function buildInputsFromSelection(opts: {
   mode: DefenseMode;
@@ -552,84 +562,4 @@ export function buildInputsFromSelection(opts: {
   }
 
   return patch;
-}
-
-export type MockPlayerBundle = {
-  guid: number;
-  name: string;
-  isOnline: boolean;
-  weaponBonusPct: number;
-  effectiveAttackByMode: Record<DefenseMode, number>;
-  defenseByMode: Record<DefenseMode, number>;
-  buffedDefByMode: Record<DefenseMode, number>;
-};
-
-export type MockMonsterStub = {
-  wcid: number;
-  name: string;
-  weenieType: string;
-  skills: WeenieSkill[];
-};
-
-export const MOCK_PLAYERS: MockPlayerBundle[] = [
-  {
-    guid: 1342177281,
-    name: "DemoArcher",
-    isOnline: true,
-    weaponBonusPct: 250,
-    effectiveAttackByMode: { melee: 4200, missile: 1800, magic: 2900 },
-    defenseByMode: { melee: 5200, missile: 35000, magic: 3500 },
-    buffedDefByMode: { melee: 1486, missile: 10000, magic: 1000 },
-  },
-  {
-    guid: 1342177282,
-    name: "DemoTank",
-    isOnline: false,
-    weaponBonusPct: 200,
-    effectiveAttackByMode: { melee: 8500, missile: 2100, magic: 1200 },
-    defenseByMode: { melee: 48000, missile: 42000, magic: 8000 },
-    buffedDefByMode: { melee: 12000, missile: 10500, magic: 2000 },
-  },
-];
-
-export const MOCK_MONSTERS: MockMonsterStub[] = [
-  {
-    wcid: 71650004,
-    name: "Cursed Armoredillo",
-    weenieType: "Creature",
-    skills: [
-      { skillId: 45, initLevel: 86325 },
-      { skillId: 47, initLevel: 50000 },
-      { skillId: 7, initLevel: 1750 },
-      { skillId: 6, initLevel: 3500 },
-      { skillId: 34, initLevel: 10000 },
-      { skillId: 15, initLevel: 2500 },
-    ],
-  },
-  {
-    wcid: 42156,
-    name: "Lugian (example)",
-    weenieType: "Creature",
-    skills: [
-      { skillId: 45, initLevel: 40000 },
-      { skillId: 6, initLevel: 5000 },
-      { skillId: 7, initLevel: 3200 },
-    ],
-  },
-];
-
-export function filterMockPlayers(query: string): MockPlayerBundle[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return MOCK_PLAYERS;
-  return MOCK_PLAYERS.filter(
-    (p) => p.name.toLowerCase().includes(q) || String(p.guid).includes(q)
-  );
-}
-
-export function filterMockMonsters(query: string): MockMonsterStub[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return MOCK_MONSTERS;
-  return MOCK_MONSTERS.filter(
-    (m) => m.name.toLowerCase().includes(q) || String(m.wcid).includes(q)
-  );
 }

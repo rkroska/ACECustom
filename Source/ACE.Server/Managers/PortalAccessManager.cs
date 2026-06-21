@@ -29,6 +29,7 @@ namespace ACE.Server.Managers
         public const string AuditLog = "audit-log";
         public const string PatchNotes = "patch-notes";
         public const string PatchNotesAdmin = "patch-notes-admin";
+        public const string CorpseFinder = "corpse-finder";
     }
 
     public sealed class PortalPageDefinition
@@ -130,6 +131,7 @@ namespace ACE.Server.Managers
             new(PortalPages.Events, "Server Events", "/events", "Server Management", DefaultRestrictedPageMinLevel),
             new(PortalPages.PortalSecurity, "Portal Security", "/portal-security", "Server Management", DefaultRestrictedPageMinLevel),
             new(PortalPages.PatchNotesAdmin, "Patch Notes", "/patch-notes/manage", "Server Management", DefaultRestrictedPageMinLevel),
+            new(PortalPages.CorpseFinder, "Corpse Finder", "/corpse-finder", "Monitoring", DefaultRestrictedPageMinLevel),
         };
 
         /// <summary>True when at least one page level has been saved to the database.</summary>

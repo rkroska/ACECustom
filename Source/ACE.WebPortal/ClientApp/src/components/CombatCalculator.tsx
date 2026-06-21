@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Swords, ChevronDown, ChevronUp } from 'lucide-react'
 import { api } from '../services/api'
 import { useDebounce } from '../hooks/useDebounce'
+import { useAuthStore } from '../store/useAuthStore'
 import PageHeader from './common/PageHeader'
 import {
   type CombatDirection,
@@ -50,6 +51,10 @@ function syncIntFromResponse(value: number | undefined, setter: (v: string) => v
 }
 
 export default function CombatCalculator() {
+  const { canAccessPage } = useAuthStore()
+  const isPlayerAdmin = canAccessPage('players')
+  const [myCharacters, setMyCharacters] = useState<PlayerStub[]>([])
+
   const [config, setConfig] = useState<CombatConfig | null>(null)
   const [mode, setMode] = useState<CombatMode>('missile')
   const [direction, setDirection] = useState<CombatDirection>('playerAttacksMonster')
@@ -116,18 +121,37 @@ export default function CombatCalculator() {
   }, [])
 
   useEffect(() => {
+    if (!isPlayerAdmin) {
+      api.get<PlayerStub[]>('/api/character/list').then((list) => {
+        setMyCharacters(list ?? [])
+      })
+    }
+  }, [isPlayerAdmin])
+
+  useEffect(() => {
     if (!config) return
     setTestAggression(String(config[mode].defaultAggression))
   }, [mode, config])
 
   useEffect(() => {
     const run = async () => {
-      if (debouncedPlayerQuery.length < 2) {
+      const q = debouncedPlayerQuery.trim().toLowerCase()
+      if (q.length < 2) {
         setPlayerResults([])
         return
       }
-      if (/^\d+$/.test(debouncedPlayerQuery.trim())) {
-        const stub = await api.get<PlayerStub>(`/api/character/lookup/${debouncedPlayerQuery.trim()}`)
+
+      if (!isPlayerAdmin) {
+        const filtered = myCharacters.filter((c) =>
+          c.name.toLowerCase().includes(q) ||
+          c.guid.toString().includes(q)
+        )
+        setPlayerResults(filtered)
+        return
+      }
+
+      if (/^\d+$/.test(q)) {
+        const stub = await api.get<PlayerStub>(`/api/character/lookup/${q}`)
         setPlayerResults(stub ? [stub] : [])
         return
       }
@@ -137,7 +161,7 @@ export default function CombatCalculator() {
       }
     }
     run()
-  }, [debouncedPlayerQuery])
+  }, [debouncedPlayerQuery, isPlayerAdmin, myCharacters])
 
   useEffect(() => {
     const run = async () => {
@@ -494,14 +518,16 @@ export default function CombatCalculator() {
               ))}
             </select>
           </label>
-          <label className="text-sm">
-            <span className="text-neutral-400 block mb-1">Test aggression</span>
-            <input
-              className="bg-neutral-950 border border-neutral-700 rounded px-2 py-1 w-24"
-              value={testAggression}
-              onChange={(e) => setTestAggression(e.target.value)}
-            />
-          </label>
+          {isPlayerAdmin && (
+            <label className="text-sm">
+              <span className="text-neutral-400 block mb-1">Test aggression</span>
+              <input
+                className="bg-neutral-950 border border-neutral-700 rounded px-2 py-1 w-24"
+                value={testAggression}
+                onChange={(e) => setTestAggression(e.target.value)}
+              />
+            </label>
+          )}
           <button
             type="button"
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm disabled:opacity-50"
@@ -709,23 +735,37 @@ export default function CombatCalculator() {
 
         {triplet && (
           <>
-            <p className="text-xs text-neutral-500">
-              A = scaling off · B = on (agg {activeCfg.serverDefaultAgg}
-              {scalingEnabled ? '' : ', scaling disabled on server'}) · C = on (test {testAgg})
-            </p>
-            <div className="flex flex-wrap gap-2 text-sm">
-              <span className="px-3 py-1 rounded bg-neutral-800">A OFF {fmtPct(triplet.primaryBaseline)}</span>
-              <span className="px-3 py-1 rounded bg-blue-900/40 text-blue-300">
-                B {fmtPct(triplet.primaryServerDefault)}
-              </span>
-              <span className="px-3 py-1 rounded bg-green-900/40 text-green-300">C {fmtPct(triplet.primaryTest)}</span>
-              <span
-                className={`px-3 py-1 rounded ${triplet.deltaPrimaryVsDefault >= 0 ? 'bg-green-900/30 text-green-400' : 'bg-amber-900/30 text-amber-400'}`}
-              >
-                Δ(C−B) {triplet.deltaPrimaryVsDefault >= 0 ? '+' : ''}
-                {triplet.deltaPrimaryVsDefault.toFixed(1)}%
-              </span>
-            </div>
+            {isPlayerAdmin ? (
+              <>
+                <p className="text-xs text-neutral-500">
+                  A = scaling off · B = on (agg {activeCfg.serverDefaultAgg}
+                  {scalingEnabled ? '' : ', scaling disabled on server'}) · C = on (test {testAgg})
+                </p>
+                <div className="flex flex-wrap gap-2 text-sm">
+                  <span className={`px-3 py-1 rounded ${!preview?.scalingEnabled ? 'bg-blue-900/40 text-blue-300 border border-blue-500/50 font-semibold' : 'bg-neutral-800 text-neutral-400'}`}>
+                    A OFF {fmtPct(triplet.primaryBaseline)} {!preview?.scalingEnabled && ' (Active)'}
+                  </span>
+                  <span className={`px-3 py-1 rounded ${preview?.scalingEnabled ? 'bg-blue-900/40 text-blue-300 border border-blue-500/50 font-semibold' : 'bg-neutral-800 text-neutral-400'}`}>
+                    B {fmtPct(triplet.primaryServerDefault)} {preview?.scalingEnabled && ' (Active)'}
+                  </span>
+                  <span className="px-3 py-1 rounded bg-neutral-800/60 text-neutral-500 border border-neutral-800">
+                    C {fmtPct(triplet.primaryTest)} (Test)
+                  </span>
+                  <span
+                    className={`px-3 py-1 rounded ${triplet.deltaPrimaryVsDefault >= 0 ? 'bg-green-900/30 text-green-400' : 'bg-amber-900/30 text-amber-400'}`}
+                  >
+                    Δ(C−B) {triplet.deltaPrimaryVsDefault >= 0 ? '+' : ''}
+                    {triplet.deltaPrimaryVsDefault.toFixed(1)}%
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-wrap gap-2 text-sm">
+                <span className="px-3 py-1 rounded bg-blue-900/40 text-blue-300">
+                  Active Setting: {fmtPct(preview?.scalingEnabled ? triplet.primaryServerDefault : triplet.primaryBaseline)}
+                </span>
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-2 items-center">
               <button type="button" className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm" onClick={copyDiscord}>
@@ -807,18 +847,38 @@ export default function CombatCalculator() {
                     <thead className="bg-neutral-950 text-neutral-400">
                       <tr>
                         <th className="text-right p-2">{sweepColumnShort}</th>
-                        <th className="text-right p-2">A OFF</th>
-                        <th className="text-right p-2">B {activeCfg.serverDefaultAgg}</th>
-                        <th className="text-right p-2">C {testAgg}</th>
+                        {isPlayerAdmin ? (
+                          <>
+                            <th className={`text-right p-2 ${!preview?.scalingEnabled ? 'text-blue-300 font-semibold border-b border-blue-500/30' : 'text-neutral-500 font-normal'}`}>
+                              A OFF {!preview?.scalingEnabled && ' (Active)'}
+                            </th>
+                            <th className={`text-right p-2 ${preview?.scalingEnabled ? 'text-blue-300 font-semibold border-b border-blue-500/30' : 'text-neutral-500 font-normal'}`}>
+                              B {activeCfg.serverDefaultAgg} {preview?.scalingEnabled && ' (Active)'}
+                            </th>
+                            <th className="text-right p-2 text-neutral-500 font-normal">
+                              C {testAgg} (Test)
+                            </th>
+                          </>
+                        ) : (
+                          <th className="text-right p-2">Active Setting</th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
                       {rangeRows.map((r) => (
                         <tr key={r.sweep} className="border-t border-neutral-800">
                           <td className="p-2 text-right">{fmt(r.sweep)}</td>
-                          <td className="p-2 text-right">{fmtPct(r.a)}</td>
-                          <td className="p-2 text-right">{fmtPct(r.b)}</td>
-                          <td className="p-2 text-right">{fmtPct(r.c)}</td>
+                          {isPlayerAdmin ? (
+                            <>
+                              <td className={`p-2 text-right ${!preview?.scalingEnabled ? 'bg-blue-900/10 text-blue-300 font-semibold border-x border-blue-500/10' : 'text-neutral-500'}`}>{fmtPct(r.a)}</td>
+                              <td className={`p-2 text-right ${preview?.scalingEnabled ? 'bg-blue-900/10 text-blue-300 font-semibold border-x border-blue-500/10' : 'text-neutral-500'}`}>{fmtPct(r.b)}</td>
+                              <td className="p-2 text-right text-neutral-600">{fmtPct(r.c)}</td>
+                            </>
+                          ) : (
+                            <td className="p-2 text-right">
+                              {fmtPct(preview?.scalingEnabled ? r.b : r.a)}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>

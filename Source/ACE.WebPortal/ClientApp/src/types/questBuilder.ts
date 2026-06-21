@@ -40,6 +40,8 @@ export interface QuestFlow {
 }
 
 export interface QuestStep {
+  /** Client-only stable key for React list reconciliation (not sent to server). */
+  _key?: string
   type: string
   text?: string
   stamp?: string
@@ -48,6 +50,13 @@ export interface QuestStep {
   delay?: number
   motion?: string
   branches?: QuestStepBranches
+}
+
+let _stepKeyCounter = 0
+/** Stamp a stable _key onto a step if it doesn't already have one. */
+export function ensureStepKey<T extends QuestStep>(step: T): T {
+  if (!step._key) step._key = `sk_${++_stepKeyCounter}_${Date.now()}`
+  return step
 }
 
 export interface QuestStepBranches {

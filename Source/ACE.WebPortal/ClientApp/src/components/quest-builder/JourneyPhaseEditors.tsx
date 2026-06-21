@@ -10,6 +10,7 @@ import type {
   QuestJourneyTurnIn,
   QuestStep,
 } from '../../types/questBuilder'
+import { ensureStepKey } from '../../types/questBuilder'
 import StampConfigPanel, { defaultPickupStamp, defaultStartStamp } from './StampConfigPanel'
 import { defaultLandscapePickup, defaultLandscapeSource, syncPickupSteps } from './questJourney'
 import type { QuestStampConfig } from '../../types/questBuilder'
@@ -116,7 +117,7 @@ export function StartPhaseEditor({
         <h4 className="text-sm font-semibold text-white">Intro steps (Use)</h4>
         <button
           type="button"
-          onClick={() => updateIntro([...start.introSteps, { type: 'Tell', text: '' }])}
+          onClick={() => updateIntro([...start.introSteps, ensureStepKey({ type: 'Tell', text: '' })])}
           className="text-xs text-blue-400 flex items-center gap-1"
         >
           <Plus className="w-3 h-3" /> Add step
@@ -501,7 +502,7 @@ function LandscapeEditor({
           <span className="text-xs text-white font-medium">Pickup emote steps</span>
           <button
             type="button"
-            onClick={() => onChange({ pickupSteps: [...source.pickupSteps, { type: 'Tell', text: '' }] })}
+            onClick={() => onChange({ pickupSteps: [...source.pickupSteps, ensureStepKey({ type: 'Tell', text: '' })] })}
             className="text-[10px] text-blue-400"
           >
             + step
@@ -518,7 +519,7 @@ function LandscapeEditor({
               step.type === 'InqQuest'
                 ? (branch) => {
                     const inq = { ...step, branches: { onCooldown: [...(step.branches?.onCooldown ?? [])], canComplete: [...(step.branches?.canComplete ?? [])] } }
-                    inq.branches![branch].push({ type: 'Tell', text: '' })
+                    inq.branches![branch].push(ensureStepKey({ type: 'Tell', text: '' }))
                     updatePickupStep(si, inq)
                   }
                 : undefined
@@ -635,7 +636,7 @@ export function TurnInPhaseEditor({
             <h4 className="text-sm font-semibold text-green-100">Give flow</h4>
             <button
               type="button"
-              onClick={() => updateGive([...turnIn.giveSteps, { type: 'Tell', text: '' }])}
+              onClick={() => updateGive([...turnIn.giveSteps, ensureStepKey({ type: 'Tell', text: '' })])}
               className="text-xs text-blue-400 flex items-center gap-1"
             >
               <Plus className="w-3 h-3" /> Add
@@ -655,7 +656,7 @@ export function TurnInPhaseEditor({
                 step.type === 'InqQuest'
                   ? (branch) => {
                       const inq = { ...step, branches: { onCooldown: [...(step.branches?.onCooldown ?? [])], canComplete: [...(step.branches?.canComplete ?? [])] } }
-                      inq.branches![branch].push({ type: 'Tell', text: '' })
+                      inq.branches![branch].push(ensureStepKey({ type: 'Tell', text: '' }))
                       patchGiveStep(si, inq)
                     }
                   : undefined
@@ -691,7 +692,7 @@ export function TurnInPhaseEditor({
             <h4 className="text-sm font-semibold text-red-100">Refuse flow</h4>
             <button
               type="button"
-              onClick={() => updateRefuse([...turnIn.refuseSteps, { type: 'Tell', text: '' }])}
+              onClick={() => updateRefuse([...turnIn.refuseSteps, ensureStepKey({ type: 'Tell', text: '' })])}
               className="text-xs text-blue-400 flex items-center gap-1"
             >
               <Plus className="w-3 h-3" /> Add

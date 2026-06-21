@@ -218,7 +218,7 @@ function BranchColumn({
         const sel = selectedKey === key
         return (
           <div
-            key={i}
+            key={s._key || `fallback_${i}`}
             ref={branchRefs ? (el) => { branchRefs.current[key] = el } : undefined}
             role={onSelectStep ? 'button' : undefined}
             tabIndex={onSelectStep ? 0 : undefined}

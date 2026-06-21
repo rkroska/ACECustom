@@ -27,7 +27,7 @@ namespace ACE.Server.Web.Controllers
 
             q = q.Trim();
             limit = Math.Clamp(limit, 1, 100);
-            var pattern = $"%{q}%";
+            var pattern = WeenieSearchOrdering.ContainsLikePattern(q);
 
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
