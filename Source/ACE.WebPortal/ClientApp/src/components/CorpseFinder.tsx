@@ -36,8 +36,9 @@ export default function CorpseFinder() {
   const sortedCorpses = [...corpses].sort((a, b) => {
     if (!sortField) return 0
 
-    let aVal: any = a[sortField as keyof CorpseRow]
-    let bVal: any = b[sortField as keyof CorpseRow]
+    type SortableValue = string | number | boolean | AcePosition | null | undefined;
+    let aVal: SortableValue = a[sortField as keyof CorpseRow]
+    let bVal: SortableValue = b[sortField as keyof CorpseRow]
 
     if (sortField === 'location') {
       aVal = a.position?.description ?? ''
@@ -49,15 +50,25 @@ export default function CorpseFinder() {
     if (aVal == null) return sortDirection === 'asc' ? 1 : -1
     if (bVal == null) return sortDirection === 'asc' ? -1 : 1
 
-    if (typeof aVal === 'string') {
+    if (typeof aVal === 'string' && typeof bVal === 'string') {
       return sortDirection === 'asc'
         ? aVal.localeCompare(bVal)
         : bVal.localeCompare(aVal)
     }
 
-    return sortDirection === 'asc'
-      ? (aVal > bVal ? 1 : -1)
-      : (aVal < bVal ? 1 : -1)
+    if (typeof aVal === 'number' && typeof bVal === 'number') {
+      return sortDirection === 'asc'
+        ? (aVal > bVal ? 1 : -1)
+        : (aVal < bVal ? 1 : -1)
+    }
+
+    if (typeof aVal === 'boolean' && typeof bVal === 'boolean') {
+      return sortDirection === 'asc'
+        ? (aVal ? 1 : -1)
+        : (bVal ? 1 : -1)
+    }
+
+    return 0;
   })
 
   const fetchCorpses = async (searchTerm: string) => {

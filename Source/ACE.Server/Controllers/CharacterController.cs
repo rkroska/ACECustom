@@ -15,6 +15,7 @@ using ACE.Server.WorldObjects.Entity;
 using ACE.Server.Controllers.Resolvers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -794,9 +795,11 @@ namespace ACE.Server.Controllers
                 var queryList = (from corpse in shard.Biota
                                  join victim in shard.BiotaPropertiesIID on corpse.Id equals victim.ObjectId
                                  join charName in shard.BiotaPropertiesString on victim.Value equals charName.ObjectId
+                                 join ch in shard.Character on victim.Value equals ch.Id
                                  where corpse.WeenieType == (int)WeenieType.Corpse
                                     && victim.Type == (ushort)PropertyInstanceId.Victim
                                     && charName.Type == (ushort)PropertyString.Name
+                                    && !ch.IsDeleted
                                  select new
                                  {
                                      CorpseId = corpse.Id,
@@ -811,6 +814,28 @@ namespace ACE.Server.Controllers
 
                 var list = queryList.OrderByDescending(c => c.CorpseId).Take(200).ToList();
 
+                var corpseIds = list.Select(c => c.CorpseId).ToList();
+
+                var namesMap = shard.BiotaPropertiesString.AsNoTracking()
+                    .Where(s => corpseIds.Contains(s.ObjectId) && s.Type == (ushort)PropertyString.Name)
+                    .ToDictionary(s => s.ObjectId, s => s.Value);
+
+                var positionsMap = shard.BiotaPropertiesPosition.AsNoTracking()
+                    .Where(p => corpseIds.Contains(p.ObjectId) && p.PositionType == (ushort)PositionType.Location)
+                    .ToDictionary(p => p.ObjectId);
+
+                var floatsMap = shard.BiotaPropertiesFloat.AsNoTracking()
+                    .Where(f => corpseIds.Contains(f.ObjectId) && f.Type == (ushort)PropertyFloat.TimeToRot)
+                    .ToDictionary(f => f.ObjectId, f => f.Value);
+
+                var intsMap = shard.BiotaPropertiesInt.AsNoTracking()
+                    .Where(i => corpseIds.Contains(i.ObjectId) && i.Type == (ushort)PropertyInt.CreationTimestamp)
+                    .ToDictionary(i => i.ObjectId, i => i.Value);
+
+                var killersMap = shard.BiotaPropertiesIID.AsNoTracking()
+                    .Where(i => corpseIds.Contains(i.ObjectId) && i.Type == (ushort)PropertyInstanceId.Killer)
+                    .ToDictionary(i => i.ObjectId, i => i.Value);
+
                 foreach (var item in list)
                 {
                     var isLoaded = false;
@@ -823,43 +848,46 @@ namespace ACE.Server.Controllers
                     var activeCorpse = FindActiveCorpseInMemory(item.CorpseId);
                     if (activeCorpse != null)
                     {
-                        isLoaded = true;
-                        locObj = activeCorpse.Location;
-                        corpseName = activeCorpse.Name;
-                        timeToRotSeconds = activeCorpse.TimeToRot;
-                        creationTimestamp = activeCorpse.CreationTimestamp;
-                        killerId = activeCorpse.KillerId;
+                        try
+                        {
+                            activeCorpse.BiotaDatabaseLock.EnterReadLock();
+                            try
+                            {
+                                isLoaded = true;
+                                locObj = new ACE.Entity.Position(activeCorpse.Location);
+                                corpseName = activeCorpse.Name;
+                                timeToRotSeconds = activeCorpse.TimeToRot;
+                                creationTimestamp = activeCorpse.CreationTimestamp;
+                                killerId = activeCorpse.KillerId;
+                            }
+                            finally
+                            {
+                                activeCorpse.BiotaDatabaseLock.ExitReadLock();
+                            }
+                        }
+                        catch
+                        {
+                            isLoaded = false;
+                        }
                     }
                     else
                     {
-                        corpseName = shard.BiotaPropertiesString
-                            .Where(s => s.ObjectId == item.CorpseId && s.Type == (ushort)PropertyString.Name)
-                            .Select(s => s.Value)
-                            .FirstOrDefault() ?? "Corpse";
+                        if (namesMap.TryGetValue(item.CorpseId, out var nameVal))
+                            corpseName = nameVal;
 
-                        var dbPos = shard.BiotaPropertiesPosition
-                            .FirstOrDefault(p => p.ObjectId == item.CorpseId && p.PositionType == (ushort)PositionType.Location);
-
-                        if (dbPos != null)
+                        if (positionsMap.TryGetValue(item.CorpseId, out var dbPos))
                         {
                             locObj = new ACE.Entity.Position(dbPos.ObjCellId, dbPos.OriginX, dbPos.OriginY, dbPos.OriginZ, dbPos.AnglesX, dbPos.AnglesY, dbPos.AnglesZ, dbPos.AnglesW, false, dbPos.VariationId);
                         }
 
-                        timeToRotSeconds = shard.BiotaPropertiesFloat
-                            .Where(f => f.ObjectId == item.CorpseId && f.Type == (ushort)PropertyFloat.TimeToRot)
-                            .Select(f => f.Value)
-                            .FirstOrDefault();
+                        if (floatsMap.TryGetValue(item.CorpseId, out var floatVal))
+                            timeToRotSeconds = floatVal;
 
-                        creationTimestamp = shard.BiotaPropertiesInt
-                            .Where(i => i.ObjectId == item.CorpseId && i.Type == (ushort)PropertyInt.CreationTimestamp)
-                            .Select(i => i.Value)
-                            .FirstOrDefault();
+                        if (intsMap.TryGetValue(item.CorpseId, out var intVal))
+                            creationTimestamp = intVal;
 
-                        var dbKiller = shard.BiotaPropertiesIID
-                            .Where(i => i.ObjectId == item.CorpseId && i.Type == (ushort)PropertyInstanceId.Killer)
-                            .Select(i => i.Value)
-                            .FirstOrDefault();
-                        killerId = dbKiller == 0 ? (uint?)null : dbKiller;
+                        if (killersMap.TryGetValue(item.CorpseId, out var dbKiller) && dbKiller != 0)
+                            killerId = dbKiller;
                     }
 
                     object serializedPos = null;

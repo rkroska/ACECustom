@@ -23,6 +23,7 @@ namespace ACE.Server.Controllers
     /// </summary>
     internal static class CharacterPortalStatusHelper
     {
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(CharacterPortalStatusHelper));
         private static readonly int VitaeSpellId = (int)SpellId.Vitae;
 
         public static object BuildStatusJson(uint characterGuid, Biota snapshot)
@@ -190,14 +191,15 @@ namespace ACE.Server.Controllers
             {
                 using (var shard = new ShardDbContext())
                 {
-                    var dbCorpsesQuery = shard.Biota
+                    var dbCorpsesQuery = shard.Biota.AsNoTracking()
                         .Include(b => b.BiotaPropertiesString)
                         .Include(b => b.BiotaPropertiesPosition)
                         .Include(b => b.BiotaPropertiesFloat)
                         .Include(b => b.BiotaPropertiesInt)
                         .Include(b => b.BiotaPropertiesIID)
                         .Where(biota => biota.WeenieType == (int)WeenieType.Corpse
-                            && biota.BiotaPropertiesIID.Any(victim => victim.Type == (ushort)PropertyInstanceId.Victim && victim.Value == victimGuid));
+                            && biota.BiotaPropertiesIID.Any(victim => victim.Type == (ushort)PropertyInstanceId.Victim && victim.Value == victimGuid))
+                        .AsSplitQuery();
 
                     var dbCorpses = dbCorpsesQuery.ToList();
 
@@ -260,12 +262,7 @@ namespace ACE.Server.Controllers
             }
             catch (Exception ex)
             {
-                // Ignore DB error and proceed with whatever we have loaded
-                try
-                {
-                    System.IO.File.WriteAllText(@"C:\Scripting\ACECustom\corpse_query_error.txt", ex.ToString());
-                }
-                catch { }
+                log.Error("Failed to fetch offline corpses from database.", ex);
             }
 
             return result;
