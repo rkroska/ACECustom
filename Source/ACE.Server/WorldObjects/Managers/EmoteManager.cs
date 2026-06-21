@@ -3617,13 +3617,12 @@ namespace ACE.Server.WorldObjects.Managers
                                 $"{WorldObject.Name} has rewards for you, but you need {slotsNeeded} free inventory slot(s). Free up some space and try again.",
                                 ChatMessageType.Broadcast));
 
-                        AbortEmoteChain = true;
+                        // No AbortEmoteChain flag here: we return without enqueueing the next action,
+                        // so this chain stops on its own. Setting the shared flag would leak to a
+                        // sibling nested chain (the guard at the top of DoEnqueue) when Nested > 0.
                         Nested--;
                         if (Nested == 0)
-                        {
-                            AbortEmoteChain = false;
                             IsBusy = false;
-                        }
                         return;
                     }
                 }
@@ -4012,7 +4011,11 @@ namespace ACE.Server.WorldObjects.Managers
                             coinMult = Math.Max(0, coinMult);
                             amount = (int)(amount * coinMult);
                         }
-                        batch.Add(action.WeenieClassId.Value, amount > 0 ? amount : 1);
+                        // Gives are scheduled in data order before any later TakeItems run, so a
+                        // running batch that exceeds here must fail now — a later Remove must not
+                        // mask an earlier over-capacity Give.
+                        if (!batch.Add(action.WeenieClassId.Value, amount > 0 ? amount : 1))
+                            return batch;
                         break;
 
                     case EmoteType.TakeItems:
