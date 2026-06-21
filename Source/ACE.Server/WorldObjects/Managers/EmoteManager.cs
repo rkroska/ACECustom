@@ -58,6 +58,15 @@ namespace ACE.Server.WorldObjects.Managers
         public bool Debug = false;
         private readonly HashSet<string> _singleLocalBroadcastsSent = new HashSet<string>();
 
+        /// <summary>
+        /// Last health percent observed by WoundedTaunt phase tracking. Used to edge-trigger
+        /// health-banded phase emotes (EmoteCategory.WoundedTaunt) so that every band CROSSED
+        /// by a damage event fires — including bands skipped by a large/overkill hit and the
+        /// final band on a lethal blow. Seeded to full health; reset upward on heals so bands
+        /// can re-arm if a boss is healed back above a threshold. See <see cref="TriggerWoundedTaunt"/>.
+        /// </summary>
+        private double _lastWoundedTauntHealthPercent = 1.0;
+
         public EmoteManager(WorldObject worldObject)
         {
             _worldObject = worldObject;
@@ -4011,8 +4020,9 @@ namespace ACE.Server.WorldObjects.Managers
         /// </remarks>
         public void OnDamage(Creature attacker, DamageType damageType = DamageType.Undef)
         {
-            if (_worldObject is Creature wounded && wounded.IsAlive)
-                ExecuteEmoteSet(EmoteCategory.WoundedTaunt, null, attacker);
+            // WoundedTaunt drives health-banded phase transitions. Fire every band crossed by
+            // this hit (including on a lethal blow), not just the band current health lands in.
+            TriggerWoundedTaunt(attacker);
 
             if (_worldObject.Biota.PropertiesEmote == null)
                 return;
@@ -4023,6 +4033,65 @@ namespace ACE.Server.WorldObjects.Managers
 
             foreach (var emoteSet in SelectReceiveDamageEmotes(receiveDamageEmotes, damageType, () => ThreadSafeRandom.Next(0.0f, 1.0f)))
                 ExecuteEmoteSet(emoteSet, attacker, nested: true);
+        }
+
+        /// <summary>
+        /// Fires all WoundedTaunt (health-banded phase) emote sets whose upper bound was crossed
+        /// downward by the most recent damage. Edge-triggered against <see cref="_lastWoundedTauntHealthPercent"/>
+        /// so each band fires once per crossing, ordered highest-band-first to preserve phase
+        /// sequencing (e.g. StartEvent phase1 before StopEvent phase1 in phase2). Fires regardless
+        /// of whether the creature survived the hit, so a one-shot still runs the final phase and
+        /// the quest event chain can complete. Does not alter the death outcome.
+        /// </summary>
+        private void TriggerWoundedTaunt(WorldObject attacker)
+        {
+            if (!(_worldObject is Creature creature))
+                return;
+
+            var prev = _lastWoundedTauntHealthPercent;
+            var curr = creature.Health.Percent; // post-damage; may be 0 on a lethal hit
+
+            _lastWoundedTauntHealthPercent = curr;
+
+            // Health didn't drop (heal, regen, no-op), or nothing to evaluate: bands simply re-arm.
+            if (curr >= prev || _worldObject.Biota.PropertiesEmote == null)
+                return;
+
+            var bands = SelectWoundedTauntBands(
+                _worldObject.Biota.PropertiesEmote, prev, curr, () => ThreadSafeRandom.Next(0.0f, 1.0f));
+
+            foreach (var band in bands)
+                ExecuteEmoteSet(band, attacker, nested: true);
+        }
+
+        /// <summary>
+        /// Selects which WoundedTaunt (health-banded phase) emote sets should fire for a health drop
+        /// from <paramref name="prevPercent"/> to <paramref name="currPercent"/>. A band is "crossed"
+        /// when health goes from above its MaxHealth to at/below it; every crossed band is returned,
+        /// ordered highest-band-first so phase sequencing is preserved on large/overkill hits. MinHealth
+        /// is intentionally ignored so a lethal hit (curr == 0) still triggers low bands. Each crossed
+        /// band rolls its Probability via <paramref name="rng"/>. Pure/deterministic for unit testing.
+        /// </summary>
+        public static List<PropertiesEmote> SelectWoundedTauntBands(
+            IEnumerable<PropertiesEmote> emotes, double prevPercent, double currPercent, Func<double> rng)
+        {
+            var results = new List<PropertiesEmote>();
+
+            if (emotes == null || currPercent >= prevPercent)
+                return results;
+
+            var crossed = emotes
+                .Where(e => e.Category == EmoteCategory.WoundedTaunt
+                            && e.MaxHealth.HasValue
+                            && prevPercent > e.MaxHealth.Value
+                            && currPercent <= e.MaxHealth.Value)
+                .OrderByDescending(e => e.MaxHealth.Value);
+
+            foreach (var band in crossed)
+                if (band.Probability > rng())
+                    results.Add(band);
+
+            return results;
         }
 
         /// <summary>
