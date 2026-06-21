@@ -3888,7 +3888,7 @@ namespace ACE.Server.WorldObjects
                                 ChatMessageType.Broadcast));
                         else
                             Session.Network.EnqueueSend(new GameMessageSystemChat(
-                                $"{target.Name} has rewards for you, but you need {rewardBatch.RequiredSlots} free inventory slot(s). Free up some space and try again.",
+                                $"{target.Name} has rewards for you, but you need {rewardBatch.RequiredAdditionalSlots} more free inventory slot(s). Free up some space and try again.",
                                 ChatMessageType.Broadcast));
 
                         // Bounce the item back on the client; the server never removed it.

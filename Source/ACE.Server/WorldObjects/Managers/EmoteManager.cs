@@ -640,14 +640,14 @@ namespace ACE.Server.WorldObjects.Managers
 
                         if (batchItems.PlayerExceedsLimits)
                         {
-                            var slotsNeeded = batchItems.RequiredSlots;
+                            var slotsNeeded = batchItems.RequiredAdditionalSlots;
                             if (batchItems.PlayerExceedsAvailableBurden)
                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(
                                     $"{WorldObject.Name} has rewards for you, but you are too encumbered to carry them! Drop some items and try again.",
                                     ChatMessageType.Broadcast));
                             else
                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                                    $"{WorldObject.Name} has rewards for you, but you need {slotsNeeded} free inventory slot(s). Free up some space and try again.",
+                                    $"{WorldObject.Name} has rewards for you, but you need {slotsNeeded} more free inventory slot(s). Free up some space and try again.",
                                     ChatMessageType.Broadcast));
 
                             AbortEmoteChain = true;
@@ -3607,14 +3607,14 @@ namespace ACE.Server.WorldObjects.Managers
                     // If no upcoming Gives, the batch has no requirements and PlayerExceedsLimits is false.
                     if (batchItems.PlayerExceedsLimits)
                     {
-                        var slotsNeeded = batchItems.RequiredSlots;
+                        var slotsNeeded = batchItems.RequiredAdditionalSlots;
                         if (batchItems.PlayerExceedsAvailableBurden)
                             preCheckPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(
                                 $"{WorldObject.Name} has rewards for you, but you are too encumbered to carry them! Drop some items and try again.",
                                 ChatMessageType.Broadcast));
                         else
                             preCheckPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                                $"{WorldObject.Name} has rewards for you, but you need {slotsNeeded} free inventory slot(s). Free up some space and try again.",
+                                $"{WorldObject.Name} has rewards for you, but you need {slotsNeeded} more free inventory slot(s). Free up some space and try again.",
                                 ChatMessageType.Broadcast));
 
                         // No AbortEmoteChain flag here: we return without enqueueing the next action,
