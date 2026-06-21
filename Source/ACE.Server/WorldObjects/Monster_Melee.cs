@@ -362,7 +362,12 @@ namespace ACE.Server.WorldObjects
                         return firstCommand;
                     }
                 }
-                log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find {motionCommand} in MotionTable {MotionTableId:X8}");
+                var logKey = $"missing_motion_{Guid.Full}_{motionCommand}";
+                if (ACE.Server.Diagnostics.LogRateLimiter.ShouldEmit(logKey, TimeSpan.FromMinutes(5), out var suppressed))
+                {
+                    var suppressedMsg = suppressed > 0 ? $" (suppressed {suppressed} similar errors in last 5m)" : "";
+                    log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find {motionCommand} in MotionTable {MotionTableId:X8}{suppressedMsg}");
+                }
                 return null;
             }
 

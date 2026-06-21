@@ -167,7 +167,10 @@ namespace ACE.Server.WorldObjects
                 if (worldObject != null)
                 {
                     // DEBUG: Check ContainerId after WorldObject creation
-                    log.Debug($"[LOAD DEBUG] Creating WorldObject from biota {biota.Id} (0x{biota.Id:X8}) in container {Name} (0x{Guid:X8}) | Biota ContainerId={biotaContainerId} (0x{(biotaContainerId ?? 0):X8}) | WorldObject ContainerId={worldObject.ContainerId} (0x{(worldObject.ContainerId ?? 0):X8}) | Match={biotaContainerId == worldObject.ContainerId}");
+                    if (ServerConfig.log_inventory_load_debug.Value)
+                    {
+                        log.Debug($"[LOAD DEBUG] Creating WorldObject from biota {biota.Id} (0x{biota.Id:X8}) in container {Name} (0x{Guid:X8}) | Biota ContainerId={biotaContainerId} (0x{(biotaContainerId ?? 0):X8}) | WorldObject ContainerId={worldObject.ContainerId} (0x{(worldObject.ContainerId ?? 0):X8}) | Match={biotaContainerId == worldObject.ContainerId}");
+                    }
                     
                     worldObjects.Add(worldObject);
                 }
@@ -202,7 +205,7 @@ namespace ACE.Server.WorldObjects
                 var thisContainerId = Biota.Id;
                 var matches = itemContainerId == thisContainerId;
                 
-                if (player != null)
+                if (player != null && ServerConfig.log_inventory_load_debug.Value)
                 {
                     log.Debug($"[LOAD DEBUG] SortWorldObjectsIntoInventory checking {worldObjects[i].Name} (0x{worldObjects[i].Guid}) | Item ContainerId={itemContainerId} (0x{itemContainerId:X8}) | This ContainerId={thisContainerId} (0x{thisContainerId:X8}) | Matches={matches}");
                 }
@@ -235,13 +238,13 @@ namespace ACE.Server.WorldObjects
             // All that should be left are side pack sub contents.
 
             var sideContainers = GetCachedSideContainers();
-            if (player != null)
+            if (player != null && ServerConfig.log_inventory_load_debug.Value)
             {
                 log.Debug($"[LOAD DEBUG] Player {player.Name} has {sideContainers.Count} side containers, {worldObjects.Count} remaining items to sort");
             }
             foreach (var container in sideContainers)
             {
-                if (player != null)
+                if (player != null && ServerConfig.log_inventory_load_debug.Value)
                 {
                     log.Debug($"[LOAD DEBUG] Processing side container {container.Name} (0x{container.Guid}) | Biota.Id={container.Biota.Id} (0x{container.Biota.Id:X8}) | Remaining items={worldObjects.Count}");
                 }
@@ -250,7 +253,7 @@ namespace ACE.Server.WorldObjects
                 Value += container.Value; // This value includes the containers value itself + all child items
             }
             
-            if (player != null && worldObjects.Count > 0)
+            if (player != null && worldObjects.Count > 0 && ServerConfig.log_inventory_load_debug.Value)
             {
                 log.Warn($"[LOAD DEBUG] Player {player.Name} has {worldObjects.Count} items that couldn't be sorted into any container:");
                 foreach (var wo in worldObjects)

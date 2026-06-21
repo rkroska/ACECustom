@@ -557,7 +557,8 @@ namespace ACE.Server.WorldObjects
                 var guidHash = Guid.Full.GetHashCode();
                 var maxOffset = Math.Min(MaxRandomSpawnTime, RegenerationInterval);
                 var nextSpawnTime = Time.GetUnixTime() + initialDelay;
-                log.Debug($"[GENERATOR][RANDOMIZE] {Name} (0x{Guid}): RandomizeSpawnTime enabled, calculated offset = {initialDelay:F2}s, next spawn at {nextSpawnTime:F2} (interval={RegenerationInterval}s, maxOffset={maxOffset:F2}s, hash={guidHash})");
+                if (ServerConfig.log_generator_debug.Value)
+                    log.Debug($"[GENERATOR][RANDOMIZE] {Name} (0x{Guid}): RandomizeSpawnTime enabled, calculated offset = {initialDelay:F2}s, next spawn at {nextSpawnTime:F2} (interval={RegenerationInterval}s, maxOffset={maxOffset:F2}s, hash={guidHash})");
             }
 
             if (initialDelay > 0)
@@ -765,7 +766,8 @@ namespace ACE.Server.WorldObjects
                 NextGeneratorRegenerationTime = currentTime + offset;
                 CurrentLandblock?.ResortWorldObjectIntoSortedGeneratorRegenerationList(this);
                 
-                log.Debug($"[GENERATOR][RANDOMIZE][FALLBACK] {Name} (0x{Guid}): Applied RandomizeSpawnTime offset = {offset:F2}s on first generation (properties loaded late on server boot)");
+                if (ServerConfig.log_generator_debug.Value)
+                    log.Debug($"[GENERATOR][RANDOMIZE][FALLBACK] {Name} (0x{Guid}): Applied RandomizeSpawnTime offset = {offset:F2}s on first generation (properties loaded late on server boot)");
             }
 
             if (!GeneratorDisabled)
