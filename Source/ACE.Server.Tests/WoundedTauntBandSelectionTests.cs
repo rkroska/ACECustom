@@ -227,5 +227,54 @@ namespace ACE.Server.Tests
 
             Assert.AreEqual(0, results.Count);
         }
+
+        // -------------------------------------------------------------------
+        // Stateful re-arm flow
+        //
+        // OnDamage threads health state across hits: it uses the previously
+        // observed percent as prev, fires crossed bands, then stores the current
+        // percent as the new prev (TriggerWoundedTaunt -> _lastWoundedTauntHealthPercent).
+        // These tests replay that exact threading through the pure selector to
+        // cover the re-arm-after-heal behavior. (Invoking OnDamage directly is not
+        // unit-testable here: it requires a live Creature with vitals/Biota and an
+        // action queue for ExecuteEmoteSet -- the reason the selection logic was
+        // extracted. The lethal-hit ordering is validated by live in-game testing.)
+        // -------------------------------------------------------------------
+
+        [TestMethod]
+        public void StateThreading_HealAboveThenRedrop_RefiresBand()
+        {
+            var band = Band(0.60f, 0.01f); // East-style port band
+            var emotes = new List<PropertiesEmote> { band };
+            double last = 1.0;
+
+            // Hit 1: 100% -> 50% crosses 0.60 -> fires.
+            var r1 = EmoteManager.SelectWoundedTauntBands(emotes, last, 0.50, () => 0.0); last = 0.50;
+            Assert.AreEqual(1, r1.Count, "first drop should fire the band");
+
+            // Heal: 50% -> 80% no fire, state re-arms upward.
+            var r2 = EmoteManager.SelectWoundedTauntBands(emotes, last, 0.80, () => 0.0); last = 0.80;
+            Assert.AreEqual(0, r2.Count, "heal must not fire");
+
+            // Hit 2: 80% -> 50% crosses 0.60 again -> fires again.
+            var r3 = EmoteManager.SelectWoundedTauntBands(emotes, last, 0.50, () => 0.0); last = 0.50;
+            Assert.AreEqual(1, r3.Count, "re-drop after heal should re-fire");
+        }
+
+        [TestMethod]
+        public void StateThreading_ContinuedDropWithoutHeal_DoesNotRefire()
+        {
+            var band = Band(0.60f, 0.01f);
+            var emotes = new List<PropertiesEmote> { band };
+            double last = 1.0;
+
+            // Hit 1: 100% -> 50% fires.
+            var r1 = EmoteManager.SelectWoundedTauntBands(emotes, last, 0.50, () => 0.0); last = 0.50;
+            Assert.AreEqual(1, r1.Count);
+
+            // Hit 2: 50% -> 20% (no heal): prev already below band max, must not re-fire.
+            var r2 = EmoteManager.SelectWoundedTauntBands(emotes, last, 0.20, () => 0.0); last = 0.20;
+            Assert.AreEqual(0, r2.Count, "continued drop without a heal must not re-fire the band");
+        }
     }
 }
