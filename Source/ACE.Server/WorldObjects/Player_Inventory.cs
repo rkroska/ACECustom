@@ -3872,13 +3872,16 @@ namespace ACE.Server.WorldObjects
                     // would void the turn-in while the async chain aborts the (uncarriable) reward.
                     var turnInStack = item.StackSize ?? 1;
                     var givenAmount = acceptAll ? Math.Min(amount, turnInStack) : 1;
-                    var rewardBatch = EmoteManager.BuildRewardBatch(this, emoteResult, 0);
 
                     // Credit the slot the turn-in frees, but only if the whole stack leaves (giving 1
                     // from a larger stack frees no slot) AND it was in a pack (an equipped item frees
                     // an equipment slot + burden, not a pack slot). Conservative: never over-credits.
-                    if (!itemWasEquipped && item.WeenieClassId != 0 && givenAmount >= turnInStack)
-                        rewardBatch.Remove(item.WeenieClassId, givenAmount);
+                    // The credit is applied inside BuildRewardBatch (before the gives) so its running
+                    // capacity check stays accurate.
+                    var creditWcid = (!itemWasEquipped && item.WeenieClassId != 0 && givenAmount >= turnInStack)
+                        ? item.WeenieClassId : 0u;
+                    var rewardBatch = EmoteManager.BuildRewardBatch(this, emoteResult, 0,
+                        creditWcid, creditWcid != 0 ? givenAmount : 0);
 
                     if (rewardBatch.PlayerExceedsLimits)
                     {

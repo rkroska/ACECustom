@@ -3986,9 +3986,16 @@ namespace ACE.Server.WorldObjects.Managers
         /// Shared by the give-to-NPC pre-removal gate and the in-chain reward prechecks so a turn-in item
         /// is never consumed when the player cannot actually carry the rewards.
         /// </summary>
-        public static ItemsToReceive BuildRewardBatch(Player player, PropertiesEmote emoteSet, int startIndex)
+        public static ItemsToReceive BuildRewardBatch(Player player, PropertiesEmote emoteSet, int startIndex,
+            uint turnInWcid = 0, int turnInAmount = 0)
         {
             var batch = new ItemsToReceive(player);
+
+            // Credit the turn-in first: in execution it is removed before any reward is handed out,
+            // freeing its slot/burden. Applying it up front keeps the running-capacity early-out below
+            // accurate — otherwise a give could trip the limit before the freed slot is accounted for.
+            if (turnInWcid != 0 && turnInAmount > 0)
+                batch.Remove(turnInWcid, turnInAmount);
 
             if (emoteSet?.PropertiesEmoteAction == null)
                 return batch;
