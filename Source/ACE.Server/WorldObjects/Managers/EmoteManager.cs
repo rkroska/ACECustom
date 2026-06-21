@@ -635,24 +635,8 @@ namespace ACE.Server.WorldObjects.Managers
                         // bundle before scheduling anything. Scanning from the current emote's
                         // index forward captures all remaining Gives without touching earlier
                         // Gives that already fired in previous interactions.
-                        var batchItems = new ItemsToReceive(player);
                         var currentEmoteIdx = emoteSet.PropertiesEmoteAction.IndexOf(emote);
-                        for (var i = currentEmoteIdx; i < emoteSet.PropertiesEmoteAction.Count; i++)
-                        {
-                            var la = emoteSet.PropertiesEmoteAction[i];
-                            if ((EmoteType)la.Type != EmoteType.Give || la.WeenieClassId == null)
-                                continue; // skip non-Give actions but keep scanning for later Gives
-                            var laAmt = la.StackSize ?? 1;
-                            if (laAmt > 0 && (la.WeenieClassId == 300004 || la.WeenieClassId == 300003))
-                            {
-                                var laCoinMult = ServerConfig.coin_reward_mult.Value;
-                                if (double.IsNaN(laCoinMult) || double.IsInfinity(laCoinMult))
-                                    laCoinMult = 0;
-                                laCoinMult = Math.Max(0, laCoinMult);
-                                laAmt = (int)(laAmt * laCoinMult);
-                            }
-                            batchItems.Add(la.WeenieClassId.Value, laAmt > 0 ? laAmt : 1);
-                        }
+                        var batchItems = BuildRewardBatch(player, emoteSet, currentEmoteIdx);
 
                         if (batchItems.PlayerExceedsLimits)
                         {
@@ -3618,58 +3602,29 @@ namespace ACE.Server.WorldObjects.Managers
                 var preCheckPlayer = targetObject as Player;
                 if (preCheckPlayer != null)
                 {
-                    var batchItems = new ItemsToReceive(preCheckPlayer);
-                    var hasUpcomingGives = false;
-                    for (var scanIdx = emoteIdx; scanIdx < emoteSet.PropertiesEmoteAction.Count; scanIdx++)
+                    var batchItems = BuildRewardBatch(preCheckPlayer, emoteSet, emoteIdx);
+
+                    // If no upcoming Gives, the batch has no requirements and PlayerExceedsLimits is false.
+                    if (batchItems.PlayerExceedsLimits)
                     {
-                        var scanEmote = emoteSet.PropertiesEmoteAction[scanIdx];
-                        var scanType = (EmoteType)scanEmote.Type;
-                        if (scanType == EmoteType.Give && scanEmote.WeenieClassId != null)
-                        {
-                            hasUpcomingGives = true;
-                            var gAmt = scanEmote.StackSize ?? 1;
-                            if (gAmt > 0 && (scanEmote.WeenieClassId == 300004 || scanEmote.WeenieClassId == 300003))
-                            {
-                                var laCoinMult = ServerConfig.coin_reward_mult.Value;
-                                if (double.IsNaN(laCoinMult) || double.IsInfinity(laCoinMult))
-                                    laCoinMult = 0;
-                                laCoinMult = Math.Max(0, laCoinMult);
-                                gAmt = (int)(gAmt * laCoinMult);
-                            }
-                            batchItems.Add(scanEmote.WeenieClassId.Value, gAmt > 0 ? gAmt : 1);
-                        }
-                        else if (scanType == EmoteType.TakeItems && scanEmote.WeenieClassId != null)
-                        {
-                            // Simulate items being taken — they free slots/burden for subsequent Gives
-                            var tAmt = scanEmote.StackSize ?? 1;
-                            batchItems.Remove(scanEmote.WeenieClassId.Value, tAmt > 0 ? tAmt : 1);
-                        }
-                    }
+                        var slotsNeeded = batchItems.RequiredSlots;
+                        if (batchItems.PlayerExceedsAvailableBurden)
+                            preCheckPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                $"{WorldObject.Name} has rewards for you, but you are too encumbered to carry them! Drop some items and try again.",
+                                ChatMessageType.Broadcast));
+                        else
+                            preCheckPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                $"{WorldObject.Name} has rewards for you, but you need {slotsNeeded} free inventory slot(s). Free up some space and try again.",
+                                ChatMessageType.Broadcast));
 
-                    if (hasUpcomingGives)
-                    {
-
-                        if (batchItems.PlayerExceedsLimits)
+                        AbortEmoteChain = true;
+                        Nested--;
+                        if (Nested == 0)
                         {
-                            var slotsNeeded = batchItems.RequiredSlots;
-                            if (batchItems.PlayerExceedsAvailableBurden)
-                                preCheckPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                                    $"{WorldObject.Name} has rewards for you, but you are too encumbered to carry them! Drop some items and try again.",
-                                    ChatMessageType.Broadcast));
-                            else
-                                preCheckPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                                    $"{WorldObject.Name} has rewards for you, but you need {slotsNeeded} free inventory slot(s). Free up some space and try again.",
-                                    ChatMessageType.Broadcast));
-
-                            AbortEmoteChain = true;
-                            Nested--;
-                            if (Nested == 0)
-                            {
-                                AbortEmoteChain = false;
-                                IsBusy = false;
-                            }
-                            return;
+                            AbortEmoteChain = false;
+                            IsBusy = false;
                         }
+                        return;
                     }
                 }
             }
@@ -4023,6 +3978,51 @@ namespace ACE.Server.WorldObjects.Managers
 
             foreach (var emoteSet in SelectReceiveDamageEmotes(receiveDamageEmotes, damageType, () => ThreadSafeRandom.Next(0.0f, 1.0f)))
                 ExecuteEmoteSet(emoteSet, attacker, nested: true);
+        }
+
+        /// <summary>
+        /// Builds an <see cref="ItemsToReceive"/> batch describing the reward items an emote set would
+        /// hand out: every Give action (with the coin-reward multiplier applied to pyreal/lucent rewards),
+        /// minus any TakeItems actions which free space. Scans from <paramref name="startIndex"/> forward.
+        /// Shared by the give-to-NPC pre-removal gate and the in-chain reward prechecks so a turn-in item
+        /// is never consumed when the player cannot actually carry the rewards.
+        /// </summary>
+        public static ItemsToReceive BuildRewardBatch(Player player, PropertiesEmote emoteSet, int startIndex)
+        {
+            var batch = new ItemsToReceive(player);
+
+            if (emoteSet?.PropertiesEmoteAction == null)
+                return batch;
+
+            for (var i = startIndex; i < emoteSet.PropertiesEmoteAction.Count; i++)
+            {
+                var action = emoteSet.PropertiesEmoteAction[i];
+                if (action.WeenieClassId == null)
+                    continue;
+
+                switch ((EmoteType)action.Type)
+                {
+                    case EmoteType.Give:
+                        var amount = action.StackSize ?? 1;
+                        if (amount > 0 && (action.WeenieClassId == 300004 || action.WeenieClassId == 300003))
+                        {
+                            var coinMult = ServerConfig.coin_reward_mult.Value;
+                            if (double.IsNaN(coinMult) || double.IsInfinity(coinMult))
+                                coinMult = 0;
+                            coinMult = Math.Max(0, coinMult);
+                            amount = (int)(amount * coinMult);
+                        }
+                        batch.Add(action.WeenieClassId.Value, amount > 0 ? amount : 1);
+                        break;
+
+                    case EmoteType.TakeItems:
+                        var takeAmount = action.StackSize ?? 1;
+                        batch.Remove(action.WeenieClassId.Value, takeAmount > 0 ? takeAmount : 1);
+                        break;
+                }
+            }
+
+            return batch;
         }
 
         /// <summary>
