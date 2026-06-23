@@ -1489,5 +1489,11 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.IsVPHardcore); else SetProperty(PropertyBool.IsVPHardcore, value); }
         }
 
+        public bool IsUnkillable
+        {
+            get => GetProperty(PropertyBool.IsUnkillable) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.IsUnkillable); else SetProperty(PropertyBool.IsUnkillable, value); }
+        }
+
     }
 }

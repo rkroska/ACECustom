@@ -123,6 +123,12 @@ namespace ACE.Server.WorldObjects
         /// <returns>The actual change in the vital, after clamping between 0 and MaxVital</returns>
         public override int UpdateVital(CreatureVital vital, int newVal)
         {
+            if (vital.Vital == PropertyAttribute2nd.MaxHealth && IsUnkillable)
+            {
+                if (newVal < 1)
+                    newVal = 1;
+            }
+
             var prevVal = vital.Current;
 
             var change = base.UpdateVital(vital, newVal);
