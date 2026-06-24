@@ -191,6 +191,11 @@ namespace ACE.Server.Managers.QuestBuilder
                 }
                 if (string.Equals(step.Type, "StampQuest", StringComparison.OrdinalIgnoreCase))
                     requireQuest(GetBaseStamp(step.Stamp));
+                if (string.Equals(step.Type, "Motion", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (step.Motion != null && !Regex.IsMatch(step.Motion, "^0x[0-9A-Fa-f]+$"))
+                        AddIssue(result, "error", "invalid_motion", $"Invalid motion literal '{step.Motion}' on actor {actorWcid} ({trigger}). Must be a hex value like 0x41000003.");
+                }
 
                 if (step.Branches != null)
                 {

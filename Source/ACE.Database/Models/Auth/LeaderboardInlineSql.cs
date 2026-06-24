@@ -13,6 +13,16 @@ namespace ACE.Database.Models.Auth;
 /// </summary>
 public static class LeaderboardInlineSql
 {
+    private static string ShardDb => Common.ConfigManager.Config?.MySql?.Shard?.Database ?? "ace_shard";
+
+    private static string ResolveSql(string sql) =>
+        sql.Replace("ace_shard.", $"`{ShardDb}`.");
+
+    private static FormattableString ResolveFormattableSql(FormattableString sql) =>
+        System.Runtime.CompilerServices.FormattableStringFactory.Create(
+            sql.Format.Replace("ace_shard.", $"`{ShardDb}`."),
+            sql.GetArguments()
+        );
     private const ushort ExcludeFromLeaderboardsBoolType = (ushort)PropertyBool.ExcludeFromLeaderboards;
 
     /// <summary>Player accounts that are not currently banned.</summary>
@@ -23,7 +33,7 @@ public static class LeaderboardInlineSql
         "INNER JOIN account acc ON acc.accountId = a.accountId AND acc.accessLevel = 0 AND (acc.ban_Expire_Time IS NULL OR acc.ban_Expire_Time <= UTC_TIMESTAMP())";
 
     /// <summary>Output columns must match Leaderboard + AuthDbContext: Score, Account, Character, LeaderboardID.</summary>
-    public const string TopLum = """
+    public static readonly string TopLum = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
@@ -32,9 +42,9 @@ public static class LeaderboardInlineSql
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
         ORDER BY i.value DESC, c.id DESC
         LIMIT 25
-        """;
+        """);
 
-    public const string TopBank = """
+    public static readonly string TopBank = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
@@ -43,9 +53,9 @@ public static class LeaderboardInlineSql
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
         ORDER BY i.value DESC, c.id DESC
         LIMIT 25
-        """;
+        """);
 
-    public const string TopLevel = """
+    public static readonly string TopLevel = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
@@ -54,9 +64,9 @@ public static class LeaderboardInlineSql
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
         ORDER BY i.value DESC, c.id DESC
         LIMIT 25
-        """;
+        """);
 
-    public const string TopEnlightenment = """
+    public static readonly string TopEnlightenment = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
@@ -65,9 +75,9 @@ public static class LeaderboardInlineSql
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
         ORDER BY i.value DESC, c.id DESC
         LIMIT 25
-        """;
+        """);
 
-    public const string TopTitles = """
+    public static readonly string TopTitles = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
@@ -76,9 +86,9 @@ public static class LeaderboardInlineSql
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
         ORDER BY i.value DESC
         LIMIT 25
-        """;
+        """);
 
-    public const string TopDeaths = """
+    public static readonly string TopDeaths = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
@@ -87,10 +97,10 @@ public static class LeaderboardInlineSql
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
         ORDER BY i.value DESC, c.id DESC
         LIMIT 25
-        """;
+        """);
 
     /// <summary>QB is per account; entire account is omitted if any non-deleted character has ExcludeFromLeaderboards (9011).</summary>
-    public const string TopQuestBonus = """
+    public static readonly string TopQuestBonus = ResolveSql("""
         SELECT (COUNT(*) + (SELECT COUNT(*) FROM account_quest a2 WHERE a.accountId = a2.accountId AND a2.num_Times_Completed >= 1)) AS Score,
                a.accountId AS Account,
                (SELECT c.name FROM ace_shard.character c
@@ -108,13 +118,13 @@ public static class LeaderboardInlineSql
         )
         ORDER BY Score DESC, a.accountId DESC
         LIMIT 25
-        """;
+        """);
 
     /// <summary>
     /// Primary attributes leaderboard: sums <c>level_From_C_P</c> (ranks purchased) for types 1–6.
     /// This is intentionally NOT CP spent (which is very large and confusing on a leaderboard).
     /// </summary>
-    public const string TopAttributes = """
+    public static readonly string TopAttributes = ResolveSql("""
         SELECT (
             COALESCE((SELECT level_From_C_P FROM ace_shard.biota_properties_attribute WHERE object_Id = c.id AND type = 1), 0) +
             COALESCE((SELECT level_From_C_P FROM ace_shard.biota_properties_attribute WHERE object_Id = c.id AND type = 2), 0) +
@@ -133,13 +143,13 @@ public static class LeaderboardInlineSql
         HAVING Score > 0
         ORDER BY Score DESC, c.id DESC
         LIMIT 25
-        """;
+        """);
 
     /// <summary>
     /// Luminance aug total: int64 purchase counts (life/creature/war/etc.) plus int rating-style augs (333–345, 365).
     /// Int64 types match PropertyInt64 LumAug*Count (9007–9011, 9016–9018, 9022–9026); bool 9011 is a different table.
     /// </summary>
-    public const string TopAugments = """
+    public static readonly string TopAugments = ResolveSql("""
         SELECT (
             COALESCE((SELECT value FROM ace_shard.biota_properties_int64 WHERE object_id = c.id AND type = 9007), 0) +
             COALESCE((SELECT value FROM ace_shard.biota_properties_int64 WHERE object_id = c.id AND type = 9008), 0) +
@@ -179,10 +189,10 @@ public static class LeaderboardInlineSql
         HAVING Score > 0
         ORDER BY Score DESC, c.id DESC
         LIMIT 25
-        """;
+        """);
 
     /// <summary>Top characters by a single PropertyInt64 row (e.g. banked currencies). Excludes <see cref="PropertyBool.ExcludeFromLeaderboards"/>.</summary>
-    public static string TopByBiotaInt64Property(ushort int64PropertyType) => $"""
+    public static string TopByBiotaInt64Property(ushort int64PropertyType) => ResolveSql($"""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
         {EligibleAccountJoin}
@@ -191,7 +201,7 @@ public static class LeaderboardInlineSql
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
         ORDER BY i.value DESC, c.id DESC
         LIMIT 25
-        """;
+        """);
 
     public static readonly string TopBankedEnlightenedCoins = TopByBiotaInt64Property((ushort)PropertyInt64.BankedEnlightenedCoins);
 
@@ -202,7 +212,7 @@ public static class LeaderboardInlineSql
     public static readonly string TopBankedLegendaryKeys = TopByBiotaInt64Property((ushort)PropertyInt64.BankedLegendaryKeys);
 
     /// <summary>Best character row for account + global rank (MySQL 8 ROW_NUMBER). Same filters/order as top list.</summary>
-    public static FormattableString SelfPlacementLum(uint accountId) => $"""
+    public static FormattableString SelfPlacementLum(uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -219,9 +229,9 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
-    public static FormattableString SelfPlacementBank(uint accountId) => $"""
+    public static FormattableString SelfPlacementBank(uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -238,9 +248,9 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
-    public static FormattableString SelfPlacementLevel(uint accountId) => $"""
+    public static FormattableString SelfPlacementLevel(uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -257,9 +267,9 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
-    public static FormattableString SelfPlacementEnlightenment(uint accountId) => $"""
+    public static FormattableString SelfPlacementEnlightenment(uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -276,9 +286,9 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
-    public static FormattableString SelfPlacementTitles(uint accountId) => $"""
+    public static FormattableString SelfPlacementTitles(uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -295,9 +305,9 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
-    public static FormattableString SelfPlacementDeaths(uint accountId) => $"""
+    public static FormattableString SelfPlacementDeaths(uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -314,9 +324,9 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
-    public static FormattableString SelfPlacementQuestBonus(uint accountId) => $"""
+    public static FormattableString SelfPlacementQuestBonus(uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT agg.Score, agg.Account, agg.Character, agg.LeaderboardID,
@@ -342,9 +352,9 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
-    public static FormattableString SelfPlacementAttributes(uint accountId) => $"""
+    public static FormattableString SelfPlacementAttributes(uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -371,9 +381,9 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
-    public static FormattableString SelfPlacementAugments(uint accountId) => $"""
+    public static FormattableString SelfPlacementAugments(uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -421,9 +431,9 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
-    public static FormattableString SelfPlacementBankedInt64(ushort int64PropertyType, uint accountId) => $"""
+    public static FormattableString SelfPlacementBankedInt64(ushort int64PropertyType, uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -440,10 +450,10 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
     /// <summary>Top list by a persisted <see cref="PropertyInt"/> on the character (e.g. discipline stats).</summary>
-    public static string TopCharacterIntStat(ushort intPropertyType) => $"""
+    public static string TopCharacterIntStat(ushort intPropertyType) => ResolveSql($"""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
         {EligibleAccountJoin}
@@ -452,13 +462,13 @@ public static class LeaderboardInlineSql
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
         ORDER BY i.value DESC, c.id DESC
         LIMIT 25
-        """;
+        """);
 
     public static readonly string TopTimesJailed = TopCharacterIntStat((ushort)PropertyInt.TimesJailed);
 
     public static readonly string TopUcmChecksPassed = TopCharacterIntStat((ushort)PropertyInt.TimesUcmCheckPassed);
 
-    public static FormattableString SelfPlacementCharacterInt(ushort intPropertyType, uint accountId) => $"""
+    public static FormattableString SelfPlacementCharacterInt(ushort intPropertyType, uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -475,10 +485,10 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
     /// <summary>Max pet bond level per character (PropertyInt64 9052 attuned character, PropertyInt 9053 bond level).</summary>
-    public const string TopBonds = """
+    public static readonly string TopBonds = ResolveSql("""
         SELECT MAX(COALESCE(bond.value, 1)) AS Score,
                c.account_Id AS Account,
                c.name AS `Character`,
@@ -492,10 +502,10 @@ public static class LeaderboardInlineSql
         GROUP BY c.id, c.account_Id, c.name
         ORDER BY Score DESC, c.name ASC, c.id DESC
         LIMIT 25
-        """;
+        """);
 
     /// <summary>Sum of pet bond levels per character.</summary>
-    public const string TopSumBonds = """
+    public static readonly string TopSumBonds = ResolveSql("""
         SELECT SUM(COALESCE(bond.value, 1)) AS Score,
                c.account_Id AS Account,
                c.name AS `Character`,
@@ -510,9 +520,9 @@ public static class LeaderboardInlineSql
         HAVING SUM(COALESCE(bond.value, 1)) > 0
         ORDER BY Score DESC, c.name ASC, c.id DESC
         LIMIT 25
-        """;
+        """);
 
-    public static FormattableString SelfPlacementBonds(uint accountId) => $"""
+    public static FormattableString SelfPlacementBonds(uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -534,9 +544,9 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
-    public static FormattableString SelfPlacementSumBonds(uint accountId) => $"""
+    public static FormattableString SelfPlacementSumBonds(uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -559,10 +569,10 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 
     /// <summary>Max pet potency level per character (PropertyInt64 9052 attuned character, PropertyInt 9056 potency level).</summary>
-    public const string TopPotency = """
+    public static readonly string TopPotency = ResolveSql("""
         SELECT MAX(COALESCE(pot.value, 0)) AS Score,
                c.account_Id AS Account,
                c.name AS `Character`,
@@ -576,9 +586,9 @@ public static class LeaderboardInlineSql
         GROUP BY c.id, c.account_Id, c.name
         ORDER BY Score DESC, c.name ASC, c.id DESC
         LIMIT 25
-        """;
+        """);
 
-    public static FormattableString SelfPlacementPotency(uint accountId) => $"""
+    public static FormattableString SelfPlacementPotency(uint accountId) => ResolveFormattableSql($"""
         SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
         FROM (
           SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
@@ -600,5 +610,5 @@ public static class LeaderboardInlineSql
         WHERE ranked.Account = {accountId}
         ORDER BY ranked.Score DESC
         LIMIT 1
-        """;
+        """);
 }

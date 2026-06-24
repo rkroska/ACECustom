@@ -21,7 +21,7 @@ namespace ACE.Server.Managers
         private static readonly HttpClient _httpClient = new HttpClient();
 
         public static bool IsDiscordConnectionEnabled =>
-            ConfigManager.Config.Chat.EnableDiscordConnection;
+            ConfigManager.Config?.Chat?.EnableDiscordConnection ?? false;
 
         public static bool IsDiscordClientReady =>
             _discordSocketClient?.ConnectionState == ConnectionState.Connected;
@@ -97,6 +97,12 @@ namespace ACE.Server.Managers
                 return null;
             }
 
+            if (ConfigManager.Config?.Chat == null)
+            {
+                log.Warn("[Discord] Chat configuration is not available.");
+                return null;
+            }
+
             var guild = _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId);
             if (guild == null)
             {
@@ -120,10 +126,11 @@ namespace ACE.Server.Managers
 
         public static async Task SendDiscordMessage(string player, string message, long channelId)
         {
-            if (ConfigManager.Config.Chat.EnableDiscordConnection)
+            if (IsDiscordConnectionEnabled)
             {
                 try
                 {
+                    if (ConfigManager.Config?.Chat == null) return;
                     var guild = _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId);
                     if (guild != null)
                     {
@@ -155,6 +162,7 @@ namespace ACE.Server.Managers
 
             try
             {
+                if (ConfigManager.Config?.Chat == null) return;
                 var guild = _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId);
                 if (guild != null)
                 {
@@ -179,6 +187,7 @@ namespace ACE.Server.Managers
 
             try
             {
+                if (ConfigManager.Config?.Chat == null) return res;
                 var guild = _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId);
                 if (guild == null) return res;
 
@@ -220,6 +229,7 @@ namespace ACE.Server.Managers
 
             try
             {
+                if (ConfigManager.Config?.Chat == null) return res;
                 var guild = _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId);
                 if (guild == null) return res;
 
@@ -288,8 +298,9 @@ namespace ACE.Server.Managers
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, attachment.Url);
-                if (!string.IsNullOrWhiteSpace(ConfigManager.Config.Chat.DiscordToken))
-                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bot", ConfigManager.Config.Chat.DiscordToken);
+                var token = ConfigManager.Config?.Chat?.DiscordToken;
+                if (!string.IsNullOrWhiteSpace(token))
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bot", token);
 
                 using var response = await _httpClient.SendAsync(request);
                 response.EnsureSuccessStatusCode();
@@ -313,7 +324,13 @@ namespace ACE.Server.Managers
             {
                 try
                 {
-                    await _discordSocketClient.LoginAsync(Discord.TokenType.Bot, ConfigManager.Config.Chat.DiscordToken);
+                    var token = ConfigManager.Config?.Chat?.DiscordToken;
+                    if (string.IsNullOrWhiteSpace(token))
+                    {
+                        log.Warn("[Discord] Discord token is empty. Discord client will not start.");
+                        return;
+                    }
+                    await _discordSocketClient.LoginAsync(Discord.TokenType.Bot, token);
                     await _discordSocketClient.StartAsync();
                 }
                 catch (Exception ex)

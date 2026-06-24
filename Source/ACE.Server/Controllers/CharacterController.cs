@@ -6,6 +6,7 @@ using ACE.DatLoader.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
+using ACE.Entity;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
@@ -916,17 +917,14 @@ namespace ACE.Server.Controllers
 
         private static Corpse FindActiveCorpseInMemory(uint corpseGuid)
         {
-            var landblocks = LandblockManager.loadedLandblocks.Values.ToList();
+            var guid = new ObjectGuid(corpseGuid);
+            var landblocks = LandblockManager.loadedLandblocks.Values;
             foreach (var lb in landblocks)
             {
                 if (lb == null) continue;
-                IEnumerable<WorldObject> objects;
-                try { objects = lb.GetWorldObjectsForDiagnostics(); } catch { continue; }
-                foreach (var wo in objects)
-                {
-                    if (wo is Corpse corpse && corpse.Guid.Full == corpseGuid)
-                        return corpse;
-                }
+                var wo = lb.GetObject(guid, false);
+                if (wo is Corpse corpse)
+                    return corpse;
             }
             return null;
         }

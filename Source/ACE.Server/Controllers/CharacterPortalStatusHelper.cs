@@ -131,7 +131,7 @@ namespace ACE.Server.Controllers
         {
             var result = new List<PlayerCorpseInfo>();
             var loadedGuids = new HashSet<uint>();
-            var landblocks = LandblockManager.loadedLandblocks.Values.ToList();
+            var landblocks = LandblockManager.loadedLandblocks.Values;
 
             foreach (var lb in landblocks)
             {
