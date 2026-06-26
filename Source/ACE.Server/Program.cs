@@ -370,6 +370,9 @@ namespace ACE.Server
             log.Info("Initializing HouseManager...");
             HouseManager.Initialize();
 
+            log.Info("Initializing PowerballManager...");
+            PowerballManager.Initialize();
+
             log.Info("Initializing InboundMessageManager...");
             InboundMessageManager.Initialize();
 
