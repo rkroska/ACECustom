@@ -99,6 +99,7 @@ namespace ACE.Server.Managers
             public int  TicketCount { get; set; }
             public bool IsTest      { get; set; }
             public Dictionary<uint, WinnerSummary> Winners { get; } = new();
+            public Dictionary<uint, (string Name, int TicketCount)> PlayerTicketStats { get; } = new();
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -258,6 +259,9 @@ namespace ACE.Server.Managers
             int winPb  = _rng.Next(1, NumberPool + 1);
             var winSet = new HashSet<int>(winNums);
 
+            var price = ServerConfig.powerball_ticket_price.Value;
+            var effectivePool = isTestMode ? (jackpotPool + _testTickets.Count * price) : jackpotPool;
+
             var result = new DrawResult
             {
                 DrawId      = drawId,
@@ -265,10 +269,18 @@ namespace ACE.Server.Managers
                 W2          = winNums[1],
                 W3          = winNums[2],
                 Pb          = winPb,
-                JackpotPool = jackpotPool,
+                JackpotPool = effectivePool,
                 TicketCount = drawTickets.Count,
                 IsTest      = isTestMode,
             };
+
+            foreach (var ticket in drawTickets)
+            {
+                if (!result.PlayerTicketStats.TryGetValue(ticket.CharId, out var stats))
+                    result.PlayerTicketStats[ticket.CharId] = (ticket.CharName, 1);
+                else
+                    result.PlayerTicketStats[ticket.CharId] = (stats.Name, stats.TicketCount + 1);
+            }
 
             // Bucket each ticket into the highest tier it matches
             var tierTickets = new List<List<PbTicket>>(TierDef.Length);
@@ -294,7 +306,7 @@ namespace ACE.Server.Managers
             for (int t = 0; t < TierDef.Length; t++)
             {
                 var tier    = tierTickets[t];
-                var tierPot = (long)(jackpotPool * TierPct[t] / 100.0);
+                var tierPot = (long)(effectivePool * TierPct[t] / 100.0);
 
                 if (tier.Count == 0)
                 {
@@ -419,7 +431,7 @@ namespace ACE.Server.Managers
                 var totalTickets = summary.TierCounts.Values.Sum();
                 Send($"Congratulations! Your tickets won {totalTickets} prize{(totalTickets == 1 ? "" : "s")} this draw!");
                 foreach (var kvp in summary.TierCounts.OrderBy(x => Array.FindIndex(TierDef, d => d.label == x.Key)))
-                    Send($"  \u2022 {kvp.Value}\u00d7 {kvp.Key}");
+                    Send($"  - {kvp.Value}x {kvp.Key}");
                 Send($"A {taxPct}% tax was applied to all winnings.");
                 Send($"{FormatLum(summary.NetWon)} has been banked in total.");
             }
@@ -430,8 +442,8 @@ namespace ACE.Server.Managers
         // ─────────────────────────────────────────────────────────────
         private static void BroadcastDrawResults(DrawResult result)
         {
-            BroadcastToAll(
-                $"[Lottery] Powerball Draw #{result.DrawId} — Winning numbers: [{result.W1} {result.W2} {result.W3}] PB:{result.Pb}");
+            BroadcastToAll($"[Lottery Announcer] The weekly Powerball Draw #{result.DrawId} is complete!");
+            BroadcastToAll($"[Lottery Announcer] Tonights winning numbers: [{result.W1:D2}]-[{result.W2:D2}]-[{result.W3:D2}]  [PB: {result.Pb:D2}]");
 
             var jackpotWinners = result.Winners.Values.Where(w => w.HasJackpot).ToList();
 
@@ -439,12 +451,12 @@ namespace ACE.Server.Managers
             {
                 foreach (var w in jackpotWinners)
                     BroadcastToAll(
-                        $"[Lottery] Grand Jackpot Won! Congratulations to {w.Name} for matching " +
-                        $"3 + Powerball and winning {FormatLum(w.GrossWon)} ({FormatLum(w.NetWon)} after taxes)!");
+                        $"[Lottery Announcer] GRAND JACKPOT WINNER! Congratulations to {w.Name} for matching " +
+                        $"all 3 balls plus the Powerball and winning {FormatLum(w.NetWon)}!");
             }
             else
             {
-                BroadcastToAll("[Lottery] No jackpot winner this week. The jackpot rolls over!");
+                BroadcastToAll("[Lottery Announcer] No one matched all 3 balls plus the Powerball! The jackpot rolls over to the next draw!");
 
                 var top = result.Winners.Values
                     .OrderByDescending(w => w.NetWon)
@@ -453,9 +465,9 @@ namespace ACE.Server.Managers
 
                 if (top.Count > 0)
                 {
-                    BroadcastToAll("[Lottery] This week's top winners:");
+                    BroadcastToAll("[Lottery Announcer] Congratulations to this week's top winners:");
                     foreach (var w in top)
-                        BroadcastToAll($"- {w.Name} ({FormatLum(w.NetWon)})");
+                        BroadcastToAll($"  - {w.Name} won {FormatLum(w.NetWon)}!");
                 }
             }
         }
@@ -498,29 +510,29 @@ namespace ACE.Server.Managers
         {
             var price = FormatLum(ServerConfig.powerball_ticket_price.Value);
             var sb    = new StringBuilder();
-            sb.AppendLine("[Powerball] \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
-            sb.AppendLine($"  Draw #{_currentDrawId} | Next Draw: {GetNextDrawTimeFormatted()}");
-            sb.AppendLine($"  Jackpot Pool : {FormatLum(_jackpotPool)}  |  Tickets Sold: {_tickets.Count}");
-            sb.AppendLine($"  Ticket Price : {price} banked luminance");
-            sb.AppendLine("  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
-            sb.AppendLine("  Payout Tiers (35% tax applied to all winnings):");
-            sb.AppendLine("    3 + Powerball  \u2192 Jackpot (50% of pool)");
-            sb.AppendLine("    3 white balls  \u2192 2nd    (15% of pool)");
-            sb.AppendLine("    2 + Powerball  \u2192 3rd    (15% of pool)");
-            sb.AppendLine("    2 white balls  \u2192 4th    (10% of pool)");
-            sb.AppendLine("    1 + Powerball  \u2192 5th    ( 5% of pool)");
-            sb.AppendLine("    1 white ball   \u2192 6th    ( 3% of pool)");
-            sb.AppendLine("    Powerball only \u2192 7th    ( 2% of pool)");
-            sb.AppendLine("  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+            sb.Append("[Powerball] ======================================\n");
+            sb.Append($"  Draw #{_currentDrawId} | Next Draw: {GetNextDrawTimeFormatted()}\n");
+            sb.Append($"  Jackpot Pool : {FormatLum(_jackpotPool)}  |  Tickets Sold: {_tickets.Count}\n");
+            sb.Append($"  Ticket Price : {price} banked luminance\n");
+            sb.Append("  ------------------------------------------\n");
+            sb.Append("  Payout Tiers (35% tax applied to all winnings):\n");
+            sb.Append("    3 + Powerball  -> Jackpot (50% of pool)\n");
+            sb.Append("    3 white balls  -> 2nd    (15% of pool)\n");
+            sb.Append("    2 + Powerball  -> 3rd    (15% of pool)\n");
+            sb.Append("    2 white balls  -> 4th    (10% of pool)\n");
+            sb.Append("    1 + Powerball  -> 5th    ( 5% of pool)\n");
+            sb.Append("    1 white ball   -> 6th    ( 3% of pool)\n");
+            sb.Append("    Powerball only -> 7th    ( 2% of pool)\n");
+            sb.Append("  ------------------------------------------\n");
 
             if (player != null)
             {
                 var mine = GetPlayerTickets(player.Guid.Full);
-                sb.AppendLine($"  Your tickets this draw: {mine.Count}");
+                sb.Append($"  Your tickets this draw: {mine.Count}\n");
             }
 
-            sb.AppendLine("  Commands: /pb buy <qty>  |  /pb tickets  |  /pb help");
-            sb.Append("[Powerball] \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+            sb.Append("  Commands: /pb buy <qty>  |  /pb tickets  |  /pb help\n");
+            sb.Append("[Powerball] ======================================");
             return sb.ToString();
         }
 
@@ -531,13 +543,13 @@ namespace ACE.Server.Managers
                 return $"[Powerball] You have no tickets for Draw #{_currentDrawId}. Use /pb buy <qty> to buy tickets.";
 
             var sb = new StringBuilder();
-            sb.AppendLine($"[Powerball] Your {tickets.Count} ticket{(tickets.Count == 1 ? "" : "s")} for Draw #{_currentDrawId}:");
+            sb.Append($"[Powerball] Your {tickets.Count} ticket{(tickets.Count == 1 ? "" : "s")} for Draw #{_currentDrawId}:\n");
 
             if (tickets.Count < 50)
             {
                 // Individual lines
                 for (int i = 0; i < tickets.Count; i++)
-                    sb.AppendLine($"  #{i + 1,3}: {tickets[i].FormatTicket()}");
+                    sb.Append($"  #{i + 1,3}: {tickets[i].FormatTicket()}\n");
             }
             else
             {
@@ -545,7 +557,7 @@ namespace ACE.Server.Managers
                 for (int i = 0; i < tickets.Count; i += 5)
                 {
                     var chunk = tickets.Skip(i).Take(5).Select(t => t.FormatTicket());
-                    sb.AppendLine("  " + string.Join("  |  ", chunk));
+                    sb.Append("  " + string.Join("  |  ", chunk) + "\n");
                 }
             }
 
@@ -557,37 +569,71 @@ namespace ACE.Server.Managers
         // ─────────────────────────────────────────────────────────────
         public static void AddTestTickets(int count)
         {
-            var rng   = new Random();
-            var names = new[] { "TestBot1", "TestBot2", "TestBot3", "TestBot4", "TestBot5",
-                                "TestBot6", "TestBot7", "TestBot8", "TestBot9", "TestBot10" };
-
+            var rng = new Random();
             lock (_lock)
             {
-                for (int i = 0; i < count; i++)
-                {
-                    var pool   = Enumerable.Range(1, NumberPool).ToList();
-                    var whites = new int[WhiteBalls];
-                    for (int j = 0; j < WhiteBalls; j++)
-                    {
-                        int idx  = rng.Next(pool.Count);
-                        whites[j] = pool[idx];
-                        pool.RemoveAt(idx);
-                    }
-                    Array.Sort(whites);
-                    int pb = rng.Next(1, NumberPool + 1);
+                // Simulate 150 unique players
+                // 15% Whales (22 players): 500-1500 tickets
+                // 50% Middle (75 players): 50-150 tickets
+                // 35% Low (53 players): 1-20 tickets
+                int whaleCount = 22;
+                int midCount   = 75;
+                int lowCount   = 53;
 
-                    _testTickets.Add(new PbTicket
-                    {
-                        DrawId   = _currentDrawId,
-                        CharId   = (uint)(900000 + (i % 10)),
-                        CharName = names[i % names.Length],
-                        N1       = whites[0],
-                        N2       = whites[1],
-                        N3       = whites[2],
-                        Pb       = pb,
-                        IsTest   = true,
-                    });
+                int playerId = 1;
+
+                // 1. Whales
+                for (int p = 0; p < whaleCount; p++)
+                {
+                    int ticketsToBuy = rng.Next(500, 1501);
+                    GenerateTicketsForPlayer($"TestWhale{playerId}", (uint)(900000 + playerId), ticketsToBuy, rng);
+                    playerId++;
                 }
+
+                // 2. Middle-tier
+                for (int p = 0; p < midCount; p++)
+                {
+                    int ticketsToBuy = rng.Next(50, 151);
+                    GenerateTicketsForPlayer($"TestPlayer{playerId}", (uint)(900000 + playerId), ticketsToBuy, rng);
+                    playerId++;
+                }
+
+                // 3. Low-tier
+                for (int p = 0; p < lowCount; p++)
+                {
+                    int ticketsToBuy = rng.Next(1, 21);
+                    GenerateTicketsForPlayer($"TestMinnow{playerId}", (uint)(900000 + playerId), ticketsToBuy, rng);
+                    playerId++;
+                }
+            }
+        }
+
+        private static void GenerateTicketsForPlayer(string name, uint charId, int ticketCount, Random rng)
+        {
+            for (int i = 0; i < ticketCount; i++)
+            {
+                var pool   = Enumerable.Range(1, NumberPool).ToList();
+                var whites = new int[WhiteBalls];
+                for (int j = 0; j < WhiteBalls; j++)
+                {
+                    int idx  = rng.Next(pool.Count);
+                    whites[j] = pool[idx];
+                    pool.RemoveAt(idx);
+                }
+                Array.Sort(whites);
+                int pb = rng.Next(1, NumberPool + 1);
+
+                _testTickets.Add(new PbTicket
+                {
+                    DrawId   = _currentDrawId,
+                    CharId   = charId,
+                    CharName = name,
+                    N1       = whites[0],
+                    N2       = whites[1],
+                    N3       = whites[2],
+                    Pb       = pb,
+                    IsTest   = true,
+                });
             }
         }
 
@@ -604,11 +650,11 @@ namespace ACE.Server.Managers
                     return "[Powerball] No test tickets in pool.";
 
                 var sb = new StringBuilder();
-                sb.AppendLine($"[Powerball] {_testTickets.Count} test ticket(s):");
+                sb.Append($"[Powerball] {_testTickets.Count} test ticket(s):\n");
                 foreach (var t in _testTickets.Take(20))
-                    sb.AppendLine($"  {t.CharName}: {t.FormatTicket()}");
+                    sb.Append($"  {t.CharName}: {t.FormatTicket()}\n");
                 if (_testTickets.Count > 20)
-                    sb.AppendLine($"  ... and {_testTickets.Count - 20} more");
+                    sb.Append($"  ... and {_testTickets.Count - 20} more\n");
                 return sb.ToString().TrimEnd();
             }
         }
@@ -620,29 +666,46 @@ namespace ACE.Server.Managers
         {
             var sb = new StringBuilder();
             var tag = result.IsTest ? "[TEST DRAW] " : "";
-            sb.AppendLine($"\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
-            sb.AppendLine($"{tag}Powerball Draw #{result.DrawId}");
-            sb.AppendLine($"  Winning : [{result.W1} {result.W2} {result.W3}] PB:{result.Pb}");
-            sb.AppendLine($"  Pool    : {FormatLum(result.JackpotPool)}  |  Tickets: {result.TicketCount}  |  Winners: {result.Winners.Count}");
+            sb.Append("==========================================\n");
+            sb.Append($"{tag}Powerball Draw #{result.DrawId}\n");
+            sb.Append($"  [Lottery Announcer] Tonights winning numbers: [{result.W1:D2}]-[{result.W2:D2}]-[{result.W3:D2}]  [PB: {result.Pb:D2}]\n");
+            sb.Append("  ------------------------------------------\n");
+            sb.Append($"  Pool    : {FormatLum(result.JackpotPool)}  |  Tickets: {result.TicketCount}  |  Winners: {result.Winners.Count}\n");
 
-            if (result.Winners.Count > 0)
+            var price = ServerConfig.powerball_ticket_price.Value;
+            var playerStats = new List<(string Name, long Spent, long NetWon, long Profit)>();
+
+            foreach (var kvp in result.PlayerTicketStats)
             {
-                sb.AppendLine("  Winners:");
-                foreach (var kvp in result.Winners.OrderByDescending(x => x.Value.NetWon))
+                var charId = kvp.Key;
+                var name = kvp.Value.Name;
+                var spent = kvp.Value.TicketCount * price;
+                long netWon = 0;
+                if (result.Winners.TryGetValue(charId, out var summary))
                 {
-                    var w    = kvp.Value;
-                    var tags = string.Join(", ", w.TierCounts.Select(t => t.Value > 1 ? $"{t.Value}\u00d7 {t.Key}" : t.Key));
-                    sb.AppendLine($"    {w.Name}: {FormatLum(w.NetWon)} net  [{tags}]");
+                    netWon = summary.NetWon;
+                }
+                playerStats.Add((name, spent, netWon, netWon - spent));
+            }
+
+            var winnersList = playerStats.Where(x => x.NetWon > 0).OrderByDescending(x => x.NetWon).Take(10).ToList();
+
+            if (winnersList.Count > 0)
+            {
+                sb.Append("  Top Winners:\n");
+                foreach (var stat in winnersList)
+                {
+                    sb.Append($"    {stat.Name}: Won {FormatLum(stat.NetWon)}\n");
                 }
             }
             else
             {
-                sb.AppendLine("  No winners this draw.");
+                sb.Append("  Top Winners:\n    None\n");
             }
 
-            sb.AppendLine($"  Rollover : {FormatLum(result.Rollover)}");
-            if (result.IsTest) sb.AppendLine("  [No payouts awarded — test draw]");
-            sb.Append("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+            sb.Append($"  Rollover : {FormatLum(result.Rollover)}\n");
+            if (result.IsTest) sb.Append("  [No payouts awarded - test draw]\n");
+            sb.Append("==========================================");
             return sb.ToString();
         }
 
@@ -662,11 +725,17 @@ namespace ACE.Server.Managers
 
         public static string FormatLum(long v)
         {
-            if (v >= 1_000_000_000_000L) return $"{v / 1_000_000_000_000.0:F1}T";
-            if (v >= 1_000_000_000L)     return $"{v / 1_000_000_000.0:F1}B";
-            if (v >= 1_000_000L)         return $"{v / 1_000_000.0:F1}M";
-            if (v >= 1_000L)             return $"{v / 1_000.0:F1}k";
-            return v.ToString("N0");
+            var isNegative = v < 0;
+            var absV = Math.Abs(v);
+            string formatted;
+
+            if (absV >= 1_000_000_000_000L) formatted = $"{absV / 1_000_000_000_000.0:F1}T";
+            else if (absV >= 1_000_000_000L)     formatted = $"{absV / 1_000_000_000.0:F1}B";
+            else if (absV >= 1_000_000L)         formatted = $"{absV / 1_000_000.0:F1}M";
+            else if (absV >= 1_000L)             formatted = $"{absV / 1_000.0:F1}k";
+            else                                 formatted = absV.ToString("N0");
+
+            return isNegative ? $"-{formatted}" : formatted;
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -834,23 +903,44 @@ CREATE TABLE IF NOT EXISTS `powerball_history` (
                 var con = ctx.Database.GetDbConnection();
                 if (con.State != ConnectionState.Open) con.Open();
                 using var cmd = con.CreateCommand();
+                using var txn = con.BeginTransaction();
+                cmd.Transaction = txn;
 
-                foreach (var t in tickets)
+                cmd.CommandText =
+                    "INSERT INTO `powerball_tickets` " +
+                    "(`draw_id`, `character_id`, `character_name`, `n1`, `n2`, `n3`, `pb`, `is_test`) " +
+                    "VALUES (@did, @cid, @cname, @n1, @n2, @n3, @pb, @istest)";
+
+                var pDid = cmd.CreateParameter(); pDid.ParameterName = "@did"; cmd.Parameters.Add(pDid);
+                var pCid = cmd.CreateParameter(); pCid.ParameterName = "@cid"; cmd.Parameters.Add(pCid);
+                var pCname = cmd.CreateParameter(); pCname.ParameterName = "@cname"; cmd.Parameters.Add(pCname);
+                var pN1 = cmd.CreateParameter(); pN1.ParameterName = "@n1"; cmd.Parameters.Add(pN1);
+                var pN2 = cmd.CreateParameter(); pN2.ParameterName = "@n2"; cmd.Parameters.Add(pN2);
+                var pN3 = cmd.CreateParameter(); pN3.ParameterName = "@n3"; cmd.Parameters.Add(pN3);
+                var pPb = cmd.CreateParameter(); pPb.ParameterName = "@pb"; cmd.Parameters.Add(pPb);
+                var pIsTest = cmd.CreateParameter(); pIsTest.ParameterName = "@istest"; cmd.Parameters.Add(pIsTest);
+
+                try
                 {
-                    cmd.CommandText =
-                        "INSERT INTO `powerball_tickets` " +
-                        "(`draw_id`, `character_id`, `character_name`, `n1`, `n2`, `n3`, `pb`, `is_test`) " +
-                        "VALUES (@did, @cid, @cname, @n1, @n2, @n3, @pb, @istest)";
-                    cmd.Parameters.Clear();
-                    AddParam(cmd, "@did",    t.DrawId);
-                    AddParam(cmd, "@cid",    (long)t.CharId);
-                    AddParam(cmd, "@cname",  t.CharName);
-                    AddParam(cmd, "@n1",     t.N1);
-                    AddParam(cmd, "@n2",     t.N2);
-                    AddParam(cmd, "@n3",     t.N3);
-                    AddParam(cmd, "@pb",     t.Pb);
-                    AddParam(cmd, "@istest", isTest ? 1 : 0);
-                    cmd.ExecuteNonQuery();
+                    foreach (var t in tickets)
+                    {
+                        pDid.Value = t.DrawId;
+                        pCid.Value = (long)t.CharId;
+                        pCname.Value = t.CharName ?? (object)DBNull.Value;
+                        pN1.Value = t.N1;
+                        pN2.Value = t.N2;
+                        pN3.Value = t.N3;
+                        pPb.Value = t.Pb;
+                        pIsTest.Value = isTest ? 1 : 0;
+
+                        cmd.ExecuteNonQuery();
+                    }
+                    txn.Commit();
+                }
+                catch
+                {
+                    txn.Rollback();
+                    throw;
                 }
             }
             catch (Exception ex)

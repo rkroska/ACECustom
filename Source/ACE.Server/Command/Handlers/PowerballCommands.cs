@@ -120,9 +120,9 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            if (!int.TryParse(qtyStr, out int qty) || qty < 1)
+            if (!int.TryParse(qtyStr, out int qty) || qty < 1 || qty > 500)
             {
-                Reply(session, "[Powerball] Please enter a positive whole number for the quantity.");
+                Reply(session, "[Powerball] Please enter a quantity between 1 and 500.");
                 return;
             }
 
@@ -150,19 +150,18 @@ namespace ACE.Server.Command.Handlers
         //  /dev powerball  — developer test commands
         // ─────────────────────────────────────────────────────────────
         [CommandHandler("dev", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
-            "Developer utility commands — use 'powerball' subcommand for Powerball testing.",
-            "/dev powerball draw      - force a real draw (payouts awarded)\n" +
-            "/dev powerball testdraw  - force a test draw (no payouts; adds 150 NPC tickets first)\n" +
-            "/dev powerball test      - add 150 random NPC test tickets\n" +
-            "/dev powerball clear     - clear all test tickets\n" +
-            "/dev powerball status    - show current pool status")]
+            "Developer utility commands — use 'powerball' or 'pb' subcommand for Powerball testing.",
+            "/dev pb testdraw  - force a test draw (no payouts; adds 150 NPC tickets first)\n" +
+            "/dev pb test      - add 150 random NPC test tickets\n" +
+            "/dev pb clear     - clear all test tickets\n" +
+            "/dev pb status    - show current pool status")]
         public static void HandleDevPowerball(Session session, params string[] parameters)
         {
-            // Only intercept if first param is "powerball"
+            // Only intercept if first param is "powerball" or "pb"
             if (parameters.Length == 0
-                || parameters[0].ToLowerInvariant() != "powerball")
+                || (parameters[0].ToLowerInvariant() != "powerball" && parameters[0].ToLowerInvariant() != "pb"))
             {
-                Reply(session, "[dev] Unknown dev subcommand. Use /dev powerball <subcommand>.");
+                Reply(session, "[dev] Unknown dev subcommand. Use /dev pb <subcommand>.");
                 return;
             }
 
@@ -170,22 +169,6 @@ namespace ACE.Server.Command.Handlers
 
             switch (sub)
             {
-                case "draw":
-                {
-                    Reply(session, "[Powerball] Forcing a real draw...");
-                    var result = PowerballManager.ExecuteDraw(isTestMode: false);
-                    if (result == null)
-                    {
-                        Reply(session, "[Powerball] Draw skipped — no tickets in pool.");
-                        return;
-                    }
-                    Reply(session, PowerballManager.BuildDrawResultText(result));
-                    // Broadcast to all as usual
-                    PlayerManager.BroadcastToAuditChannel(session.Player,
-                        $"[Powerball] {session.Player.Name} forced a real Powerball draw (DrawId {result.DrawId}).");
-                    break;
-                }
-
                 case "testdraw":
                 {
                     Reply(session, "[Powerball] Adding 150 NPC test tickets and running a test draw...");
@@ -219,11 +202,11 @@ namespace ACE.Server.Command.Handlers
                 case "status":
                 {
                     var sb = new StringBuilder();
-                    sb.AppendLine("[Powerball] Status:");
-                    sb.AppendLine($"  Draw ID    : {PowerballManager.GetCurrentDrawId()}");
-                    sb.AppendLine($"  Pool       : {PowerballManager.FormatLum(PowerballManager.GetJackpotPool())}");
-                    sb.AppendLine($"  Tickets    : {PowerballManager.GetTicketCount()} real  +  {PowerballManager.GetTestTicketCount()} test");
-                    sb.Append(    $"  Next Draw  : {PowerballManager.GetNextDrawTimeFormatted()}");
+                    sb.Append("[Powerball] Status:\n");
+                    sb.Append($"  Draw ID    : {PowerballManager.GetCurrentDrawId()}\n");
+                    sb.Append($"  Pool       : {PowerballManager.FormatLum(PowerballManager.GetJackpotPool())}\n");
+                    sb.Append($"  Tickets    : {PowerballManager.GetTicketCount()} real  +  {PowerballManager.GetTestTicketCount()} test\n");
+                    sb.Append($"  Next Draw  : {PowerballManager.GetNextDrawTimeFormatted()}");
                     Reply(session, sb.ToString());
                     break;
                 }
@@ -231,11 +214,10 @@ namespace ACE.Server.Command.Handlers
                 default:
                     Reply(session,
                         "[Powerball] Dev subcommands:\n" +
-                        "  /dev powerball draw      - force real draw\n" +
-                        "  /dev powerball testdraw  - force test draw (adds 150 NPC tickets)\n" +
-                        "  /dev powerball test      - add 150 NPC test tickets\n" +
-                        "  /dev powerball clear     - clear test tickets\n" +
-                        "  /dev powerball status    - show pool status");
+                        "  /dev pb testdraw  - force test draw (adds 150 NPC tickets)\n" +
+                        "  /dev pb test      - add 150 NPC test tickets\n" +
+                        "  /dev pb clear     - clear test tickets\n" +
+                        "  /dev pb status    - show pool status");
                     break;
             }
         }
