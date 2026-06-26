@@ -26,6 +26,7 @@ namespace ACE.Server.Entity
             var blockEnd = blockStart | 0xFFFF;
 
             string resolvedName = null;
+            var lookupFailed = false;
 
             try
             {
@@ -85,6 +86,7 @@ namespace ACE.Server.Entity
             catch (Exception)
             {
                 // Fallback on database error
+                lookupFailed = true;
             }
 
             if (string.IsNullOrEmpty(resolvedName))
@@ -92,7 +94,10 @@ namespace ACE.Server.Entity
                 resolvedName = $"Unknown Dungeon (0x{landblock:X4})";
             }
 
-            _dungeonNameCache.TryAdd(key, resolvedName);
+            if (!lookupFailed)
+            {
+                _dungeonNameCache.TryAdd(key, resolvedName);
+            }
             return resolvedName;
         }
     }
