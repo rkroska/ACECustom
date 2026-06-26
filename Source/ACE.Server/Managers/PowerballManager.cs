@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 
 using log4net;
@@ -53,8 +54,6 @@ namespace ACE.Server.Managers
         private static readonly List<PbTicket> _tickets     = new();
         private static readonly List<PbTicket> _testTickets = new();
         private static readonly object         _lock        = new();
-
-        private static readonly Random _rng = new();
 
         // ─────────────────────────────────────────────────────────────
         //  Data types
@@ -113,7 +112,19 @@ namespace ACE.Server.Managers
             EnsureTablesExist();
             LoadStateFromDb();
             LoadTicketsFromDb();
+
+            // Settle any draw that was due while the server was offline
+            if (_nextDrawTime != DateTime.MinValue && DateTime.UtcNow >= _nextDrawTime
+                && ServerConfig.powerball_enabled.Value)
+            {
+                log.Info("[Powerball] Overdue draw detected on startup \u2014 settling now.");
+                var result = ExecuteDraw(isTestMode: false);
+                if (result != null)
+                    BroadcastDrawResults(result);
+            }
+
             CalculateNextDrawTime();
+            SaveStateToDb();   // persist updated next_draw_time
 
             log.Info($"[Powerball] Initialized. DrawId={_currentDrawId}, " +
                      $"Pool={FormatLum(_jackpotPool)}, Tickets={_tickets.Count}, " +
@@ -137,6 +148,7 @@ namespace ACE.Server.Managers
             {
                 var result = ExecuteDraw(isTestMode: false);
                 CalculateNextDrawTime();
+                SaveStateToDb();   // persist updated next_draw_time
 
                 if (result != null)
                     BroadcastDrawResults(result);
@@ -154,28 +166,28 @@ namespace ACE.Server.Managers
             if (count < 1 || count > 500)
                 return (false, "[Powerball] You may buy between 1 and 500 tickets per purchase.");
 
-            var price     = ServerConfig.powerball_ticket_price.Value;
-            var totalCost = price * count;
-            var banked    = player.BankedLuminance ?? 0;
+            var price = ServerConfig.powerball_ticket_price.Value;
+            if (price <= 0)
+                return (false, "[Powerball] Ticket price is misconfigured.");
 
+            long totalCost;
+            try   { totalCost = checked(price * count); }
+            catch (OverflowException) { return (false, "[Powerball] Ticket price is misconfigured."); }
+
+            var banked = player.BankedLuminance ?? 0;
             if (banked < totalCost)
                 return (false,
                     $"[Powerball] Insufficient banked luminance. " +
                     $"You have {FormatLum(banked)} but need {FormatLum(totalCost)} " +
                     $"for {count} ticket{(count == 1 ? "" : "s")} at {FormatLum(price)} each.");
 
-            // Deduct up-front before generating tickets
-            player.BankedLuminance = banked - totalCost;
-            player.SaveBiotaToDatabase(enqueueSave: true);
-
+            // Generate tickets in memory first
             var newTickets = new List<PbTicket>(count);
             int drawId;
 
             lock (_lock)
             {
-                drawId        = _currentDrawId;
-                _jackpotPool += totalCost;
-
+                drawId = _currentDrawId;
                 for (int i = 0; i < count; i++)
                 {
                     var t = GenerateTicket(player.Guid.Full, player.Name, drawId);
@@ -184,7 +196,23 @@ namespace ACE.Server.Managers
                 }
             }
 
-            SaveTicketsToDb(newTickets, isTest: false);
+            // Persist tickets before touching player balance — roll back on failure
+            bool saved = SaveTicketsToDb(newTickets, isTest: false);
+            if (!saved)
+            {
+                lock (_lock)
+                {
+                    foreach (var t in newTickets)
+                        _tickets.Remove(t);
+                }
+                return (false, "[Powerball] A database error occurred. Please try again.");
+            }
+
+            // Tickets safely persisted — now commit the deduction
+            player.BankedLuminance = banked - totalCost;
+            player.SaveBiotaToDatabase(enqueueSave: true);
+
+            lock (_lock) { _jackpotPool += totalCost; }
             SaveStateToDb();
 
             return (true, "");
@@ -197,12 +225,12 @@ namespace ACE.Server.Managers
             var whites = new int[WhiteBalls];
             for (int i = 0; i < WhiteBalls; i++)
             {
-                int idx  = _rng.Next(pool.Count);
+                int idx  = RandomNumberGenerator.GetInt32(pool.Count);
                 whites[i] = pool[idx];
                 pool.RemoveAt(idx);
             }
             Array.Sort(whites);
-            int pb = _rng.Next(1, NumberPool + 1);
+            int pb = RandomNumberGenerator.GetInt32(1, NumberPool + 1);
 
             return new PbTicket
             {
@@ -251,12 +279,12 @@ namespace ACE.Server.Managers
             var winNums = new int[WhiteBalls];
             for (int i = 0; i < WhiteBalls; i++)
             {
-                int idx   = _rng.Next(pool.Count);
+                int idx   = RandomNumberGenerator.GetInt32(pool.Count);
                 winNums[i] = pool[idx];
                 pool.RemoveAt(idx);
             }
             Array.Sort(winNums);
-            int winPb  = _rng.Next(1, NumberPool + 1);
+            int winPb  = RandomNumberGenerator.GetInt32(1, NumberPool + 1);
             var winSet = new HashSet<int>(winNums);
 
             var price = ServerConfig.powerball_ticket_price.Value;
@@ -337,19 +365,21 @@ namespace ACE.Server.Managers
 
             if (!isTestMode)
             {
-                // Award payouts to real players
-                foreach (var kvp in result.Winners)
-                    AwardPayout(kvp.Key, kvp.Value);
-
+                // 1. Advance state and persist FIRST — prevents draw replay on crash
                 lock (_lock)
                 {
                     _jackpotPool   = rollover;
                     _currentDrawId = drawId + 1;
                     _tickets.Clear();
                 }
-
-                SaveHistoryToDb(result);
                 SaveStateToDb();
+
+                // 2. Award payouts to real players
+                foreach (var kvp in result.Winners)
+                    AwardPayout(kvp.Key, kvp.Value);
+
+                // 3. Record history and clean up tickets
+                SaveHistoryToDb(result);
                 ClearTicketsFromDb(drawId);
             }
             else
@@ -569,7 +599,6 @@ namespace ACE.Server.Managers
         // ─────────────────────────────────────────────────────────────
         public static void AddTestTickets(int count)
         {
-            var rng = new Random();
             lock (_lock)
             {
                 // Simulate 150 unique players
@@ -585,30 +614,30 @@ namespace ACE.Server.Managers
                 // 1. Whales
                 for (int p = 0; p < whaleCount; p++)
                 {
-                    int ticketsToBuy = rng.Next(500, 1501);
-                    GenerateTicketsForPlayer($"TestWhale{playerId}", (uint)(900000 + playerId), ticketsToBuy, rng);
+                    int ticketsToBuy = RandomNumberGenerator.GetInt32(500, 1501);
+                    GenerateTicketsForPlayer($"TestWhale{playerId}", (uint)(900000 + playerId), ticketsToBuy);
                     playerId++;
                 }
 
                 // 2. Middle-tier
                 for (int p = 0; p < midCount; p++)
                 {
-                    int ticketsToBuy = rng.Next(50, 151);
-                    GenerateTicketsForPlayer($"TestPlayer{playerId}", (uint)(900000 + playerId), ticketsToBuy, rng);
+                    int ticketsToBuy = RandomNumberGenerator.GetInt32(50, 151);
+                    GenerateTicketsForPlayer($"TestPlayer{playerId}", (uint)(900000 + playerId), ticketsToBuy);
                     playerId++;
                 }
 
                 // 3. Low-tier
                 for (int p = 0; p < lowCount; p++)
                 {
-                    int ticketsToBuy = rng.Next(1, 21);
-                    GenerateTicketsForPlayer($"TestMinnow{playerId}", (uint)(900000 + playerId), ticketsToBuy, rng);
+                    int ticketsToBuy = RandomNumberGenerator.GetInt32(1, 21);
+                    GenerateTicketsForPlayer($"TestMinnow{playerId}", (uint)(900000 + playerId), ticketsToBuy);
                     playerId++;
                 }
             }
         }
 
-        private static void GenerateTicketsForPlayer(string name, uint charId, int ticketCount, Random rng)
+        private static void GenerateTicketsForPlayer(string name, uint charId, int ticketCount)
         {
             for (int i = 0; i < ticketCount; i++)
             {
@@ -616,12 +645,12 @@ namespace ACE.Server.Managers
                 var whites = new int[WhiteBalls];
                 for (int j = 0; j < WhiteBalls; j++)
                 {
-                    int idx  = rng.Next(pool.Count);
+                    int idx  = RandomNumberGenerator.GetInt32(pool.Count);
                     whites[j] = pool[idx];
                     pool.RemoveAt(idx);
                 }
                 Array.Sort(whites);
-                int pb = rng.Next(1, NumberPool + 1);
+                int pb = RandomNumberGenerator.GetInt32(1, NumberPool + 1);
 
                 _testTickets.Add(new PbTicket
                 {
@@ -820,12 +849,15 @@ CREATE TABLE IF NOT EXISTS `powerball_history` (
                 if (con.State != ConnectionState.Open) con.Open();
                 using var cmd = con.CreateCommand();
                 cmd.CommandText =
-                    "SELECT `current_draw_id`, `jackpot_pool` FROM `powerball_state` WHERE `id` = 1 LIMIT 1";
+                    "SELECT `current_draw_id`, `jackpot_pool`, `next_draw_time` " +
+                    "FROM `powerball_state` WHERE `id` = 1 LIMIT 1";
                 using var reader = cmd.ExecuteReader();
                 if (reader.Read())
                 {
                     _currentDrawId = reader.GetInt32(0);
                     _jackpotPool   = reader.GetInt64(1);
+                    if (!reader.IsDBNull(2))
+                        _nextDrawTime = DateTime.SpecifyKind(reader.GetDateTime(2), DateTimeKind.Utc);
                 }
             }
             catch (Exception ex)
@@ -894,9 +926,9 @@ CREATE TABLE IF NOT EXISTS `powerball_history` (
             }
         }
 
-        private static void SaveTicketsToDb(List<PbTicket> tickets, bool isTest)
+        private static bool SaveTicketsToDb(List<PbTicket> tickets, bool isTest)
         {
-            if (tickets.Count == 0) return;
+            if (tickets.Count == 0) return true;
             try
             {
                 using var ctx = new ShardDbContext();
@@ -942,10 +974,12 @@ CREATE TABLE IF NOT EXISTS `powerball_history` (
                     txn.Rollback();
                     throw;
                 }
+                return true;
             }
             catch (Exception ex)
             {
                 log.Error("[Powerball] SaveTicketsToDb failed", ex);
+                return false;
             }
         }
 

@@ -151,8 +151,8 @@ namespace ACE.Server.Command.Handlers
         // ─────────────────────────────────────────────────────────────
         [CommandHandler("dev", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Developer utility commands — use 'powerball' or 'pb' subcommand for Powerball testing.",
-            "/dev pb testdraw  - force a test draw (no payouts; adds 150 NPC tickets first)\n" +
-            "/dev pb test      - add 150 random NPC test tickets\n" +
+            "/dev pb testdraw  - force a test draw (no payouts; adds the simulated NPC test pool first)\n" +
+            "/dev pb test      - add the simulated NPC test pool\n" +
             "/dev pb clear     - clear all test tickets\n" +
             "/dev pb status    - show current pool status")]
         public static void HandleDevPowerball(Session session, params string[] parameters)
@@ -171,7 +171,7 @@ namespace ACE.Server.Command.Handlers
             {
                 case "testdraw":
                 {
-                    Reply(session, "[Powerball] Adding 150 NPC test tickets and running a test draw...");
+                    Reply(session, "[Powerball] Adding the simulated NPC test pool and running a test draw...");
                     PowerballManager.AddTestTickets(150);
                     var result = PowerballManager.ExecuteDraw(isTestMode: true);
                     if (result == null)
@@ -187,7 +187,7 @@ namespace ACE.Server.Command.Handlers
                 {
                     PowerballManager.AddTestTickets(150);
                     Reply(session,
-                        $"[Powerball] Added 150 NPC test tickets. " +
+                        $"[Powerball] Added the simulated NPC test pool. " +
                         $"Total test tickets: {PowerballManager.GetTestTicketCount()}");
                     break;
                 }
@@ -214,8 +214,8 @@ namespace ACE.Server.Command.Handlers
                 default:
                     Reply(session,
                         "[Powerball] Dev subcommands:\n" +
-                        "  /dev pb testdraw  - force test draw (adds 150 NPC tickets)\n" +
-                        "  /dev pb test      - add 150 NPC test tickets\n" +
+                        "  /dev pb testdraw  - force test draw (adds the simulated NPC test pool)\n" +
+                        "  /dev pb test      - add the simulated NPC test pool\n" +
                         "  /dev pb clear     - clear test tickets\n" +
                         "  /dev pb status    - show pool status");
                     break;
