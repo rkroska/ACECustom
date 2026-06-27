@@ -16,6 +16,7 @@ using ACE.Server.Entity.Actions;
 using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Network;
+using ACE.Server.WorldObjects.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 
@@ -3865,9 +3866,42 @@ namespace ACE.Server.WorldObjects
             {
                 if (acceptAll || (emoteResult.Category == EmoteCategory.Give && target.AllowGive))
                 {
+                    // Pre-removal gate: verify the player can carry the rewards BEFORE consuming the
+                    // turn-in. The reward emote chain runs asynchronously, but the turn-in is removed
+                    // and Destroy()-ed synchronously below — so without this check a full inventory
+                    // would void the turn-in while the async chain aborts the (uncarriable) reward.
+                    var turnInStack = item.StackSize ?? 1;
+                    var givenAmount = acceptAll ? Math.Min(amount, turnInStack) : 1;
+
+                    // Credit the slot the turn-in frees, but only if the whole stack leaves (giving 1
+                    // from a larger stack frees no slot) AND it was in a pack (an equipped item frees
+                    // an equipment slot + burden, not a pack slot). Conservative: never over-credits.
+                    // The credit is applied inside BuildRewardBatch (before the gives) so its running
+                    // capacity check stays accurate.
+                    var creditWcid = (!itemWasEquipped && item.WeenieClassId != 0 && givenAmount >= turnInStack)
+                        ? item.WeenieClassId : 0u;
+                    var rewardBatch = EmoteManager.BuildRewardBatch(this, emoteResult, 0,
+                        creditWcid, creditWcid != 0 ? givenAmount : 0);
+
+                    if (rewardBatch.PlayerExceedsLimits)
+                    {
+                        if (rewardBatch.PlayerExceedsAvailableBurden)
+                            Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                $"{target.Name} has rewards for you, but you are too encumbered to carry them! Drop some items and try again.",
+                                ChatMessageType.Broadcast));
+                        else
+                            Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                $"{target.Name} has rewards for you, but you need {rewardBatch.RequiredAdditionalSlots} more free inventory slot(s). Free up some space and try again.",
+                                ChatMessageType.Broadcast));
+
+                        // Bounce the item back on the client; the server never removed it.
+                        Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+                        return;
+                    }
+
                     // for NPCs that accept items with EmoteCategory.Give,
                     // if stacked item, only give 1, ignoring amount indicated, unless they are AiAcceptEverything in which case, take full amount indicated
-                    if (RemoveItemForGive(item, itemFoundInContainer, itemWasEquipped, itemRootOwner, acceptAll ? amount : 1, out WorldObject itemToGive))
+                    if (RemoveItemForGive(item, itemFoundInContainer, itemWasEquipped, itemRootOwner, givenAmount, out WorldObject itemToGive))
                     {
                         // Track the actual transferred item for emote handlers (may differ from original for stack splits)
                         LastGivenItemGuid = itemToGive.Guid;

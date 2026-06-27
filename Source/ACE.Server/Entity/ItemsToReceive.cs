@@ -29,6 +29,16 @@ namespace ACE.Server.Entity
 
         public bool PlayerExceedsLimits => PlayerOutOfInventorySlots || PlayerOutOfContainerSlots || PlayerExceedsAvailableBurden;
 
+        /// <summary>
+        /// How many MORE slots the player must free to receive the batch (the deficit), accounting for
+        /// the slots they already have free (including side packs). This is what to show the player —
+        /// not <see cref="RequiredSlots"/>, which is the gross size of the reward and over-states what
+        /// they actually need to clear.
+        /// </summary>
+        public int RequiredAdditionalSlots =>
+            (RequiredInventorySlots > playerFreeInventorySlots ? RequiredInventorySlots - playerFreeInventorySlots : 0)
+            + (RequiredContainerSlots > playerFreeContainerSlots ? RequiredContainerSlots - playerFreeContainerSlots : 0);
+
         public bool Add(uint weenieClassId, int amount)
         {
             return Process(weenieClassId, amount);
