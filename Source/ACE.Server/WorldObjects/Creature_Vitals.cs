@@ -51,7 +51,14 @@ namespace ACE.Server.WorldObjects
         {
             var before = vital.Current;
             vital.Current = (uint)Math.Clamp(newVal, 0, vital.MaxValue);
-            return (int)(vital.Current - before);
+            var delta = (int)(vital.Current - before);
+
+            // Keep the WoundedTaunt phase tracker fresh on any health gain (heal/regen) so banded
+            // bosses re-arm correctly if healed above a threshold and then re-damaged through it.
+            if (delta > 0 && vital == Health)
+                EmoteManager?.OnHealthRaised();
+
+            return delta;
         }
 
         public virtual int UpdateVital(CreatureVital vital, uint newVal)
