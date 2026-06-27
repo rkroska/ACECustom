@@ -763,6 +763,19 @@ namespace ACE.Server.Managers
                 return Math.Min(clamped, PortalStuckKickMaxSeconds);
             }
         }
+
+        // ── Powerball System Configuration ───────────────────────────────────────────
+        /// <summary>Master toggle for the weekly Powerball lottery. FALSE disables all purchases and draws.</summary>
+        public static ConfigProperty<bool> powerball_enabled { get; private set; } = new(true, "If TRUE, the Powerball lottery system is active. Set FALSE to disable all ticket purchases and draws. Use /modifybool powerball_enabled.");
+
+        /// <summary>Ticket price in banked luminance (default 5B = 5,000,000,000).</summary>
+        public static ConfigProperty<long> powerball_ticket_price { get; private set; } = new(5_000_000_000L, "Banked luminance cost per Powerball ticket. Default 5B. Use /modifylong powerball_ticket_price.");
+
+        /// <summary>Day of week for the weekly draw: 0=Sunday … 6=Saturday. Default 0 (Sunday).</summary>
+        public static ConfigProperty<long> powerball_draw_day_of_week { get; private set; } = new(0L, "Day of week for the weekly Powerball draw (0=Sunday, 1=Monday, … 6=Saturday). Default 0. Use /modifylong powerball_draw_day_of_week.");
+
+        /// <summary>Hour (UTC, 0–23) at which the weekly draw fires. Default 2 (2 AM UTC).</summary>
+        public static ConfigProperty<long> powerball_draw_hour_utc { get; private set; } = new(2L, "Hour of the day (UTC, 0–23) when the weekly Powerball draw fires. Default 2 = 2 AM UTC. Use /modifylong powerball_draw_hour_utc.");
     }
 
     public static class PropertyManager

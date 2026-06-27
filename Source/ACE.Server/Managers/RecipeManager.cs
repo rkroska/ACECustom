@@ -382,14 +382,16 @@ namespace ACE.Server.Managers
 
             var modified = CreateDestroyItems(player, recipe, source, target, successChance, success);
 
-            if (modified != null)
-            {
-                if (modified.Contains(source.Guid.Full))
-                    UpdateObj(player, source);
+            // null == the craft was aborted before anything was consumed (missing result weenie, or the
+            // player has no room for the result). Stop here so no skill XP is granted for a no-op craft.
+            if (modified == null)
+                return;
 
-                if (modified.Contains(target.Guid.Full))
-                    UpdateObj(player, target);
-            }
+            if (modified.Contains(source.Guid.Full))
+                UpdateObj(player, source);
+
+            if (modified.Contains(target.Guid.Full))
+                UpdateObj(player, target);
 
             if (success && recipe.Skill > 0 && recipe.Difficulty > 0)
             {
@@ -1050,6 +1052,35 @@ namespace ACE.Server.Managers
                 return null;
             }
 
+            // Pre-flight inventory check: the created result is added to the pack only AFTER the
+            // source/target are destroyed below, and CreateItem ignores TryCreateInInventory's failure —
+            // so on a full / over-burden pack the crafted item was silently lost. Verify the result fits
+            // BEFORE destroying anything, crediting only the pack slot/burden a destroyed ingredient
+            // actually frees (whole stack, sitting in a pack, not equipped). Abort cleanly if it won't fit.
+            if (createItem > 0)
+            {
+                var space = new ItemsToReceive(player);
+                space.Add(createItem, (int)Math.Max(1u, createAmount));
+
+                if (destroyTarget)
+                    CreditDestroyedIngredient(player, space, target,
+                        success ? recipe.SuccessDestroyTargetAmount : recipe.FailDestroyTargetAmount);
+                if (destroySource)
+                    CreditDestroyedIngredient(player, space, source,
+                        success ? recipe.SuccessDestroySourceAmount : recipe.FailDestroySourceAmount);
+
+                if (space.PlayerExceedsLimits)
+                {
+                    if (space.PlayerExceedsAvailableBurden)
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                            "You are too encumbered to craft that. Drop some items and try again.", ChatMessageType.Craft));
+                    else
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                            "You don't have enough free inventory space to craft that. Free up some space and try again.", ChatMessageType.Craft));
+                    return null;
+                }
+            }
+
             if (destroyTarget)
             {
                 var destroyTargetAmount = success ? recipe.SuccessDestroyTargetAmount : recipe.FailDestroyTargetAmount;
@@ -1099,6 +1130,21 @@ namespace ACE.Server.Managers
                 player.EnqueueBroadcast(new GameMessageSystemChat($"{player.Name} fails to apply the {sourceName} (workmanship {(tool.Workmanship ?? 0):#.00}) to the {target.NameWithMaterial}. The target is destroyed.", ChatMessageType.Craft), WorldObject.LocalBroadcastRange, ChatMessageType.Craft);
 
             log.Debug($"[TINKERING] {player.Name} {(success ? "successfully applies" : "fails to apply")} the {sourceName} (workmanship {(tool.Workmanship ?? 0):#.00}) to the {target.NameWithMaterial}.{(!success ? " The target is destroyed." : "")} | Chance: {chance}");
+        }
+
+        /// <summary>
+        /// Credits the pack slot + burden that a soon-to-be-destroyed crafting ingredient frees, used by
+        /// the pre-flight space check in <see cref="CreateDestroyItems"/>. Conservative: only credits when
+        /// the item sits in a pack (an equipped/wielded item frees an equipment slot, not a pack slot) and
+        /// its entire stack is consumed (consuming part of a stack frees no slot). Never over-credits.
+        /// </summary>
+        private static void CreditDestroyedIngredient(Player player, ItemsToReceive batch, WorldObject item, uint destroyAmount)
+        {
+            if (item == null || item.WeenieClassId == 0 || destroyAmount == 0)
+                return;
+
+            if (player.GetInventoryItem(item.Guid) != null && destroyAmount >= (uint)(item.StackSize ?? 1))
+                batch.Remove(item.WeenieClassId, (int)destroyAmount);
         }
 
         public static WorldObject CreateItem(Player player, uint wcid, uint amount)
