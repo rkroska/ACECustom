@@ -498,6 +498,9 @@ namespace ACE.Server.Physics.Common
         /// <returns>TRUE if object was previously not visible, and added to the visible list</returns>
         public bool AddVisibleObject(PhysicsObj obj)
         {
+            bool added = false;
+            bool callInverse = false;
+
             rwLock.EnterWriteLock();
             try
             {
@@ -526,22 +529,25 @@ namespace ACE.Server.Physics.Common
 
                 //Console.WriteLine($"{PhysicsObj.Name}.AddVisibleObject({obj.Name})");
                 VisibleObjects.TryAdd(obj.ID, obj);
-
-                if (obj.WeenieObj.IsMonster)
-                    obj.ObjMaint.AddVisibleTarget(PhysicsObj, false);
+                added = true;
+                callInverse = obj.WeenieObj.IsMonster;
 
                 if (PhysicsObj.IsPlayer && PhysicsObj.WeenieObj.WorldObject is Player viewerAdded && ServerConfig.visibility_create_object_diag_verbose.Value)
                 {
                     var dist2D = (float)Math.Sqrt(dist2DSq);
                     VisibilityCreateObjectDiag.LogAddVisibleObject(viewerAdded, obj, added: true, rejectedByClamp: false, dist2D, wasKnown, wasVisible);
                 }
-
-                return true;
             }
             finally
             {
                 rwLock.ExitWriteLock();
             }
+
+            // Cross-instance call OUTSIDE the lock to prevent A↔B deadlock
+            if (callInverse)
+                obj.ObjMaint.AddVisibleTarget(PhysicsObj, false);
+
+            return added;
         }
 
         /// <summary>
@@ -550,25 +556,19 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public List<PhysicsObj> AddVisibleObjects(ICollection<PhysicsObj> objs)
         {
-            rwLock.EnterWriteLock();
-            try
+            // No outer lock — each call manages its own lock and cross-instance calls
+            // are made outside their respective locks (matching the pattern used by AddVisibleTargets).
+            var visibleAdded = new List<PhysicsObj>();
+
+            foreach (var obj in objs)
             {
-                var visibleAdded = new List<PhysicsObj>();
-
-                foreach (var obj in objs)
-                {
-                    if (AddVisibleObject(obj))
-                        visibleAdded.Add(obj);
-                }
-
-                RemoveObjectsToBeDestroyed(objs);
-
-                return AddKnownObjects(visibleAdded);
+                if (AddVisibleObject(obj))
+                    visibleAdded.Add(obj);
             }
-            finally
-            {
-                rwLock.ExitWriteLock();
-            }
+
+            RemoveObjectsToBeDestroyed(objs);
+
+            return AddKnownObjects(visibleAdded);
         }
 
         /// <summary>
@@ -578,20 +578,22 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public bool RemoveVisibleObject(PhysicsObj obj, bool inverseTarget = true)
         {
+            bool removed;
             rwLock.EnterWriteLock();
             try
             {
-                var removed = VisibleObjects.Remove(obj.ID, out _);
-
-                if (inverseTarget)
-                    obj.ObjMaint.RemoveVisibleTarget(PhysicsObj);
-
-                return removed;
+                removed = VisibleObjects.Remove(obj.ID, out _);
             }
             finally
             {
                 rwLock.ExitWriteLock();
             }
+
+            // Cross-instance call OUTSIDE the lock to prevent deadlock
+            if (removed && inverseTarget)
+                obj.ObjMaint.RemoveVisibleTarget(PhysicsObj);
+
+            return removed;
         }
 
 
@@ -633,21 +635,29 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public bool AddObjectToBeDestroyed(PhysicsObj obj)
         {
+            bool visibleRemoved;
+            bool added;
+
             rwLock.EnterWriteLock();
             try
             {
-                RemoveVisibleObject(obj);
+                // Inline the VisibleObjects removal to avoid re-entrant lock on same instance
+                visibleRemoved = VisibleObjects.Remove(obj.ID, out _);
+
                 //Console.WriteLine($"Destructing PhysObj: {obj.Name}, {obj.Position.Variation}");
-                if (DestructionQueue.ContainsKey(obj))
-                    return false;
-
-                return DestructionQueue.TryAdd(obj, PhysicsTimer.CurrentTime + DestructionTime);
-
+                added = !DestructionQueue.ContainsKey(obj) &&
+                        DestructionQueue.TryAdd(obj, PhysicsTimer.CurrentTime + DestructionTime);
             }
             finally
             {
                 rwLock.ExitWriteLock();
             }
+
+            // Cross-instance call OUTSIDE the lock (mirrors RemoveVisibleObject fix)
+            if (visibleRemoved)
+                obj.ObjMaint.RemoveVisibleTarget(PhysicsObj);
+
+            return added;
         }
 
         /// <summary>
@@ -656,22 +666,9 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public void AddObjectsToBeDestroyed(List<PhysicsObj> objs)
         {
-            rwLock.EnterWriteLock();
-            try
-            {
-                var queued = new List<PhysicsObj>();
-                foreach (var obj in objs)
-                {
-                    if (AddObjectToBeDestroyed(obj))
-                        queued.Add(obj);
-                }
-
-                return;
-            }
-            finally
-            {
-                rwLock.ExitWriteLock();
-            }
+            // No outer lock — AddObjectToBeDestroyed manages its own lock
+            foreach (var obj in objs)
+                AddObjectToBeDestroyed(obj);
         }
 
         /// <summary>
@@ -715,23 +712,24 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public List<PhysicsObj> DestroyObjects()
         {
-            rwLock.EnterWriteLock();
+            // Snapshot under read lock — no writes here
+            List<PhysicsObj> expiredObjs;
+            rwLock.EnterReadLock();
             try
             {
-                // find the list of objects that have been in the destruction queue > 25s
-                var expiredObjs = DestructionQueue.Where(kvp => kvp.Value <= PhysicsTimer.CurrentTime)
+                expiredObjs = DestructionQueue.Where(kvp => kvp.Value <= PhysicsTimer.CurrentTime)
                     .Select(kvp => kvp.Key).ToList();
-
-                // remove expired objects from all lists
-                foreach (var expiredObj in expiredObjs)
-                    RemoveObject(expiredObj);
-
-                return expiredObjs;
             }
             finally
             {
-                rwLock.ExitWriteLock();
+                rwLock.ExitReadLock();
             }
+
+            // RemoveObject handles its own locking
+            foreach (var expiredObj in expiredObjs)
+                RemoveObject(expiredObj);
+
+            return expiredObjs;
         }
 
         /// <summary>
@@ -739,20 +737,21 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public void RemoveObject(PhysicsObj obj, bool inverse = true)
         {
+            if (obj == null) return;
+
+            // These two handle their own locks and make cross-instance calls outside them
+            RemoveKnownObject(obj, inverse);
+            RemoveVisibleObject(obj, inverse);
+
+            // Batch the remaining purely-local removals under a single write lock
             rwLock.EnterWriteLock();
             try
             {
-                if (obj == null) return;
-
-                RemoveKnownObject(obj, inverse);
-                RemoveVisibleObject(obj, inverse);
                 DestructionQueue.Remove(obj, out _);
-
                 if (obj.IsPlayer)
-                    RemoveKnownPlayer(obj);
-
-                RemoveVisibleTarget(obj);
-                RemoveRetaliateTarget(obj);
+                    KnownPlayers.Remove(obj.ID, out _);
+                VisibleTargets.Remove(obj.ID);
+                RetaliateTargets.Remove(obj.ID);
             }
             finally
             {
