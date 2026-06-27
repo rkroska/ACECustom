@@ -108,6 +108,40 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("unkillable", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Toggles or sets unkillable state.", "[on|off|true|false|enable|disable]")]
+        public static void HandleUnkillable(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+            bool newValue;
+
+            if (parameters == null || parameters.Length == 0)
+            {
+                newValue = !player.IsUnkillable;
+            }
+            else
+            {
+                var arg = parameters[0].ToLower();
+                if (arg == "on" || arg == "true" || arg == "enable")
+                    newValue = true;
+                else if (arg == "off" || arg == "false" || arg == "disable")
+                    newValue = false;
+                else
+                {
+                    ChatPacket.SendServerMessage(session, "Usage: /unkillable [on|off|true|false|enable|disable]", ChatMessageType.Broadcast);
+                    return;
+                }
+            }
+
+            player.IsUnkillable = newValue;
+            var stateStr = newValue ? "ON" : "OFF";
+            ChatPacket.SendServerMessage(session, $"Unkillable mode is now {stateStr}.", ChatMessageType.Broadcast);
+
+            if (newValue && player.Health.Current == 0)
+            {
+                player.UpdateVital(player.Health, 1);
+            }
+        }
+
         /// <summary>
         /// Attempts to remove the hourglass / fix the busy state for the player
         /// </summary>

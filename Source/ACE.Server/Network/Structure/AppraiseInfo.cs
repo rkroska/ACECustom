@@ -1017,22 +1017,41 @@ namespace ACE.Server.Network.Structure
                 }
             }
 
-            if (effectDescriptions.Count > 0)
+            // Calculate Effective Melee Defense
+            var meleeSkill = examiner.GetCreatureSkill(Skill.MeleeDefense).Current;
+            var wepMeleeDef = (float)(weapon.WeaponDefense ?? 1.0f);
+            if (weapon.WeaponDefense > 0 && weapon.WeaponDefense < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 4) != 0)
+                wepMeleeDef += 1;
+
+            var meleeMod = wepMeleeDef + weapon.EnchantmentManager.GetDefenseMod();
+            if (weapon.IsEnchantable)
+                meleeMod += examiner.EnchantmentManager.GetDefenseMod();
+
+            var meleeImbues = examiner.GetDefenseImbues(ImbuedEffectType.MeleeDefense);
+            var meleeLum = examiner.LuminanceAugmentMeleeDefenseCount ?? 0;
+            var burdenMod = examiner.GetBurdenMod();
+
+            // Option B: stanceMod = 1.0f, not exhausted
+            uint emdVal = (uint)Math.Round(meleeSkill * meleeMod * burdenMod * 1.0f + meleeImbues + meleeLum);
+
+            effectDescriptions.Sort();
+            effectDescriptions.Add($"- Effective Melee Defense: {emdVal}");
+
+            var useParts = new List<string>();
+            useParts.Add($"Property Details:\n{string.Join("\n", effectDescriptions)}");
+
+            if (PropertiesString.TryGetValue(PropertyString.Use, out string existingUse) && !string.IsNullOrWhiteSpace(existingUse))
             {
-                effectDescriptions.Sort();
-                var enhancementsBlock = $"Property Details:\n{string.Join("\n", effectDescriptions)}";
-
-                if (PropertiesString.TryGetValue(PropertyString.Use, out string value))
-                    PropertiesString[PropertyString.Use] = enhancementsBlock + "\n\n" + value;
-                else
-                    PropertiesString[PropertyString.Use] = enhancementsBlock;
-
-                // Make sure there's a line break between the string and some of the other "details".
-                if (PropertiesInt.ContainsKey(PropertyInt.ItemMaxLevel) ||
-                    PropertiesInt.ContainsKey(PropertyInt.ItemSpellcraft) ||
-                    PropertiesInt.ContainsKey(PropertyInt.WieldRequirements))
-                    PropertiesString[PropertyString.Use] += "\n";
+                useParts.Add(existingUse);
             }
+
+            PropertiesString[PropertyString.Use] = string.Join("\n\n", useParts);
+
+            // Make sure there's a line break between the string and some of the other "details".
+            if (PropertiesInt.ContainsKey(PropertyInt.ItemMaxLevel) ||
+                PropertiesInt.ContainsKey(PropertyInt.ItemSpellcraft) ||
+                PropertiesInt.ContainsKey(PropertyInt.WieldRequirements))
+                PropertiesString[PropertyString.Use] += "\n";
 
             // item enchantments can also be on wielder currently
             AddEnchantments(weapon);
