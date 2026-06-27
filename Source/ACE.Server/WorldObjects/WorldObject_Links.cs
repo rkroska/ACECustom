@@ -69,14 +69,12 @@ namespace ACE.Server.WorldObjects
 
         public virtual void SetLinkProperties(WorldObject wo)
         {
-            // empty base
-            Console.WriteLine($"{Name}.SetLinkProperties({wo.Name}) called for unknown parent type: {WeenieType}");
+            // empty base — not all WeenieTypes override this (e.g. Hook), and that's fine
         }
 
         public virtual void UpdateLinkProperties(WorldObject wo)
         {
-            // empty base
-            Console.WriteLine($"{Name}.UpdateLinkProperties({wo.Name}) called for unknown parent type: {WeenieType}");
+            // empty base — not all WeenieTypes override this (e.g. Hook), and that's fine
         }
 
         public void UpdateLinks()

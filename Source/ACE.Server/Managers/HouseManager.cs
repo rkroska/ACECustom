@@ -80,7 +80,7 @@ namespace ACE.Server.Managers
 
                     if (!uint.TryParse(Regex.Match(classname, @"\d+").Value, out var houseId))
                     {
-                        log.Error($"[HOUSE] HouseManager.BuildHouseIdToGuid(): couldn't parse {classname}");
+                        log.Debug($"[HOUSE] HouseManager.BuildHouseIdToGuid(): couldn't parse classname '{classname}' — no numeric house ID found, skipping.");
                         continue;
                     }
 
