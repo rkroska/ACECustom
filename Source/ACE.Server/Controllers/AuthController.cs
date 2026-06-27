@@ -10,6 +10,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using ACE.Common;
+using ACE.Server.Managers;
 
 namespace ACE.Server.Web.Controllers
 {
@@ -65,20 +66,24 @@ namespace ACE.Server.Web.Controllers
                 var token = GenerateJwtToken(account);
 
                 // Set HttpOnly Cookie
-                var isDevelopment = HttpContext.Request.Host.Host == "localhost" || HttpContext.Request.Host.Host == "127.0.0.1";
+                // If the cookie is marked Secure and we're serving over plain HTTP, browsers will refuse to store it.
+                // When a reverse proxy terminates TLS, UseForwardedHeaders will set Request.IsHttps based on X-Forwarded-Proto.
+                var isHttps = HttpContext.Request.IsHttps;
                 Response.Cookies.Append("ilt_auth_token", token, new Microsoft.AspNetCore.Http.CookieOptions
                 {
                     HttpOnly = true,
-                    Secure = !isDevelopment,
+                    Secure = isHttps,
                     SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict,
                     Expires = DateTime.UtcNow.AddHours(8)
                 });
 
+                var accessLevel = (AccessLevel)account.AccessLevel;
                 return Ok(new
                 {
                     username = account.AccountName,
-                    accessLevel = (AccessLevel)account.AccessLevel,
-                    lastLogin = account.LastLoginTime
+                    accessLevel,
+                    lastLogin = account.LastLoginTime,
+                    pageAccess = PortalAccessManager.GetAccessMap(accessLevel),
                 });
             }
             catch (Exception ex)
@@ -132,7 +137,8 @@ namespace ACE.Server.Web.Controllers
             {
                 username,
                 accessLevel,
-                accountId = uint.Parse(accountIdStr ?? "0")
+                accountId = uint.Parse(accountIdStr ?? "0"),
+                pageAccess = PortalAccessManager.GetAccessMap(accessLevel),
             });
         }
 

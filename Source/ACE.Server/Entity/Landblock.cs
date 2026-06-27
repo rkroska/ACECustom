@@ -141,7 +141,7 @@ namespace ACE.Server.Entity
         /// </summary>
         public IEnumerable<WorldObject> GetWorldObjectsForDiagnostics()
         {
-            return worldObjects.Values.ToList();
+            return worldObjects.Values;
         }
 
         public int PhysicsObjectCount

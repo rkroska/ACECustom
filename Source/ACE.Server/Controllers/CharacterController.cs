@@ -6,6 +6,7 @@ using ACE.DatLoader.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
+using ACE.Entity;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
@@ -15,6 +16,7 @@ using ACE.Server.WorldObjects.Entity;
 using ACE.Server.Controllers.Resolvers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -185,8 +187,8 @@ namespace ACE.Server.Controllers
         [HttpGet("all-online")]
         public async Task<IActionResult> GetAllOnline()
         {
-            if (!IsAdmin)
-                return Unauthorized();
+            if (!HasPortalAccess(PortalPages.Players))
+                return Forbid();
 
             var online = PlayerManager.GetAllOnline();
             var tasks = online.Select(async p => {
@@ -223,11 +225,58 @@ namespace ACE.Server.Controllers
             return Ok(result);
         }
 
+        [HttpGet("lookup/{id}")]
+        public async Task<IActionResult> Lookup(uint id)
+        {
+            if (!HasPortalAccess(PortalPages.Players))
+                return Forbid();
+
+            var stub = DatabaseManager.Shard.BaseDatabase.GetCharacterStubByGuid(id);
+            if (stub == null)
+                return NotFound();
+
+            var player = PlayerManager.FindByGuid(id);
+            var isAdmin = (player?.Account?.AccessLevel ?? 0) > 0;
+            var charName = stub.Name;
+            if (isAdmin && !charName.StartsWith("+"))
+                charName = $"+{charName}";
+
+            var online = PlayerManager.GetOnlinePlayer(id);
+            WorldLocationDto location = null;
+            if (online != null)
+            {
+                var lbRaw = online.Location.LandblockId.Raw;
+                var variation = online.Location.Variation;
+                var coords = online.Location.GetMapCoordStr();
+                var isDungeon = online.CurrentLandblock?.IsDungeon ?? false;
+                var res = await LocationResolver.ResolveLocationAsync(lbRaw, variation, isDungeon);
+                location = new WorldLocationDto
+                {
+                    Landblock = lbRaw,
+                    Variation = variation,
+                    Coordinates = coords,
+                    IsDungeon = isDungeon,
+                    CategoryName = res.CategoryName,
+                    CategoryOrdinal = res.CategoryOrdinal,
+                    Name = res.Name,
+                };
+            }
+
+            return Ok(new PlayerStubDto
+            {
+                Guid = stub.Id,
+                Name = charName,
+                IsOnline = online != null,
+                IsAdmin = isAdmin,
+                Location = location,
+            });
+        }
+
         [HttpGet("search-all/{name}")]
         public async Task<IActionResult> SearchAll(string name)
         {
-            if (!IsAdmin)
-                return Unauthorized();
+            if (!HasPortalAccess(PortalPages.Players))
+                return Forbid();
 
             if (string.IsNullOrWhiteSpace(name))
                 return Ok(new List<object>());
@@ -280,7 +329,7 @@ namespace ACE.Server.Controllers
         [HttpGet("detail/{guid}")]
         public async Task<IActionResult> GetDetail(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Forbid();
             
             var isAdmin = (player?.Account?.AccessLevel ?? 0) > 0;
             var charName = isAdmin && !player?.Name.StartsWith("+") == true ? $"+{player?.Name}" : player?.Name;
@@ -320,7 +369,7 @@ namespace ACE.Server.Controllers
         [HttpGet("stats/{guid}")]
         public IActionResult GetStats(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Forbid();
 
             if (player is Player online)
                 return Ok(GetOnlineStats(online));
@@ -331,7 +380,7 @@ namespace ACE.Server.Controllers
         [HttpGet("skills/{guid}")]
         public IActionResult GetSkills(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Forbid();
 
             if (player is Player online)
                 return Ok(GetOnlineSkills(online));
@@ -342,7 +391,7 @@ namespace ACE.Server.Controllers
         [HttpGet("inventory/{guid}")]
         public IActionResult GetInventory(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Forbid();
 
             if (player is Player online)
                 return Ok(GetOnlineInventory(online));
@@ -353,7 +402,7 @@ namespace ACE.Server.Controllers
         [HttpGet("stamps/{guid}")]
         public IActionResult GetStamps(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Forbid();
 
             var stamps = DatabaseManager.Authentication.GetAccountQuests(player.Account.AccountId)
                 .Where(q => q.NumTimesCompleted >= 1)
@@ -365,11 +414,36 @@ namespace ACE.Server.Controllers
             return Ok(stamps);
         }
 
+        /// <summary>
+        /// Death/vitae summary from biota snapshot, live position when online, and active player corpses in loaded landblocks.
+        /// </summary>
+        [HttpGet("status/{guid}")]
+        public IActionResult GetPortalStatus(uint guid)
+        {
+            if (!IsAuthorizedForCharacter(guid, out var player))
+                return Forbid();
+
+            var snapshot = RetrieveBiota(player);
+            return Ok(CharacterPortalStatusHelper.BuildStatusJson(guid, snapshot));
+        }
+
+        /// <summary>
+        /// Player corpses currently in memory (loaded landblocks) for this character.
+        /// </summary>
+        [HttpGet("corpses/{guid}")]
+        public IActionResult GetPortalCorpses(uint guid)
+        {
+            if (!IsAuthorizedForCharacter(guid, out _))
+                return Forbid();
+
+            return Ok(new { corpses = CharacterPortalStatusHelper.FindPlayerCorpses(guid) });
+        }
+
         [HttpPost("logout/{guid}")]
         public async Task<IActionResult> ForceLogout(uint guid)
         {
-            if (!IsAdmin)
-                return Unauthorized();
+            if (!IsPortalAdmin)
+                return Forbid();
 
             var player = PlayerManager.GetOnlinePlayer(guid);
             if (player == null) return NotFound(new { message = "Character is not online" });
@@ -385,9 +459,17 @@ namespace ACE.Server.Controllers
             if (CurrentAccountId == null) return false;
             IPlayer p = PlayerManager.FindByGuid(guid);
             if (p == null || p.Account == null) return false;
-            if (!IsAuthorizedForAccount(p.Account.AccountId)) return false;
-            player = p;
-            return true;
+            if (p.Account.AccountId == CurrentAccountId.Value)
+            {
+                player = p;
+                return true;
+            }
+            if (HasPortalAccess(PortalPages.Players))
+            {
+                player = p;
+                return true;
+            }
+            return false;
         }
 
         private static Dictionary<string, long> GetBankedProperties(Biota biota)
@@ -697,6 +779,154 @@ namespace ACE.Server.Controllers
                 foreach (var eq in creature.EquippedObjects.Values)
                     items.Add(MapToDto(eq.Biota, true, (uint)container.Guid.Full));
             }
+        }
+
+        [HttpGet("admin/corpses")]
+        public IActionResult GetAdminCorpses([FromQuery] string query)
+        {
+            if (!HasPortalAccess(PortalPages.CorpseFinder))
+                return Forbid();
+
+            var result = new List<object>();
+
+            using (var shard = new ShardDbContext())
+            {
+                var queryText = (query ?? "").Trim();
+                
+                var queryList = (from corpse in shard.Biota
+                                 join victim in shard.BiotaPropertiesIID on corpse.Id equals victim.ObjectId
+                                 join charName in shard.BiotaPropertiesString on victim.Value equals charName.ObjectId
+                                 join ch in shard.Character on victim.Value equals ch.Id
+                                 where corpse.WeenieType == (int)WeenieType.Corpse
+                                    && victim.Type == (ushort)PropertyInstanceId.Victim
+                                    && charName.Type == (ushort)PropertyString.Name
+                                    && !ch.IsDeleted
+                                 select new
+                                 {
+                                     CorpseId = corpse.Id,
+                                     CharacterId = victim.Value,
+                                     CharacterName = charName.Value
+                                 });
+
+                if (!string.IsNullOrEmpty(queryText))
+                {
+                    queryList = queryList.Where(c => c.CharacterName.Contains(queryText));
+                }
+
+                var list = queryList.OrderByDescending(c => c.CorpseId).Take(200).ToList();
+
+                var corpseIds = list.Select(c => c.CorpseId).ToList();
+
+                var namesMap = shard.BiotaPropertiesString.AsNoTracking()
+                    .Where(s => corpseIds.Contains(s.ObjectId) && s.Type == (ushort)PropertyString.Name)
+                    .ToDictionary(s => s.ObjectId, s => s.Value);
+
+                var positionsMap = shard.BiotaPropertiesPosition.AsNoTracking()
+                    .Where(p => corpseIds.Contains(p.ObjectId) && p.PositionType == (ushort)PositionType.Location)
+                    .ToDictionary(p => p.ObjectId);
+
+                var floatsMap = shard.BiotaPropertiesFloat.AsNoTracking()
+                    .Where(f => corpseIds.Contains(f.ObjectId) && f.Type == (ushort)PropertyFloat.TimeToRot)
+                    .ToDictionary(f => f.ObjectId, f => f.Value);
+
+                var intsMap = shard.BiotaPropertiesInt.AsNoTracking()
+                    .Where(i => corpseIds.Contains(i.ObjectId) && i.Type == (ushort)PropertyInt.CreationTimestamp)
+                    .ToDictionary(i => i.ObjectId, i => i.Value);
+
+                var killersMap = shard.BiotaPropertiesIID.AsNoTracking()
+                    .Where(i => corpseIds.Contains(i.ObjectId) && i.Type == (ushort)PropertyInstanceId.Killer)
+                    .ToDictionary(i => i.ObjectId, i => i.Value);
+
+                foreach (var item in list)
+                {
+                    var isLoaded = false;
+                    ACE.Entity.Position locObj = null;
+                    string corpseName = "Corpse";
+                    double? timeToRotSeconds = null;
+                    int? creationTimestamp = null;
+                    uint? killerId = null;
+
+                    var activeCorpse = FindActiveCorpseInMemory(item.CorpseId);
+                    if (activeCorpse != null)
+                    {
+                        try
+                        {
+                            activeCorpse.BiotaDatabaseLock.EnterReadLock();
+                            try
+                            {
+                                isLoaded = true;
+                                locObj = new ACE.Entity.Position(activeCorpse.Location);
+                                corpseName = activeCorpse.Name;
+                                timeToRotSeconds = activeCorpse.TimeToRot;
+                                creationTimestamp = activeCorpse.CreationTimestamp;
+                                killerId = activeCorpse.KillerId;
+                            }
+                            finally
+                            {
+                                activeCorpse.BiotaDatabaseLock.ExitReadLock();
+                            }
+                        }
+                        catch
+                        {
+                            isLoaded = false;
+                        }
+                    }
+                    else
+                    {
+                        if (namesMap.TryGetValue(item.CorpseId, out var nameVal))
+                            corpseName = nameVal;
+
+                        if (positionsMap.TryGetValue(item.CorpseId, out var dbPos))
+                        {
+                            locObj = new ACE.Entity.Position(dbPos.ObjCellId, dbPos.OriginX, dbPos.OriginY, dbPos.OriginZ, dbPos.AnglesX, dbPos.AnglesY, dbPos.AnglesZ, dbPos.AnglesW, false, dbPos.VariationId);
+                        }
+
+                        if (floatsMap.TryGetValue(item.CorpseId, out var floatVal))
+                            timeToRotSeconds = floatVal;
+
+                        if (intsMap.TryGetValue(item.CorpseId, out var intVal))
+                            creationTimestamp = intVal;
+
+                        if (killersMap.TryGetValue(item.CorpseId, out var dbKiller) && dbKiller != 0)
+                            killerId = dbKiller;
+                    }
+
+                    object serializedPos = null;
+                    if (locObj != null)
+                    {
+                        serializedPos = CharacterPortalStatusHelper.SerializePosition(locObj);
+                    }
+
+                    result.Add(new
+                    {
+                        corpseId = item.CorpseId,
+                        characterId = item.CharacterId,
+                        characterName = item.CharacterName,
+                        name = corpseName,
+                        position = serializedPos,
+                        timeToRotSeconds = timeToRotSeconds,
+                        creationTimestamp = creationTimestamp == 0 ? (int?)null : creationTimestamp,
+                        killerId = killerId,
+                        isLoaded = isLoaded
+                    });
+                }
+            }
+
+            return Ok(result);
+        }
+
+        private static Corpse FindActiveCorpseInMemory(uint corpseGuid)
+        {
+            var guid = new ObjectGuid(corpseGuid);
+            var landblocks = LandblockManager.loadedLandblocks.Values;
+            foreach (var lb in landblocks)
+            {
+                if (lb == null) continue;
+                var wo = lb.GetObject(guid, false);
+                if (wo is Corpse corpse)
+                    return corpse;
+            }
+            return null;
         }
     }
 }

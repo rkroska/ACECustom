@@ -765,6 +765,14 @@ namespace ACE.Server.WorldObjects
                             if (dropped.Count > 0)
                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your corpse is located at ({corpse.Location.GetMapCoordStr()}).", ChatMessageType.Broadcast));
                         }
+                        else
+                        {
+                            if (dropped.Count > 0)
+                            {
+                                var dungeonName = DungeonNameResolver.Resolve(corpse.Location.Landblock, corpse.Location.Variation ?? 0);
+                                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your corpse is located in {dungeonName}.", ChatMessageType.Broadcast));
+                            }
+                        }
 
                         var isPKdeath = player.IsPKDeath(killer);
                         var isPKLdeath = player.IsPKLiteDeath(killer);

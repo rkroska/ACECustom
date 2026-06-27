@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
+using ACE.Server.Managers;
+
 namespace ACE.Server.Web.Controllers
 {
     [ApiController]
@@ -47,7 +49,7 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("metadata")]
         public IActionResult GetPropertyMetadata()
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Properties))
                 return Forbid();
 
             try

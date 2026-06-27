@@ -306,6 +306,12 @@ namespace ACE.Server
             log.Info("Initializing Character Tracker...");
             CharacterTracker.EnsureDatabaseMigrated();
 
+            log.Info("Initializing Patch Notes...");
+            PatchNotesManager.EnsureDatabaseMigrated();
+
+            log.Info("Initializing Portal page access...");
+            PortalAccessManager.EnsureDatabaseMigrated();
+
             log.Info("Initializing Pet Registry...");
             PetRegistryManager.EnsureTableCreated();
 
@@ -430,8 +436,15 @@ namespace ACE.Server
                 WorldManager.Open(null);
             }
 
-            // Start the Web Portal
-            await ACE.Server.Web.WebPortalHost.Start(args);
+            // Start the Web Portal (optional — game server runs without it when disabled)
+            if (ServerConfig.enable_web_portal.Value)
+            {
+                await ACE.Server.Web.WebPortalHost.Start(args);
+            }
+            else
+            {
+                log.Info("[WEB PORTAL] enable_web_portal is false — skipping web portal host startup.");
+            }
 
             // Keep the server alive (ACE uses a manual loop or waits for shutdown elsewhere)
             // In this project, Main ends here, but other threads (Network, etc.) are running.

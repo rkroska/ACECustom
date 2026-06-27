@@ -14,7 +14,7 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("list")]
         public IActionResult GetServerParams()
         {
-            if (!IsAdmin)
+            if (!HasPortalAccess(PortalPages.Params))
                 return Forbid();
 
             try

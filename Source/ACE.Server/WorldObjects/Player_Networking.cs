@@ -116,6 +116,17 @@ namespace ACE.Server.WorldObjects
             HandleAllegianceOnLogin();
             HandleHouseOnLogin();
 
+            if (ConfigManager.Config.PatchNotes?.MotdEnabled == true)
+            {
+                var patchNotesMotdChain = new ActionChain();
+                patchNotesMotdChain.AddDelaySeconds(5.0f);
+                patchNotesMotdChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
+                {
+                    PatchNotesManager.SendMotdToPlayer(this);
+                });
+                patchNotesMotdChain.EnqueueChain();
+            }
+
             // retail appeared to send the squelch list very early,
             // even before the CreatePlayer, but doing it here
             if (SquelchManager.HasSquelches)

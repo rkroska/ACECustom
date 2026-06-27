@@ -64,6 +64,25 @@ namespace ACE.Server.WorldObjects
             return GetMissileCombatSkillChance((int)skill, (int)difficulty);
         }
 
+        /// <summary>
+        /// Combat calculator preview (web portal): same sigmoid + optional defense scaling with explicit aggression.
+        /// </summary>
+        public static double GetCombatSkillChancePreview(int skill, int difficulty, float factor, bool scalingEnabled, double aggression)
+        {
+            return ApplyScalingAndCompute(skill, difficulty, factor, scalingEnabled, aggression);
+        }
+
+        /// <summary>Unscaled factor for column A — spell resist uses 0.03; player casting vs MagD uses 0.07.</summary>
+        public static float GetUnscaledCombatFactor(string mode, bool playerAttacksMonster)
+        {
+            if (mode == "magic")
+                return playerAttacksMonster ? 0.07f : 0.03f;
+            return 0.03f;
+        }
+
+        /// <summary>Base factor before scaling adjustment (melee/missile 0.03, magic cast 0.07).</summary>
+        public static float GetScaledCombatBaseFactor(string mode) => mode == "magic" ? 0.07f : 0.03f;
+
         // ---------------------------------------------------------------
         // Shared scaling + sigmoid computation used by the combat helpers.
         // ---------------------------------------------------------------

@@ -1416,7 +1416,7 @@ namespace ACE.Server.Command.Handlers
 
         }
 
-        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "use top qb to list top quest bonus count, top level to list top character levels, enl for enlightenments; bond(s) / sumbond(s) for pet bond rankings")]
+        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "top qb|level|enl|title|augs|deaths|bank|lum|attr|bond(s)|sumbond(s)|enlcoins|wenlcoins|mkeys|lkeys|jails|notguilty|pets|shinies|potency")]
         public static async void DisplayTop(Session session, params string[] parameters)
         {
             try
@@ -1531,6 +1531,51 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Sum of Pet Bond Levels:", ChatMessageType.Broadcast));
                         }
                     }
+                    else if (key == "potency" || key == "toppotency")
+                    {
+                        sqlLeaderboardRequested = true;
+                        list = await cache.GetTopPotencyAsync(context);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Highest Pet Potency Level:", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else if (key == "enlcoins")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "enlcoins", LeaderboardInlineSql.TopBankedEnlightenedCoins);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Enlightened Coins:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "wenlcoins")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "wenlcoins", LeaderboardInlineSql.TopBankedWeaklyEnlightenedCoins);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Weakly Enlightened Coins:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "mkeys")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "mkeys", LeaderboardInlineSql.TopBankedMythicalKeys);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Mythic Keys:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "lkeys")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "lkeys", LeaderboardInlineSql.TopBankedLegendaryKeys);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Legendary Keys:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "jails")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "jails", LeaderboardInlineSql.TopTimesJailed);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Characters by Times Jailed:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "notguilty")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "notguilty", LeaderboardInlineSql.TopUcmChecksPassed);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Characters by Not Guilty (passed focus checks):", ChatMessageType.Broadcast));
+                    }
                     else if (key == "pets")
                     {
                         // Pet Registry leaderboard - by account (shows main character)
@@ -1573,19 +1618,32 @@ namespace ACE.Server.Command.Handlers
                     }
                     else
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies, potency", ChatMessageType.Broadcast));
                         return;
                     }
-                }
 
-                for (int i = 0; i < list.Count; i++)
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {list[i].Score:N0} - {list[i].Character}", ChatMessageType.Broadcast));
-                }
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {list[i].Score:N0} - {list[i].Character}", ChatMessageType.Broadcast));
+                    }
 
-                if (sqlLeaderboardRequested && list.Count == 0)
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] No entries on this leaderboard yet.", ChatMessageType.Broadcast));
+                    if (sqlLeaderboardRequested)
+                    {
+                        var boardKey = key;
+                        if (boardKey == "bonds") boardKey = "bond";
+                        else if (boardKey == "sumbonds") boardKey = "sumbond";
+                        else if (boardKey == "toppotency") boardKey = "potency";
+
+                        var p = await Leaderboard.GetSelfPlacementRowAsync(context, boardKey, session.AccountId);
+                        if (p != null)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Your placement: #{p.PlacementRank:N0} - Score: {p.Score ?? 0:N0} ({p.Character})", ChatMessageType.Broadcast));
+                        }
+                        else if (list.Count == 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] No entries on this leaderboard yet.", ChatMessageType.Broadcast));
+                        }
+                    }
                 }
             }
             catch (Exception ex)
@@ -3961,6 +4019,57 @@ namespace ACE.Server.Command.Handlers
         public static void HandleLocation(Session session, params string[] parameters)
         {
             session.Network.EnqueueSend(new GameMessageSystemChat($"Your location is: {session.Player.Location}", ChatMessageType.Broadcast));
+        }
+
+        [CommandHandler("patchnotes", AccessLevel.Player, CommandHandlerFlag.None, 0, "Shows where to read server patch notes.")]
+        public static void HandlePatchNotes(Session session, params string[] parameters)
+        {
+            var lines = PatchNotesManager.BuildMotdLines();
+            if (lines.Length == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "No patch notes have been published yet.", ChatMessageType.System);
+                return;
+            }
+
+            foreach (var line in lines)
+                CommandHandlerHelper.WriteOutputInfo(session, line, ChatMessageType.System);
+        }
+
+        [CommandHandler("corpses", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Lists your active corpses")]
+        public static void HandleCorpses(Session session, params string[] parameters)
+        {
+            var victimGuid = session.Player.Guid.Full;
+            var corpses = ACE.Server.Controllers.CharacterPortalStatusHelper.FindPlayerCorpses(victimGuid);
+
+            if (corpses.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("You have no active corpses.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"You have {corpses.Count} active corpse(s):", ChatMessageType.Broadcast));
+            foreach (var corpse in corpses)
+            {
+                string locStr = "Unknown Location";
+                if (corpse.positionObj != null)
+                {
+                    if (corpse.positionObj.Indoors)
+                    {
+                        locStr = DungeonNameResolver.Resolve(corpse.positionObj.Landblock, corpse.positionObj.Variation ?? 0);
+                    }
+                    else
+                    {
+                        locStr = corpse.positionObj.GetMapCoordStr();
+                    }
+                }
+
+                var timeRemaining = TimeSpan.FromSeconds(corpse.timeToRotSeconds ?? 0);
+                var timeStr = $"{(int)timeRemaining.TotalMinutes}m {timeRemaining.Seconds:D2}s";
+                
+                var loadStatus = corpse.isLoaded ? "" : " (Inactive Area - decay frozen)";
+
+                session.Network.EnqueueSend(new GameMessageSystemChat($"- {corpse.name} (Rot: {timeStr}){loadStatus} @ {locStr}", ChatMessageType.Broadcast));
+            }
         }
     }
 }

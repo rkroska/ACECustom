@@ -299,15 +299,26 @@ AppVeyor/
 Source/ACE.Server/config.js
 Source/ACE.Server/Config.js
 Database/tools/password.txt
+Database/tools/.env.readonly
+Database/tools/.env.write
 Source/ACE.Server/log4net.config
 docker.env
 docker-compose.yml
 /httplocalhost8000contentuser=rudy&p.txt
 
-# Build scratch output files
+# Local dev scratch (repo root / server tree)
+/build_log*.txt
+/diff*.txt
+/diff_*.txt
+/*.patch
+/pr_diff*.txt
+/temp.txt
 Source/ACE.Server/build_*.txt
 Source/ACE.Server/build_output.txt
 Source/ACE.Server/build_errors.txt
+Source/ACE.Server.Tests/tests_log.txt
+Source/build_log.txt
+Source/build_output.txt
 
 # Frontend build results
 dist/

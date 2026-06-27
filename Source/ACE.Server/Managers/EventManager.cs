@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using ACE.Common;
 using ACE.Database.Models.World;
 using ACE.Entity.Enum;
@@ -241,6 +242,15 @@ namespace ACE.Server.Managers
 
                 return (GameEventState)evnt.State;
             }
+        }
+
+        /// <summary>
+        /// Thread-safe snapshot of registered events for admin tooling (web portal).
+        /// </summary>
+        public static List<Event> GetEventSnapshots()
+        {
+            lock (_eventsLock)
+                return Events.Values.ToList();
         }
 
         /// <summary>
