@@ -21,10 +21,16 @@ select (
 from ace_shard.character c
     left join ace_shard.biota_properties_bool b on b.object_id = c.id
     and b.type = 9011
+    left join ace_shard.biota_properties_bool m on m.object_id = c.id
+    and m.type = 131
 where c.is_Deleted = 0
     and (
         b.value is null
         or b.value = 0
+    )
+    and (
+        m.value is null
+        or m.value = 0
     )
 having Score > 0
 order by Score desc

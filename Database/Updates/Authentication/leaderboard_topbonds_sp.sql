@@ -18,7 +18,8 @@ BEGIN
         AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
     LEFT JOIN ace_shard.biota_properties_int bond ON bond.object_id = att.object_id AND bond.type = 9053
     LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-    WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (m.value IS NULL OR m.value = 0)
     GROUP BY c.id, c.account_Id, c.name
     ORDER BY Score DESC, c.name ASC
     LIMIT 25;

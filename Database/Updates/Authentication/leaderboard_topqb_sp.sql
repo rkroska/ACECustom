@@ -24,8 +24,7 @@ BEGIN
        AND NOT EXISTS (
            SELECT 1
            FROM ace_shard.character cex
-                    INNER JOIN ace_shard.biota_properties_bool bx
-                               ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
+                    INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type IN (9011, 131) AND bx.value <> 0
            WHERE cex.account_Id = a.accountId
              AND cex.is_Deleted = 0
        )
