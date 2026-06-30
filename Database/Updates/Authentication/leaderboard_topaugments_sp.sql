@@ -1,6 +1,9 @@
 USE `ace_auth`;
 DROP procedure IF EXISTS `TopAugments`;
-DELIMITER $$ USE `ace_auth` $$ CREATE PROCEDURE `TopAugments` () BEGIN
+DELIMITER $$
+USE `ace_auth`$$
+CREATE PROCEDURE `TopAugments` ()
+BEGIN
 -- Sums luminance skill-style aug int64 purchase counts (9007-9011, 9016-9018, 9022-9026).
 -- Note: biota_properties_bool type 9011 is ExcludeFromLeaderboards; int64 9011 is LumAugWarCount.
 select (
@@ -22,6 +25,7 @@ select (
     c.name as 'Character',
     c.id as 'LeaderboardID'
 from ace_shard.character c
+    inner join ace_auth.account a on a.accountId = c.account_Id and a.accessLevel = 0 and (a.ban_Expire_Time is null or a.ban_Expire_Time <= utc_timestamp())
     left join ace_shard.biota_properties_bool b on b.object_id = c.id
     and b.type = 9011
     left join ace_shard.biota_properties_bool m on m.object_id = c.id
