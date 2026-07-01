@@ -1786,6 +1786,9 @@ namespace ACE.Server.WorldObjects
                 LogBankChange("TransferPyreals_Target", "Pyreals", Amount, targetOldBalance, targetNewBalance, $"Received from {this.Name}");
                 LogTransfer("TransferPyreals", "Pyreals", Amount, CharacterDestination, true, "Transfer completed successfully");
                 
+                // Log the transfer to Audit / TransferLogger
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Pyreals", Amount, TransferLogger.TransferTypeBankTransfer);
+
                 LogInfo($"[BANK_DEBUG] Player: {Name} | Transfer completed | Source new balance: {newBalance:N0} | Target new balance: {targetNewBalance:N0}");
                 return true;
             }
