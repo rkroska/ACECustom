@@ -19,13 +19,13 @@ BEGIN
             LIMIT 1) AS 'Character',
            a.accountId AS 'LeaderboardID'
     FROM ace_auth.account_quest a
+    INNER JOIN ace_auth.account acc ON acc.accountId = a.accountId AND acc.accessLevel = 0 AND (acc.ban_Expire_Time IS NULL OR acc.ban_Expire_Time <= UTC_TIMESTAMP())
     GROUP BY a.accountId
     HAVING `Character` IS NOT NULL
        AND NOT EXISTS (
            SELECT 1
            FROM ace_shard.character cex
-                    INNER JOIN ace_shard.biota_properties_bool bx
-                               ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
+                    INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type IN (9011, 131) AND bx.value <> 0
            WHERE cex.account_Id = a.accountId
              AND cex.is_Deleted = 0
        )

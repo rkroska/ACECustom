@@ -3,7 +3,10 @@
 
 USE `ace_auth`;
 DROP procedure IF EXISTS `TopAttributes`;
-DELIMITER $$ USE `ace_auth` $$ CREATE PROCEDURE `TopAttributes` () BEGIN
+DELIMITER $$
+USE `ace_auth`$$
+CREATE PROCEDURE `TopAttributes` ()
+BEGIN
 -- Sums primary attribute ranks purchased (types 1-6), using level_From_C_P.
 -- CP spent is very large and confusing for a leaderboard.
 -- Excludes characters with PropertyBool ExcludeFromLeaderboards (9011) on biota_properties_bool.
@@ -19,12 +22,19 @@ select (
     c.name as 'Character',
     c.id as 'LeaderboardID'
 from ace_shard.character c
+    inner join ace_auth.account a on a.accountId = c.account_Id and a.accessLevel = 0 and (a.ban_Expire_Time is null or a.ban_Expire_Time <= utc_timestamp())
     left join ace_shard.biota_properties_bool b on b.object_id = c.id
     and b.type = 9011
+    left join ace_shard.biota_properties_bool m on m.object_id = c.id
+    and m.type = 131
 where c.is_Deleted = 0
     and (
         b.value is null
         or b.value = 0
+    )
+    and (
+        m.value is null
+        or m.value = 0
     )
 having Score > 0
 order by Score desc
