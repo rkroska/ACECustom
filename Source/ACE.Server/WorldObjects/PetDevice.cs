@@ -205,6 +205,9 @@ namespace ACE.Server.WorldObjects
 
             if (ServerConfig.pet_potency_enabled.Value)
                 owner.UpdateProperty(this, PropertyInt.PetPotencyStored, PetPotencyStored ?? 0, broadcast);
+
+            if (ServerConfig.pet_breeding_enabled.Value)
+                owner.UpdateProperty(this, PropertyFloat.PetNextBreedingTime, GetProperty(PropertyFloat.PetNextBreedingTime) ?? 0.0, broadcast);
         }
 
         public bool TryAwardBondXp(Player owner, long amount, out bool leveledUp)
@@ -619,6 +622,12 @@ namespace ACE.Server.WorldObjects
                 }
 
                 MonsterCapture.ApplyAppearanceToCrate(player, this, target);
+                return;
+            }
+
+            if (target is PetDevice targetDevice && IsCombatPetDevice() && targetDevice.IsCombatPetDevice())
+            {
+                TryBreedPets(player, targetDevice);
                 return;
             }
 

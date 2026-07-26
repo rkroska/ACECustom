@@ -519,6 +519,14 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> pet_residue_salvage_mult { get; private set; } = new(1.0, "Legacy: global salvage yield multiplier. 1.0 = no reduction.");
         public static ConfigProperty<double> pet_residue_hollow_mult { get; private set; } = new(0.75, "Hollow essence salvage multiplier vs Siphoned. 1.0 = same yield.");
         public static ConfigProperty<double> pet_residue_salvage_shiny_mult { get; private set; } = new(5.0, "Shiny essence salvage multiplier (applied on top of base or creature override).");
+
+        // Pet breeding (custom)
+        public static ConfigProperty<bool> pet_breeding_enabled { get; private set; } = new(false, "If TRUE, enables pet breeding by using one combat pet device on another in the Seedy Motel.");
+        public static ConfigProperty<double> pet_breeding_cooldown_hours { get; private set; } = new(24.0, "Cooldown period in hours before a parent combat pet device can be bred again.");
+        public static ConfigProperty<long> pet_breeding_min_bond { get; private set; } = new(100, "Minimum bond level required on parent devices to breed.");
+        public static ConfigProperty<long> pet_breeding_min_parent_level { get; private set; } = new(50, "Minimum level/tier of parent combat pet devices required to breed.");
+        public static ConfigProperty<long> pet_breeding_allowed_landblock { get; private set; } = new(0x013A02AEL, "Landblock raw ID where breeding is allowed (0x013A02AE is Seedy Motel). 0 = allowed anywhere.");
+        public static ConfigProperty<long> pet_breeding_allowed_variant { get; private set; } = new(3, "Landblock variation ID where breeding is allowed. -1 = ignore variation.");
         public static ConfigProperty<long> pet_strain_potency_threshold { get; private set; } = new(50, "No bond strain at or below this active potency.");
         public static ConfigProperty<double> pet_strain_per_potency_level { get; private set; } = new(1.0, "Player DR penalty per active level above strain threshold.");
         public static ConfigProperty<long> pet_strain_max_rating { get; private set; } = new(0, "Cap bond strain magnitude (0 = no cap).");

@@ -281,5 +281,11 @@ namespace ACE.Entity.Enum.Properties
         /// Used by ring-specific charms to increase coverage. Defaults to 1.0 if not set.
         /// </summary>
         AoeRangeMultiplier = 9048,
+
+        /// <summary>
+        /// Next allowed breeding/mating timestamp (Unix time) for a pet device.
+        /// </summary>
+        [AssessmentProperty]
+        PetNextBreedingTime = 9049,
     }
 }

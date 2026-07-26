@@ -304,6 +304,15 @@ namespace ACE.Server.Network.Structure
                         else
                             PropertiesString[PropertyString.LongDesc] = potencyMsg;
                     }
+
+                    var breedingMsg = petDevice.BuildBreedingAppraisalBlock();
+                    if (!string.IsNullOrWhiteSpace(breedingMsg))
+                    {
+                        if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                            PropertiesString[PropertyString.LongDesc] += $"\n\n{breedingMsg}";
+                        else
+                            PropertiesString[PropertyString.LongDesc] = breedingMsg;
+                    }
                 }
 
                 var minLumAugSummon = petDevice.GetProperty(PropertyInt.PetDeviceMinLumAugSummonCount);
