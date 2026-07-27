@@ -145,6 +145,8 @@ namespace ACE.Server.WorldObjects
                 skipTargetTypeCheck = true;
             else if (sourceItem.WeenieClassId == PetPotency.EssenceResonatorWcid && PetPotency.IsSalvageableCapturedEssence(target))
                 skipTargetTypeCheck = true;
+            else if (sourceItem.WeenieClassId == 98760399 && target is PetDevice)
+                skipTargetTypeCheck = true;
 
             var sourceTargetType = sourceItem.TargetType ?? ItemType.None;
             var targetItemType = target.ItemType;
@@ -154,6 +156,33 @@ namespace ACE.Server.WorldObjects
             {
                 // ItemHolder::TargetCompatibleWithObject
                 SendTransientError($"Cannot use the {sourceItem.Name} with the {target.Name}");
+                SendUseDoneEvent();
+                return;
+            }
+
+            if (sourceItem.WeenieClassId == 98760399) // Neutering Kit
+            {
+                if (target is not PetDevice petDevice)
+                {
+                    SendTransientError("This tool can only be used on combat pet devices.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (petDevice.GetProperty(global::ACE.Entity.Enum.Properties.PropertyBool.PetNeutered) == true)
+                {
+                    SendTransientError("This pet is already spayed/neutered.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                petDevice.SetProperty(global::ACE.Entity.Enum.Properties.PropertyBool.PetNeutered, true);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+
+                PlayParticleEffect(PlayScript.AttribDownRed, target.Guid);
+                SendMessage($"You have permanently spayed/neutered {petDevice.Name}. It can no longer be used for breeding!");
+                TryConsumeFromInventoryWithNetworking(sourceItem, 1);
                 SendUseDoneEvent();
                 return;
             }

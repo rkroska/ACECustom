@@ -262,6 +262,10 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         ShowPetEchoDrops                  = 9050,
 
+        /// <summary>Combat pet essence: has been neutered/spayed to prevent breeding (server/custom).</summary>
+        [AssessmentProperty]
+        PetNeutered                       = 9051,
+
         // -- ILT Ability Charm System (50000-50099) ---------------------------------
         /// <summary>On an ability charm item: marks it as an ability-granting charm.</summary>
         IsAbilityCharm   = 50000,

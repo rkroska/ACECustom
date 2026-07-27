@@ -771,6 +771,10 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         EssenceSalvageYield                     = 9057,
 
+        /// <summary>Number of genetic mutations this combat pet has accumulated via breeding (server/custom).</summary>
+        [AssessmentProperty]
+        PetMutationCount                        = 9058,
+
         /// <summary>
         /// The absolute Unix timestamp (in seconds since epoch) when the item expires.
         /// </summary>

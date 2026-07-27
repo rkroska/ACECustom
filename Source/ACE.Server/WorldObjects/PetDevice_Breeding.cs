@@ -111,6 +111,19 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
+                if (device1.GetProperty(PropertyBool.PetNeutered) == true)
+                {
+                    player1.SendTransientError("Your pet is spayed/neutered and cannot breed.");
+                    return;
+                }
+
+                if (device2.GetProperty(PropertyBool.PetNeutered) == true)
+                {
+                    player1.SendTransientError($"{partner.Name}'s pet is spayed/neutered and cannot breed.");
+                    partner.SendTransientError("Your pet is spayed/neutered and cannot breed.");
+                    return;
+                }
+
                 // Verify devices remain in the players' inventories (prevent trade/drop exploits)
                 var inInv1 = player1.FindObject(device1.Guid.Full, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) != null;
                 var inInv2 = partner.FindObject(device2.Guid.Full, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) != null;
@@ -177,12 +190,64 @@ namespace ACE.Server.WorldObjects
                 var masteryRoll = (global::ACE.Entity.Enum.SummoningMastery)ThreadSafeRandom.Next(1, 4); // Primalist=1, Necromancer=2, Naturalist=3
                 var babyWcid = (uint)global::ACE.Server.Factories.Tables.Wcids.PetDeviceWcids.RollBaby(masteryRoll, babyLevel);
 
+                // Color inheritance
+                var parentPalette1 = device1.VisualOverridePaletteTemplate ?? device1.PaletteTemplate ?? 0;
+                var parentPalette2 = device2.VisualOverridePaletteTemplate ?? device2.PaletteTemplate ?? 0;
+
+                var parentShade1 = device1.VisualOverrideShade ?? device1.Shade ?? 0.0;
+                var parentShade2 = device2.VisualOverrideShade ?? device2.Shade ?? 0.0;
+
+                // Base inheritance (50/50 roll for palette, average for shade)
+                var babyPalette = ThreadSafeRandom.Next(0, 2) == 0 ? parentPalette1 : parentPalette2;
+                var babyShade = (parentShade1 + parentShade2) / 2.0;
+
+                // Add minor random drift to shade (±0.05)
+                babyShade += ThreadSafeRandom.Next(-0.05f, 0.05f);
+                babyShade = Math.Clamp(babyShade, 0.0, 1.0);
+
                 // Potency calculations: randomize between average of parents and highest of parents (inclusive)
                 var pot1 = device1.PetPotencyStored ?? 0;
                 var pot2 = device2.PetPotencyStored ?? 0;
                 var minPot = (pot1 + pot2) / 2;
                 var maxPot = Math.Max(pot1, pot2);
                 var babyPot = minPot == maxPot ? minPot : ThreadSafeRandom.Next(minPot, maxPot + 1);
+
+                // Mutation check (20% if hits max potency)
+                var isMutated = false;
+                if (babyPot == maxPot && ThreadSafeRandom.Next(0.0f, 1.0f) < 0.20)
+                {
+                    babyPot += 2;
+                    isMutated = true;
+
+                    // Color Mutation triggers on stat mutation!
+                    if (ThreadSafeRandom.Next(0.0f, 1.0f) < 0.5)
+                    {
+                        var rarePalettes = new[] {
+                            (int)global::ACE.Entity.Enum.PaletteTemplate.Gold,
+                            (int)global::ACE.Entity.Enum.PaletteTemplate.Silver,
+                            (int)global::ACE.Entity.Enum.PaletteTemplate.Copper,
+                            (int)global::ACE.Entity.Enum.PaletteTemplate.Black,
+                            (int)global::ACE.Entity.Enum.PaletteTemplate.AquaBlue,
+                            (int)global::ACE.Entity.Enum.PaletteTemplate.Purple,
+                            (int)global::ACE.Entity.Enum.PaletteTemplate.Red,
+                            (int)global::ACE.Entity.Enum.PaletteTemplate.BluePurple,
+                            (int)global::ACE.Entity.Enum.PaletteTemplate.Rose,
+                            (int)global::ACE.Entity.Enum.PaletteTemplate.SnowyWhite,
+                            (int)global::ACE.Entity.Enum.PaletteTemplate.DyeWinterBlue,
+                            (int)global::ACE.Entity.Enum.PaletteTemplate.DyeWinterGreen
+                        };
+                        babyPalette = rarePalettes[ThreadSafeRandom.Next(0, rarePalettes.Length)];
+                    }
+                    else
+                    {
+                        babyShade = ThreadSafeRandom.Next(0.0f, 1.0f);
+                    }
+                }
+
+                // Stored parent pedigree mutations
+                var parentMutations1 = device1.GetProperty(PropertyInt.PetMutationCount) ?? 0;
+                var parentMutations2 = device2.GetProperty(PropertyInt.PetMutationCount) ?? 0;
+                var babyMutations = parentMutations1 + parentMutations2 + (isMutated ? 1 : 0);
 
                 // Set parent breeding cooldowns
                 var cooldownSeconds = ServerConfig.pet_breeding_cooldown_hours.Value * 3600.0;
@@ -217,11 +282,22 @@ namespace ACE.Server.WorldObjects
                 baby.Attuned = AttunedStatus.Normal;
                 baby.Bonded = BondedStatus.Normal;
 
+                if (babyPalette > 0)
+                    baby.VisualOverridePaletteTemplate = babyPalette;
+                if (babyShade > 0.0)
+                    baby.VisualOverrideShade = babyShade;
+
+                if (babyMutations > 0)
+                    baby.SetProperty(PropertyInt.PetMutationCount, babyMutations);
+
+                var successMsg = $"Congratulations! A baby pet has been born: {baby.Name}! It was placed in {winner.Name}'s inventory.";
+                if (isMutated)
+                    successMsg += " A genetic mutation has occurred! The baby gained a potency boost and unique colors!";
+
                 if (winner.TryCreateInInventoryWithNetworking(baby))
                 {
-                    var msg = $"Congratulations! A baby pet has been born: {baby.Name}! It was placed in {winner.Name}'s inventory.";
-                    player1.SendMessage(msg);
-                    partner.SendMessage(msg);
+                    player1.SendMessage(successMsg);
+                    partner.SendMessage(successMsg);
                     player1.PlayParticleEffect(PlayScript.VisionUpWhite, player1.Guid);
                     partner.PlayParticleEffect(PlayScript.VisionUpWhite, partner.Guid);
                     pet1.PlayParticleEffect(PlayScript.WeddingBliss, pet1.Guid);
@@ -231,9 +307,11 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    var msg = $"A baby pet has been born: {baby.Name}! {winner.Name}'s inventory was full, so the baby fell on the ground.";
-                    player1.SendMessage(msg);
-                    partner.SendMessage(msg);
+                    var fullMsg = $"A baby pet has been born: {baby.Name}! {winner.Name}'s inventory was full, so the baby fell on the ground.";
+                    if (isMutated)
+                        fullMsg += " A genetic mutation has occurred! The baby gained a potency boost and unique colors!";
+                    player1.SendMessage(fullMsg);
+                    partner.SendMessage(fullMsg);
                     baby.Location = new Position(winner.Location);
                     baby.EnterWorld();
                     player1.PlayParticleEffect(PlayScript.VisionUpWhite, player1.Guid);
@@ -273,14 +351,35 @@ namespace ACE.Server.WorldObjects
             if (!ServerConfig.pet_breeding_enabled.Value)
                 return null;
 
-            var now = Time.GetUnixTime();
-            var nextBreeding = GetProperty(PropertyFloat.PetNextBreedingTime) ?? 0.0;
-            if (now < nextBreeding)
+            var sb = new System.Text.StringBuilder();
+
+            var isNeutered = GetProperty(PropertyBool.PetNeutered) ?? false;
+            if (isNeutered)
             {
-                var remaining = TimeSpan.FromSeconds(nextBreeding - now);
-                return $"Breeding Cooldown: {remaining.Hours}h {remaining.Minutes}m remaining";
+                sb.AppendLine("Breeding: [Neutered]");
             }
-            return "Breeding: Ready to breed";
+            else
+            {
+                var now = Time.GetUnixTime();
+                var nextBreeding = GetProperty(PropertyFloat.PetNextBreedingTime) ?? 0.0;
+                if (now < nextBreeding)
+                {
+                    var remaining = TimeSpan.FromSeconds(nextBreeding - now);
+                    sb.AppendLine($"Breeding Cooldown: {remaining.Hours}h {remaining.Minutes}m remaining");
+                }
+                else
+                {
+                    sb.AppendLine("Breeding: Ready to breed");
+                }
+            }
+
+            var mutationCount = GetProperty(PropertyInt.PetMutationCount) ?? 0;
+            if (mutationCount > 0)
+            {
+                sb.Append($"Mutations: {mutationCount}");
+            }
+
+            return sb.ToString().TrimEnd();
         }
     }
 }
