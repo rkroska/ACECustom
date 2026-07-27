@@ -224,6 +224,10 @@ namespace ACE.Server.WorldObjects
                     partner.SendMessage(msg);
                     player1.PlayParticleEffect(PlayScript.VisionUpWhite, player1.Guid);
                     partner.PlayParticleEffect(PlayScript.VisionUpWhite, partner.Guid);
+                    pet1.PlayParticleEffect(PlayScript.WeddingBliss, pet1.Guid);
+                    pet2.PlayParticleEffect(PlayScript.WeddingBliss, pet2.Guid);
+                    pet1.EnqueueBroadcastMotion(new global::ACE.Server.Entity.Motion(MotionStance.NonCombat, MotionCommand.Twitch1));
+                    pet2.EnqueueBroadcastMotion(new global::ACE.Server.Entity.Motion(MotionStance.NonCombat, MotionCommand.Twitch1));
                 }
                 else
                 {
@@ -234,6 +238,10 @@ namespace ACE.Server.WorldObjects
                     baby.EnterWorld();
                     player1.PlayParticleEffect(PlayScript.VisionUpWhite, player1.Guid);
                     partner.PlayParticleEffect(PlayScript.VisionUpWhite, partner.Guid);
+                    pet1.PlayParticleEffect(PlayScript.WeddingBliss, pet1.Guid);
+                    pet2.PlayParticleEffect(PlayScript.WeddingBliss, pet2.Guid);
+                    pet1.EnqueueBroadcastMotion(new global::ACE.Server.Entity.Motion(MotionStance.NonCombat, MotionCommand.Twitch1));
+                    pet2.EnqueueBroadcastMotion(new global::ACE.Server.Entity.Motion(MotionStance.NonCombat, MotionCommand.Twitch1));
                 }
 
                 baby.SaveBiotaToDatabase();
