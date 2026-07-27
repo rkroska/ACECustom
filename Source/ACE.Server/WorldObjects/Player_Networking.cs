@@ -432,6 +432,11 @@ namespace ACE.Server.WorldObjects
 
                     LastSoulEmote = soulEmote;
                     LastSoulEmoteEndTime = DateTime.UtcNow + TimeSpan.FromSeconds(animLength);
+
+                    if (soulEmote == MotionCommand.DrudgeDance || soulEmote == MotionCommand.DrudgeDanceState)
+                    {
+                        PetDevice.CheckMultiplayerBreeding(this);
+                    }
                 }
             }
 

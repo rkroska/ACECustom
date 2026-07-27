@@ -604,7 +604,6 @@ namespace ACE.Server.WorldObjects
             return string.IsNullOrEmpty(tail) ? baseName : baseName + tail;
         }
 
-        // Monster Capture System - Handle captured appearance application
         public override void HandleActionUseOnTarget(Player player, WorldObject target)
         {
             if (MonsterCapture.IsCapturedAppearance(target))
@@ -622,12 +621,6 @@ namespace ACE.Server.WorldObjects
                 }
 
                 MonsterCapture.ApplyAppearanceToCrate(player, this, target);
-                return;
-            }
-
-            if (target is PetDevice targetDevice && IsCombatPetDevice() && targetDevice.IsCombatPetDevice())
-            {
-                TryBreedPets(player, targetDevice);
                 return;
             }
 
