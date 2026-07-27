@@ -4375,5 +4375,100 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("testpal_curated", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Test subpalette mutation Option 1 (Curated list of cool palettes) on selected pet device.")]
+        public static void TestPalCurated(Session session, params string[] parameters)
+        {
+            var target = session.Player.SelectedTarget as PetDevice;
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "You must select a pet device in your inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            var curated = new uint[] {
+                0x0400001D, // Bright Red
+                0x04000021, // Bright Blue
+                0x04000025, // Green
+                0x04000029, // Yellow
+                0x0400002D, // Purple
+                0x0400005C, // Obsidian Black
+                0x04000097, // Gold/Bronze
+                0x04000104, // Copper
+                0x0400018E, // Metallic Silver
+                0x0400033E, // Pure Snowy White
+                0x0400033F  // Deep Crimson
+            };
+
+            var chosen = curated[ThreadSafeRandom.Next(0, curated.Length)];
+
+            var palsStr = target.GetProperty(PropertyString.CapturedObjDescPalettes);
+            if (string.IsNullOrEmpty(palsStr))
+            {
+                palsStr = $"{chosen}:0:256";
+            }
+            else
+            {
+                var entries = palsStr.Split(',');
+                var parts = entries[0].Split(':');
+                parts[0] = chosen.ToString();
+                entries[0] = string.Join(":", parts);
+                palsStr = string.Join(",", entries);
+            }
+
+            target.SetProperty(PropertyString.CapturedObjDescPalettes, palsStr);
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"[Option 1] Set primary subpalette to 0x{chosen:X8} ({chosen}) on {target.Name}. Dismiss and re-summon to see changes.", ChatMessageType.System);
+        }
+
+        [CommandHandler("testpal_random", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Test subpalette mutation Option 2 (Query all palettes in Portal DAT) on selected pet device.")]
+        public static void TestPalRandom(Session session, params string[] parameters)
+        {
+            var target = session.Player.SelectedTarget as PetDevice;
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "You must select a pet device in your inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            var paletteIds = new System.Collections.Generic.List<uint>();
+            foreach (var entry in DatManager.PortalDat.AllFiles)
+            {
+                if ((entry.Key >> 24) == 0x04)
+                    paletteIds.Add(entry.Key);
+            }
+
+            if (paletteIds.Count == 0)
+            {
+                ChatPacket.SendServerMessage(session, "No palettes found in portal.dat.", ChatMessageType.System);
+                return;
+            }
+
+            var chosen = paletteIds[ThreadSafeRandom.Next(0, paletteIds.Count)];
+
+            var palsStr = target.GetProperty(PropertyString.CapturedObjDescPalettes);
+            if (string.IsNullOrEmpty(palsStr))
+            {
+                palsStr = $"{chosen}:0:256";
+            }
+            else
+            {
+                var entries = palsStr.Split(',');
+                var parts = entries[0].Split(':');
+                parts[0] = chosen.ToString();
+                entries[0] = string.Join(":", parts);
+                palsStr = string.Join(",", entries);
+            }
+
+            target.SetProperty(PropertyString.CapturedObjDescPalettes, palsStr);
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"[Option 2] Set primary subpalette to random 0x{chosen:X8} ({chosen}) on {target.Name}. Dismiss and re-summon to see changes.", ChatMessageType.System);
+        }
+
     }
 }
