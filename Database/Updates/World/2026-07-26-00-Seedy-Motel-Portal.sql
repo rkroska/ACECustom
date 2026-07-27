@@ -72,3 +72,30 @@ FROM `landblock_instance` l
 JOIN `weenie_properties_string` s ON l.`weenie_Class_Id` = s.`object_Id`
 WHERE s.`type` = 1 AND (s.`value` = 'Prof. Ruggan' OR s.`value` = 'Professor Ruggan')
 LIMIT 1;
+
+-- 5. Define the Neutering Kit Item (WCID: 98760399)
+DELETE FROM `weenie` WHERE `class_Id` = 98760399;
+INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`) 
+VALUES (98760399, 'neutering_kit', 8, NOW()); -- Type 8 = Misc/Item
+
+DELETE FROM `weenie_properties_int` WHERE `object_Id` = 98760399;
+INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`) VALUES 
+(98760399, 1, 8192),      -- ItemType = 8192 (Misc/Tool)
+(98760399, 5, 100),       -- EncumbranceVal = 100
+(98760399, 16, 16),      -- ItemUseable = 16 (Usable on another item)
+(98760399, 19, 500),      -- Value = 500 pyreals
+(98760399, 150, 4);      -- DefaultClickAction = 4 (Use on target)
+
+DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 98760399;
+INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`) VALUES 
+(98760399, 14, True);    -- IsSellable = True
+
+DELETE FROM `weenie_properties_string` WHERE `object_Id` = 98760399;
+INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`) VALUES 
+(98760399, 1, 'Neutering Kit'),
+(98760399, 14, 'Use this kit on a combat pet device in your inventory to permanently spay/neuter it, locking it out of any future breeding.');
+
+DELETE FROM `weenie_properties_d_i_d` WHERE `object_Id` = 98760399;
+INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES 
+(98760399, 1, 0x0200021A),  -- Setup DID (scissors/pliers tool model)
+(98760399, 8, 100669279);   -- Icon (scissors/cut icon)
