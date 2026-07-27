@@ -212,11 +212,11 @@ namespace ACE.Server.WorldObjects
                 var maxPot = Math.Max(pot1, pot2);
                 var babyPot = minPot == maxPot ? minPot : ThreadSafeRandom.Next(minPot, maxPot + 1);
 
-                // Mutation check (20% if hits max potency)
+                // Mutation check (20% if hits max potency, or forced by config)
                 var isMutated = false;
-                if (babyPot == maxPot && ThreadSafeRandom.Next(0.0f, 1.0f) < 0.20)
+                if (ServerConfig.pet_breeding_force_mutation.Value || (babyPot == maxPot && ThreadSafeRandom.Next(0.0f, 1.0f) < 0.20))
                 {
-                    babyPot += 2;
+                    babyPot = maxPot + 2;
                     isMutated = true;
 
                     // Color Mutation triggers on stat mutation!

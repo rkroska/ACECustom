@@ -527,6 +527,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> pet_breeding_min_parent_level { get; private set; } = new(50, "Minimum level/tier of parent combat pet devices required to breed.");
         public static ConfigProperty<long> pet_breeding_allowed_landblock { get; private set; } = new(0x013A02AEL, "Landblock raw ID where breeding is allowed (0x013A02AE is Seedy Motel). 0 = allowed anywhere.");
         public static ConfigProperty<long> pet_breeding_allowed_variant { get; private set; } = new(3, "Landblock variation ID where breeding is allowed. -1 = ignore variation.");
+        public static ConfigProperty<bool> pet_breeding_force_mutation { get; private set; } = new(false, "If TRUE, forces a mutation and color mutation to occur on every breed roll.");
         public static ConfigProperty<long> pet_strain_potency_threshold { get; private set; } = new(50, "No bond strain at or below this active potency.");
         public static ConfigProperty<double> pet_strain_per_potency_level { get; private set; } = new(1.0, "Player DR penalty per active level above strain threshold.");
         public static ConfigProperty<long> pet_strain_max_rating { get; private set; } = new(0, "Cap bond strain magnitude (0 = no cap).");
