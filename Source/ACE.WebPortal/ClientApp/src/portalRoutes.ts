@@ -18,6 +18,7 @@ import {
   ClipboardList,
   FileText,
   Skull,
+  Heart,
 } from 'lucide-react'
 
 export interface PortalRouteDefinition {
@@ -39,6 +40,7 @@ export const PORTAL_ROUTES: PortalRouteDefinition[] = [
   { key: 'audit-log', path: '/audit', label: 'Audit Log', section: 'Monitoring', icon: ClipboardList },
   { key: 'map', path: '/map', label: 'World Map', section: 'Monitoring', icon: Globe, placeholder: true },
   { key: 'combat-calculator', path: '/combat-calculator', label: 'Combat Calculator', section: 'Content Tools', icon: Swords },
+  { key: 'pet-breeding', path: '/pet-breeding', label: 'Pet Breeding', section: 'Content Tools', icon: Heart },
   { key: 'properties', path: '/properties', label: 'Property Explorer', section: 'Content Tools', icon: Search },
   { key: 'lookup', path: '/lookup', label: 'Lookup Tables', section: 'Content Tools', icon: Book },
   { key: 'items', path: '/items', label: 'Item Search', section: 'Content Tools', icon: Package },

@@ -29,6 +29,7 @@ import { useAuthStore } from './store/useAuthStore'
 import PlayerList from './components/PlayerList'
 
 import CombatCalculator from './components/CombatCalculator'
+import PetBreedingCalculator from './components/PetBreedingCalculator'
 
 import QuestBuilder from './components/quest-builder/QuestBuilder'
 
@@ -314,6 +315,16 @@ function App() {
           <ProtectedRoute pageKey="combat-calculator">
 
             <CombatCalculator />
+
+          </ProtectedRoute>
+
+        } />
+
+        <Route path="/pet-breeding" element={
+
+          <ProtectedRoute pageKey="pet-breeding">
+
+            <PetBreedingCalculator />
 
           </ProtectedRoute>
 
