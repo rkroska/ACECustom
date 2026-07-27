@@ -210,12 +210,12 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                baby.PetBondAttuned = true;
-                baby.PetBondAttunedCharacterId = (long)winner.Character.Id;
+                baby.PetBondAttuned = false;
+                baby.PetBondAttunedCharacterId = 0;
                 baby.PetBondLevel = 1; // Baby starts at Bond Level 1
                 baby.PetPotencyStored = babyPot;
-                baby.Attuned = AttunedStatus.Attuned;
-                baby.Bonded = BondedStatus.Bonded;
+                baby.Attuned = AttunedStatus.Normal;
+                baby.Bonded = BondedStatus.Normal;
 
                 if (winner.TryCreateInInventoryWithNetworking(baby))
                 {
