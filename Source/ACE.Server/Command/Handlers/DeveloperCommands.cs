@@ -4379,10 +4379,10 @@ namespace ACE.Server.Command.Handlers
             "Test subpalette mutation Option 1 (Curated list of cool palettes) on selected pet device.")]
         public static void TestPalCurated(Session session, params string[] parameters)
         {
-            var target = session.Player.SelectedTarget as PetDevice;
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
             if (target == null)
             {
-                ChatPacket.SendServerMessage(session, "You must select a pet device in your inventory first.", ChatMessageType.System);
+                ChatPacket.SendServerMessage(session, "You must appraise (examine/identify) the pet device in your inventory first.", ChatMessageType.System);
                 return;
             }
 
@@ -4427,10 +4427,10 @@ namespace ACE.Server.Command.Handlers
             "Test subpalette mutation Option 2 (Query all palettes in Portal DAT) on selected pet device.")]
         public static void TestPalRandom(Session session, params string[] parameters)
         {
-            var target = session.Player.SelectedTarget as PetDevice;
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
             if (target == null)
             {
-                ChatPacket.SendServerMessage(session, "You must select a pet device in your inventory first.", ChatMessageType.System);
+                ChatPacket.SendServerMessage(session, "You must appraise (examine/identify) the pet device in your inventory first.", ChatMessageType.System);
                 return;
             }
 
