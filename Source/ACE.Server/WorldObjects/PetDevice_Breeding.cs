@@ -57,6 +57,10 @@ namespace ACE.Server.WorldObjects
                 if (otherPlayer.IsTrading)
                     continue;
 
+                // Check if players are in the same cell (room)
+                if (player1.Location.Cell != otherPlayer.Location.Cell)
+                    continue;
+
                 // Check distance between players (within 10.0 meters)
                 if (player1.GetDistance(otherPlayer) > 10.0f)
                     continue;
@@ -68,6 +72,10 @@ namespace ACE.Server.WorldObjects
 
                 // Check if otherPlayer has a summoned combat pet
                 if (otherPlayer.CurrentActivePet is not CombatPet otherPet)
+                    continue;
+
+                // Check if pets are in the same cell
+                if (pet1.Location.Cell != otherPet.Location.Cell)
                     continue;
 
                 // Check distance between the two summoned pets (within 5.0 meters)
