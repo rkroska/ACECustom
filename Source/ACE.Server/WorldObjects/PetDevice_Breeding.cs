@@ -263,6 +263,9 @@ namespace ACE.Server.WorldObjects
                 device1.SyncPetProgressPropertiesToOwner(player1, broadcast: true);
                 device2.SyncPetProgressPropertiesToOwner(partner, broadcast: true);
 
+                // Roll 50/50 to see which parent's base visual look the baby inherits
+                var donor = ThreadSafeRandom.Next(0, 2) == 0 ? device1 : device2;
+
                 // Roll 50/50 to see who gets the baby (prevents ninja looting)
                 var winner = ThreadSafeRandom.Next(0, 2) == 0 ? player1 : partner;
 
@@ -274,6 +277,39 @@ namespace ACE.Server.WorldObjects
                     partner.SendTransientError("Failed to spawn the baby pet device.");
                     return;
                 }
+
+                // Copy parent visual overrides to baby
+                baby.VisualOverrideSetup = donor.VisualOverrideSetup;
+                baby.VisualOverrideMotionTable = donor.VisualOverrideMotionTable;
+                baby.VisualOverrideCombatTable = donor.VisualOverrideCombatTable;
+                baby.VisualOverrideSoundTable = donor.VisualOverrideSoundTable;
+                baby.VisualOverridePaletteBase = donor.VisualOverridePaletteBase;
+                baby.VisualOverrideClothingBase = donor.VisualOverrideClothingBase;
+                baby.VisualOverrideScale = donor.VisualOverrideScale;
+                baby.VisualOverrideName = donor.VisualOverrideName;
+                baby.VisualOverrideCreatureVariant = donor.VisualOverrideCreatureVariant;
+                baby.VisualOverrideCreatureType = donor.VisualOverrideCreatureType;
+
+                var donorAnim = donor.GetProperty(PropertyString.CapturedObjDescAnimParts);
+                if (!string.IsNullOrEmpty(donorAnim)) baby.SetProperty(PropertyString.CapturedObjDescAnimParts, donorAnim);
+
+                var donorPals = donor.GetProperty(PropertyString.CapturedObjDescPalettes);
+                if (!string.IsNullOrEmpty(donorPals)) baby.SetProperty(PropertyString.CapturedObjDescPalettes, donorPals);
+
+                var donorTex = donor.GetProperty(PropertyString.CapturedObjDescTextures);
+                if (!string.IsNullOrEmpty(donorTex)) baby.SetProperty(PropertyString.CapturedObjDescTextures, donorTex);
+
+                var donorWcid = donor.GetProperty(PropertyInt.CapturedCreatureWCID);
+                if (donorWcid.HasValue) baby.SetProperty(PropertyInt.CapturedCreatureWCID, donorWcid.Value);
+
+                var donorDmg = donor.GetProperty(PropertyInt.CapturedSourceDamageType);
+                if (donorDmg.HasValue) baby.SetProperty(PropertyInt.CapturedSourceDamageType, donorDmg.Value);
+
+                // Set baby display name based on inherited captured name
+                var babyBaseName = baby.Name;
+                var rebuiltName = PetDevice.BuildDisplayNameAfterCaptureApply(babyBaseName, null, baby.VisualOverrideName);
+                if (!string.IsNullOrEmpty(rebuiltName))
+                    baby.Name = rebuiltName;
 
                 baby.PetBondAttuned = false;
                 baby.PetBondAttunedCharacterId = 0;
