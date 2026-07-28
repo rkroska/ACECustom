@@ -1,6 +1,6 @@
 import React, { type FC, useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, useGLTF } from '@react-three/drei';
+import { OrbitControls, useGLTF, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { 
   Globe, 
@@ -17,7 +17,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-// --- Error Boundary for handling missing / invalid models gracefully ---
+// --- Error Boundary for handling missing / invalid models inside Canvas context ---
 interface ErrorBoundaryProps {
   fallback: React.ReactNode;
   children: React.ReactNode;
@@ -47,6 +47,45 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, { hasError: bool
     return this.props.children;
   }
 }
+
+// --- Canvas Loader & Error Components using Drei's Html wrapper ---
+const CanvasLoader: FC = () => {
+  return (
+    <Html center>
+      <div className="flex flex-col items-center justify-center gap-3 whitespace-nowrap bg-[#111827]/90 backdrop-blur-md px-6 py-4 rounded-xl border border-[#1f2937] shadow-2xl">
+        <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
+        <span className="text-sm font-semibold tracking-wide text-neutral-300">Loading 3D asset from DAT...</span>
+      </div>
+    </Html>
+  );
+};
+
+interface CanvasErrorProps {
+  wcid: number;
+  onReset: () => void;
+}
+
+const CanvasError: FC<CanvasErrorProps> = ({ wcid, onReset }) => {
+  return (
+    <Html center>
+      <div className="flex flex-col items-center justify-center gap-3 p-6 text-center bg-[#0f172a]/95 border border-red-500/30 rounded-xl w-[320px] shadow-2xl">
+        <div className="p-3 bg-red-950/40 border border-red-500/30 text-red-400 rounded-full">
+          <AlertTriangle className="w-8 h-8" />
+        </div>
+        <h3 className="text-lg font-bold text-red-400">Asset Load Failed</h3>
+        <p className="text-xs text-neutral-400 leading-relaxed">
+          Weenie ID {wcid} could not be loaded. Please ensure this Weenie exists in your database and defines a valid 3D setup model (0x02).
+        </p>
+        <button
+          onClick={onReset}
+          className="mt-2 px-4 py-2 bg-[#1f2937] hover:bg-[#374151] border border-[#374151] rounded-lg text-xs font-semibold text-white transition-colors"
+        >
+          Reset to Default Preset
+        </button>
+      </div>
+    </Html>
+  );
+};
 
 // --- Curated Preset Lists ---
 const PRESET_CREATURES = [
@@ -78,12 +117,11 @@ interface ModelProps {
   rotationSpeed: number;
   isRotating: boolean;
   wireframe: boolean;
-  onLoaded: () => void;
 }
 
-const Model: FC<ModelProps> = ({ wcid, paletteId, rotationSpeed, isRotating, wireframe, onLoaded }) => {
-  const modelUrl = `/api/visualizer/mesh/${wcid}`;
-  const paletteUrl = `/api/visualizer/palette/${paletteId}`;
+const Model: FC<ModelProps> = ({ wcid, paletteId, rotationSpeed, isRotating, wireframe }) => {
+  const modelUrl = `/api/visualizer/mesh/${wcid}.gltf`;
+  const paletteUrl = `/api/visualizer/palette/${paletteId}.png`;
 
   // useGLTF suspends while parsing binary buffer
   const { scene } = useGLTF(modelUrl);
@@ -143,8 +181,7 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, rotationSpeed, isRotating, wir
         }
       }
     });
-    onLoaded();
-  }, [scene, paletteTexture, wireframe, onLoaded]);
+  }, [scene, paletteTexture, wireframe]);
 
   // Center model and scale it
   useEffect(() => {
@@ -180,19 +217,16 @@ const WorldViewer: FC = () => {
   const [wireframe, setWireframe] = useState<boolean>(false);
   const [showGrid, setShowGrid] = useState<boolean>(true);
   const [lightIntensity, setLightIntensity] = useState<number>(1.2);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const id = parseInt(searchInput, 10);
     if (!isNaN(id) && id > 0) {
-      setIsLoading(true);
       setWcid(id);
     }
   };
 
   const selectPreset = (presetWcid: number) => {
-    setIsLoading(true);
     setWcid(presetWcid);
     setSearchInput(presetWcid.toString());
   };
@@ -207,7 +241,7 @@ const WorldViewer: FC = () => {
             <Globe className="w-6 h-6 animate-pulse" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight">3D Visualizer</h1>
+            <h1 className="text-xl font-bold tracking-tight">3D Showroom</h1>
             <p className="text-xs text-neutral-400">Portal DAT asset renderer</p>
           </div>
         </div>
@@ -369,69 +403,44 @@ const WorldViewer: FC = () => {
       {/* Main Canvas Area */}
       <div className="flex-grow relative h-[500px] md:h-full min-h-[300px] bg-[#090d16] flex items-center justify-center">
         
-        {/* Loading Overlay */}
-        {(isLoading) && (
-          <div className="absolute inset-0 bg-[#090d16]/75 backdrop-blur-sm z-10 flex flex-col items-center justify-center gap-3">
-            <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
-            <span className="text-sm font-semibold tracking-wide text-neutral-400">Loading 3D asset from DAT...</span>
-          </div>
-        )}
-
         {/* 3D Canvas */}
         <div className="w-full h-full">
-          <ErrorBoundary
-            resetKey={wcid}
-            fallback={
-              <div className="w-full h-full flex flex-col items-center justify-center gap-3 p-6 text-center">
-                <div className="p-3 bg-red-950/40 border border-red-500/30 text-red-400 rounded-full">
-                  <AlertTriangle className="w-8 h-8" />
-                </div>
-                <h3 className="text-lg font-bold text-red-400">Asset Load Failed</h3>
-                <p className="text-sm text-neutral-400 maxWidth-[380px] leading-relaxed">
-                  Weenie ID {wcid} could not be loaded. Please ensure this Weenie exists in your database and defines a valid 3D setup model (0x02).
-                </p>
-                <button
-                  onClick={() => selectPreset(25749)}
-                  className="mt-2 px-4 py-2 bg-[#1f2937] hover:bg-[#374151] border border-[#374151] rounded-lg text-sm transition-colors"
-                >
-                  Reset to Default Preset
-                </button>
-              </div>
-            }
+          <Canvas
+            camera={{ position: [0, 0, 4.5], fov: 45 }}
+            gl={{ preserveDrawingBuffer: true, antialias: true }}
           >
-            <Canvas
-              camera={{ position: [0, 0, 4.5], fov: 45 }}
-              gl={{ preserveDrawingBuffer: true, antialias: true }}
-            >
-              <color attach="background" args={['#090d16']} />
-              <ambientLight intensity={lightIntensity * 0.4} />
-              <directionalLight position={[10, 10, 5]} intensity={lightIntensity * 0.8} castShadow />
-              <directionalLight position={[-10, 5, -5]} intensity={lightIntensity * 0.3} />
-              <pointLight position={[0, -5, 5]} intensity={lightIntensity * 0.4} />
+            <color attach="background" args={['#090d16']} />
+            <ambientLight intensity={lightIntensity * 0.4} />
+            <directionalLight position={[10, 10, 5]} intensity={lightIntensity * 0.8} castShadow />
+            <directionalLight position={[-10, 5, -5]} intensity={lightIntensity * 0.3} />
+            <pointLight position={[0, -5, 5]} intensity={lightIntensity * 0.4} />
 
-              <Suspense fallback={null}>
+            <ErrorBoundary
+              resetKey={wcid}
+              fallback={<CanvasError wcid={wcid} onReset={() => selectPreset(25749)} />}
+            >
+              <Suspense fallback={<CanvasLoader />}>
                 <Model
                   wcid={wcid}
                   paletteId={paletteId}
                   rotationSpeed={rotationSpeed}
                   isRotating={isRotating}
                   wireframe={wireframe}
-                  onLoaded={() => setIsLoading(false)}
                 />
               </Suspense>
+            </ErrorBoundary>
 
-              {showGrid && (
-                <gridHelper args={[15, 15, '#1e293b', '#0f172a']} position={[0, -1.2, 0]} />
-              )}
-              <OrbitControls 
-                enableDamping 
-                dampingFactor={0.05} 
-                minDistance={1.5} 
-                maxDistance={12} 
-                target={[0, 0, 0]}
-              />
-            </Canvas>
-          </ErrorBoundary>
+            {showGrid && (
+              <gridHelper args={[15, 15, '#1e293b', '#0f172a']} position={[0, -1.2, 0]} />
+            )}
+            <OrbitControls 
+              enableDamping 
+              dampingFactor={0.05} 
+              minDistance={1.5} 
+              maxDistance={12} 
+              target={[0, 0, 0]}
+            />
+          </Canvas>
         </div>
 
         {/* Client-side Controls Overlay */}

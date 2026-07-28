@@ -296,7 +296,7 @@ namespace ACE.Server.Services
                                         };
                                         gltf.materials.Add(material);
                                         gltf.textures.Add(new GltfTexture { source = gltf.images.Count });
-                                        gltf.images.Add(new GltfImage { uri = $"/api/visualizer/texture/{texId}" });
+                                        gltf.images.Add(new GltfImage { uri = $"/api/visualizer/texture/{texId}.png" });
 
                                         textureToMat[texId] = matIdx;
                                     }
@@ -421,9 +421,15 @@ namespace ACE.Server.Services
                 }
 
                 gltf.nodes.Add(partNode);
+            }
 
-                // Add to hierarchy
-                if (parentIdx == -1 || parentIdx >= setupModel.Parts.Count)
+            // Two-pass hierarchy construction to support non-topologically sorted parent indices safely
+            for (int i = 0; i < setupModel.Parts.Count; i++)
+            {
+                var parentIdx = (setupModel.ParentIndex != null && i < setupModel.ParentIndex.Count) ? (int)setupModel.ParentIndex[i] : -1;
+                var partNodeIdx = i + 1;
+
+                if (parentIdx == -1 || parentIdx >= setupModel.Parts.Count || parentIdx == i)
                 {
                     rootNode.children ??= new List<int>();
                     rootNode.children.Add(partNodeIdx);

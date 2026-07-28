@@ -11,7 +11,7 @@ namespace ACE.Server.Controllers
     [Route("api/[controller]")]
     public class VisualizerController : BaseController
     {
-        [HttpGet("mesh/{wcid}")]
+        [HttpGet("mesh/{wcid}.gltf")]
         public async Task<IActionResult> GetMesh(uint wcid)
         {
             if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
@@ -22,7 +22,7 @@ namespace ACE.Server.Controllers
             return File(gltfBytes, "model/gltf+json", $"{wcid}.gltf");
         }
 
-        [HttpGet("texture/{id}")]
+        [HttpGet("texture/{id}.png")]
         public async Task<IActionResult> GetTexture(uint id)
         {
             if (id == 0) return BadRequest("Invalid Texture ID.");
@@ -33,7 +33,7 @@ namespace ACE.Server.Controllers
             return File(pngBytes, "image/png");
         }
 
-        [HttpGet("palette/{id}")]
+        [HttpGet("palette/{id}.png")]
         public async Task<IActionResult> GetPalette(uint id)
         {
             if (id == 0) return BadRequest("Invalid Palette ID.");
