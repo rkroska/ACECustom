@@ -102,14 +102,14 @@ const PRESET_CREATURES = [
 ];
 
 const PRESET_PALETTES = [
-  { id: 67108967, hex: '#04000097', name: 'Metallic Gold' },
-  { id: 67108864, hex: '#0400005C', name: 'Shadow Obsidian' },
-  { id: 67108978, hex: '#040000A2', name: 'Lightning Blue' },
-  { id: 67109024, hex: '#040000D0', name: 'Flame Red' },
-  { id: 67109027, hex: '#040000D3', name: 'Acid Green' },
-  { id: 67109039, hex: '#040000DF', name: 'Metallic Pink' },
-  { id: 67109040, hex: '#040000E0', name: 'Rusty Bronze' },
-  { id: 67108973, hex: '#0400009D', name: 'Ice White' },
+  { id: 67109257, hex: '#04846B29', name: 'Olive Gold' },
+  { id: 67109053, hex: '#049C6A3B', name: 'Rusty Brown' },
+  { id: 67109070, hex: '#043A4A52', name: 'Slate Blue' },
+  { id: 67109071, hex: '#04E0CAEA', name: 'Lilac Pink' },
+  { id: 67109073, hex: '#04393332', name: 'Shadow Charcoal' },
+  { id: 67109147, hex: '#04523110', name: 'Amber Wood' },
+  { id: 67109308, hex: '#0499A2A1', name: 'Light Teal' },
+  { id: 67109312, hex: '#040B0302', name: 'Obsidian Black' },
 ];
 
 // --- 3D Model Instance with Custom WebGL Shader ---
@@ -240,7 +240,7 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, rotationSpeed, isRotating, wir
 const WorldViewer: FC = () => {
   const [wcid, setWcid] = useState<number>(25749); // Default Olthoi Harvester
   const [searchInput, setSearchInput] = useState<string>('25749');
-  const [paletteId, setPaletteId] = useState<number>(67108967); // Gold
+  const [paletteId, setPaletteId] = useState<number>(67109257); // Olive Gold
   const [isRotating, setIsRotating] = useState<boolean>(true);
   const [rotationSpeed, setRotationSpeed] = useState<number>(0.25);
   const [wireframe, setWireframe] = useState<boolean>(false);
