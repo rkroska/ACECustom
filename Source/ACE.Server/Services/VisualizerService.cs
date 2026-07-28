@@ -281,10 +281,35 @@ namespace ACE.Server.Services
                                 if (surface.Type.HasFlag(SurfaceType.Base1Image) && surface.OrigTextureId != 0)
                                 {
                                     var texId = surface.OrigTextureId;
+                                    if ((texId & 0xFF000000) == 0x05000000)
+                                    {
+                                        var surfTex = portalDb.ReadFromDat<SurfaceTexture>(texId);
+                                        if (surfTex != null && surfTex.Textures.Count > 0)
+                                        {
+                                            texId = surfTex.Textures[0];
+                                        }
+                                        else if (DatManager.HighResDat != null)
+                                        {
+                                            var highResDb = new PortalDatDatabase(DatManager.HighResDat.FilePath, keepOpen: false);
+                                            surfTex = highResDb.ReadFromDat<SurfaceTexture>(texId);
+                                            if (surfTex != null && surfTex.Textures.Count > 0)
+                                                texId = surfTex.Textures[0];
+                                        }
+                                    }
+
                                     if (!textureToMat.TryGetValue(texId, out var matIdx))
                                     {
                                         matIdx = gltf.materials.Count;
                                         var texture = portalDb.ReadFromDat<Texture>(texId);
+                                        if (texture == null || texture.SourceData == null || texture.SourceData.Length == 0)
+                                        {
+                                            if (DatManager.HighResDat != null)
+                                            {
+                                                var highResDb = new PortalDatDatabase(DatManager.HighResDat.FilePath, keepOpen: false);
+                                                texture = highResDb.ReadFromDat<Texture>(texId);
+                                            }
+                                        }
+
                                         bool isIndexed = texture != null && (texture.Format == SurfacePixelFormat.PFID_P8 || texture.Format == SurfacePixelFormat.PFID_INDEX16);
 
                                         var material = new GltfMaterial
@@ -453,7 +478,32 @@ namespace ACE.Server.Services
         {
             var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
 
+            if ((textureId & 0xFF000000) == 0x05000000)
+            {
+                var surfTex = portalDb.ReadFromDat<SurfaceTexture>(textureId);
+                if (surfTex != null && surfTex.Textures.Count > 0)
+                {
+                    textureId = surfTex.Textures[0];
+                }
+                else if (DatManager.HighResDat != null)
+                {
+                    var highResDb = new PortalDatDatabase(DatManager.HighResDat.FilePath, keepOpen: false);
+                    surfTex = highResDb.ReadFromDat<SurfaceTexture>(textureId);
+                    if (surfTex != null && surfTex.Textures.Count > 0)
+                        textureId = surfTex.Textures[0];
+                }
+            }
+
             var texture = portalDb.ReadFromDat<Texture>(textureId);
+            if (texture == null || texture.SourceData == null || texture.SourceData.Length == 0)
+            {
+                if (DatManager.HighResDat != null)
+                {
+                    var highResDb = new PortalDatDatabase(DatManager.HighResDat.FilePath, keepOpen: false);
+                    texture = highResDb.ReadFromDat<Texture>(textureId);
+                }
+            }
+
             if (texture == null || texture.SourceData == null || texture.SourceData.Length == 0)
                 return null;
 
