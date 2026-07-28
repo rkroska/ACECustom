@@ -50,13 +50,14 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, { hasError: bool
 
 // --- Curated Preset Lists ---
 const PRESET_CREATURES = [
-  { wcid: 787801041, name: 'Olthoi Harvester (Pet Essence)' },
-  { wcid: 787801042, name: 'Blistered Zombie (Pet Essence)' },
+  { wcid: 25749, name: 'Olthoi Harvester' },
+  { wcid: 787802041, name: 'Blistered Zombie' },
+  { wcid: 787802042, name: 'Shocked Zombie' },
+  { wcid: 787802037, name: 'Fire Skeleton Samurai' },
   { wcid: 98, name: 'Olthoi Soldier' },
   { wcid: 1045, name: 'Tusker Guard' },
   { wcid: 554, name: 'Drudge Ravager' },
   { wcid: 1540, name: 'Lugian Warlord' },
-  { wcid: 6868, name: 'Armored Olthoi Harvester' },
 ];
 
 const PRESET_PALETTES = [
@@ -171,8 +172,8 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, rotationSpeed, isRotating, wir
 
 // --- Main WorldViewer Page ---
 const WorldViewer: FC = () => {
-  const [wcid, setWcid] = useState<number>(787801041); // Default Olthoi Harvester Pet
-  const [searchInput, setSearchInput] = useState<string>('787801041');
+  const [wcid, setWcid] = useState<number>(25749); // Default Olthoi Harvester
+  const [searchInput, setSearchInput] = useState<string>('25749');
   const [paletteId, setPaletteId] = useState<number>(67108967); // Gold
   const [isRotating, setIsRotating] = useState<boolean>(true);
   const [rotationSpeed, setRotationSpeed] = useState<number>(0.25);
@@ -390,7 +391,7 @@ const WorldViewer: FC = () => {
                   Weenie ID {wcid} could not be loaded. Please ensure this Weenie exists in your database and defines a valid 3D setup model (0x02).
                 </p>
                 <button
-                  onClick={() => selectPreset(787801041)}
+                  onClick={() => selectPreset(25749)}
                   className="mt-2 px-4 py-2 bg-[#1f2937] hover:bg-[#374151] border border-[#374151] rounded-lg text-sm transition-colors"
                 >
                   Reset to Default Preset
