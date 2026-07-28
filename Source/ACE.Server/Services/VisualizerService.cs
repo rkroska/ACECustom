@@ -213,7 +213,8 @@ namespace ACE.Server.Services
             var rootNode = new GltfNode
             {
                 name = $"Weenie_{wcid}_Setup_{setupId}",
-                children = new List<int>()
+                children = new List<int>(),
+                rotation = new float[] { -0.7071068f, 0f, 0f, 0.7071068f }
             };
             gltf.nodes.Add(rootNode);
             gltfScene.nodes.Add(0);

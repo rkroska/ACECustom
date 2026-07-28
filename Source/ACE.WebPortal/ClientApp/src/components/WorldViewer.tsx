@@ -157,7 +157,7 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, rotationSpeed, isRotating, wir
           }
 
           // Check if indexed flag is set in extras
-          const isIndexed = child.material.userData?.extras?.indexed === true || child.userData.isIndexed === true;
+          const isIndexed = child.material.userData?.indexed === true || child.material.userData?.extras?.indexed === true || child.userData.isIndexed === true;
           if (isIndexed) {
             child.userData.isIndexed = true; // Cache flag on mesh
             const originalMap = child.userData.originalMap;
