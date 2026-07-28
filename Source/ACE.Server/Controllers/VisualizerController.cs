@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using ACE.Server.Services;
 using ACE.Server.Web.Controllers;
@@ -43,5 +44,32 @@ namespace ACE.Server.Controllers
 
             return File(pngBytes, "image/png");
         }
+
+        [HttpPost("save-screenshot")]
+        public async Task<IActionResult> SaveScreenshot([FromBody] ScreenshotRequest request)
+        {
+            if (request == null || string.IsNullOrEmpty(request.DataUrl) || string.IsNullOrEmpty(request.Filename))
+                return BadRequest("Invalid request data.");
+
+            var base64Data = request.DataUrl;
+            if (base64Data.Contains(","))
+                base64Data = base64Data.Split(',')[1];
+
+            var bytes = Convert.FromBase64String(base64Data);
+            var dir = System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot", "screenshots");
+            if (!System.IO.Directory.Exists(dir))
+                System.IO.Directory.CreateDirectory(dir);
+
+            var path = System.IO.Path.Combine(dir, request.Filename);
+            await System.IO.File.WriteAllBytesAsync(path, bytes);
+
+            return Ok(new { path = $"/screenshots/{request.Filename}" });
+        }
+    }
+
+    public class ScreenshotRequest
+    {
+        public string DataUrl { get; set; }
+        public string Filename { get; set; }
     }
 }

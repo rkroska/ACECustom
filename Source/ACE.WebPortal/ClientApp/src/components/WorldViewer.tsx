@@ -1,5 +1,5 @@
 import React, { type FC, useState, useEffect, useMemo, useRef, Suspense } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, useGLTF, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { 
@@ -14,7 +14,9 @@ import {
   RefreshCw,
   Search,
   ChevronRight,
-  AlertTriangle
+  AlertTriangle,
+  Camera,
+  Download
 } from 'lucide-react';
 
 // --- Error Boundary for handling missing / invalid models inside Canvas context ---
@@ -117,16 +119,19 @@ interface ModelProps {
   rotationSpeed: number;
   isRotating: boolean;
   wireframe: boolean;
+  onCreated: (gl: any) => void;
 }
 
-const Model: FC<ModelProps> = ({ wcid, paletteId, rotationSpeed, isRotating, wireframe }) => {
+const Model: FC<ModelProps> = ({ wcid, paletteId, rotationSpeed, isRotating, wireframe, onCreated }) => {
   const modelUrl = `/api/visualizer/mesh/${wcid}.gltf`;
   const paletteUrl = `/api/visualizer/palette/${paletteId}.png`;
 
   // useGLTF suspends while parsing binary buffer
   const { scene } = useGLTF(modelUrl);
+  const { gl } = useThree();
   const groupRef = useRef<THREE.Group>(null);
 
+  // Expose GL context to parent for screenshots
   // Load palette texture map (256x1 pixels)
   const paletteTexture = useMemo(() => {
     const loader = new THREE.TextureLoader();
@@ -135,6 +140,11 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, rotationSpeed, isRotating, wir
     tex.magFilter = THREE.NearestFilter;
     return tex;
   }, [paletteUrl]);
+  useEffect(() => {
+    if (gl && onCreated) {
+      onCreated(gl);
+    }
+  }, [gl, onCreated]);
 
   // Apply shader to indexed meshes
   useEffect(() => {
@@ -237,6 +247,14 @@ const WorldViewer: FC = () => {
   const [showGrid, setShowGrid] = useState<boolean>(true);
   const [lightIntensity, setLightIntensity] = useState<number>(1.2);
 
+  // Bulk Exporter States
+  const [isBulkExporting, setIsBulkExporting] = useState<boolean>(false);
+  const [bulkProgress, setBulkProgress] = useState<number>(0);
+  const [bulkTotal, setBulkTotal] = useState<number>(0);
+
+  // GL Context Ref for screenshots
+  const glRef = useRef<any>(null);
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const id = parseInt(searchInput, 10);
@@ -248,6 +266,65 @@ const WorldViewer: FC = () => {
   const selectPreset = (presetWcid: number) => {
     setWcid(presetWcid);
     setSearchInput(presetWcid.toString());
+  };
+
+  const startBulkExport = async () => {
+    if (isBulkExporting) return;
+    
+    const confirmStart = window.confirm(
+      "This will automatically cycle through all creature presets and palettes to export 2D PNG images. It takes about 1.5 seconds per image. Start?"
+    );
+    if (!confirmStart) return;
+
+    setIsBulkExporting(true);
+    setIsRotating(false); // Stop rotation to get a consistent front angle
+
+    // Generate combinations
+    const combinations: { wcid: number; name: string; paletteId: number; paletteName: string }[] = [];
+    for (const creature of PRESET_CREATURES) {
+      for (const palette of PRESET_PALETTES) {
+        combinations.push({
+          wcid: creature.wcid,
+          name: creature.name.replace(/\s+/g, ''),
+          paletteId: palette.id,
+          paletteName: palette.name.replace(/\s+/g, '')
+        });
+      }
+    }
+
+    setBulkTotal(combinations.length);
+    setBulkProgress(0);
+
+    for (let i = 0; i < combinations.length; i++) {
+      const item = combinations[i];
+      setWcid(item.wcid);
+      setSearchInput(item.wcid.toString());
+      setPaletteId(item.paletteId);
+
+      // Wait for assets to download and render
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      if (glRef.current) {
+        try {
+          const dataUrl = glRef.current.domElement.toDataURL("image/png");
+          const filename = `${item.wcid}_${item.name}_${item.paletteId}_${item.paletteName}.png`;
+
+          await fetch('/api/visualizer/save-screenshot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dataUrl, filename })
+          });
+        } catch (err) {
+          console.error("Screenshot export failed: ", err);
+        }
+      }
+
+      setBulkProgress(i + 1);
+    }
+
+    setIsBulkExporting(false);
+    setIsRotating(true);
+    alert("Bulk export complete! All screenshots saved in your server's wwwroot/screenshots directory.");
   };
 
   return (
@@ -417,6 +494,45 @@ const WorldViewer: FC = () => {
             />
           </div>
         </div>
+
+        <hr className="border-[#1f2937]" />
+
+        {/* Bulk Screenshot Exporter */}
+        <div className="flex flex-col gap-3">
+          <label className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+            <Camera className="w-4 h-4 text-neutral-400" />
+            Bulk Asset Rendering
+          </label>
+          <p className="text-xs text-neutral-400 leading-relaxed">
+            Automatically render all combinations of creature presets and palettes, saving them as high-quality PNGs in your server's <code className="text-blue-400 bg-neutral-900 px-1 py-0.5 rounded font-mono">wwwroot/screenshots</code> folder.
+          </p>
+          
+          {isBulkExporting ? (
+            <div className="flex flex-col gap-2 bg-[#1f2937]/30 border border-[#374151] rounded-lg p-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-neutral-300 font-semibold flex items-center gap-1.5 animate-pulse">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                  Generating {bulkProgress} / {bulkTotal}...
+                </span>
+                <span className="text-neutral-400">{Math.round((bulkProgress / bulkTotal) * 100)}%</span>
+              </div>
+              <div className="w-full bg-[#111827] rounded-full h-1.5 overflow-hidden">
+                <div 
+                  className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${(bulkProgress / bulkTotal) * 100}%` }}
+                />
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={startBulkExport}
+              className="w-full flex items-center justify-center gap-2 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg text-sm transition-colors shadow-lg shadow-blue-600/20"
+            >
+              <Download className="w-4 h-4" />
+              Bulk Export 2D Images
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main Canvas Area */}
@@ -445,6 +561,7 @@ const WorldViewer: FC = () => {
                   rotationSpeed={rotationSpeed}
                   isRotating={isRotating}
                   wireframe={wireframe}
+                  onCreated={(gl) => { glRef.current = gl; }}
                 />
               </Suspense>
             </ErrorBoundary>
