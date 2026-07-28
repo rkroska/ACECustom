@@ -99,3 +99,58 @@ DELETE FROM `weenie_properties_d_i_d` WHERE `object_Id` = 98760399;
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES 
 (98760399, 1, 0x0200021A),  -- Setup DID (scissors/pliers tool model)
 (98760399, 8, 100669279);   -- Icon (scissors/cut icon)
+
+-- 6. Define the Pet Tailoring Kit Item (WCID: 98760400)
+DELETE FROM `weenie` WHERE `class_Id` = 98760400;
+INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`) 
+VALUES (98760400, 'pet_tailoring_kit', 8, NOW());
+
+DELETE FROM `weenie_properties_int` WHERE `object_Id` = 98760400;
+INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`) VALUES 
+(98760400, 1, 8192),      -- ItemType = 8192 (Misc/Tool)
+(98760400, 5, 100),       -- EncumbranceVal = 100
+(98760400, 16, 16),      -- ItemUseable = 16 (Usable on another item)
+(98760400, 19, 25000),    -- Value = 25,000 pyreals
+(98760400, 150, 4);      -- DefaultClickAction = 4 (Use on target)
+
+DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 98760400;
+INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`) VALUES 
+(98760400, 14, True);    -- IsSellable = True
+
+DELETE FROM `weenie_properties_string` WHERE `object_Id` = 98760400;
+INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`) VALUES 
+(98760400, 1, 'Pet Tailoring Kit'),
+(98760400, 14, 'Use this kit on a source combat pet device in your inventory to extract its appearance. The source pet will be consumed, and this kit will hold the appearance.');
+
+DELETE FROM `weenie_properties_d_i_d` WHERE `object_Id` = 98760400;
+INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES 
+(98760400, 1, 0x020006CF),  -- Setup DID (sewing kit / dye kit mesh)
+(98760400, 8, 100671391);   -- Icon (sewing/dye kit icon)
+
+
+-- 7. Define the Intermediate Pet Tailoring Kit (WCID: 98760401)
+DELETE FROM `weenie` WHERE `class_Id` = 98760401;
+INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`) 
+VALUES (98760401, 'intermediate_pet_tailoring_kit', 8, NOW());
+
+DELETE FROM `weenie_properties_int` WHERE `object_Id` = 98760401;
+INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`) VALUES 
+(98760401, 1, 8192),      -- ItemType = 8192 (Misc/Tool)
+(98760401, 5, 100),       -- EncumbranceVal = 100
+(98760401, 16, 16),      -- ItemUseable = 16 (Usable on another item)
+(98760401, 19, 0),        -- Value = 0 (tailored)
+(98760401, 150, 4);      -- DefaultClickAction = 4 (Use on target)
+
+DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 98760401;
+INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`) VALUES 
+(98760401, 14, False);   -- IsSellable = False
+
+DELETE FROM `weenie_properties_string` WHERE `object_Id` = 98760401;
+INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`) VALUES 
+(98760401, 1, 'Pet Tailoring Kit (Primed)'),
+(98760401, 14, 'Use this primed kit on a destination combat pet device in your inventory to apply the stored appearance to it. This kit will be consumed.');
+
+DELETE FROM `weenie_properties_d_i_d` WHERE `object_Id` = 98760401;
+INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES 
+(98760401, 1, 0x020006CF),  -- Setup DID
+(98760401, 8, 100671392);   -- Icon (glowing/primed sewing kit icon)
