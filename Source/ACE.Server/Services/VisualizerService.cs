@@ -424,23 +424,12 @@ namespace ACE.Server.Services
                 gltf.nodes.Add(partNode);
             }
 
-            // Two-pass hierarchy construction to support non-topologically sorted parent indices safely
+            // Build scene graph hierarchy - flat layout since frames define absolute setup-space transforms
             for (int i = 0; i < setupModel.Parts.Count; i++)
             {
-                var parentIdx = (setupModel.ParentIndex != null && i < setupModel.ParentIndex.Count) ? (int)setupModel.ParentIndex[i] : -1;
                 var partNodeIdx = i + 1;
-
-                if (parentIdx == -1 || parentIdx >= setupModel.Parts.Count || parentIdx == i)
-                {
-                    rootNode.children ??= new List<int>();
-                    rootNode.children.Add(partNodeIdx);
-                }
-                else
-                {
-                    var parentNodeIdx = parentIdx + 1;
-                    gltf.nodes[parentNodeIdx].children ??= new List<int>();
-                    gltf.nodes[parentNodeIdx].children.Add(partNodeIdx);
-                }
+                rootNode.children ??= new List<int>();
+                rootNode.children.Add(partNodeIdx);
             }
 
             // Write out binary buffers as Base64 Data URI

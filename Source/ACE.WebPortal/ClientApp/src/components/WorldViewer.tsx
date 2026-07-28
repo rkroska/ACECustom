@@ -95,10 +95,10 @@ const PRESET_CREATURES = [
   { wcid: 787802041, name: 'Blistered Zombie' },
   { wcid: 787802042, name: 'Shocked Zombie' },
   { wcid: 787802037, name: 'Fire Skeleton Samurai' },
-  { wcid: 98, name: 'Olthoi Soldier' },
-  { wcid: 1045, name: 'Tusker Guard' },
-  { wcid: 554, name: 'Drudge Ravager' },
-  { wcid: 1540, name: 'Lugian Warlord' },
+  { wcid: 35146, name: 'Olthoi Slayer' },
+  { wcid: 36967, name: 'Tusker Protector' },
+  { wcid: 35427, name: 'Drudge Lurker' },
+  { wcid: 35134, name: 'Kroktok Lugian' },
 ];
 
 const PRESET_PALETTES = [
