@@ -4470,5 +4470,40 @@ namespace ACE.Server.Command.Handlers
             ChatPacket.SendServerMessage(session, $"[Option 2] Set primary subpalette to random 0x{chosen:X8} ({chosen}) on {target.Name}. Dismiss and re-summon to see changes.", ChatMessageType.System);
         }
 
+        [CommandHandler("testpal_item", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Test item palette recolor on last appraised weapon/armor.")]
+        public static void TestPalItem(Session session, params string[] parameters)
+        {
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session);
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "You must appraise (examine/identify) the item first.", ChatMessageType.System);
+                return;
+            }
+
+            var paletteIds = new System.Collections.Generic.List<uint>();
+            foreach (var entry in DatManager.PortalDat.AllFiles)
+            {
+                if ((entry.Key >> 24) == 0x04)
+                    paletteIds.Add(entry.Key);
+            }
+
+            if (paletteIds.Count == 0)
+            {
+                ChatPacket.SendServerMessage(session, "No palettes found in portal.dat.", ChatMessageType.System);
+                return;
+            }
+
+            var chosen = paletteIds[ThreadSafeRandom.Next(0, paletteIds.Count)];
+
+            target.SetProperty(PropertyInt.PaletteTemplate, (int)chosen);
+            target.SetProperty(PropertyInt.VisualOverridePaletteTemplate, (int)chosen);
+            
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"Set item palette to 0x{chosen:X8} ({chosen}) on {target.Name}.", ChatMessageType.System);
+        }
+
     }
 }
