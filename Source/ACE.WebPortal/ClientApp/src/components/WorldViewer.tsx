@@ -141,42 +141,61 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, rotationSpeed, isRotating, wir
     scene.traverse((child: any) => {
       if (child.isMesh) {
         if (child.material) {
-          child.material.wireframe = wireframe;
+          // Store original map reference on first pass
+          if (child.material.map && !child.userData.originalMap) {
+            child.userData.originalMap = child.material.map;
+          }
 
-          const isIndexed = child.material.userData?.extras?.indexed === true;
-          if (isIndexed && child.material.map) {
-            const indexedTexture = child.material.map;
-            indexedTexture.minFilter = THREE.NearestFilter;
-            indexedTexture.magFilter = THREE.NearestFilter;
+          // Check if indexed flag is set in extras
+          const isIndexed = child.material.userData?.extras?.indexed === true || child.userData.isIndexed === true;
+          if (isIndexed) {
+            child.userData.isIndexed = true; // Cache flag on mesh
+            const originalMap = child.userData.originalMap;
 
-            child.material = new THREE.ShaderMaterial({
-              uniforms: {
-                u_indexedTexture: { value: indexedTexture },
-                u_paletteTexture: { value: paletteTexture }
-              },
-              vertexShader: `
-                varying vec2 v_uv;
-                void main() {
-                  v_uv = uv;
-                  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-              `,
-              fragmentShader: `
-                uniform sampler2D u_indexedTexture;
-                uniform sampler2D u_paletteTexture;
-                varying vec2 v_uv;
-                void main() {
-                  float idx = texture2D(u_indexedTexture, v_uv).r;
-                  float u = (idx * 255.0 + 0.5) / 256.0;
-                  vec4 finalColor = texture2D(u_paletteTexture, vec2(u, 0.5));
-                  if (finalColor.a < 0.1) discard;
-                  gl_FragColor = finalColor;
-                }
-              `,
-              transparent: true,
-              depthWrite: true,
-              side: THREE.DoubleSide
-            });
+            if (originalMap) {
+              originalMap.minFilter = THREE.NearestFilter;
+              originalMap.magFilter = THREE.NearestFilter;
+
+              if (child.material instanceof THREE.ShaderMaterial) {
+                child.material.uniforms.u_paletteTexture.value = paletteTexture;
+                child.material.uniforms.u_indexedTexture.value = originalMap;
+                child.material.wireframe = wireframe;
+                child.material.uniformsNeedUpdate = true;
+              } else {
+                child.material = new THREE.ShaderMaterial({
+                  uniforms: {
+                    u_indexedTexture: { value: originalMap },
+                    u_paletteTexture: { value: paletteTexture }
+                  },
+                  vertexShader: `
+                    varying vec2 v_uv;
+                    void main() {
+                      v_uv = uv;
+                      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                  `,
+                  fragmentShader: `
+                    uniform sampler2D u_indexedTexture;
+                    uniform sampler2D u_paletteTexture;
+                    varying vec2 v_uv;
+                    void main() {
+                      float idx = texture2D(u_indexedTexture, v_uv).r;
+                      float u = (idx * 255.0 + 0.5) / 256.0;
+                      vec4 finalColor = texture2D(u_paletteTexture, vec2(u, 0.5));
+                      if (finalColor.a < 0.1) discard;
+                      gl_FragColor = finalColor;
+                    }
+                  `,
+                  transparent: true,
+                  depthWrite: true,
+                  side: THREE.DoubleSide,
+                  wireframe: wireframe
+                });
+              }
+            }
+          } else {
+            // Apply standard wireframe to non-indexed materials
+            child.material.wireframe = wireframe;
           }
         }
       }
