@@ -298,7 +298,7 @@ namespace ACE.Server.Services
                                         };
                                         gltf.materials.Add(material);
                                         gltf.textures.Add(new GltfTexture { source = gltf.images.Count });
-                                        gltf.images.Add(new GltfImage { uri = $"/api/visualizer/texture/{texId}.png" });
+                                         gltf.images.Add(new GltfImage { uri = $"../texture/{texId}.png" });
 
                                         textureToMat[texId] = matIdx;
                                     }
