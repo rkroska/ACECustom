@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using ACE.Common;
@@ -450,7 +451,11 @@ namespace ACE.Server.Services
                 byteLength = rawBufferBytes.Length
             });
 
-            var json = JsonSerializer.Serialize(gltf, new JsonSerializerOptions { WriteIndented = false });
+            var json = JsonSerializer.Serialize(gltf, new JsonSerializerOptions 
+            { 
+                WriteIndented = false,
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            });
             return System.Text.Encoding.UTF8.GetBytes(json);
         }
 
