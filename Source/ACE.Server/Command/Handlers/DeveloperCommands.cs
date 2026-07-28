@@ -4576,5 +4576,139 @@ namespace ACE.Server.Command.Handlers
             ChatPacket.SendServerMessage(session, $"Set summoned {target.Name} primary subpalette to 0x{chosenPalette.Value:X8} ({chosenPalette.Value}).", ChatMessageType.System);
         }
 
+        [CommandHandler("mutate_pet", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Mutate targeted pet or last appraised pet device with visual override properties.",
+            "<setupId> [paletteId] [scale] [shade]\n" +
+            "Example: @mutate_pet 0x02000001 0x0400001D 1.2 0.5\n" +
+            "If targeting a summoned pet, this updates it in real-time. If appraising a device, this updates the item.")]
+        public static void MutatePet(Session session, params string[] parameters)
+        {
+            if (parameters.Length == 0)
+            {
+                ChatPacket.SendServerMessage(session, "Usage: @mutate_pet <setupId> [paletteId] [scale] [shade]", ChatMessageType.System);
+                return;
+            }
+
+            // Parse setupId
+            uint setupId = 0;
+            if (parameters[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!uint.TryParse(parameters[0].Substring(2), System.Globalization.NumberStyles.HexNumber, null, out setupId))
+                {
+                    ChatPacket.SendServerMessage(session, "Invalid setupId hex format.", ChatMessageType.System);
+                    return;
+                }
+            }
+            else if (!uint.TryParse(parameters[0], out setupId))
+            {
+                ChatPacket.SendServerMessage(session, "Invalid setupId format.", ChatMessageType.System);
+                return;
+            }
+
+            uint? paletteId = null;
+            if (parameters.Length > 1)
+            {
+                if (parameters[1].StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (uint.TryParse(parameters[1].Substring(2), System.Globalization.NumberStyles.HexNumber, null, out var pal))
+                        paletteId = pal;
+                }
+                else if (uint.TryParse(parameters[1], out var pal))
+                {
+                    paletteId = pal;
+                }
+            }
+
+            float? scale = null;
+            if (parameters.Length > 2)
+            {
+                if (float.TryParse(parameters[2], out var sc))
+                    scale = sc;
+            }
+
+            float? shade = null;
+            if (parameters.Length > 3)
+            {
+                if (float.TryParse(parameters[3], out var sh))
+                    shade = sh;
+            }
+
+            // Try targeted pet first
+            var selected = session.Player.SelectedTarget;
+            if (selected is Pet pet)
+            {
+                pet.SetupTableId = setupId;
+                if (paletteId.HasValue)
+                {
+                    pet.PaletteBaseId = paletteId.Value;
+                    pet.PaletteTemplate = (int)paletteId.Value;
+                    
+                    var palsStr = pet.GetProperty(PropertyString.CapturedObjDescPalettes);
+                    if (string.IsNullOrEmpty(palsStr))
+                        palsStr = $"{paletteId.Value}:0:256";
+                    else
+                    {
+                        var entries = palsStr.Split(',');
+                        var parts = entries[0].Split(':');
+                        parts[0] = paletteId.Value.ToString();
+                        entries[0] = string.Join(":", parts);
+                        palsStr = string.Join(",", entries);
+                    }
+                    pet.SetProperty(PropertyString.CapturedObjDescPalettes, palsStr);
+                }
+                if (scale.HasValue)
+                    pet.ObjScale = scale.Value;
+                if (shade.HasValue)
+                    pet.Shade = shade.Value;
+
+                // Force dynamic client-side redraw by cycling object tracking
+                foreach (var viewer in pet.PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
+                {
+                    viewer.RemoveTrackedObject(pet, false);
+                    viewer.AddTrackedObject(pet);
+                }
+
+                ChatPacket.SendServerMessage(session, $"Mutated targeted pet in real-time: Setup 0x{setupId:X8}", ChatMessageType.System);
+                return;
+            }
+
+            // Fallback to appraised PetDevice
+            var device = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (device != null)
+            {
+                device.VisualOverrideSetup = setupId;
+                if (paletteId.HasValue)
+                {
+                    device.VisualOverridePaletteBase = paletteId.Value;
+                    device.VisualOverridePaletteTemplate = (int)paletteId.Value;
+                    
+                    var palsStr = device.GetProperty(PropertyString.CapturedObjDescPalettes);
+                    if (string.IsNullOrEmpty(palsStr))
+                        palsStr = $"{paletteId.Value}:0:256";
+                    else
+                    {
+                        var entries = palsStr.Split(',');
+                        var parts = entries[0].Split(':');
+                        parts[0] = paletteId.Value.ToString();
+                        entries[0] = string.Join(":", parts);
+                        palsStr = string.Join(",", entries);
+                    }
+                    device.SetProperty(PropertyString.CapturedObjDescPalettes, palsStr);
+                }
+                if (scale.HasValue)
+                    device.VisualOverrideScale = scale.Value;
+                if (shade.HasValue)
+                    device.VisualOverrideShade = shade.Value;
+
+                device.ChangesDetected = true;
+                device.SaveBiotaToDatabase();
+
+                ChatPacket.SendServerMessage(session, $"Mutated appraised pet device: Setup 0x{setupId:X8}. Re-summon to see changes.", ChatMessageType.System);
+                return;
+            }
+
+            ChatPacket.SendServerMessage(session, "Error: You must select a summoned pet in the world or appraise a pet device in your inventory first.", ChatMessageType.System);
+        }
+
     }
 }
