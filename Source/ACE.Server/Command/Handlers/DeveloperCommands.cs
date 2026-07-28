@@ -4505,5 +4505,76 @@ namespace ACE.Server.Command.Handlers
             ChatPacket.SendServerMessage(session, $"Set item palette to 0x{chosen:X8} ({chosen}) on {target.Name}.", ChatMessageType.System);
         }
 
+        [CommandHandler("testpal_summoned", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Test subpalette mutation on the currently targeted summoned creature in real-time.")]
+        public static void TestPalSummoned(Session session, params string[] parameters)
+        {
+            var target = session.Player.SelectedTarget;
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "You must select a summoned creature in the world first.", ChatMessageType.System);
+                return;
+            }
+
+            uint? chosenPalette = null;
+            if (parameters.Length > 0 && parameters[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                if (uint.TryParse(parameters[0].Substring(2), System.Globalization.NumberStyles.HexNumber, null, out var hex))
+                    chosenPalette = hex;
+            }
+            else if (parameters.Length > 0 && uint.TryParse(parameters[0], out var val))
+            {
+                chosenPalette = val;
+            }
+
+            if (!chosenPalette.HasValue)
+            {
+                // Query all palettes in portal dat
+                var paletteIds = new System.Collections.Generic.List<uint>();
+                foreach (var entry in DatManager.PortalDat.AllFiles)
+                {
+                    if ((entry.Key >> 24) == 0x04)
+                        paletteIds.Add(entry.Key);
+                }
+                if (paletteIds.Count > 0)
+                    chosenPalette = paletteIds[ThreadSafeRandom.Next(0, paletteIds.Count)];
+            }
+
+            if (!chosenPalette.HasValue)
+            {
+                ChatPacket.SendServerMessage(session, "No palette found.", ChatMessageType.System);
+                return;
+            }
+
+            var palsStr = target.GetProperty(PropertyString.CapturedObjDescPalettes);
+            if (string.IsNullOrEmpty(palsStr))
+            {
+                palsStr = $"{chosenPalette.Value}:0:256";
+            }
+            else
+            {
+                var entries = palsStr.Split(',');
+                var parts = entries[0].Split(':');
+                parts[0] = chosenPalette.Value.ToString();
+                entries[0] = string.Join(":", parts);
+                palsStr = string.Join(",", entries);
+            }
+
+            target.SetProperty(PropertyString.CapturedObjDescPalettes, palsStr);
+
+            // Also update the palette template property just in case
+            target.SetProperty(PropertyInt.PaletteTemplate, (int)chosenPalette.Value);
+            target.SetProperty(PropertyInt.VisualOverridePaletteTemplate, (int)chosenPalette.Value);
+
+            // Force dynamic client-side redraw by cycling object tracking
+            foreach (var viewer in target.PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
+            {
+                viewer.RemoveTrackedObject(target, false);
+                viewer.AddTrackedObject(target);
+            }
+
+            ChatPacket.SendServerMessage(session, $"Set summoned {target.Name} primary subpalette to 0x{chosenPalette.Value:X8} ({chosenPalette.Value}).", ChatMessageType.System);
+        }
+
     }
 }
