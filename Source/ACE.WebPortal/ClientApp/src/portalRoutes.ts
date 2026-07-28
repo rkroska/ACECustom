@@ -38,7 +38,7 @@ export const PORTAL_ROUTES: PortalRouteDefinition[] = [
   { key: 'players', path: '/players', label: 'Player List', section: 'Monitoring', icon: Users },
   { key: 'corpse-finder', path: '/corpse-finder', label: 'Corpse Finder', section: 'Monitoring', icon: Skull },
   { key: 'audit-log', path: '/audit', label: 'Audit Log', section: 'Monitoring', icon: ClipboardList },
-  { key: 'map', path: '/map', label: 'World Map', section: 'Monitoring', icon: Globe, placeholder: true },
+  { key: 'map', path: '/map', label: '3D Showroom', section: 'Content Tools', icon: Globe, placeholder: false },
   { key: 'combat-calculator', path: '/combat-calculator', label: 'Combat Calculator', section: 'Content Tools', icon: Swords },
   { key: 'pet-breeding', path: '/pet-breeding', label: 'Pet Breeding', section: 'Content Tools', icon: Heart },
   { key: 'properties', path: '/properties', label: 'Property Explorer', section: 'Content Tools', icon: Search },

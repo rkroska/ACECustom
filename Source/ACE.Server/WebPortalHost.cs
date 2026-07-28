@@ -148,6 +148,7 @@ namespace ACE.Server.Web
                 });
 
                 builder.Services.AddAuthorization();
+                builder.Services.AddHostedService<ACE.Server.Services.VisualizerCacheEvictionService>();
 
                 // IMPORTANT: We must tell MVC to look for controllers in THIS assembly
                 builder.Services.AddControllers()
