@@ -24,23 +24,57 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("texture/{id}.png")]
-        public async Task<IActionResult> GetTexture(uint id, [FromQuery] uint wcid = 0, [FromQuery] uint paletteId = 0, [FromQuery] float shade = 0.5f)
+        public async Task<IActionResult> GetTexture(string id, [FromQuery] uint wcid = 0, [FromQuery] uint paletteId = 0, [FromQuery] float shade = 0.5f)
         {
-            if (id == 0) return BadRequest("Invalid Texture ID.");
+            if (string.IsNullOrEmpty(id)) return BadRequest("Invalid Texture ID.");
 
-            var pngBytes = await VisualizerService.GetTexturePngBytesAsync(id, wcid, paletteId, shade);
-            if (pngBytes == null) return NotFound($"Texture {id} not found.");
+            uint textureId = 0;
+            if (id.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!uint.TryParse(id.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out textureId))
+                    return BadRequest("Invalid Texture ID format.");
+            }
+            else
+            {
+                if (!uint.TryParse(id, System.Globalization.NumberStyles.HexNumber, null, out textureId))
+                {
+                    if (!uint.TryParse(id, out textureId))
+                        return BadRequest("Invalid Texture ID format.");
+                }
+            }
+
+            if (textureId == 0) return BadRequest("Invalid Texture ID.");
+
+            var pngBytes = await VisualizerService.GetTexturePngBytesAsync(textureId, wcid, paletteId, shade);
+            if (pngBytes == null) return NotFound($"Texture {textureId} not found.");
 
             return File(pngBytes, "image/png");
         }
 
         [HttpGet("palette/{id}.png")]
-        public async Task<IActionResult> GetPalette(uint id)
+        public async Task<IActionResult> GetPalette(string id)
         {
-            if (id == 0) return BadRequest("Invalid Palette ID.");
+            if (string.IsNullOrEmpty(id)) return BadRequest("Invalid Palette ID.");
 
-            var pngBytes = await VisualizerService.GetPalettePngBytesAsync(id);
-            if (pngBytes == null) return NotFound($"Palette {id} not found.");
+            uint paletteId = 0;
+            if (id.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!uint.TryParse(id.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out paletteId))
+                    return BadRequest("Invalid Palette ID format.");
+            }
+            else
+            {
+                if (!uint.TryParse(id, System.Globalization.NumberStyles.HexNumber, null, out paletteId))
+                {
+                    if (!uint.TryParse(id, out paletteId))
+                        return BadRequest("Invalid Palette ID format.");
+                }
+            }
+
+            if (paletteId == 0) return BadRequest("Invalid Palette ID.");
+
+            var pngBytes = await VisualizerService.GetPalettePngBytesAsync(paletteId);
+            if (pngBytes == null) return NotFound($"Palette {paletteId} not found.");
 
             return File(pngBytes, "image/png");
         }
