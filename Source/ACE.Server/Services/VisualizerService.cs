@@ -27,7 +27,12 @@ namespace ACE.Server.Services
     {
         public uint TemplateId { get; set; }
         public string Name { get; set; }
+        public uint PaletteSetId { get; set; }
+        public string PaletteSetHex => $"0x{PaletteSetId:X8}";
         public uint PaletteId { get; set; }
+        public string PaletteHex => $"0x{PaletteId:X8}";
+        public List<string> Swatches { get; set; } = new List<string>();
+        public string Ranges { get; set; } = "Offset 0 - 2048 (Full Mesh)";
     }
 
     public class TextureReplacementDto
@@ -256,10 +261,14 @@ namespace ACE.Server.Services
                 var templateId = kvp.Key;
                 var effect = kvp.Value;
                 uint finalPaletteId = 0;
+                uint paletteSetId = 0;
+                var swatches = new List<string>();
+                string rangesStr = "Offset 0 - 2048 (Full Mesh)";
 
                 if (effect.CloSubPalettes != null && effect.CloSubPalettes.Count > 0)
                 {
-                    var paletteSetId = effect.CloSubPalettes[0].PaletteSet;
+                    var subPal = effect.CloSubPalettes[0];
+                    paletteSetId = subPal.PaletteSet;
                     if (paletteSetId != 0)
                     {
                         var paletteSet = portalDb.ReadFromDat<PaletteSet>(paletteSetId);
@@ -268,15 +277,40 @@ namespace ACE.Server.Services
                             finalPaletteId = paletteSet.GetPaletteID(shade);
                         }
                     }
+
+                    if (subPal.Ranges != null && subPal.Ranges.Count > 0)
+                    {
+                        var rangeList = new List<string>();
+                        foreach (var r in subPal.Ranges)
+                            rangeList.Add($"Offset {r.Offset} ({r.NumColors} colors)");
+                        rangesStr = string.Join(", ", rangeList);
+                    }
                 }
 
                 if (finalPaletteId == 0) continue;
+
+                var resolvedPal = portalDb.ReadFromDat<Palette>(finalPaletteId);
+                if (resolvedPal != null && resolvedPal.Colors != null && resolvedPal.Colors.Count > 0)
+                {
+                    int step = Math.Max(1, resolvedPal.Colors.Count / 8);
+                    for (int i = 0; i < resolvedPal.Colors.Count && swatches.Count < 8; i += step)
+                    {
+                        uint argb = resolvedPal.Colors[i];
+                        byte r = (byte)((argb >> 16) & 0xFF);
+                        byte g = (byte)((argb >> 8) & 0xFF);
+                        byte b = (byte)(argb & 0xFF);
+                        swatches.Add($"#{r:X2}{g:X2}{b:X2}");
+                    }
+                }
 
                 result.Add(new SpeciesPaletteDto 
                 { 
                     TemplateId = templateId, 
                     Name = $"Variant {templateId}", 
-                    PaletteId = finalPaletteId 
+                    PaletteSetId = paletteSetId,
+                    PaletteId = finalPaletteId,
+                    Swatches = swatches,
+                    Ranges = rangesStr
                 });
             }
 

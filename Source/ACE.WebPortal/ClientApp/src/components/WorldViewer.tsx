@@ -672,6 +672,65 @@ const WorldViewer: FC = () => {
               </option>
             ))}
           </select>
+
+          {/* Active Species Variant Metadata & Swatches Card */}
+          {(() => {
+            const activeVariant = speciesPalettes.find(p => p.templateId === paletteId);
+            if (!activeVariant) return null;
+            return (
+              <div className="mt-2 p-2.5 bg-[#111827] rounded-lg border border-[#374151] flex flex-col gap-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-amber-400">{activeVariant.name} Metadata</span>
+                  <span className="font-mono text-[10px] text-neutral-400">Template #{activeVariant.templateId}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono text-neutral-300 bg-[#1f2937]/50 p-2 rounded border border-[#374151]/40">
+                  <div>
+                    <span className="text-neutral-500 block text-[9px] uppercase">PaletteSet</span>
+                    <span className="text-blue-300 font-bold">{activeVariant.paletteSetHex || '0x0F000202'}</span>
+                  </div>
+                  <div>
+                    <span className="text-neutral-500 block text-[9px] uppercase">Resolved Palette</span>
+                    <span className="text-green-300 font-bold">{activeVariant.paletteHex || '0x04001163'}</span>
+                  </div>
+                </div>
+
+                {/* Live Swatch Bar */}
+                {activeVariant.swatches && activeVariant.swatches.length > 0 && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] uppercase font-semibold text-neutral-400">Gradient Swatches (8-Point)</span>
+                    <div className="flex gap-1 h-5 rounded overflow-hidden border border-[#374151]">
+                      {activeVariant.swatches.map((hex: string, idx: number) => (
+                        <div 
+                          key={idx} 
+                          className="flex-1 h-full cursor-pointer hover:opacity-80 transition-opacity" 
+                          style={{ backgroundColor: hex }}
+                          title={`Swatch #${idx + 1}: ${hex}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-[10px] text-neutral-400 font-mono italic">
+                  Range: {activeVariant.ranges || 'Offset 0 - 2048 (Full Mesh)'}
+                </div>
+
+                {/* Copy SQL / Command Button */}
+                <button
+                  onClick={() => {
+                    const sql = `UPDATE \`weenie_properties_int\` SET \`value\` = ${activeVariant.templateId} WHERE \`weenie_class_Id\` = ${wcid} AND \`type\` = 3;`;
+                    const cmd = `@set-prop int 3 ${activeVariant.templateId}`;
+                    navigator.clipboard.writeText(`${sql}\n-- In-Game Command:\n${cmd}`);
+                    alert(`Copied in-game SQL and command to clipboard!\n\n${cmd}`);
+                  }}
+                  className="w-full py-1 px-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 border border-blue-500/30 rounded text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors"
+                >
+                  📋 Copy In-Game SQL & Command
+                </button>
+              </div>
+            );
+          })()}
           
           <div className="flex flex-col gap-1 mt-2">
             <span className="flex items-center gap-1.5 text-sm text-neutral-300">
