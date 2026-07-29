@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -36,6 +37,15 @@ namespace ACE.Server.Services
         public uint NewTextureId { get; set; }
     }
 
+    public class SmartPaletteDto
+    {
+        public uint PaletteId { get; set; }
+        public string HexId { get; set; }
+        public string Family { get; set; }
+        public List<string> Swatches { get; set; }
+    }
+
+
     public static class VisualizerService
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(VisualizerService));
@@ -61,6 +71,108 @@ namespace ACE.Server.Services
             {
                 log.Error($"Failed to initialize visualizer cache directories: {ex.Message}");
             }
+        }
+
+        private static List<SmartPaletteDto> _smartPalettesCache = null;
+        private static readonly object _smartPalettesLock = new object();
+
+        public static List<SmartPaletteDto> GetSmartPalettePool(uint wcid, string family = "all")
+        {
+            if (_smartPalettesCache == null)
+            {
+                lock (_smartPalettesLock)
+                {
+                    if (_smartPalettesCache == null)
+                    {
+                        _smartPalettesCache = BuildSmartPalettePool();
+                    }
+                }
+            }
+
+            if (string.IsNullOrEmpty(family) || family.Equals("all", StringComparison.OrdinalIgnoreCase))
+                return _smartPalettesCache;
+
+            return _smartPalettesCache.Where(p => p.Family.Equals(family, StringComparison.OrdinalIgnoreCase) || (p.Family == "Fur" && family == "Fur/Hide")).ToList();
+        }
+
+        private static List<SmartPaletteDto> BuildSmartPalettePool()
+        {
+            var results = new List<SmartPaletteDto>();
+            var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
+
+            foreach (var kvp in portalDb.AllFiles)
+            {
+                uint fileId = kvp.Key;
+                if ((fileId & 0xFF000000) != 0x04000000) continue;
+
+                var palette = portalDb.ReadFromDat<Palette>(fileId);
+                if (palette == null || palette.Colors == null || palette.Colors.Count < 16) continue;
+
+                int colorCount = Math.Min(256, palette.Colors.Count);
+                
+                double avgSat = 0;
+                double avgLum = 0;
+                double totalDelta = 0;
+
+                for (int i = 0; i < colorCount; i++)
+                {
+                    var c = palette.Colors[i];
+                    byte r = (byte)((c >> 16) & 0xFF);
+                    byte g = (byte)((c >> 8) & 0xFF);
+                    byte b = (byte)(c & 0xFF);
+                    
+                    ColorToHSV(r, g, b, out double h, out double s, out double v);
+                    avgSat += s;
+                    avgLum += v;
+
+                    if (i > 0)
+                    {
+                        var prevC = palette.Colors[i - 1];
+                        byte pr = (byte)((prevC >> 16) & 0xFF);
+                        byte pg = (byte)((prevC >> 8) & 0xFF);
+                        byte pb = (byte)(prevC & 0xFF);
+                        double dist = Math.Sqrt(Math.Pow(r - pr, 2) + Math.Pow(g - pg, 2) + Math.Pow(b - pb, 2));
+                        totalDelta += dist;
+                    }
+                }
+
+                avgSat /= colorCount;
+                avgLum /= colorCount;
+                double avgDelta = totalDelta / (colorCount - 1);
+
+                // Filters out flat-black, flat-white, and noisy spiky palettes (GUI icons)
+                if (avgLum < 0.1 || avgLum > 0.95) continue;
+                if (avgSat < 0.05 && avgLum > 0.8) continue;
+                if (avgDelta > 80) continue; // GUI icons usually have very high step variance
+
+                string family = "Humanoid";
+                if (avgSat < 0.2 && avgLum < 0.5) family = "Metallic";
+                else if (avgSat > 0.5) family = "Elemental";
+                else if (avgLum < 0.4) family = "Chitin";
+                else family = "Fur";
+
+                var swatches = new List<string>();
+                int sampleCount = Math.Min(6, palette.Colors.Count);
+                for (int i = 0; i < sampleCount; i++)
+                {
+                    int idx = (palette.Colors.Count / sampleCount) * i;
+                    var c = palette.Colors[idx];
+                    byte r = (byte)((c >> 16) & 0xFF);
+                    byte g = (byte)((c >> 8) & 0xFF);
+                    byte b = (byte)(c & 0xFF);
+                    swatches.Add($"#{r:X2}{g:X2}{b:X2}");
+                }
+
+                results.Add(new SmartPaletteDto
+                {
+                    PaletteId = fileId,
+                    HexId = $"0x{fileId:X8}",
+                    Family = family,
+                    Swatches = swatches
+                });
+            }
+
+            return results;
         }
 
         private static SemaphoreSlim GetLock(string key)
@@ -688,7 +800,7 @@ namespace ACE.Server.Services
                         if (weenie.PropertiesDID != null && weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase))
                         {
                             int palTemplate = 0;
-                            if (paletteId != 0)
+                            if (paletteId != 0 && (paletteId & 0xFF000000) != 0x04000000)
                             {
                                 palTemplate = (int)paletteId;
                             }
@@ -709,14 +821,26 @@ namespace ACE.Server.Services
                                     cloSubPalettes = effect.CloSubPalettes;
                                 }
                             }
-
-                            uint paletteBase = 0;
-                            if (weenie.PropertiesDID != null && weenie.PropertiesDID.TryGetValue(PropertyDataId.PaletteBase, out paletteBase))
-                            {
-                                basePalette = portalDb.ReadFromDat<Palette>(paletteBase);
-                            }
                         }
                     }
+                }
+
+                uint paletteBase = 0;
+                if ((paletteId & 0xFF000000) == 0x04000000)
+                {
+                    paletteBase = paletteId;
+                }
+                else if (wcid != 0)
+                {
+                    var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
+                    if (weenie != null && weenie.PropertiesDID != null && weenie.PropertiesDID.TryGetValue(PropertyDataId.PaletteBase, out paletteBase))
+                    {
+                    }
+                }
+
+                if (paletteBase != 0)
+                {
+                    basePalette = portalDb.ReadFromDat<Palette>(paletteBase);
                 }
 
                 if (basePalette == null && texture.DefaultPaletteId != null && texture.DefaultPaletteId.Value != 0)

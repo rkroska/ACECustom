@@ -97,6 +97,15 @@ namespace ACE.Server.Controllers
             return File(pngBytes, "image/png");
         }
 
+        [HttpGet("palette/smart-pool/{wcid}")]
+        public IActionResult GetSmartPalettePool(uint wcid, [FromQuery] string family = "all")
+        {
+            if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
+
+            var result = VisualizerService.GetSmartPalettePool(wcid, family);
+            return Ok(result);
+        }
+
         [HttpPost("save-screenshot")]
         public async Task<IActionResult> SaveScreenshot([FromBody] ScreenshotRequest request)
         {

@@ -221,6 +221,11 @@ const WorldViewer: FC = () => {
   const [textureReplacements, setTextureReplacements] = useState<any[]>([]);
   const [activeTexReplaceIdx, setActiveTexReplaceIdx] = useState<number>(-1);
 
+  // Smart Palette States
+  const [smartPalettes, setSmartPalettes] = useState<any[]>([]);
+  const [smartFamily, setSmartFamily] = useState<string>('all');
+
+
   const [isRotating, setIsRotating] = useState<boolean>(true);
   const [rotationSpeed, setRotationSpeed] = useState<number>(0.25);
   const [wireframe, setWireframe] = useState<boolean>(false);
@@ -254,6 +259,15 @@ const WorldViewer: FC = () => {
       })
       .catch(e => console.error(e));
   }, [wcid]);
+
+  useEffect(() => {
+    fetch(`/api/visualizer/palette/smart-pool/${wcid}?family=${smartFamily}`)
+      .then(r => r.json())
+      .then(data => {
+         setSmartPalettes(data);
+      })
+      .catch(e => console.error(e));
+  }, [wcid, smartFamily]);
 
   const randomizePalette = () => {
     if (speciesPalettes.length > 0 && Math.random() > 0.5) {
@@ -402,7 +416,7 @@ const WorldViewer: FC = () => {
             Species Variant Palette
           </label>
           <select
-            value={paletteId}
+            value={(paletteId & 0xFF000000) === 0x04000000 ? 0 : paletteId}
             onChange={(e) => setPaletteId(parseInt(e.target.value))}
             className="w-full px-3 py-2 bg-[#1f2937] border border-[#374151] rounded-lg text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           >
@@ -413,18 +427,6 @@ const WorldViewer: FC = () => {
               </option>
             ))}
           </select>
-          
-          {paletteId !== 0 && (
-            <div className="mt-1">
-              <label className="text-[10px] uppercase text-neutral-500 font-bold mb-1 block">Active Palette Texture</label>
-              <img 
-                src={`/api/visualizer/palette/${speciesPalettes.find(p => p.templateId === paletteId)?.paletteId}.png`} 
-                alt="Active Palette" 
-                className="w-full h-4 rounded shadow-sm image-pixelated"
-                onError={(e) => (e.currentTarget.style.display = 'none')}
-              />
-            </div>
-          )}
           
           <div className="flex flex-col gap-1 mt-2">
             <span className="flex items-center gap-1.5 text-sm text-neutral-300">
@@ -447,6 +449,57 @@ const WorldViewer: FC = () => {
           >
             🎲 Randomize Palette
           </button>
+        </div>
+
+        {/* Smart Palette Inspector */}
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+            <Layers className="w-4 h-4 text-neutral-400" />
+            Material & Palette Inspector
+          </label>
+          <div className="flex gap-1 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-transparent">
+            {['All', 'Chitin', 'Fur/Hide', 'Metallic', 'Elemental'].map(family => (
+              <button
+                key={family}
+                onClick={() => setSmartFamily(family === 'All' ? 'all' : family)}
+                className={`px-3 py-1 text-[11px] font-semibold rounded-full whitespace-nowrap transition-colors ${
+                  (smartFamily === 'all' && family === 'All') || smartFamily === family
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-[#1f2937] text-neutral-400 hover:text-neutral-200'
+                }`}
+              >
+                {family}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 pr-1">
+            {smartPalettes.map(pal => (
+              <button
+                key={pal.paletteId}
+                onClick={() => setPaletteId(pal.paletteId)}
+                className={`flex flex-col gap-1 p-2 rounded border text-left transition-all ${
+                  paletteId === pal.paletteId
+                    ? 'bg-blue-600/20 border-blue-500'
+                    : 'bg-[#1f2937]/50 border-[#374151] hover:border-neutral-500'
+                }`}
+              >
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-mono text-neutral-300">{pal.hexId}</span>
+                </div>
+                <div className="flex w-full h-3 rounded overflow-hidden">
+                  {pal.swatches.map((hex: string, i: number) => (
+                    <div key={i} className="flex-1 h-full" style={{ backgroundColor: hex }} />
+                  ))}
+                </div>
+              </button>
+            ))}
+            {smartPalettes.length === 0 && (
+              <div className="col-span-2 text-center text-xs text-neutral-500 py-4">
+                No palettes found for this material family.
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Texture Replacement Selector */}
