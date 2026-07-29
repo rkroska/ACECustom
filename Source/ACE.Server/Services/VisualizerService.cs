@@ -848,6 +848,35 @@ namespace ACE.Server.Services
                     basePalette = portalDb.ReadFromDat<Palette>(texture.DefaultPaletteId.Value);
                 }
 
+                if ((paletteId & 0xFF000000) == 0x04000000)
+                {
+                    var overridePalette = portalDb.ReadFromDat<Palette>(paletteId);
+                    if (overridePalette != null && overridePalette.Colors.Count > 0)
+                    {
+                        int targetLength = Math.Max(2048, basePalette?.Colors.Count ?? 256);
+                        if (basePalette == null)
+                        {
+                            basePalette = new Palette();
+                            basePalette.Colors.Capacity = targetLength;
+                            while (basePalette.Colors.Count < targetLength)
+                                basePalette.Colors.Add(0xFFFFFFFF);
+                        }
+                        else if (basePalette.Colors.Count < targetLength)
+                        {
+                            basePalette.Colors.Capacity = targetLength;
+                            while (basePalette.Colors.Count < targetLength)
+                                basePalette.Colors.Add(0xFFFFFFFF);
+                        }
+
+                        for (int i = 0; i < basePalette.Colors.Count; i++)
+                        {
+                            basePalette.Colors[i] = overridePalette.Colors[(i % 256) % overridePalette.Colors.Count];
+                        }
+
+                        cloSubPalettes = null;
+                    }
+                }
+
                 if (cloSubPalettes != null && basePalette != null)
                 {
                     foreach (var subPal in cloSubPalettes)
