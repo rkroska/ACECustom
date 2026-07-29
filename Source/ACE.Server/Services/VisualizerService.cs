@@ -200,32 +200,82 @@ namespace ACE.Server.Services
             var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
             if (weenie == null) return result;
 
+            uint setupId = 0;
+            if (weenie.PropertiesDID != null)
+                weenie.PropertiesDID.TryGetValue(PropertyDataId.Setup, out setupId);
+
             uint clothingBase = 0;
-            if (weenie.PropertiesDID == null || !weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase)) return result;
+            if (weenie.PropertiesDID != null)
+                weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase);
 
             var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
-            var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
-            if (clothingTable == null || clothingTable.ClothingBaseEffects == null) return result;
 
-            foreach (var kvp in clothingTable.ClothingBaseEffects)
+            if (clothingBase != 0)
             {
-                var effectId = kvp.Key;
-                var effect = kvp.Value;
-
-                if (effect.CloObjectEffects == null) continue;
-
-                foreach (var objEffect in effect.CloObjectEffects)
+                var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
+                if (clothingTable != null && clothingTable.ClothingBaseEffects != null)
                 {
-                    if (objEffect.CloTextureEffects == null) continue;
+                    foreach (var kvp in clothingTable.ClothingBaseEffects)
+                    {
+                        var effectKey = kvp.Key;
+                        var effect = kvp.Value;
 
-                    foreach (var texEffect in objEffect.CloTextureEffects)
+                        // Match setupId if key equals setupId, or parse all object effects
+                        if (setupId != 0 && effectKey != setupId && effectKey != 0) continue;
+
+                        if (effect.CloObjectEffects == null) continue;
+
+                        foreach (var objEffect in effect.CloObjectEffects)
+                        {
+                            if (objEffect.CloTextureEffects == null) continue;
+
+                            foreach (var texEffect in objEffect.CloTextureEffects)
+                            {
+                                result.Add(new TextureReplacementDto
+                                {
+                                    Name = $"Texture Swap (0x{texEffect.OldTexture:X8} -> 0x{texEffect.NewTexture:X8})",
+                                    OldTextureId = texEffect.OldTexture,
+                                    NewTextureId = texEffect.NewTexture
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fallback for creatures without ClothingBase: inspect SetupModel surfaces
+            if (result.Count == 0 && setupId != 0)
+            {
+                var setup = portalDb.ReadFromDat<SetupModel>(setupId);
+                if (setup != null && setup.Parts != null)
+                {
+                    var modelTextures = new HashSet<uint>();
+                    foreach (var part in setup.Parts)
+                    {
+                        var gfxObj = portalDb.ReadFromDat<GfxObj>(part);
+                        if (gfxObj == null || gfxObj.Surfaces == null) continue;
+
+                        foreach (var surfId in gfxObj.Surfaces)
+                        {
+                            var surf = portalDb.ReadFromDat<Surface>(surfId);
+                            if (surf != null && surf.OrigTextureId != 0)
+                            {
+                                modelTextures.Add(surf.OrigTextureId);
+                            }
+                        }
+                    }
+
+                    // For each texture on creature mesh, provide replacement options
+                    int idx = 1;
+                    foreach (var origTex in modelTextures)
                     {
                         result.Add(new TextureReplacementDto
                         {
-                            Name = $"TexReplace {effectId}",
-                            OldTextureId = texEffect.OldTexture,
-                            NewTextureId = texEffect.NewTexture
+                            Name = $"Surface #{idx} (0x{origTex:X8})",
+                            OldTextureId = origTex,
+                            NewTextureId = origTex
                         });
+                        idx++;
                     }
                 }
             }
