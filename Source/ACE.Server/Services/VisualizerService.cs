@@ -392,7 +392,7 @@ namespace ACE.Server.Services
                                         if (vert.UVs != null && uvIdx < vert.UVs.Count)
                                         {
                                             u = vert.UVs[uvIdx].U;
-                                            v = 1.0f - vert.UVs[uvIdx].V;
+                                            v = vert.UVs[uvIdx].V;
                                         }
                                         uvs.Add(u);
                                         uvs.Add(v);
