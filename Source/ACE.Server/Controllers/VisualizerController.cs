@@ -48,6 +48,25 @@ namespace ACE.Server.Controllers
             return Ok(result);
         }
 
+        [HttpPost("curation")]
+        public IActionResult SubmitCuration([FromBody] CurationItemDto item)
+        {
+            if (item == null || item.CreatureWcid == 0) return BadRequest("Invalid Curation Data.");
+
+            var result = CurationService.AddOrUpdateCuration(item.CreatureWcid, item.CreatureName, item.TextureId, item.PaletteId, item.Rating);
+            return Ok(result);
+        }
+
+        [HttpGet("curation/{wcid}")]
+        public IActionResult GetCurations(uint wcid)
+        {
+            if (wcid == 0)
+            {
+                return Ok(CurationService.GetAllCurations());
+            }
+            return Ok(CurationService.GetCurationsForCreature(wcid));
+        }
+
         [HttpGet("texture/{id}.png")]
         public async Task<IActionResult> GetTexture(string id, [FromQuery] uint wcid = 0, [FromQuery] uint paletteId = 0, [FromQuery] float shade = 0.5f, [FromQuery] int hue = 0, [FromQuery] int slot = -1)
         {

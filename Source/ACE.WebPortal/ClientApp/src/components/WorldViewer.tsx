@@ -18,7 +18,11 @@ import {
   Camera,
   Download,
   Layers,
-  Sliders
+  Sliders,
+  ThumbsUp,
+  ThumbsDown,
+  CheckCircle2,
+  XCircle
 } from 'lucide-react';
 
 // --- Error Boundary for handling missing / invalid models inside Canvas context ---
@@ -293,6 +297,25 @@ const WorldViewer: FC = () => {
       .catch(e => console.error(e));
   }, [wcid]);
 
+  // Interactive Curation States
+  const [curations, setCurations] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    fetch(`/api/visualizer/curation/${wcid}`)
+      .then(r => r.json())
+      .then((data: any[]) => {
+        const map: Record<string, number> = {};
+        if (Array.isArray(data)) {
+          data.forEach(item => {
+            const key = `${item.creatureWcid}_${item.textureId}_${item.paletteId}`;
+            map[key] = item.rating;
+          });
+        }
+        setCurations(map);
+      })
+      .catch(e => console.error(e));
+  }, [wcid]);
+
   useEffect(() => {
     fetch(`/api/visualizer/palette/smart-pool/${wcid}?family=${smartFamily}`)
       .then(r => r.json())
@@ -301,6 +324,50 @@ const WorldViewer: FC = () => {
       })
       .catch(e => console.error(e));
   }, [wcid, smartFamily]);
+
+  const activeCurrentTexId = activeTexReplaceIdx >= 0 ? textureReplacements[activeTexReplaceIdx]?.newTextureId : targetSurfaceId;
+  const currentCurationKey = `${wcid}_${activeCurrentTexId || 0}_${paletteId || 0}`;
+  const currentCurationRating = curations[currentCurationKey] || 0;
+
+  const handleCurationSubmit = (rating: number) => {
+    const activeTexId = activeTexReplaceIdx >= 0 ? textureReplacements[activeTexReplaceIdx]?.newTextureId : targetSurfaceId;
+    const activePalId = paletteId || 0;
+
+    const payload = {
+      creatureWcid: wcid,
+      creatureName: PRESET_CREATURES.find(c => c.wcid === wcid)?.name || `WCID ${wcid}`,
+      textureId: activeTexId || 0,
+      paletteId: activePalId,
+      rating: rating
+    };
+
+    fetch('/api/visualizer/curation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(r => r.json())
+      .then(() => {
+        const key = `${wcid}_${payload.textureId}_${payload.paletteId}`;
+        setCurations(prev => ({ ...prev, [key]: rating }));
+      })
+      .catch(e => console.error("Failed to submit curation: ", e));
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+
+      if (e.key === 'a' || e.key === 'A') {
+        handleCurationSubmit(1);
+      } else if (e.key === 'x' || e.key === 'X') {
+        handleCurationSubmit(-1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [wcid, activeTexReplaceIdx, targetSurfaceId, paletteId, textureReplacements]);
 
   const randomizePalette = () => {
     if (speciesPalettes.length > 0 && Math.random() > 0.5) {
@@ -835,6 +902,46 @@ const WorldViewer: FC = () => {
               target={[0, 0, 0]}
             />
           </Canvas>
+        </div>
+
+        {/* Interactive Curation Toolbar (Approval / Blacklist) */}
+        <div className="absolute top-4 right-4 bg-[#111827]/90 backdrop-blur-md px-4 py-3 rounded-xl border border-[#374151] shadow-2xl flex items-center gap-3 select-none z-10">
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase font-bold text-blue-400 tracking-wider">Quality Control</span>
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+              {currentCurationRating === 1 && <span className="text-green-400 flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Approved</span>}
+              {currentCurationRating === -1 && <span className="text-red-400 flex items-center gap-1"><XCircle className="w-4 h-4" /> Blacklisted</span>}
+              {currentCurationRating === 0 && <span className="text-neutral-400 flex items-center gap-1"><AlertTriangle className="w-4 h-4 text-amber-400" /> Unrated</span>}
+            </div>
+          </div>
+
+          <div className="h-6 w-[1px] bg-[#374151]" />
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleCurationSubmit(1)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md ${
+                currentCurationRating === 1
+                  ? 'bg-green-600 text-white ring-2 ring-green-400'
+                  : 'bg-green-600/20 text-green-400 hover:bg-green-600 hover:text-white border border-green-500/40'
+              }`}
+              title="Approve Combination (Shortcut: A)"
+            >
+              <ThumbsUp className="w-3.5 h-3.5" /> Approve (A)
+            </button>
+
+            <button
+              onClick={() => handleCurationSubmit(-1)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md ${
+                currentCurationRating === -1
+                  ? 'bg-red-600 text-white ring-2 ring-red-400'
+                  : 'bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white border border-red-500/40'
+              }`}
+              title="Blacklist Combination (Shortcut: X)"
+            >
+              <ThumbsDown className="w-3.5 h-3.5" /> Blacklist (X)
+            </button>
+          </div>
         </div>
 
         {/* Client-side Controls Overlay */}
