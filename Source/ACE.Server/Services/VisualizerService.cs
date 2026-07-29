@@ -1047,17 +1047,28 @@ namespace ACE.Server.Services
                                 basePalette.Colors.Add(0xFFFFFFFF);
                         }
 
-                        int startIdx = 0;
-                        int endIdx = basePalette.Colors.Count;
-
-                        if (paletteSlot == 1) { startIdx = 0; endIdx = Math.Min(256, basePalette.Colors.Count); }
-                        else if (paletteSlot == 2) { startIdx = 256; endIdx = Math.Min(512, basePalette.Colors.Count); }
-                        else if (paletteSlot == 3) { startIdx = 512; endIdx = Math.Min(768, basePalette.Colors.Count); }
-                        else if (paletteSlot == 4) { startIdx = 768; endIdx = Math.Min(1024, basePalette.Colors.Count); }
-
-                        for (int i = startIdx; i < endIdx; i++)
+                        if (overridePalette.Colors.Count >= 2048)
                         {
-                            basePalette.Colors[i] = overridePalette.Colors[(i % 256) % overridePalette.Colors.Count];
+                            int limit = Math.Min(basePalette.Colors.Count, overridePalette.Colors.Count);
+                            for (int i = 0; i < limit; i++)
+                            {
+                                basePalette.Colors[i] = overridePalette.Colors[i];
+                            }
+                        }
+                        else
+                        {
+                            int startIdx = 0;
+                            int endIdx = basePalette.Colors.Count;
+
+                            if (paletteSlot == 1) { startIdx = 0; endIdx = Math.Min(256, basePalette.Colors.Count); }
+                            else if (paletteSlot == 2) { startIdx = 256; endIdx = Math.Min(512, basePalette.Colors.Count); }
+                            else if (paletteSlot == 3) { startIdx = 512; endIdx = Math.Min(768, basePalette.Colors.Count); }
+                            else if (paletteSlot == 4) { startIdx = 768; endIdx = Math.Min(1024, basePalette.Colors.Count); }
+
+                            for (int i = startIdx; i < endIdx; i++)
+                            {
+                                basePalette.Colors[i] = overridePalette.Colors[(i % 256) % overridePalette.Colors.Count];
+                            }
                         }
 
                         if (paletteSlot <= 0 || paletteSlot == -1)
