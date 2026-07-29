@@ -269,6 +269,19 @@ const WorldViewer: FC = () => {
   const [selectedLibTexId, setSelectedLibTexId] = useState<number>(0);
   const [customTexHex, setCustomTexHex] = useState<string>('');
   const [customPalSetHex, setCustomPalSetHex] = useState<string>('');
+  const [similarPalettes, setSimilarPalettes] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (paletteId > 0) {
+      const palHex = `0x${paletteId.toString(16).toUpperCase()}`;
+      fetch(`/api/visualizer/palette/similar/${palHex}`)
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data)) setSimilarPalettes(data);
+        })
+        .catch(() => setSimilarPalettes([]));
+    }
+  }, [paletteId]);
 
   useEffect(() => {
     fetch(`/api/visualizer/species-palettes/${wcid}`)
@@ -717,39 +730,6 @@ const WorldViewer: FC = () => {
                   Range: {activeVariant.ranges || 'Offset 0 - 2048 (Full Mesh)'}
                 </div>
 
-                {/* PaletteSet / Palette Direct ID Override Input */}
-                <div className="flex flex-col gap-1 mt-1 pt-1 border-t border-[#374151]/50">
-                  <span className="text-[10px] font-semibold text-amber-300 uppercase tracking-wide">
-                    ⚡ Override PaletteSet (0x0F...) or Palette (0x04...) ID
-                  </span>
-                  <div className="flex gap-1.5">
-                    <input
-                      type="text"
-                      placeholder="e.g. 0x0F0001FF"
-                      value={customPalSetHex}
-                      onChange={(e) => setCustomPalSetHex(e.target.value)}
-                      className="flex-grow px-2 py-1 bg-[#1f2937] border border-[#374151] rounded text-[11px] text-white font-mono placeholder-neutral-500 focus:outline-none focus:border-blue-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!customPalSetHex.trim()) return;
-                        const clean = customPalSetHex.trim().toLowerCase().replace('0x', '');
-                        const parsed = parseInt(clean, 16);
-                        if (!isNaN(parsed) && parsed > 0) {
-                          setPaletteId(parsed);
-                          appendLog('auto', `🎨 Overwrote PaletteSet / Palette ID to 0x${parsed.toString(16).toUpperCase()}`);
-                        } else {
-                          alert("Invalid Hex ID. Use format 0x0F0001FF or 0x04001165");
-                        }
-                      }}
-                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded text-[11px] transition-colors shadow"
-                    >
-                      Apply
-                    </button>
-                  </div>
-                </div>
-
                 {/* Copy SQL / Command Button */}
                 <button
                   onClick={() => {
@@ -765,6 +745,39 @@ const WorldViewer: FC = () => {
               </div>
             );
           })()}
+
+          {/* PERMANENT PaletteSet / Palette Direct ID Override Toolbar */}
+          <div className="mt-2 p-2.5 bg-[#111827] rounded-lg border border-[#374151] flex flex-col gap-1.5 shadow-sm">
+            <span className="text-[10px] font-semibold text-amber-300 uppercase tracking-wide flex items-center gap-1">
+              ⚡ Direct PaletteSet (0x0F...) or Palette (0x04...) ID Override
+            </span>
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                placeholder="e.g. 0x0F0001FF or 0x04001091"
+                value={customPalSetHex}
+                onChange={(e) => setCustomPalSetHex(e.target.value)}
+                className="flex-grow px-2 py-1 bg-[#1f2937] border border-[#374151] rounded text-[11px] text-white font-mono placeholder-neutral-500 focus:outline-none focus:border-amber-500"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!customPalSetHex.trim()) return;
+                  const clean = customPalSetHex.trim().toLowerCase().replace('0x', '');
+                  const parsed = parseInt(clean, 16);
+                  if (!isNaN(parsed) && parsed > 0) {
+                    setPaletteId(parsed);
+                    appendLog('auto', `🎨 Overwrote PaletteSet / Palette ID to 0x${parsed.toString(16).toUpperCase()}`);
+                  } else {
+                    alert("Invalid Hex ID. Use format 0x0F0001FF or 0x04001165");
+                  }
+                }}
+                className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded text-[11px] transition-colors shadow"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
           
           <div className="flex flex-col gap-1 mt-2">
             <span className="flex items-center gap-1.5 text-sm text-neutral-300">
@@ -928,6 +941,37 @@ const WorldViewer: FC = () => {
               </div>
             )}
           </div>
+
+          {/* Similar Palettes Recommendation Shelf (CIELAB Delta-E) */}
+          {similarPalettes.length > 0 && (
+            <div className="flex flex-col gap-1.5 mt-2 pt-2 border-t border-[#374151]/50">
+              <span className="text-[11px] font-semibold text-purple-400 uppercase tracking-wide flex items-center gap-1">
+                ✨ Palettes with Similar Progression (CIELAB Delta-E)
+              </span>
+              <div className="grid grid-cols-2 gap-1.5">
+                {similarPalettes.map(sim => (
+                  <button
+                    key={sim.paletteId}
+                    onClick={() => {
+                      setPaletteId(sim.paletteId);
+                      appendLog('auto', `✨ Selected Similar Palette 0x${sim.paletteId.toString(16).toUpperCase()}`);
+                    }}
+                    className="flex flex-col gap-1 p-1.5 rounded bg-[#1f2937]/70 hover:bg-[#374151] border border-purple-500/30 hover:border-purple-400 text-left transition-all"
+                  >
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="font-mono text-purple-200">{sim.hexId}</span>
+                      <span className="text-[9px] text-neutral-400">{sim.family}</span>
+                    </div>
+                    <div className="flex w-full h-2.5 rounded overflow-hidden">
+                      {sim.swatches.map((hex: string, i: number) => (
+                        <div key={i} className="flex-1 h-full" style={{ backgroundColor: hex }} />
+                      ))}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Texture Replacement Selector */}

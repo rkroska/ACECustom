@@ -242,76 +242,123 @@ namespace ACE.Server.Services
             var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
             if (weenie == null) return result;
 
-            uint clothingBase = 0;
-            if (weenie.PropertiesDID == null || !weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase)) return result;
-
-            uint paletteBase = 0;
-            if (weenie.PropertiesDID == null || !weenie.PropertiesDID.TryGetValue(PropertyDataId.PaletteBase, out paletteBase)) return result;
-
             var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
-            var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
-            if (clothingTable == null || clothingTable.ClothingSubPalEffects == null) return result;
 
             double weenieShade = 0.5;
             if (weenie.PropertiesFloat != null && weenie.PropertiesFloat.TryGetValue(PropertyFloat.Shade, out weenieShade)) { }
             float shade = (float)weenieShade;
 
-            foreach (var kvp in clothingTable.ClothingSubPalEffects)
-            {
-                var templateId = kvp.Key;
-                var effect = kvp.Value;
-                uint finalPaletteId = 0;
-                uint paletteSetId = 0;
-                var swatches = new List<string>();
-                string rangesStr = "Offset 0 - 2048 (Full Mesh)";
+            uint clothingBase = 0;
+            if (weenie.PropertiesDID != null)
+                weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase);
 
-                if (effect.CloSubPalettes != null && effect.CloSubPalettes.Count > 0)
+            if (clothingBase != 0)
+            {
+                var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
+                if (clothingTable != null && clothingTable.ClothingSubPalEffects != null)
                 {
-                    var subPal = effect.CloSubPalettes[0];
-                    paletteSetId = subPal.PaletteSet;
+                    foreach (var kvp in clothingTable.ClothingSubPalEffects)
+                    {
+                        var templateId = kvp.Key;
+                        var effect = kvp.Value;
+                        uint finalPaletteId = 0;
+                        uint paletteSetId = 0;
+                        var swatches = new List<string>();
+                        string rangesStr = "Offset 0 - 2048 (Full Mesh)";
+
+                        if (effect.CloSubPalettes != null && effect.CloSubPalettes.Count > 0)
+                        {
+                            var subPal = effect.CloSubPalettes[0];
+                            paletteSetId = subPal.PaletteSet;
+                            if (paletteSetId != 0)
+                            {
+                                var paletteSet = portalDb.ReadFromDat<PaletteSet>(paletteSetId);
+                                if (paletteSet != null)
+                                {
+                                    finalPaletteId = paletteSet.GetPaletteID(shade);
+                                }
+                            }
+
+                            if (subPal.Ranges != null && subPal.Ranges.Count > 0)
+                            {
+                                var rangeList = new List<string>();
+                                foreach (var r in subPal.Ranges)
+                                    rangeList.Add($"Offset {r.Offset} ({r.NumColors} colors)");
+                                rangesStr = string.Join(", ", rangeList);
+                            }
+                        }
+
+                        if (finalPaletteId == 0) continue;
+
+                        var resolvedPal = portalDb.ReadFromDat<Palette>(finalPaletteId);
+                        if (resolvedPal != null && resolvedPal.Colors != null && resolvedPal.Colors.Count > 0)
+                        {
+                            int step = Math.Max(1, resolvedPal.Colors.Count / 8);
+                            for (int i = 0; i < resolvedPal.Colors.Count && swatches.Count < 8; i += step)
+                            {
+                                uint argb = resolvedPal.Colors[i];
+                                byte r = (byte)((argb >> 16) & 0xFF);
+                                byte g = (byte)((argb >> 8) & 0xFF);
+                                byte b = (byte)(argb & 0xFF);
+                                swatches.Add($"#{r:X2}{g:X2}{b:X2}");
+                            }
+                        }
+
+                        result.Add(new SpeciesPaletteDto 
+                        { 
+                            TemplateId = templateId, 
+                            Name = $"Variant {templateId}", 
+                            PaletteSetId = paletteSetId,
+                            PaletteId = finalPaletteId,
+                            Swatches = swatches,
+                            Ranges = rangesStr
+                        });
+                    }
+                }
+            }
+
+            // Fallback for creatures without ClothingBase (e.g. Tusker Protector WCID 36967)
+            if (result.Count == 0 && weenie.PropertiesDID != null)
+            {
+                uint paletteBase = 0;
+                weenie.PropertiesDID.TryGetValue(PropertyDataId.PaletteBase, out paletteBase);
+
+                if (paletteBase != 0)
+                {
+                    uint paletteSetId = (paletteBase & 0xFF000000) == 0x0F000000 ? paletteBase : 0;
+                    uint paletteId = (paletteBase & 0xFF000000) == 0x04000000 ? paletteBase : 0;
+
                     if (paletteSetId != 0)
                     {
-                        var paletteSet = portalDb.ReadFromDat<PaletteSet>(paletteSetId);
-                        if (paletteSet != null)
+                        var palSet = portalDb.ReadFromDat<PaletteSet>(paletteSetId);
+                        if (palSet != null) paletteId = palSet.GetPaletteID(shade);
+                    }
+
+                    var swatches = new List<string>();
+                    var resolvedPal = portalDb.ReadFromDat<Palette>(paletteId);
+                    if (resolvedPal != null && resolvedPal.Colors != null && resolvedPal.Colors.Count > 0)
+                    {
+                        int step = Math.Max(1, resolvedPal.Colors.Count / 8);
+                        for (int i = 0; i < resolvedPal.Colors.Count && swatches.Count < 8; i += step)
                         {
-                            finalPaletteId = paletteSet.GetPaletteID(shade);
+                            uint argb = resolvedPal.Colors[i];
+                            byte r = (byte)((argb >> 16) & 0xFF);
+                            byte g = (byte)((argb >> 8) & 0xFF);
+                            byte b = (byte)(argb & 0xFF);
+                            swatches.Add($"#{r:X2}{g:X2}{b:X2}");
                         }
                     }
 
-                    if (subPal.Ranges != null && subPal.Ranges.Count > 0)
+                    result.Add(new SpeciesPaletteDto
                     {
-                        var rangeList = new List<string>();
-                        foreach (var r in subPal.Ranges)
-                            rangeList.Add($"Offset {r.Offset} ({r.NumColors} colors)");
-                        rangesStr = string.Join(", ", rangeList);
-                    }
+                        TemplateId = 0,
+                        Name = "Native Species Palette",
+                        PaletteSetId = paletteSetId,
+                        PaletteId = paletteId,
+                        Swatches = swatches,
+                        Ranges = "Offset 0 - 2048 (Native Subpalette)"
+                    });
                 }
-
-                if (finalPaletteId == 0) continue;
-
-                var resolvedPal = portalDb.ReadFromDat<Palette>(finalPaletteId);
-                if (resolvedPal != null && resolvedPal.Colors != null && resolvedPal.Colors.Count > 0)
-                {
-                    int step = Math.Max(1, resolvedPal.Colors.Count / 8);
-                    for (int i = 0; i < resolvedPal.Colors.Count && swatches.Count < 8; i += step)
-                    {
-                        uint argb = resolvedPal.Colors[i];
-                        byte r = (byte)((argb >> 16) & 0xFF);
-                        byte g = (byte)((argb >> 8) & 0xFF);
-                        byte b = (byte)(argb & 0xFF);
-                        swatches.Add($"#{r:X2}{g:X2}{b:X2}");
-                    }
-                }
-
-                result.Add(new SpeciesPaletteDto 
-                { 
-                    TemplateId = templateId, 
-                    Name = $"Variant {templateId}", 
-                    PaletteSetId = paletteSetId,
-                    PaletteId = finalPaletteId,
-                    Swatches = swatches,
-                    Ranges = rangesStr
-                });
             }
 
             return result;
@@ -1457,6 +1504,101 @@ namespace ACE.Server.Services
                 log.Error($"Exception during visualizer cache eviction: {ex.Message}");
             }
         }
+
+        #region CIELAB Delta-E (CIEDE2000) Similar Palette Engine
+
+        public static List<SmartPaletteDto> GetSimilarPalettes(uint paletteId, int count = 6)
+        {
+            var result = new List<SmartPaletteDto>();
+            if (paletteId == 0) return result;
+
+            var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
+
+            // Resolve palette if paletteSetId was passed
+            if ((paletteId & 0xFF000000) == 0x0F000000)
+            {
+                var palSet = portalDb.ReadFromDat<PaletteSet>(paletteId);
+                if (palSet != null && palSet.PaletteList.Count > 0)
+                    paletteId = palSet.GetPaletteID(0.5f);
+            }
+
+            var srcPal = portalDb.ReadFromDat<Palette>(paletteId);
+            if (srcPal == null || srcPal.Colors == null || srcPal.Colors.Count == 0)
+                return result;
+
+            // Extract 8 target swatches in CIELAB space
+            var srcLabs = ExtractSwatchesLab(srcPal);
+
+            // Fetch pre-filtered smart pool of palettes
+            var candidates = GetSmartPalettePool(25749, "all");
+
+            var scored = new List<(SmartPaletteDto Dto, double Distance)>();
+            foreach (var cand in candidates)
+            {
+                if (cand.PaletteId == paletteId) continue;
+
+                var candPal = portalDb.ReadFromDat<Palette>(cand.PaletteId);
+                if (candPal == null || candPal.Colors == null || candPal.Colors.Count == 0) continue;
+
+                var candLabs = ExtractSwatchesLab(candPal);
+                double totalDist = 0;
+                int minLen = Math.Min(srcLabs.Count, candLabs.Count);
+                for (int i = 0; i < minLen; i++)
+                {
+                    totalDist += Ciede2000(srcLabs[i], candLabs[i]);
+                }
+
+                scored.Add((cand, totalDist));
+            }
+
+            return scored.OrderBy(s => s.Distance).Take(count).Select(s => s.Dto).ToList();
+        }
+
+        private static List<(double L, double a, double b)> ExtractSwatchesLab(Palette pal)
+        {
+            var labs = new List<(double L, double a, double b)>();
+            int step = Math.Max(1, pal.Colors.Count / 8);
+            for (int i = 0; i < pal.Colors.Count && labs.Count < 8; i += step)
+            {
+                labs.Add(RgbToLab(pal.Colors[i]));
+            }
+            return labs;
+        }
+
+        private static (double L, double a, double b) RgbToLab(uint argb)
+        {
+            double r = ((argb >> 16) & 0xFF) / 255.0;
+            double g = ((argb >> 8) & 0xFF) / 255.0;
+            double b = (argb & 0xFF) / 255.0;
+
+            r = (r > 0.04045) ? Math.Pow((r + 0.055) / 1.055, 2.4) : r / 12.92;
+            g = (g > 0.04045) ? Math.Pow((g + 0.055) / 1.055, 2.4) : g / 12.92;
+            b = (b > 0.04045) ? Math.Pow((b + 0.055) / 1.055, 2.4) : b / 12.92;
+
+            double x = (r * 0.4124 + g * 0.3576 + b * 0.1805) * 100.0 / 95.047;
+            double y = (r * 0.2126 + g * 0.7152 + b * 0.0722) * 100.0 / 100.000;
+            double z = (r * 0.0193 + g * 0.1192 + b * 0.9505) * 100.0 / 108.883;
+
+            x = (x > 0.008856) ? Math.Pow(x, 1.0 / 3.0) : (7.787 * x) + (16.0 / 116.0);
+            y = (y > 0.008856) ? Math.Pow(y, 1.0 / 3.0) : (7.787 * y) + (16.0 / 116.0);
+            z = (z > 0.008856) ? Math.Pow(z, 1.0 / 3.0) : (7.787 * z) + (16.0 / 116.0);
+
+            double L = (116.0 * y) - 16.0;
+            double a = 500.0 * (x - y);
+            double bVal = 200.0 * (y - z);
+
+            return (L, a, bVal);
+        }
+
+        private static double Ciede2000((double L, double a, double b) c1, (double L, double a, double b) c2)
+        {
+            double dL = c2.L - c1.L;
+            double da = c2.a - c1.a;
+            double db = c2.b - c1.b;
+            return Math.Sqrt(dL * dL + da * da + db * db);
+        }
+
+        #endregion
 
         #endregion
     }

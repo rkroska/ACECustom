@@ -67,6 +67,26 @@ namespace ACE.Server.Controllers
             return Ok(CurationService.GetCurationsForCreature(wcid));
         }
 
+        [HttpGet("palette/similar/{paletteId}")]
+        public IActionResult GetSimilarPalettes(string paletteId, [FromQuery] int count = 6)
+        {
+            if (string.IsNullOrEmpty(paletteId)) return BadRequest("Invalid Palette ID.");
+
+            uint palId = 0;
+            if (paletteId.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                uint.TryParse(paletteId.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out palId);
+            }
+            else
+            {
+                uint.TryParse(paletteId, out palId);
+            }
+
+            if (palId == 0) return BadRequest("Invalid Palette ID.");
+
+            return Ok(VisualizerService.GetSimilarPalettes(palId, count));
+        }
+
         [HttpGet("texture/{id}.png")]
         public async Task<IActionResult> GetTexture(string id, [FromQuery] uint wcid = 0, [FromQuery] uint paletteId = 0, [FromQuery] float shade = 0.5f, [FromQuery] int hue = 0, [FromQuery] int slot = -1)
         {
