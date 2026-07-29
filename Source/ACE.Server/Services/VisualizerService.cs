@@ -42,11 +42,24 @@ namespace ACE.Server.Services
         public uint PaletteId { get; set; }
         public string HexId { get; set; }
         public string Family { get; set; }
-        public List<string> Swatches { get; set; }
+        public List<string> Swatches { get; set; } = new List<string>();
     }
 
+    public class CreatureSurfaceDto
+    {
+        public int Index { get; set; }
+        public uint TextureId { get; set; }
+        public string HexId { get; set; }
+        public string Name { get; set; }
+    }
 
-    public static class VisualizerService
+    public class TextureLibraryItemDto
+    {
+        public string Category { get; set; }
+        public uint TextureId { get; set; }
+        public string HexId { get; set; }
+        public string Name { get; set; }
+    }public static class VisualizerService
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(VisualizerService));
 
@@ -217,42 +230,6 @@ namespace ACE.Server.Services
             }
         }
 
-        /// <summary>
-        /// Retrieves or exports the texture PNG bytes for a given texture ID.
-        /// </summary>
-        public static async Task<byte[]> GetTexturePngBytesAsync(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f, int hueShift = 0)
-        {
-            string cacheKey = $"{textureId}_wcid_{wcid}_pal_0x{paletteId:X8}_hue_{hueShift}";
-            var cachePath = Path.Combine(TexturesCacheDir, $"{cacheKey}.png");
-            if (File.Exists(cachePath))
-            {
-                return await File.ReadAllBytesAsync(cachePath);
-            }
-
-            var texLock = GetLock($"tex_{cacheKey}");
-            await texLock.WaitAsync();
-            try
-            {
-                if (File.Exists(cachePath))
-                {
-                    return await File.ReadAllBytesAsync(cachePath);
-                }
-
-                var bytes = ExportTexturePng(textureId, wcid, paletteId, shade, hueShift);
-                if (bytes == null) return null;
-
-                // Write atomically
-                var tempPath = Path.Combine(TexturesCacheDir, $"temp_{Guid.NewGuid()}.png");
-                await File.WriteAllBytesAsync(tempPath, bytes);
-                File.Move(tempPath, cachePath, overwrite: true);
-
-                return bytes;
-            }
-            finally
-            {
-                texLock.Release();
-            }
-        }
 
         public static List<SpeciesPaletteDto> GetSpeciesPalettes(uint wcid)
         {
@@ -393,6 +370,93 @@ namespace ACE.Server.Services
             }
 
             return result;
+        }
+
+        public static List<CreatureSurfaceDto> GetCreatureSurfaces(uint wcid)
+        {
+            var result = new List<CreatureSurfaceDto>();
+            if (wcid == 0) return result;
+
+            var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
+            if (weenie == null) return result;
+
+            uint setupId = 0;
+            if (weenie.PropertiesDID != null && weenie.PropertiesDID.TryGetValue(PropertyDataId.Setup, out setupId))
+            {
+            }
+
+            if (setupId == 0) return result;
+
+            var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
+            var setupModel = portalDb.ReadFromDat<SetupModel>(setupId);
+            if (setupModel == null || setupModel.Parts == null) return result;
+
+            var seenTextures = new HashSet<uint>();
+
+            int index = 0;
+            foreach (var gfxObjId in setupModel.Parts)
+            {
+                var gfxObj = portalDb.ReadFromDat<GfxObj>(gfxObjId);
+                if (gfxObj == null || gfxObj.Surfaces == null) continue;
+
+                foreach (var surfId in gfxObj.Surfaces)
+                {
+                    var surf = portalDb.ReadFromDat<Surface>(surfId);
+                    if (surf == null) continue;
+
+                    uint origTex = surf.OrigTextureId;
+                    if (origTex != 0 && seenTextures.Add(origTex))
+                    {
+                        result.Add(new CreatureSurfaceDto
+                        {
+                            Index = ++index,
+                            TextureId = origTex,
+                            HexId = $"0x{origTex:X8}",
+                            Name = $"Surface 0x{origTex:X8}"
+                        });
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        public static List<TextureLibraryItemDto> GetTextureLibrary(string category = "all")
+        {
+            var items = new List<TextureLibraryItemDto>
+            {
+                // Armor / Metallic
+                new TextureLibraryItemDto { Category = "Armor/Metal", TextureId = 0x0600021A, HexId = "0x0600021A", Name = "🛡️ Chainmail Weave" },
+                new TextureLibraryItemDto { Category = "Armor/Metal", TextureId = 0x0600021C, HexId = "0x0600021C", Name = "🛡️ Polished Platemail" },
+                new TextureLibraryItemDto { Category = "Armor/Metal", TextureId = 0x0600021E, HexId = "0x0600021E", Name = "🛡️ Bronze Scale Armor" },
+                new TextureLibraryItemDto { Category = "Armor/Metal", TextureId = 0x06003110, HexId = "0x06003110", Name = "🛡️ Dark Steel Plate" },
+
+                // Chitin / Insectoid
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004067, HexId = "0x06004067", Name = "🦂 Dark Olthoi Carapace" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004FD3, HexId = "0x06004FD3", Name = "🐝 Red Phyntos Chitin" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004FD4, HexId = "0x06004FD4", Name = "🐝 Gold Wing Veins" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004068, HexId = "0x06004068", Name = "🦂 Olthoi Carapace Trim" },
+
+                // Fur & Hide
+                new TextureLibraryItemDto { Category = "Fur/Hide", TextureId = 0x060012E4, HexId = "0x060012E4", Name = "🐺 Tusker Brown Pelt" },
+                new TextureLibraryItemDto { Category = "Fur/Hide", TextureId = 0x06003112, HexId = "0x06003112", Name = "🐺 Shadow Creature Hide" },
+                new TextureLibraryItemDto { Category = "Fur/Hide", TextureId = 0x060018A2, HexId = "0x060018A2", Name = "🐺 Dire Wolf Fur" },
+
+                // Undead & Bone
+                new TextureLibraryItemDto { Category = "Undead/Bone", TextureId = 0x060020B1, HexId = "0x060020B1", Name = "💀 Decayed Zombie Flesh" },
+                new TextureLibraryItemDto { Category = "Undead/Bone", TextureId = 0x060021C0, HexId = "0x060021C0", Name = "💀 Bleached Skeleton Bone" },
+
+                // Elemental & Crystal
+                new TextureLibraryItemDto { Category = "Elemental", TextureId = 0x06003B21, HexId = "0x06003B21", Name = "🔮 Volcanic Fire Crystal" },
+                new TextureLibraryItemDto { Category = "Elemental", TextureId = 0x06003B22, HexId = "0x06003B22", Name = "🔮 Glacial Frost Ice" }
+            };
+
+            if (!string.IsNullOrEmpty(category) && !category.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                return items.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            return items;
         }
 
         /// <summary>
@@ -747,7 +811,41 @@ namespace ACE.Server.Services
             return System.Text.Encoding.UTF8.GetBytes(json);
         }
 
-        private static byte[] ExportTexturePng(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f, int hueShift = 0)
+        public static async Task<byte[]> GetTexturePngBytesAsync(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f, int hueShift = 0, int paletteSlot = -1)
+        {
+            string cacheKey = $"{textureId}_wcid_{wcid}_pal_0x{paletteId:X8}_slot_{paletteSlot}_hue_{hueShift}";
+            var cachePath = Path.Combine(TexturesCacheDir, $"{cacheKey}.png");
+            if (File.Exists(cachePath))
+            {
+                return await File.ReadAllBytesAsync(cachePath);
+            }
+
+            var texLock = GetLock($"tex_{cacheKey}");
+            await texLock.WaitAsync();
+            try
+            {
+                if (File.Exists(cachePath))
+                {
+                    return await File.ReadAllBytesAsync(cachePath);
+                }
+
+                var bytes = ExportTexturePng(textureId, wcid, paletteId, shade, hueShift, paletteSlot);
+                if (bytes == null) return null;
+
+                // Write atomically
+                var tempPath = Path.Combine(TexturesCacheDir, $"temp_{Guid.NewGuid()}.png");
+                await File.WriteAllBytesAsync(tempPath, bytes);
+                File.Move(tempPath, cachePath, overwrite: true);
+
+                return bytes;
+            }
+            finally
+            {
+                texLock.Release();
+            }
+        }
+
+        private static byte[] ExportTexturePng(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f, int hueShift = 0, int paletteSlot = -1)
         {
             var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
 
@@ -868,12 +966,23 @@ namespace ACE.Server.Services
                                 basePalette.Colors.Add(0xFFFFFFFF);
                         }
 
-                        for (int i = 0; i < basePalette.Colors.Count; i++)
+                        int startIdx = 0;
+                        int endIdx = basePalette.Colors.Count;
+
+                        if (paletteSlot == 1) { startIdx = 0; endIdx = Math.Min(256, basePalette.Colors.Count); }
+                        else if (paletteSlot == 2) { startIdx = 256; endIdx = Math.Min(512, basePalette.Colors.Count); }
+                        else if (paletteSlot == 3) { startIdx = 512; endIdx = Math.Min(768, basePalette.Colors.Count); }
+                        else if (paletteSlot == 4) { startIdx = 768; endIdx = Math.Min(1024, basePalette.Colors.Count); }
+
+                        for (int i = startIdx; i < endIdx; i++)
                         {
                             basePalette.Colors[i] = overridePalette.Colors[(i % 256) % overridePalette.Colors.Count];
                         }
 
-                        cloSubPalettes = null;
+                        if (paletteSlot <= 0 || paletteSlot == -1)
+                        {
+                            cloSubPalettes = null;
+                        }
                     }
                 }
 

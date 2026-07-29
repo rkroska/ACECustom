@@ -17,7 +17,8 @@ import {
   AlertTriangle,
   Camera,
   Download,
-  Layers
+  Layers,
+  Sliders
 } from 'lucide-react';
 
 // --- Error Boundary for handling missing / invalid models inside Canvas context ---
@@ -106,6 +107,7 @@ const PRESET_CREATURES = [
 interface ModelProps {
   wcid: number;
   paletteId?: number;
+  paletteSlot?: number;
   hueShift?: number;
   rotationSpeed: number;
   isRotating: boolean;
@@ -114,8 +116,8 @@ interface ModelProps {
   onCreated: (gl: any) => void;
 }
 
-const Model: FC<ModelProps> = ({ wcid, paletteId, hueShift, activeTexReplaceInfo, rotationSpeed, isRotating, wireframe, onCreated }) => {
-  const modelUrl = `/api/visualizer/mesh/${wcid}.gltf?paletteId=${paletteId || 0}&hue=${hueShift || 0}`;
+const Model: FC<ModelProps> = ({ wcid, paletteId, paletteSlot = -1, hueShift, activeTexReplaceInfo, rotationSpeed, isRotating, wireframe, onCreated }) => {
+  const modelUrl = `/api/visualizer/mesh/${wcid}.gltf?paletteId=${paletteId || 0}&hue=${hueShift || 0}&slot=${paletteSlot}`;
 
   // useGLTF suspends while parsing binary buffer
   const { scene } = useGLTF(modelUrl);
@@ -150,42 +152,51 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, hueShift, activeTexReplaceInfo
   // Texture replacement
   useEffect(() => {
     scene.traverse((child: any) => {
-      if (child.isMesh && child.material && child.material.map) {
-        if (!child.material.userData.originalMap) {
-          child.material.userData.originalMap = child.material.map;
-        }
+      if (child.isMesh && child.material) {
+        const matList = Array.isArray(child.material) ? child.material : [child.material];
 
-        if (activeTexReplaceInfo) {
-          const oldHexUpper = activeTexReplaceInfo.oldTextureId.toString(16).toUpperCase().padStart(8, '0');
-          const oldHexLower = activeTexReplaceInfo.oldTextureId.toString(16).toLowerCase().padStart(8, '0');
+        matList.forEach((mat: any) => {
+          if (mat && mat.map) {
+            if (!mat.userData.originalMap) {
+              mat.userData.originalMap = mat.map;
+            }
 
-          const matName = child.material.name || '';
-          const mapSrc = child.material.map.image?.src || child.material.userData.originalMap.image?.src || '';
+            if (activeTexReplaceInfo) {
+              const oldHexUpper = activeTexReplaceInfo.oldTextureId.toString(16).toUpperCase().padStart(8, '0');
+              const oldHexLower = activeTexReplaceInfo.oldTextureId.toString(16).toLowerCase().padStart(8, '0');
 
-          const isMatch = matName.toUpperCase().includes(oldHexUpper) || 
-                          matName.toLowerCase().includes(oldHexLower) ||
-                          mapSrc.toUpperCase().includes(oldHexUpper) || 
-                          mapSrc.toLowerCase().includes(oldHexLower);
+              const matName = mat.name || '';
+              const mapSrc = mat.map.image?.src || mat.userData.originalMap?.image?.src || '';
 
-          if (isMatch) {
-            const newHex = activeTexReplaceInfo.newTextureId.toString(16).toUpperCase().padStart(8, '0');
-            const newUrl = `/api/visualizer/texture/${newHex}.png?wcid=${wcid}&paletteId=${paletteId || 0}&hue=${hueShift || 0}`;
+              const isMatch = activeTexReplaceInfo.isUniversal ||
+                              matName.toUpperCase().includes(oldHexUpper) || 
+                              matName.toLowerCase().includes(oldHexLower) ||
+                              mapSrc.toUpperCase().includes(oldHexUpper) || 
+                              mapSrc.toLowerCase().includes(oldHexLower);
 
-            new THREE.TextureLoader().load(newUrl, (tex) => {
-              tex.flipY = false;
-              tex.minFilter = THREE.NearestFilter;
-              tex.magFilter = THREE.NearestFilter;
-              child.material.map = tex;
-              child.material.needsUpdate = true;
-            });
+              if (isMatch) {
+                const newHex = activeTexReplaceInfo.newTextureId.toString(16).toUpperCase().padStart(8, '0');
+                const newUrl = `/api/visualizer/texture/${newHex}.png?wcid=${wcid}&paletteId=${paletteId || 0}&hue=${hueShift || 0}&slot=${paletteSlot}`;
+
+                new THREE.TextureLoader().load(newUrl, (tex) => {
+                  tex.flipY = false;
+                  tex.minFilter = THREE.NearestFilter;
+                  tex.magFilter = THREE.NearestFilter;
+                  tex.needsUpdate = true;
+
+                  mat.map = tex;
+                  mat.needsUpdate = true;
+                });
+              }
+            } else if (mat.userData.originalMap) {
+              mat.map = mat.userData.originalMap;
+              mat.needsUpdate = true;
+            }
           }
-        } else if (child.material.userData.originalMap) {
-          child.material.map = child.material.userData.originalMap;
-          child.material.needsUpdate = true;
-        }
+        });
       }
     });
-  }, [scene, activeTexReplaceInfo, wcid, paletteId, hueShift]);
+  }, [scene, activeTexReplaceInfo, wcid, paletteId, hueShift, paletteSlot]);
 
   // Center model and scale it
   useEffect(() => {
@@ -224,6 +235,7 @@ const WorldViewer: FC = () => {
   // Smart Palette States
   const [smartPalettes, setSmartPalettes] = useState<any[]>([]);
   const [smartFamily, setSmartFamily] = useState<string>('all');
+  const [paletteSlot, setPaletteSlot] = useState<number>(-1);
 
 
   const [isRotating, setIsRotating] = useState<boolean>(true);
@@ -239,6 +251,13 @@ const WorldViewer: FC = () => {
 
   // GL Context Ref for screenshots
   const glRef = useRef<any>(null);
+
+  // Universal Texture Swapper States
+  const [creatureSurfaces, setCreatureSurfaces] = useState<any[]>([]);
+  const [targetSurfaceId, setTargetSurfaceId] = useState<number>(0);
+  const [textureLibrary, setTextureLibrary] = useState<any[]>([]);
+  const [selectedLibTexId, setSelectedLibTexId] = useState<number>(0);
+  const [customTexHex, setCustomTexHex] = useState<string>('');
 
   useEffect(() => {
     fetch(`/api/visualizer/species-palettes/${wcid}`)
@@ -257,6 +276,20 @@ const WorldViewer: FC = () => {
          setTextureReplacements(data);
          setActiveTexReplaceIdx(-1);
       })
+      .catch(e => console.error(e));
+
+    fetch(`/api/visualizer/surfaces/${wcid}`)
+      .then(r => r.json())
+      .then(data => {
+        setCreatureSurfaces(data);
+        if (data.length > 0) setTargetSurfaceId(data[0].textureId);
+        else setTargetSurfaceId(0);
+      })
+      .catch(e => console.error(e));
+
+    fetch(`/api/visualizer/texture-library`)
+      .then(r => r.json())
+      .then(data => setTextureLibrary(data))
       .catch(e => console.error(e));
   }, [wcid]);
 
@@ -277,6 +310,32 @@ const WorldViewer: FC = () => {
     } else {
       setHueShift(Math.floor(Math.random() * 360));
     }
+  };
+
+  const applyUniversalTextureSwap = () => {
+    if (!targetSurfaceId) return;
+
+    let newTexId = selectedLibTexId;
+    if (customTexHex) {
+      const cleanHex = customTexHex.startsWith('0x') ? customTexHex.substring(2) : customTexHex;
+      const parsed = parseInt(cleanHex, 16);
+      if (!isNaN(parsed) && parsed > 0) {
+        newTexId = parsed;
+      }
+    }
+
+    if (!newTexId) return;
+
+    const newSwap = {
+      name: `Dynamic Surface Swap (0x${targetSurfaceId.toString(16).toUpperCase()} -> 0x${newTexId.toString(16).toUpperCase()})`,
+      oldTextureId: targetSurfaceId,
+      newTextureId: newTexId,
+      isUniversal: true
+    };
+
+    const nextList = [...textureReplacements, newSwap];
+    setTextureReplacements(nextList);
+    setActiveTexReplaceIdx(nextList.length - 1);
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -451,12 +510,102 @@ const WorldViewer: FC = () => {
           </button>
         </div>
 
+        {/* Universal Programmatic Surface Texture Swapper (On-The-Fly) */}
+        <div className="flex flex-col gap-2 bg-[#1f2937]/30 p-3 rounded-lg border border-[#374151]/60">
+          <label className="text-xs font-semibold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+            <Sliders className="w-4 h-4 text-blue-400" />
+            Universal Surface Texture Swapper (On-The-Fly)
+          </label>
+          <p className="text-[11px] text-neutral-400 leading-normal">
+            Swap surface textures live on the 3D model programmatically without needing pre-written JSON files.
+          </p>
+
+          <div className="flex flex-col gap-1 mt-1">
+            <span className="text-[11px] font-semibold text-neutral-300">1. Target Active Surface</span>
+            <select
+              value={targetSurfaceId}
+              onChange={(e) => setTargetSurfaceId(parseInt(e.target.value))}
+              className="w-full px-2.5 py-1.5 bg-[#111827] border border-[#374151] rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value={0}>Select Surface to Replace...</option>
+              {creatureSurfaces.map(surf => (
+                <option key={surf.textureId} value={surf.textureId}>
+                  {surf.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1 mt-1">
+            <span className="text-[11px] font-semibold text-neutral-300">2. Preset DAT Texture</span>
+            <select
+              value={selectedLibTexId}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                setSelectedLibTexId(val);
+                if (val > 0) setCustomTexHex('');
+              }}
+              className="w-full px-2.5 py-1.5 bg-[#111827] border border-[#374151] rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value={0}>Select from Texture Library...</option>
+              {textureLibrary.map(item => (
+                <option key={item.textureId} value={item.textureId}>
+                  [{item.category}] {item.name} ({item.hexId})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1 mt-1">
+            <span className="text-[11px] font-semibold text-neutral-300">OR Enter Custom DAT Texture ID (Hex)</span>
+            <input
+              type="text"
+              placeholder="e.g. 0x06004067"
+              value={customTexHex}
+              onChange={(e) => {
+                setCustomTexHex(e.target.value);
+                if (e.target.value) setSelectedLibTexId(0);
+              }}
+              className="w-full px-2.5 py-1.5 bg-[#111827] border border-[#374151] rounded-lg text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500 font-mono"
+            />
+          </div>
+
+          <button
+            onClick={applyUniversalTextureSwap}
+            disabled={!targetSurfaceId || (!selectedLibTexId && !customTexHex)}
+            className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white font-semibold rounded-lg text-xs transition-colors shadow-md"
+          >
+            ⚡ Apply Texture Swap Live
+          </button>
+        </div>
+
         {/* Smart Palette Inspector */}
         <div className="flex flex-col gap-2">
-          <label className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
-            <Layers className="w-4 h-4 text-neutral-400" />
-            Material & Palette Inspector
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+              <Layers className="w-4 h-4 text-neutral-400" />
+              Material & Palette Inspector
+            </label>
+          </div>
+
+          {/* Target Body Part / Subpalette Slot Selector */}
+          <div className="flex flex-col gap-1 my-1 bg-[#1f2937]/40 p-2.5 rounded-lg border border-[#374151]/50">
+            <label className="text-[11px] font-semibold text-blue-400 flex items-center gap-1">
+              🎯 Target Body Part / Subpalette Slot
+            </label>
+            <select
+              value={paletteSlot}
+              onChange={(e) => setPaletteSlot(parseInt(e.target.value))}
+              className="w-full bg-[#111827] text-white border border-[#374151] rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
+            >
+              <option value={-1}>🌟 All Body Parts (Entire Model)</option>
+              <option value={1}>🐺 Primary Body / Fur (Slot 1)</option>
+              <option value={2}>🛡️ Armor & Clothing Trim (Slot 2)</option>
+              <option value={3}>🦷 Tusks, Claws & Accents (Slot 3)</option>
+              <option value={4}>✨ Detail Highlights (Slot 4)</option>
+            </select>
+          </div>
+
           <div className="flex gap-1 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-transparent">
             {['All', 'Chitin', 'Fur/Hide', 'Metallic', 'Elemental'].map(family => (
               <button
@@ -664,6 +813,7 @@ const WorldViewer: FC = () => {
                 <Model
                   wcid={wcid}
                   paletteId={paletteId}
+                  paletteSlot={paletteSlot}
                   hueShift={hueShift}
                   activeTexReplaceInfo={activeTexReplaceIdx >= 0 ? textureReplacements[activeTexReplaceIdx] : null}
                   rotationSpeed={rotationSpeed}

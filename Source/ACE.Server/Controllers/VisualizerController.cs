@@ -32,17 +32,24 @@ namespace ACE.Server.Controllers
             return Ok(result);
         }
 
-        [HttpGet("texture-replacements/{wcid}")]
-        public IActionResult GetTextureReplacements(uint wcid)
+        [HttpGet("surfaces/{wcid}")]
+        public IActionResult GetCreatureSurfaces(uint wcid)
         {
             if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
 
-            var result = VisualizerService.GetTextureReplacements(wcid);
+            var result = VisualizerService.GetCreatureSurfaces(wcid);
+            return Ok(result);
+        }
+
+        [HttpGet("texture-library")]
+        public IActionResult GetTextureLibrary([FromQuery] string category = "all")
+        {
+            var result = VisualizerService.GetTextureLibrary(category);
             return Ok(result);
         }
 
         [HttpGet("texture/{id}.png")]
-        public async Task<IActionResult> GetTexture(string id, [FromQuery] uint wcid = 0, [FromQuery] uint paletteId = 0, [FromQuery] float shade = 0.5f, [FromQuery] int hue = 0)
+        public async Task<IActionResult> GetTexture(string id, [FromQuery] uint wcid = 0, [FromQuery] uint paletteId = 0, [FromQuery] float shade = 0.5f, [FromQuery] int hue = 0, [FromQuery] int slot = -1)
         {
             if (string.IsNullOrEmpty(id)) return BadRequest("Invalid Texture ID.");
 
@@ -63,7 +70,7 @@ namespace ACE.Server.Controllers
 
             if (textureId == 0) return BadRequest("Invalid Texture ID.");
 
-            var pngBytes = await VisualizerService.GetTexturePngBytesAsync(textureId, wcid, paletteId, shade, hue);
+            var pngBytes = await VisualizerService.GetTexturePngBytesAsync(textureId, wcid, paletteId, shade, hue, slot);
             if (pngBytes == null) return NotFound($"Texture {textureId} not found.");
 
             return File(pngBytes, "image/png");
