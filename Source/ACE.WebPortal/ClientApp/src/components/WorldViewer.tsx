@@ -16,7 +16,8 @@ import {
   ChevronRight,
   AlertTriangle,
   Camera,
-  Download
+  Download,
+  Layers
 } from 'lucide-react';
 
 // --- Error Boundary for handling missing / invalid models inside Canvas context ---
@@ -109,10 +110,11 @@ interface ModelProps {
   rotationSpeed: number;
   isRotating: boolean;
   wireframe: boolean;
+  activeTexReplaceInfo?: any;
   onCreated: (gl: any) => void;
 }
 
-const Model: FC<ModelProps> = ({ wcid, paletteId, hueShift, rotationSpeed, isRotating, wireframe, onCreated }) => {
+const Model: FC<ModelProps> = ({ wcid, paletteId, hueShift, activeTexReplaceInfo, rotationSpeed, isRotating, wireframe, onCreated }) => {
   const modelUrl = `/api/visualizer/mesh/${wcid}.gltf?paletteId=${paletteId || 0}&hue=${hueShift || 0}`;
 
   // useGLTF suspends while parsing binary buffer
@@ -135,12 +137,40 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, hueShift, rotationSpeed, isRot
           if (child.material.map) {
             child.material.map.minFilter = THREE.NearestFilter;
             child.material.map.magFilter = THREE.NearestFilter;
+            if (!child.material.userData.originalMap) {
+              child.material.userData.originalMap = child.material.map;
+            }
           }
           child.material.wireframe = wireframe;
         }
       }
     });
   }, [scene, wireframe]);
+
+  // Texture replacement
+  useEffect(() => {
+    scene.traverse((child: any) => {
+      if (child.isMesh && child.material) {
+        if (activeTexReplaceInfo && child.material.userData.originalMap) {
+           const oldMatName = `Material_Texture_0x${activeTexReplaceInfo.oldTextureId.toString(16).toUpperCase()}`;
+           const oldMatNameLower = `Material_Texture_0x${activeTexReplaceInfo.oldTextureId.toString(16).toLowerCase()}`;
+           if (child.material.name === oldMatName || child.material.name === oldMatNameLower) {
+              const newUrl = `/api/visualizer/texture/${activeTexReplaceInfo.newTextureId.toString(16).toUpperCase()}.png?wcid=${wcid}&paletteId=${paletteId || 0}&hue=${hueShift || 0}`;
+              new THREE.TextureLoader().load(newUrl, (tex) => {
+                 tex.flipY = false;
+                 tex.minFilter = THREE.NearestFilter;
+                 tex.magFilter = THREE.NearestFilter;
+                 child.material.map = tex;
+                 child.material.needsUpdate = true;
+              });
+           }
+        } else if (!activeTexReplaceInfo && child.material.userData.originalMap) {
+           child.material.map = child.material.userData.originalMap;
+           child.material.needsUpdate = true;
+        }
+      }
+    });
+  }, [scene, activeTexReplaceInfo, wcid, paletteId, hueShift]);
 
   // Center model and scale it
   useEffect(() => {
@@ -173,6 +203,8 @@ const WorldViewer: FC = () => {
   const [paletteId, setPaletteId] = useState<number>(0); 
   const [hueShift, setHueShift] = useState<number>(0);
   const [speciesPalettes, setSpeciesPalettes] = useState<any[]>([]);
+  const [textureReplacements, setTextureReplacements] = useState<any[]>([]);
+  const [activeTexReplaceIdx, setActiveTexReplaceIdx] = useState<number>(-1);
 
   const [isRotating, setIsRotating] = useState<boolean>(true);
   const [rotationSpeed, setRotationSpeed] = useState<number>(0.25);
@@ -196,6 +228,14 @@ const WorldViewer: FC = () => {
          if (data.length > 0) setPaletteId(data[0].templateId);
          else setPaletteId(0);
          setHueShift(0);
+      })
+      .catch(e => console.error(e));
+
+    fetch(`/api/visualizer/texture-replacements/${wcid}`)
+      .then(r => r.json())
+      .then(data => {
+         setTextureReplacements(data);
+         setActiveTexReplaceIdx(-1);
       })
       .catch(e => console.error(e));
   }, [wcid]);
@@ -394,6 +434,28 @@ const WorldViewer: FC = () => {
           </button>
         </div>
 
+        {/* Texture Replacement Selector */}
+        {textureReplacements.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+              <Layers className="w-4 h-4 text-neutral-400" />
+              Texture Replacement
+            </label>
+            <select
+              value={activeTexReplaceIdx}
+              onChange={(e) => setActiveTexReplaceIdx(parseInt(e.target.value))}
+              className="w-full px-3 py-2 bg-[#1f2937] border border-[#374151] rounded-lg text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            >
+              <option value={-1}>Original Textures</option>
+              {textureReplacements.map((tr, idx) => (
+                <option key={idx} value={idx}>
+                  {tr.name} (0x{tr.newTextureId.toString(16).toUpperCase()})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <hr className="border-[#1f2937]" />
 
         {/* Display Settings */}
@@ -535,6 +597,7 @@ const WorldViewer: FC = () => {
                   wcid={wcid}
                   paletteId={paletteId}
                   hueShift={hueShift}
+                  activeTexReplaceInfo={activeTexReplaceIdx >= 0 ? textureReplacements[activeTexReplaceIdx] : null}
                   rotationSpeed={rotationSpeed}
                   isRotating={isRotating}
                   wireframe={wireframe}

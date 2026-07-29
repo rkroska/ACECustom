@@ -32,6 +32,15 @@ namespace ACE.Server.Controllers
             return Ok(result);
         }
 
+        [HttpGet("texture-replacements/{wcid}")]
+        public IActionResult GetTextureReplacements(uint wcid)
+        {
+            if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
+
+            var result = VisualizerService.GetTextureReplacements(wcid);
+            return Ok(result);
+        }
+
         [HttpGet("texture/{id}.png")]
         public async Task<IActionResult> GetTexture(string id, [FromQuery] uint wcid = 0, [FromQuery] uint paletteId = 0, [FromQuery] float shade = 0.5f, [FromQuery] int hue = 0)
         {

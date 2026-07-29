@@ -29,6 +29,13 @@ namespace ACE.Server.Services
         public uint PaletteId { get; set; }
     }
 
+    public class TextureReplacementDto
+    {
+        public string Name { get; set; }
+        public uint OldTextureId { get; set; }
+        public uint NewTextureId { get; set; }
+    }
+
     public static class VisualizerService
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(VisualizerService));
@@ -182,6 +189,45 @@ namespace ACE.Server.Services
                     Name = $"Variant {templateId}", 
                     PaletteId = finalPaletteId 
                 });
+            }
+
+            return result;
+        }
+
+        public static List<TextureReplacementDto> GetTextureReplacements(uint wcid)
+        {
+            var result = new List<TextureReplacementDto>();
+            var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
+            if (weenie == null) return result;
+
+            uint clothingBase = 0;
+            if (weenie.PropertiesDID == null || !weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase)) return result;
+
+            var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
+            var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
+            if (clothingTable == null || clothingTable.ClothingBaseEffects == null) return result;
+
+            foreach (var kvp in clothingTable.ClothingBaseEffects)
+            {
+                var effectId = kvp.Key;
+                var effect = kvp.Value;
+
+                if (effect.CloObjectEffects == null) continue;
+
+                foreach (var objEffect in effect.CloObjectEffects)
+                {
+                    if (objEffect.CloTextureEffects == null) continue;
+
+                    foreach (var texEffect in objEffect.CloTextureEffects)
+                    {
+                        result.Add(new TextureReplacementDto
+                        {
+                            Name = $"TexReplace {effectId}",
+                            OldTextureId = texEffect.OldTexture,
+                            NewTextureId = texEffect.NewTexture
+                        });
+                    }
+                }
             }
 
             return result;
