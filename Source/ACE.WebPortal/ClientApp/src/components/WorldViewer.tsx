@@ -1,4 +1,4 @@
-import React, { type FC, useState, useEffect, useMemo, useRef, Suspense } from 'react';
+import React, { type FC, useState, useEffect, useRef, Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, useGLTF, Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -115,16 +115,14 @@ const PRESET_PALETTES = [
 // --- 3D Model Instance with Custom WebGL Shader ---
 interface ModelProps {
   wcid: number;
-  paletteId: number;
   rotationSpeed: number;
   isRotating: boolean;
   wireframe: boolean;
   onCreated: (gl: any) => void;
 }
 
-const Model: FC<ModelProps> = ({ wcid, paletteId, rotationSpeed, isRotating, wireframe, onCreated }) => {
+const Model: FC<ModelProps> = ({ wcid, rotationSpeed, isRotating, wireframe, onCreated }) => {
   const modelUrl = `/api/visualizer/mesh/${wcid}.gltf`;
-  const paletteUrl = `/api/visualizer/palette/${paletteId}.png`;
 
   // useGLTF suspends while parsing binary buffer
   const { scene } = useGLTF(modelUrl);
@@ -132,85 +130,26 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, rotationSpeed, isRotating, wir
   const groupRef = useRef<THREE.Group>(null);
 
   // Expose GL context to parent for screenshots
-  // Load palette texture map (256x1 pixels)
-  const paletteTexture = useMemo(() => {
-    const loader = new THREE.TextureLoader();
-    const tex = loader.load(paletteUrl);
-    tex.minFilter = THREE.NearestFilter;
-    tex.magFilter = THREE.NearestFilter;
-    return tex;
-  }, [paletteUrl]);
   useEffect(() => {
     if (gl && onCreated) {
       onCreated(gl);
     }
   }, [gl, onCreated]);
 
-  // Apply shader to indexed meshes
+  // Ensure standard materials and apply wireframe
   useEffect(() => {
     scene.traverse((child: any) => {
       if (child.isMesh) {
         if (child.material) {
-          // Store original map reference on first pass
-          if (child.material.map && !child.userData.originalMap) {
-            child.userData.originalMap = child.material.map;
+          if (child.material.map) {
+            child.material.map.minFilter = THREE.NearestFilter;
+            child.material.map.magFilter = THREE.NearestFilter;
           }
-
-          // Check if indexed flag is set in extras
-          const isIndexed = child.material.userData?.indexed === true || child.material.userData?.extras?.indexed === true || child.userData.isIndexed === true;
-          if (isIndexed) {
-            child.userData.isIndexed = true; // Cache flag on mesh
-            const originalMap = child.userData.originalMap;
-
-            if (originalMap) {
-              originalMap.minFilter = THREE.NearestFilter;
-              originalMap.magFilter = THREE.NearestFilter;
-
-              if (child.material instanceof THREE.ShaderMaterial) {
-                child.material.uniforms.u_paletteTexture.value = paletteTexture;
-                child.material.uniforms.u_indexedTexture.value = originalMap;
-                child.material.wireframe = wireframe;
-                child.material.uniformsNeedUpdate = true;
-              } else {
-                child.material = new THREE.ShaderMaterial({
-                  uniforms: {
-                    u_indexedTexture: { value: originalMap },
-                    u_paletteTexture: { value: paletteTexture }
-                  },
-                  vertexShader: `
-                    varying vec2 v_uv;
-                    void main() {
-                      v_uv = uv;
-                      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                    }
-                  `,
-                  fragmentShader: `
-                    uniform sampler2D u_indexedTexture;
-                    uniform sampler2D u_paletteTexture;
-                    varying vec2 v_uv;
-                    void main() {
-                      float idx = texture2D(u_indexedTexture, v_uv).r;
-                      float u = (idx * 255.0 + 0.5) / 256.0;
-                      vec4 finalColor = texture2D(u_paletteTexture, vec2(u, 0.5));
-                      if (finalColor.a < 0.1) discard;
-                      gl_FragColor = finalColor;
-                    }
-                  `,
-                  transparent: true,
-                  depthWrite: true,
-                  side: THREE.DoubleSide,
-                  wireframe: wireframe
-                });
-              }
-            }
-          } else {
-            // Apply standard wireframe to non-indexed materials
-            child.material.wireframe = wireframe;
-          }
+          child.material.wireframe = wireframe;
         }
       }
     });
-  }, [scene, paletteTexture, wireframe]);
+  }, [scene, wireframe]);
 
   // Center model and scale it
   useEffect(() => {
@@ -557,7 +496,6 @@ const WorldViewer: FC = () => {
               <Suspense fallback={<CanvasLoader />}>
                 <Model
                   wcid={wcid}
-                  paletteId={paletteId}
                   rotationSpeed={rotationSpeed}
                   isRotating={isRotating}
                   wireframe={wireframe}

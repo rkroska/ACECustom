@@ -24,11 +24,11 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("texture/{id}.png")]
-        public async Task<IActionResult> GetTexture(uint id)
+        public async Task<IActionResult> GetTexture(uint id, [FromQuery] uint wcid = 0, [FromQuery] uint paletteId = 0, [FromQuery] float shade = 0.5f)
         {
             if (id == 0) return BadRequest("Invalid Texture ID.");
 
-            var pngBytes = await VisualizerService.GetTexturePngBytesAsync(id);
+            var pngBytes = await VisualizerService.GetTexturePngBytesAsync(id, wcid, paletteId, shade);
             if (pngBytes == null) return NotFound($"Texture {id} not found.");
 
             return File(pngBytes, "image/png");

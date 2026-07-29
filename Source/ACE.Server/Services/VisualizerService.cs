@@ -93,15 +93,16 @@ namespace ACE.Server.Services
         /// <summary>
         /// Retrieves or exports the texture PNG bytes for a given texture ID.
         /// </summary>
-        public static async Task<byte[]> GetTexturePngBytesAsync(uint textureId)
+        public static async Task<byte[]> GetTexturePngBytesAsync(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f)
         {
-            var cachePath = Path.Combine(TexturesCacheDir, $"{textureId}.png");
+            string cacheKey = wcid != 0 ? $"{textureId}_{wcid}_{paletteId}_{shade}" : $"{textureId}";
+            var cachePath = Path.Combine(TexturesCacheDir, $"{cacheKey}.png");
             if (File.Exists(cachePath))
             {
                 return await File.ReadAllBytesAsync(cachePath);
             }
 
-            var texLock = GetLock($"tex_{textureId}");
+            var texLock = GetLock($"tex_{cacheKey}");
             await texLock.WaitAsync();
             try
             {
@@ -110,7 +111,7 @@ namespace ACE.Server.Services
                     return await File.ReadAllBytesAsync(cachePath);
                 }
 
-                var bytes = ExportTexturePng(textureId);
+                var bytes = ExportTexturePng(textureId, wcid, paletteId, shade);
                 if (bytes == null) return null;
 
                 // Write atomically
@@ -323,7 +324,8 @@ namespace ACE.Server.Services
                                         };
                                         gltf.materials.Add(material);
                                         gltf.textures.Add(new GltfTexture { source = gltf.images.Count });
-                                         gltf.images.Add(new GltfImage { uri = $"../texture/{texId}.png" });
+                                        string texUri = $"../texture/{texId:X8}.png?wcid={wcid}";
+                                        gltf.images.Add(new GltfImage { uri = texUri });
 
                                         textureToMat[texId] = matIdx;
                                     }
@@ -474,7 +476,7 @@ namespace ACE.Server.Services
             return System.Text.Encoding.UTF8.GetBytes(json);
         }
 
-        private static byte[] ExportTexturePng(uint textureId)
+        private static byte[] ExportTexturePng(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f)
         {
             var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
 
@@ -513,16 +515,106 @@ namespace ACE.Server.Services
                 int height = texture.Height;
                 byte[] rgba8 = new byte[width * height * 4];
 
+                // Subpalette baking
+                Palette basePalette = null;
+                List<CloSubPalette> cloSubPalettes = null;
+                double weenieShade = 0.5;
+
+                if (wcid != 0)
+                {
+                    var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
+                    if (weenie != null)
+                    {
+                        uint clothingBase = 0;
+                        if (weenie.PropertiesDID != null && weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase))
+                        {
+                            int palTemplate = 0;
+                            if (weenie.PropertiesInt != null && weenie.PropertiesInt.TryGetValue(PropertyInt.PaletteTemplate, out palTemplate))
+                            {
+                                if (weenie.PropertiesFloat != null && weenie.PropertiesFloat.TryGetValue(PropertyFloat.Shade, out weenieShade))
+                                {
+                                    shade = (float)weenieShade;
+                                }
+
+                                var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
+                                if (clothingTable != null)
+                                {
+                                    if (clothingTable.ClothingSubPalEffects != null && clothingTable.ClothingSubPalEffects.TryGetValue((uint)palTemplate, out var effect))
+                                    {
+                                        cloSubPalettes = effect.CloSubPalettes;
+                                    }
+                                }
+                            }
+
+                            uint paletteBase = 0;
+                            if (weenie.PropertiesDID != null && weenie.PropertiesDID.TryGetValue(PropertyDataId.PaletteBase, out paletteBase))
+                            {
+                                basePalette = portalDb.ReadFromDat<Palette>(paletteBase);
+                            }
+                        }
+                    }
+                }
+
+                if (basePalette == null && texture.DefaultPaletteId != null && texture.DefaultPaletteId.Value != 0)
+                {
+                    basePalette = portalDb.ReadFromDat<Palette>(texture.DefaultPaletteId.Value);
+                }
+
+                if (cloSubPalettes != null && basePalette != null)
+                {
+                    foreach (var subPal in cloSubPalettes)
+                    {
+                        var paletteSetId = subPal.PaletteSet;
+                        if (paletteSetId != 0)
+                        {
+                            var paletteSet = portalDb.ReadFromDat<PaletteSet>(paletteSetId);
+                            if (paletteSet != null && paletteSet.PaletteList.Count > 0)
+                            {
+                                uint subPalId = paletteSet.GetPaletteID(shade);
+                                if (subPalId != 0)
+                                {
+                                    var subPaletteData = portalDb.ReadFromDat<Palette>(subPalId);
+                                    if (subPaletteData != null)
+                                    {
+                                        int srcColorIndex = 0;
+                                        foreach (var range in subPal.Ranges)
+                                        {
+                                            int offset = (int)range.Offset;
+                                            int numColors = (int)range.NumColors;
+                                            for (int c = 0; c < numColors; c++)
+                                            {
+                                                if (offset + c < basePalette.Colors.Count && srcColorIndex < subPaletteData.Colors.Count)
+                                                {
+                                                    basePalette.Colors[offset + c] = subPaletteData.Colors[srcColorIndex];
+                                                }
+                                                srcColorIndex++;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                uint GetColor(byte index)
+                {
+                    if (basePalette != null && index < basePalette.Colors.Count)
+                        return basePalette.Colors[index];
+                    return 0; // Default black/transparent
+                }
+
                 if (texture.Format == SurfacePixelFormat.PFID_P8)
                 {
                     for (int i = 0; i < width * height; i++)
                     {
                         if (i >= texture.SourceData.Length) break;
                         byte index = texture.SourceData[i];
-                        rgba8[i * 4] = index;       // R = index
-                        rgba8[i * 4 + 1] = index;   // G = index
-                        rgba8[i * 4 + 2] = index;   // B = index
-                        rgba8[i * 4 + 3] = 255;     // A = 255
+                        uint color = GetColor(index);
+                        rgba8[i * 4] = (byte)((color >> 16) & 0xFF);     // R
+                        rgba8[i * 4 + 1] = (byte)((color >> 8) & 0xFF);   // G
+                        rgba8[i * 4 + 2] = (byte)(color & 0xFF);          // B
+                        rgba8[i * 4 + 3] = (byte)((color >> 24) & 0xFF);  // A
                     }
                 }
                 else // PFID_INDEX16
@@ -533,10 +625,11 @@ namespace ACE.Server.Services
                         if (reader.BaseStream.Position + 2 > reader.BaseStream.Length) break;
                         ushort val = reader.ReadUInt16();
                         byte index = (byte)(val & 0xFF);
-                        rgba8[i * 4] = index;
-                        rgba8[i * 4 + 1] = index;
-                        rgba8[i * 4 + 2] = index;
-                        rgba8[i * 4 + 3] = 255;
+                        uint color = GetColor(index);
+                        rgba8[i * 4] = (byte)((color >> 16) & 0xFF);
+                        rgba8[i * 4 + 1] = (byte)((color >> 8) & 0xFF);
+                        rgba8[i * 4 + 2] = (byte)(color & 0xFF);
+                        rgba8[i * 4 + 3] = (byte)((color >> 24) & 0xFF);
                     }
                 }
 
