@@ -268,6 +268,7 @@ const WorldViewer: FC = () => {
   const [textureLibrary, setTextureLibrary] = useState<any[]>([]);
   const [selectedLibTexId, setSelectedLibTexId] = useState<number>(0);
   const [customTexHex, setCustomTexHex] = useState<string>('');
+  const [customPalSetHex, setCustomPalSetHex] = useState<string>('');
 
   useEffect(() => {
     fetch(`/api/visualizer/species-palettes/${wcid}`)
@@ -714,6 +715,39 @@ const WorldViewer: FC = () => {
 
                 <div className="text-[10px] text-neutral-400 font-mono italic">
                   Range: {activeVariant.ranges || 'Offset 0 - 2048 (Full Mesh)'}
+                </div>
+
+                {/* PaletteSet / Palette Direct ID Override Input */}
+                <div className="flex flex-col gap-1 mt-1 pt-1 border-t border-[#374151]/50">
+                  <span className="text-[10px] font-semibold text-amber-300 uppercase tracking-wide">
+                    ⚡ Override PaletteSet (0x0F...) or Palette (0x04...) ID
+                  </span>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      placeholder="e.g. 0x0F0001FF"
+                      value={customPalSetHex}
+                      onChange={(e) => setCustomPalSetHex(e.target.value)}
+                      className="flex-grow px-2 py-1 bg-[#1f2937] border border-[#374151] rounded text-[11px] text-white font-mono placeholder-neutral-500 focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!customPalSetHex.trim()) return;
+                        const clean = customPalSetHex.trim().toLowerCase().replace('0x', '');
+                        const parsed = parseInt(clean, 16);
+                        if (!isNaN(parsed) && parsed > 0) {
+                          setPaletteId(parsed);
+                          appendLog('auto', `🎨 Overwrote PaletteSet / Palette ID to 0x${parsed.toString(16).toUpperCase()}`);
+                        } else {
+                          alert("Invalid Hex ID. Use format 0x0F0001FF or 0x04001165");
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded text-[11px] transition-colors shadow"
+                    >
+                      Apply
+                    </button>
+                  </div>
                 </div>
 
                 {/* Copy SQL / Command Button */}

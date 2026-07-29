@@ -1019,6 +1019,27 @@ namespace ACE.Server.Services
                         }
                     }
                 }
+                else if ((paletteId & 0xFF000000) == 0x0F000000)
+                {
+                    // PaletteSet Direct Override (0x0F...)
+                    var overridePalSet = portalDb.ReadFromDat<PaletteSet>(paletteId);
+                    if (overridePalSet != null && overridePalSet.PaletteList.Count > 0)
+                    {
+                        uint subPalId = overridePalSet.GetPaletteID(shade);
+                        if (subPalId != 0)
+                        {
+                            var subPaletteData = portalDb.ReadFromDat<Palette>(subPalId);
+                            if (subPaletteData != null && basePalette != null)
+                            {
+                                int limit = Math.Min(basePalette.Colors.Count, subPaletteData.Colors.Count);
+                                for (int i = 0; i < limit; i++)
+                                {
+                                    basePalette.Colors[i] = subPaletteData.Colors[i];
+                                }
+                            }
+                        }
+                    }
+                }
 
                 if (cloSubPalettes != null && basePalette != null)
                 {
