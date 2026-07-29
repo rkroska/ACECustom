@@ -150,23 +150,38 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, hueShift, activeTexReplaceInfo
   // Texture replacement
   useEffect(() => {
     scene.traverse((child: any) => {
-      if (child.isMesh && child.material) {
-        if (activeTexReplaceInfo && child.material.userData.originalMap) {
-           const oldMatName = `Material_Texture_0x${activeTexReplaceInfo.oldTextureId.toString(16).toUpperCase()}`;
-           const oldMatNameLower = `Material_Texture_0x${activeTexReplaceInfo.oldTextureId.toString(16).toLowerCase()}`;
-           if (child.material.name === oldMatName || child.material.name === oldMatNameLower) {
-              const newUrl = `/api/visualizer/texture/${activeTexReplaceInfo.newTextureId.toString(16).toUpperCase()}.png?wcid=${wcid}&paletteId=${paletteId || 0}&hue=${hueShift || 0}`;
-              new THREE.TextureLoader().load(newUrl, (tex) => {
-                 tex.flipY = false;
-                 tex.minFilter = THREE.NearestFilter;
-                 tex.magFilter = THREE.NearestFilter;
-                 child.material.map = tex;
-                 child.material.needsUpdate = true;
-              });
-           }
-        } else if (!activeTexReplaceInfo && child.material.userData.originalMap) {
-           child.material.map = child.material.userData.originalMap;
-           child.material.needsUpdate = true;
+      if (child.isMesh && child.material && child.material.map) {
+        if (!child.material.userData.originalMap) {
+          child.material.userData.originalMap = child.material.map;
+        }
+
+        if (activeTexReplaceInfo) {
+          const oldHexUpper = activeTexReplaceInfo.oldTextureId.toString(16).toUpperCase().padStart(8, '0');
+          const oldHexLower = activeTexReplaceInfo.oldTextureId.toString(16).toLowerCase().padStart(8, '0');
+
+          const matName = child.material.name || '';
+          const mapSrc = child.material.map.image?.src || child.material.userData.originalMap.image?.src || '';
+
+          const isMatch = matName.toUpperCase().includes(oldHexUpper) || 
+                          matName.toLowerCase().includes(oldHexLower) ||
+                          mapSrc.toUpperCase().includes(oldHexUpper) || 
+                          mapSrc.toLowerCase().includes(oldHexLower);
+
+          if (isMatch) {
+            const newHex = activeTexReplaceInfo.newTextureId.toString(16).toUpperCase().padStart(8, '0');
+            const newUrl = `/api/visualizer/texture/${newHex}.png?wcid=${wcid}&paletteId=${paletteId || 0}&hue=${hueShift || 0}`;
+
+            new THREE.TextureLoader().load(newUrl, (tex) => {
+              tex.flipY = false;
+              tex.minFilter = THREE.NearestFilter;
+              tex.magFilter = THREE.NearestFilter;
+              child.material.map = tex;
+              child.material.needsUpdate = true;
+            });
+          }
+        } else if (child.material.userData.originalMap) {
+          child.material.map = child.material.userData.originalMap;
+          child.material.needsUpdate = true;
         }
       }
     });
