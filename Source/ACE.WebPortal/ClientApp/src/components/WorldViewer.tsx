@@ -438,7 +438,7 @@ const WorldViewer: FC = () => {
   }, [wcid]);
 
   useEffect(() => {
-    fetch(`/api/visualizer/palette/smart-pool/${wcid}?family=${smartFamily}`)
+    fetch(`/api/visualizer/curated-pool/${wcid}?family=${smartFamily}`)
       .then(r => r.json())
       .then(data => {
          setSmartPalettes(data);
@@ -449,6 +449,18 @@ const WorldViewer: FC = () => {
   const activeCurrentTexId = activeTexReplaceIdx >= 0 ? textureReplacements[activeTexReplaceIdx]?.newTextureId : targetSurfaceId;
   const currentCurationKey = `${wcid}_${activeCurrentTexId || 0}_${paletteId || 0}`;
   const currentCurationRating = curations[currentCurationKey] || 0;
+
+  const cyclePalette = (direction: 1 | -1) => {
+    if (!smartPalettes || smartPalettes.length === 0) return;
+    const currIdx = smartPalettes.findIndex(p => p.paletteId === paletteId);
+    let nextIdx = 0;
+    if (currIdx >= 0) {
+      nextIdx = (currIdx + direction + smartPalettes.length) % smartPalettes.length;
+    } else {
+      nextIdx = direction === 1 ? 0 : smartPalettes.length - 1;
+    }
+    setPaletteId(smartPalettes[nextIdx].paletteId);
+  };
 
   const handleCurationSubmit = (rating: number) => {
     const activeTexId = activeTexReplaceIdx >= 0 ? textureReplacements[activeTexReplaceIdx]?.newTextureId : targetSurfaceId;
@@ -481,16 +493,24 @@ const WorldViewer: FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
 
-      if (e.key === 'a' || e.key === 'A') {
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        cyclePalette(1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'q' || e.key === 'Q') {
+        e.preventDefault();
+        cyclePalette(-1);
+      } else if (e.key === 'a' || e.key === 'A') {
         handleCurationSubmit(1);
+        cyclePalette(1);
       } else if (e.key === 'x' || e.key === 'X') {
         handleCurationSubmit(-1);
+        cyclePalette(1);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [wcid, activeTexReplaceIdx, targetSurfaceId, paletteId, textureReplacements]);
+  }, [wcid, activeTexReplaceIdx, targetSurfaceId, paletteId, textureReplacements, smartPalettes]);
 
   const randomizePalette = () => {
     if (speciesPalettes.length > 0 && Math.random() > 0.5) {

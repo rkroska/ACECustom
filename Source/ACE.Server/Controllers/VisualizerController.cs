@@ -87,6 +87,12 @@ namespace ACE.Server.Controllers
             return Ok(VisualizerService.GetSimilarPalettes(palId, count));
         }
 
+        [HttpGet("curated-pool/{wcid}")]
+        public IActionResult GetCuratedPool(uint wcid, [FromQuery] string family = "all")
+        {
+            return Ok(VisualizerService.GetCuratedMutationPool(wcid, family));
+        }
+
         [HttpGet("texture/{id}.png")]
         public async Task<IActionResult> GetTexture(string id, [FromQuery] uint wcid = 0, [FromQuery] uint paletteId = 0, [FromQuery] float shade = 0.5f, [FromQuery] int hue = 0, [FromQuery] int slot = -1)
         {

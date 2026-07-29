@@ -1609,6 +1609,89 @@ namespace ACE.Server.Services
             return Math.Sqrt(dL * dL + da * da + db * db);
         }
 
+        /// <summary>
+        /// Generates a curated pet breeding mutation palette pool based on user approvals & blacklists.
+        /// </summary>
+        public static List<SmartPaletteDto> GetCuratedMutationPool(uint wcid, string family = "all")
+        {
+            var curations = CurationService.GetCurationsForCreature(wcid);
+            var approvedPalettes = new HashSet<uint>(curations.Where(c => c.Rating == 1).Select(c => c.PaletteId));
+            var blacklistedPalettes = new HashSet<uint>(curations.Where(c => c.Rating == -1).Select(c => c.PaletteId));
+
+            var fullPool = GetSmartPalettePool(wcid, family);
+
+            // Filter out blacklisted palettes completely
+            var filtered = fullPool.Where(p => !blacklistedPalettes.Contains(p.PaletteId)).ToList();
+
+            var result = new List<SmartPaletteDto>();
+
+            // 1. Put Approved palettes at the very top
+            foreach (var item in filtered)
+            {
+                if (approvedPalettes.Contains(item.PaletteId))
+                {
+                    result.Add(item);
+                }
+            }
+
+            // 2. Add high-similarity candidate palettes based on CIELAB Delta-E distance to approved clusters
+            if (approvedPalettes.Count > 0)
+            {
+                var remaining = filtered.Where(p => !approvedPalettes.Contains(p.PaletteId)).ToList();
+                var portalDb = DatManager.PortalDat;
+
+                var approvedLabsList = new List<List<(double L, double a, double b)>>();
+                foreach (var appPalId in approvedPalettes)
+                {
+                    var pal = portalDb.ReadFromDat<Palette>(appPalId);
+                    if (pal != null && pal.Colors != null && pal.Colors.Count > 0)
+                    {
+                        approvedLabsList.Add(ExtractSwatchesLab(pal));
+                    }
+                }
+
+                if (approvedLabsList.Count > 0)
+                {
+                    var scored = new List<(SmartPaletteDto Dto, double MinDistance)>();
+                    foreach (var cand in remaining)
+                    {
+                        var candPal = portalDb.ReadFromDat<Palette>(cand.PaletteId);
+                        if (candPal == null || candPal.Colors == null || candPal.Colors.Count == 0) continue;
+
+                        var candLabs = ExtractSwatchesLab(candPal);
+                        double minDistance = double.MaxValue;
+
+                        foreach (var appLabs in approvedLabsList)
+                        {
+                            double dist = 0;
+                            int minLen = Math.Min(appLabs.Count, candLabs.Count);
+                            for (int i = 0; i < minLen; i++)
+                            {
+                                dist += Ciede2000(appLabs[i], candLabs[i]);
+                            }
+                            if (dist < minDistance) minDistance = dist;
+                        }
+
+                        scored.Add((cand, minDistance));
+                    }
+
+                    // Sort candidates by lowest Delta-E distance to approved cluster
+                    result.AddRange(scored.OrderBy(s => s.MinDistance).Select(s => s.Dto));
+                }
+                else
+                {
+                    result.AddRange(remaining);
+                }
+            }
+            else
+            {
+                var remaining = filtered.Where(p => !approvedPalettes.Contains(p.PaletteId)).ToList();
+                result.AddRange(remaining);
+            }
+
+            return result;
+        }
+
         #endregion
 
         #endregion
