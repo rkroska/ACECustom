@@ -576,18 +576,17 @@ namespace ACE.Server.Services
                                     var subPaletteData = portalDb.ReadFromDat<Palette>(subPalId);
                                     if (subPaletteData != null)
                                     {
-                                        int srcColorIndex = 0;
                                         foreach (var range in subPal.Ranges)
                                         {
                                             int offset = (int)range.Offset;
                                             int numColors = (int)range.NumColors;
                                             for (int c = 0; c < numColors; c++)
                                             {
-                                                if (offset + c < basePalette.Colors.Count && srcColorIndex < subPaletteData.Colors.Count)
+                                                int idx = offset + c;
+                                                if (idx < basePalette.Colors.Count && idx < subPaletteData.Colors.Count)
                                                 {
-                                                    basePalette.Colors[offset + c] = subPaletteData.Colors[srcColorIndex];
+                                                    basePalette.Colors[idx] = subPaletteData.Colors[idx];
                                                 }
-                                                srcColorIndex++;
                                             }
                                         }
                                     }
@@ -597,12 +596,15 @@ namespace ACE.Server.Services
                     }
                 }
 
-                uint GetColor(byte index)
+                uint GetColor(ushort index)
                 {
                     if (basePalette != null && index < basePalette.Colors.Count)
                         return basePalette.Colors[index];
-                    return 0; // Default black/transparent
+                    return 0xFFFFFFFF;
                 }
+
+                // Check ClipMap surface type (or wing / translucent textures)
+                bool isClipMap = (textureId == 0x0600406A) || (texture.Format == SurfacePixelFormat.PFID_INDEX16 && width == height && width <= 128);
 
                 if (texture.Format == SurfacePixelFormat.PFID_P8)
                 {
@@ -611,10 +613,18 @@ namespace ACE.Server.Services
                         if (i >= texture.SourceData.Length) break;
                         byte index = texture.SourceData[i];
                         uint color = GetColor(index);
-                        rgba8[i * 4] = (byte)((color >> 16) & 0xFF);     // R
-                        rgba8[i * 4 + 1] = (byte)((color >> 8) & 0xFF);   // G
-                        rgba8[i * 4 + 2] = (byte)(color & 0xFF);          // B
-                        rgba8[i * 4 + 3] = (byte)((color >> 24) & 0xFF);  // A
+
+                        if (isClipMap && index < 8)
+                        {
+                            rgba8[i * 4] = 0; rgba8[i * 4 + 1] = 0; rgba8[i * 4 + 2] = 0; rgba8[i * 4 + 3] = 0;
+                        }
+                        else
+                        {
+                            rgba8[i * 4] = (byte)((color >> 16) & 0xFF);     // R
+                            rgba8[i * 4 + 1] = (byte)((color >> 8) & 0xFF);   // G
+                            rgba8[i * 4 + 2] = (byte)(color & 0xFF);          // B
+                            rgba8[i * 4 + 3] = (byte)((color >> 24) & 0xFF);  // A
+                        }
                     }
                 }
                 else // PFID_INDEX16
@@ -624,12 +634,19 @@ namespace ACE.Server.Services
                     {
                         if (reader.BaseStream.Position + 2 > reader.BaseStream.Length) break;
                         ushort val = reader.ReadUInt16();
-                        byte index = (byte)(val & 0xFF);
-                        uint color = GetColor(index);
-                        rgba8[i * 4] = (byte)((color >> 16) & 0xFF);
-                        rgba8[i * 4 + 1] = (byte)((color >> 8) & 0xFF);
-                        rgba8[i * 4 + 2] = (byte)(color & 0xFF);
-                        rgba8[i * 4 + 3] = (byte)((color >> 24) & 0xFF);
+                        uint color = GetColor(val);
+
+                        if (isClipMap && val < 8)
+                        {
+                            rgba8[i * 4] = 0; rgba8[i * 4 + 1] = 0; rgba8[i * 4 + 2] = 0; rgba8[i * 4 + 3] = 0;
+                        }
+                        else
+                        {
+                            rgba8[i * 4] = (byte)((color >> 16) & 0xFF);
+                            rgba8[i * 4 + 1] = (byte)((color >> 8) & 0xFF);
+                            rgba8[i * 4 + 2] = (byte)(color & 0xFF);
+                            rgba8[i * 4 + 3] = (byte)((color >> 24) & 0xFF);
+                        }
                     }
                 }
 
