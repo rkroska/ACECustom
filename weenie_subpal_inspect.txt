@@ -1,0 +1,35 @@
+
+==================== WCID 25749 (olthoiharvester) ====================
+ClothingBase = 0x100002E4
+  ClothingBaseEffects found for Setup 0x02000AAC: 0 obj effects
+  ClothingSubPalEffects found for PalTemplate 8: 1 subpalettes
+    SubPal Range: PalSet=0x0F000202, Offset=0, NumColors=2048
+
+==================== WCID 35134 (ace35134-kroktoklugian) ====================
+ClothingBase = 0x100002BE
+  ClothingBaseEffects found for Setup 0x02000A0B: 8 obj effects
+    TexReplace: Old=0x05001BE8 -> New=0x05001BE6
+    TexReplace: Old=0x05001BEF -> New=0x05001BED
+    TexReplace: Old=0x05001BE2 -> New=0x05001BE0
+    TexReplace: Old=0x05001BE2 -> New=0x05001BE0
+    TexReplace: Old=0x05001BEB -> New=0x05001BEA
+    TexReplace: Old=0x05001BDE -> New=0x05001BDC
+    TexReplace: Old=0x05001BE2 -> New=0x05001BE0
+    TexReplace: Old=0x05001BE2 -> New=0x05001BE0
+    TexReplace: Old=0x05001BF8 -> New=0x05001BF8
+    TexReplace: Old=0x05001BF8 -> New=0x05001BF8
+  ClothingSubPalEffects found for PalTemplate 20: 1 subpalettes
+    SubPal Range: PalSet=0x0F0001B2, Offset=0, NumColors=2048
+
+==================== WCID 35427 (ace35427-drudgelurker) ====================
+ClothingBase = 0x10000208
+  ClothingBaseEffects found for Setup 0x020007DD: 5 obj effects
+    TexReplace: Old=0x050018EF -> New=0x050018F0
+    TexReplace: Old=0x050018F1 -> New=0x050018F1
+    TexReplace: Old=0x050018F2 -> New=0x050018F2
+    TexReplace: Old=0x050018E5 -> New=0x050018E6
+    TexReplace: Old=0x050018E5 -> New=0x050018E6
+    TexReplace: Old=0x050018E7 -> New=0x050018E8
+    TexReplace: Old=0x050018E7 -> New=0x050018E8
+  ClothingSubPalEffects found for PalTemplate 51: 1 subpalettes
+    SubPal Range: PalSet=0x0F0000EE, Offset=0, NumColors=2048

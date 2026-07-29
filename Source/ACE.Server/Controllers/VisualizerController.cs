@@ -13,18 +13,27 @@ namespace ACE.Server.Controllers
     public class VisualizerController : BaseController
     {
         [HttpGet("mesh/{wcid}.gltf")]
-        public async Task<IActionResult> GetMesh(uint wcid)
+        public async Task<IActionResult> GetMesh(uint wcid, [FromQuery] uint paletteId = 0, [FromQuery] int hue = 0)
         {
             if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
 
-            var gltfBytes = await VisualizerService.GetMeshGltfBytesAsync(wcid);
+            var gltfBytes = await VisualizerService.GetMeshGltfBytesAsync(wcid, paletteId, hue);
             if (gltfBytes == null) return NotFound($"Mesh for Weenie {wcid} not found.");
 
             return File(gltfBytes, "model/gltf+json", $"{wcid}.gltf");
         }
 
+        [HttpGet("species-palettes/{wcid}")]
+        public IActionResult GetSpeciesPalettes(uint wcid)
+        {
+            if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
+
+            var result = VisualizerService.GetSpeciesPalettes(wcid);
+            return Ok(result);
+        }
+
         [HttpGet("texture/{id}.png")]
-        public async Task<IActionResult> GetTexture(string id, [FromQuery] uint wcid = 0, [FromQuery] uint paletteId = 0, [FromQuery] float shade = 0.5f)
+        public async Task<IActionResult> GetTexture(string id, [FromQuery] uint wcid = 0, [FromQuery] uint paletteId = 0, [FromQuery] float shade = 0.5f, [FromQuery] int hue = 0)
         {
             if (string.IsNullOrEmpty(id)) return BadRequest("Invalid Texture ID.");
 
@@ -45,7 +54,7 @@ namespace ACE.Server.Controllers
 
             if (textureId == 0) return BadRequest("Invalid Texture ID.");
 
-            var pngBytes = await VisualizerService.GetTexturePngBytesAsync(textureId, wcid, paletteId, shade);
+            var pngBytes = await VisualizerService.GetTexturePngBytesAsync(textureId, wcid, paletteId, shade, hue);
             if (pngBytes == null) return NotFound($"Texture {textureId} not found.");
 
             return File(pngBytes, "image/png");

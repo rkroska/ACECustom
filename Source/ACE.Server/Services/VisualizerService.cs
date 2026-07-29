@@ -22,6 +22,13 @@ using SixLabors.ImageSharp.Processing;
 
 namespace ACE.Server.Services
 {
+    public class SpeciesPaletteDto
+    {
+        public uint TemplateId { get; set; }
+        public string Name { get; set; }
+        public uint PaletteId { get; set; }
+    }
+
     public static class VisualizerService
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(VisualizerService));
@@ -57,25 +64,26 @@ namespace ACE.Server.Services
         /// <summary>
         /// Retrieves or exports the GLTF 3D model bytes for a Weenie Class ID.
         /// </summary>
-        public static async Task<byte[]> GetMeshGltfBytesAsync(uint wcid)
+        public static async Task<byte[]> GetMeshGltfBytesAsync(uint wcid, uint paletteId = 0, int hue = 0)
         {
-            var cachePath = Path.Combine(ModelsCacheDir, $"{wcid}.gltf");
+            var cacheKey = $"{wcid}_{paletteId}_{hue}";
+            var cachePath = Path.Combine(ModelsCacheDir, $"{cacheKey}.gltf");
             if (File.Exists(cachePath))
             {
                 return await File.ReadAllBytesAsync(cachePath);
             }
 
-            var wcidLock = GetLock($"mesh_{wcid}");
-            await wcidLock.WaitAsync();
-            try
-            {
-                if (File.Exists(cachePath))
+                var wcidLock = GetLock($"mesh_{cacheKey}");
+                await wcidLock.WaitAsync();
+                try
                 {
-                    return await File.ReadAllBytesAsync(cachePath);
-                }
+                    if (File.Exists(cachePath))
+                    {
+                        return await File.ReadAllBytesAsync(cachePath);
+                    }
 
-                var bytes = ExportMeshGltf(wcid);
-                if (bytes == null) return null;
+                    var bytes = ExportMeshGltf(wcid, paletteId, hue);
+                    if (bytes == null) return null;
 
                 // Write atomically
                 var tempPath = Path.Combine(ModelsCacheDir, $"temp_{Guid.NewGuid()}.gltf");
@@ -93,9 +101,9 @@ namespace ACE.Server.Services
         /// <summary>
         /// Retrieves or exports the texture PNG bytes for a given texture ID.
         /// </summary>
-        public static async Task<byte[]> GetTexturePngBytesAsync(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f)
+        public static async Task<byte[]> GetTexturePngBytesAsync(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f, int hueShift = 0)
         {
-            string cacheKey = wcid != 0 ? $"{textureId}_{wcid}_{paletteId}_{shade}" : $"{textureId}";
+            string cacheKey = $"{textureId}_wcid_{wcid}_pal_0x{paletteId:X8}_hue_{hueShift}";
             var cachePath = Path.Combine(TexturesCacheDir, $"{cacheKey}.png");
             if (File.Exists(cachePath))
             {
@@ -111,7 +119,7 @@ namespace ACE.Server.Services
                     return await File.ReadAllBytesAsync(cachePath);
                 }
 
-                var bytes = ExportTexturePng(textureId, wcid, paletteId, shade);
+                var bytes = ExportTexturePng(textureId, wcid, paletteId, shade, hueShift);
                 if (bytes == null) return null;
 
                 // Write atomically
@@ -125,6 +133,58 @@ namespace ACE.Server.Services
             {
                 texLock.Release();
             }
+        }
+
+        public static List<SpeciesPaletteDto> GetSpeciesPalettes(uint wcid)
+        {
+            var result = new List<SpeciesPaletteDto>();
+            var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
+            if (weenie == null) return result;
+
+            uint clothingBase = 0;
+            if (weenie.PropertiesDID == null || !weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase)) return result;
+
+            uint paletteBase = 0;
+            if (weenie.PropertiesDID == null || !weenie.PropertiesDID.TryGetValue(PropertyDataId.PaletteBase, out paletteBase)) return result;
+
+            var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
+            var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
+            if (clothingTable == null || clothingTable.ClothingSubPalEffects == null) return result;
+
+            double weenieShade = 0.5;
+            if (weenie.PropertiesFloat != null && weenie.PropertiesFloat.TryGetValue(PropertyFloat.Shade, out weenieShade)) { }
+            float shade = (float)weenieShade;
+
+            foreach (var kvp in clothingTable.ClothingSubPalEffects)
+            {
+                var templateId = kvp.Key;
+                var effect = kvp.Value;
+                uint finalPaletteId = 0;
+
+                if (effect.CloSubPalettes != null && effect.CloSubPalettes.Count > 0)
+                {
+                    var paletteSetId = effect.CloSubPalettes[0].PaletteSet;
+                    if (paletteSetId != 0)
+                    {
+                        var paletteSet = portalDb.ReadFromDat<PaletteSet>(paletteSetId);
+                        if (paletteSet != null)
+                        {
+                            finalPaletteId = paletteSet.GetPaletteID(shade);
+                        }
+                    }
+                }
+
+                if (finalPaletteId == 0) continue;
+
+                result.Add(new SpeciesPaletteDto 
+                { 
+                    TemplateId = templateId, 
+                    Name = $"Variant {templateId}", 
+                    PaletteId = finalPaletteId 
+                });
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -165,7 +225,7 @@ namespace ACE.Server.Services
 
         #region Exporter Implementation Detail
 
-        private static byte[] ExportMeshGltf(uint wcid)
+        private static byte[] ExportMeshGltf(uint wcid, uint paletteId = 0, int hue = 0)
         {
             var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
             if (weenie == null) return null;
@@ -325,6 +385,9 @@ namespace ACE.Server.Services
                                         gltf.materials.Add(material);
                                         gltf.textures.Add(new GltfTexture { source = gltf.images.Count });
                                         string texUri = $"../texture/{texId:X8}.png?wcid={wcid}";
+                                        if (paletteId != 0) texUri += $"&paletteId={paletteId}";
+                                        if (hue != 0) texUri += $"&hue={hue}";
+                                        
                                         gltf.images.Add(new GltfImage { uri = texUri });
 
                                         textureToMat[texId] = matIdx;
@@ -476,7 +539,7 @@ namespace ACE.Server.Services
             return System.Text.Encoding.UTF8.GetBytes(json);
         }
 
-        private static byte[] ExportTexturePng(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f)
+        private static byte[] ExportTexturePng(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f, int hueShift = 0)
         {
             var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
 
@@ -529,20 +592,25 @@ namespace ACE.Server.Services
                         if (weenie.PropertiesDID != null && weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase))
                         {
                             int palTemplate = 0;
-                            if (weenie.PropertiesInt != null && weenie.PropertiesInt.TryGetValue(PropertyInt.PaletteTemplate, out palTemplate))
+                            if (paletteId != 0)
                             {
-                                if (weenie.PropertiesFloat != null && weenie.PropertiesFloat.TryGetValue(PropertyFloat.Shade, out weenieShade))
-                                {
-                                    shade = (float)weenieShade;
-                                }
+                                palTemplate = (int)paletteId;
+                            }
+                            else if (weenie.PropertiesInt != null && weenie.PropertiesInt.TryGetValue(PropertyInt.PaletteTemplate, out palTemplate))
+                            {
+                            }
 
-                                var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
-                                if (clothingTable != null)
+                            if (weenie.PropertiesFloat != null && weenie.PropertiesFloat.TryGetValue(PropertyFloat.Shade, out weenieShade))
+                            {
+                                shade = (float)weenieShade;
+                            }
+
+                            var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
+                            if (clothingTable != null)
+                            {
+                                if (clothingTable.ClothingSubPalEffects != null && clothingTable.ClothingSubPalEffects.TryGetValue((uint)palTemplate, out var effect))
                                 {
-                                    if (clothingTable.ClothingSubPalEffects != null && clothingTable.ClothingSubPalEffects.TryGetValue((uint)palTemplate, out var effect))
-                                    {
-                                        cloSubPalettes = effect.CloSubPalettes;
-                                    }
+                                    cloSubPalettes = effect.CloSubPalettes;
                                 }
                             }
 
@@ -593,6 +661,25 @@ namespace ACE.Server.Services
                                 }
                             }
                         }
+                    }
+                }
+
+                if (hueShift != 0 && basePalette != null)
+                {
+                    for (int i = 0; i < basePalette.Colors.Count; i++)
+                    {
+                        var col = basePalette.Colors[i];
+                        byte a = (byte)((col >> 24) & 0xFF);
+                        byte r = (byte)((col >> 16) & 0xFF);
+                        byte g = (byte)((col >> 8) & 0xFF);
+                        byte b = (byte)(col & 0xFF);
+
+                        ColorToHSV(r, g, b, out double h, out double s, out double v);
+                        h = (h + hueShift) % 360.0;
+                        if (h < 0) h += 360.0;
+                        ColorFromHSV(h, s, v, out byte nr, out byte ng, out byte nb);
+
+                        basePalette.Colors[i] = ((uint)a << 24) | ((uint)nr << 16) | ((uint)ng << 8) | (uint)nb;
                     }
                 }
 
@@ -659,6 +746,59 @@ namespace ACE.Server.Services
             {
                 return IconService.GetIcon(textureId);
             }
+        }
+
+        private static void ColorToHSV(byte r, byte g, byte b, out double h, out double s, out double v)
+        {
+            double min = Math.Min(Math.Min(r, g), b) / 255.0;
+            v = Math.Max(Math.Max(r, g), b) / 255.0;
+            double delta = v - min;
+
+            if (v == 0.0) s = 0;
+            else s = delta / v;
+
+            if (s == 0) h = 0.0;
+            else
+            {
+                double r1 = r / 255.0, g1 = g / 255.0, b1 = b / 255.0;
+                if (r1 == v) h = (g1 - b1) / delta;
+                else if (g1 == v) h = 2 + (b1 - r1) / delta;
+                else h = 4 + (r1 - g1) / delta;
+
+                h *= 60;
+                if (h < 0.0) h += 360;
+            }
+        }
+
+        private static void ColorFromHSV(double h, double s, double v, out byte r, out byte g, out byte b)
+        {
+            if (s == 0)
+            {
+                r = g = b = (byte)(v * 255);
+                return;
+            }
+            double hh = h;
+            if (hh >= 360.0) hh = 0.0;
+            hh /= 60.0;
+            long i = (long)hh;
+            double ff = hh - i;
+            double p = v * (1.0 - s);
+            double q = v * (1.0 - (s * ff));
+            double t = v * (1.0 - (s * (1.0 - ff)));
+
+            double rOut, gOut, bOut;
+            switch (i)
+            {
+                case 0: rOut = v; gOut = t; bOut = p; break;
+                case 1: rOut = q; gOut = v; bOut = p; break;
+                case 2: rOut = p; gOut = v; bOut = t; break;
+                case 3: rOut = p; gOut = q; bOut = v; break;
+                case 4: rOut = t; gOut = p; bOut = v; break;
+                default: rOut = v; gOut = p; bOut = q; break;
+            }
+            r = (byte)(rOut * 255.0);
+            g = (byte)(gOut * 255.0);
+            b = (byte)(bOut * 255.0);
         }
 
         private static byte[] ExportPalettePng(uint paletteId)

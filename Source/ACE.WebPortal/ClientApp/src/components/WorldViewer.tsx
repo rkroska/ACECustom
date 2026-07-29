@@ -101,28 +101,19 @@ const PRESET_CREATURES = [
   { wcid: 35134, name: 'Kroktok Lugian' },
 ];
 
-const PRESET_PALETTES = [
-  { id: 67109257, hex: '#04846B29', name: 'Olive Gold' },
-  { id: 67109053, hex: '#049C6A3B', name: 'Rusty Brown' },
-  { id: 67109070, hex: '#043A4A52', name: 'Slate Blue' },
-  { id: 67109071, hex: '#04E0CAEA', name: 'Lilac Pink' },
-  { id: 67109073, hex: '#04393332', name: 'Shadow Charcoal' },
-  { id: 67109147, hex: '#04523110', name: 'Amber Wood' },
-  { id: 67109308, hex: '#0499A2A1', name: 'Light Teal' },
-  { id: 67109312, hex: '#040B0302', name: 'Obsidian Black' },
-];
-
 // --- 3D Model Instance with Custom WebGL Shader ---
 interface ModelProps {
   wcid: number;
+  paletteId?: number;
+  hueShift?: number;
   rotationSpeed: number;
   isRotating: boolean;
   wireframe: boolean;
   onCreated: (gl: any) => void;
 }
 
-const Model: FC<ModelProps> = ({ wcid, rotationSpeed, isRotating, wireframe, onCreated }) => {
-  const modelUrl = `/api/visualizer/mesh/${wcid}.gltf`;
+const Model: FC<ModelProps> = ({ wcid, paletteId, hueShift, rotationSpeed, isRotating, wireframe, onCreated }) => {
+  const modelUrl = `/api/visualizer/mesh/${wcid}.gltf?paletteId=${paletteId || 0}&hue=${hueShift || 0}`;
 
   // useGLTF suspends while parsing binary buffer
   const { scene } = useGLTF(modelUrl);
@@ -179,7 +170,10 @@ const Model: FC<ModelProps> = ({ wcid, rotationSpeed, isRotating, wireframe, onC
 const WorldViewer: FC = () => {
   const [wcid, setWcid] = useState<number>(25749); // Default Olthoi Harvester
   const [searchInput, setSearchInput] = useState<string>('25749');
-  const [paletteId, setPaletteId] = useState<number>(67109257); // Olive Gold
+  const [paletteId, setPaletteId] = useState<number>(0); 
+  const [hueShift, setHueShift] = useState<number>(0);
+  const [speciesPalettes, setSpeciesPalettes] = useState<any[]>([]);
+
   const [isRotating, setIsRotating] = useState<boolean>(true);
   const [rotationSpeed, setRotationSpeed] = useState<number>(0.25);
   const [wireframe, setWireframe] = useState<boolean>(false);
@@ -193,6 +187,28 @@ const WorldViewer: FC = () => {
 
   // GL Context Ref for screenshots
   const glRef = useRef<any>(null);
+
+  useEffect(() => {
+    fetch(`/api/visualizer/species-palettes/${wcid}`)
+      .then(r => r.json())
+      .then(data => {
+         setSpeciesPalettes(data);
+         if (data.length > 0) setPaletteId(data[0].templateId);
+         else setPaletteId(0);
+         setHueShift(0);
+      })
+      .catch(e => console.error(e));
+  }, [wcid]);
+
+  const randomizePalette = () => {
+    if (speciesPalettes.length > 0 && Math.random() > 0.5) {
+      const randomPal = speciesPalettes[Math.floor(Math.random() * speciesPalettes.length)];
+      setPaletteId(randomPal.templateId);
+      setHueShift(0);
+    } else {
+      setHueShift(Math.floor(Math.random() * 360));
+    }
+  };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -219,16 +235,13 @@ const WorldViewer: FC = () => {
     setIsRotating(false); // Stop rotation to get a consistent front angle
 
     // Generate combinations
-    const combinations: { wcid: number; name: string; paletteId: number; paletteName: string }[] = [];
+    const combinations: { wcid: number; name: string; paletteId: number; }[] = [];
     for (const creature of PRESET_CREATURES) {
-      for (const palette of PRESET_PALETTES) {
-        combinations.push({
-          wcid: creature.wcid,
-          name: creature.name.replace(/\s+/g, ''),
-          paletteId: palette.id,
-          paletteName: palette.name.replace(/\s+/g, '')
-        });
-      }
+      combinations.push({
+        wcid: creature.wcid,
+        name: creature.name.replace(/\s+/g, ''),
+        paletteId: 0
+      });
     }
 
     setBulkTotal(combinations.length);
@@ -246,7 +259,7 @@ const WorldViewer: FC = () => {
       if (glRef.current) {
         try {
           const dataUrl = glRef.current.domElement.toDataURL("image/png");
-          const filename = `${item.wcid}_${item.name}_${item.paletteId}_${item.paletteName}.png`;
+          const filename = `${item.wcid}_${item.name}_${item.paletteId}.png`;
 
           await fetch('/api/visualizer/save-screenshot', {
             method: 'POST',
@@ -331,30 +344,54 @@ const WorldViewer: FC = () => {
         <div className="flex flex-col gap-2">
           <label className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
             <PaletteIcon className="w-4 h-4 text-neutral-400" />
-            Active Subpalette
+            Species Variant Palette
           </label>
-          <div className="grid grid-cols-4 gap-2">
-            {PRESET_PALETTES.map((pal) => (
-              <button
-                key={pal.id}
-                title={`${pal.name} (${pal.hex})`}
-                onClick={() => setPaletteId(pal.id)}
-                className={`w-full aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${
-                  paletteId === pal.id 
-                    ? 'border-blue-500 scale-105 shadow-lg shadow-blue-500/20' 
-                    : 'border-[#1f2937] hover:border-neutral-500'
-                }`}
-                style={{ backgroundColor: pal.hex.replace('#04', '#') }}
-              >
-                {paletteId === pal.id && (
-                  <span className="w-2.5 h-2.5 bg-[#111827] rounded-full" />
-                )}
-              </button>
+          <select
+            value={paletteId}
+            onChange={(e) => setPaletteId(parseInt(e.target.value))}
+            className="w-full px-3 py-2 bg-[#1f2937] border border-[#374151] rounded-lg text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          >
+            <option value={0}>Default Variant</option>
+            {speciesPalettes.map(pal => (
+              <option key={pal.templateId} value={pal.templateId}>
+                {pal.name} (0x{pal.paletteId.toString(16).toUpperCase()})
+              </option>
             ))}
+          </select>
+          
+          {paletteId !== 0 && (
+            <div className="mt-1">
+              <label className="text-[10px] uppercase text-neutral-500 font-bold mb-1 block">Active Palette Texture</label>
+              <img 
+                src={`/api/visualizer/palette/${speciesPalettes.find(p => p.templateId === paletteId)?.paletteId}.png`} 
+                alt="Active Palette" 
+                className="w-full h-4 rounded shadow-sm image-pixelated"
+                onError={(e) => (e.currentTarget.style.display = 'none')}
+              />
+            </div>
+          )}
+          
+          <div className="flex flex-col gap-1 mt-2">
+            <span className="flex items-center gap-1.5 text-sm text-neutral-300">
+              Hue Shift ({hueShift}°)
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="360"
+              step="1"
+              value={hueShift}
+              onChange={(e) => setHueShift(parseInt(e.target.value))}
+              className="w-full h-1.5 bg-gradient-to-r from-red-500 via-green-500 to-blue-500 rounded-lg appearance-none cursor-pointer"
+            />
           </div>
-          <div className="text-xs text-neutral-400 mt-1 text-center font-mono bg-[#1f2937]/50 py-1.5 rounded-md">
-            Active: {PRESET_PALETTES.find(p => p.id === paletteId)?.name || 'Custom'}
-          </div>
+
+          <button
+            onClick={randomizePalette}
+            className="mt-2 w-full flex items-center justify-center gap-2 py-2 bg-[#1f2937] hover:bg-[#374151] text-white font-semibold rounded-lg text-sm transition-colors border border-[#374151]"
+          >
+            🎲 Randomize Palette
+          </button>
         </div>
 
         <hr className="border-[#1f2937]" />
@@ -496,6 +533,8 @@ const WorldViewer: FC = () => {
               <Suspense fallback={<CanvasLoader />}>
                 <Model
                   wcid={wcid}
+                  paletteId={paletteId}
+                  hueShift={hueShift}
                   rotationSpeed={rotationSpeed}
                   isRotating={isRotating}
                   wireframe={wireframe}
