@@ -246,6 +246,7 @@ const WorldViewer: FC = () => {
   const [smartPalettes, setSmartPalettes] = useState<any[]>([]);
   const [smartFamily, setSmartFamily] = useState<string>('all');
   const [paletteSlot, setPaletteSlot] = useState<number>(-1);
+  const [minConfidenceScore, setMinConfidenceScore] = useState<number>(85);
 
 
   const [isRotating, setIsRotating] = useState<boolean>(true);
@@ -918,24 +919,36 @@ const WorldViewer: FC = () => {
             </select>
           </div>
 
-          <div className="flex gap-1 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-transparent">
-            {['All', 'Chitin', 'Fur/Hide', 'Metallic', 'Elemental'].map(family => (
-              <button
-                key={family}
-                onClick={() => setSmartFamily(family === 'All' ? 'all' : family)}
-                className={`px-3 py-1 text-[11px] font-semibold rounded-full whitespace-nowrap transition-colors ${
-                  (smartFamily === 'all' && family === 'All') || smartFamily === family
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-[#1f2937] text-neutral-400 hover:text-neutral-200'
-                }`}
-              >
-                {family}
-              </button>
-            ))}
+          <div className="flex justify-between items-center gap-1.5 pb-1">
+            <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-transparent">
+              {['All', 'Chitin', 'Fur/Hide', 'Metallic', 'Elemental'].map(family => (
+                <button
+                  key={family}
+                  onClick={() => setSmartFamily(family === 'All' ? 'all' : family)}
+                  className={`px-2.5 py-0.5 text-[10px] font-semibold rounded-full whitespace-nowrap transition-colors ${
+                    (smartFamily === 'all' && family === 'All') || smartFamily === family
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-[#1f2937] text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  {family}
+                </button>
+              ))}
+            </div>
+            <select
+              value={minConfidenceScore}
+              onChange={(e) => setMinConfidenceScore(parseInt(e.target.value))}
+              className="bg-[#111827] text-amber-300 border border-amber-500/40 rounded px-2 py-0.5 text-[10px] font-bold focus:outline-none cursor-pointer"
+            >
+              <option value={85}>🔥 S-Tier (85%+)</option>
+              <option value={70}>✨ A-Tier (70%+)</option>
+              <option value={50}>👍 B-Tier (50%+)</option>
+              <option value={0}>🌐 All</option>
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 pr-1">
-            {smartPalettes.map(pal => (
+            {smartPalettes.filter((p: any) => (p.confidenceScore ?? 80) >= minConfidenceScore).map((pal: any) => (
               <button
                 key={pal.paletteId}
                 onClick={() => setPaletteId(pal.paletteId)}
@@ -947,6 +960,13 @@ const WorldViewer: FC = () => {
               >
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-mono text-neutral-300">{pal.hexId}</span>
+                  <span className={`text-[9px] font-bold px-1 py-0.2 rounded ${
+                    (pal.confidenceScore ?? 80) >= 85 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                    (pal.confidenceScore ?? 80) >= 70 ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
+                    'bg-neutral-700 text-neutral-400'
+                  }`}>
+                    {(pal.confidenceScore ?? 80) >= 85 ? '🔥' : '✨'} {pal.confidenceScore ?? 80}%
+                  </span>
                 </div>
                 <div className="flex w-full h-3 rounded overflow-hidden">
                   {pal.swatches.map((hex: string, i: number) => (
@@ -955,9 +975,9 @@ const WorldViewer: FC = () => {
                 </div>
               </button>
             ))}
-            {smartPalettes.length === 0 && (
+            {smartPalettes.filter((p: any) => (p.confidenceScore ?? 80) >= minConfidenceScore).length === 0 && (
               <div className="col-span-2 text-center text-xs text-neutral-500 py-4">
-                No palettes found for this material family.
+                No palettes matching minimum confidence filter ({minConfidenceScore}%+).
               </div>
             )}
           </div>

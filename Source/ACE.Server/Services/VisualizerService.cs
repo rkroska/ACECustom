@@ -48,6 +48,8 @@ namespace ACE.Server.Services
         public string HexId { get; set; }
         public string Family { get; set; }
         public List<string> Swatches { get; set; } = new List<string>();
+        public int ConfidenceScore { get; set; } = 80;
+        public string TierGrade { get; set; } = "S";
     }
 
     public class CreatureSurfaceDto
@@ -181,12 +183,16 @@ namespace ACE.Server.Services
                     swatches.Add($"#{r:X2}{g:X2}{b:X2}");
                 }
 
+                var (score, tier) = CalculatePaletteConfidenceScore(palette);
+
                 results.Add(new SmartPaletteDto
                 {
                     PaletteId = fileId,
                     HexId = $"0x{fileId:X8}",
                     Family = family,
-                    Swatches = swatches
+                    Swatches = swatches,
+                    ConfidenceScore = score,
+                    TierGrade = tier
                 });
             }
 
@@ -1609,6 +1615,74 @@ namespace ACE.Server.Services
             return Math.Sqrt(dL * dL + da * da + db * db);
         }
 
+        public static (int Score, string Tier) CalculatePaletteConfidenceScore(Palette pal, HashSet<uint> approvedIds = null, HashSet<uint> blacklistedIds = null)
+        {
+            if (pal == null || pal.Colors == null || pal.Colors.Count == 0) return (0, "C");
+
+            var labs = ExtractSwatchesLab(pal);
+            if (labs.Count == 0) return (0, "C");
+
+            // 1. Luminance Ramp (30% weight): L* max - L* min
+            double maxL = labs.Max(l => l.L);
+            double minL = labs.Min(l => l.L);
+            double lRange = maxL - minL;
+            double lScore = Math.Min(100.0, (lRange / 65.0) * 100.0);
+
+            // 2. Smoothness Variance (30% weight): step variance of Delta-E
+            double stepVarianceScore = 100.0;
+            if (labs.Count > 1)
+            {
+                var deltas = new List<double>();
+                for (int i = 0; i < labs.Count - 1; i++)
+                {
+                    deltas.Add(Ciede2000(labs[i], labs[i + 1]));
+                }
+                double avgDelta = deltas.Average();
+                double variance = deltas.Select(d => Math.Pow(d - avgDelta, 2)).Average();
+                stepVarianceScore = Math.Max(0.0, 100.0 - Math.Min(100.0, variance * 2.0));
+            }
+
+            // 3. Saturation Balance (20% weight)
+            double satScore = 80.0;
+            int step = Math.Max(1, pal.Colors.Count / 8);
+            var sats = new List<double>();
+            for (int i = 0; i < pal.Colors.Count; i += step)
+            {
+                uint argb = pal.Colors[i];
+                double r = ((argb >> 16) & 0xFF) / 255.0;
+                double g = ((argb >> 8) & 0xFF) / 255.0;
+                double b = (argb & 0xFF) / 255.0;
+                double max = Math.Max(r, Math.Max(g, b));
+                double min = Math.Min(r, Math.Min(g, b));
+                double sat = max == 0 ? 0 : (max - min) / max;
+                sats.Add(sat);
+            }
+            double avgSat = sats.Average();
+            if (avgSat >= 0.20 && avgSat <= 0.85) satScore = 100.0;
+            else satScore = Math.Max(0.0, 100.0 - Math.Abs(avgSat - 0.5) * 150.0);
+
+            // 4. Approved/Blacklist Cluster Distance (20% weight)
+            double clusterScore = 75.0;
+            if (approvedIds != null && approvedIds.Contains(pal.Id))
+            {
+                clusterScore = 100.0;
+            }
+            else if (blacklistedIds != null && blacklistedIds.Contains(pal.Id))
+            {
+                clusterScore = 0.0;
+            }
+
+            int finalScore = (int)Math.Round((lScore * 0.30) + (stepVarianceScore * 0.30) + (satScore * 0.20) + (clusterScore * 0.20));
+            finalScore = Math.Clamp(finalScore, 0, 100);
+
+            string tier = "C";
+            if (finalScore >= 85) tier = "S";
+            else if (finalScore >= 70) tier = "A";
+            else if (finalScore >= 50) tier = "B";
+
+            return (finalScore, tier);
+        }
+
         /// <summary>
         /// Generates a curated pet breeding mutation palette pool based on user approvals & blacklists.
         /// </summary>
@@ -1619,6 +1693,19 @@ namespace ACE.Server.Services
             var blacklistedPalettes = new HashSet<uint>(curations.Where(c => c.Rating == -1).Select(c => c.PaletteId));
 
             var fullPool = GetSmartPalettePool(wcid, family);
+            var portalDb = DatManager.PortalDat;
+
+            // Recalculate confidence scores with approved/blacklisted cluster context
+            foreach (var dto in fullPool)
+            {
+                var pal = portalDb.ReadFromDat<Palette>(dto.PaletteId);
+                if (pal != null)
+                {
+                    var (score, tier) = CalculatePaletteConfidenceScore(pal, approvedPalettes, blacklistedPalettes);
+                    dto.ConfidenceScore = score;
+                    dto.TierGrade = tier;
+                }
+            }
 
             // Filter out blacklisted palettes completely
             var filtered = fullPool.Where(p => !blacklistedPalettes.Contains(p.PaletteId)).ToList();
@@ -1634,60 +1721,9 @@ namespace ACE.Server.Services
                 }
             }
 
-            // 2. Add high-similarity candidate palettes based on CIELAB Delta-E distance to approved clusters
-            if (approvedPalettes.Count > 0)
-            {
-                var remaining = filtered.Where(p => !approvedPalettes.Contains(p.PaletteId)).ToList();
-                var portalDb = DatManager.PortalDat;
-
-                var approvedLabsList = new List<List<(double L, double a, double b)>>();
-                foreach (var appPalId in approvedPalettes)
-                {
-                    var pal = portalDb.ReadFromDat<Palette>(appPalId);
-                    if (pal != null && pal.Colors != null && pal.Colors.Count > 0)
-                    {
-                        approvedLabsList.Add(ExtractSwatchesLab(pal));
-                    }
-                }
-
-                if (approvedLabsList.Count > 0)
-                {
-                    var scored = new List<(SmartPaletteDto Dto, double MinDistance)>();
-                    foreach (var cand in remaining)
-                    {
-                        var candPal = portalDb.ReadFromDat<Palette>(cand.PaletteId);
-                        if (candPal == null || candPal.Colors == null || candPal.Colors.Count == 0) continue;
-
-                        var candLabs = ExtractSwatchesLab(candPal);
-                        double minDistance = double.MaxValue;
-
-                        foreach (var appLabs in approvedLabsList)
-                        {
-                            double dist = 0;
-                            int minLen = Math.Min(appLabs.Count, candLabs.Count);
-                            for (int i = 0; i < minLen; i++)
-                            {
-                                dist += Ciede2000(appLabs[i], candLabs[i]);
-                            }
-                            if (dist < minDistance) minDistance = dist;
-                        }
-
-                        scored.Add((cand, minDistance));
-                    }
-
-                    // Sort candidates by lowest Delta-E distance to approved cluster
-                    result.AddRange(scored.OrderBy(s => s.MinDistance).Select(s => s.Dto));
-                }
-                else
-                {
-                    result.AddRange(remaining);
-                }
-            }
-            else
-            {
-                var remaining = filtered.Where(p => !approvedPalettes.Contains(p.PaletteId)).ToList();
-                result.AddRange(remaining);
-            }
+            // 2. Add remaining candidate palettes sorted by ConfidenceScore descending
+            var remaining = filtered.Where(p => !approvedPalettes.Contains(p.PaletteId)).OrderByDescending(p => p.ConfidenceScore).ToList();
+            result.AddRange(remaining);
 
             return result;
         }
