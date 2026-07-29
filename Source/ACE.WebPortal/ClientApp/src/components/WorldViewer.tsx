@@ -14,6 +14,8 @@ import {
   RefreshCw,
   Search,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   AlertTriangle,
   Camera,
   Download,
@@ -22,7 +24,11 @@ import {
   ThumbsUp,
   ThumbsDown,
   CheckCircle2,
-  XCircle
+  XCircle,
+  MessageSquare,
+  Copy,
+  RotateCcw,
+  Send
 } from 'lucide-react';
 
 // --- Error Boundary for handling missing / invalid models inside Canvas context ---
@@ -300,6 +306,107 @@ const WorldViewer: FC = () => {
   // Interactive Curation States
   const [curations, setCurations] = useState<Record<string, number>>({});
 
+  // Session Audit Log States
+  type LogEntry = {
+    id: string;
+    timestamp: string;
+    type: 'auto' | 'user' | 'screenshot';
+    content: string;
+  };
+
+  const [sessionLogs, setSessionLogs] = useState<LogEntry[]>([]);
+  const [chatInput, setChatInput] = useState<string>('');
+  const [isLogOpen, setIsLogOpen] = useState<boolean>(true);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  const appendLog = (type: 'auto' | 'user' | 'screenshot', content: string) => {
+    const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const newEntry: LogEntry = {
+      id: Math.random().toString(36).substring(2, 9),
+      timestamp: `[${timestamp}]`,
+      type,
+      content
+    };
+    setSessionLogs(prev => [...prev, newEntry]);
+  };
+
+  useEffect(() => {
+    if (isLogOpen) {
+      logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [sessionLogs, isLogOpen]);
+
+  const handleResetToDefault = () => {
+    setPaletteId(0);
+    setHueShift(0);
+    setPaletteSlot(-1);
+    setActiveTexReplaceIdx(-1);
+    if (creatureSurfaces.length > 0) setTargetSurfaceId(creatureSurfaces[0].textureId);
+    else setTargetSurfaceId(0);
+
+    const cName = PRESET_CREATURES.find(c => c.wcid === wcid)?.name || `WCID ${wcid}`;
+    appendLog('auto', `🔄 Reset visual overrides to native DAT defaults for ${cName}`);
+  };
+
+  const handleAddUserComment = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!chatInput.trim()) return;
+
+    appendLog('user', chatInput.trim());
+    setChatInput('');
+  };
+
+  const handleCaptureScreenshotAndLog = async () => {
+    if (!glRef.current) {
+      alert("3D canvas not ready for screenshot.");
+      return;
+    }
+
+    try {
+      const dataUrl = glRef.current.domElement.toDataURL("image/png");
+      const cName = PRESET_CREATURES.find(c => c.wcid === wcid)?.name.replace(/[^a-zA-Z0-9]/g, '_') || `WCID_${wcid}`;
+      const filename = `snapshot_${cName}_${Date.now()}.png`;
+
+      const response = await fetch('/api/visualizer/save-screenshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl, filename })
+      });
+
+      if (response.ok) {
+        const imageUrl = `/screenshots/${filename}`;
+        appendLog('screenshot', `📸 Captured Screenshot:\n![Snapshot](${imageUrl})`);
+      } else {
+        appendLog('auto', `⚠️ Failed to save screenshot to server.`);
+      }
+    } catch (err) {
+      console.error("Screenshot capture failed: ", err);
+    }
+  };
+
+  const handleCopyLogsForAI = async () => {
+    if (sessionLogs.length === 0) {
+      alert("No logs to copy yet.");
+      return;
+    }
+
+    const cName = PRESET_CREATURES.find(c => c.wcid === wcid)?.name || `WCID ${wcid}`;
+    const header = `# 🎨 3D Showroom Session Audit & Comments\n**Creature**: ${cName} (WCID ${wcid})\n**Date**: ${new Date().toLocaleString()}\n\n---\n\n`;
+    
+    const body = sessionLogs.map(log => {
+      if (log.type === 'user') {
+        return `### 💬 User Comment ${log.timestamp}\n${log.content}`;
+      } else if (log.type === 'screenshot') {
+        return `### ${log.content}`;
+      }
+      return `${log.timestamp} ${log.content}`;
+    }).join('\n\n');
+
+    const fullMarkdown = header + body;
+    await navigator.clipboard.writeText(fullMarkdown);
+    alert("Copied full session transcript (with comments & screenshot links) to clipboard! You can paste it directly into our chat.");
+  };
+
   useEffect(() => {
     fetch(`/api/visualizer/curation/${wcid}`)
       .then(r => r.json())
@@ -350,6 +457,8 @@ const WorldViewer: FC = () => {
       .then(() => {
         const key = `${wcid}_${payload.textureId}_${payload.paletteId}`;
         setCurations(prev => ({ ...prev, [key]: rating }));
+        const label = rating === 1 ? '👍 APPROVED' : '👎 BLACKLISTED';
+        appendLog('auto', `${label} combo (Texture 0x${payload.textureId.toString(16).toUpperCase().padStart(8, '0')}, Palette 0x${payload.paletteId.toString(16).toUpperCase().padStart(8, '0')})`);
       })
       .catch(e => console.error("Failed to submit curation: ", e));
   };
@@ -403,6 +512,7 @@ const WorldViewer: FC = () => {
     const nextList = [...textureReplacements, newSwap];
     setTextureReplacements(nextList);
     setActiveTexReplaceIdx(nextList.length - 1);
+    appendLog('auto', `⚡ Live Swapped Surface 0x${targetSurfaceId.toString(16).toUpperCase()} -> Texture 0x${newTexId.toString(16).toUpperCase()}`);
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -488,6 +598,15 @@ const WorldViewer: FC = () => {
             <p className="text-xs text-neutral-400">Portal DAT asset renderer</p>
           </div>
         </div>
+
+        {/* Reset to Default Control */}
+        <button
+          onClick={handleResetToDefault}
+          className="w-full flex items-center justify-center gap-2 py-2 bg-neutral-800 hover:bg-neutral-700 text-amber-400 hover:text-amber-300 font-semibold rounded-lg text-xs transition-colors border border-[#374151]"
+          title="Reset model overrides to native DAT defaults"
+        >
+          <RotateCcw className="w-3.5 h-3.5" /> 🔄 Reset to Default
+        </button>
 
         <hr className="border-[#1f2937]" />
 
@@ -942,6 +1061,112 @@ const WorldViewer: FC = () => {
               <ThumbsDown className="w-3.5 h-3.5" /> Blacklist (X)
             </button>
           </div>
+        </div>
+
+        {/* Showroom Session Audit & Chat Box */}
+        <div className="absolute bottom-4 right-4 w-96 max-w-[90vw] bg-[#111827]/95 backdrop-blur-md rounded-xl border border-[#374151] shadow-2xl flex flex-col z-20 overflow-hidden">
+          {/* Header */}
+          <div 
+            onClick={() => setIsLogOpen(!isLogOpen)}
+            className="px-3.5 py-2.5 bg-[#1f2937]/80 hover:bg-[#1f2937] border-b border-[#374151] flex items-center justify-between cursor-pointer select-none"
+          >
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-blue-400" />
+              <span className="text-xs font-bold text-white tracking-wide">Session Audit & Comments</span>
+              <span className="text-[10px] bg-blue-600/30 text-blue-300 font-mono px-1.5 py-0.5 rounded-full">
+                {sessionLogs.length}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopyLogsForAI();
+                }}
+                className="p-1 hover:bg-blue-600/30 text-neutral-300 hover:text-white rounded transition-colors"
+                title="Copy Full Session Log for AI"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </button>
+              {isLogOpen ? <ChevronDown className="w-4 h-4 text-neutral-400" /> : <ChevronUp className="w-4 h-4 text-neutral-400" />}
+            </div>
+          </div>
+
+          {/* Collapsible Content */}
+          {isLogOpen && (
+            <div className="flex flex-col">
+              {/* Log Messages Viewport */}
+              <div className="h-52 p-3 overflow-y-auto flex flex-col gap-2 font-sans text-xs scrollbar-thin scrollbar-thumb-neutral-700">
+                {sessionLogs.length === 0 ? (
+                  <div className="text-center text-neutral-500 text-[11px] my-auto italic">
+                    No actions logged yet. Interact with the 3D model, swap textures, or add comments below!
+                  </div>
+                ) : (
+                  sessionLogs.map(log => (
+                    <div 
+                      key={log.id} 
+                      className={`p-2 rounded-lg text-xs leading-relaxed border ${
+                        log.type === 'user' 
+                          ? 'bg-blue-900/30 border-blue-500/40 text-blue-100' 
+                          : log.type === 'screenshot'
+                          ? 'bg-purple-900/30 border-purple-500/40 text-purple-100'
+                          : 'bg-[#1f2937]/50 border-[#374151]/80 text-neutral-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[10px] opacity-70 mb-0.5 font-mono">
+                        <span>{log.type === 'user' ? '💬 Comment' : log.type === 'screenshot' ? '📸 Snapshot' : '⚡ System Event'}</span>
+                        <span>{log.timestamp}</span>
+                      </div>
+                      <div className="whitespace-pre-wrap break-words">
+                        {log.content}
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={logEndRef} />
+              </div>
+
+              {/* Chat Input & Tools Bar */}
+              <form onSubmit={handleAddUserComment} className="p-2 bg-[#1f2937]/50 border-t border-[#374151] flex flex-col gap-2">
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Type a comment/note on this combo..."
+                    className="flex-grow px-2.5 py-1.5 bg-[#0b0f19] border border-[#374151] rounded-lg text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg text-xs transition-colors flex items-center gap-1 shadow"
+                  >
+                    <Send className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div className="flex justify-between items-center text-[11px]">
+                  <button
+                    type="button"
+                    onClick={handleCaptureScreenshotAndLog}
+                    className="flex items-center gap-1 text-purple-400 hover:text-purple-300 font-semibold px-2 py-1 rounded hover:bg-purple-600/20 transition-colors"
+                    title="Capture current 3D view and embed direct markdown image link"
+                  >
+                    <Camera className="w-3 h-3" /> 📸 Screenshot & Link
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyLogsForAI}
+                    className="flex items-center gap-1 text-blue-400 hover:text-blue-300 font-semibold px-2 py-1 rounded hover:bg-blue-600/20 transition-colors"
+                    title="Copy formatted markdown transcript to paste into chat"
+                  >
+                    <Copy className="w-3 h-3" /> 📋 Copy Log for AI
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
 
         {/* Client-side Controls Overlay */}
