@@ -261,6 +261,8 @@ namespace ACE.Server.Services
             if (clothingBase != 0)
             {
                 var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
+                var customNames = MergeCustomClothingBaseJson(clothingBase, clothingTable);
+
                 if (clothingTable != null && clothingTable.ClothingSubPalEffects != null)
                 {
                     foreach (var kvp in clothingTable.ClothingSubPalEffects)
@@ -310,10 +312,12 @@ namespace ACE.Server.Services
                             }
                         }
 
+                        string name = customNames.TryGetValue(templateId, out var customName) ? $"Variant {templateId} ({customName})" : $"Variant {templateId}";
+
                         result.Add(new SpeciesPaletteDto 
                         { 
                             TemplateId = templateId, 
-                            Name = $"Variant {templateId}", 
+                            Name = name, 
                             PaletteSetId = paletteSetId,
                             PaletteId = finalPaletteId,
                             Swatches = swatches,
@@ -370,6 +374,78 @@ namespace ACE.Server.Services
             return result;
         }
 
+        private static Dictionary<uint, string> MergeCustomClothingBaseJson(uint clothingBaseId, ClothingTable clothingTable)
+        {
+            var customNames = new Dictionary<uint, string>();
+            if (clothingTable == null) return customNames;
+
+            string jsonPath = $@"C:\ACE\Mods\CustomClothingBase\json\{clothingBaseId:X8}.json";
+            if (!File.Exists(jsonPath))
+            {
+                jsonPath = $@"C:\Scripting\CustomClothingBase\json\{clothingBaseId:X8}.json";
+            }
+            if (!File.Exists(jsonPath)) return customNames;
+
+            try
+            {
+                string jsonText = File.ReadAllText(jsonPath);
+                using (var doc = JsonDocument.Parse(jsonText))
+                {
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("clothingSubPalEffects", out var subPalElem))
+                    {
+                        foreach (var prop in subPalElem.EnumerateObject())
+                        {
+                            if (uint.TryParse(prop.Name, out uint templateId))
+                            {
+                                var elem = prop.Value;
+                                uint icon = 0;
+                                if (elem.TryGetProperty("icon", out var iconProp)) icon = iconProp.GetUInt32();
+
+                                string comment = "";
+                                if (elem.TryGetProperty("comment", out var commentProp)) comment = commentProp.GetString();
+                                else if (elem.TryGetProperty("Comment", out var commentProp2)) comment = commentProp2.GetString();
+
+                                if (!string.IsNullOrEmpty(comment)) customNames[templateId] = comment;
+
+                                var cloSubPalEffectObj = new CloSubPalEffect();
+                                if (elem.TryGetProperty("cloSubPalettes", out var cloSubPalsElem))
+                                {
+                                    foreach (var subElem in cloSubPalsElem.EnumerateArray())
+                                    {
+                                        uint palSet = 0;
+                                        if (subElem.TryGetProperty("paletteSet", out var palSetProp)) palSet = palSetProp.GetUInt32();
+
+                                        var subPalObj = new CloSubPalette { PaletteSet = palSet };
+
+                                        if (subElem.TryGetProperty("ranges", out var rangesElem))
+                                        {
+                                            foreach (var rElem in rangesElem.EnumerateArray())
+                                            {
+                                                uint offset = rElem.GetProperty("offset").GetUInt32();
+                                                uint numColors = rElem.GetProperty("numColors").GetUInt32();
+                                                subPalObj.Ranges.Add(new CloSubPaletteRange { Offset = offset, NumColors = numColors });
+                                            }
+                                        }
+
+                                        cloSubPalEffectObj.CloSubPalettes.Add(subPalObj);
+                                    }
+                                }
+
+                                clothingTable.ClothingSubPalEffects[templateId] = cloSubPalEffectObj;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Failed to parse CustomClothingBase JSON {jsonPath}: {ex.Message}");
+            }
+
+            return customNames;
+        }
+
         public static List<TextureReplacementDto> GetTextureReplacements(uint wcid)
         {
             var result = new List<TextureReplacementDto>();
@@ -389,6 +465,8 @@ namespace ACE.Server.Services
             if (clothingBase != 0)
             {
                 var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
+                MergeCustomClothingBaseJson(clothingBase, clothingTable);
+
                 if (clothingTable != null && clothingTable.ClothingBaseEffects != null)
                 {
                     foreach (var kvp in clothingTable.ClothingBaseEffects)
