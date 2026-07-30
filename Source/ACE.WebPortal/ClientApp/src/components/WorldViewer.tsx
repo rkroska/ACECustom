@@ -1,4 +1,4 @@
-import React, { type FC, useState, useEffect, useRef, Suspense } from 'react';
+import React, { type FC, useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, useGLTF, Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -247,6 +247,7 @@ const WorldViewer: FC = () => {
   const [smartFamily, setSmartFamily] = useState<string>('all');
   const [paletteSlot, setPaletteSlot] = useState<number>(-1);
   const [minConfidenceScore, setMinConfidenceScore] = useState<number>(85);
+  const [curationQueueTab, setCurationQueueTab] = useState<'unrated' | 'approved' | 'blacklisted' | 'all'>('unrated');
 
 
   const [isRotating, setIsRotating] = useState<boolean>(true);
@@ -451,16 +452,47 @@ const WorldViewer: FC = () => {
   const currentCurationKey = `${wcid}_${activeCurrentTexId || 0}_${paletteId || 0}`;
   const currentCurationRating = curations[currentCurationKey] || 0;
 
+  const filteredSmartPalettes = useMemo(() => {
+    return smartPalettes.filter((p: any) => {
+      const confidence = p.confidenceScore ?? 80;
+      if (confidence < minConfidenceScore) return false;
+
+      const key = `${wcid}_${activeCurrentTexId || 0}_${p.paletteId}`;
+      const rating = curations[key] ?? 0;
+
+      if (curationQueueTab === 'unrated') return rating === 0;
+      if (curationQueueTab === 'approved') return rating === 1;
+      if (curationQueueTab === 'blacklisted') return rating === -1;
+      return true; // 'all'
+    });
+  }, [smartPalettes, minConfidenceScore, curations, wcid, activeCurrentTexId, curationQueueTab]);
+
+  const unratedCount = useMemo(() => {
+    return smartPalettes.filter((p: any) => {
+      if ((p.confidenceScore ?? 80) < minConfidenceScore) return false;
+      const key = `${wcid}_${activeCurrentTexId || 0}_${p.paletteId}`;
+      return (curations[key] ?? 0) === 0;
+    }).length;
+  }, [smartPalettes, minConfidenceScore, curations, wcid, activeCurrentTexId]);
+
+  const approvedCount = useMemo(() => {
+    return Object.entries(curations).filter(([k, v]) => k.startsWith(`${wcid}_`) && v === 1).length;
+  }, [curations, wcid]);
+
+  const blacklistedCount = useMemo(() => {
+    return Object.entries(curations).filter(([k, v]) => k.startsWith(`${wcid}_`) && v === -1).length;
+  }, [curations, wcid]);
+
   const cyclePalette = (direction: 1 | -1) => {
-    if (!smartPalettes || smartPalettes.length === 0) return;
-    const currIdx = smartPalettes.findIndex(p => p.paletteId === paletteId);
+    if (!filteredSmartPalettes || filteredSmartPalettes.length === 0) return;
+    const currIdx = filteredSmartPalettes.findIndex((p: any) => p.paletteId === paletteId);
     let nextIdx = 0;
     if (currIdx >= 0) {
-      nextIdx = (currIdx + direction + smartPalettes.length) % smartPalettes.length;
+      nextIdx = (currIdx + direction + filteredSmartPalettes.length) % filteredSmartPalettes.length;
     } else {
-      nextIdx = direction === 1 ? 0 : smartPalettes.length - 1;
+      nextIdx = direction === 1 ? 0 : filteredSmartPalettes.length - 1;
     }
-    setPaletteId(smartPalettes[nextIdx].paletteId);
+    setPaletteId(filteredSmartPalettes[nextIdx].paletteId);
   };
 
   const handleCurationSubmit = (rating: number) => {
@@ -486,6 +518,16 @@ const WorldViewer: FC = () => {
         setCurations(prev => ({ ...prev, [key]: rating }));
         const label = rating === 1 ? '👍 APPROVED' : '👎 BLACKLISTED';
         appendLog('auto', `${label} combo (Texture 0x${payload.textureId.toString(16).toUpperCase().padStart(8, '0')}, Palette 0x${payload.paletteId.toString(16).toUpperCase().padStart(8, '0')})`);
+
+        // Auto-pop rated palette out of queue and load next unrated palette!
+        if (curationQueueTab === 'unrated') {
+          const remaining = filteredSmartPalettes.filter((p: any) => p.paletteId !== activePalId);
+          if (remaining.length > 0) {
+            const currIdx = filteredSmartPalettes.findIndex((p: any) => p.paletteId === activePalId);
+            const nextPal = remaining[currIdx % remaining.length];
+            setPaletteId(nextPal.paletteId);
+          }
+        }
       })
       .catch(e => console.error("Failed to submit curation: ", e));
   };
@@ -502,16 +544,14 @@ const WorldViewer: FC = () => {
         cyclePalette(-1);
       } else if (e.key === 'a' || e.key === 'A') {
         handleCurationSubmit(1);
-        cyclePalette(1);
       } else if (e.key === 'x' || e.key === 'X') {
         handleCurationSubmit(-1);
-        cyclePalette(1);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [wcid, activeTexReplaceIdx, targetSurfaceId, paletteId, textureReplacements, smartPalettes]);
+  }, [wcid, activeTexReplaceIdx, targetSurfaceId, paletteId, textureReplacements, filteredSmartPalettes, curationQueueTab]);
 
   const randomizePalette = () => {
     if (speciesPalettes.length > 0 && Math.random() > 0.5) {
@@ -947,8 +987,55 @@ const WorldViewer: FC = () => {
             </select>
           </div>
 
+          {/* Speed Curation Queue Status Banner & Tabs */}
+          <div className="flex flex-col gap-1 text-[11px] font-semibold bg-[#111827] p-2 rounded-lg border border-[#374151] mb-1">
+            <div className="flex justify-between items-center text-neutral-300">
+              <span className="flex items-center gap-1 font-bold text-amber-400">
+                🎯 Speed Curation Queue
+              </span>
+              <span className="text-[10px] text-neutral-400">
+                👍 {approvedCount} Approved | 👎 {blacklistedCount} Blacklisted
+              </span>
+            </div>
+
+            <div className="grid grid-cols-4 gap-1 mt-1">
+              <button
+                onClick={() => setCurationQueueTab('unrated')}
+                className={`py-1 text-[10px] rounded font-bold transition-all ${
+                  curationQueueTab === 'unrated' ? 'bg-amber-500 text-black shadow' : 'bg-[#1f2937] text-neutral-400 hover:text-white'
+                }`}
+              >
+                📥 Unrated ({unratedCount})
+              </button>
+              <button
+                onClick={() => setCurationQueueTab('approved')}
+                className={`py-1 text-[10px] rounded font-bold transition-all ${
+                  curationQueueTab === 'approved' ? 'bg-green-600 text-white shadow' : 'bg-[#1f2937] text-neutral-400 hover:text-white'
+                }`}
+              >
+                👍 Approved ({approvedCount})
+              </button>
+              <button
+                onClick={() => setCurationQueueTab('blacklisted')}
+                className={`py-1 text-[10px] rounded font-bold transition-all ${
+                  curationQueueTab === 'blacklisted' ? 'bg-red-600 text-white shadow' : 'bg-[#1f2937] text-neutral-400 hover:text-white'
+                }`}
+              >
+                👎 Blacklisted ({blacklistedCount})
+              </button>
+              <button
+                onClick={() => setCurationQueueTab('all')}
+                className={`py-1 text-[10px] rounded font-bold transition-all ${
+                  curationQueueTab === 'all' ? 'bg-blue-600 text-white shadow' : 'bg-[#1f2937] text-neutral-400 hover:text-white'
+                }`}
+              >
+                🌐 All
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 pr-1">
-            {smartPalettes.filter((p: any) => (p.confidenceScore ?? 80) >= minConfidenceScore).map((pal: any) => (
+            {filteredSmartPalettes.map((pal: any) => (
               <button
                 key={pal.paletteId}
                 onClick={() => setPaletteId(pal.paletteId)}
@@ -975,9 +1062,11 @@ const WorldViewer: FC = () => {
                 </div>
               </button>
             ))}
-            {smartPalettes.filter((p: any) => (p.confidenceScore ?? 80) >= minConfidenceScore).length === 0 && (
+            {filteredSmartPalettes.length === 0 && (
               <div className="col-span-2 text-center text-xs text-neutral-500 py-4">
-                No palettes matching minimum confidence filter ({minConfidenceScore}%+).
+                {curationQueueTab === 'unrated' 
+                  ? '🎉 All Palettes Curated! Unrated queue empty for this filter.'
+                  : 'No palettes found in this view category.'}
               </div>
             )}
           </div>
