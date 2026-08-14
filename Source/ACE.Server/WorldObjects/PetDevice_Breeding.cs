@@ -190,110 +190,113 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                // Stat Inheritance (55/45 Rule)
-                int InheritRating(PropertyInt prop)
+                // Stat Inheritance Package Deal (55/45 Rule: Couples Stat Value & Mutation Count together)
+                (int val, int muts) InheritStat(PropertyInt propVal, PropertyInt propMuts, int defaultVal)
                 {
-                    var val1 = device1.GetProperty(prop) ?? 0;
-                    var val2 = device2.GetProperty(prop) ?? 0;
-                    var highVal = Math.Max(val1, val2);
-                    var lowVal = Math.Min(val1, val2);
-                    var chosen = ThreadSafeRandom.Next(0.0f, 1.0f) < 0.55f ? highVal : lowVal;
-                    var variance = ThreadSafeRandom.Next(-1, 2); // +-1 variance
-                    return Math.Max(0, chosen + variance);
+                    var val1 = device1.GetProperty(propVal) ?? defaultVal;
+                    var val2 = device2.GetProperty(propVal) ?? defaultVal;
+                    var muts1 = device1.GetProperty(propMuts) ?? 0;
+                    var muts2 = device2.GetProperty(propMuts) ?? 0;
+
+                    var isHigh1 = val1 >= val2;
+                    var chosenIs1 = ThreadSafeRandom.Next(0.0f, 1.0f) < 0.55f ? isHigh1 : !isHigh1;
+
+                    var chosenVal = chosenIs1 ? val1 : val2;
+                    var chosenMuts = chosenIs1 ? muts1 : muts2;
+                    return (chosenVal, chosenMuts);
                 }
 
-                var babyPotency = InheritRating(PropertyInt.PetPotencyStored);
-                var babyDmg = InheritRating(PropertyInt.DamageRating);
-                var babyDR = InheritRating(PropertyInt.DamageResistRating);
-                var babyCrit = InheritRating(PropertyInt.CritRating);
-                var babyCritDmg = InheritRating(PropertyInt.CritDamageRating);
-                var babyCritResist = InheritRating(PropertyInt.CritResistRating);
-                var babyCritDmgResist = InheritRating(PropertyInt.CritDamageResistRating);
-                var babyVitality = InheritRating(PropertyInt.Vitality);
+                var potRes = InheritStat(PropertyInt.PetPotencyStored, PropertyInt.PetMutPotency, 150);
+                var dmgRes = InheritStat(PropertyInt.DamageRating, PropertyInt.PetMutDamageRating, 0);
+                var drRes = InheritStat(PropertyInt.DamageResistRating, PropertyInt.PetMutDamageResistRating, 0);
+                var critRes = InheritStat(PropertyInt.CritRating, PropertyInt.PetMutCritRating, 0);
+                var vitRes = InheritStat(PropertyInt.Vitality, PropertyInt.PetMutVitality, 0);
 
-                // Parent mutations count
-                var parentMutations1 = device1.GetProperty(PropertyInt.PetMutationCount) ?? 0;
-                var parentMutations2 = device2.GetProperty(PropertyInt.PetMutationCount) ?? 0;
-                var totalParentMuts = parentMutations1 + parentMutations2;
+                var babyPotency = potRes.val;
+                var babyDmg = dmgRes.val;
+                var babyDR = drRes.val;
+                var babyCrit = critRes.val;
+                var babyVitality = vitRes.val;
 
-                // Diminishing returns mutation chance formula: max(0.015, 0.15 / (1 + 0.75 * totalParentMuts))
-                var mutChance = Math.Max(0.015, 0.15 / (1.0 + 0.75 * totalParentMuts));
+                var babyDmgMuts = dmgRes.muts;
+                var babyDrMuts = drRes.muts;
+                var babyCritMuts = critRes.muts;
+                var babyVitMuts = vitRes.muts;
+                var babyPotMuts = potRes.muts;
+
+                var babyCritDmg = (int)Math.Round(babyDmg * 0.8);
+                var babyCritResist = (int)Math.Round(babyDR * 0.8);
+                var babyCritDmgResist = (int)Math.Round(babyDR * 0.6);
+
+                var totalParentStatMuts = babyDmgMuts + babyDrMuts + babyCritMuts + babyVitMuts;
+
+                // Roll 1: Normal Stat Mutation (15% base decaying odds per stat line, max 20 muts per stat)
+                var mutChance = Math.Max(0.015, 0.15 / (1.0 + 0.75 * totalParentStatMuts));
                 var isMutated = ServerConfig.pet_breeding_force_mutation.Value || ThreadSafeRandom.Next(0.0f, 1.0f) < mutChance;
+
+                // Roll 2: Independent Potency Mutation Roll (2.0% Fixed Rare Chance, Uncapped / Soft-Capped at 1000)
+                var isPotencyMutated = ThreadSafeRandom.Next(0.0f, 1.0f) < 0.02f;
 
                 string mutatedStatName = null;
                 int mutatedStatBoost = 0;
 
-                var parentPalette1 = device1.VisualOverridePaletteTemplate ?? device1.PaletteTemplate ?? 0;
-                var parentPalette2 = device2.VisualOverridePaletteTemplate ?? device2.PaletteTemplate ?? 0;
-                var parentShade1 = device1.VisualOverrideShade ?? device1.Shade ?? 0.0;
-                var parentShade2 = device2.VisualOverrideShade ?? device2.Shade ?? 0.0;
+                if (isPotencyMutated)
+                {
+                    int potStep = 20; // Fixed +20 Potency Step
+                    if (babyPotency >= 1000 && babyPotency < 2000)
+                        potStep = 5;  // Soft-cap diminishing step
+                    
+                    if (babyPotency < 2000)
+                    {
+                        babyPotency += potStep;
+                        babyPotMuts += 1;
+                        mutatedStatName = "Potency";
+                        mutatedStatBoost = potStep;
+                    }
+                }
 
-                var babyPalette = ThreadSafeRandom.Next(0, 2) == 0 ? parentPalette1 : parentPalette2;
-                var babyShade = (parentShade1 + parentShade2) / 2.0;
+                uint? babyPaletteBase = null;
 
                 if (isMutated)
                 {
-                    // Select 1 random stat target out of 8 ratings for POSITIVE boost
-                    var statChoice = ThreadSafeRandom.Next(0, 8);
-                    switch (statChoice)
-                    {
-                        case 0:
-                            mutatedStatName = "Potency";
-                            mutatedStatBoost = ThreadSafeRandom.Next(2, 6); // +2 to +5
-                            babyPotency += mutatedStatBoost;
-                            break;
-                        case 1:
-                            mutatedStatName = "Damage Rating";
-                            mutatedStatBoost = ThreadSafeRandom.Next(3, 6); // +3 to +5
-                            babyDmg += mutatedStatBoost;
-                            break;
-                        case 2:
-                            mutatedStatName = "Damage Resist Rating";
-                            mutatedStatBoost = ThreadSafeRandom.Next(3, 6);
-                            babyDR += mutatedStatBoost;
-                            break;
-                        case 3:
-                            mutatedStatName = "Crit Rating";
-                            mutatedStatBoost = ThreadSafeRandom.Next(2, 5);
-                            babyCrit += mutatedStatBoost;
-                            break;
-                        case 4:
-                            mutatedStatName = "Crit Damage Rating";
-                            mutatedStatBoost = ThreadSafeRandom.Next(3, 6);
-                            babyCritDmg += mutatedStatBoost;
-                            break;
-                        case 5:
-                            mutatedStatName = "Crit Resist Rating";
-                            mutatedStatBoost = ThreadSafeRandom.Next(3, 6);
-                            babyCritResist += mutatedStatBoost;
-                            break;
-                        case 6:
-                            mutatedStatName = "Crit Damage Resist Rating";
-                            mutatedStatBoost = ThreadSafeRandom.Next(3, 6);
-                            babyCritDmgResist += mutatedStatBoost;
-                            break;
-                        case 7:
-                            mutatedStatName = "Vitality";
-                            mutatedStatBoost = ThreadSafeRandom.Next(200, 501); // +200 to +500 HP
-                            babyVitality += mutatedStatBoost;
-                            break;
-                    }
+                    var eligibleStats = new System.Collections.Generic.List<string>();
+                    if (babyDmgMuts < 20) eligibleStats.Add("DamageRating");
+                    if (babyDrMuts < 20) eligibleStats.Add("DamageResistRating");
+                    if (babyCritMuts < 20) eligibleStats.Add("CritRating");
+                    if (babyVitMuts < 20) eligibleStats.Add("Vitality");
 
-                    // 100% Guaranteed Rare Color Palette Override on Mutation
-                    var rarePalettes = new[] {
-                        (int)global::ACE.Entity.Enum.PaletteTemplate.Gold,
-                        (int)global::ACE.Entity.Enum.PaletteTemplate.Silver,
-                        (int)global::ACE.Entity.Enum.PaletteTemplate.Copper,
-                        (int)global::ACE.Entity.Enum.PaletteTemplate.Black,
-                        (int)global::ACE.Entity.Enum.PaletteTemplate.AquaBlue,
-                        (int)global::ACE.Entity.Enum.PaletteTemplate.Purple,
-                        (int)global::ACE.Entity.Enum.PaletteTemplate.Red,
-                        (int)global::ACE.Entity.Enum.PaletteTemplate.Rose,
-                        (int)global::ACE.Entity.Enum.PaletteTemplate.SnowyWhite,
-                        (int)global::ACE.Entity.Enum.PaletteTemplate.DyeWinterBlue,
-                        (int)global::ACE.Entity.Enum.PaletteTemplate.DyeWinterGreen
-                    };
-                    babyPalette = rarePalettes[ThreadSafeRandom.Next(0, rarePalettes.Length)];
+                    if (eligibleStats.Count > 0)
+                    {
+                        var chosenStat = eligibleStats[ThreadSafeRandom.Next(0, eligibleStats.Count)];
+                        if (chosenStat == "DamageRating")
+                        {
+                            mutatedStatName = "Damage Rating";
+                            mutatedStatBoost = 3; // Fixed +3 Step
+                            babyDmg += 3;
+                            babyDmgMuts += 1;
+                        }
+                        else if (chosenStat == "DamageResistRating")
+                        {
+                            mutatedStatName = "Damage Resist Rating";
+                            mutatedStatBoost = 3; // Fixed +3 Step
+                            babyDR += 3;
+                            babyDrMuts += 1;
+                        }
+                        else if (chosenStat == "DamageResistRating")
+                        {
+                            mutatedStatName = "Crit Rating";
+                            mutatedStatBoost = 2; // Fixed +2 Step
+                            babyCrit += 2;
+                            babyCritMuts += 1;
+                        }
+                        else if (chosenStat == "Vitality")
+                        {
+                            mutatedStatName = "Vitality";
+                            mutatedStatBoost = 200; // Fixed +200 HP Step
+                            babyVitality += 200;
+                            babyVitMuts += 1;
+                        }
+                    }
                 }
 
                 // Update charges & cooldowns
@@ -315,6 +318,20 @@ namespace ACE.Server.WorldObjects
 
                 var donor = ThreadSafeRandom.Next(0, 2) == 0 ? device1 : device2;
                 var winner = ThreadSafeRandom.Next(0, 2) == 0 ? player1 : partner;
+
+                if (isMutated)
+                {
+                    // Pick a random 0x04... DAT Palette ID from 3D Showroom DAT pool for this species
+                    try
+                    {
+                        var pool = ACE.Server.Services.VisualizerService.GetSmartPalettePool(babyWcid, "all");
+                        if (pool != null && pool.Count > 0)
+                        {
+                            babyPaletteBase = pool[ThreadSafeRandom.Next(0, pool.Count)].PaletteId;
+                        }
+                    }
+                    catch { }
+                }
 
                 var baby = WorldObjectFactory.CreateNewWorldObject(babyWcid) as PetDevice;
                 if (baby == null)
@@ -349,18 +366,26 @@ namespace ACE.Server.WorldObjects
                 baby.SetProperty(PropertyInt.CritDamageResistRating, babyCritDmgResist);
                 baby.SetProperty(PropertyInt.Vitality, babyVitality);
 
-                var babyMutations = totalParentMuts + (isMutated ? 1 : 0);
-                if (babyMutations > 0)
-                    baby.SetProperty(PropertyInt.PetMutationCount, babyMutations);
+                // Write dedicated PetMut properties
+                if (babyDmgMuts > 0) baby.SetProperty(PropertyInt.PetMutDamageRating, babyDmgMuts * 3);
+                if (babyDrMuts > 0) baby.SetProperty(PropertyInt.PetMutDamageResistRating, babyDrMuts * 3);
+                if (babyCritMuts > 0) baby.SetProperty(PropertyInt.PetMutCritRating, babyCritMuts * 2);
+                if (babyVitMuts > 0) baby.SetProperty(PropertyInt.PetMutVitality, babyVitMuts * 200);
+                if (babyPotMuts > 0) baby.SetProperty(PropertyInt.PetMutPotency, babyPotMuts * 20);
 
-                if (babyPalette > 0)
-                    baby.VisualOverridePaletteTemplate = babyPalette;
-                if (babyShade > 0.0)
-                    baby.VisualOverrideShade = babyShade;
+                var totalMutations = babyDmgMuts + babyDrMuts + babyCritMuts + babyVitMuts + babyPotMuts;
+                if (totalMutations > 0)
+                    baby.SetProperty(PropertyInt.PetMutationCount, totalMutations);
+
+                if (babyPaletteBase.HasValue && babyPaletteBase.Value != 0)
+                {
+                    baby.SetProperty(PropertyDataId.PaletteBase, babyPaletteBase.Value);
+                    baby.PaletteBaseId = babyPaletteBase.Value;
+                }
 
                 var successMsg = $"Congratulations! A baby pet has been born: {baby.Name}! Placed in {winner.Name}'s inventory.";
-                if (isMutated)
-                    successMsg += $" 🌟 GENETIC MUTATION! Gained +{mutatedStatBoost} {mutatedStatName} & Rare Essence Palette unlocked!";
+                if (isMutated || isPotencyMutated)
+                    successMsg += $" 🌟 GENETIC MUTATION! Gained +{mutatedStatBoost} {mutatedStatName} & Rare DAT Palette unlocked!";
 
                 if (winner.TryCreateInInventoryWithNetworking(baby))
                 {
@@ -378,8 +403,8 @@ namespace ACE.Server.WorldObjects
                     baby.Attuned = AttunedStatus.Attuned;
 
                     var fullMsg = $"A baby pet has been born: {baby.Name}! {winner.Name}'s inventory was full, so the baby fell on the ground (attuned to {winner.Name}).";
-                    if (isMutated)
-                        fullMsg += $" 🌟 GENETIC MUTATION! Gained +{mutatedStatBoost} {mutatedStatName} & Rare Essence Palette unlocked!";
+                    if (isMutated || isPotencyMutated)
+                        fullMsg += $" 🌟 GENETIC MUTATION! Gained +{mutatedStatBoost} {mutatedStatName} & Rare DAT Palette unlocked!";
 
                     player1.SendMessage(fullMsg);
                     partner.SendMessage(fullMsg);

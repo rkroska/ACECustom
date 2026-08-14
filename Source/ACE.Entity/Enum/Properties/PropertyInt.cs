@@ -783,6 +783,15 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         PetMutationCount                        = 9058,
 
+        PetMutDamageRating                      = 9060,
+        PetMutDamageResistRating                = 9061,
+        PetMutCritRating                        = 9062,
+        PetMutCritDamageRating                  = 9063,
+        PetMutCritResistRating                  = 9064,
+        PetMutCritDamageResistRating            = 9065,
+        PetMutVitality                          = 9066,
+        PetMutPotency                           = 9067,
+
         /// <summary>
         /// The absolute Unix timestamp (in seconds since epoch) when the item expires.
         /// </summary>
