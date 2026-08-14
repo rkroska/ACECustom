@@ -321,6 +321,22 @@ namespace ACE.Server.WorldObjects
                 if (petDevice.GearCritResist.HasValue)
                     CritResistRating = petDevice.GearCritResist;
 
+                // Add mutated ratings from breeding properties
+                var mutDmg = petDevice.GetProperty(PropertyInt.DamageRating) ?? 0;
+                var mutDr = petDevice.GetProperty(PropertyInt.DamageResistRating) ?? 0;
+                var mutCrit = petDevice.GetProperty(PropertyInt.CritRating) ?? 0;
+                var mutCritDmg = petDevice.GetProperty(PropertyInt.CritDamageRating) ?? 0;
+                var mutCritResist = petDevice.GetProperty(PropertyInt.CritResistRating) ?? 0;
+                var mutCritDmgResist = petDevice.GetProperty(PropertyInt.CritDamageResistRating) ?? 0;
+
+                if (mutDmg > 0) DamageRating = (DamageRating ?? 0) + mutDmg;
+                if (mutDr > 0) DamageResistRating = (DamageResistRating ?? 0) + mutDr;
+                if (mutCrit > 0) CritRating = (CritRating ?? 0) + mutCrit;
+                if (mutCritDmg > 0) CritDamageRating = (CritDamageRating ?? 0) + mutCritDmg;
+                if (mutCritResist > 0) CritResistRating = (CritResistRating ?? 0) + mutCritResist;
+                if (mutCritDmgResist > 0) CritDamageResistRating = (CritDamageResistRating ?? 0) + mutCritDmgResist;
+
+
                 if (ServerConfig.pet_bond_enabled.Value && petDevice.IsCombatPetDevice() && petDevice.IsPetBondAttuned)
                 {
                     var capRaw = (int)ServerConfig.pet_bond_level_cap.Value;
@@ -503,6 +519,11 @@ namespace ACE.Server.WorldObjects
 
             if (bondMaxHealthBonus > 0)
                 Health.StartingValue = (uint)Math.Min(uint.MaxValue, (ulong)Health.StartingValue + (uint)bondMaxHealthBonus);
+
+            var mutHP = petDevice.GetProperty(PropertyInt.Vitality) ?? 0;
+            if (mutHP > 0)
+                Health.StartingValue = (uint)Math.Min(uint.MaxValue, (ulong)Health.StartingValue + (uint)mutHP);
+
 
             // Lifespan vs TimeToRot (stock ACE): WorldObject.IsDecayable() returns false when Lifespan is set, so landblock
             // TimeToRot decay does not run — heartbeat Lifespan drives despawn in that case. Pet templates often duplicate both;
