@@ -282,13 +282,14 @@ namespace ACE.Server.WorldObjects
                             babyDR += 3;
                             babyDrMuts += 1;
                         }
-                        else if (chosenStat == "DamageResistRating")
+                        else if (chosenStat == "CritRating")
                         {
                             mutatedStatName = "Crit Rating";
                             mutatedStatBoost = 2; // Fixed +2 Step
                             babyCrit += 2;
                             babyCritMuts += 1;
                         }
+
                         else if (chosenStat == "Vitality")
                         {
                             mutatedStatName = "Vitality";
