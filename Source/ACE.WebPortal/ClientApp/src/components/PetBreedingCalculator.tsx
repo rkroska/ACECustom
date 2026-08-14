@@ -293,54 +293,90 @@ export default function PetBreedingCalculator() {
     addDebugLog(`🎲 [SPECIES ROLL] 50/50 Roll Result -> Birthed Species: ${babySpecies} (Stat Lineage Winner: Parent ${inheritedParent})`)
 
     // Stat Inheritance (55/45 Rule)
-    const inheritStat = (valAlpha: number, valBeta: number) => {
-      const highVal = Math.max(valAlpha, valBeta)
-      const lowVal = Math.min(valAlpha, valBeta)
-      const chosen = Math.random() < 0.55 ? highVal : lowVal
-      const variance = (Math.random() * 0.04 - 0.02) * chosen // +-2% variance
-      return Math.max(0, Math.round(chosen + variance))
+    const inheritStat = (valAlpha: number, mutCountAlpha: number, valBeta: number, mutCountBeta: number) => {
+      const isAlphaHigh = valAlpha >= valBeta
+      const chosenIsAlpha = Math.random() < 0.55 ? isAlphaHigh : !isAlphaHigh
+      const chosenVal = chosenIsAlpha ? valAlpha : valBeta
+      const chosenMutCount = chosenIsAlpha ? mutCountAlpha : mutCountBeta
+      return { val: chosenVal, mutCount: chosenMutCount }
     }
 
-    let babyPot = inheritStat(alphaPot, betaPot)
-    let babyDmg = inheritStat(alphaDamageRating, betaDamageRating)
-    let babyDR = inheritStat(alphaDamageResist, betaDamageResist)
-    let babyCrit = inheritStat(alphaCritRating, betaCritRating)
+    const potRes = inheritStat(alphaPot, 0, betaPot, 0)
+    const dmgRes = inheritStat(alphaDamageRating, Math.floor((alphaDamageRating - 10) / 3), betaDamageRating, Math.floor((betaDamageRating - 10) / 3))
+    const drRes = inheritStat(alphaDamageResist, Math.floor((alphaDamageResist - 8) / 3), betaDamageResist, Math.floor((betaDamageResist - 8) / 3))
+    const critRes = inheritStat(alphaCritRating, Math.floor((alphaCritRating - 5) / 2), betaCritRating, Math.floor((betaCritRating - 5) / 2))
+    const vitRes = inheritStat(alphaVitality, Math.floor((alphaVitality - 1000) / 200), betaVitality, Math.floor((betaVitality - 1000) / 200))
+
+    let babyPot = potRes.val
+    let babyDmg = dmgRes.val
+    let babyDR = drRes.val
+    let babyCrit = critRes.val
+    let babyVit = vitRes.val
+
+    let babyDmgMuts = dmgRes.mutCount
+    let babyDrMuts = drRes.mutCount
+    let babyCritMuts = critRes.mutCount
+    let babyVitMuts = vitRes.mutCount
+
     let babyCritDmg = Math.round(babyDmg * 0.8)
     let babyCritResist = Math.round(babyDR * 0.8)
     let babyCritDmgResist = Math.round(babyDR * 0.6)
-    let babyVit = inheritStat(alphaVitality, betaVitality)
 
-    // Mutation Check: Color mutation triggers ONLY when a Stat Mutation occurs on this breed (Option 2)
-    const roll = Math.random()
-    const isMutated = roll < alphaMutChance
+    // Roll 1: Normal Stat Mutation (15% base decaying odds, capped at 20 muts per stat)
+    const statRoll = Math.random()
+    const isMutated = statRoll < alphaMutChance
     const isColorMutated = isMutated
+
+    // Roll 2: Independent Potency Mutation Roll (2.0% Fixed Rare Chance, Uncapped)
+    const potRoll = Math.random()
+    const isPotencyMutated = potRoll < 0.02
 
     let mutatedStatName: string | null = null
     let mutatedStatBoost = 0
 
-    if (isMutated) {
-      const statsToMutate = ['Potency', 'DamageRating', 'DamageResistRating', 'CritRating', 'Vitality']
-      mutatedStatName = statsToMutate[Math.floor(Math.random() * statsToMutate.length)]
+    if (isMutated && isPotencyMutated) {
+      addDebugLog(`🌟 [DOUBLE MUTATION JACKPOT!] Birthed BOTH a Stat Mutation AND a Potency Mutation!`)
+    }
 
-      if (mutatedStatName === 'Potency') {
-        mutatedStatBoost = Math.floor(Math.random() * 11) + 10 // +10 to +20
-        babyPot += mutatedStatBoost
-      } else if (mutatedStatName === 'DamageRating') {
-        mutatedStatBoost = Math.floor(Math.random() * 3) + 3 // +3 to +5
-        babyDmg += mutatedStatBoost
-      } else if (mutatedStatName === 'DamageResistRating') {
-        mutatedStatBoost = Math.floor(Math.random() * 3) + 3 // +3 to +5
-        babyDR += mutatedStatBoost
-      } else if (mutatedStatName === 'CritRating') {
-        mutatedStatBoost = Math.floor(Math.random() * 3) + 2 // +2 to +4
-        babyCrit += mutatedStatBoost
-      } else if (mutatedStatName === 'Vitality') {
-        mutatedStatBoost = Math.floor(Math.random() * 301) + 200 // +200 to +500 HP
-        babyVit += mutatedStatBoost
+    if (isPotencyMutated) {
+      const potBoost = 20 // Fixed +20 Potency Step
+      babyPot += potBoost
+      addDebugLog(`🔮 [POTENCY MUTATION] Roll ${potRoll.toFixed(4)} < 0.0200 -> Rare Potency Mutation! Boosted Potency by +${potBoost} (Total Potency: ${babyPot})`)
+    }
+
+    if (isMutated) {
+      const statsToMutate: string[] = []
+      if (babyDmgMuts < 20) statsToMutate.push('DamageRating')
+      if (babyDrMuts < 20) statsToMutate.push('DamageResistRating')
+      if (babyCritMuts < 20) statsToMutate.push('CritRating')
+      if (babyVitMuts < 20) statsToMutate.push('Vitality')
+
+      if (statsToMutate.length > 0) {
+        mutatedStatName = statsToMutate[Math.floor(Math.random() * statsToMutate.length)]
+
+        if (mutatedStatName === 'DamageRating') {
+          mutatedStatBoost = 3 // Fixed +3 Step
+          babyDmg += mutatedStatBoost
+          babyDmgMuts += 1
+        } else if (mutatedStatName === 'DamageResistRating') {
+          mutatedStatBoost = 3 // Fixed +3 Step
+          babyDR += mutatedStatBoost
+          babyDrMuts += 1
+        } else if (mutatedStatName === 'CritRating') {
+          mutatedStatBoost = 2 // Fixed +2 Step
+          babyCrit += mutatedStatBoost
+          babyCritMuts += 1
+        } else if (mutatedStatName === 'Vitality') {
+          mutatedStatBoost = 200 // Fixed +200 HP Step
+          babyVit += mutatedStatBoost
+          babyVitMuts += 1
+        }
+        addDebugLog(`🌟 [STAT MUTATION] Roll ${statRoll.toFixed(4)} < Chance ${alphaMutChance.toFixed(4)} -> MUTATED! Boosted ${mutatedStatName} by +${mutatedStatBoost} (Fixed Step)`)
+      } else {
+        addDebugLog(`🛑 [MUTATION CAP REACHED] All stat lines at 20/20 max mutations!`)
       }
-      addDebugLog(`🌟 [STAT MUTATION] Roll ${roll.toFixed(4)} < Chance ${alphaMutChance.toFixed(4)} -> MUTATED! Boosted ${mutatedStatName} by +${mutatedStatBoost}`)
-    } else {
-      addDebugLog(`📊 [STAT INHERITANCE] Roll ${roll.toFixed(4)} >= Chance ${alphaMutChance.toFixed(4)} -> Normal Breed (No Stat Mutation)`)
+    } else if (!isPotencyMutated) {
+      addDebugLog(`📊 [STAT INHERITANCE] Stat Roll ${statRoll.toFixed(4)} >= Chance ${alphaMutChance.toFixed(4)} -> Normal Breed (No Stat Mutation)`)
     }
 
     // Mendelian Palette Inheritance vs Color Mutation
@@ -349,7 +385,7 @@ export default function PetBreedingCalculator() {
     if (!isColorMutated) {
       const parentPal = inheritFromAlpha ? alphaPalette : betaPalette
       babyPalette = resolvePaletteForSpecies(parentPal, babySpecies, inheritedParent)
-      addDebugLog(`🎨 [PALETTE RESOLUTION] Option 2: No Stat Mutation -> Inherited Parent ${inheritedParent}'s Color Family "${parentPal.name}"`)
+      addDebugLog(`🎨 [PALETTE RESOLUTION] Inherited Parent ${inheritedParent}'s Color Family "${parentPal.name}"`)
       addDebugLog(`🖼️ [DAT MAPPING] Mapped to ${babySpecies} DAT Palette Entry #${babyPalette.templateId} (PaletteID: 0x${babyPalette.paletteId.toString(16).toUpperCase()}, HueShift: ${babyPalette.hueShift}°)`)
     } else {
       // COLOR MUTATION: Birthed a NEW RARE DAT MUTATED PALETTE FAMILY!
@@ -366,11 +402,10 @@ export default function PetBreedingCalculator() {
         hueShift: 0,
         swatches: mutFam.swatches
       }
-      addDebugLog(`🌈 [COLOR MUTATION ACTIVATED] Stat Mutation Triggered Option 2 -> Birthed NEW RARE DAT MUTATION PALETTE "${mutFam.name}"! (DAT PaletteID: 0x${specMap.paletteId.toString(16).toUpperCase()}, Template #${specMap.templateId})`)
+      addDebugLog(`🌈 [COLOR MUTATION ACTIVATED] Stat Mutation Triggered -> Birthed NEW RARE DAT MUTATION PALETTE "${mutFam.name}"! (DAT PaletteID: 0x${specMap.paletteId.toString(16).toUpperCase()}, Template #${specMap.templateId})`)
     }
 
-    const babyAlphaMuts = alphaMutations + (isMutated && inheritFromAlpha ? 1 : 0)
-    const babyBetaMuts = betaMutations + (isMutated && !inheritFromAlpha ? 1 : 0)
+    const babyTotalMuts = babyDmgMuts + babyDrMuts + babyCritMuts + babyVitMuts
     const babyId = `baby_${Date.now()}_${Math.floor(Math.random() * 1000)}`
 
     const babyWcid = speciesList.find(s => s.name === babySpecies)?.wcid || 25749
@@ -393,14 +428,14 @@ export default function PetBreedingCalculator() {
       critResistRating: babyCritResist,
       critDamageResistRating: babyCritDmgResist,
       vitality: babyVit,
-      isMutated,
-      mutatedStatName,
-      mutatedStatBoost,
+      isMutated: isMutated || isPotencyMutated,
+      mutatedStatName: mutatedStatName || (isPotencyMutated ? 'Potency' : null),
+      mutatedStatBoost: mutatedStatBoost || (isPotencyMutated ? 20 : 0),
       isColorMutated,
       mastery: masteries[Math.floor(Math.random() * masteries.length)],
-      alphaMutations: babyAlphaMuts,
-      betaMutations: babyBetaMuts,
-      totalMutations: babyAlphaMuts + babyBetaMuts,
+      alphaMutations: Math.floor(babyTotalMuts / 2),
+      betaMutations: Math.ceil(babyTotalMuts / 2),
+      totalMutations: babyTotalMuts,
       bondLevel: 1,
       cooldownHours: 4.0, // Non-Alpha gets 4-hour cooldown
       palette: babyPalette,
@@ -413,6 +448,7 @@ export default function PetBreedingCalculator() {
       hasPaletteOverride: true,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
     }
+
 
     setSimResults([newResult, ...simResults])
     setSelectedBabyId(babyId)
