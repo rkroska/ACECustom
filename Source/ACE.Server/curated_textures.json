@@ -1,0 +1,302 @@
+{
+  "Version": "1.0",
+  "LastUpdated": "2026-08-10T12:33:16.9583636Z",
+  "Curations": [
+    {
+      "CreatureWcid": 28672,
+      "CreatureName": "WCID 28672",
+      "TextureId": 0,
+      "PaletteId": 67109070,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:01:59.5655909Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 75,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T20:31:02.6469305Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 47,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T20:31:06.6380589Z"
+    },
+    {
+      "CreatureWcid": 12,
+      "CreatureName": "WCID 12",
+      "TextureId": 83895399,
+      "PaletteId": 67112947,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T23:11:04.8520446Z"
+    },
+    {
+      "CreatureWcid": 28672,
+      "CreatureName": "WCID 28672",
+      "TextureId": 0,
+      "PaletteId": 67112538,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:02:05.9373104Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 7,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T20:30:54.5553894Z"
+    },
+    {
+      "CreatureWcid": 25845,
+      "CreatureName": "WCID 25845",
+      "TextureId": 0,
+      "PaletteId": 67112578,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:00:45.0465768Z"
+    },
+    {
+      "CreatureWcid": 12,
+      "CreatureName": "WCID 12",
+      "TextureId": 83895399,
+      "PaletteId": 67113236,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T23:11:02.7186275Z"
+    },
+    {
+      "CreatureWcid": 28672,
+      "CreatureName": "WCID 28672",
+      "TextureId": 0,
+      "PaletteId": 67112575,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:02:15.726674Z"
+    },
+    {
+      "CreatureWcid": 25845,
+      "CreatureName": "WCID 25845",
+      "TextureId": 0,
+      "PaletteId": 67114284,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:00:36.9631736Z"
+    },
+    {
+      "CreatureWcid": 25845,
+      "CreatureName": "WCID 25845",
+      "TextureId": 0,
+      "PaletteId": 67113371,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:00:32.8427644Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 67114283,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T20:30:40.9081153Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 79,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T20:31:04.6647369Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 4,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T20:30:51.6168365Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 67113316,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T20:30:48.327294Z"
+    },
+    {
+      "CreatureWcid": 28672,
+      "CreatureName": "WCID 28672",
+      "TextureId": 0,
+      "PaletteId": 67112578,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:01:57.5271838Z"
+    },
+    {
+      "CreatureWcid": 25845,
+      "CreatureName": "WCID 25845",
+      "TextureId": 0,
+      "PaletteId": 67112538,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:01:03.2385432Z"
+    },
+    {
+      "CreatureWcid": 25845,
+      "CreatureName": "WCID 25845",
+      "TextureId": 0,
+      "PaletteId": 67111682,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:00:59.8434784Z"
+    },
+    {
+      "CreatureWcid": 28672,
+      "CreatureName": "WCID 28672",
+      "TextureId": 0,
+      "PaletteId": 67113242,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:02:12.005323Z"
+    },
+    {
+      "CreatureWcid": 25845,
+      "CreatureName": "WCID 25845",
+      "TextureId": 0,
+      "PaletteId": 67115271,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:00:39.1799498Z"
+    },
+    {
+      "CreatureWcid": 10,
+      "CreatureName": "WCID 10",
+      "TextureId": 83895242,
+      "PaletteId": 67115386,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T12:33:16.016374Z"
+    },
+    {
+      "CreatureWcid": 28672,
+      "CreatureName": "WCID 28672",
+      "TextureId": 0,
+      "PaletteId": 67113323,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:02:10.5538073Z"
+    },
+    {
+      "CreatureWcid": 28672,
+      "CreatureName": "WCID 28672",
+      "TextureId": 0,
+      "PaletteId": 67111682,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:02:09.2942582Z"
+    },
+    {
+      "CreatureWcid": 12,
+      "CreatureName": "WCID 12",
+      "TextureId": 83895399,
+      "PaletteId": 67113317,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T23:11:01.2424921Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 39,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T20:30:58.4358749Z"
+    },
+    {
+      "CreatureWcid": 25845,
+      "CreatureName": "WCID 25845",
+      "TextureId": 0,
+      "PaletteId": 67112808,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:00:22.8484465Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 67112577,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T20:30:37.5999493Z"
+    },
+    {
+      "CreatureWcid": 25845,
+      "CreatureName": "WCID 25845",
+      "TextureId": 0,
+      "PaletteId": 67113315,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:00:54.9691896Z"
+    },
+    {
+      "CreatureWcid": 18,
+      "CreatureName": "WCID 18",
+      "TextureId": 83886196,
+      "PaletteId": 67113316,
+      "Rating": 1,
+      "Timestamp": "2026-08-07T04:37:59.8219589Z"
+    },
+    {
+      "CreatureWcid": 10,
+      "CreatureName": "WCID 10",
+      "TextureId": 83895242,
+      "PaletteId": 67109070,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T12:32:54.0453919Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 67115271,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T20:30:41.7180729Z"
+    },
+    {
+      "CreatureWcid": 18,
+      "CreatureName": "WCID 18",
+      "TextureId": 83886196,
+      "PaletteId": 67115271,
+      "Rating": 1,
+      "Timestamp": "2026-08-07T04:37:59.4680394Z"
+    },
+    {
+      "CreatureWcid": 4108,
+      "CreatureName": "WCID 4108",
+      "TextureId": 0,
+      "PaletteId": 67115271,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T09:02:40.9025324Z"
+    },
+    {
+      "CreatureWcid": 10,
+      "CreatureName": "WCID 10",
+      "TextureId": 83895242,
+      "PaletteId": 67112578,
+      "Rating": 1,
+      "Timestamp": "2026-08-10T12:32:46.2062598Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 67114284,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T20:30:38.4055368Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 41,
+      "Rating": 1,
+      "Timestamp": "2026-08-06T20:31:00.5639091Z"
+    },
+    {
+      "CreatureWcid": 35427,
+      "CreatureName": "Drudge Lurker",
+      "TextureId": 83892452,
+      "PaletteId": 51,
+      "Rating": -1,
+      "Timestamp": "2026-08-06T20:42:43.9672625Z"
+    }
+  ]
+}

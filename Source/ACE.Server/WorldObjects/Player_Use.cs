@@ -185,9 +185,15 @@ namespace ACE.Server.WorldObjects
                 petDevice.ChangesDetected = true;
                 petDevice.SaveBiotaToDatabase();
 
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    SendTransientError("Failed to consume neutering kit tool.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
                 PlayParticleEffect(PlayScript.AttribDownRed, target.Guid);
                 SendMessage($"You have permanently spayed/neutered {petDevice.Name}. It can no longer be used for breeding!");
-                TryConsumeFromInventoryWithNetworking(sourceItem, 1);
                 SendUseDoneEvent();
                 return;
             }
@@ -197,6 +203,14 @@ namespace ACE.Server.WorldObjects
                 if (target is not PetDevice sourcePet)
                 {
                     SendTransientError("This tool can only be used to extract skins from combat pet devices.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                // Verify items can be consumed prior to creation
+                if (!TryConsumeFromInventoryWithNetworking(sourcePet, 1) || !TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    SendTransientError("Failed to consume tailoring tool or source pet device.");
                     SendUseDoneEvent();
                     return;
                 }
@@ -251,8 +265,6 @@ namespace ACE.Server.WorldObjects
                 {
                     PlayParticleEffect(PlayScript.AttribDownRed, target.Guid);
                     SendMessage($"You extract the visual skin from {sourcePet.Name} and store it in the kit. The source pet is consumed.");
-                    TryConsumeFromInventoryWithNetworking(sourcePet, 1);
-                    TryConsumeFromInventoryWithNetworking(sourceItem, 1);
                 }
                 else
                 {
@@ -269,6 +281,13 @@ namespace ACE.Server.WorldObjects
                 if (target is not PetDevice targetPet)
                 {
                     SendTransientError("This tool can only be used on combat pet devices.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    SendTransientError("Failed to consume tailoring skin kit.");
                     SendUseDoneEvent();
                     return;
                 }
@@ -333,7 +352,7 @@ namespace ACE.Server.WorldObjects
                 else targetPet.VisualOverrideShade = null;
 
                 // Rebuild target pet name
-                var baseName = targetPet.Name;
+                var baseName = targetPet.Name ?? "";
                 var index = baseName.IndexOf(" Essence");
                 var baseClean = index >= 0 ? baseName.Substring(0, index + 8) : baseName;
                 var rebuiltName = PetDevice.BuildDisplayNameAfterCaptureApply(baseClean, null, targetPet.VisualOverrideName);

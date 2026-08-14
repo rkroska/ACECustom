@@ -197,19 +197,35 @@ namespace ACE.Server.WorldObjects
                                 itemSubPal = item.ClothingSubPalEffects[item.ClothingSubPalEffects.Keys.ElementAt(0)];
                             }
 
-                            float shade = 0;
+                            float shade = 0.5f;
                             if (w.Shade.HasValue)
-                                shade = (float)w.Shade;
+                                shade = (float)w.Shade.Value;
                             for (int i = 0; i < itemSubPal.CloSubPalettes.Count; i++)
                             {
-                                var itemPalSet = DatManager.PortalDat.ReadFromDat<PaletteSet>(itemSubPal.CloSubPalettes[i].PaletteSet);
-                                ushort itemPal = (ushort)itemPalSet.GetPaletteID(shade);
-
-                                for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
+                                ushort itemPal = 0;
+                                if ((palOption & 0xFF000000) == 0x04000000)
                                 {
-                                    ushort palOffset = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].Offset / 8);
-                                    ushort numColors = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].NumColors / 8);
-                                    objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = palOffset, Length = numColors });
+                                    itemPal = (ushort)(palOption & 0xFFFF);
+                                }
+                                else if (palOption > 0 && !item.ClothingSubPalEffects.ContainsKey((uint)palOption))
+                                {
+                                    itemPal = (ushort)(palOption & 0xFFFF);
+                                }
+                                else
+                                {
+                                    var itemPalSet = DatManager.PortalDat.ReadFromDat<PaletteSet>(itemSubPal.CloSubPalettes[i].PaletteSet);
+                                    if (itemPalSet != null)
+                                        itemPal = (ushort)itemPalSet.GetPaletteID(shade);
+                                }
+
+                                if (itemPal != 0)
+                                {
+                                    for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
+                                    {
+                                        ushort palOffset = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].Offset / 8);
+                                        ushort numColors = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].NumColors / 8);
+                                        objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = palOffset, Length = numColors });
+                                    }
                                 }
                             }
                         }
@@ -219,14 +235,93 @@ namespace ACE.Server.WorldObjects
 
             if (coverage.Count == 0 && ClothingBase.HasValue)
             {
-                // Even with no armor coverage, apply shiny variant textures before falling back
-                if (CreatureVariant.HasValue)
+                if (DatManager.PortalDat.TryReadClothingTable((uint)ClothingBase.Value, out var creatureCloTable))
                 {
-                    var baseObjDesc = base.CalculateObjDesc();
-                    baseObjDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
-                    return baseObjDesc;
+                    if (creatureCloTable.ClothingBaseEffects.TryGetValue(thisSetupId, out var cloEffect))
+                    {
+                        foreach (CloObjectEffect t in cloEffect.CloObjectEffects)
+                        {
+                            byte partNum = (byte)t.Index;
+                            coverage.Add(partNum);
+                            objDesc.AddAnimPartChange(new PropertiesAnimPart { Index = (byte)t.Index, AnimationId = t.ModelId });
+                            foreach (CloTextureEffect t1 in t.CloTextureEffects)
+                                objDesc.AddTextureChange(new PropertiesTextureMap { PartIndex = (byte)t.Index, OldTexture = t1.OldTexture, NewTexture = t1.NewTexture });
+                        }
+                    }
+
+                    int palOption = PaletteTemplate.HasValue ? (int)PaletteTemplate.Value : 0;
+                    uint setupTexPal = GetSetupDefaultPaletteId(thisSetupId);
+                    if (setupTexPal > 0 && (objDesc.PaletteID == 0 || objDesc.PaletteID == 0x040002AB || objDesc.PaletteID == 0x0400007E || ClothingBase.Value == 0x100000AF))
+                    {
+                        objDesc.PaletteID = setupTexPal;
+                    }
+
+                    if ((palOption & 0xFF000000) == 0x04000000)
+                    {
+                        ushort itemPal = (ushort)(palOption & 0xFFFF);
+                        objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 0, Length = 255 });
+                        objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 255, Length = 1 });
+                    }
+                    else if (creatureCloTable != null && creatureCloTable.ClothingSubPalEffects != null && creatureCloTable.ClothingSubPalEffects.Count > 0)
+                    {
+                        CloSubPalEffect itemSubPal = null;
+                        if (creatureCloTable.ClothingSubPalEffects.ContainsKey((uint)palOption))
+                        {
+                            itemSubPal = creatureCloTable.ClothingSubPalEffects[(uint)palOption];
+                        }
+                        else if (creatureCloTable.ClothingSubPalEffects.Count > 0)
+                        {
+                            itemSubPal = creatureCloTable.ClothingSubPalEffects[creatureCloTable.ClothingSubPalEffects.Keys.ElementAt(0)];
+                        }
+
+                        if (itemSubPal != null)
+                        {
+                            float shade = Shade.HasValue ? (float)Shade.Value : 0.5f;
+                            for (int i = 0; i < itemSubPal.CloSubPalettes.Count; i++)
+                            {
+                                ushort itemPal = 0;
+                                if (palOption > 0 && !creatureCloTable.ClothingSubPalEffects.ContainsKey((uint)palOption))
+                                {
+                                    itemPal = (ushort)(palOption & 0xFFFF);
+                                }
+                                else
+                                {
+                                    var itemPalSet = DatManager.PortalDat.ReadFromDat<PaletteSet>(itemSubPal.CloSubPalettes[i].PaletteSet);
+                                    if (itemPalSet != null)
+                                        itemPal = (ushort)itemPalSet.GetPaletteID(shade);
+                                }
+
+                                if (itemPal != 0)
+                                {
+                                    if (objDesc.PaletteID == 0)
+                                    {
+                                        objDesc.PaletteID = (uint)(0x04000000 | itemPal);
+                                    }
+
+                                    for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
+                                    {
+                                        ushort rawOffset = (ushort)itemSubPal.CloSubPalettes[i].Ranges[j].Offset;
+                                        if (rawOffset == 320 && j == 0 && i == 0)
+                                        {
+                                            // Map chunk 40 (Offset 320 body colors) into low-index body parts (like Olthoi legs [0..319]) in-game!
+                                            objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 40, Length = 40 });
+                                        }
+
+                                        ushort palOffset = (ushort)(rawOffset / 8);
+                                        ushort numColors = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].NumColors / 8);
+                                        while (numColors > 0)
+                                        {
+                                            ushort chunkLength = numColors > 255 ? (ushort)255 : numColors;
+                                            objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = palOffset, Length = chunkLength });
+                                            palOffset += chunkLength;
+                                            numColors -= chunkLength;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                return base.CalculateObjDesc();
             }
 
             // Add the "naked" body parts. These are the ones not already covered.
@@ -246,7 +341,67 @@ namespace ACE.Server.WorldObjects
                 objDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
             }
 
+            int directPalOption = PaletteTemplate.HasValue ? (int)PaletteTemplate.Value : 0;
+            if ((directPalOption & 0xFF000000) == 0x04000000)
+            {
+                uint setupTexPal = GetSetupDefaultPaletteId(thisSetupId);
+                if (setupTexPal > 0 && (objDesc.PaletteID == 0 || objDesc.PaletteID == 0x040002AB || objDesc.PaletteID == 0x0400007E || (ClothingBase.HasValue && ClothingBase.Value == 0x100000AF)))
+                    objDesc.PaletteID = setupTexPal;
+                else if (objDesc.PaletteID == 0)
+                    objDesc.PaletteID = setupTexPal > 0 ? setupTexPal : (uint)directPalOption;
+
+                ushort itemPal = (ushort)(directPalOption & 0xFFFF);
+                bool exists = false;
+                foreach (var sp in objDesc.SubPalettes)
+                {
+                    if (sp.SubPaletteId == itemPal) { exists = true; break; }
+                }
+                if (!exists)
+                {
+                    objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 0, Length = 255 });
+                    objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 255, Length = 1 });
+                }
+            }
+
+            log.Info($"[CREATURE PACKET DEBUG] {Name} (WCID {WeenieClassId}): SubPalettes.Count={objDesc.SubPalettes.Count}, PaletteTemplate=0x{(PaletteTemplate ?? 0):X8}");
+            foreach (var sp in objDesc.SubPalettes)
+            {
+                log.Info($"   -> SubPalette: Id=0x{sp.SubPaletteId:X4}, Offset={sp.Offset}, Length={sp.Length}");
+            }
+
             return objDesc;
+        }
+
+        private static uint GetSetupDefaultPaletteId(uint setupId)
+        {
+            if (setupId == 0) return 0;
+            var setupModel = DatManager.PortalDat.ReadFromDat<SetupModel>(setupId);
+            if (setupModel == null || setupModel.Parts == null) return 0;
+
+            for (int i = 0; i < setupModel.Parts.Count; i++)
+            {
+                var gfx = DatManager.PortalDat.ReadFromDat<GfxObj>(setupModel.Parts[i]);
+                if (gfx == null || gfx.Surfaces == null) continue;
+
+                foreach (var sId in gfx.Surfaces)
+                {
+                    var surf = DatManager.PortalDat.ReadFromDat<Surface>(sId);
+                    if (surf == null || surf.OrigTextureId == 0) continue;
+
+                    var st = DatManager.PortalDat.ReadFromDat<SurfaceTexture>(surf.OrigTextureId);
+                    if (st == null || st.Textures == null) continue;
+
+                    foreach (var tId in st.Textures)
+                    {
+                        var tex = DatManager.PortalDat.ReadFromDat<ACE.DatLoader.FileTypes.Texture>(tId);
+                        if (tex != null && tex.DefaultPaletteId.HasValue && tex.DefaultPaletteId.Value > 0)
+                        {
+                            return tex.DefaultPaletteId.Value;
+                        }
+                    }
+                }
+            }
+            return 0;
         }
 
         /// <summary>

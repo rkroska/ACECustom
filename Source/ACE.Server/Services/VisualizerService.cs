@@ -33,6 +33,14 @@ namespace ACE.Server.Services
         public string PaletteHex => $"0x{PaletteId:X8}";
         public List<string> Swatches { get; set; } = new List<string>();
         public string Ranges { get; set; } = "Offset 0 - 2048 (Full Mesh)";
+        public bool IsDefault { get; set; }
+    }
+
+    public class SpeciesPresetDto
+    {
+        public uint Wcid { get; set; }
+        public string Name { get; set; }
+        public string Species { get; set; }
     }
 
     public class TextureReplacementDto
@@ -66,12 +74,55 @@ namespace ACE.Server.Services
         public uint TextureId { get; set; }
         public string HexId { get; set; }
         public string Name { get; set; }
-    }public static class VisualizerService
+    }
+
+    public class ParticleEmitterDto
+    {
+        public uint EmitterId { get; set; }
+        public string HexId => $"0x{EmitterId:X8}";
+        public int EmitterType { get; set; }
+        public int ParticleType { get; set; }
+        public uint GfxObjId { get; set; }
+        public double Birthrate { get; set; }
+        public int MaxParticles { get; set; }
+        public double Lifespan { get; set; }
+        public double LifespanRand { get; set; }
+        public float[] OffsetDir { get; set; } = new float[3];
+        public float MinOffset { get; set; }
+        public float MaxOffset { get; set; }
+        public float[] VelocityA { get; set; } = new float[3];
+        public float MinA { get; set; }
+        public float MaxA { get; set; }
+        public float[] VelocityB { get; set; } = new float[3];
+        public float MinB { get; set; }
+        public float MaxB { get; set; }
+        public float[] VelocityC { get; set; } = new float[3];
+        public float MinC { get; set; }
+        public float MaxC { get; set; }
+        public float StartScale { get; set; }
+        public float FinalScale { get; set; }
+        public float ScaleRand { get; set; }
+        public float StartTrans { get; set; }
+        public float FinalTrans { get; set; }
+        public float TransRand { get; set; }
+        public int IsParentLocal { get; set; }
+    }
+
+    public class CreatureParticleHookDto
+    {
+        public uint EmitterId { get; set; }
+        public string HexId => $"0x{EmitterId:X8}";
+        public int PartIndex { get; set; }
+        public ParticleEmitterDto Emitter { get; set; }
+    }
+
+    public static class VisualizerService
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(VisualizerService));
 
         // Concurrency locks per asset ID
         private static readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
+        private static readonly ReaderWriterLockSlim _cacheLock = new ReaderWriterLockSlim();
 
         private static string CacheDir => Path.Combine(AppContext.BaseDirectory, "wwwroot", "visualizer_cache");
 
@@ -83,6 +134,10 @@ namespace ACE.Server.Services
         {
             try
             {
+                if (Directory.Exists(CacheDir))
+                {
+                    Directory.Delete(CacheDir, true);
+                }
                 Directory.CreateDirectory(ModelsCacheDir);
                 Directory.CreateDirectory(TexturesCacheDir);
                 Directory.CreateDirectory(PalettesCacheDir);
@@ -245,18 +300,64 @@ namespace ACE.Server.Services
         public static List<SpeciesPaletteDto> GetSpeciesPalettes(uint wcid)
         {
             var result = new List<SpeciesPaletteDto>();
-            var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
-            if (weenie == null) return result;
-
             var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
 
-            double weenieShade = 0.5;
-            if (weenie.PropertiesFloat != null && weenie.PropertiesFloat.TryGetValue(PropertyFloat.Shade, out weenieShade)) { }
-            float shade = (float)weenieShade;
-
+            var weenie = DatabaseManager.World?.GetCachedWeenie(wcid);
             uint clothingBase = 0;
-            if (weenie.PropertiesDID != null)
+            uint paletteBase = 0;
+            uint defaultTemplate = 0;
+            float shade = 0.5f;
+
+            if (weenie != null && weenie.PropertiesDID != null && weenie.PropertiesDID.Count > 0)
+            {
                 weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase);
+                weenie.PropertiesDID.TryGetValue(PropertyDataId.PaletteBase, out paletteBase);
+
+                if (paletteBase > 0 && paletteBase < 0x01000000 && defaultTemplate == 0)
+                    defaultTemplate = paletteBase;
+
+                if (weenie.PropertiesInt != null && weenie.PropertiesInt.TryGetValue(PropertyInt.PaletteTemplate, out int pTemp))
+                    defaultTemplate = (uint)pTemp;
+                if (weenie.PropertiesFloat != null && weenie.PropertiesFloat.TryGetValue(PropertyFloat.Shade, out double weenieShade))
+                    shade = (float)weenieShade;
+            }
+
+            if (paletteBase == 0 || clothingBase == 0)
+            {
+                var dbWeenie = DatabaseManager.World?.GetWeenie(wcid);
+                if (dbWeenie != null)
+                {
+                    if (dbWeenie.WeeniePropertiesDID != null)
+                    {
+                        foreach (var prop in dbWeenie.WeeniePropertiesDID)
+                        {
+                            if (prop.Type == (ushort)PropertyDataId.ClothingBase && clothingBase == 0) clothingBase = prop.Value;
+                            if (prop.Type == (ushort)PropertyDataId.PaletteBase && paletteBase == 0) 
+                            {
+                                paletteBase = prop.Value;
+                                if (paletteBase > 0 && paletteBase < 0x01000000 && defaultTemplate == 0)
+                                    defaultTemplate = paletteBase;
+                            }
+                        }
+                    }
+                    if (dbWeenie.WeeniePropertiesInt != null && defaultTemplate == 0)
+                    {
+                        foreach (var prop in dbWeenie.WeeniePropertiesInt)
+                        {
+                            if (prop.Type == (ushort)PropertyInt.PaletteTemplate) defaultTemplate = (uint)prop.Value;
+                        }
+                    }
+                    if (dbWeenie.WeeniePropertiesFloat != null && shade == 0.5f)
+                    {
+                        foreach (var prop in dbWeenie.WeeniePropertiesFloat)
+                        {
+                            if (prop.Type == (ushort)PropertyFloat.Shade) shade = (float)prop.Value;
+                        }
+                    }
+                }
+            }
+
+            log.Info($"[GET SPECIES PALETTES] wcid={wcid}, cachedWeenie={(weenie != null)}, clothingBase=0x{clothingBase:X8}, paletteBase=0x{paletteBase:X8}, defaultTemplate={defaultTemplate}, shade={shade}");
 
             if (clothingBase != 0)
             {
@@ -298,7 +399,29 @@ namespace ACE.Server.Services
 
                         if (finalPaletteId == 0) continue;
 
-                        var resolvedPal = portalDb.ReadFromDat<Palette>(finalPaletteId);
+                        Palette resolvedPal = null;
+                        try
+                        {
+                            resolvedPal = portalDb.ReadFromDat<Palette>(finalPaletteId);
+                        }
+                        catch
+                        {
+                            try
+                            {
+                                var palSet = portalDb.ReadFromDat<PaletteSet>(finalPaletteId);
+                                if (palSet != null)
+                                {
+                                    uint subPalId = palSet.GetPaletteID(0.5f);
+                                    if (subPalId != 0)
+                                        resolvedPal = portalDb.ReadFromDat<Palette>(subPalId);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Warn($"Failed to read palette 0x{finalPaletteId:X8}: {ex.Message}");
+                            }
+                        }
+
                         if (resolvedPal != null && resolvedPal.Colors != null && resolvedPal.Colors.Count > 0)
                         {
                             int step = Math.Max(1, resolvedPal.Colors.Count / 8);
@@ -313,6 +436,8 @@ namespace ACE.Server.Services
                         }
 
                         string name = customNames.TryGetValue(templateId, out var customName) ? $"Variant {templateId} ({customName})" : $"Variant {templateId}";
+                        bool isDefault = (defaultTemplate != 0 && templateId == defaultTemplate);
+                        if (isDefault) name += " ⭐ [Default]";
 
                         result.Add(new SpeciesPaletteDto 
                         { 
@@ -321,29 +446,62 @@ namespace ACE.Server.Services
                             PaletteSetId = paletteSetId,
                             PaletteId = finalPaletteId,
                             Swatches = swatches,
-                            Ranges = rangesStr
+                            Ranges = rangesStr,
+                            IsDefault = isDefault
                         });
                     }
                 }
             }
 
-            // Fallback for creatures without ClothingBase (e.g. Tusker Protector WCID 36967)
-            if (result.Count == 0 && weenie.PropertiesDID != null)
+            // Fallback for creatures without ClothingBase (e.g. Tusker Protector WCID 36967, Rynthid Nullifier WCID 420600)
+            if (result.Count == 0 && paletteBase != 0)
             {
-                uint paletteBase = 0;
-                weenie.PropertiesDID.TryGetValue(PropertyDataId.PaletteBase, out paletteBase);
+                uint paletteSetId = (paletteBase & 0xFF000000) == 0x0F000000 ? paletteBase : 0;
+                uint paletteId = (paletteBase & 0xFF000000) == 0x04000000 ? paletteBase : 0;
 
-                if (paletteBase != 0)
+                if (paletteSetId != 0)
                 {
-                    uint paletteSetId = (paletteBase & 0xFF000000) == 0x0F000000 ? paletteBase : 0;
-                    uint paletteId = (paletteBase & 0xFF000000) == 0x04000000 ? paletteBase : 0;
-
-                    if (paletteSetId != 0)
+                    var palSet = portalDb.ReadFromDat<PaletteSet>(paletteSetId);
+                    if (palSet != null && palSet.PaletteList != null && palSet.PaletteList.Count > 0)
                     {
-                        var palSet = portalDb.ReadFromDat<PaletteSet>(paletteSetId);
-                        if (palSet != null) paletteId = palSet.GetPaletteID(shade);
-                    }
+                        uint defaultPalId = palSet.GetPaletteID(shade);
+                        if (defaultPalId == 0) defaultPalId = palSet.PaletteList[0];
 
+                        for (int pIdx = 0; pIdx < palSet.PaletteList.Count; pIdx++)
+                        {
+                            uint currentPalId = palSet.PaletteList[pIdx];
+                            bool isDefault = (currentPalId == defaultPalId) || (pIdx == 0 && defaultPalId == 0);
+
+                            var swatches = new List<string>();
+                            var resolvedPal = portalDb.ReadFromDat<Palette>(currentPalId);
+                            if (resolvedPal != null && resolvedPal.Colors != null && resolvedPal.Colors.Count > 0)
+                            {
+                                int step = Math.Max(1, resolvedPal.Colors.Count / 8);
+                                for (int i = 0; i < resolvedPal.Colors.Count && swatches.Count < 8; i += step)
+                                {
+                                    uint argb = resolvedPal.Colors[i];
+                                    byte r = (byte)((argb >> 16) & 0xFF);
+                                    byte g = (byte)((argb >> 8) & 0xFF);
+                                    byte b = (byte)(argb & 0xFF);
+                                    swatches.Add($"#{r:X2}{g:X2}{b:X2}");
+                                }
+                            }
+
+                            result.Add(new SpeciesPaletteDto
+                            {
+                                TemplateId = currentPalId,
+                                Name = isDefault ? $"Species Palette 0x{currentPalId:X8} ⭐ [Default]" : $"Species Palette 0x{currentPalId:X8}",
+                                PaletteSetId = paletteSetId,
+                                PaletteId = currentPalId,
+                                Swatches = swatches,
+                                Ranges = $"Palette #{pIdx + 1}",
+                                IsDefault = isDefault
+                            });
+                        }
+                    }
+                }
+                else if (paletteId != 0)
+                {
                     var swatches = new List<string>();
                     var resolvedPal = portalDb.ReadFromDat<Palette>(paletteId);
                     if (resolvedPal != null && resolvedPal.Colors != null && resolvedPal.Colors.Count > 0)
@@ -361,12 +519,13 @@ namespace ACE.Server.Services
 
                     result.Add(new SpeciesPaletteDto
                     {
-                        TemplateId = 0,
-                        Name = "Native Species Palette",
-                        PaletteSetId = paletteSetId,
+                        TemplateId = paletteId,
+                        Name = "Native Species Palette ⭐ [Default]",
+                        PaletteSetId = 0,
                         PaletteId = paletteId,
                         Swatches = swatches,
-                        Ranges = "Offset 0 - 2048 (Native Subpalette)"
+                        Ranges = "Native Subpalette",
+                        IsDefault = true
                     });
                 }
             }
@@ -436,6 +595,55 @@ namespace ACE.Server.Services
                             }
                         }
                     }
+                    if (root.TryGetProperty("clothingBaseEffects", out var baseElem) || root.TryGetProperty("ClothingBaseEffects", out baseElem))
+                    {
+                        foreach (var prop in baseElem.EnumerateObject())
+                        {
+                            if (uint.TryParse(prop.Name, out uint setupKey))
+                            {
+                                var cloBaseEffect = new ClothingBaseEffect();
+                                if (prop.Value.TryGetProperty("cloObjectEffects", out var objElem) || prop.Value.TryGetProperty("CloObjectEffects", out objElem))
+                                {
+                                    foreach (var objItem in objElem.EnumerateArray())
+                                    {
+                                        uint modelId = 0, index = 0;
+                                        if (objItem.TryGetProperty("modelId", out var mProp) || objItem.TryGetProperty("ModelId", out mProp))
+                                            modelId = mProp.GetUInt32();
+                                        if (objItem.TryGetProperty("index", out var iProp) || objItem.TryGetProperty("Index", out iProp))
+                                            index = iProp.GetUInt32();
+
+                                        var cloObjEffect = new CloObjectEffect();
+                                        typeof(CloObjectEffect).GetProperty(nameof(CloObjectEffect.ModelId))?.SetValue(cloObjEffect, modelId, null);
+                                        typeof(CloObjectEffect).GetProperty(nameof(CloObjectEffect.Index))?.SetValue(cloObjEffect, index, null);
+
+                                        if (objItem.TryGetProperty("cloTextureEffects", out var texElem) || objItem.TryGetProperty("CloTextureEffects", out texElem))
+                                        {
+                                            foreach (var texItem in texElem.EnumerateArray())
+                                            {
+                                                uint oldTex = 0, newTex = 0;
+                                                if (texItem.TryGetProperty("oldTexture", out var otProp) || texItem.TryGetProperty("OldTexture", out otProp))
+                                                    oldTex = otProp.GetUInt32();
+                                                if (texItem.TryGetProperty("newTexture", out var ntProp) || texItem.TryGetProperty("NewTexture", out ntProp))
+                                                    newTex = ntProp.GetUInt32();
+
+                                                if (newTex != 0)
+                                                {
+                                                    var cloTexEffect = new CloTextureEffect();
+                                                    typeof(CloTextureEffect).GetProperty(nameof(CloTextureEffect.OldTexture))?.SetValue(cloTexEffect, oldTex, null);
+                                                    typeof(CloTextureEffect).GetProperty(nameof(CloTextureEffect.NewTexture))?.SetValue(cloTexEffect, newTex, null);
+                                                    cloObjEffect.CloTextureEffects.Add(cloTexEffect);
+                                                }
+                                            }
+                                        }
+
+                                        cloBaseEffect.CloObjectEffects.Add(cloObjEffect);
+                                    }
+                                }
+
+                                clothingTable.ClothingBaseEffects[setupKey] = cloBaseEffect;
+                            }
+                        }
+                    }
                 }
             }
             catch (Exception ex)
@@ -449,7 +657,7 @@ namespace ACE.Server.Services
         public static List<TextureReplacementDto> GetTextureReplacements(uint wcid)
         {
             var result = new List<TextureReplacementDto>();
-            var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
+            var weenie = DatabaseManager.World?.GetCachedWeenie(wcid);
             if (weenie == null) return result;
 
             uint setupId = 0;
@@ -471,13 +679,8 @@ namespace ACE.Server.Services
                 {
                     foreach (var kvp in clothingTable.ClothingBaseEffects)
                     {
-                        var effectKey = kvp.Key;
                         var effect = kvp.Value;
-
-                        // Match setupId if key equals setupId, or parse all object effects
-                        if (setupId != 0 && effectKey != setupId && effectKey != 0) continue;
-
-                        if (effect.CloObjectEffects == null) continue;
+                        if (effect?.CloObjectEffects == null) continue;
 
                         foreach (var objEffect in effect.CloObjectEffects)
                         {
@@ -542,12 +745,20 @@ namespace ACE.Server.Services
             var result = new List<CreatureSurfaceDto>();
             if (wcid == 0) return result;
 
-            var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
-            if (weenie == null) return result;
-
             uint setupId = 0;
-            if (weenie.PropertiesDID != null && weenie.PropertiesDID.TryGetValue(PropertyDataId.Setup, out setupId))
+            var weenie = DatabaseManager.World?.GetCachedWeenie(wcid);
+            if (weenie != null && weenie.PropertiesDID != null)
             {
+                weenie.PropertiesDID.TryGetValue(PropertyDataId.Setup, out setupId);
+            }
+            else
+            {
+                var dbWeenie = DatabaseManager.World?.GetWeenie(wcid);
+                if (dbWeenie != null && dbWeenie.WeeniePropertiesDID != null)
+                {
+                    foreach (var prop in dbWeenie.WeeniePropertiesDID)
+                        if (prop.Type == (ushort)PropertyDataId.Setup) setupId = prop.Value;
+                }
             }
 
             if (setupId == 0) return result;
@@ -586,6 +797,28 @@ namespace ACE.Server.Services
             return result;
         }
 
+        public static List<TextureLibraryItemDto> GetSimilarTextures(uint textureId)
+        {
+            var result = new List<TextureLibraryItemDto>();
+            var allTextures = GetTextureLibrary("all");
+
+            var match = allTextures.FirstOrDefault(x => x.TextureId == textureId);
+            string matchCategory = match?.Category;
+
+            if (!string.IsNullOrEmpty(matchCategory))
+            {
+                result.AddRange(allTextures.Where(x => x.Category.Equals(matchCategory, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            // Always provide at least a varied sample of 6-8 distinct textures if no exact category match
+            if (result.Count < 4)
+            {
+                result.AddRange(allTextures.Take(8));
+            }
+
+            return result.GroupBy(x => x.TextureId).Select(g => g.First()).ToList();
+        }
+
         public static List<TextureLibraryItemDto> GetTextureLibrary(string category = "all")
         {
             var items = new List<TextureLibraryItemDto>
@@ -601,6 +834,9 @@ namespace ACE.Server.Services
                 new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004FD3, HexId = "0x06004FD3", Name = "🐝 Red Phyntos Chitin" },
                 new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004FD4, HexId = "0x06004FD4", Name = "🐝 Gold Wing Veins" },
                 new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004068, HexId = "0x06004068", Name = "🦂 Olthoi Carapace Trim" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x05003306, HexId = "0x05003306", Name = "💀 Skull Mask & Orb Surface" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x050030C9, HexId = "0x050030C9", Name = "🐙 Void Tentacle Skin" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x0500303D, HexId = "0x0500303D", Name = "🔥 Flame Collar Aura" },
 
                 // Fur & Hide
                 new TextureLibraryItemDto { Category = "Fur/Hide", TextureId = 0x060012E4, HexId = "0x060012E4", Name = "🐺 Tusker Brown Pelt" },
@@ -622,6 +858,31 @@ namespace ACE.Server.Services
             }
 
             return items;
+        }
+
+        public static void ClearCache()
+        {
+            _cacheLock.EnterWriteLock();
+            try
+            {
+                if (Directory.Exists(CacheDir))
+                {
+                    Directory.Delete(CacheDir, recursive: true);
+                    Directory.CreateDirectory(CacheDir);
+                    Directory.CreateDirectory(ModelsCacheDir);
+                    Directory.CreateDirectory(TexturesCacheDir);
+                    Directory.CreateDirectory(PalettesCacheDir);
+                    log.Info("Visualizer cache cleared successfully.");
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error clearing visualizer cache: {ex.Message}");
+            }
+            finally
+            {
+                _cacheLock.ExitWriteLock();
+            }
         }
 
         /// <summary>
@@ -664,11 +925,43 @@ namespace ACE.Server.Services
 
         private static byte[] ExportMeshGltf(uint wcid, uint paletteId = 0, int hue = 0)
         {
-            var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
-            if (weenie == null) return null;
-
+            ACE.Entity.Models.Weenie weenie = null;
             uint setupId = 0;
-            if (weenie.PropertiesDID == null || !weenie.PropertiesDID.TryGetValue(PropertyDataId.Setup, out setupId))
+            uint clothingBase = 0;
+            try
+            {
+                weenie = DatabaseManager.World?.GetCachedWeenie(wcid);
+                if (weenie != null && weenie.PropertiesDID != null)
+                {
+                    weenie.PropertiesDID.TryGetValue(PropertyDataId.Setup, out setupId);
+                    weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase);
+                }
+            }
+            catch { }
+
+            if (setupId == 0 || clothingBase == 0)
+            {
+                try
+                {
+                    var dbWeenie = DatabaseManager.World?.GetWeenie(wcid);
+                    if (dbWeenie != null && dbWeenie.WeeniePropertiesDID != null)
+                    {
+                        foreach (var prop in dbWeenie.WeeniePropertiesDID)
+                        {
+                            if (prop.Type == (ushort)PropertyDataId.Setup && prop.Value != 0 && setupId == 0)
+                                setupId = prop.Value;
+                            if (prop.Type == (ushort)PropertyDataId.ClothingBase && prop.Value != 0 && clothingBase == 0)
+                                clothingBase = prop.Value;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            if (setupId == 0 && wcid == 420600)
+                setupId = 0x02001BCA;
+
+            if (setupId == 0)
             {
                 log.Warn($"Weenie {wcid} does not define a Setup DID.");
                 return null;
@@ -676,6 +969,46 @@ namespace ACE.Server.Services
 
             // Open separate read-only portal dat handle to avoid lock contention on game server's streamMutex
             var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
+
+            var textureSwaps = new Dictionary<uint, uint>();
+            var modelTextureSwaps = new Dictionary<uint, uint>();
+            var indexTextureSwaps = new Dictionary<uint, uint>();
+
+            if (clothingBase != 0)
+            {
+                var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
+                MergeCustomClothingBaseJson(clothingBase, clothingTable);
+                if (clothingTable != null && clothingTable.ClothingBaseEffects != null)
+                {
+                    foreach (var kvp in clothingTable.ClothingBaseEffects)
+                    {
+                        if (kvp.Value?.CloObjectEffects == null) continue;
+                        foreach (var objEffect in kvp.Value.CloObjectEffects)
+                        {
+                            if (objEffect.CloTextureEffects == null) continue;
+
+                            foreach (var texEffect in objEffect.CloTextureEffects)
+                            {
+                                if (texEffect.NewTexture != 0)
+                                {
+                                    if (texEffect.OldTexture != 0)
+                                    {
+                                        textureSwaps[texEffect.OldTexture] = texEffect.NewTexture;
+                                    }
+                                    else
+                                    {
+                                        if (objEffect.ModelId != 0)
+                                            modelTextureSwaps[objEffect.ModelId] = texEffect.NewTexture;
+
+                                        indexTextureSwaps[objEffect.Index] = texEffect.NewTexture;
+                                    }
+                                    log.Info($"[VISUALIZER DEBUG] Registered Texture Swap: Old=0x{texEffect.OldTexture:X8} ({texEffect.OldTexture}) -> New=0x{texEffect.NewTexture:X8} ({texEffect.NewTexture}) [ModelId=0x{objEffect.ModelId:X8}, Index={objEffect.Index}]");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             var setupModel = portalDb.ReadFromDat<SetupModel>(setupId);
             if (setupModel == null)
@@ -717,12 +1050,13 @@ namespace ACE.Server.Services
             gltf.nodes.Add(rootNode);
             gltfScene.nodes.Add(0);
 
-            var textureToMat = new Dictionary<uint, int>();
+            var textureToMatKey = new Dictionary<string, int>();
 
             // Map each setup part to a GLTF node
             for (int i = 0; i < setupModel.Parts.Count; i++)
             {
                 var gfxObjId = setupModel.Parts[i];
+                if (gfxObjId == 0x010001EC) continue; // Skip AC target selection bounding box dummy mesh
                 var parentIdx = (setupModel.ParentIndex != null && i < setupModel.ParentIndex.Count) ? (int)setupModel.ParentIndex[i] : -1;
                 var scaleVec = (setupModel.DefaultScale != null && i < setupModel.DefaultScale.Count) ? setupModel.DefaultScale[i] : Vector3.One;
 
@@ -776,58 +1110,101 @@ namespace ACE.Server.Services
                             var surface = portalDb.ReadFromDat<Surface>(surfaceId);
                             if (surface != null)
                             {
-                                if (surface.Type.HasFlag(SurfaceType.Base1Image) && surface.OrigTextureId != 0)
+                                if (surface.OrigTextureId != 0)
                                 {
-                                    var texId = surface.OrigTextureId;
-                                    if ((texId & 0xFF000000) == 0x05000000)
+                                    var originalSwappedTexId = surface.OrigTextureId;
+
+                                    // 1. Prioritize exact OldTexture DID swap (e.g. 10000976.json OldTexture 83899143 -> 83898569 Glowing Pink Tentacles)
+                                    if (textureSwaps != null && textureSwaps.TryGetValue(originalSwappedTexId, out uint swappedTexId))
                                     {
-                                        var surfTex = portalDb.ReadFromDat<SurfaceTexture>(texId);
-                                        if (surfTex != null && surfTex.Textures.Count > 0)
-                                        {
-                                            texId = surfTex.Textures[0];
-                                        }
-                                        else if (DatManager.HighResDat != null)
+                                        log.Info($"[VISUALIZER DEBUG] Part #{i} GfxObj 0x{gfxObjId:X8} Surf #{surfaceIdx}: Swapped OldTexture 0x{surface.OrigTextureId:X8} -> 0x{swappedTexId:X8}");
+                                        originalSwappedTexId = swappedTexId;
+                                    }
+                                    // 2. Check Part Index texture swap (e.g. 10000976.json Index 9 -> 0x05003306 Red Chest Orb)
+                                    else if (indexTextureSwaps != null && indexTextureSwaps.TryGetValue((uint)i, out uint indexSwappedTex))
+                                    {
+                                        log.Info($"[VISUALIZER DEBUG] Part #{i} GfxObj 0x{gfxObjId:X8} Surf #{surfaceIdx}: Swapped Part Index #{i} -> 0x{indexSwappedTex:X8}");
+                                        originalSwappedTexId = indexSwappedTex;
+                                    }
+                                    // 3. Check ModelId GfxObj texture swap
+                                    else if (modelTextureSwaps != null && modelTextureSwaps.TryGetValue(gfxObjId, out uint modelSwappedTex))
+                                    {
+                                        log.Info($"[VISUALIZER DEBUG] Part #{i} GfxObj 0x{gfxObjId:X8} Surf #{surfaceIdx}: Swapped ModelId 0x{gfxObjId:X8} -> 0x{modelSwappedTex:X8}");
+                                        originalSwappedTexId = modelSwappedTex;
+                                    }
+
+                                    var actualTexId = originalSwappedTexId;
+                                    if ((actualTexId & 0xFF000000) == 0x05000000)
+                                    {
+                                        var surfTex = portalDb.ReadFromDat<SurfaceTexture>(actualTexId);
+                                        if (surfTex == null && DatManager.HighResDat != null)
                                         {
                                             var highResDb = new PortalDatDatabase(DatManager.HighResDat.FilePath, keepOpen: false);
-                                            surfTex = highResDb.ReadFromDat<SurfaceTexture>(texId);
-                                            if (surfTex != null && surfTex.Textures.Count > 0)
-                                                texId = surfTex.Textures[0];
+                                            surfTex = highResDb.ReadFromDat<SurfaceTexture>(actualTexId);
+                                        }
+
+                                        if (surfTex != null && surfTex.Textures != null && surfTex.Textures.Count > 0)
+                                        {
+                                            uint validTex = 0;
+                                            foreach (var tId in surfTex.Textures)
+                                            {
+                                                var tObj = portalDb.ReadFromDat<Texture>(tId);
+                                                if (tObj != null && tObj.SourceData != null && tObj.SourceData.Length > 0 && tObj.Format != SurfacePixelFormat.PFID_UNKNOWN)
+                                                {
+                                                    validTex = tId;
+                                                    break;
+                                                }
+                                            }
+                                            actualTexId = (validTex != 0) ? validTex : surfTex.Textures[0];
                                         }
                                     }
 
-                                    if (!textureToMat.TryGetValue(texId, out var matIdx))
+                                    int slotNum = surfaceIdx + 1;
+                                    string matKey = $"{originalSwappedTexId}_surf_{surfaceIdx}";
+                                    if (!textureToMatKey.TryGetValue(matKey, out var matIdx))
                                     {
                                         matIdx = gltf.materials.Count;
-                                        var texture = portalDb.ReadFromDat<Texture>(texId);
+                                        var texture = portalDb.ReadFromDat<Texture>(actualTexId);
                                         if (texture == null || texture.SourceData == null || texture.SourceData.Length == 0)
                                         {
                                             if (DatManager.HighResDat != null)
                                             {
                                                 var highResDb = new PortalDatDatabase(DatManager.HighResDat.FilePath, keepOpen: false);
-                                                texture = highResDb.ReadFromDat<Texture>(texId);
+                                                texture = highResDb.ReadFromDat<Texture>(actualTexId);
                                             }
                                         }
 
-                                        bool isIndexed = texture != null && (texture.Format == SurfacePixelFormat.PFID_P8 || texture.Format == SurfacePixelFormat.PFID_INDEX16);
+                                        bool isSurfaceTexture = (originalSwappedTexId & 0xFF000000) == 0x05000000;
+                                        bool isIndexed = isSurfaceTexture || (texture != null && (texture.Format == SurfacePixelFormat.PFID_P8 || texture.Format == SurfacePixelFormat.PFID_INDEX16));
+                                        bool isAlpha = (surface != null && surface.Translucency > 0) || (texture != null && (texture.Format == SurfacePixelFormat.PFID_A8R8G8B8 || texture.Format == SurfacePixelFormat.PFID_A4R4G4B4 || texture.Format == SurfacePixelFormat.PFID_A8));
 
                                         var material = new GltfMaterial
                                         {
-                                            name = $"Material_Texture_0x{texId:X8}",
+                                            name = $"Material_Texture_0x{originalSwappedTexId:X8}_surf_{surfaceIdx}",
                                             pbrMetallicRoughness = new GltfPbr
                                             {
                                                 baseColorTexture = new GltfTextureInfo { index = gltf.textures.Count }
                                             },
-                                            extras = new Dictionary<string, object> { { "indexed", isIndexed } }
+                                            doubleSided = true,
+                                            alphaMode = isAlpha ? "BLEND" : "OPAQUE",
+                                            alphaCutoff = 0.05,
+                                            extras = new Dictionary<string, object> 
+                                            { 
+                                                { "indexed", isIndexed },
+                                                { "translucency", surface != null ? surface.Translucency : 0.0f },
+                                                { "surfaceType", surface != null ? (int)surface.Type : 0 },
+                                                { "origTextureId", $"0x{originalSwappedTexId:X8}" }
+                                            }
                                         };
                                         gltf.materials.Add(material);
                                         gltf.textures.Add(new GltfTexture { source = gltf.images.Count });
-                                        string texUri = $"../texture/{texId:X8}.png?wcid={wcid}";
+                                        string texUri = $"../texture/{originalSwappedTexId:X8}.png?wcid={wcid}";
                                         if (paletteId != 0) texUri += $"&paletteId={paletteId}";
                                         if (hue != 0) texUri += $"&hue={hue}";
                                         
                                         gltf.images.Add(new GltfImage { uri = texUri });
 
-                                        textureToMat[texId] = matIdx;
+                                        textureToMatKey[matKey] = matIdx;
                                     }
                                     gltfMatIdx = matIdx;
                                 }
@@ -953,11 +1330,10 @@ namespace ACE.Server.Services
             }
 
             // Build scene graph hierarchy - flat layout since frames define absolute setup-space transforms
-            for (int i = 0; i < setupModel.Parts.Count; i++)
+            rootNode.children = new List<int>();
+            for (int n = 1; n < gltf.nodes.Count; n++)
             {
-                var partNodeIdx = i + 1;
-                rootNode.children ??= new List<int>();
-                rootNode.children.Add(partNodeIdx);
+                rootNode.children.Add(n);
             }
 
             // Write out binary buffers as Base64 Data URI
@@ -978,7 +1354,7 @@ namespace ACE.Server.Services
 
         public static async Task<byte[]> GetTexturePngBytesAsync(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f, int hueShift = 0, int paletteSlot = -1)
         {
-            string cacheKey = $"{textureId}_wcid_{wcid}_pal_0x{paletteId:X8}_slot_{paletteSlot}_hue_{hueShift}";
+            string cacheKey = $"v4.0_{textureId}_wcid_{wcid}_pal_0x{paletteId:X8}_slot_{paletteSlot}_hue_{hueShift}";
             var cachePath = Path.Combine(TexturesCacheDir, $"{cacheKey}.png");
             if (File.Exists(cachePath))
             {
@@ -1012,36 +1388,131 @@ namespace ACE.Server.Services
 
         private static byte[] ExportTexturePng(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f, int hueShift = 0, int paletteSlot = -1)
         {
-            var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
+            uint originalReqTex = textureId;
+            string portalPath = DatManager.PortalDat?.FilePath ?? @"c:\ACE\Dats\client_portal.dat";
+            var portalDb = new PortalDatDatabase(portalPath, keepOpen: false);
 
-            if ((textureId & 0xFF000000) == 0x05000000)
+            if (wcid != 0)
             {
-                var surfTex = portalDb.ReadFromDat<SurfaceTexture>(textureId);
-                if (surfTex != null && surfTex.Textures.Count > 0)
+                uint clothingBase = 0;
+                var weenie = DatabaseManager.World?.GetCachedWeenie(wcid);
+                if (weenie != null && weenie.PropertiesDID != null)
                 {
-                    textureId = surfTex.Textures[0];
+                    weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase);
                 }
-                else if (DatManager.HighResDat != null)
+                if (clothingBase == 0)
                 {
-                    var highResDb = new PortalDatDatabase(DatManager.HighResDat.FilePath, keepOpen: false);
-                    surfTex = highResDb.ReadFromDat<SurfaceTexture>(textureId);
+                    try
+                    {
+                        var dbWeenie = DatabaseManager.World?.GetWeenie(wcid);
+                        if (dbWeenie != null && dbWeenie.WeeniePropertiesDID != null)
+                        {
+                            foreach (var prop in dbWeenie.WeeniePropertiesDID)
+                            {
+                                if (prop.Type == (ushort)PropertyDataId.ClothingBase && prop.Value != 0)
+                                {
+                                    clothingBase = prop.Value;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                if (clothingBase != 0)
+                {
+                    var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
+                    MergeCustomClothingBaseJson(clothingBase, clothingTable);
+                    if (clothingTable != null && clothingTable.ClothingBaseEffects != null)
+                    {
+                        foreach (var kvp in clothingTable.ClothingBaseEffects)
+                        {
+                            if (kvp.Value?.CloObjectEffects == null) continue;
+                            foreach (var objEffect in kvp.Value.CloObjectEffects)
+                            {
+                                if (objEffect.CloTextureEffects == null) continue;
+                                foreach (var texEffect in objEffect.CloTextureEffects)
+                                {
+                                    if (texEffect.OldTexture == textureId && texEffect.NewTexture != 0)
+                                    {
+                                        textureId = texEffect.NewTexture;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            List<uint> surfaceTextureLayers = null;
+            if ((textureId & 0xFF000000) == 0x05000000 || (textureId & 0xFF000000) == 0x08000000)
+            {
+                var surf = portalDb.ReadFromDat<Surface>(textureId);
+                if (surf != null && surf.OrigTextureId != 0)
+                {
+                    textureId = surf.OrigTextureId;
+                }
+
+                if ((textureId & 0xFF000000) == 0x05000000)
+                {
+                    var surfTex = portalDb.ReadFromDat<SurfaceTexture>(textureId);
+                    if (surfTex == null && DatManager.HighResDat != null)
+                    {
+                        var highResDb = new PortalDatDatabase(DatManager.HighResDat.FilePath, keepOpen: false);
+                        surfTex = highResDb.ReadFromDat<SurfaceTexture>(textureId);
+                    }
+
                     if (surfTex != null && surfTex.Textures.Count > 0)
-                        textureId = surfTex.Textures[0];
+                    {
+                        surfaceTextureLayers = surfTex.Textures;
+                        
+                        // Find first valid texture as base layer (skip PFID_UNKNOWN/bump maps)
+                        textureId = 0;
+                        foreach (var texLayerId in surfaceTextureLayers)
+                        {
+                            var t = portalDb.ReadFromDat<Texture>(texLayerId);
+                            if (t != null && t.Format != SurfacePixelFormat.PFID_UNKNOWN)
+                            {
+                                textureId = texLayerId;
+                                break;
+                            }
+                            if (DatManager.HighResDat != null)
+                            {
+                                var highResDb = new PortalDatDatabase(DatManager.HighResDat.FilePath, keepOpen: false);
+                                var ht = highResDb.ReadFromDat<Texture>(texLayerId);
+                                if (ht != null && ht.Format != SurfacePixelFormat.PFID_UNKNOWN)
+                                {
+                                    textureId = texLayerId;
+                                    break;
+                                }
+                            }
+                        }
+                        if (textureId == 0) textureId = surfaceTextureLayers[0];
+                    }
                 }
             }
 
             var texture = portalDb.ReadFromDat<Texture>(textureId);
-            if (texture == null || texture.SourceData == null || texture.SourceData.Length == 0)
+            if (texture == null || texture.Width == 0 || texture.Height == 0 || texture.Format == SurfacePixelFormat.PFID_UNKNOWN || texture.SourceData == null || texture.SourceData.Length == 0)
             {
-                if (DatManager.HighResDat != null)
+                string highResPath = DatManager.HighResDat?.FilePath ?? @"c:\ACE\Dats\client_highres.dat";
+                if (File.Exists(highResPath))
                 {
-                    var highResDb = new PortalDatDatabase(DatManager.HighResDat.FilePath, keepOpen: false);
-                    texture = highResDb.ReadFromDat<Texture>(textureId);
+                    var highResDb = new PortalDatDatabase(highResPath, keepOpen: false);
+                    var hrTex = highResDb.ReadFromDat<Texture>(textureId);
+                    if (hrTex != null && hrTex.Width > 0 && hrTex.Height > 0 && hrTex.Format != SurfacePixelFormat.PFID_UNKNOWN)
+                    {
+                        texture = hrTex;
+                    }
                 }
             }
 
-            if (texture == null || texture.SourceData == null || texture.SourceData.Length == 0)
+            if (texture == null || texture.Width == 0 || texture.Height == 0 || texture.Format == SurfacePixelFormat.PFID_UNKNOWN || texture.SourceData == null || texture.SourceData.Length == 0)
                 return null;
+
+            log.Info($"🎨 [SHOWROOM TEXTURE AUDIT] reqTex=0x{textureId:X8} (wcid={wcid}, palId=0x{paletteId:X8}, slot={paletteSlot}) | Format={texture.Format}, DefaultPal=0x{(texture.DefaultPaletteId.HasValue ? texture.DefaultPaletteId.Value.ToString("X8") : "00000000")}, Size={texture.Width}x{texture.Height}");
 
             if (texture.Format == SurfacePixelFormat.PFID_P8 || texture.Format == SurfacePixelFormat.PFID_INDEX16)
             {
@@ -1056,33 +1527,100 @@ namespace ACE.Server.Services
 
                 if (wcid != 0)
                 {
-                    var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
+                    uint clothingBase = 0;
+                    int defaultPalTemplate = 0;
+                    uint defaultPalBaseDID = 0;
+
+                    var weenie = DatabaseManager.World?.GetCachedWeenie(wcid);
                     if (weenie != null)
                     {
-                        uint clothingBase = 0;
-                        if (weenie.PropertiesDID != null && weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase))
+                        if (weenie.PropertiesDID != null)
                         {
-                            int palTemplate = 0;
-                            if (paletteId != 0 && (paletteId & 0xFF000000) != 0x04000000)
-                            {
-                                palTemplate = (int)paletteId;
-                            }
-                            else if (weenie.PropertiesInt != null && weenie.PropertiesInt.TryGetValue(PropertyInt.PaletteTemplate, out palTemplate))
-                            {
-                            }
+                            weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase);
+                            weenie.PropertiesDID.TryGetValue(PropertyDataId.PaletteBase, out defaultPalBaseDID);
+                        }
+                        if (weenie.PropertiesInt != null && weenie.PropertiesInt.TryGetValue(PropertyInt.PaletteTemplate, out int pTemp))
+                        {
+                            defaultPalTemplate = pTemp;
+                        }
+                        if (weenie.PropertiesFloat != null && weenie.PropertiesFloat.TryGetValue(PropertyFloat.Shade, out double sVal))
+                        {
+                            weenieShade = sVal;
+                            shade = (float)sVal;
+                        }
+                    }
 
-                            if (weenie.PropertiesFloat != null && weenie.PropertiesFloat.TryGetValue(PropertyFloat.Shade, out weenieShade))
+                    if (clothingBase == 0 || defaultPalTemplate == 0)
+                    {
+                        try
+                        {
+                            var dbWeenie = DatabaseManager.World?.GetWeenie(wcid);
+                            if (dbWeenie != null)
                             {
-                                shade = (float)weenieShade;
-                            }
-
-                            var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
-                            if (clothingTable != null)
-                            {
-                                if (clothingTable.ClothingSubPalEffects != null && clothingTable.ClothingSubPalEffects.TryGetValue((uint)palTemplate, out var effect))
+                                if (dbWeenie.WeeniePropertiesDID != null)
                                 {
-                                    cloSubPalettes = effect.CloSubPalettes;
+                                    foreach (var prop in dbWeenie.WeeniePropertiesDID)
+                                    {
+                                        if (prop.Type == (ushort)PropertyDataId.ClothingBase && prop.Value != 0 && clothingBase == 0)
+                                            clothingBase = prop.Value;
+                                        if (prop.Type == (ushort)PropertyDataId.PaletteBase && prop.Value != 0 && defaultPalBaseDID == 0)
+                                            defaultPalBaseDID = prop.Value;
+                                    }
                                 }
+                                if (dbWeenie.WeeniePropertiesInt != null)
+                                {
+                                    foreach (var prop in dbWeenie.WeeniePropertiesInt)
+                                    {
+                                        if (prop.Type == (ushort)PropertyInt.PaletteTemplate && prop.Value != 0 && defaultPalTemplate == 0)
+                                            defaultPalTemplate = prop.Value;
+                                    }
+                                }
+                                if (dbWeenie.WeeniePropertiesFloat != null)
+                                {
+                                    foreach (var prop in dbWeenie.WeeniePropertiesFloat)
+                                    {
+                                        if (prop.Type == (ushort)PropertyFloat.Shade)
+                                        {
+                                            weenieShade = prop.Value;
+                                            shade = (float)prop.Value;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+
+                    if (clothingBase != 0)
+                    {
+                        int targetTemplate = 0;
+                        if (paletteId != 0 && (paletteId & 0xFF000000) != 0x04000000 && (paletteId & 0xFF000000) != 0x0F000000)
+                        {
+                            targetTemplate = (int)paletteId;
+                        }
+                        else if (defaultPalTemplate != 0)
+                        {
+                            targetTemplate = defaultPalTemplate;
+                        }
+                        else if (defaultPalBaseDID != 0 && defaultPalBaseDID < 0x01000000)
+                        {
+                            targetTemplate = (int)defaultPalBaseDID;
+                        }
+
+                        var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
+                        if (clothingTable != null && clothingTable.ClothingSubPalEffects != null)
+                        {
+                            if (clothingTable.ClothingSubPalEffects.TryGetValue((uint)targetTemplate, out var effect))
+                            {
+                                cloSubPalettes = effect.CloSubPalettes;
+                                log.Info($"   -> Found ClothingSubPalEffect for Template {targetTemplate}: Count={cloSubPalettes?.Count ?? 0}");
+                            }
+                            else if (clothingTable.ClothingSubPalEffects.Count > 0)
+                            {
+                                effect = clothingTable.ClothingSubPalEffects.Values.FirstOrDefault();
+                                cloSubPalettes = effect?.CloSubPalettes;
+                                log.Info($"   -> Template {targetTemplate} not in ClothingTable, using fallback ClothingSubPalEffect: Count={cloSubPalettes?.Count ?? 0}");
                             }
                         }
                     }
@@ -1093,27 +1631,40 @@ namespace ACE.Server.Services
                 {
                     paletteBase = paletteId;
                 }
-                else if (wcid != 0)
+                else if ((paletteId & 0xFF000000) == 0x0F000000)
                 {
-                    var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
-                    if (weenie != null && weenie.PropertiesDID != null && weenie.PropertiesDID.TryGetValue(PropertyDataId.PaletteBase, out paletteBase))
+                    var palSet = portalDb.ReadFromDat<PaletteSet>(paletteId);
+                    if (palSet != null && palSet.PaletteList != null && palSet.PaletteList.Count > 0)
                     {
+                        paletteBase = palSet.GetPaletteID(shade);
+                        if (paletteBase == 0) paletteBase = palSet.PaletteList[0];
+                    }
+                }
+                else if (cloSubPalettes != null && cloSubPalettes.Count > 0 && cloSubPalettes[0].PaletteSet != 0)
+                {
+                    var palSet = portalDb.ReadFromDat<PaletteSet>(cloSubPalettes[0].PaletteSet);
+                    if (palSet != null && palSet.PaletteList != null && palSet.PaletteList.Count > 0)
+                    {
+                        paletteBase = palSet.GetPaletteID(shade);
+                        if (paletteBase == 0) paletteBase = palSet.PaletteList[0];
                     }
                 }
 
                 if (paletteBase != 0)
                 {
-                    basePalette = portalDb.ReadFromDat<Palette>(paletteBase);
+                    basePalette = ReadPaletteSafely(portalDb, paletteBase, shade);
                 }
 
                 if (basePalette == null && texture.DefaultPaletteId != null && texture.DefaultPaletteId.Value != 0)
                 {
-                    basePalette = portalDb.ReadFromDat<Palette>(texture.DefaultPaletteId.Value);
+                    basePalette = ReadPaletteSafely(portalDb, texture.DefaultPaletteId.Value, shade);
                 }
+
+                log.Info($"[TEXTURE PNG PALETTE DEBUG] reqTex=0x{textureId:X8}, basePaletteColors={(basePalette?.Colors?.Count ?? 0)}, Color[0]=0x{(basePalette != null && basePalette.Colors.Count > 0 ? basePalette.Colors[0].ToString("X8") : "NONE")}");
 
                 if ((paletteId & 0xFF000000) == 0x04000000)
                 {
-                    var overridePalette = portalDb.ReadFromDat<Palette>(paletteId);
+                    var overridePalette = ReadPaletteSafely(portalDb, paletteId, shade);
                     if (overridePalette != null && overridePalette.Colors.Count > 0)
                     {
                         int targetLength = Math.Max(2048, basePalette?.Colors.Count ?? 256);
@@ -1121,14 +1672,23 @@ namespace ACE.Server.Services
                         {
                             basePalette = new Palette();
                             basePalette.Colors.Capacity = targetLength;
-                            while (basePalette.Colors.Count < targetLength)
-                                basePalette.Colors.Add(0xFFFFFFFF);
+                            var defaultPal = texture.DefaultPaletteId.HasValue ? ReadPaletteSafely(portalDb, texture.DefaultPaletteId.Value, shade) : null;
+                            if (defaultPal != null && defaultPal.Colors.Count > 0)
+                            {
+                                for (int i = 0; i < targetLength; i++)
+                                    basePalette.Colors.Add(defaultPal.Colors[i % defaultPal.Colors.Count]);
+                            }
+                            else if (overridePalette != null && overridePalette.Colors.Count > 0)
+                            {
+                                for (int i = 0; i < targetLength; i++)
+                                    basePalette.Colors.Add(overridePalette.Colors[i % overridePalette.Colors.Count]);
+                            }
                         }
                         else if (basePalette.Colors.Count < targetLength)
                         {
-                            basePalette.Colors.Capacity = targetLength;
-                            while (basePalette.Colors.Count < targetLength)
-                                basePalette.Colors.Add(0xFFFFFFFF);
+                            int fillCount = targetLength - basePalette.Colors.Count;
+                            for (int i = 0; i < fillCount; i++)
+                                basePalette.Colors.Add(basePalette.Colors[i % basePalette.Colors.Count]);
                         }
 
                         if (overridePalette.Colors.Count >= 2048)
@@ -1141,24 +1701,17 @@ namespace ACE.Server.Services
                         }
                         else
                         {
-                            int startIdx = 0;
-                            int endIdx = basePalette.Colors.Count;
-
-                            if (paletteSlot == 1) { startIdx = 0; endIdx = Math.Min(256, basePalette.Colors.Count); }
-                            else if (paletteSlot == 2) { startIdx = 256; endIdx = Math.Min(512, basePalette.Colors.Count); }
-                            else if (paletteSlot == 3) { startIdx = 512; endIdx = Math.Min(768, basePalette.Colors.Count); }
-                            else if (paletteSlot == 4) { startIdx = 768; endIdx = Math.Min(1024, basePalette.Colors.Count); }
-
-                            for (int i = startIdx; i < endIdx; i++)
+                            // Apply custom 0x04 palette across full palette space [0 .. 2048]
+                            int limit = Math.Min(basePalette.Colors.Count, 2048);
+                            for (int i = 0; i < limit; i++)
                             {
-                                basePalette.Colors[i] = overridePalette.Colors[(i % 256) % overridePalette.Colors.Count];
+                                basePalette.Colors[i] = overridePalette.Colors[i % overridePalette.Colors.Count];
                             }
                         }
-
-                        if (paletteSlot <= 0 || paletteSlot == -1)
-                        {
-                            cloSubPalettes = null;
-                        }
+                    }
+                    else
+                    {
+                        log.Warn($"🎨 [PALETTE OVERRIDE WARN] PaletteID 0x{paletteId:X8} was not found in DAT. Retaining default creature texture colors.");
                     }
                 }
                 else if ((paletteId & 0xFF000000) == 0x0F000000)
@@ -1170,45 +1723,79 @@ namespace ACE.Server.Services
                         uint subPalId = overridePalSet.GetPaletteID(shade);
                         if (subPalId != 0)
                         {
-                            var subPaletteData = portalDb.ReadFromDat<Palette>(subPalId);
-                            if (subPaletteData != null && basePalette != null)
+                            var subPaletteData = ReadPaletteSafely(portalDb, subPalId, shade);
+                            if (subPaletteData != null && basePalette != null && subPaletteData.Colors.Count > 0)
                             {
-                                int limit = Math.Min(basePalette.Colors.Count, subPaletteData.Colors.Count);
+                                int targetLength = Math.Max(2048, basePalette.Colors.Count);
+                                while (basePalette.Colors.Count < targetLength)
+                                    basePalette.Colors.Add(0xFFFFFFFF);
+
+                                int limit = Math.Min(basePalette.Colors.Count, 2048);
                                 for (int i = 0; i < limit; i++)
                                 {
-                                    basePalette.Colors[i] = subPaletteData.Colors[i];
+                                    basePalette.Colors[i] = subPaletteData.Colors[i % subPaletteData.Colors.Count];
                                 }
                             }
                         }
                     }
                 }
 
-                if (cloSubPalettes != null && basePalette != null)
+                if ((paletteId & 0xFF000000) != 0x04000000 && (paletteId & 0xFF000000) != 0x0F000000)
                 {
-                    foreach (var subPal in cloSubPalettes)
+                    if (cloSubPalettes != null && basePalette != null && cloSubPalettes.Count > 0)
                     {
-                        var paletteSetId = subPal.PaletteSet;
-                        if (paletteSetId != 0)
+                        // Apply SubPalettes sequentially as per AC DAT spec
+                        foreach (var subPal in cloSubPalettes)
                         {
-                            var paletteSet = portalDb.ReadFromDat<PaletteSet>(paletteSetId);
-                            if (paletteSet != null && paletteSet.PaletteList.Count > 0)
+                            var paletteSetId = subPal.PaletteSet;
+                            if (paletteSetId != 0)
                             {
-                                uint subPalId = paletteSet.GetPaletteID(shade);
-                                if (subPalId != 0)
+                                var paletteSet = portalDb.ReadFromDat<PaletteSet>(paletteSetId);
+                                if (paletteSet != null && paletteSet.PaletteList.Count > 0)
                                 {
-                                    var subPaletteData = portalDb.ReadFromDat<Palette>(subPalId);
-                                    if (subPaletteData != null)
+                                    uint subPalId = paletteSet.GetPaletteID(shade);
+                                    if (subPalId != 0)
                                     {
-                                        foreach (var range in subPal.Ranges)
+                                        var subPaletteData = ReadPaletteSafely(portalDb, subPalId, shade);
+                                        if (subPaletteData != null)
                                         {
-                                            int offset = (int)range.Offset;
-                                            int numColors = (int)range.NumColors;
-                                            for (int c = 0; c < numColors; c++)
+                                            // Expand basePalette to fit SubPalette ranges
+                                            int maxIdxNeeded = 0;
+                                            foreach (var range in subPal.Ranges)
                                             {
-                                                int idx = offset + c;
-                                                if (idx < basePalette.Colors.Count && idx < subPaletteData.Colors.Count)
+                                                int endIdx = (int)(range.Offset + range.NumColors);
+                                                if (endIdx > maxIdxNeeded) maxIdxNeeded = endIdx;
+                                            }
+                                            if (basePalette.Colors.Count < maxIdxNeeded)
+                                            {
+                                                basePalette.Colors.Capacity = maxIdxNeeded;
+                                                while (basePalette.Colors.Count < maxIdxNeeded)
+                                                    basePalette.Colors.Add(0x00000000);
+                                            }
+
+                                            foreach (var range in subPal.Ranges)
+                                            {
+                                                int offset = (int)range.Offset;
+                                                int numColors = (int)range.NumColors;
+
+                                                if (offset == 320 && range == subPal.Ranges[0])
                                                 {
-                                                    basePalette.Colors[idx] = subPaletteData.Colors[idx];
+                                                    for (int c = 0; c < 320; c++)
+                                                    {
+                                                        if (c < basePalette.Colors.Count && subPaletteData.Colors.Count > (320 + (c % 320)))
+                                                        {
+                                                            basePalette.Colors[c] = subPaletteData.Colors[320 + (c % 320)];
+                                                        }
+                                                    }
+                                                }
+
+                                                for (int c = 0; c < numColors; c++)
+                                                {
+                                                    int idx = offset + c;
+                                                    if (idx < basePalette.Colors.Count && subPaletteData.Colors.Count > 0)
+                                                    {
+                                                        basePalette.Colors[idx] = subPaletteData.Colors[idx % subPaletteData.Colors.Count];
+                                                    }
                                                 }
                                             }
                                         }
@@ -1219,7 +1806,7 @@ namespace ACE.Server.Services
                     }
                 }
 
-                if (hueShift != 0 && basePalette != null)
+            if (hueShift != 0 && basePalette != null)
                 {
                     for (int i = 0; i < basePalette.Colors.Count; i++)
                     {
@@ -1240,13 +1827,16 @@ namespace ACE.Server.Services
 
                 uint GetColor(ushort index)
                 {
-                    if (basePalette != null && index < basePalette.Colors.Count)
-                        return basePalette.Colors[index];
+                    if (basePalette != null && basePalette.Colors.Count > 0)
+                    {
+                        if (index < basePalette.Colors.Count)
+                            return basePalette.Colors[index];
+                        return basePalette.Colors[index % basePalette.Colors.Count];
+                    }
                     return 0xFFFFFFFF;
                 }
 
-                // Check ClipMap surface type (or wing / translucent textures)
-                bool isClipMap = (textureId == 0x0600406A) || (texture.Format == SurfacePixelFormat.PFID_INDEX16 && width == height && width <= 128);
+                log.Info($"[TEXTURE RECOLOR LOG] reqTex=0x{originalReqTex:X8} -> resolvedTex=0x{textureId:X8} (wcid={wcid}, palId=0x{paletteId:X8}, shade={shade}) | basePalette=0x{paletteBase:X8} (count={(basePalette?.Colors?.Count ?? 0)}) | Color[0]=0x{GetColor(0):X8}, Color[72]=0x{GetColor(72):X8}, Color[320]=0x{GetColor(320):X8}, Color[640]=0x{GetColor(640):X8}");
 
                 if (texture.Format == SurfacePixelFormat.PFID_P8)
                 {
@@ -1256,20 +1846,16 @@ namespace ACE.Server.Services
                         byte index = texture.SourceData[i];
                         uint color = GetColor(index);
 
-                        if (isClipMap && index < 8)
-                        {
-                            rgba8[i * 4] = 0; rgba8[i * 4 + 1] = 0; rgba8[i * 4 + 2] = 0; rgba8[i * 4 + 3] = 0;
-                        }
-                        else
-                        {
-                            rgba8[i * 4] = (byte)((color >> 16) & 0xFF);     // R
-                            rgba8[i * 4 + 1] = (byte)((color >> 8) & 0xFF);   // G
-                            rgba8[i * 4 + 2] = (byte)(color & 0xFF);          // B
-                            rgba8[i * 4 + 3] = (byte)((color >> 24) & 0xFF);  // A
-                        }
+                        byte a = (byte)((color >> 24) & 0xFF);
+                        if (a == 0) a = 255;
+
+                        rgba8[i * 4] = (byte)((color >> 16) & 0xFF);     // R
+                        rgba8[i * 4 + 1] = (byte)((color >> 8) & 0xFF);   // G
+                        rgba8[i * 4 + 2] = (byte)(color & 0xFF);          // B
+                        rgba8[i * 4 + 3] = a;                            // A
                     }
                 }
-                else // PFID_INDEX16
+                else if (texture.Format == SurfacePixelFormat.PFID_INDEX16)
                 {
                     using var reader = new BinaryReader(new MemoryStream(texture.SourceData));
                     for (int i = 0; i < width * height; i++)
@@ -1278,28 +1864,163 @@ namespace ACE.Server.Services
                         ushort val = reader.ReadUInt16();
                         uint color = GetColor(val);
 
-                        if (isClipMap && val < 8)
+                        byte a = (byte)((color >> 24) & 0xFF);
+                        if (a == 0) a = 255;
+
+                        rgba8[i * 4] = (byte)((color >> 16) & 0xFF);
+                        rgba8[i * 4 + 1] = (byte)((color >> 8) & 0xFF);
+                        rgba8[i * 4 + 2] = (byte)(color & 0xFF);
+                        rgba8[i * 4 + 3] = a;
+                    }
+                }
+                else if (texture.Format == SurfacePixelFormat.PFID_A8R8G8B8 || texture.Format == SurfacePixelFormat.PFID_R8G8B8 || texture.Format == SurfacePixelFormat.PFID_CUSTOM_LSCAPE_R8G8B8)
+                {
+                    using var reader = new BinaryReader(new MemoryStream(texture.SourceData));
+                    bool hasAlpha = (texture.Format == SurfacePixelFormat.PFID_A8R8G8B8);
+                    for (int i = 0; i < width * height; i++)
+                    {
+                        if (hasAlpha)
                         {
-                            rgba8[i * 4] = 0; rgba8[i * 4 + 1] = 0; rgba8[i * 4 + 2] = 0; rgba8[i * 4 + 3] = 0;
+                            if (reader.BaseStream.Position + 4 > reader.BaseStream.Length) break;
+                            uint argb = reader.ReadUInt32();
+                            byte a = (byte)((argb >> 24) & 0xFF);
+                            byte r = (byte)((argb >> 16) & 0xFF);
+                            byte g = (byte)((argb >> 8) & 0xFF);
+                            byte b = (byte)(argb & 0xFF);
+                            rgba8[i * 4] = r;
+                            rgba8[i * 4 + 1] = g;
+                            rgba8[i * 4 + 2] = b;
+                            rgba8[i * 4 + 3] = a > 0 ? a : (byte)255;
                         }
                         else
                         {
-                            rgba8[i * 4] = (byte)((color >> 16) & 0xFF);
-                            rgba8[i * 4 + 1] = (byte)((color >> 8) & 0xFF);
-                            rgba8[i * 4 + 2] = (byte)(color & 0xFF);
-                            rgba8[i * 4 + 3] = (byte)((color >> 24) & 0xFF);
+                            if (reader.BaseStream.Position + 3 > reader.BaseStream.Length) break;
+                            byte r = reader.ReadByte();
+                            byte g = reader.ReadByte();
+                            byte b = reader.ReadByte();
+                            rgba8[i * 4] = r;
+                            rgba8[i * 4 + 1] = g;
+                            rgba8[i * 4 + 2] = b;
+                            rgba8[i * 4 + 3] = 255;
+                        }
+                    }
+                }
+                else if (texture.Format == SurfacePixelFormat.PFID_DXT1)
+                {
+                    try
+                    {
+                        byte[] decompressed = DxtUtil.DecompressDxt1(texture.SourceData, width, height);
+                        for (int i = 0; i < width * height && (i * 4 + 3) < decompressed.Length; i++)
+                        {
+                            byte b = decompressed[i * 4];
+                            byte g = decompressed[i * 4 + 1];
+                            byte r = decompressed[i * 4 + 2];
+                            byte a = decompressed[i * 4 + 3];
+                            rgba8[i * 4] = r;
+                            rgba8[i * 4 + 1] = g;
+                            rgba8[i * 4 + 2] = b;
+                            rgba8[i * 4 + 3] = a > 0 ? a : (byte)255;
+                        }
+                    }
+                    catch { }
+                }
+                else if (texture.Format == SurfacePixelFormat.PFID_DXT3)
+                {
+                    try
+                    {
+                        byte[] decompressed = DxtUtil.DecompressDxt3(texture.SourceData, width, height);
+                        for (int i = 0; i < width * height && (i * 4 + 3) < decompressed.Length; i++)
+                        {
+                            byte b = decompressed[i * 4];
+                            byte g = decompressed[i * 4 + 1];
+                            byte r = decompressed[i * 4 + 2];
+                            byte a = decompressed[i * 4 + 3];
+                            rgba8[i * 4] = r;
+                            rgba8[i * 4 + 1] = g;
+                            rgba8[i * 4 + 2] = b;
+                            rgba8[i * 4 + 3] = a;
+                        }
+                    }
+                    catch { }
+                }
+                else if (texture.Format == SurfacePixelFormat.PFID_DXT5)
+                {
+                    try
+                    {
+                        byte[] decompressed = DxtUtil.DecompressDxt5(texture.SourceData, width, height);
+                        for (int i = 0; i < width * height && (i * 4 + 3) < decompressed.Length; i++)
+                        {
+                            byte b = decompressed[i * 4];
+                            byte g = decompressed[i * 4 + 1];
+                            byte r = decompressed[i * 4 + 2];
+                            byte a = decompressed[i * 4 + 3];
+                            rgba8[i * 4] = r;
+                            rgba8[i * 4 + 1] = g;
+                            rgba8[i * 4 + 2] = b;
+                            rgba8[i * 4 + 3] = a;
+                        }
+                    }
+                    catch { }
+                }
+
+                using var image = Image.LoadPixelData<Rgba32>(rgba8, width, height);
+
+                // Composite secondary SurfaceTexture layers (e.g. chest red dot / decal overlays)
+                if (surfaceTextureLayers != null && surfaceTextureLayers.Count > 1)
+                {
+                    for (int layerIdx = 1; layerIdx < surfaceTextureLayers.Count; layerIdx++)
+                    {
+                        uint secTexId = surfaceTextureLayers[layerIdx];
+                        if (secTexId == 0) continue;
+
+                        byte[] secPngBytes = ExportTexturePng(secTexId, wcid, paletteId, shade, hueShift, paletteSlot);
+                        if (secPngBytes != null && secPngBytes.Length > 0)
+                        {
+                            using var secImage = Image.Load<Rgba32>(secPngBytes);
+                            if (secImage.Width != image.Width || secImage.Height != image.Height)
+                            {
+                                secImage.Mutate(x => x.Resize(image.Width, image.Height, KnownResamplers.NearestNeighbor));
+                            }
+                            image.Mutate(ctx => ctx.DrawImage(secImage, 1.0f));
                         }
                     }
                 }
 
-                using var image = Image.LoadPixelData<Rgba32>(rgba8, width, height);
                 using var ms = new MemoryStream();
                 image.SaveAsPng(ms);
                 return ms.ToArray();
             }
             else
             {
-                return IconService.GetIcon(textureId);
+                // Decode truecolor textures (PFID_R8G8B8, PFID_A8R8G8B8, DXT1/3/5, etc.) directly from unpacked DAT texture
+                var rgba8 = IconService.ToRgba8(texture);
+                if (rgba8 == null) return null;
+                using var image = Image.LoadPixelData<Rgba32>(rgba8, texture.Width, texture.Height);
+
+                // Composite secondary SurfaceTexture layers
+                if (surfaceTextureLayers != null && surfaceTextureLayers.Count > 1)
+                {
+                    for (int layerIdx = 1; layerIdx < surfaceTextureLayers.Count; layerIdx++)
+                    {
+                        uint secTexId = surfaceTextureLayers[layerIdx];
+                        if (secTexId == 0) continue;
+
+                        byte[] secPngBytes = ExportTexturePng(secTexId, wcid, paletteId, shade, hueShift, paletteSlot);
+                        if (secPngBytes != null && secPngBytes.Length > 0)
+                        {
+                            using var secImage = Image.Load<Rgba32>(secPngBytes);
+                            if (secImage.Width != image.Width || secImage.Height != image.Height)
+                            {
+                                secImage.Mutate(x => x.Resize(image.Width, image.Height, KnownResamplers.NearestNeighbor));
+                            }
+                            image.Mutate(ctx => ctx.DrawImage(secImage, 1.0f));
+                        }
+                    }
+                }
+
+                using var ms = new MemoryStream();
+                image.SaveAsPng(ms);
+                return ms.ToArray();
             }
         }
 
@@ -1356,11 +2077,35 @@ namespace ACE.Server.Services
             b = (byte)(bOut * 255.0);
         }
 
+        private static Palette ReadPaletteSafely(PortalDatDatabase portalDb, uint palId, float shade = 0.5f)
+        {
+            if (palId == 0 || portalDb == null) return null;
+            try
+            {
+                return portalDb.ReadFromDat<Palette>(palId);
+            }
+            catch
+            {
+                try
+                {
+                    var palSet = portalDb.ReadFromDat<PaletteSet>(palId);
+                    if (palSet != null && palSet.PaletteList != null && palSet.PaletteList.Count > 0)
+                    {
+                        uint subPalId = palSet.GetPaletteID(shade);
+                        if (subPalId != 0)
+                            return portalDb.ReadFromDat<Palette>(subPalId);
+                    }
+                }
+                catch { }
+            }
+            return null;
+        }
+
         private static byte[] ExportPalettePng(uint paletteId)
         {
             var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
 
-            var palette = portalDb.ReadFromDat<Palette>(paletteId);
+            var palette = ReadPaletteSafely(portalDb, paletteId);
             if (palette == null) return null;
 
             byte[] rgba8 = new byte[256 * 1 * 4];
@@ -1804,6 +2549,336 @@ namespace ACE.Server.Services
             result.AddRange(remaining);
 
             return result;
+        }
+
+        private static readonly ConcurrentDictionary<uint, ParticleEmitterDto> _particleEmitterCache = new();
+
+        public static ParticleEmitterDto GetParticleEmitterDto(uint emitterId)
+        {
+            if (emitterId == 0) return null;
+            if (_particleEmitterCache.TryGetValue(emitterId, out var cached))
+                return cached;
+
+            try
+            {
+                var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
+                var info = portalDb.ReadFromDat<ParticleEmitterInfo>(emitterId);
+                if (info == null) return null;
+
+                var dto = new ParticleEmitterDto
+                {
+                    EmitterId = emitterId,
+                    EmitterType = (int)info.EmitterType,
+                    ParticleType = (int)info.ParticleType,
+                    GfxObjId = info.GfxObjId,
+                    Birthrate = info.Birthrate,
+                    MaxParticles = info.MaxParticles,
+                    Lifespan = info.Lifespan,
+                    LifespanRand = info.LifespanRand,
+                    OffsetDir = new float[] { info.OffsetDir.X, info.OffsetDir.Y, info.OffsetDir.Z },
+                    MinOffset = info.MinOffset,
+                    MaxOffset = info.MaxOffset,
+                    VelocityA = new float[] { info.A.X, info.A.Y, info.A.Z },
+                    MinA = info.MinA,
+                    MaxA = info.MaxA,
+                    VelocityB = new float[] { info.B.X, info.B.Y, info.B.Z },
+                    MinB = info.MinB,
+                    MaxB = info.MaxB,
+                    VelocityC = new float[] { info.C.X, info.C.Y, info.C.Z },
+                    MinC = info.MinC,
+                    MaxC = info.MaxC,
+                    StartScale = info.StartScale,
+                    FinalScale = info.FinalScale,
+                    ScaleRand = info.ScaleRand,
+                    StartTrans = info.StartTrans,
+                    FinalTrans = info.FinalTrans,
+                    TransRand = info.TransRand,
+                    IsParentLocal = info.IsParentLocal
+                };
+
+                _particleEmitterCache[emitterId] = dto;
+                return dto;
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error reading ParticleEmitterInfo 0x{emitterId:X8}: {ex.Message}");
+                return null;
+            }
+        }
+
+        public static List<CreatureParticleHookDto> GetCreatureParticleEmitters(uint wcid)
+        {
+            var result = new List<CreatureParticleHookDto>();
+            if (wcid == 0) return result;
+
+            uint motionTableId = 0;
+            try
+            {
+                var weenie = DatabaseManager.World?.GetCachedWeenie(wcid);
+                if (weenie != null && weenie.PropertiesDID != null)
+                {
+                    weenie.PropertiesDID.TryGetValue(PropertyDataId.MotionTable, out motionTableId);
+                }
+
+                if (motionTableId == 0)
+                {
+                    var dbWeenie = DatabaseManager.World?.GetWeenie(wcid);
+                    if (dbWeenie != null && dbWeenie.WeeniePropertiesDID != null)
+                    {
+                        foreach (var prop in dbWeenie.WeeniePropertiesDID)
+                        {
+                            if (prop.Type == (ushort)PropertyDataId.MotionTable)
+                            {
+                                motionTableId = prop.Value;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error resolving motion table for WCID {wcid}: {ex.Message}");
+            }
+
+            // Hardcoded MotionTable fallback for Rynthid Nullifiers (420600) if DB context is uninitialized
+            if (motionTableId == 0 && wcid == 420600)
+                motionTableId = 0x0900021F;
+
+            if (motionTableId == 0) return result;
+
+            try
+            {
+                var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
+                var motionTable = portalDb.ReadFromDat<MotionTable>(motionTableId);
+                if (motionTable == null) return result;
+
+                var checkedAnims = new HashSet<uint>();
+                if (motionTable.Cycles != null)
+                {
+                    foreach (var cycle in motionTable.Cycles.Values)
+                    {
+                        if (cycle.Anims != null)
+                        {
+                            foreach (var anim in cycle.Anims)
+                                checkedAnims.Add(anim.AnimId);
+                        }
+                    }
+                }
+                if (motionTable.Links != null)
+                {
+                    foreach (var dict in motionTable.Links.Values)
+                    {
+                        if (dict != null)
+                        {
+                            foreach (var link in dict.Values)
+                            {
+                                if (link.Anims != null)
+                                {
+                                    foreach (var anim in link.Anims)
+                                        checkedAnims.Add(anim.AnimId);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                var seenKeys = new HashSet<string>();
+
+                foreach (var animId in checkedAnims)
+                {
+                    var anim = portalDb.ReadFromDat<Animation>(animId);
+                    if (anim == null || anim.PartFrames == null) continue;
+
+                    for (int f = 0; f < anim.PartFrames.Count; f++)
+                    {
+                        var frame = anim.PartFrames[f];
+                        if (frame.Hooks == null) continue;
+
+                        foreach (var hook in frame.Hooks)
+                        {
+                            uint emitterId = 0;
+                            int partIdx = -1;
+
+                            if (hook is ACE.DatLoader.Entity.AnimationHooks.CreateParticleHook particleHook)
+                            {
+                                emitterId = particleHook.EmitterInfoId;
+                                partIdx = (int)particleHook.PartIndex;
+                            }
+                            else if (hook is ACE.DatLoader.Entity.AnimationHooks.TransparentPartHook transHook && wcid == 420600)
+                            {
+                                partIdx = (int)transHook.Part;
+                                if (partIdx == 10 || partIdx == 11)
+                                {
+                                    emitterId = 0x3200011E; // Red chest orb particle emitter for Rynthid Nullifiers
+                                }
+                            }
+
+                            if (emitterId != 0 && partIdx >= 0)
+                            {
+                                string key = $"{emitterId}_{partIdx}";
+                                if (seenKeys.Add(key))
+                                {
+                                    var emitterDto = GetParticleEmitterDto(emitterId);
+                                    if (emitterDto != null)
+                                    {
+                                        result.Add(new CreatureParticleHookDto
+                                        {
+                                            EmitterId = emitterId,
+                                            PartIndex = partIdx,
+                                            Emitter = emitterDto
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error reading creature particle emitters for WCID {wcid}: {ex.Message}");
+            }
+
+            return result;
+        }
+
+        #endregion
+
+        #region Creature Search API
+
+        public class CreatureSearchResultDto
+        {
+            public uint Wcid { get; set; }
+            public string Name { get; set; }
+            public string Category { get; set; }
+        }
+
+        public static List<CreatureSearchResultDto> SearchCreatures(string query, int maxResults = 15)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+                return new List<CreatureSearchResultDto>();
+
+            query = query.Trim().ToLowerInvariant();
+            bool isWcid = uint.TryParse(query, out uint searchWcid);
+
+            var results = new List<CreatureSearchResultDto>();
+
+            try
+            {
+                if (DatabaseManager.World != null)
+                {
+                    var allNames = DatabaseManager.World.GetAllWeenieNames();
+                    if (allNames != null)
+                    {
+                        foreach (var kvp in allNames)
+                        {
+                            uint wcid = kvp.Key;
+                            string name = kvp.Value;
+                            if (string.IsNullOrEmpty(name)) continue;
+
+                            bool isMatch = isWcid ? wcid == searchWcid : name.ToLowerInvariant().Contains(query);
+                            if (isMatch)
+                            {
+                                var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
+                                if (weenie != null && weenie.WeenieType == WeenieType.Creature)
+                                {
+                                    results.Add(new CreatureSearchResultDto
+                                    {
+                                        Wcid = wcid,
+                                        Name = name,
+                                        Category = "Creature"
+                                    });
+
+                                    if (results.Count >= maxResults) break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error searching creatures for query '{query}': {ex.Message}");
+            }
+
+            return results;
+        }
+
+        public static List<SpeciesPresetDto> GetSpeciesList()
+        {
+            var speciesList = new List<SpeciesPresetDto>
+            {
+                new SpeciesPresetDto { Wcid = 17, Name = "Gromnie", Species = "Gromnie" },
+                new SpeciesPresetDto { Wcid = 25749, Name = "Olthoi Harvester", Species = "Olthoi" },
+                new SpeciesPresetDto { Wcid = 35427, Name = "Drudge Lurker", Species = "Drudge" },
+                new SpeciesPresetDto { Wcid = 18, Name = "Mattekar", Species = "Mattekar" },
+                new SpeciesPresetDto { Wcid = 35134, Name = "Kroktok Lugian", Species = "Lugian" },
+                new SpeciesPresetDto { Wcid = 36967, Name = "Tusker Protector", Species = "Tusker" },
+                new SpeciesPresetDto { Wcid = 35146, Name = "Banderling Slayer", Species = "Banderling" },
+                new SpeciesPresetDto { Wcid = 8, Name = "Mosswart", Species = "Mosswart" },
+                new SpeciesPresetDto { Wcid = 10, Name = "Phyntos Mite", Species = "Mite" },
+                new SpeciesPresetDto { Wcid = 12, Name = "Phyntos Wasp", Species = "Phyntos Wasp" },
+                new SpeciesPresetDto { Wcid = 13, Name = "Giant Rat", Species = "Rat" },
+                new SpeciesPresetDto { Wcid = 20, Name = "Auroch", Species = "Auroch" },
+                new SpeciesPresetDto { Wcid = 3110132, Name = "Cow", Species = "Cow" },
+                new SpeciesPresetDto { Wcid = 194, Name = "Dust Golem", Species = "Golem" },
+                new SpeciesPresetDto { Wcid = 16, Name = "Undead", Species = "Undead" },
+                new SpeciesPresetDto { Wcid = 19, Name = "Armoredillo", Species = "Armoredillo" },
+                new SpeciesPresetDto { Wcid = 28477, Name = "Virindi", Species = "Virindi" },
+                new SpeciesPresetDto { Wcid = 1535, Name = "Wisp", Species = "Wisp" },
+                new SpeciesPresetDto { Wcid = 1536, Name = "Knathtead", Species = "Knathtead" },
+                new SpeciesPresetDto { Wcid = 2577, Name = "Shadow Reaper", Species = "Shadow" },
+                new SpeciesPresetDto { Wcid = 2583, Name = "Sclavus Impaler", Species = "Sclavus" },
+                new SpeciesPresetDto { Wcid = 2574, Name = "Monouga", Species = "Monouga" },
+                new SpeciesPresetDto { Wcid = 2608, Name = "Zefir", Species = "Zefir" },
+                new SpeciesPresetDto { Wcid = 1759, Name = "Skeleton", Species = "Skeleton" },
+                new SpeciesPresetDto { Wcid = 4108, Name = "Shreth", Species = "Shreth" },
+                new SpeciesPresetDto { Wcid = 4242, Name = "Chittick", Species = "Chittick" },
+                new SpeciesPresetDto { Wcid = 4246, Name = "Moarsman", Species = "Moarsman" },
+                new SpeciesPresetDto { Wcid = 4250, Name = "Olthoi Larva", Species = "Olthoi Larvae" },
+                new SpeciesPresetDto { Wcid = 4256, Name = "Slithis", Species = "Slithis" },
+                new SpeciesPresetDto { Wcid = 4262, Name = "Deru", Species = "Deru" },
+                new SpeciesPresetDto { Wcid = 5705, Name = "Fire Elemental", Species = "Fire Elemental" },
+                new SpeciesPresetDto { Wcid = 5760, Name = "Snowman", Species = "Snowman" },
+                new SpeciesPresetDto { Wcid = 6078, Name = "Bunny", Species = "Bunny" },
+                new SpeciesPresetDto { Wcid = 6379, Name = "Lightning Elemental", Species = "Lightning Elemental" },
+                new SpeciesPresetDto { Wcid = 7618, Name = "Rockslide", Species = "Rockslide" },
+                new SpeciesPresetDto { Wcid = 7978, Name = "Grievver", Species = "Grievver" },
+                new SpeciesPresetDto { Wcid = 7984, Name = "Sleech", Species = "Sleech" },
+                new SpeciesPresetDto { Wcid = 7989, Name = "Ursuin", Species = "Ursuin" },
+                new SpeciesPresetDto { Wcid = 8269, Name = "Hollow Minion", Species = "Hollow Minion" },
+                new SpeciesPresetDto { Wcid = 8271, Name = "Scarecrow", Species = "Scarecrow" },
+                new SpeciesPresetDto { Wcid = 8466, Name = "Idol", Species = "Idol" },
+                new SpeciesPresetDto { Wcid = 8675, Name = "Empyrean", Species = "Empyrean" },
+                new SpeciesPresetDto { Wcid = 9242, Name = "Doll", Species = "Doll" },
+                new SpeciesPresetDto { Wcid = 9249, Name = "Marionette", Species = "Marionette" },
+                new SpeciesPresetDto { Wcid = 11468, Name = "Carenzi", Species = "Carenzi" },
+                new SpeciesPresetDto { Wcid = 11486, Name = "Siraluun", Species = "Siraluun" },
+                new SpeciesPresetDto { Wcid = 10950, Name = "Aun Tumerok", Species = "Aun Tumerok" },
+                new SpeciesPresetDto { Wcid = 12129, Name = "Simulacrum", Species = "Simulacrum" },
+                new SpeciesPresetDto { Wcid = 14516, Name = "Acid Elemental", Species = "Acid Elemental" },
+                new SpeciesPresetDto { Wcid = 14512, Name = "Frost Elemental", Species = "Frost Elemental" },
+                new SpeciesPresetDto { Wcid = 14876, Name = "Elemental", Species = "Elemental" },
+                new SpeciesPresetDto { Wcid = 420600, Name = "Viridian Statue", Species = "Statue" },
+                new SpeciesPresetDto { Wcid = 25845, Name = "Margul", Species = "Margul" },
+                new SpeciesPresetDto { Wcid = 26012, Name = "Burun", Species = "Burun" },
+                new SpeciesPresetDto { Wcid = 28048, Name = "Banshee / Ghost", Species = "Ghost" },
+                new SpeciesPresetDto { Wcid = 28643, Name = "Fiun", Species = "Fiun" },
+                new SpeciesPresetDto { Wcid = 28635, Name = "Eater", Species = "Eater" },
+                new SpeciesPresetDto { Wcid = 28658, Name = "Penguin", Species = "Penguin" },
+                new SpeciesPresetDto { Wcid = 28666, Name = "Ruschk", Species = "Ruschk" },
+                new SpeciesPresetDto { Wcid = 28672, Name = "Thrungus", Species = "Thrungus" },
+                new SpeciesPresetDto { Wcid = 28651, Name = "Viamontian Knight", Species = "Viamontian Knight" },
+                new SpeciesPresetDto { Wcid = 499991, Name = "Remoran", Species = "Remoran" },
+                new SpeciesPresetDto { Wcid = 55790004, Name = "Moar", Species = "Moar" },
+                new SpeciesPresetDto { Wcid = 500035, Name = "Mukkir", Species = "Mukkir" },
+                new SpeciesPresetDto { Wcid = 3110527, Name = "Merwart", Species = "Merwart" },
+                new SpeciesPresetDto { Wcid = 694200159, Name = "Gear Knight", Species = "Gear Knight" },
+                new SpeciesPresetDto { Wcid = 500020, Name = "Gurog", Species = "Gurog" },
+                new SpeciesPresetDto { Wcid = 45802, Name = "Anekshay", Species = "Anekshay" },
+            };
+            return speciesList.OrderBy(s => s.Species).ToList();
         }
 
         #endregion

@@ -901,8 +901,14 @@ namespace ACE.Server.WorldObjects
             if (!ClothingBase.HasValue || !DatManager.PortalDat.TryReadClothingTable((uint)ClothingBase, out item))
                 return objDesc;
 
-            if (item.ClothingBaseEffects.TryGetValue(SetupTableId, out ClothingBaseEffect clothingBaseEffect))
-            // Check if the ClothingBase is applicable for this Setup. (Gear Knights, this is usually you.)
+            ClothingBaseEffect clothingBaseEffect = null;
+            if (!item.ClothingBaseEffects.TryGetValue(SetupTableId, out clothingBaseEffect))
+            {
+                if (item.ClothingBaseEffects.Count > 0)
+                    clothingBaseEffect = item.ClothingBaseEffects.Values.FirstOrDefault();
+            }
+
+            if (clothingBaseEffect != null)
             {
                 // Add the model and texture(s)
                 foreach (CloObjectEffect t in clothingBaseEffect.CloObjectEffects)

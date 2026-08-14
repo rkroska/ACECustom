@@ -4510,9 +4510,30 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters.Length > idx)
             {
-                if (!int.TryParse(parameters[idx], out int _palette))
+                int _palette = 0;
+                bool parsedPal = false;
+                if (parameters[idx].StartsWith("0x", StringComparison.OrdinalIgnoreCase))
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Palette must be number between {int.MinValue} - {int.MaxValue}.", ChatMessageType.Broadcast));
+                    string hexStr = parameters[idx].Substring(2);
+                    if (uint.TryParse(hexStr, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out uint uVal))
+                    {
+                        _palette = (int)uVal;
+                        parsedPal = true;
+                    }
+                }
+                else if (int.TryParse(parameters[idx], out _palette))
+                {
+                    parsedPal = true;
+                }
+                else if (uint.TryParse(parameters[idx], out uint uVal2))
+                {
+                    _palette = (int)uVal2;
+                    parsedPal = true;
+                }
+
+                if (!parsedPal)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Palette must be a valid integer or hex string (e.g. 100 or 0x040001F4).", ChatMessageType.Broadcast));
                     return false;
                 }
                 else
@@ -4833,9 +4854,30 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters.Length > 2)
             {
-                if (!int.TryParse(parameters[2], out int _palette))
+                int _palette = 0;
+                bool parsedPal = false;
+                if (parameters[2].StartsWith("0x", StringComparison.OrdinalIgnoreCase))
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"palette must be number between {int.MinValue} - {int.MaxValue}", ChatMessageType.Broadcast));
+                    string hexStr = parameters[2].Substring(2);
+                    if (uint.TryParse(hexStr, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out uint uVal))
+                    {
+                        _palette = (int)uVal;
+                        parsedPal = true;
+                    }
+                }
+                else if (int.TryParse(parameters[2], out _palette))
+                {
+                    parsedPal = true;
+                }
+                else if (uint.TryParse(parameters[2], out uint uVal2))
+                {
+                    _palette = (int)uVal2;
+                    parsedPal = true;
+                }
+
+                if (!parsedPal)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"palette must be a valid number or hex string (e.g. 100 or 0x040001F4)", ChatMessageType.Broadcast));
                     return;
                 }
                 else

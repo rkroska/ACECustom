@@ -13,11 +13,25 @@ namespace ACE.Server.Controllers
     public class VisualizerController : BaseController
     {
         [HttpGet("mesh/{wcid}.gltf")]
-        public async Task<IActionResult> GetMesh(uint wcid, [FromQuery] uint paletteId = 0, [FromQuery] int hue = 0)
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public async Task<IActionResult> GetMesh(uint wcid, [FromQuery] string paletteId = null, [FromQuery] int hue = 0)
         {
             if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
 
-            var gltfBytes = await VisualizerService.GetMeshGltfBytesAsync(wcid, paletteId, hue);
+            uint parsedPaletteId = 0;
+            if (!string.IsNullOrEmpty(paletteId))
+            {
+                if (paletteId.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                {
+                    uint.TryParse(paletteId.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out parsedPaletteId);
+                }
+                else
+                {
+                    uint.TryParse(paletteId, out parsedPaletteId);
+                }
+            }
+
+            var gltfBytes = await VisualizerService.GetMeshGltfBytesAsync(wcid, parsedPaletteId, hue);
             if (gltfBytes == null) return NotFound($"Mesh for Weenie {wcid} not found.");
 
             return File(gltfBytes, "model/gltf+json", $"{wcid}.gltf");
@@ -48,6 +62,13 @@ namespace ACE.Server.Controllers
             return Ok(result);
         }
 
+        [HttpGet("similar-textures/{textureId}")]
+        public IActionResult GetSimilarTextures(uint textureId)
+        {
+            var result = VisualizerService.GetSimilarTextures(textureId);
+            return Ok(result);
+        }
+
         [HttpPost("curation")]
         public IActionResult SubmitCuration([FromBody] CurationItemDto item)
         {
@@ -55,6 +76,13 @@ namespace ACE.Server.Controllers
 
             var result = CurationService.AddOrUpdateCuration(item.CreatureWcid, item.CreatureName, item.TextureId, item.PaletteId, item.Rating);
             return Ok(result);
+        }
+
+        [HttpPost("clear-cache")]
+        public IActionResult ClearCache()
+        {
+            VisualizerService.ClearCache();
+            return Ok(new { success = true, message = "Visualizer cache cleared successfully." });
         }
 
         [HttpGet("curation/{wcid}")]
@@ -93,8 +121,41 @@ namespace ACE.Server.Controllers
             return Ok(VisualizerService.GetCuratedMutationPool(wcid, family));
         }
 
+        [HttpGet("particle-emitter/{id}")]
+        public IActionResult GetParticleEmitter(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return BadRequest("Invalid Emitter ID.");
+
+            uint emitterId = 0;
+            if (id.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                uint.TryParse(id.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out emitterId);
+            }
+            else
+            {
+                uint.TryParse(id, System.Globalization.NumberStyles.HexNumber, null, out emitterId);
+            }
+
+            if (emitterId == 0) return BadRequest("Invalid Emitter ID.");
+
+            var result = VisualizerService.GetParticleEmitterDto(emitterId);
+            if (result == null) return NotFound($"ParticleEmitter 0x{emitterId:X8} not found.");
+
+            return Ok(result);
+        }
+
+        [HttpGet("creature-particles/{wcid}")]
+        public IActionResult GetCreatureParticles(uint wcid)
+        {
+            if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
+
+            var result = VisualizerService.GetCreatureParticleEmitters(wcid);
+            return Ok(result);
+        }
+
         [HttpGet("texture/{id}.png")]
-        public async Task<IActionResult> GetTexture(string id, [FromQuery] uint wcid = 0, [FromQuery] uint paletteId = 0, [FromQuery] float shade = 0.5f, [FromQuery] int hue = 0, [FromQuery] int slot = -1)
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public async Task<IActionResult> GetTexture(string id, [FromQuery] uint wcid = 0, [FromQuery] string paletteId = null, [FromQuery] float shade = 0.5f, [FromQuery] int hue = 0, [FromQuery] int slot = -1)
         {
             if (string.IsNullOrEmpty(id)) return BadRequest("Invalid Texture ID.");
 
@@ -115,7 +176,20 @@ namespace ACE.Server.Controllers
 
             if (textureId == 0) return BadRequest("Invalid Texture ID.");
 
-            var pngBytes = await VisualizerService.GetTexturePngBytesAsync(textureId, wcid, paletteId, shade, hue, slot);
+            uint parsedPaletteId = 0;
+            if (!string.IsNullOrEmpty(paletteId))
+            {
+                if (paletteId.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                {
+                    uint.TryParse(paletteId.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out parsedPaletteId);
+                }
+                else
+                {
+                    uint.TryParse(paletteId, out parsedPaletteId);
+                }
+            }
+
+            var pngBytes = await VisualizerService.GetTexturePngBytesAsync(textureId, wcid, parsedPaletteId, shade, hue, slot);
             if (pngBytes == null) return NotFound($"Texture {textureId} not found.");
 
             return File(pngBytes, "image/png");
@@ -164,6 +238,10 @@ namespace ACE.Server.Controllers
             if (request == null || string.IsNullOrEmpty(request.DataUrl) || string.IsNullOrEmpty(request.Filename))
                 return BadRequest("Invalid request data.");
 
+            var safeFilename = System.IO.Path.GetFileName(request.Filename);
+            if (string.IsNullOrEmpty(safeFilename))
+                return BadRequest("Invalid filename.");
+
             var base64Data = request.DataUrl;
             if (base64Data.Contains(","))
                 base64Data = base64Data.Split(',')[1];
@@ -173,10 +251,24 @@ namespace ACE.Server.Controllers
             if (!System.IO.Directory.Exists(dir))
                 System.IO.Directory.CreateDirectory(dir);
 
-            var path = System.IO.Path.Combine(dir, request.Filename);
+            var path = System.IO.Path.Combine(dir, safeFilename);
             await System.IO.File.WriteAllBytesAsync(path, bytes);
 
-            return Ok(new { path = $"/screenshots/{request.Filename}" });
+            return Ok(new { path = $"/screenshots/{safeFilename}" });
+        }
+
+        [HttpGet("search-creatures")]
+        public IActionResult SearchCreatures([FromQuery] string query)
+        {
+            var results = VisualizerService.SearchCreatures(query);
+            return Ok(results);
+        }
+
+        [HttpGet("species-presets")]
+        public IActionResult GetSpeciesPresets()
+        {
+            var results = VisualizerService.GetSpeciesList();
+            return Ok(results);
         }
     }
 

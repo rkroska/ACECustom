@@ -28,13 +28,41 @@ namespace ACE.Server.Services
 
     public static class CurationService
     {
-        private static readonly string CurationFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "curated_textures.json");
+        private static string GetPersistentFilePath()
+        {
+            var currentDir = AppDomain.CurrentDomain.BaseDirectory;
+            var dir = new DirectoryInfo(currentDir);
+            
+            while (dir != null)
+            {
+                if (File.Exists(Path.Combine(dir.FullName, "ACE.Server.csproj")))
+                {
+                    return Path.Combine(dir.FullName, "curated_textures.json");
+                }
+                dir = dir.Parent;
+            }
+            
+            return Path.Combine(currentDir, "curated_textures.json");
+        }
+
+        private static readonly string CurationFilePath = GetPersistentFilePath();
         private static readonly object FileLock = new object();
         private static readonly ConcurrentDictionary<string, CurationItemDto> CurationCache = new ConcurrentDictionary<string, CurationItemDto>();
+
+        private static bool _isDirty = false;
+        private static readonly System.Threading.Timer _saveTimer;
 
         static CurationService()
         {
             LoadCurations();
+            _saveTimer = new System.Threading.Timer(_ => FlushCurationsIfNeeded(), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+        }
+
+        private static void FlushCurationsIfNeeded()
+        {
+            if (!_isDirty) return;
+            SaveCurations();
+            _isDirty = false;
         }
 
         private static string GetKey(uint wcid, uint textureId, uint paletteId)
@@ -46,26 +74,48 @@ namespace ACE.Server.Services
         {
             lock (FileLock)
             {
-                if (!File.Exists(CurationFilePath)) return;
-
-                try
+                if (File.Exists(CurationFilePath))
                 {
-                    var json = File.ReadAllText(CurationFilePath);
-                    var data = JsonSerializer.Deserialize<CurationDataFile>(json);
-                    if (data?.Curations != null)
+                    MergeFromFile(CurationFilePath);
+                }
+
+                // Check Release build path to merge existing bulk approvals/blacklists
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var releasePath = Path.Combine(baseDir, "bin", "Release", "net10.0", "curated_textures.json");
+                if (!File.Exists(releasePath))
+                {
+                    releasePath = Path.Combine(Directory.GetParent(baseDir)?.FullName ?? "", "Release", "net10.0", "curated_textures.json");
+                }
+
+                if (File.Exists(releasePath))
+                {
+                    MergeFromFile(releasePath);
+                    _isDirty = true;
+                }
+            }
+        }
+
+        private static void MergeFromFile(string filePath)
+        {
+            try
+            {
+                var json = File.ReadAllText(filePath);
+                var data = JsonSerializer.Deserialize<CurationDataFile>(json);
+                if (data?.Curations != null)
+                {
+                    foreach (var item in data.Curations)
                     {
-                        CurationCache.Clear();
-                        foreach (var item in data.Curations)
+                        var key = GetKey(item.CreatureWcid, item.TextureId, item.PaletteId);
+                        if (!CurationCache.ContainsKey(key))
                         {
-                            var key = GetKey(item.CreatureWcid, item.TextureId, item.PaletteId);
                             CurationCache[key] = item;
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    log4net.LogManager.GetLogger(typeof(CurationService)).Error("Failed to load curated_textures.json", ex);
-                }
+            }
+            catch (Exception ex)
+            {
+                log4net.LogManager.GetLogger(typeof(CurationService)).Error($"Failed to merge curated_textures.json from {filePath}", ex);
             }
         }
 
@@ -106,7 +156,7 @@ namespace ACE.Server.Services
             };
 
             CurationCache[key] = item;
-            Task.Run(() => SaveCurations());
+            _isDirty = true;
             return item;
         }
 

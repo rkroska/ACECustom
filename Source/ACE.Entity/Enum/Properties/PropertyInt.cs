@@ -763,6 +763,14 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         PetPotencyStored                        = 9056,
 
+        /// <summary>Daily breeding charges remaining on Alpha Stud pet device (default 10).</summary>
+        [AssessmentProperty]
+        PetAlphaStamina                         = 9057,
+
+        /// <summary>Bonus health vitality rating on combat pet device (server/custom).</summary>
+        [AssessmentProperty]
+        Vitality                                = 9058,
+
         /// <summary>
         /// Optional per-creature override for Essence Resonator salvage yield.
         /// Set this on a creature weenie to make salvaging essences from that creature

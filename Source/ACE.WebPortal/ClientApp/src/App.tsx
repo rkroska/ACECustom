@@ -119,9 +119,7 @@ function App() {
 
 
   if (!isAuthenticated) {
-
     return <LoginPage />
-
   }
 
 

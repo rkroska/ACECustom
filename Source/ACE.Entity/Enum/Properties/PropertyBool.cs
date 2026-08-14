@@ -329,7 +329,9 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Player is in unkillable developer mode.</summary>
         IsUnkillable = 50041,
 
-        // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
+        /// <summary>Combat pet device is designated as an Alpha Stud (10 daily breeding charges).</summary>
+        [AssessmentProperty]
+        IsAlphaPet = 50042,
     }
 }
 

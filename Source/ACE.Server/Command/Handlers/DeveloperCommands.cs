@@ -4710,5 +4710,119 @@ namespace ACE.Server.Command.Handlers
             ChatPacket.SendServerMessage(session, "Error: You must select a summoned pet in the world or appraise a pet device in your inventory first.", ChatMessageType.System);
         }
 
+        [CommandHandler("pet-reset-cooldown", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Resets breeding cooldowns and restores 10 Alpha charges on targeted/appraised pet device.", "@pet-reset-cooldown")]
+        public static void HandlePetResetCooldown(Session session, params string[] args)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (target == null && player.CurrentActivePet is CombatPet pet)
+                target = pet.TryGetSummoningDevice() as PetDevice;
+
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "Target a summoned pet or appraise a pet device in inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            target.RemoveProperty(PropertyFloat.PetNextBreedingTime);
+            target.SetProperty(PropertyInt.PetAlphaStamina, 10);
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"[Admin] Cooldown reset & 10 Alpha charges restored on {target.Name}.", ChatMessageType.System);
+        }
+
+        [CommandHandler("pet-make-alpha", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Toggles Alpha Stud designation on targeted/appraised pet device.", "@pet-make-alpha")]
+        public static void HandlePetMakeAlpha(Session session, params string[] args)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (target == null && player.CurrentActivePet is CombatPet pet)
+                target = pet.TryGetSummoningDevice() as PetDevice;
+
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "Target a summoned pet or appraise a pet device in inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            var current = target.GetProperty(PropertyBool.IsAlphaPet) ?? false;
+            target.SetProperty(PropertyBool.IsAlphaPet, !current);
+            target.SetProperty(PropertyInt.PetAlphaStamina, 10);
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"[Admin] {target.Name} IsAlphaPet set to {!current} (10 charges restored).", ChatMessageType.System);
+        }
+
+        [CommandHandler("pet-cleanse-palette", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Strips visual override palette on targeted/appraised pet device.", "@pet-cleanse-palette")]
+        public static void HandlePetCleansePalette(Session session, params string[] args)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (target == null && player.CurrentActivePet is CombatPet pet)
+                target = pet.TryGetSummoningDevice() as PetDevice;
+
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "Target a summoned pet or appraise a pet device in inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            target.VisualOverridePaletteTemplate = 0;
+            target.VisualOverrideShade = 0.0;
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"[Admin] Palette override cleansed on {target.Name}. Re-summon pet to view natural base appearance.", ChatMessageType.System);
+        }
+
+        [CommandHandler("pet-set-mutations", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Sets mutation count on targeted/appraised pet device.", "@pet-set-mutations <count>")]
+        public static void HandlePetSetMutations(Session session, params string[] args)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            if (args.Length < 1 || !int.TryParse(args[0], out int count))
+            {
+                ChatPacket.SendServerMessage(session, "Usage: @pet-set-mutations <count>", ChatMessageType.System);
+                return;
+            }
+
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (target == null && player.CurrentActivePet is CombatPet pet)
+                target = pet.TryGetSummoningDevice() as PetDevice;
+
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "Target a summoned pet or appraise a pet device in inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            target.SetProperty(PropertyInt.PetMutationCount, Math.Max(0, count));
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"[Admin] Mutation count on {target.Name} set to {count}.", ChatMessageType.System);
+        }
+
+        [CommandHandler("pet-breed-test", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Forces an immediate breeding test with partner player.", "@pet-breed-test")]
+        public static void HandlePetBreedTest(Session session, params string[] args)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            PetDevice.CheckMultiplayerBreeding(player);
+            ChatPacket.SendServerMessage(session, "[Admin] Triggered multiplayer breeding test.", ChatMessageType.System);
+        }
+
     }
 }
+
+
