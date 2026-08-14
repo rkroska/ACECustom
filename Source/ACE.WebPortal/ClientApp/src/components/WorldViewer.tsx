@@ -30,6 +30,8 @@ import {
   Send,
   Sparkles
 } from 'lucide-react';
+import { copyToClipboard } from '../utils/clipboard';
+
 
 // --- Error Boundary for handling missing / invalid models inside Canvas context ---
 interface ErrorBoundaryProps {
@@ -1210,20 +1212,25 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
   const handleCopyCreateCmd = async () => {
     const palParam = getActivePaletteParamString();
     const cmd = `@create ${wcid} 1 ${palParam} 0.5`;
-    await navigator.clipboard.writeText(cmd);
-    setCopiedCreateCmd(true);
-    appendLog('user', `📋 Copied in-game command to clipboard: ${cmd}`);
-    setTimeout(() => setCopiedCreateCmd(false), 3000);
+    const success = await copyToClipboard(cmd);
+    if (success) {
+      setCopiedCreateCmd(true);
+      appendLog('user', `📋 Copied in-game command to clipboard: ${cmd}`);
+      setTimeout(() => setCopiedCreateCmd(false), 3000);
+    }
   };
 
   const handleCopySetCmd = async () => {
     const palParam = getActivePaletteParamString();
     const cmd = `@set Int PaletteTemplate ${palParam}`;
-    await navigator.clipboard.writeText(cmd);
-    setCopiedSetCmd(true);
-    appendLog('user', `📋 Copied in-game command to clipboard: ${cmd}`);
-    setTimeout(() => setCopiedSetCmd(false), 3000);
+    const success = await copyToClipboard(cmd);
+    if (success) {
+      setCopiedSetCmd(true);
+      appendLog('user', `📋 Copied in-game command to clipboard: ${cmd}`);
+      setTimeout(() => setCopiedSetCmd(false), 3000);
+    }
   };
+
 
   useEffect(() => {
     fetch(`/api/visualizer/curation/${wcid}`)

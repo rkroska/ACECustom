@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { Heart, Dna, Info, Sparkles, RefreshCw, ChevronRight, Award, Copy, BarChart3, HelpCircle, RotateCcw, Terminal, Check } from 'lucide-react'
 import WorldViewer from './WorldViewer'
+import { copyToClipboard } from '../utils/clipboard'
 
 interface PetPalette {
+
   name: string
   hex: string
   templateId: number
@@ -499,21 +501,24 @@ export default function PetBreedingCalculator() {
   const activeSelectedBaby = simResults.find(b => b.id === selectedBabyId) || simResults[0] || null
   const isSkinCleansed = false
 
-  const handleCopyCmd = () => {
+  const handleCopyCmd = async () => {
     if (!activeSelectedBaby) return
     const babyWcid = speciesList.find(s => s.name === activeSelectedBaby.species)?.wcid || 25749
+    let cmd = ''
     if (isSkinCleansed || (!activeSelectedBaby.paletteId && !activeSelectedBaby.paletteTemplateId)) {
-      const cmd = `@create ${babyWcid} 1 0`
-      navigator.clipboard.writeText(cmd)
+      cmd = `@create ${babyWcid} 1 0`
     } else {
       const palVal = activeSelectedBaby.paletteId || activeSelectedBaby.paletteTemplateId || 0
       const palHex = `0x${palVal.toString(16).toUpperCase()}`
-      const cmd = `@create ${babyWcid} 1 ${palHex} 0.5`
-      navigator.clipboard.writeText(cmd)
+      cmd = `@create ${babyWcid} 1 ${palHex} 0.5`
     }
-    setCopiedCmd(true)
-    setTimeout(() => setCopiedCmd(false), 2000)
+    const success = await copyToClipboard(cmd)
+    if (success) {
+      setCopiedCmd(true)
+      setTimeout(() => setCopiedCmd(false), 2000)
+    }
   }
+
 
   // Time-to-Target Calculator Estimations
   const getBreedsPerDay = () => {
@@ -1270,14 +1275,17 @@ export default function PetBreedingCalculator() {
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => {
+                onClick={async () => {
                   const text = debugLogs.join('\n')
-                  navigator.clipboard.writeText(text)
-                  setCopiedDebug(true)
-                  setTimeout(() => setCopiedDebug(false), 2000)
+                  const success = await copyToClipboard(text)
+                  if (success) {
+                    setCopiedDebug(true)
+                    setTimeout(() => setCopiedDebug(false), 2000)
+                  }
                 }}
                 className="bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 font-bold text-xs px-3 py-1.5 rounded-lg border border-emerald-500/40 transition-all flex items-center gap-1.5 cursor-pointer"
               >
+
                 {copiedDebug ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 {copiedDebug ? 'Copied Debug Log!' : 'Copy Full Debug Log'}
               </button>
