@@ -7,6 +7,9 @@ namespace ACE.Server.Tests
     public class PetBreedingTests
     {
         [TestMethod]
+        [DataRow(0, 50)]
+        [DataRow(-10, 50)]
+        [DataRow(49, 50)]
         [DataRow(50, 50)]
         [DataRow(79, 50)]
         [DataRow(80, 80)]

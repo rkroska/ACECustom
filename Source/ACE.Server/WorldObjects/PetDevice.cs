@@ -27,7 +27,22 @@ namespace ACE.Server.WorldObjects
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        public static int GetFlooredPetLevel(int level)
+        {
+            var validLevels = new[] { 50, 80, 100, 125, 150, 180, 200, 250, 300 };
+            var result = 50;
+            foreach (var v in validLevels)
+            {
+                if (level >= v)
+                    result = v;
+                else
+                    break;
+            }
+            return result;
+        }
+
         public int? PetClass
+
         {
             get => GetProperty(PropertyInt.PetClass);
             set { if (value.HasValue) SetProperty(PropertyInt.PetClass, value.Value); else RemoveProperty(PropertyInt.PetClass); }
