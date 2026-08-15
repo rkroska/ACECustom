@@ -1,0 +1,695 @@
+[
+  {
+    "CreatureTypeId": 28640,
+    "SpeciesName": "28640",
+    "DefaultWcid": 30851,
+    "WeenieName": "eatervoraciousliveopspreactd",
+    "SetupIdHex": "0x02001251"
+  },
+  {
+    "CreatureTypeId": 650,
+    "SpeciesName": "650",
+    "DefaultWcid": 71700006,
+    "WeenieName": "CausticOlthoiEviscerator",
+    "SetupIdHex": "0x020016FA"
+  },
+  {
+    "CreatureTypeId": 60,
+    "SpeciesName": "AcidElemental",
+    "DefaultWcid": 14513,
+    "WeenieName": "acidelementalcaustic-nofall",
+    "SetupIdHex": "0x02000BEE"
+  },
+  {
+    "CreatureTypeId": 96,
+    "SpeciesName": "Aerbax",
+    "DefaultWcid": 36036,
+    "WeenieName": "ace36036-aerbax",
+    "SetupIdHex": "0x02001749"
+  },
+  {
+    "CreatureTypeId": 65,
+    "SpeciesName": "AlteredHuman",
+    "DefaultWcid": 20028,
+    "WeenieName": "martinelo",
+    "SetupIdHex": "0x02000D41"
+  },
+  {
+    "CreatureTypeId": 101,
+    "SpeciesName": "Anekshay",
+    "DefaultWcid": 44021,
+    "WeenieName": "ace44021-baktshay",
+    "SetupIdHex": "0x02001AA3"
+  },
+  {
+    "CreatureTypeId": 95,
+    "SpeciesName": "Apparition",
+    "DefaultWcid": 36773,
+    "WeenieName": "ace36773-olthoisentineltracker",
+    "SetupIdHex": "0x02000FB3"
+  },
+  {
+    "CreatureTypeId": 17,
+    "SpeciesName": "Armoredillo",
+    "DefaultWcid": 19,
+    "WeenieName": "armoredillobronze",
+    "SetupIdHex": "0x02000004"
+  },
+  {
+    "CreatureTypeId": 57,
+    "SpeciesName": "AunTumerok",
+    "DefaultWcid": 10950,
+    "WeenieName": "tumerokchampionralirea-xp",
+    "SetupIdHex": "0x02000A7D"
+  },
+  {
+    "CreatureTypeId": 11,
+    "SpeciesName": "Auroch",
+    "DefaultWcid": 20017,
+    "WeenieName": "cocoonedauroch",
+    "SetupIdHex": "0x02000CD0"
+  },
+  {
+    "CreatureTypeId": 2,
+    "SpeciesName": "Banderling",
+    "DefaultWcid": 6,
+    "WeenieName": "banderlingscout",
+    "SetupIdHex": "0x02000E08"
+  },
+  {
+    "CreatureTypeId": 72,
+    "SpeciesName": "BleachedRabbit",
+    "DefaultWcid": 9533,
+    "WeenieName": "rabbitgardenpink",
+    "SetupIdHex": "0x0200047B"
+  },
+  {
+    "CreatureTypeId": 98,
+    "SpeciesName": "BlightedMoarsman",
+    "DefaultWcid": 37405,
+    "WeenieName": "ace37405-blightedmirymoarsman",
+    "SetupIdHex": "0x02000992"
+  },
+  {
+    "CreatureTypeId": 41,
+    "SpeciesName": "Bunny",
+    "DefaultWcid": 6078,
+    "WeenieName": "rabbitbabyblack",
+    "SetupIdHex": "0x02001083"
+  },
+  {
+    "CreatureTypeId": 75,
+    "SpeciesName": "Burun",
+    "DefaultWcid": 26012,
+    "WeenieName": "burunruukadept",
+    "SetupIdHex": "0x02001036"
+  },
+  {
+    "CreatureTypeId": 55,
+    "SpeciesName": "Carenzi",
+    "DefaultWcid": 11468,
+    "WeenieName": "carenzibethel-xp",
+    "SetupIdHex": "0x02000A95"
+  },
+  {
+    "CreatureTypeId": 69,
+    "SpeciesName": "Chicken",
+    "DefaultWcid": 24937,
+    "WeenieName": "chickenhen",
+    "SetupIdHex": "0x020005A2"
+  },
+  {
+    "CreatureTypeId": 33,
+    "SpeciesName": "Chittick",
+    "DefaultWcid": 4242,
+    "WeenieName": "chitticksharp",
+    "SetupIdHex": "0x02000E66"
+  },
+  {
+    "CreatureTypeId": 12,
+    "SpeciesName": "Cow",
+    "DefaultWcid": 3110132,
+    "WeenieName": "BovineWench",
+    "SetupIdHex": "0x02000006"
+  },
+  {
+    "CreatureTypeId": 47,
+    "SpeciesName": "Crystal",
+    "DefaultWcid": 5891,
+    "WeenieName": "soulcrystalgreatwork",
+    "SetupIdHex": "0x02000700"
+  },
+  {
+    "CreatureTypeId": 68,
+    "SpeciesName": "DarkSarcophagus",
+    "DefaultWcid": 22116,
+    "WeenieName": "mysterioussarcophagus",
+    "SetupIdHex": "0x02000E1B"
+  },
+  {
+    "CreatureTypeId": 37,
+    "SpeciesName": "Deru",
+    "DefaultWcid": 4262,
+    "WeenieName": "derugreen",
+    "SetupIdHex": "0x020002D9"
+  },
+  {
+    "CreatureTypeId": 66,
+    "SpeciesName": "Device",
+    "DefaultWcid": 32398,
+    "WeenieName": "ace32398-alchemywardenofforgetfulness",
+    "SetupIdHex": "0x02000398"
+  },
+  {
+    "CreatureTypeId": 53,
+    "SpeciesName": "Doll",
+    "DefaultWcid": 9242,
+    "WeenieName": "dollinnocent",
+    "SetupIdHex": "0x02000A04"
+  },
+  {
+    "CreatureTypeId": 3,
+    "SpeciesName": "Drudge",
+    "DefaultWcid": 7,
+    "WeenieName": "drudgeskulker",
+    "SetupIdHex": "0x020007DD"
+  },
+  {
+    "CreatureTypeId": 79,
+    "SpeciesName": "Eater",
+    "DefaultWcid": 28635,
+    "WeenieName": "eaterinsatiable",
+    "SetupIdHex": "0x02001251"
+  },
+  {
+    "CreatureTypeId": 62,
+    "SpeciesName": "Elemental",
+    "DefaultWcid": 14876,
+    "WeenieName": "stormelementalmaelstrom",
+    "SetupIdHex": "0x02000C54"
+  },
+  {
+    "CreatureTypeId": 51,
+    "SpeciesName": "Empyrean",
+    "DefaultWcid": 8675,
+    "WeenieName": "asheron",
+    "SetupIdHex": "0x020009C8"
+  },
+  {
+    "CreatureTypeId": 94,
+    "SpeciesName": "Energy",
+    "DefaultWcid": 81000030,
+    "WeenieName": "ace81000030-thedarkness",
+    "SetupIdHex": "0x020009B1"
+  },
+  {
+    "CreatureTypeId": 18,
+    "SpeciesName": "Fae",
+    "DefaultWcid": 99999989,
+    "WeenieName": "FFFFFFFFFFFFd",
+    "SetupIdHex": "0x02001A10"
+  },
+  {
+    "CreatureTypeId": 38,
+    "SpeciesName": "FireElemental",
+    "DefaultWcid": 5705,
+    "WeenieName": "fireelementalflicker",
+    "SetupIdHex": "0x020006A3"
+  },
+  {
+    "CreatureTypeId": 78,
+    "SpeciesName": "Fiun",
+    "DefaultWcid": 28643,
+    "WeenieName": "fiunderanged",
+    "SetupIdHex": "0x020012A2"
+  },
+  {
+    "CreatureTypeId": 91,
+    "SpeciesName": "Food",
+    "DefaultWcid": 80079,
+    "WeenieName": "ace80079-hotsoupelemental",
+    "SetupIdHex": "0x020013F7"
+  },
+  {
+    "CreatureTypeId": 61,
+    "SpeciesName": "FrostElemental",
+    "DefaultWcid": 14512,
+    "WeenieName": "frostelementalfrost-nofall",
+    "SetupIdHex": "0x02000BEF"
+  },
+  {
+    "CreatureTypeId": 99,
+    "SpeciesName": "GearKnight",
+    "DefaultWcid": 41224,
+    "WeenieName": "ace41224-ironbladelieutenant",
+    "SetupIdHex": "0x02001909"
+  },
+  {
+    "CreatureTypeId": 77,
+    "SpeciesName": "Ghost",
+    "DefaultWcid": 28048,
+    "WeenieName": "ghostspecter",
+    "SetupIdHex": "0x02001120"
+  },
+  {
+    "CreatureTypeId": 13,
+    "SpeciesName": "Golem",
+    "DefaultWcid": 194,
+    "WeenieName": "golemcopper",
+    "SetupIdHex": "0x020007CA"
+  },
+  {
+    "CreatureTypeId": 70,
+    "SpeciesName": "GotrokLugian",
+    "DefaultWcid": 7550,
+    "WeenieName": "lugianamplothminer",
+    "SetupIdHex": "0x02000A0B"
+  },
+  {
+    "CreatureTypeId": 44,
+    "SpeciesName": "Grievver",
+    "DefaultWcid": 7978,
+    "WeenieName": "grievverscrawed",
+    "SetupIdHex": "0x020008DA"
+  },
+  {
+    "CreatureTypeId": 74,
+    "SpeciesName": "GrimacingRabbit",
+    "DefaultWcid": 9535,
+    "WeenieName": "rabbitgardenpurple",
+    "SetupIdHex": "0x0200047B"
+  },
+  {
+    "CreatureTypeId": 15,
+    "SpeciesName": "Gromnie",
+    "DefaultWcid": 17,
+    "WeenieName": "gromnie",
+    "SetupIdHex": "0x02000037"
+  },
+  {
+    "CreatureTypeId": 100,
+    "SpeciesName": "Gurog",
+    "DefaultWcid": 43391,
+    "WeenieName": "ace43391-gurogminion",
+    "SetupIdHex": "0x02001A2B"
+  },
+  {
+    "CreatureTypeId": 93,
+    "SpeciesName": "Harvest",
+    "DefaultWcid": 32186,
+    "WeenieName": "ace32186-pumpkinlord",
+    "SetupIdHex": "0x020014C9"
+  },
+  {
+    "CreatureTypeId": 58,
+    "SpeciesName": "HeaTumerok",
+    "DefaultWcid": 10937,
+    "WeenieName": "heatumeroknualuankanokeh-xp",
+    "SetupIdHex": "0x02001404"
+  },
+  {
+    "CreatureTypeId": 48,
+    "SpeciesName": "HollowMinion",
+    "DefaultWcid": 8269,
+    "WeenieName": "hollowminiontumideon",
+    "SetupIdHex": "0x02000938"
+  },
+  {
+    "CreatureTypeId": 52,
+    "SpeciesName": "Hopeslayer",
+    "DefaultWcid": 8503,
+    "WeenieName": "baelzharon",
+    "SetupIdHex": "0x0200099E"
+  },
+  {
+    "CreatureTypeId": 31,
+    "SpeciesName": "Human",
+    "DefaultWcid": 1,
+    "WeenieName": "human",
+    "SetupIdHex": "0x02000001"
+  },
+  {
+    "CreatureTypeId": 50,
+    "SpeciesName": "Idol",
+    "DefaultWcid": 8466,
+    "WeenieName": "idol",
+    "SetupIdHex": "0x0200099D"
+  },
+  {
+    "CreatureTypeId": 21,
+    "SpeciesName": "Knathtead",
+    "DefaultWcid": 1536,
+    "WeenieName": "knathzbog",
+    "SetupIdHex": "0x020004AF"
+  },
+  {
+    "CreatureTypeId": 42,
+    "SpeciesName": "LightningElemental",
+    "DefaultWcid": 6379,
+    "WeenieName": "lightningelementalastyrrian",
+    "SetupIdHex": "0x020006AC"
+  },
+  {
+    "CreatureTypeId": 5,
+    "SpeciesName": "Lugian",
+    "DefaultWcid": 5,
+    "WeenieName": "lugianlaigus",
+    "SetupIdHex": "0x02000A0B"
+  },
+  {
+    "CreatureTypeId": 71,
+    "SpeciesName": "Margul",
+    "DefaultWcid": 25845,
+    "WeenieName": "margulbossgikar",
+    "SetupIdHex": "0x0200101A"
+  },
+  {
+    "CreatureTypeId": 54,
+    "SpeciesName": "Marionette",
+    "DefaultWcid": 9249,
+    "WeenieName": "marionette",
+    "SetupIdHex": "0x02000A03"
+  },
+  {
+    "CreatureTypeId": 23,
+    "SpeciesName": "Mattekar",
+    "DefaultWcid": 2580,
+    "WeenieName": "mattekarwhite",
+    "SetupIdHex": "0x02000486"
+  },
+  {
+    "CreatureTypeId": 90,
+    "SpeciesName": "Merwart",
+    "DefaultWcid": 32051,
+    "WeenieName": "ace32051-merwarturglurg",
+    "SetupIdHex": "0x0200003A"
+  },
+  {
+    "CreatureTypeId": 7,
+    "SpeciesName": "Mite",
+    "DefaultWcid": 10,
+    "WeenieName": "mitescamp",
+    "SetupIdHex": "0x02001080"
+  },
+  {
+    "CreatureTypeId": 86,
+    "SpeciesName": "Moar",
+    "DefaultWcid": 34869,
+    "WeenieName": "ace34869-pallidmoar",
+    "SetupIdHex": "0x0200149F"
+  },
+  {
+    "CreatureTypeId": 34,
+    "SpeciesName": "Moarsman",
+    "DefaultWcid": 4246,
+    "WeenieName": "moarsmanrank",
+    "SetupIdHex": "0x02000992"
+  },
+  {
+    "CreatureTypeId": 28,
+    "SpeciesName": "Monouga",
+    "DefaultWcid": 2574,
+    "WeenieName": "monougarough",
+    "SetupIdHex": "0x020002FF"
+  },
+  {
+    "CreatureTypeId": 4,
+    "SpeciesName": "Mosswart",
+    "DefaultWcid": 8,
+    "WeenieName": "mosswartcreeper",
+    "SetupIdHex": "0x02000B4F"
+  },
+  {
+    "CreatureTypeId": 89,
+    "SpeciesName": "Mukkir",
+    "DefaultWcid": 31897,
+    "WeenieName": "ace31897-barbaricmukkir",
+    "SetupIdHex": "0x020014BD"
+  },
+  {
+    "CreatureTypeId": 73,
+    "SpeciesName": "NastyRabbit",
+    "DefaultWcid": 9531,
+    "WeenieName": "rabbitgardengreen",
+    "SetupIdHex": "0x0200047B"
+  },
+  {
+    "CreatureTypeId": 45,
+    "SpeciesName": "Niffis",
+    "DefaultWcid": 7984,
+    "WeenieName": "niffisparfal",
+    "SetupIdHex": "0x02000926"
+  },
+  {
+    "CreatureTypeId": 1,
+    "SpeciesName": "Olthoi",
+    "DefaultWcid": 3,
+    "WeenieName": "olthoiworker",
+    "SetupIdHex": "0x02000AAC"
+  },
+  {
+    "CreatureTypeId": 35,
+    "SpeciesName": "OlthoiLarvae",
+    "DefaultWcid": 4250,
+    "WeenieName": "olthoiworm",
+    "SetupIdHex": "0x020004D4"
+  },
+  {
+    "CreatureTypeId": 92,
+    "SpeciesName": "ParadoxOlthoi",
+    "DefaultWcid": 35731,
+    "WeenieName": "ace35731-paradoxtouchedolthoievisceratorgrub",
+    "SetupIdHex": "0x020016FB"
+  },
+  {
+    "CreatureTypeId": 80,
+    "SpeciesName": "Penguin",
+    "DefaultWcid": 28658,
+    "WeenieName": "penguinsycophantic",
+    "SetupIdHex": "0x02001252"
+  },
+  {
+    "CreatureTypeId": 9,
+    "SpeciesName": "PhyntosWasp",
+    "DefaultWcid": 12,
+    "WeenieName": "phyntoswaspred",
+    "SetupIdHex": "0x02001121"
+  },
+  {
+    "CreatureTypeId": 25,
+    "SpeciesName": "Rabbit",
+    "DefaultWcid": 2566,
+    "WeenieName": "rabbitblack",
+    "SetupIdHex": "0x0200047B"
+  },
+  {
+    "CreatureTypeId": 10,
+    "SpeciesName": "Rat",
+    "DefaultWcid": 13,
+    "WeenieName": "ratwhite",
+    "SetupIdHex": "0x0200003D"
+  },
+  {
+    "CreatureTypeId": 16,
+    "SpeciesName": "Reedshark",
+    "DefaultWcid": 18,
+    "WeenieName": "reedsharkelder",
+    "SetupIdHex": "0x02000039"
+  },
+  {
+    "CreatureTypeId": 84,
+    "SpeciesName": "Remoran",
+    "DefaultWcid": 31837,
+    "WeenieName": "ace31837-remoransandstalker",
+    "SetupIdHex": "0x02001494"
+  },
+  {
+    "CreatureTypeId": 43,
+    "SpeciesName": "Rockslide",
+    "DefaultWcid": 7618,
+    "WeenieName": "rockslideb",
+    "SetupIdHex": "0x020003E3"
+  },
+  {
+    "CreatureTypeId": 81,
+    "SpeciesName": "Ruschk",
+    "DefaultWcid": 28666,
+    "WeenieName": "ruschkslayer",
+    "SetupIdHex": "0x02001240"
+  },
+  {
+    "CreatureTypeId": 49,
+    "SpeciesName": "Scarecrow",
+    "DefaultWcid": 8271,
+    "WeenieName": "scarecrowrickety",
+    "SetupIdHex": "0x02000984"
+  },
+  {
+    "CreatureTypeId": 26,
+    "SpeciesName": "Sclavus",
+    "DefaultWcid": 2583,
+    "WeenieName": "sclavusse",
+    "SetupIdHex": "0x02000498"
+  },
+  {
+    "CreatureTypeId": 22,
+    "SpeciesName": "Shadow",
+    "DefaultWcid": 1756,
+    "WeenieName": "shadowchild",
+    "SetupIdHex": "0x02000001"
+  },
+  {
+    "CreatureTypeId": 27,
+    "SpeciesName": "ShallowsShark",
+    "DefaultWcid": 2577,
+    "WeenieName": "shallowsshark",
+    "SetupIdHex": "0x02001480"
+  },
+  {
+    "CreatureTypeId": 32,
+    "SpeciesName": "Shreth",
+    "DefaultWcid": 4108,
+    "WeenieName": "shrethgnawer",
+    "SetupIdHex": "0x020005C4"
+  },
+  {
+    "CreatureTypeId": 59,
+    "SpeciesName": "Simulacrum",
+    "DefaultWcid": 12129,
+    "WeenieName": "simulacrumcrafter",
+    "SetupIdHex": "0x0200004E"
+  },
+  {
+    "CreatureTypeId": 56,
+    "SpeciesName": "Siraluun",
+    "DefaultWcid": 11486,
+    "WeenieName": "siraluunkithless-xp",
+    "SetupIdHex": "0x02000A43"
+  },
+  {
+    "CreatureTypeId": 30,
+    "SpeciesName": "Skeleton",
+    "DefaultWcid": 1759,
+    "WeenieName": "skeleton",
+    "SetupIdHex": "0x02000059"
+  },
+  {
+    "CreatureTypeId": 88,
+    "SpeciesName": "Sleech",
+    "DefaultWcid": 987313,
+    "WeenieName": "987313 luscleech",
+    "SetupIdHex": "0x020014A0"
+  },
+  {
+    "CreatureTypeId": 36,
+    "SpeciesName": "Slithis",
+    "DefaultWcid": 4256,
+    "WeenieName": "slithistendril",
+    "SetupIdHex": "0x020004D6"
+  },
+  {
+    "CreatureTypeId": 39,
+    "SpeciesName": "Snowman",
+    "DefaultWcid": 5760,
+    "WeenieName": "snowmanfrosty",
+    "SetupIdHex": "0x020006FD"
+  },
+  {
+    "CreatureTypeId": 63,
+    "SpeciesName": "Statue",
+    "DefaultWcid": 19267,
+    "WeenieName": "statuereplicaextremegrievversmall",
+    "SetupIdHex": "0x020008DA"
+  },
+  {
+    "CreatureTypeId": 85,
+    "SpeciesName": "Swarm",
+    "DefaultWcid": 31849,
+    "WeenieName": "ace31849-aggressiveswarm",
+    "SetupIdHex": "0x02001499"
+  },
+  {
+    "CreatureTypeId": 76,
+    "SpeciesName": "Target",
+    "DefaultWcid": 6075,
+    "WeenieName": "drudgestrawtarget",
+    "SetupIdHex": "0x02000034"
+  },
+  {
+    "CreatureTypeId": 82,
+    "SpeciesName": "Thrungus",
+    "DefaultWcid": 28672,
+    "WeenieName": "thrungusbutton",
+    "SetupIdHex": "0x02001253"
+  },
+  {
+    "CreatureTypeId": 97,
+    "SpeciesName": "Touched",
+    "DefaultWcid": 72276,
+    "WeenieName": "ace72276-jester",
+    "SetupIdHex": "0x020017D6"
+  },
+  {
+    "CreatureTypeId": 6,
+    "SpeciesName": "Tumerok",
+    "DefaultWcid": 226,
+    "WeenieName": "tumerokcaptain",
+    "SetupIdHex": "0x02001408"
+  },
+  {
+    "CreatureTypeId": 8,
+    "SpeciesName": "Tusker",
+    "DefaultWcid": 11,
+    "WeenieName": "tuskermale",
+    "SetupIdHex": "0x02000964"
+  },
+  {
+    "CreatureTypeId": 14,
+    "SpeciesName": "Undead",
+    "DefaultWcid": 16,
+    "WeenieName": "zombieundead",
+    "SetupIdHex": "0x02000197"
+  },
+  {
+    "CreatureTypeId": 46,
+    "SpeciesName": "Ursuin",
+    "DefaultWcid": 7989,
+    "WeenieName": "ursuinscavenger",
+    "SetupIdHex": "0x02000925"
+  },
+  {
+    "CreatureTypeId": 83,
+    "SpeciesName": "ViamontianKnight",
+    "DefaultWcid": 28651,
+    "WeenieName": "knightmercenary",
+    "SetupIdHex": "0x02001255"
+  },
+  {
+    "CreatureTypeId": 19,
+    "SpeciesName": "Virindi",
+    "DefaultWcid": 23,
+    "WeenieName": "virindi",
+    "SetupIdHex": "0x02000041"
+  },
+  {
+    "CreatureTypeId": 64,
+    "SpeciesName": "Wall",
+    "DefaultWcid": 19440,
+    "WeenieName": "wallweb",
+    "SetupIdHex": "0x0200003D"
+  },
+  {
+    "CreatureTypeId": 20,
+    "SpeciesName": "Wisp",
+    "DefaultWcid": 1535,
+    "WeenieName": "wispethereal",
+    "SetupIdHex": "0x0200059A"
+  },
+  {
+    "CreatureTypeId": 29,
+    "SpeciesName": "Zefir",
+    "DefaultWcid": 2608,
+    "WeenieName": "zefirjibrit",
+    "SetupIdHex": "0x0200049A"
+  }
+]
