@@ -193,66 +193,67 @@ export default function PetBreedingCalculator() {
   // Navigation tab state: 'simulator' | 'calculator' | 'guide'
   const [activeTab, setActiveTab] = useState<'simulator' | 'calculator' | 'guide'>('simulator')
 
-  // Database-Validated Creature Species List (Scanned from WCID 1)
+  // Database-Validated Creature Species List (Alphabetically Sorted)
   const speciesList = [
-    { name: 'Olthoi', wcid: 3, creatureTypeId: 1, setupId: '0x02000AAC' },
-    { name: 'Banderling', wcid: 6, creatureTypeId: 2, setupId: '0x02000E08' },
-    { name: 'Drudge', wcid: 7, creatureTypeId: 3, setupId: '0x020007DD' },
-    { name: 'Mosswart', wcid: 8, creatureTypeId: 4, setupId: '0x02000B4F' },
-    { name: 'Lugian', wcid: 5, creatureTypeId: 5, setupId: '0x02000A0B' },
-    { name: 'Tumerok', wcid: 226, creatureTypeId: 6, setupId: '0x02001408' },
-    { name: 'Mite', wcid: 10, creatureTypeId: 7, setupId: '0x02001080' },
-    { name: 'Tusker', wcid: 11, creatureTypeId: 8, setupId: '0x02000964' },
-    { name: 'PhyntosWasp', wcid: 12, creatureTypeId: 9, setupId: '0x02001121' },
-    { name: 'Rat', wcid: 13, creatureTypeId: 10, setupId: '0x0200003D' },
-    { name: 'Auroch', wcid: 20017, creatureTypeId: 11, setupId: '0x02000CD0' },
-    { name: 'Cow', wcid: 3110132, creatureTypeId: 12, setupId: '0x02000006' },
-    { name: 'Golem', wcid: 194, creatureTypeId: 13, setupId: '0x020007CA' },
-    { name: 'Undead', wcid: 16, creatureTypeId: 14, setupId: '0x02000197' },
-    { name: 'Gromnie', wcid: 17, creatureTypeId: 15, setupId: '0x02000037' },
-    { name: 'Reedshark', wcid: 18, creatureTypeId: 16, setupId: '0x02000039' },
+    { name: 'Acid Elemental', wcid: 14513, creatureTypeId: 60, setupId: '0x02000BEE' },
+    { name: 'Anekshay', wcid: 44021, creatureTypeId: 101, setupId: '0x02001AA3' },
     { name: 'Armoredillo', wcid: 19, creatureTypeId: 17, setupId: '0x02000004' },
+    { name: 'Auroch', wcid: 20017, creatureTypeId: 11, setupId: '0x02000CD0' },
+    { name: 'Banderling', wcid: 6, creatureTypeId: 2, setupId: '0x02000E08' },
+    { name: 'Burun', wcid: 26012, creatureTypeId: 75, setupId: '0x02001036' },
+    { name: 'Carenzi', wcid: 11468, creatureTypeId: 55, setupId: '0x02000A95' },
+    { name: 'Chittick', wcid: 4242, creatureTypeId: 33, setupId: '0x02000E66' },
+    { name: 'Cow', wcid: 3110132, creatureTypeId: 12, setupId: '0x02000006' },
+    { name: 'Deru', wcid: 4262, creatureTypeId: 37, setupId: '0x020002D9' },
+    { name: 'Drudge', wcid: 7, creatureTypeId: 3, setupId: '0x020007DD' },
     { name: 'Fae', wcid: 99999989, creatureTypeId: 18, setupId: '0x02001A10' },
+    { name: 'Fire Elemental', wcid: 5705, creatureTypeId: 38, setupId: '0x020006A3' },
+    { name: 'Frost Elemental', wcid: 14512, creatureTypeId: 61, setupId: '0x02000BEF' },
+    { name: 'Gear Knight', wcid: 41224, creatureTypeId: 99, setupId: '0x02001909' },
+    { name: 'Ghost', wcid: 28048, creatureTypeId: 77, setupId: '0x02001120' },
+    { name: 'Golem', wcid: 194, creatureTypeId: 13, setupId: '0x020007CA' },
+    { name: 'Grievver', wcid: 7978, creatureTypeId: 44, setupId: '0x020008DA' },
+    { name: 'Gromnie', wcid: 17, creatureTypeId: 15, setupId: '0x02000037' },
+    { name: 'Gurog', wcid: 43391, creatureTypeId: 100, setupId: '0x02001A2B' },
+    { name: 'Knathtead', wcid: 1536, creatureTypeId: 21, setupId: '0x020004AF' },
+    { name: 'Lightning Elemental', wcid: 6379, creatureTypeId: 42, setupId: '0x020006AC' },
+    { name: 'Lugian', wcid: 5, creatureTypeId: 5, setupId: '0x02000A0B' },
+    { name: 'Mattekar', wcid: 2580, creatureTypeId: 23, setupId: '0x02000486' },
+    { name: 'Merwart', wcid: 32051, creatureTypeId: 90, setupId: '0x0200003A' },
+    { name: 'Mite', wcid: 10, creatureTypeId: 7, setupId: '0x02001080' },
+    { name: 'Moarsman', wcid: 4246, creatureTypeId: 34, setupId: '0x02000992' },
+    { name: 'Monouga', wcid: 2574, creatureTypeId: 28, setupId: '0x020002FF' },
+    { name: 'Mosswart', wcid: 8, creatureTypeId: 4, setupId: '0x02000B4F' },
+    { name: 'Mukkir', wcid: 31897, creatureTypeId: 89, setupId: '0x020014BD' },
+    { name: 'Niffis', wcid: 7984, creatureTypeId: 45, setupId: '0x02000926' },
+    { name: 'Olthoi', wcid: 3, creatureTypeId: 1, setupId: '0x02000AAC' },
+    { name: 'Phyntos Wasp', wcid: 12, creatureTypeId: 9, setupId: '0x02001121' },
+    { name: 'Rabbit', wcid: 2566, creatureTypeId: 25, setupId: '0x0200047B' },
+    { name: 'Rat', wcid: 13, creatureTypeId: 10, setupId: '0x0200003D' },
+    { name: 'Reedshark', wcid: 18, creatureTypeId: 16, setupId: '0x02000039' },
+    { name: 'Ruschk', wcid: 28666, creatureTypeId: 81, setupId: '0x02001240' },
+    { name: 'Sclavus', wcid: 2583, creatureTypeId: 26, setupId: '0x02000498' },
+    { name: 'Shadow', wcid: 1756, creatureTypeId: 22, setupId: '0x02000001' },
+    { name: 'Shallows Shark', wcid: 2577, creatureTypeId: 27, setupId: '0x02001480' },
+    { name: 'Shreth', wcid: 4108, creatureTypeId: 32, setupId: '0x020005C4' },
+    { name: 'Siraluun', wcid: 11486, creatureTypeId: 56, setupId: '0x02000A43' },
+    { name: 'Skeleton', wcid: 1759, creatureTypeId: 30, setupId: '0x02000059' },
+    { name: 'Snowman', wcid: 5760, creatureTypeId: 39, setupId: '0x020006FD' },
+    { name: 'Thrungus', wcid: 28672, creatureTypeId: 82, setupId: '0x02001253' },
+    { name: 'Tumerok', wcid: 226, creatureTypeId: 6, setupId: '0x02001408' },
+    { name: 'Tusker', wcid: 11, creatureTypeId: 8, setupId: '0x02000964' },
+    { name: 'Undead', wcid: 16, creatureTypeId: 14, setupId: '0x02000197' },
+    { name: 'Ursuin', wcid: 7989, creatureTypeId: 46, setupId: '0x02000925' },
+    { name: 'Viridian Statue', wcid: 420600, creatureTypeId: 68, setupId: '0x020008DA' },
     { name: 'Virindi', wcid: 23, creatureTypeId: 19, setupId: '0x02000041' },
     { name: 'Wisp', wcid: 1535, creatureTypeId: 20, setupId: '0x0200059A' },
-    { name: 'Knathtead', wcid: 1536, creatureTypeId: 21, setupId: '0x020004AF' },
-    { name: 'Shadow', wcid: 1756, creatureTypeId: 22, setupId: '0x02000001' },
-    { name: 'Mattekar', wcid: 2580, creatureTypeId: 23, setupId: '0x02000486' },
-    { name: 'Rabbit', wcid: 2566, creatureTypeId: 25, setupId: '0x0200047B' },
-    { name: 'Sclavus', wcid: 2583, creatureTypeId: 26, setupId: '0x02000498' },
-    { name: 'ShallowsShark', wcid: 2577, creatureTypeId: 27, setupId: '0x02001480' },
-    { name: 'Monouga', wcid: 2574, creatureTypeId: 28, setupId: '0x020002FF' },
     { name: 'Zefir', wcid: 2608, creatureTypeId: 29, setupId: '0x0200049A' },
-    { name: 'Skeleton', wcid: 1759, creatureTypeId: 30, setupId: '0x02000059' },
-    { name: 'Shreth', wcid: 4108, creatureTypeId: 32, setupId: '0x020005C4' },
-    { name: 'Chittick', wcid: 4242, creatureTypeId: 33, setupId: '0x02000E66' },
-    { name: 'Moarsman', wcid: 4246, creatureTypeId: 34, setupId: '0x02000992' },
-    { name: 'Deru', wcid: 4262, creatureTypeId: 37, setupId: '0x020002D9' },
-    { name: 'FireElemental', wcid: 5705, creatureTypeId: 38, setupId: '0x020006A3' },
-    { name: 'Snowman', wcid: 5760, creatureTypeId: 39, setupId: '0x020006FD' },
-    { name: 'AcidElemental', wcid: 14513, creatureTypeId: 60, setupId: '0x02000BEE' },
-    { name: 'FrostElemental', wcid: 14512, creatureTypeId: 61, setupId: '0x02000BEF' },
-    { name: 'LightningElemental', wcid: 6379, creatureTypeId: 42, setupId: '0x020006AC' },
-    { name: 'Grievver', wcid: 7978, creatureTypeId: 44, setupId: '0x020008DA' },
-    { name: 'Niffis', wcid: 7984, creatureTypeId: 45, setupId: '0x02000926' },
-    { name: 'Ursuin', wcid: 7989, creatureTypeId: 46, setupId: '0x02000925' },
-    { name: 'Carenzi', wcid: 11468, creatureTypeId: 55, setupId: '0x02000A95' },
-    { name: 'Siraluun', wcid: 11486, creatureTypeId: 56, setupId: '0x02000A43' },
-    { name: 'Burun', wcid: 26012, creatureTypeId: 75, setupId: '0x02001036' },
-    { name: 'Ghost', wcid: 28048, creatureTypeId: 77, setupId: '0x02001120' },
-    { name: 'Ruschk', wcid: 28666, creatureTypeId: 81, setupId: '0x02001240' },
-    { name: 'Thrungus', wcid: 28672, creatureTypeId: 82, setupId: '0x02001253' },
-    { name: 'Mukkir', wcid: 31897, creatureTypeId: 89, setupId: '0x020014BD' },
-    { name: 'Merwart', wcid: 32051, creatureTypeId: 90, setupId: '0x0200003A' },
-    { name: 'GearKnight', wcid: 41224, creatureTypeId: 99, setupId: '0x02001909' },
-    { name: 'Gurog', wcid: 43391, creatureTypeId: 100, setupId: '0x02001A2B' },
-    { name: 'Anekshay', wcid: 44021, creatureTypeId: 101, setupId: '0x02001AA3' },
-    { name: 'Viridian Statue', wcid: 420600, creatureTypeId: 68, setupId: '0x020008DA' },
   ]
 
 
+
   // Parent Alpha (Stud) State
-  const [alphaSpecies, setAlphaSpecies] = useState<string>('Olthoi')
+  const [alphaSpecies, setAlphaSpecies] = useState<string>('Acid Elemental')
   const [alphaLvl, setAlphaLvl] = useState<number>(300)
   const [alphaPot, setAlphaPot] = useState<number>(150)
   const [alphaDamageRating, setAlphaDamageRating] = useState<number>(12)
@@ -271,7 +272,8 @@ export default function PetBreedingCalculator() {
   })
 
   // Parent Beta (Donor) State
-  const [betaSpecies, setBetaSpecies] = useState<string>('Gromnie')
+  const [betaSpecies, setBetaSpecies] = useState<string>('Acid Elemental')
+
   const [betaLvl, setBetaLvl] = useState<number>(300)
   const [betaPot, setBetaPot] = useState<number>(100)
   const [betaDamageRating, setBetaDamageRating] = useState<number>(6)
