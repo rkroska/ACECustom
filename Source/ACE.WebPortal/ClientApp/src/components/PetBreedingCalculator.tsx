@@ -247,6 +247,8 @@ export default function PetBreedingCalculator() {
   const [selectedBabyId, setSelectedBabyId] = useState<string | null>(null)
   const [currentGen, setCurrentGen] = useState<number>(1)
   const [copiedCmd, setCopiedCmd] = useState<boolean>(false)
+  const [copiedSql, setCopiedSql] = useState<boolean>(false)
+
 
   // Live Debug Terminal State
   const [debugLogs, setDebugLogs] = useState<string[]>([
@@ -518,6 +520,19 @@ export default function PetBreedingCalculator() {
       setTimeout(() => setCopiedCmd(false), 2000)
     }
   }
+
+  const handleCopySql = async () => {
+    if (!activeSelectedBaby) return
+    const palVal = activeSelectedBaby.paletteId || activeSelectedBaby.paletteTemplateId || 0
+    const palHex = `0x${palVal.toString(16).toUpperCase()}`
+    const sql = `INSERT INTO \`weenie_properties_did\` (\`object_wcid\`, \`type\`, \`value\`) VALUES (YOUR_WCID, 8, ${palHex});`
+    const success = await copyToClipboard(sql)
+    if (success) {
+      setCopiedSql(true)
+      setTimeout(() => setCopiedSql(false), 2000)
+    }
+  }
+
 
 
   // Time-to-Target Calculator Estimations
@@ -1035,6 +1050,16 @@ export default function PetBreedingCalculator() {
                       <Copy className="w-3.5 h-3.5" />
                       {copiedCmd ? '✓ Copied @create!' : 'Copy @create Command'}
                     </button>
+
+                    <button
+                      onClick={handleCopySql}
+                      className="bg-cyan-700 hover:bg-cyan-600 text-white font-bold text-xs px-3 py-2 rounded-lg shadow border border-cyan-400/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                      title="Copy SQL INSERT statement for weenie_properties_did Type 8 (PaletteBase)"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      {copiedSql ? '✓ Copied SQL!' : 'Copy SQL (Type 8 Palette)'}
+                    </button>
+
                   </div>
                 </div>
 
