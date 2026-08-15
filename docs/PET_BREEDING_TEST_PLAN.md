@@ -1,138 +1,157 @@
 # 🧪 ACE Server & Web Portal - Pet Breeding & Visualizer Master Test Plan
 
-## Overview & Scope
-This test plan covers the exhaustive verification of all sub-systems introduced in the `feature/pet-breeding-motel` branch. The scope includes the new in-game Pet Breeding Engine (Seedy Motel mechanics, Mendelian stat inheritance, mutation logic, and cooldowns), Summoned Combat Pet stat scaling integration, the Web Portal Single Page Application (SPA) with 3D WebGL visualizations, and the associated automated unit tests and admin commands.
+This document contains **exact step-by-step instructions** with in-game admin commands (`@create`, `@set`, `@appraise`), expected chat messages, and web portal verification steps. Check off each box (`[x]`) as you test!
 
 ---
 
 ## 📋 Section 1: In-Game Pet Breeding Engine (Seedy Motel & C# Server)
 
-### Test Case 1.1: Seedy Motel Dance Ritual Trigger & Particle Effects
-- [ ] Ensure two compatible pets are placed in the Seedy Motel breeding zone.
-- [ ] Initiate the breeding sequence.
-- [ ] Verify that the Dance Ritual animation plays correctly for both pets.
-- [ ] Verify that the correct particle effects spawn during the ritual.
-- [ ] Confirm no server errors or exceptions are thrown during the animation phase.
+### Test 1.1: Seedy Motel Breeding Ritual Trigger & Animation
+- [ ] **Step 1**: Log in two characters (Player A and Player B) or use 2 accounts in the game client.
+- [ ] **Step 2**: Teleport both characters inside the Seedy Motel (`@teleport 0x00000000` or portal).
+- [ ] **Step 3**: Give Player A an Alpha Stud pet device and Player B a Non-Alpha pet device.
+- [ ] **Step 4**: Have both players target each other's pet and type `/dance` in chat.
+- [ ] **Verification**: Confirm `WeddingBliss` particles play on both parents, `VisionUpWhite` plays on both players, and local chat announces: *"Congratulations! A baby pet has been born!"*
 
-### Test Case 1.2: Alpha Stud Stamina (10 Daily Charges & Reset)
-- [ ] Designate a pet as the Alpha Stud.
-- [ ] Breed the Alpha Stud 10 consecutive times.
-- [ ] Verify that each breed consumes exactly 1 stamina charge.
-- [ ] Attempt an 11th breed and verify it is correctly rejected due to lack of stamina.
-- [ ] Wait for the daily reset (or force reset via admin command).
-- [ ] Verify that the Alpha Stud's stamina correctly resets to 10 charges.
+---
 
-### Test Case 1.3: Non-Alpha Donor Cooldown (4-Hour Timer)
-- [ ] Breed a Non-Alpha Donor pet.
-- [ ] Verify that a 4-hour cooldown timer is immediately applied to the donor.
-- [ ] Attempt to breed the donor again before the 4 hours expire and verify rejection.
-- [ ] Wait 4 hours (or advance server time).
-- [ ] Verify the donor can successfully breed again after the cooldown expires.
+### Test 1.2: Alpha Stud Stamina (10 Daily Charges)
+- [ ] **Step 1**: Target an Alpha Stud pet device in inventory.
+- [ ] **Step 2**: Run `@appraise` on the device and verify chat output shows `Role: [Alpha Stud] (10 / 10 Daily Charges)`.
+- [ ] **Step 3**: Perform 10 consecutive breeds with different donors.
+- [ ] **Step 4**: Run `@appraise` after 10 breeds and confirm charges drop to `(0 / 10 Daily Charges)`.
+- [ ] **Step 5**: Attempt an 11th breed with the Alpha Stud.
+- [ ] **Verification**: Confirm transient error message appears: *"[Device Name] has exhausted its 10 daily Alpha Breeding Charges. Rest for 24h or use an Alpha Stamina Tonic."*
 
-### Test Case 1.4: Mendelian 55/45 Stat Inheritance & Package-Deal Coupling (No Ghost Mutations)
-- [ ] Perform a breed between two pets with known, distinct stats.
-- [ ] Verify the offspring inherits stats using the 55% (Primary) / 45% (Secondary) Mendelian split.
-- [ ] Verify that coupled stats (Package-Deals) inherit together seamlessly.
-- [ ] Check the database/server logs to ensure no unintended "Ghost Mutations" occur during standard inheritance.
+---
 
-### Test Case 1.5: Option A Per-Stat 20 Mutation Cap Enforcement
-- [ ] Force a pet's specific stat to reach 20 mutations.
-- [ ] Attempt to breed and trigger a mutation for that specific stat.
-- [ ] Verify that the mutation does not exceed the cap of 20.
-- [ ] Verify that normal inheritance still proceeds correctly without exceeding the cap.
+### Test 1.3: Non-Alpha Donor Cooldown (4-Hour Timer)
+- [ ] **Step 1**: Breed a Non-Alpha Donor pet device once.
+- [ ] **Step 2**: Run `@appraise` on the donor device immediately after breeding.
+- [ ] **Verification**: Confirm chat output shows `Role: [Non-Alpha Donor] (Cooldown: 3h 59m remaining)`.
+- [ ] **Step 3**: Attempt to breed the same donor pet again right away.
+- [ ] **Verification**: Confirm breeding fails with message: *"Non-Alpha Donor is on cooldown."*
+- [ ] **Step 4** *(Admin Fast-Forward)*: Run `@set Float PetNextBreedingTime 0` on the donor device.
+- [ ] **Verification**: Run `@appraise` again and confirm donor status resets to `Role: [Non-Alpha Donor] (Ready to breed)`.
 
-### Test Case 1.6: Fixed Step-Size Mutation Boosts (+3 Dmg, +3 DR, +2 Crit, +200 HP)
-- [ ] Trigger a damage mutation and verify the stat increases by exactly +3.
-- [ ] Trigger a Damage Reduction (DR) mutation and verify an increase of exactly +3.
-- [ ] Trigger a Critical Hit (Crit) mutation and verify an increase of exactly +2.
-- [ ] Trigger a Health Points (HP) mutation and verify an increase of exactly +200.
+---
 
-### Test Case 1.7: Independent 2.0% Potency Mutation Track (Soft-Cap 1000, Hard-Cap 2000)
-- [ ] Perform multiple breeds to trigger the independent Potency mutation (2.0% base chance).
-- [ ] Verify Potency increases appropriately upon a successful mutation.
-- [ ] Force Potency to 1000 (Soft-Cap) and verify diminishing returns or appropriate soft-cap logic applies.
-- [ ] Force Potency to 2000 (Hard-Cap) and verify it cannot increase further under any circumstance.
+### Test 1.4: Mendelian 55/45 Stat Inheritance & Package-Deal Coupling
+- [ ] **Step 1**: Spawn Parent A with high damage rating: `@create 25749` then `@set Int DamageRating 30`.
+- [ ] **Step 2**: Spawn Parent B with low damage rating: `@create 25749` then `@set Int DamageRating 10`.
+- [ ] **Step 3**: Perform 10 breeds between Parent A and Parent B.
+- [ ] **Step 4**: Run `@appraise` on all 10 birthed baby devices.
+- [ ] **Verification**: Confirm roughly 5–6 babies inherit Parent A's high stat (30 Damage) and 4–5 inherit Parent B's low stat (10 Damage). Confirm mutation counts are coupled 1-to-1 with the inherited stat (no ghost mutation counts like 30+10=40).
 
-### Test Case 1.8: Double Mutation Jackpot (0.3% Chance)
-- [ ] Run a bulk simulation or manipulate RNG to hit the 0.3% Double Mutation Jackpot.
-- [ ] Verify that exactly two stats mutate simultaneously.
-- [ ] Verify that both mutations apply their correct Fixed Step-Size boosts.
-- [ ] Verify UI or system chat correctly notifies the player of the jackpot.
+---
 
-### Test Case 1.9: Master 0x04 DAT Palette Assignment on Mutation
-- [ ] Trigger a mutation during breeding.
-- [ ] Verify that the offspring is correctly assigned the Master 0x04 DAT Palette.
-- [ ] Confirm visually that the new palette reflects accurately on the pet's model in-game.
+### Test 1.5: Per-Stat 20 Mutation Cap Enforcement
+- [ ] **Step 1**: Create a pet device with 20 Damage mutations: `@set Int PetMutDamageRating 60` and `@set Int DamageRating 60`.
+- [ ] **Step 2**: Breed this pet repeatedly until a stat mutation rolls.
+- [ ] **Verification**: Confirm Damage Rating never exceeds 60 (+60 bonus at 20 cap). Any new stat mutation rolls onto eligible uncapped stats (DR, Crit, or HP).
 
-### Test Case 1.10: Inventory Placement & Full Inventory Ground Drop (Attunement)
-- [ ] Complete a breeding cycle with open inventory slots.
-- [ ] Verify the offspring pet item is placed directly into the player's inventory.
-- [ ] Verify the pet item is correctly attuned to the breeder.
-- [ ] Fill the player's inventory completely.
-- [ ] Complete another breeding cycle.
-- [ ] Verify the offspring pet item drops to the ground.
-- [ ] Verify the ground-dropped pet retains correct attunement to the breeder.
+---
+
+### Test 1.6: Fixed Step-Size Mutation Boosts (+3 Dmg, +3 DR, +2 Crit, +200 HP)
+- [ ] **Step 1**: Set server config to force mutations on every breed: `@setconfig pet_breeding_force_mutation true`.
+- [ ] **Step 2**: Perform 5 breeds and appraise the babies.
+- [ ] **Verification**: Confirm stat boosts are strictly fixed step sizes:
+  - Damage Rating boost is ALWAYS **+3**
+  - Damage Resist Rating boost is ALWAYS **+3**
+  - Crit Rating boost is ALWAYS **+2**
+  - Vitality / Health boost is ALWAYS **+200 HP**
+- [ ] **Step 3**: Reset force mutation config: `@setconfig pet_breeding_force_mutation false`.
+
+---
+
+### Test 1.7: Independent 2.0% Potency Mutation Track (Soft-Cap 1000, Hard-Cap 2000)
+- [ ] **Step 1**: Spawn a pet device with 980 Potency: `@set Int PetPotencyStored 980`.
+- [ ] **Step 2**: Breed until a Potency mutation rolls (or set `pet_breeding_potency_chance` high for testing).
+- [ ] **Verification**: Confirm Potency increases by **+20** up to 1,000.
+- [ ] **Step 3**: Set pet Potency to 1,500: `@set Int PetPotencyStored 1500`.
+- [ ] **Step 4**: Trigger a Potency mutation above 1,000 Potency.
+- [ ] **Verification**: Confirm diminishing step applies (+5 Potency per hit above 1,000). Confirm hard cap prevents Potency from ever exceeding 2,000.
+
+---
+
+### Test 1.8: Double Mutation Jackpot (0.3% Chance)
+- [ ] **Step 1**: Perform breeding until both normal stat and Potency mutations hit on the same breed.
+- [ ] **Verification**: Confirm server console logs `🌟 [DOUBLE MUTATION JACKPOT!]` and baby gains both a stat mutation (+3 Dmg / +200 HP) AND a Potency mutation (+20 Potency) simultaneously!
+
+---
+
+### Test 1.9: Master 0x04 DAT Palette Assignment on Mutation
+- [ ] **Step 1**: Perform a breed that triggers a color mutation.
+- [ ] **Step 2**: Run `@appraise` on the baby pet device.
+- [ ] **Verification**: Confirm `PaletteBase` is assigned a master 2,048-color DAT Palette ID starting with `0x04......` (e.g. `0x040001BE`), and the pet's 3D mesh renders with the rare mutated color palette!
+
+---
+
+### Test 1.10: Inventory Placement & Full Inventory Drop (Attunement)
+- [ ] **Step 1**: Ensure player has empty inventory space and complete a breed.
+- [ ] **Verification**: Confirm baby pet device appears in inventory and is marked attuned.
+- [ ] **Step 2**: Fill inventory completely with pyreals/items so 0 slots remain.
+- [ ] **Step 3**: Complete another breed.
+- [ ] **Verification**: Confirm chat message states inventory was full, baby pet drops to the ground at player's feet, and the ground item is correctly attuned to the player.
 
 ---
 
 ## 📋 Section 2: Summoned Combat Pet Stat Scaling (CombatPet.cs)
 
-### Test Case 2.1: Mutated Rating Application at Summon Time (Damage, DR, Crit, etc.)
-- [ ] Summon a highly mutated combat pet.
-- [ ] Verify the base Damage applies the mutated ratings properly.
-- [ ] Verify Damage Reduction (DR) and Crit Chance reflect the inherited/mutated stats.
-- [ ] Engage in combat to confirm actual damage output aligns with the calculated mutated ratings.
+### Test 2.1: Mutated Rating Application at Summon Time
+- [ ] **Step 1**: Take a pet device with +15 Damage Rating and +10 Crit Rating in inventory.
+- [ ] **Step 2**: Use the pet device to summon the active combat pet into the world.
+- [ ] **Step 3**: Run `@appraise` on the active summoned combat pet entity.
+- [ ] **Verification**: Confirm combat pet's active stats include the +15 Damage Rating and +10 Crit Rating bonuses!
 
-### Test Case 2.2: Mutated Vitality HP Boost Application
-- [ ] Check the HP of an unmutated pet.
-- [ ] Summon a pet with maxed Vitality/HP mutations.
-- [ ] Verify the maximum HP pool reflects the +200 HP per mutation step increments accurately.
+---
 
-### Test Case 2.3: Potency Scaling (Spell Level & Body Part Damage Scaling)
-- [ ] Summon a pet with high Potency.
-- [ ] Verify that casted spell levels scale up correctly based on the Potency value.
-- [ ] Verify that physical body part damage scales correctly according to Potency modifiers.
+### Test 2.2: Mutated Vitality HP Boost Application
+- [ ] **Step 1**: Take a pet device with +1,000 Vitality (+1,000 HP from 5 HP mutations).
+- [ ] **Step 2**: Use the device to summon the pet.
+- [ ] **Verification**: Confirm summoned pet's Max HP (`Health.MaxValue`) is 1,000 points higher than an unmutated pet of the same level!
+
+---
+
+### Test 2.3: Potency Scaling in Combat
+- [ ] **Step 1**: Summon a pet with 1,000 Potency.
+- [ ] **Step 2**: Have the pet attack an enemy creature.
+- [ ] **Verification**: Confirm pet spell tier / body part damage scales up according to `PetPotency.cs` formulas.
 
 ---
 
 ## 📋 Section 3: Web Portal SPA & 3D Visualizer (React & WebGL)
 
-### Test Case 3.1: Pet Breeding Simulator Parity with C# Engine
-- [ ] Input two parent pets into the Web Portal Breeding Simulator.
-- [ ] Run the simulation.
-- [ ] Verify the simulated offspring stats exactly match the expected Mendelian math from the C# Engine.
-- [ ] Verify mutation probabilities (2.0% Potency, 0.3% Jackpot) are represented accurately in the SPA.
+### Test 3.1: Pet Breeding Simulator Parity
+- [ ] **Step 1**: Open Web Portal at `http://localhost:5001` or `http://76.237.151.184:5001`.
+- [ ] **Step 2**: Navigate to **Pet Breeding Calculator** tab.
+- [ ] **Step 3**: Click **Simulate Breeding Ritual**.
+- [ ] **Verification**: Confirm terminal debug log displays step-by-step stat inheritance, 55/45 rolls, mutation checks, and DAT palette resolution matching C# server output.
 
-### Test Case 3.2: 3D WebGL Model Rendering & DAT Palette Swatch Display
-- [ ] Load a pet profile on the Web Portal.
-- [ ] Verify the 3D WebGL model renders correctly in the browser.
-- [ ] Verify the 0x04 DAT Palette colors display accurately on the model.
-- [ ] Verify the UI swatch correctly identifies and displays the HEX/RGB values of the applied palette.
+---
 
-### Test Case 3.3: Safe HTTP/HTTPS Clipboard Copy Fallback (http://76.237.151.184:5001)
-- [ ] Access the portal via the non-HTTPS URL: `http://76.237.151.184:5001`.
-- [ ] Attempt to copy a pet build/link to the clipboard.
-- [ ] Verify the safe fallback copy mechanism works without throwing Secure Context (HTTPS) errors.
-- [ ] Paste the copied text to verify data integrity.
+### Test 3.2: 3D WebGL Model Preview & Palette Swatches
+- [ ] **Step 1**: Select any birthed baby in the Breeding Simulator results list.
+- [ ] **Verification**: Confirm 3D WebGL viewport renders the creature model with active rotation controls and displays color swatch HEX codes.
 
-### Test Case 3.4: Speed Curation & Texture Quality Scoring Engine
-- [ ] Load a heavy pet model with high-resolution textures.
-- [ ] Monitor load times and verify they fall within acceptable SPA performance thresholds.
-- [ ] Check the Texture Quality Scoring Engine output in the portal UI.
-- [ ] Verify the scoring engine correctly penalizes or rewards based on texture optimization standards.
+---
+
+### Test 3.3: HTTP Safe Clipboard Copy Fallback
+- [ ] **Step 1**: Open web portal over plain HTTP IP address: `http://76.237.151.184:5001`.
+- [ ] **Step 2**: Click **Copy @create In-Game Command** or **Copy Full Debug Log**.
+- [ ] **Verification**: Confirm green checkmark appears, text copies to system clipboard, and **NO browser console error** (`navigator.clipboard is undefined`) is thrown!
 
 ---
 
 ## 📋 Section 4: Automated Unit Tests & Admin Commands
 
-### Test Case 4.1: ACE.Server.Tests Unit Test Suite Execution
-- [ ] Run the complete `ACE.Server.Tests` suite locally or via CI/CD.
-- [ ] Verify all Pet Breeding related unit tests pass successfully.
-- [ ] Check test coverage to ensure Mendelian inheritance and mutation logic are fully covered.
-- [ ] Review logs for any flaky tests or warnings.
+### Test 4.1: Unit Test Suite Execution
+- [ ] **Step 1**: Open PowerShell terminal in `Source` directory.
+- [ ] **Step 2**: Run `dotnet test ACE.Server.Tests\ACE.Server.Tests.csproj --filter "FullyQualifiedName~PetBreedingTests"`.
+- [ ] **Verification**: Confirm all 21 unit tests pass (`Passed: 21, Failed: 0`).
 
-### Test Case 4.2: Admin Commands (@create, @set, @appraise)
-- [ ] Use `@create` to spawn a custom pet item in-game.
-- [ ] Use `@set` to manually modify a pet's mutation counts, stamina, and cooldown timers.
-- [ ] Verify the `@set` command correctly clamps values to the defined caps (e.g., max 20 per stat).
-- [ ] Use `@appraise` on a pet and verify the output accurately lists all hidden genetics, current mutations, Potency, and cooldown status.
+---
+
+### Test 4.2: Admin Commands Verification
+- [ ] **Step 1**: Execute `@create 25749 1 0x040001BE 0.5` in-game.
+- [ ] **Verification**: Confirm pet device spawns with specified WCID and 0x04 DAT Palette ID!
