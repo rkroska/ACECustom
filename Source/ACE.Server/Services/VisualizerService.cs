@@ -1447,7 +1447,8 @@ namespace ACE.Server.Services
             }
 
             List<uint> surfaceTextureLayers = null;
-            if ((textureId & 0xFF000000) == 0x05000000 || (textureId & 0xFF000000) == 0x08000000)
+            // 1. Handle 0x08 Surfaces FIRST (DO NOT pass 0x05 SurfaceTexture IDs to ReadFromDat<Surface>!)
+            if ((textureId & 0xFF000000) == 0x08000000)
             {
                 var surf = portalDb.ReadFromDat<Surface>(textureId);
                 if (surf != null)
@@ -1455,8 +1456,12 @@ namespace ACE.Server.Services
                     if (surf.OrigTextureId != 0)
                     {
                         textureId = surf.OrigTextureId;
+                        if (surf.OrigPaletteId != 0 && (paletteId == 0 || paletteId == 0x00000000))
+                        {
+                            paletteId = surf.OrigPaletteId;
+                        }
                     }
-                    else if (surf.Type.HasFlag(SurfaceType.Base1Solid) || (surf.ColorValue != 0 && (textureId & 0xFF000000) == 0x08000000) || (textureId & 0xFF000000) == 0x08000000)
+                    else if (surf.OrigTextureId == 0 && (surf.Type.HasFlag(SurfaceType.Base1Solid) || surf.ColorValue != 0))
                     {
                         // Handle solid color surfaces (e.g. 0x080000DF on Banderling parts #15 & #16)
                         uint col = surf.ColorValue;
@@ -1479,8 +1484,10 @@ namespace ACE.Server.Services
                         return solidMs.ToArray();
                     }
                 }
+            }
 
-                if ((textureId & 0xFF000000) == 0x05000000)
+            // 2. Handle 0x05 Surface Textures SEPARATELY
+            if ((textureId & 0xFF000000) == 0x05000000)
                 {
                     var surfTex = portalDb.ReadFromDat<SurfaceTexture>(textureId);
                     if (surfTex == null && DatManager.HighResDat != null)
@@ -1517,7 +1524,6 @@ namespace ACE.Server.Services
                         if (textureId == 0) textureId = surfaceTextureLayers[0];
                     }
                 }
-            }
 
             var texture = portalDb.ReadFromDat<Texture>(textureId);
             if (texture == null || texture.Width == 0 || texture.Height == 0 || texture.Format == SurfacePixelFormat.PFID_UNKNOWN || texture.SourceData == null || texture.SourceData.Length == 0)
