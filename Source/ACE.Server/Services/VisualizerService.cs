@@ -1771,11 +1771,9 @@ namespace ACE.Server.Services
                     }
                 }
 
-                if ((paletteId & 0xFF000000) != 0x04000000 && (paletteId & 0xFF000000) != 0x0F000000)
+                if (cloSubPalettes != null && basePalette != null && cloSubPalettes.Count > 0)
                 {
-                    if (cloSubPalettes != null && basePalette != null && cloSubPalettes.Count > 0)
-                    {
-                        // Apply SubPalettes sequentially as per AC DAT spec
+                    // Apply SubPalettes sequentially as per AC DAT spec
                         foreach (var subPal in cloSubPalettes)
                         {
                             var paletteSetId = subPal.PaletteSet;
@@ -1835,7 +1833,6 @@ namespace ACE.Server.Services
                             }
                         }
                     }
-                }
 
             if (hueShift != 0 && basePalette != null)
                 {
