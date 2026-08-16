@@ -1814,7 +1814,7 @@ namespace ACE.Server.Services
                                                 int offset = (int)range.Offset;
                                                 int numColors = (int)range.NumColors;
 
-                                                if (offset == 320 && range == subPal.Ranges[0])
+                                                if (offset == 320 && range == subPal.Ranges[0] && wcid == 6)
                                                 {
                                                     for (int c = 0; c < 320; c++)
                                                     {
