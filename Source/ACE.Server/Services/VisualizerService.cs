@@ -980,10 +980,13 @@ namespace ACE.Server.Services
                 MergeCustomClothingBaseJson(clothingBase, clothingTable);
                 if (clothingTable != null && clothingTable.ClothingBaseEffects != null)
                 {
-                    foreach (var kvp in clothingTable.ClothingBaseEffects)
+                    ClothingBaseEffect baseEffect = null;
+                    if (setupId != 0 && clothingTable.ClothingBaseEffects.TryGetValue(setupId, out var eff))
+                        baseEffect = eff;
+
+                    if (baseEffect?.CloObjectEffects != null)
                     {
-                        if (kvp.Value?.CloObjectEffects == null) continue;
-                        foreach (var objEffect in kvp.Value.CloObjectEffects)
+                        foreach (var objEffect in baseEffect.CloObjectEffects)
                         {
                             if (objEffect.CloTextureEffects == null) continue;
 
@@ -1395,12 +1398,14 @@ namespace ACE.Server.Services
             if (wcid != 0)
             {
                 uint clothingBase = 0;
+                uint setupId = 0;
                 var weenie = DatabaseManager.World?.GetCachedWeenie(wcid);
                 if (weenie != null && weenie.PropertiesDID != null)
                 {
                     weenie.PropertiesDID.TryGetValue(PropertyDataId.ClothingBase, out clothingBase);
+                    weenie.PropertiesDID.TryGetValue(PropertyDataId.Setup, out setupId);
                 }
-                if (clothingBase == 0)
+                if (clothingBase == 0 || setupId == 0)
                 {
                     try
                     {
@@ -1409,11 +1414,10 @@ namespace ACE.Server.Services
                         {
                             foreach (var prop in dbWeenie.WeeniePropertiesDID)
                             {
-                                if (prop.Type == (ushort)PropertyDataId.ClothingBase && prop.Value != 0)
-                                {
+                                if (prop.Type == (ushort)PropertyDataId.ClothingBase && prop.Value != 0 && clothingBase == 0)
                                     clothingBase = prop.Value;
-                                    break;
-                                }
+                                if (prop.Type == (ushort)PropertyDataId.Setup && prop.Value != 0 && setupId == 0)
+                                    setupId = prop.Value;
                             }
                         }
                     }
@@ -1426,10 +1430,13 @@ namespace ACE.Server.Services
                     MergeCustomClothingBaseJson(clothingBase, clothingTable);
                     if (clothingTable != null && clothingTable.ClothingBaseEffects != null)
                     {
-                        foreach (var kvp in clothingTable.ClothingBaseEffects)
+                        ClothingBaseEffect baseEffect = null;
+                        if (setupId != 0 && clothingTable.ClothingBaseEffects.TryGetValue(setupId, out var eff))
+                            baseEffect = eff;
+
+                        if (baseEffect?.CloObjectEffects != null)
                         {
-                            if (kvp.Value?.CloObjectEffects == null) continue;
-                            foreach (var objEffect in kvp.Value.CloObjectEffects)
+                            foreach (var objEffect in baseEffect.CloObjectEffects)
                             {
                                 if (objEffect.CloTextureEffects == null) continue;
                                 foreach (var texEffect in objEffect.CloTextureEffects)
