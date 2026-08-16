@@ -1882,7 +1882,6 @@ namespace ACE.Server.Services
                         uint color = GetColor(index);
 
                         byte a = (byte)((color >> 24) & 0xFF);
-                        if (a == 0) a = 255;
 
                         rgba8[i * 4] = (byte)((color >> 16) & 0xFF);     // R
                         rgba8[i * 4 + 1] = (byte)((color >> 8) & 0xFF);   // G
@@ -1900,7 +1899,6 @@ namespace ACE.Server.Services
                         uint color = GetColor(val);
 
                         byte a = (byte)((color >> 24) & 0xFF);
-                        if (a == 0) a = 255;
 
                         rgba8[i * 4] = (byte)((color >> 16) & 0xFF);
                         rgba8[i * 4 + 1] = (byte)((color >> 8) & 0xFF);
@@ -1954,7 +1952,7 @@ namespace ACE.Server.Services
                             rgba8[i * 4] = r;
                             rgba8[i * 4 + 1] = g;
                             rgba8[i * 4 + 2] = b;
-                            rgba8[i * 4 + 3] = a > 0 ? a : (byte)255;
+                            rgba8[i * 4 + 3] = a;
                         }
                     }
                     catch { }
