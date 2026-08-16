@@ -1778,7 +1778,7 @@ namespace ACE.Server.Services
                     }
                 }
 
-                if (cloSubPalettes != null && basePalette != null && cloSubPalettes.Count > 0)
+                if ((paletteId & 0xFF000000) != 0x04000000 && (paletteId & 0xFF000000) != 0x0F000000 && cloSubPalettes != null && basePalette != null && cloSubPalettes.Count > 0)
                 {
                     // Apply SubPalettes sequentially as per AC DAT spec
                         foreach (var subPal in cloSubPalettes)
