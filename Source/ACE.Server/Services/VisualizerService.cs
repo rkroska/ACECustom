@@ -1450,9 +1450,34 @@ namespace ACE.Server.Services
             if ((textureId & 0xFF000000) == 0x05000000 || (textureId & 0xFF000000) == 0x08000000)
             {
                 var surf = portalDb.ReadFromDat<Surface>(textureId);
-                if (surf != null && surf.OrigTextureId != 0)
+                if (surf != null)
                 {
-                    textureId = surf.OrigTextureId;
+                    if (surf.OrigTextureId != 0)
+                    {
+                        textureId = surf.OrigTextureId;
+                    }
+                    else if (surf.Type.HasFlag(SurfaceType.Base1Solid) || (surf.ColorValue != 0 && (textureId & 0xFF000000) == 0x08000000) || (textureId & 0xFF000000) == 0x08000000)
+                    {
+                        // Handle solid color surfaces (e.g. 0x080000DF on Banderling parts #15 & #16)
+                        uint col = surf.ColorValue;
+                        byte a = (byte)((col >> 24) & 0xFF);
+                        byte r = (byte)((col >> 16) & 0xFF);
+                        byte g = (byte)((col >> 8) & 0xFF);
+                        byte b = (byte)(col & 0xFF);
+                        if (a == 0 && (r != 0 || g != 0 || b != 0 || col == 0xFF000000)) a = 255;
+                        byte[] solidRgba = new byte[16 * 16 * 4];
+                        for (int i = 0; i < 16 * 16; i++)
+                        {
+                            solidRgba[i * 4 + 0] = r;
+                            solidRgba[i * 4 + 1] = g;
+                            solidRgba[i * 4 + 2] = b;
+                            solidRgba[i * 4 + 3] = a;
+                        }
+                        using var solidImg = Image.LoadPixelData<Rgba32>(solidRgba, 16, 16);
+                        using var solidMs = new MemoryStream();
+                        solidImg.SaveAsPng(solidMs);
+                        return solidMs.ToArray();
+                    }
                 }
 
                 if ((textureId & 0xFF000000) == 0x05000000)
