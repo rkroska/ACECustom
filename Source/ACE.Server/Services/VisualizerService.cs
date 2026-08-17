@@ -1588,12 +1588,12 @@ namespace ACE.Server.Services
                 Palette basePalette = null;
                 List<CloSubPalette> cloSubPalettes = null;
                 double weenieShade = 0.5;
+                uint defaultPalBaseDID = 0;
 
                 if (wcid != 0)
                 {
                     uint clothingBase = 0;
                     int defaultPalTemplate = 0;
-                    uint defaultPalBaseDID = 0;
 
                     var weenie = DatabaseManager.World?.GetCachedWeenie(wcid);
                     if (weenie != null)
@@ -1706,6 +1706,22 @@ namespace ACE.Server.Services
                     {
                         paletteBase = palSet.GetPaletteID(shade);
                         if (paletteBase == 0) paletteBase = palSet.PaletteList[0];
+                    }
+                }
+                else if (defaultPalBaseDID != 0)
+                {
+                    if ((defaultPalBaseDID & 0xFF000000) == 0x04000000)
+                    {
+                        paletteBase = defaultPalBaseDID;
+                    }
+                    else if ((defaultPalBaseDID & 0xFF000000) == 0x0F000000)
+                    {
+                        var palSet = portalDb.ReadFromDat<PaletteSet>(defaultPalBaseDID);
+                        if (palSet != null && palSet.PaletteList != null && palSet.PaletteList.Count > 0)
+                        {
+                            paletteBase = palSet.GetPaletteID(shade);
+                            if (paletteBase == 0) paletteBase = palSet.PaletteList[0];
+                        }
                     }
                 }
 
