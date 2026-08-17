@@ -180,7 +180,7 @@ interface ModelProps {
 }
 
 const Model: FC<ModelProps> = ({ wcid, paletteId, paletteSlot = -1, hueShift, activeTexReplaceInfo, rotationSpeed, isRotating, wireframe, creatureParticles = [], particleEffectsEnabled = true, particleOffsets, onCreated, onMeshListLoaded }) => {
-  const modelUrl = `/api/visualizer/mesh/${wcid}.gltf?paletteId=${paletteId || 0}&hue=${hueShift || 0}&slot=${paletteSlot}&v=4.0-clean-bake-v1`;
+  const modelUrl = `/api/visualizer/mesh/${wcid}.gltf?paletteId=${paletteId || 0}&hue=${hueShift || 0}&slot=${paletteSlot}&v=4.1-translucency-fix-v1`;
 
   // useGLTF suspends while parsing binary buffer
   const { scene } = useGLTF(modelUrl);
@@ -217,13 +217,15 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, paletteSlot = -1, hueShift, ac
           const mapSrc = (mat.map?.image?.src || mat.userData?.originalMap?.image?.src || '').toUpperCase();
           const combined = matName + ' ' + mapSrc;
 
-          const extras = mat.userData?.gltfExtensions?.extras || mat.userData?.extras || {};
-          const datTranslucency = extras.translucency ?? 0;
+          const extras = mat.userData?.gltfExtensions?.extras || mat.userData?.extras || mat.userData || {};
+          const datTranslucency = extras.translucency ?? mat.userData?.translucency ?? 0;
+          const matOpacity = mat.opacity !== undefined ? mat.opacity : 1.0;
 
           // 0500 SurfaceTextures are standard texture surfaces
           const isSurfaceTexture = combined.includes('0500');
           const isAdditiveParticle = combined.includes('0500303D') || 
                                      combined.includes('05003305');
+          const isTranslucent = datTranslucency > 0 || matOpacity < 0.99;
 
           if (mat.userData.customBlending !== undefined) {
             if (mat.userData.customBlending === 'additive') {
@@ -237,7 +239,7 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, paletteSlot = -1, hueShift, ac
             } else if (mat.userData.customBlending === 'blend') {
               mat.transparent = true;
               mat.blending = THREE.NormalBlending;
-              mat.opacity = datTranslucency > 0 ? (1.0 - datTranslucency) : 1.0;
+              mat.opacity = datTranslucency > 0 ? (1.0 - datTranslucency) : matOpacity;
               mat.depthWrite = true;
             }
           } else if (isAdditiveParticle) {
@@ -245,9 +247,9 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, paletteSlot = -1, hueShift, ac
             mat.blending = THREE.AdditiveBlending;
             mat.depthWrite = false;
             mat.side = THREE.DoubleSide;
-          } else if (datTranslucency > 0) {
+          } else if (isTranslucent) {
             mat.transparent = true;
-            mat.opacity = 1.0 - datTranslucency;
+            mat.opacity = datTranslucency > 0 ? (1.0 - datTranslucency) : matOpacity;
             mat.blending = THREE.NormalBlending;
             mat.depthWrite = true;
             mat.side = THREE.DoubleSide;
