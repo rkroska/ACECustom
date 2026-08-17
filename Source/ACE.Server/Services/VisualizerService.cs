@@ -1680,12 +1680,7 @@ namespace ACE.Server.Services
                                 cloSubPalettes = effect.CloSubPalettes;
                                 log.Info($"   -> Found ClothingSubPalEffect for Template {targetTemplate}: Count={cloSubPalettes?.Count ?? 0}");
                             }
-                            else if (clothingTable.ClothingSubPalEffects.Count > 0)
-                            {
-                                effect = clothingTable.ClothingSubPalEffects.Values.FirstOrDefault();
-                                cloSubPalettes = effect?.CloSubPalettes;
-                                log.Info($"   -> Template {targetTemplate} not in ClothingTable, using fallback ClothingSubPalEffect: Count={cloSubPalettes?.Count ?? 0}");
-                            }
+                            // If targetTemplate is not defined in ClothingSubPalEffects, leave cloSubPalettes null to retain authentic default base palette!
                         }
                     }
                 }
@@ -1755,22 +1750,10 @@ namespace ACE.Server.Services
                                 basePalette.Colors.Add(basePalette.Colors[i % basePalette.Colors.Count]);
                         }
 
-                        if (overridePalette.Colors.Count >= 2048)
+                        int limit = Math.Min(basePalette.Colors.Count, overridePalette.Colors.Count);
+                        for (int i = 0; i < limit; i++)
                         {
-                            int limit = Math.Min(basePalette.Colors.Count, overridePalette.Colors.Count);
-                            for (int i = 0; i < limit; i++)
-                            {
-                                basePalette.Colors[i] = overridePalette.Colors[i];
-                            }
-                        }
-                        else
-                        {
-                            // Apply custom 0x04 palette across full palette space [0 .. 2048]
-                            int limit = Math.Min(basePalette.Colors.Count, 2048);
-                            for (int i = 0; i < limit; i++)
-                            {
-                                basePalette.Colors[i] = overridePalette.Colors[i % overridePalette.Colors.Count];
-                            }
+                            basePalette.Colors[i] = overridePalette.Colors[i];
                         }
                     }
                     else
