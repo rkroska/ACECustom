@@ -942,19 +942,34 @@ namespace ACE.Server.Services
             }
             catch { }
 
-            if (setupId == 0 || clothingBase == 0)
+            float weenieTranslucency = 0.0f;
+            if (weenie?.PropertiesFloat != null && weenie.PropertiesFloat.TryGetValue(PropertyFloat.Translucency, out double weenieTransVal))
+                weenieTranslucency = (float)weenieTransVal;
+
+            if (setupId == 0 || clothingBase == 0 || weenieTranslucency == 0.0f)
             {
                 try
                 {
                     var dbWeenie = DatabaseManager.World?.GetWeenie(wcid);
-                    if (dbWeenie != null && dbWeenie.WeeniePropertiesDID != null)
+                    if (dbWeenie != null)
                     {
-                        foreach (var prop in dbWeenie.WeeniePropertiesDID)
+                        if (dbWeenie.WeeniePropertiesDID != null)
                         {
-                            if (prop.Type == (ushort)PropertyDataId.Setup && prop.Value != 0 && setupId == 0)
-                                setupId = prop.Value;
-                            if (prop.Type == (ushort)PropertyDataId.ClothingBase && prop.Value != 0 && clothingBase == 0)
-                                clothingBase = prop.Value;
+                            foreach (var prop in dbWeenie.WeeniePropertiesDID)
+                            {
+                                if (prop.Type == (ushort)PropertyDataId.Setup && prop.Value != 0 && setupId == 0)
+                                    setupId = prop.Value;
+                                if (prop.Type == (ushort)PropertyDataId.ClothingBase && prop.Value != 0 && clothingBase == 0)
+                                    clothingBase = prop.Value;
+                            }
+                        }
+                        if (dbWeenie.WeeniePropertiesFloat != null && weenieTranslucency == 0.0f)
+                        {
+                            foreach (var prop in dbWeenie.WeeniePropertiesFloat)
+                            {
+                                if (prop.Type == (ushort)PropertyFloat.Translucency && prop.Value != 0)
+                                    weenieTranslucency = (float)prop.Value;
+                            }
                         }
                     }
                 }
@@ -1185,14 +1200,16 @@ namespace ACE.Server.Services
 
                                         bool isSurfaceTexture = (originalSwappedTexId & 0xFF000000) == 0x05000000;
                                         bool isIndexed = isSurfaceTexture || (texture != null && (texture.Format == SurfacePixelFormat.PFID_P8 || texture.Format == SurfacePixelFormat.PFID_INDEX16));
-                                        bool isAlpha = (surface != null && surface.Translucency > 0) || (texture != null && (texture.Format == SurfacePixelFormat.PFID_A8R8G8B8 || texture.Format == SurfacePixelFormat.PFID_A4R4G4B4 || texture.Format == SurfacePixelFormat.PFID_A8));
+                                        float finalTranslucency = (surface != null && surface.Translucency > 0) ? surface.Translucency : weenieTranslucency;
+                                        bool isAlpha = finalTranslucency > 0 || (texture != null && (texture.Format == SurfacePixelFormat.PFID_A8R8G8B8 || texture.Format == SurfacePixelFormat.PFID_A4R4G4B4 || texture.Format == SurfacePixelFormat.PFID_A8));
 
                                         var material = new GltfMaterial
                                         {
                                             name = $"Material_Texture_0x{originalSwappedTexId:X8}_surf_{surfaceIdx}",
                                             pbrMetallicRoughness = new GltfPbr
                                             {
-                                                baseColorTexture = new GltfTextureInfo { index = gltf.textures.Count }
+                                                baseColorTexture = new GltfTextureInfo { index = gltf.textures.Count },
+                                                baseColorFactor = (finalTranslucency > 0) ? new float[] { 1.0f, 1.0f, 1.0f, 1.0f - finalTranslucency } : new float[] { 1.0f, 1.0f, 1.0f, 1.0f }
                                             },
                                             doubleSided = true,
                                             alphaMode = isAlpha ? "BLEND" : "OPAQUE",
@@ -1200,7 +1217,7 @@ namespace ACE.Server.Services
                                             extras = new Dictionary<string, object> 
                                             { 
                                                 { "indexed", isIndexed },
-                                                { "translucency", surface != null ? surface.Translucency : 0.0f },
+                                                { "translucency", finalTranslucency },
                                                 { "surfaceType", surface != null ? (int)surface.Type : 0 },
                                                 { "origTextureId", $"0x{originalSwappedTexId:X8}" }
                                             }

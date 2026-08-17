@@ -222,9 +222,8 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, paletteSlot = -1, hueShift, ac
 
           // 0500 SurfaceTextures are standard texture surfaces
           const isSurfaceTexture = combined.includes('0500');
-          const isAdditiveEnergy = datTranslucency > 0 || 
-                                   combined.includes('0500303D') || 
-                                   combined.includes('05003305');
+          const isAdditiveParticle = combined.includes('0500303D') || 
+                                     combined.includes('05003305');
 
           if (mat.userData.customBlending !== undefined) {
             if (mat.userData.customBlending === 'additive') {
@@ -238,16 +237,23 @@ const Model: FC<ModelProps> = ({ wcid, paletteId, paletteSlot = -1, hueShift, ac
             } else if (mat.userData.customBlending === 'blend') {
               mat.transparent = true;
               mat.blending = THREE.NormalBlending;
+              mat.opacity = datTranslucency > 0 ? (1.0 - datTranslucency) : 1.0;
               mat.depthWrite = true;
             }
-          } else if (isAdditiveEnergy) {
+          } else if (isAdditiveParticle) {
             mat.transparent = true;
             mat.blending = THREE.AdditiveBlending;
             mat.depthWrite = false;
             mat.side = THREE.DoubleSide;
+          } else if (datTranslucency > 0) {
+            mat.transparent = true;
+            mat.opacity = 1.0 - datTranslucency;
+            mat.blending = THREE.NormalBlending;
+            mat.depthWrite = true;
+            mat.side = THREE.DoubleSide;
           } else if (isSurfaceTexture) {
             mat.transparent = false; // Keep false to avoid see-through alpha sorting holes
-            mat.alphaTest = 0.5; // Fix: Cull transparent background pixels (e.g. Drudge Lurker orange neck)
+            mat.alphaTest = 0.5; // Fix: Cull transparent background pixels
             mat.blending = THREE.NormalBlending;
             mat.depthWrite = true;
             mat.side = THREE.DoubleSide;
