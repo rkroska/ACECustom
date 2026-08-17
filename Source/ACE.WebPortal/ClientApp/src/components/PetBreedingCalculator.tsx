@@ -209,7 +209,7 @@ export default function PetBreedingCalculator() {
     { name: 'Fae', wcid: 99999989, creatureTypeId: 18, setupId: '0x02001A10' },
     { name: 'Fire Elemental', wcid: 5705, creatureTypeId: 38, setupId: '0x020006A3' },
     { name: 'Frost Elemental', wcid: 14512, creatureTypeId: 61, setupId: '0x02000BEF' },
-    { name: 'Gear Knight', wcid: 41224, creatureTypeId: 99, setupId: '0x02001909' },
+    { name: 'Gear Knight', wcid: 41244, creatureTypeId: 99, setupId: '0x0200190F' },
     { name: 'Ghost', wcid: 28048, creatureTypeId: 77, setupId: '0x02001120' },
     { name: 'Golem', wcid: 194, creatureTypeId: 13, setupId: '0x020007CA' },
     { name: 'Grievver', wcid: 7978, creatureTypeId: 44, setupId: '0x020008DA' },

@@ -357,6 +357,9 @@ namespace ACE.Server.Services
                 }
             }
 
+            if (clothingBase == 0 && (wcid == 41224 || wcid == 41244)) clothingBase = 0x10000764;
+            if (paletteBase == 0 && (wcid == 41224 || wcid == 41244)) paletteBase = 0x04001A25;
+
             log.Info($"[GET SPECIES PALETTES] wcid={wcid}, cachedWeenie={(weenie != null)}, clothingBase=0x{clothingBase:X8}, paletteBase=0x{paletteBase:X8}, defaultTemplate={defaultTemplate}, shade={shade}");
 
             if (clothingBase != 0)
@@ -974,6 +977,9 @@ namespace ACE.Server.Services
             var modelTextureSwaps = new Dictionary<uint, uint>();
             var indexTextureSwaps = new Dictionary<uint, uint>();
 
+            if (clothingBase == 0 && (wcid == 41224 || wcid == 41244 || setupId == 0x02001909 || setupId == 0x0200190F))
+                clothingBase = 0x10000764;
+
             if (clothingBase != 0)
             {
                 var clothingTable = portalDb.ReadFromDat<ClothingTable>(clothingBase);
@@ -1423,6 +1429,9 @@ namespace ACE.Server.Services
                     }
                     catch { }
                 }
+
+                if (clothingBase == 0 && (wcid == 41224 || wcid == 41244 || setupId == 0x02001909 || setupId == 0x0200190F))
+                    clothingBase = 0x10000764;
 
                 if (clothingBase != 0)
                 {
