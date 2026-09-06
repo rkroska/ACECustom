@@ -122,14 +122,31 @@ namespace ACE.Server.Tests
         public void VariantForWcid_SurvivesNullMapAndNullBucket()
         {
             // persisted JSON can carry an explicit null map, or a null bucket inside the map; neither may throw,
-            // both read as "absent", and create still hands back a fresh bucket
+            // and both read as "absent"
             var nullMap = JsonConvert.DeserializeObject<ZoneScalingProfile>("{\"WcidOverrides\": null}");
             Assert.IsNull(nullMap.VariantForWcid(12345));
-            Assert.IsNotNull(nullMap.VariantForWcid(12345, create: true));
 
             var nullBucket = JsonConvert.DeserializeObject<ZoneScalingProfile>("{\"WcidOverrides\": {\"5\": null}}");
             Assert.IsNull(nullBucket.VariantForWcid(5));
-            Assert.IsNotNull(nullBucket.VariantForWcid(5, create: true));
+        }
+
+        [TestMethod]
+        public void VariantForWcid_CreatesAndStoresFromNullMapAndNullBucket()
+        {
+            // Fresh instances: the create call must be the FIRST touch, so the null map is what it
+            // normalizes - a prior non-creating lookup would have done that already and hidden the path.
+            var nullMap = JsonConvert.DeserializeObject<ZoneScalingProfile>("{\"WcidOverrides\": null}");
+            var created = nullMap.VariantForWcid(12345, create: true);
+            Assert.IsNotNull(created);
+            Assert.IsNotNull(nullMap.WcidOverrides, "create must materialize the map");
+            Assert.AreSame(created, nullMap.VariantForWcid(12345), "a later non-creating lookup must return the stored bucket");
+            Assert.AreEqual(1, nullMap.WcidOverrides.Count);
+
+            var nullBucket = JsonConvert.DeserializeObject<ZoneScalingProfile>("{\"WcidOverrides\": {\"5\": null}}");
+            var replaced = nullBucket.VariantForWcid(5, create: true);
+            Assert.IsNotNull(replaced);
+            Assert.AreSame(replaced, nullBucket.VariantForWcid(5), "the null bucket must be replaced in the map, not just returned");
+            Assert.AreSame(replaced, nullBucket.WcidOverrides[5]);
         }
 
         [TestMethod]
