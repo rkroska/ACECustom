@@ -1915,6 +1915,44 @@ namespace ACE.Server.Command.Handlers
         }
 
 
+        /// <summary>Launch-day readout (2026-08-23): how Max Health is composed, incl. the Zone Control cantrip
+        /// cache (Fortify Vitals / Max Health Pct) and the worn GearMaxHealth sum. Diagnoses "helm on/off".</summary>
+        [CommandHandler("zcvitals", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows the Max Health composition incl. Zone Control cantrip contributions")]
+        public static void HandleZcVitals(Session session, params string[] parameters)
+        {
+            var p = session.Player;
+            var hp = p.Health;
+            void Msg(string m) => session.Network.EnqueueSend(new GameMessageSystemChat(m, ChatMessageType.Broadcast));
+            var formula = AttributeFormula.GetFormula(p, hp.Vital, true);
+            var fortify = p.GetZoneModifierMax(ACE.Server.Managers.ZoneControl.ZoneModifiers.FortifyVitalsPct);
+            var pctHp = p.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.PctMaxHealthPct);
+            var worn = 0; var wornWithRecord = 0; var rawFortifyMax = 0; var rawPct = 0; var rawGearHp = 0;
+            foreach (var wo in p.EquippedObjects.Values)
+            {
+                worn++;
+                if (ACE.Server.Managers.ZoneControl.ZoneStatResolver.HasRecord(wo)) wornWithRecord++;
+                rawFortifyMax = Math.Max(rawFortifyMax, wo.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.FortifyVitalsPct) ?? 0);
+                rawPct += wo.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.PctMaxHealthPct) ?? 0;
+                rawGearHp += wo.GearMaxHealth ?? 0;
+            }
+            Msg($"Max Health {hp.MaxValue:N0} = (starting {hp.StartingValue:N0} + formula {formula:N0} + enl {p.Enlightenment * 2:N0} + ranks {hp.Ranks:N0} + gear {p.GetGearMaxHealth():N0}) x ench {p.EnchantmentManager.GetVitalMod_Multiplier(hp):0.###} x fortify (1 + ({fortify} + {pctHp}) / 100) x vitae {p.Vitae:0.###} + additives {p.EnchantmentManager.GetVitalMod_Additives(hp):N0}");
+            Msg($"Worn: {worn} items, {wornWithRecord} with a ZcModifiers record. Raw on items: Fortify max {rawFortifyMax}, Max Health Pct sum {rawPct}, GearMaxHealth sum {rawGearHp:N0}. Cache says: Fortify {fortify}, Pct {pctHp}, GearMaxHealth {p.GetGearMaxHealth():N0}.");
+            // the cache applies two rules the raw item sums do not: zone-lock suppression (everything reads 0) and the
+            // gear cap on cap-line props (the cache may be LOWER than the raw sum, never higher)
+            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(p))
+                Msg("Zone lock: worn power is SUPPRESSED here (outside an authored zone) - the cache reads 0 by design.");
+            else if (rawFortifyMax != fortify || pctHp > rawPct)
+                Msg("MISMATCH: the cantrip cache does not match what is worn - equip/dequip hook missed (report this).");
+            else if (pctHp < rawPct)
+                Msg($"Max Health Pct clamped by the gear cap: raw {rawPct} -> effective {pctHp}.");
+
+            // Regeneration (key 46, bracers): prop 50231 = FLAT pct of max vital added per natural tick (2026-08-23)
+            var regenSpecial = p.GetZoneModifierMax(ACE.Server.Managers.ZoneControl.ZoneModifiers.RegenSpecialMult);
+            var augRegen = 1.0f + p.AugmentationFasterRegen;
+            var ench = p.EnchantmentManager.GetRegenerationMod(hp);
+            Msg($"Health regen per tick = base {hp.RegenRate:0.###} x attribute mod x stance mod x enchant {ench:0.##} x Faster Regen aug {augRegen:0.##} (x zone tuner) + bracers flat {regenSpecial} pct of max = +{hp.MaxValue * regenSpecial / 100.0:N0}.");
+        }
+
         [CommandHandler("lbworldobjs", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows the current landblock's world objects")]
         public static void HandleLBWorldObjects(Session session, params string[] parameters)
         {

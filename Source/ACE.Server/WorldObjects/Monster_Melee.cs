@@ -447,8 +447,37 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public virtual BaseDamageMod GetBaseDamage(PropertiesBodyPart attackPart)
         {
+            // Zone Control offense: a governed monster's zone profile can REPLACE its attack damage.
+            // Precedence: attack_damage/attack_variance scalar > per-part override > weenie (weapon OR body part)
+            // — the blanket Offense-tab stats are the always-live tuning lever; per-part values are a refined
+            // baseline that only shows through where the blanket stat is unset (owner ruling 2026-08-02).
+            // This is the single choke point for melee, missile and weapon damage, so one number covers them all.
+            var zoneProfile = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this);
+            double? zoneMax = null, zoneVar = null;
+            if (zoneProfile != null)
+            {
+                var zonePart = FindZoneBodyPart(zoneProfile, attackPart);
+                if (zoneProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.AttackDamage))
+                    zoneMax = zoneProfile.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.AttackDamage);
+                else
+                    zoneMax = zonePart?.Damage;
+                if (zoneProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.AttackVariance))
+                    zoneVar = zoneProfile.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.AttackVariance);
+                else
+                    zoneVar = zonePart?.Variance;
+
+                // variance is a fraction of the max hit (min = max * (1 - v)); out-of-range values
+                // produce negative rolls, so clamp 0..1 exactly like the spell_variance path does
+                if (zoneVar.HasValue)
+                    zoneVar = Math.Clamp(zoneVar.Value, 0.0, 1.0);
+
+                // a negative authored attack_damage would roll negative hits (heals) - floor at 0
+                if (zoneMax.HasValue)
+                    zoneMax = Math.Max(zoneMax.Value, 0.0);
+            }
+
             if (CurrentAttack == CombatType.Missile && GetMissileAmmo() != null)
-                return GetMissileDamage();
+                return ApplyZoneAttackDamage(GetMissileDamage(), zoneMax, zoneVar);
 
             // use weapon damage for every attack?
             var weapon = GetEquippedMeleeWeapon();
@@ -456,14 +485,44 @@ namespace ACE.Server.WorldObjects
             {
                 var weaponDamage = weapon.GetDamageMod(this);
                 //Console.WriteLine($"{Name} using weapon damage: {weaponDamage}");
-                return weaponDamage;
+                return ApplyZoneAttackDamage(weaponDamage, zoneMax, zoneVar);
             }
 
-            var maxDamage = attackPart.DVal;
-            var variance = attackPart.DVar;
+            var maxDamage = zoneMax.HasValue ? (int)Math.Round(zoneMax.Value) : attackPart.DVal;
+            var variance = zoneVar.HasValue ? (float)zoneVar.Value : attackPart.DVar;
 
             var baseDamage = new BaseDamage(maxDamage, variance);
-            return new BaseDamageMod(baseDamage);
+            var baseDamageMod = new BaseDamageMod(baseDamage);
+
+            return baseDamageMod;
+        }
+
+        /// <summary>Overwrites a weapon/missile BaseDamageMod's underlying max damage / variance with the zone
+        /// values (the BaseDamage instance is freshly created per call, so mutating it is safe). Enchantment /
+        /// launcher mods on the BaseDamageMod itself still apply on top.</summary>
+        private static BaseDamageMod ApplyZoneAttackDamage(BaseDamageMod mod, double? zoneMax, double? zoneVar)
+        {
+            if (mod?.BaseDamage != null)
+            {
+                if (zoneMax.HasValue) mod.BaseDamage.MaxDamage = (int)Math.Round(zoneMax.Value);
+                if (zoneVar.HasValue) mod.BaseDamage.Variance = (float)zoneVar.Value;
+            }
+            return mod;
+        }
+
+        /// <summary>Resolves the zone per-part override for a raw PropertiesBodyPart by reference (the callers
+        /// only have the value, not the CombatBodyPart key; collections are &lt;= ~10 entries so the scan is cheap).</summary>
+        private ACE.Server.Managers.ZoneScaling.ZoneBodyPart FindZoneBodyPart(
+            ACE.Server.Managers.ZoneScaling.EvaluatedProfile zoneProfile, PropertiesBodyPart attackPart)
+        {
+            if (zoneProfile == null || !zoneProfile.HasBodyParts || attackPart == null || Biota.PropertiesBodyPart == null)
+                return null;
+
+            foreach (var kv in Biota.PropertiesBodyPart)
+                if (ReferenceEquals(kv.Value, attackPart))
+                    return zoneProfile.GetBodyPart((int)kv.Key);
+
+            return null;
         }
 
         /// <summary>
@@ -638,10 +697,19 @@ namespace ACE.Server.WorldObjects
         {
             List<KeyValuePair<CombatBodyPart, PropertiesBodyPart>> parts = null;
 
+            // Zone Control: per-part damage overrides also gate WHICH parts attack — an override of 0 silences
+            // a part, an override > 0 lets a normally non-attacking part swing (weenie DVal used when unset).
+            var zoneProfile = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this);
+            int EffectiveDVal(CombatBodyPart key, int baseDVal)
+            {
+                var ovr = zoneProfile?.GetBodyPart((int)key)?.Damage;
+                return ovr.HasValue ? (int)Math.Round(ovr.Value) : baseDVal;
+            }
+
             // todo: speed up key lookup?
             if (attackHook != null)
             {
-                parts = Biota.PropertiesBodyPart.Where(b => (uint)b.Key == attackHook.AttackCone.PartIndex && b.Value.DVal > 0).ToList();
+                parts = Biota.PropertiesBodyPart.Where(b => (uint)b.Key == attackHook.AttackCone.PartIndex && EffectiveDVal(b.Key, b.Value.DVal) > 0).ToList();
             }
             else if (motionCommand >= MotionCommand.SpecialAttack1 && motionCommand <= MotionCommand.SpecialAttack3)
             {
@@ -652,7 +720,7 @@ namespace ACE.Server.WorldObjects
             // added parts.Count check for monsters wielding weapons -- should we be getting a body part here?
             if (parts == null || parts.Count == 0)
                 //parts = Biota.BiotaPropertiesBodyPart.Where(b => b.DVal != 0 && b.BH != 0).ToList();
-                parts = Biota.PropertiesBodyPart.Where(b => b.Value.DVal != 0 && b.Key != CombatBodyPart.Breath).ToList();
+                parts = Biota.PropertiesBodyPart.Where(b => EffectiveDVal(b.Key, b.Value.DVal) != 0 && b.Key != CombatBodyPart.Breath).ToList();
 
             if (parts.Count == 0)
             {

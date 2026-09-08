@@ -77,9 +77,9 @@ namespace ACE.Server.Factories
 
         private static void MutateAetheria(WorldObject wo, int tier)
         {
-            if (tier == 10)
+            if (tier >= 10)
             {
-                wo.ItemMaxLevel = AetheriaChance.Roll_ItemMaxLevel(tier);
+                wo.ItemMaxLevel = AetheriaChance.Roll_ItemMaxLevel(Math.Min(tier, 10));   // authored through T10; T11+ clamps to it
 
             }
             else
@@ -140,7 +140,7 @@ namespace ACE.Server.Factories
             wo.ItemMaxLevel = AetheriaChance.Roll_ItemMaxLevel(profile);
             wo.IconOverlayId = IconOverlay_ItemMaxLevel[wo.ItemMaxLevel.Value - 1];
 
-            if (profile.Tier == 10 && wo.ItemMaxLevel >= 6)
+            if (profile.Tier >= 10 && wo.ItemMaxLevel >= 6)
             {
                 int roll = ThreadSafeRandom.Next(0, 2);
                 int rating = ThreadSafeRandom.Next(1, 4);

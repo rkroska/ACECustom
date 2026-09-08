@@ -940,7 +940,7 @@ namespace ACE.Server.Factories
             var materialMod = LootTables.getMaterialValueModifier(wo);
             var gemMod = LootTables.getGemMaterialValueModifier(wo);
 
-            var rngRange = itemValue_RandomRange[tier - 1];
+            var rngRange = TierTable.Entry(itemValue_RandomRange, tier);
 
             var rng = ThreadSafeRandom.Next(rngRange.min, rngRange.max);
 
@@ -979,7 +979,7 @@ namespace ACE.Server.Factories
             var materialMod = LootTables.getMaterialValueModifier(wo);
             var gemMod = LootTables.getGemMaterialValueModifier(wo);
 
-            var rngRange = itemValue_RandomRange[tier - 1];
+            var rngRange = TierTable.Entry(itemValue_RandomRange, tier);
 
             var minValue = (int)(rngRange.min * gemMod * materialMod * Math.Ceiling(tier / 2.0f));
             var maxValue = (int)(rngRange.max * gemMod * materialMod * Math.Ceiling(tier / 2.0f));
@@ -1373,7 +1373,7 @@ namespace ACE.Server.Factories
         {
             var tier = Math.Clamp(profile.Tier, 1, 10);
 
-            var tierRange = coinRanges[tier - 1];
+            var tierRange = TierTable.Entry(coinRanges, tier);
 
             // flat rng range, according to magloot corpse logs
             var rng = ThreadSafeRandom.Next(tierRange.min, tierRange.max);

@@ -185,9 +185,10 @@ namespace ACE.Server.WorldObjects.Managers
                 // should be update the StatModVal here?
 
                 var duration = spell.Duration;
-                if (caster is Player player && (player.AugmentationIncreasedSpellDuration > 0 || (player.LuminanceAugmentSpellDurationCount ?? 0) > 0) && spell.DotDuration == 0)
+                if (caster is Player player && (player.AugmentationIncreasedSpellDuration > 0 || (player.LuminanceAugmentSpellDurationCount ?? 0) > 0 || player.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.SpellDurationLevels) > 0) && spell.DotDuration == 0)
                 {
-                    duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.05f);
+                    duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.05f)
+                        + (player.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.SpellDurationLevels) * 0.2f);
                 }
 
                 var timeRemaining = refreshSpell.Duration + refreshSpell.StartTime;
@@ -231,14 +232,16 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 entry.Duration = spell.Duration;
 
-                if (caster is Player player && !spell.IsFellowshipSpell && (player.AugmentationIncreasedSpellDuration > 0 || (player.LuminanceAugmentSpellDurationCount ?? 0) > 0) && spell.DotDuration == 0)
-                { 
-                    entry.Duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.05f);
+                if (caster is Player player && !spell.IsFellowshipSpell && (player.AugmentationIncreasedSpellDuration > 0 || (player.LuminanceAugmentSpellDurationCount ?? 0) > 0 || player.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.SpellDurationLevels) > 0) && spell.DotDuration == 0)
+                {
+                    entry.Duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.05f)
+                        + (player.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.SpellDurationLevels) * 0.2f);
                     //entry.Duration *= (caster as Player).LuminanceAugmentSpellDurationCount ?? 0 * 0.001f;
                 }
-                else if (caster is Player dotPlayer && (dotPlayer.AugmentationIncreasedSpellDuration > 0 || (dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) > 0) && spell.DotDuration > 0)
+                else if (caster is Player dotPlayer && (dotPlayer.AugmentationIncreasedSpellDuration > 0 || (dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) > 0 || dotPlayer.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.SpellDurationLevels) > 0) && spell.DotDuration > 0)
                 {
-                    entry.Duration *= 1.0f + (dotPlayer.AugmentationIncreasedSpellDuration * 0.2f) + ((dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) * ServerConfig.void_dot_duration_aug_effect.Value);
+                    entry.Duration *= 1.0f + (dotPlayer.AugmentationIncreasedSpellDuration * 0.2f) + ((dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) * ServerConfig.void_dot_duration_aug_effect.Value)
+                        + (dotPlayer.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.SpellDurationLevels) * 0.2f);
                 }
             }
             else
@@ -303,6 +306,17 @@ namespace ACE.Server.WorldObjects.Managers
                     {
                         entry.StatModValue += (player.EffectiveItemAugCount) * 0.01f;
                     }
+                    // 168 = Heart Seeker (WeaponAuraOffense), 169 = Defender.
+                    //
+                    // INTENTIONAL - DO NOT "FIX" THE PRECEDENCE (owner ruling 2026-08-21).
+                    // This parses as `168 || (169 && selfCastEligible)`: Heart Seeker gets the
+                    // item-aug bonus UNCONDITIONALLY. That is load-bearing: melee attack skill
+                    // ~= skill x (1.2 + 0.001 x itemAugs) ~= 44-64k at endgame, and 200+ custom
+                    // mobs carry MeleeDefense 3k-99k tuned against exactly that scale (60k
+                    // Thrungi, 65k Sagittarii, 99.5k Warren mobs...). Adding parentheses drops
+                    // melee attack ~4.5x and makes all of that content unhittable - it is
+                    // melee-only-hittable BY this mechanism (casters have no aura equivalent
+                    // and bounce off those mobs' 50-100k MagicDefense by design).
                     else if (spell.StatModKey == 168 || spell.StatModKey == 169 && selfCastEligible)
                     {
                         entry.StatModValue += GetItemAugPercentageRating(player.EffectiveItemAugCount); //(player.EffectiveItemAugCount) * 0.01f;
@@ -1313,6 +1327,26 @@ namespace ACE.Server.WorldObjects.Managers
             return modifier;
         }
 
+        /// <summary>
+        /// Regen mod with specific spell ids excluded BEFORE top-layer selection (a retail regen buff underneath
+        /// an excluded one still applies). Zone Control Suppression (Prodigal block) calls this per vital tick.
+        /// DELIBERATELY non-virtual and uncached: EnchantmentManagerWithCaching's regen cache only invalidates on
+        /// enchantment change, not movement, so a cached zone-dependent value would go stale at zone borders.
+        /// </summary>
+        public float GetRegenerationMod(CreatureVital vital, HashSet<int> excludeSpellIds)
+        {
+            var typeFlags = EnchantmentTypeFlags.Float | EnchantmentTypeFlags.SingleStat | EnchantmentTypeFlags.Multiplicative;
+            var vitalKey = GetVitalRateKey(vital);
+            var enchantments = WorldObject.Biota.PropertiesEnchantmentRegistry.GetEnchantmentsTopLayerByStatModType(
+                typeFlags, (uint)vitalKey, WorldObject.BiotaDatabaseLock, SpellSet.SetSpells, excludeSpellIds);
+
+            var modifier = 1.0f;
+            foreach (var enchantment in enchantments)
+                modifier *= enchantment.StatModValue;
+
+            return modifier;
+        }
+
 
         /// <summary>
         /// Returns the weapon damage bonus, ie. Blood Drinker
@@ -1654,7 +1688,8 @@ namespace ACE.Server.WorldObjects.Managers
             var healAmount = creature.UpdateVitalDelta(creature.Health, (int)Math.Round(tickAmountTotal));
             creature.DamageHistory.OnHeal((uint)healAmount);
 
-            if (creature is Player player)
+            // 0-point ticks (full HP) are pure spam - say nothing (owner 2026-08-23)
+            if (healAmount > 0 && creature is Player player)
                 player.SendMessage($"You receive {healAmount} points of periodic healing.", ServerConfig.aetheria_heal_color.Value ? ChatMessageType.Broadcast : ChatMessageType.Combat);
         }
 
@@ -1767,7 +1802,7 @@ namespace ACE.Server.WorldObjects.Managers
                 var damager = kvp.Key;
                 var amount = kvp.Value;
 
-                if (creature.Invincible)
+                if (creature.Invincible || creature is Player { ZcDamageImmune: true })   // incl. Zone Control Cheat Death window
                     amount = 0;
 
                 var damageSourcePlayer = damager as Player;

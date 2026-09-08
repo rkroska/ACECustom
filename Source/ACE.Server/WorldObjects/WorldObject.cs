@@ -187,6 +187,13 @@ namespace ACE.Server.WorldObjects
                 PhysicsObj.Velocity = new Vector3(0, 0, 0.5f);
         }
 
+        /// <summary>
+        /// Transient (never persisted): best-effort cosmetic spawns (e.g. Zone Control boundary lanterns at a
+        /// water edge) set this so a NoValidPosition placement failure is skipped quietly instead of emitting a
+        /// [SpawnDiag] WARN. Only silences the log — the object is still destroyed/skipped on failure as before.
+        /// </summary>
+        public bool SuppressSpawnPlacementDiag;
+
         public bool AddPhysicsObj(int? VariationId)
         {
             if (PhysicsObj.CurCell != null)
@@ -200,6 +207,9 @@ namespace ACE.Server.WorldObjects
             var cell = LScape.get_landcell(Location.Cell, VariationId);
             if (cell == null)
             {
+                if (ServerConfig.spawn_diag_verbose.Value)
+                    log.Warn($"[SpawnDiag] AddPhysicsObj: get_landcell returned NULL for 0x{Guid}:{Name} " +
+                         $"[{WeenieClassId}] cell={Location.Cell:X8} v={VariationId?.ToString() ?? "null"} locV={Location.Variation?.ToString() ?? "null"}");
                 PhysicsObj.DestroyObject();
                 PhysicsObj = null;
                 return false;
@@ -220,9 +230,13 @@ namespace ACE.Server.WorldObjects
 
             if (!success || PhysicsObj.CurCell == null)
             {
+                if (ServerConfig.spawn_diag_verbose.Value && !SuppressSpawnPlacementDiag)
+                    log.Warn($"[SpawnDiag] AddPhysicsObj: enter_world FAILED for 0x{Guid}:{Name} [{WeenieClassId}] " +
+                         $"@ cell {cell.ID:X8} pos {Location.Pos} rot {Location.Rotation} v={VariationId?.ToString() ?? "null"} " +
+                         $"locV={Location.Variation?.ToString() ?? "null"} cellLbVar={(cell.CurLandblock?.VariationId)?.ToString() ?? "null"} " +
+                         $"success={success} curCellNull={PhysicsObj.CurCell == null} sposErr={PhysicsObj.LastEnterWorldError} SetupID={SetupTableId:X8}");
                 PhysicsObj.DestroyObject();
                 PhysicsObj = null;
-                //Console.WriteLine($"AddPhysicsObj: failure: {Name} @ {cell.ID.ToString("X8")} - {Location.Pos} - {Location.Rotation} - lv: {Location.Variation}, v: {VariationId} - SetupID: {SetupTableId.ToString("X8")}, MTableID: {MotionTableId.ToString("X8")}");
                 return false;
             }
 

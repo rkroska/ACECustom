@@ -13,6 +13,7 @@ using ACE.Server.Managers;
 using ACE.Server.Network.Enum;
 using ACE.Server.WorldObjects;
 using ACE.Server.WorldObjects.Entity;
+using ZoneStatResolver = ACE.Server.Managers.ZoneControl.ZoneStatResolver;
 
 namespace ACE.Server.Network.Structure
 {
@@ -77,8 +78,15 @@ namespace ACE.Server.Network.Structure
             //Console.WriteLine("Appraise: " + wo.Guid);
             Success = success;
 
-            BuildProperties(wo);
+            BuildProperties(wo, examiner);
             BuildSpells(wo);
+
+            // Live Stat Resolution (owner 2026-08-22, plan 3b): a piece with a ZcModifiers record is
+            // resolved from its grades against the LIVE ladder for the RESPONSE COPY only - wo is
+            // never written, never marked dirty (equip is the only re-stamp site: ApplyIfStale).
+            var zcResolved = ZoneStatResolver.Compute(wo);
+            if (zcResolved != null)
+                SubstituteZoneResolvedInts(wo, zcResolved);
 
             // Help us make sure the item identify properly
             NPCLooksLikeObject = wo.GetProperty(PropertyBool.NpcLooksLikeObject) ?? false;
@@ -121,6 +129,11 @@ namespace ACE.Server.Network.Structure
 
             if (wo.Damage != null && !(wo is Clothing) || wo is MeleeWeapon || wo is Missile || wo is MissileLauncher || wo is Ammunition || wo is Caster)
                 BuildWeapon(wo, examiner);
+
+            // Owner 2026-08-22: Zone Cantrip lines belong in the Property Details section, not
+            // adrift in the description block. Runs here so downstream LongDesc edits see the same
+            // shape they always have (a block already pinned to the top).
+            PromoteZoneModifierLines(zcResolved, wo, examiner);
 
             // TODO: Resolve this issue a better way?
             // Because of the way ACE handles default base values in recipe system (or rather the lack thereof)
@@ -258,6 +271,45 @@ namespace ACE.Server.Network.Structure
                 }
 
                 PropertiesInt.Remove(PropertyInt.EncumbranceVal);
+            }
+
+            // Weapon aug-scaling: the EXAMINER-projected value, so a drop can be evaluated without
+            // equipping it (owner 2026-08-01). Computed from the VIEWER's current item augs — the
+            // same resolve combat uses — so re-examining after buying augs refreshes it. Appraisal
+            // output only, never persisted; only shows while the system is enabled and the item is
+            // stamped (GetFlatBonus returns 0 otherwise). While WIELDED the green damage line
+            // already includes the term (WeaponProfile), so the projection is for the unwielded case.
+            if (examiner != null && wo.Wielder == null)
+            {
+                var projected = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFlatBonus(wo, examiner);
+                var floor = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFloorBonus(wo);
+                if (projected > floor)
+                {
+                    // The unwielded damage line already shows the wield-FLOOR value (an honest
+                    // minimum for any hands), so this line is the examiner's bonus ABOVE that
+                    // floor — hidden entirely for a player sitting exactly at the wield req.
+                    var msg = $"Bonus Damage to weapon while equipped by you: +{(int)(projected - floor):N0}";
+
+                    // Provenance ("Dropped by:" / "Location:") stays the very last block (owner
+                    // 2026-08-01) - insert the per-viewer projection ABOVE it, not after. Legacy
+                    // single-line formats ("Dropped by X in...", "Dropped in the...") still match.
+                    if (PropertiesString.TryGetValue(PropertyString.LongDesc, out var ldCur) && !string.IsNullOrEmpty(ldCur))
+                    {
+                        var provIdx = ldCur.IndexOf("Dropped by", StringComparison.Ordinal);
+                        if (provIdx < 0)
+                            provIdx = ldCur.IndexOf("Dropped in ", StringComparison.Ordinal);
+                        if (provIdx < 0)
+                            provIdx = ldCur.IndexOf("Created by", StringComparison.Ordinal);   // forged test items
+                        if (provIdx < 0)
+                            provIdx = ldCur.IndexOf("Location:", StringComparison.Ordinal);
+                        if (provIdx >= 0)
+                            PropertiesString[PropertyString.LongDesc] = ldCur.Insert(provIdx, $"{msg}\n\n");
+                        else
+                            PropertiesString[PropertyString.LongDesc] = ldCur + $"\n\n{msg}";
+                    }
+                    else
+                        PropertiesString[PropertyString.LongDesc] = msg;
+                }
             }
 
             // Pet Bonding System - display bond info on PetDevice appraisal
@@ -562,27 +614,8 @@ namespace ACE.Server.Network.Structure
             {
                 if ((dec & 4) != 0) // AppraisalLongDescDecorations.AppendGemInfo
                 {
-                    if (wo.GemType.HasValue && wo.GemCount.HasValue)
-                    {
-                        var gemName = System.Text.RegularExpressions.Regex.Replace(wo.GemType.Value.ToString(), "(\\B[A-Z])", " $1");
-                        if (wo.GemCount > 1)
-                        {
-                            if (gemName.EndsWith("y"))
-                                gemName = gemName.Substring(0, gemName.Length - 1) + "ies";
-                            else if (gemName.EndsWith("x"))
-                                gemName += "es";
-                            else
-                                gemName += "s";
-                        }
-
-                        var gemString = $", set with {wo.GemCount} {gemName}";
-                        if (PropertiesString.ContainsKey(PropertyString.LongDesc))
-                            PropertiesString[PropertyString.LongDesc] += gemString;
-                        else
-                            PropertiesString[PropertyString.LongDesc] = gemString.TrimStart(',', ' ');
-                    }
-
-                    // Remove the AppendGemInfo flag so the client doesn't double-append
+                    // Gem-socket "set with N <gem>" label suppressed globally (owner 2026-07-14): don't
+                    // append it server-side, but still clear the flag so the client doesn't append it either.
                     dec &= ~4;
                     if (dec == 0)
                         PropertiesInt.Remove(PropertyInt.AppraisalLongDescDecoration);
@@ -614,7 +647,7 @@ namespace ACE.Server.Network.Structure
             BuildFlags();
         }
 
-        private void BuildProperties(WorldObject wo)
+        private void BuildProperties(WorldObject wo, Player examiner = null)
         {
             PropertiesInt = wo.GetAllPropertyInt().Where(x => AssessmentProperties.PropertiesInt.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
             PropertiesInt64 = wo.GetAllPropertyInt64().Where(x => AssessmentProperties.PropertiesInt64.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
@@ -623,6 +656,31 @@ namespace ACE.Server.Network.Structure
             PropertiesString = wo.GetAllPropertyString().Where(x => AssessmentProperties.PropertiesString.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
             PropertiesDID = wo.GetAllPropertyDataId().Where(x => AssessmentProperties.PropertiesDataId.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
             PropertiesIID = wo.GetAllPropertyInstanceId().Where(x => AssessmentProperties.PropertiesInstanceId.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+
+            // Int64Stat is a server-side extension the client has no requirement text for — it
+            // renders the wield-requirement rows as a blank block (between the native Melee Defense
+            // and Mana Conversion sections on casters). Enforcement reads the biota, not appraisal;
+            // the authored "Wield requires: N Item Augmentations" line carries the requirement.
+            if (PropertiesInt.TryGetValue(PropertyInt.WieldRequirements, out var wieldReqType) &&
+                wieldReqType == (int)WieldRequirement.Int64Stat)
+            {
+                PropertiesInt.Remove(PropertyInt.WieldRequirements);
+                PropertiesInt.Remove(PropertyInt.WieldSkillType);
+                PropertiesInt.Remove(PropertyInt.WieldDifficulty);
+            }
+
+            // Paragon-stamped items (recipe + the ZoneLootMutator pre-Paragon card) carry
+            // ItemMaxLevel/ItemBaseXp/ItemTotalXp but no ItemXpStyle, and the client can't compose
+            // its item-level section without the style — it renders a blank block instead (between
+            // the native Melee Defense and Mana Conversion sections on casters). Real leveling
+            // items (cloaks, aetheria) always set ItemXpStyle and keep their display.
+            if (PropertiesInt.ContainsKey(PropertyInt.ItemMaxLevel) &&
+                !PropertiesInt.ContainsKey(PropertyInt.ItemXpStyle))
+            {
+                PropertiesInt.Remove(PropertyInt.ItemMaxLevel);
+                PropertiesInt64.Remove(PropertyInt64.ItemBaseXp);
+                PropertiesInt64.Remove(PropertyInt64.ItemTotalXp);
+            }
 
             if (wo is Player player)
             {
@@ -664,10 +722,10 @@ namespace ACE.Server.Network.Structure
                     PropertiesString[PropertyString.Fellowship] = player.Fellowship.FellowshipName;
             }
 
-            AddPropertyEnchantments(wo);
+            AddPropertyEnchantments(wo, examiner);
         }
 
-        private void AddPropertyEnchantments(WorldObject wo)
+        private void AddPropertyEnchantments(WorldObject wo, Player examiner = null)
         {
             if (wo == null) return;
 
@@ -710,11 +768,25 @@ namespace ACE.Server.Network.Structure
 
             if (PropertiesFloat.ContainsKey(PropertyFloat.ElementalDamageMod))
             {
+                // Weapon aug-scaling: show the RESOLVED elemental modifier, not the authored one —
+                // the same resolver combat uses, with the same replace semantics. WIELDED reads
+                // the wielder's augs; UNWIELDED reads the examiner's, so a drop in a pack reads as
+                // what it would do in YOUR hands. Without this the panel would show every tier of
+                // caster the same number, which is exactly the confusion the launcher lane hit on
+                // 2026-08-06 (two different-tier bows appraising identically, reasonably read as
+                // "these weapons are identical").
+                var casterHolder = (wo.Wielder as Player) ?? examiner;
                 var enchantmentBonus = ResistMaskHelper.GetElementalDamageBonus(wo);
+
+                if (ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetCasterElementalMod(wo, casterHolder, out var gradedElemMod))
+                    // the same composition combat uses: the graded mod MULTIPLIES the aura, it does not add to it
+                    PropertiesFloat[PropertyFloat.ElementalDamageMod] = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.ComposeCasterModifier(
+                        gradedElemMod, enchantmentBonus, ACE.Server.Managers.WeaponScaling.WeaponScalingManager.Current.CasterAuraRescale);
+                else if (enchantmentBonus != 0)
+                    PropertiesFloat[PropertyFloat.ElementalDamageMod] += enchantmentBonus;
 
                 if (enchantmentBonus != 0)
                 {
-                    PropertiesFloat[PropertyFloat.ElementalDamageMod] += enchantmentBonus;
 
                     ResistHighlight = ResistMaskHelper.GetHighlightMask(wo);
                     ResistColor = ResistMaskHelper.GetColorMask(wo);
@@ -746,7 +818,18 @@ namespace ACE.Server.Network.Structure
             if (wo.SpellDID.HasValue)
                 SpellBook.Add(wo.SpellDID.Value);
 
-            if (wo.ProcSpell.HasValue)
+            // Zone Control "Cast on Strike" withholds its spell id from the client (owner 2026-08-27).
+            // The client renders a SpellBook entry's name from its own DAT, so handing it the id would
+            // print "Nether Arc I" beside our own Property Details line that deliberately says "Nether
+            // Arc" - the level marker reads as a weak spell, which the card is not.
+            //
+            // GATED ON PROP 9058, NOT ON THE SPELL ID. A spell-id test would also swallow the ~11,700
+            // live items carrying player-crafted Ring Glyph procs of the very same spells, rewriting
+            // appraisal on gear we never touched. 9058 is stamped by this card and by nothing else.
+            var zcArcDmg = wo.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcArcDamagePropId);
+            var zcHasProcCard = zcArcDmg.HasValue && zcArcDmg.Value > 0;
+
+            if (wo.ProcSpell.HasValue && !zcHasProcCard)
                 SpellBook.Add(wo.ProcSpell.Value);
 
             var woSpellDID = wo.SpellDID;   // prevent recursive lock
@@ -814,6 +897,169 @@ namespace ACE.Server.Network.Structure
                     }
                 }
             }
+        }
+
+        // The stored per-line marker. The VALUE is frozen plumbing - NEVER change the string: it is
+        // baked into live items' LongDesc and four readers key on the exact string (this promoter,
+        // the T11 whitelist, ladder diag/migrate). It is stripped before display, so players never
+        // see it. Only the const NAME followed the cantrip -> modifier rename (2026-08-28).
+        private const string LegacyModifierMarker = "Zone Cantrip:";
+        // The section header players DO see. "Cantrips:" -> "Modifiers:" (owner 2026-08-28: the
+        // lines are flat stat bonuses, not cantrips - the retail word was a misnomer).
+        private const string ModifierSectionHeader = "Modifiers:";
+        private const string WeaponDetailsHeader = "Property Details:";
+
+        /// <summary>
+        /// Cantrip lines are baked into wo.LongDesc at stamp time (ZoneModifiers.Stamp), so on
+        /// armor / clothing / shields / jewelry they render as raw description text - none of those
+        /// build a details section, only BuildWeapon does. Owner 2026-08-22: they get their own
+        /// "Cantrips:" section. Creature Augmentation used to be lifted in here as a special case
+        /// beside them; the fixed gear base that stamped that line was deleted the same day, so
+        /// Creature Augs arrives as an ordinary "Zone Cantrip:" line (key 35) like the other augs.
+        ///
+        /// Lifts them out of the APPRAISAL copy only - wo.LongDesc, the stamped source of truth,
+        /// is never touched, so nothing is re-rolled and existing drops re-render correctly on the
+        /// next appraise. Bullets stay in STAMP ORDER (owner: no sorting - two identical pieces
+        /// must read identically). The "Zone Cantrip:" prefix is a MARKER, not decoration -
+        /// FinalizeT11LongDesc's whitelist deletes any line that lacks it - so it stays in the
+        /// stored text and is dropped from the render only.
+        ///
+        /// Weapons carry their own "Property Details:" block pinned to the top; the cantrip group
+        /// becomes a SEPARATE section right after it, never folded in. Armor has no other details
+        /// entries, so it gets "Cantrips:" alone rather than an empty outer header (owner ruling).
+        /// </summary>
+        /// <summary>
+        /// Live Stat Resolution (plan 3b, READ-ONLY): swap the response copy's int props for the values
+        /// the record resolves to against the live ladder. Only keys the client is sent anyway
+        /// (AssessmentProperties - the retail Gear* ratings) are substituted; the 502xx custom block is
+        /// not an assessment property today and stays off the wire exactly as before. Armor Level is
+        /// carried to the client as PropertyInt.ArmorLevel (ArmorProfile holds only the per-damage-type
+        /// mods); BuildProperties already added the enchantment armor mod on top of the stamped base,
+        /// so the same mod goes on top of the resolved base. wo is never touched.
+        /// </summary>
+        private void SubstituteZoneResolvedInts(WorldObject wo, ZoneStatResolver.Resolved r)
+        {
+            // Core four -> Ratings (resolved). A Gear* prop that a CANTRIP LINE produced is REMOVED from the
+            // Ratings copy instead (owner 2026-08-23: it showed twice - once in the client's Ratings, once
+            // under Cantrips). Display only: the prop stays on the item, combat and character totals read it
+            // as before. Gated on the record, so pre-T11 gear never enters this path.
+            var lineProps = new HashSet<PropertyInt>();
+            foreach (var line in r.Lines)
+                if (line.Def?.Ints != null)
+                    foreach (var (propId, _) in line.Def.Ints)
+                        lineProps.Add((PropertyInt)propId);
+
+            foreach (var kv in r.Ints)
+            {
+                if (!AssessmentProperties.PropertiesInt.Contains(kv.Key))
+                    continue;
+                if (lineProps.Contains(kv.Key))
+                    PropertiesInt.Remove(kv.Key);
+                else
+                    PropertiesInt[kv.Key] = kv.Value;
+            }
+
+            if (r.ArmorLevel.HasValue && AssessmentProperties.PropertiesInt.Contains(PropertyInt.ArmorLevel))
+                PropertiesInt[PropertyInt.ArmorLevel] = r.ArmorLevel.Value + wo.EnchantmentManager.GetArmorMod();
+        }
+
+        private const string ReinforcedLineName = "Reinforced";
+
+        /// <param name="resolved">Live Stat Resolution record (null = legacy piece / weapon): when present
+        /// the bullets come from the record (record order, specials and Armor Level included, the core
+        /// four excluded - they are ratings, not cantrip lines) plus any baked Reinforced text line
+        /// (earned + frozen, never in the record). The baked "Zone Cantrip:" text is stripped either way.</param>
+        private void PromoteZoneModifierLines(ZoneStatResolver.Resolved resolved = null, WorldObject wo = null, Player examiner = null)
+        {
+            if (!PropertiesString.TryGetValue(PropertyString.LongDesc, out var ld) || string.IsNullOrEmpty(ld))
+                return;
+            if (ld.IndexOf(LegacyModifierMarker, StringComparison.Ordinal) < 0)
+                return;
+
+            var cantrips = new List<string>();
+            var reinforced = new List<string>();
+            var rest = new List<string>();
+            foreach (var raw in ld.Split('\n'))
+            {
+                var line = raw.Trim();
+                if (line.StartsWith(LegacyModifierMarker, StringComparison.Ordinal))
+                {
+                    var name = line.Substring(LegacyModifierMarker.Length).Trim();
+                    if (name.Length == 0)
+                        continue;
+                    if (resolved == null)
+                        cantrips.Add("- " + name);
+                    else if (name.StartsWith(ReinforcedLineName, StringComparison.Ordinal))
+                        reinforced.Add("- " + name);
+                }
+                else
+                    rest.Add(raw);
+            }
+
+            if (resolved != null)
+            {
+                foreach (var line in resolved.Lines)
+                {
+                    if (ZoneStatResolver.IsCoreKey(line.Record.Key))
+                        continue;
+                    cantrips.Add("- " + line.Text);
+                }
+                cantrips.AddRange(reinforced);
+            }
+
+            if (cantrips.Count == 0)
+                return;
+
+            // Armor zone lock (owner 2026-08-30, wording approved): same rule as the weapon
+            // panel - the lines keep showing full power (items are compared in town), and this
+            // pinned line reconciles that with the dormant contribution while the examiner
+            // stands outside every authored area.
+            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo)
+                && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(examiner))
+                cantrips.Insert(0, ACE.Server.Managers.ZoneControl.ZoneControlManager.ZoneLockedAppraisalLine);
+
+            // Collapse the blank runs the pulled lines leave behind: the slot-special stamp joins
+            // with a blank line, so removing one can leave three consecutive newlines.
+            var body = string.Join("\n", rest);
+            while (body.Contains("\n\n\n"))
+                body = body.Replace("\n\n\n", "\n\n");
+            body = body.Trim('\n');
+
+            var block = ModifierSectionHeader + "\n" + string.Join("\n", cantrips);
+
+            if (body.StartsWith(WeaponDetailsHeader, StringComparison.Ordinal))
+            {
+                var split = body.IndexOf("\n\n", StringComparison.Ordinal);
+                PropertiesString[PropertyString.LongDesc] = split >= 0
+                    ? body.Substring(0, split) + "\n\n" + block + body.Substring(split)
+                    : body + "\n\n" + block;
+                return;
+            }
+
+            // Non-weapon: the block goes in the USE string, not LongDesc. That is the position
+            // lever (owner 2026-08-22 - the section read too low): the client draws Use ABOVE its
+            // native sections and LongDesc BELOW them, which is why the original implementation
+            // (Ruggan, PR #327) used Use and why moving it to LongDesc pushed it under Spell
+            // Descriptions. The wand problem that forced that move does not apply here - armor,
+            // clothing, shields and jewelry have no native caster sections to sit on top of.
+            PropertiesString[PropertyString.LongDesc] = body;
+            if (string.IsNullOrEmpty(body))
+                PropertiesString.Remove(PropertyString.LongDesc);
+
+            var useParts = new List<string> { block };
+            if (PropertiesString.TryGetValue(PropertyString.Use, out var existingUse) && !string.IsNullOrWhiteSpace(existingUse))
+                useParts.Add(existingUse);
+
+            var use = string.Join("\n\n", useParts);
+
+            // Keep a break between the block and whatever the client draws next (same guard the
+            // original carried - without it the section runs straight into the following text).
+            if (PropertiesInt.ContainsKey(PropertyInt.ItemMaxLevel) ||
+                PropertiesInt.ContainsKey(PropertyInt.ItemSpellcraft) ||
+                PropertiesInt.ContainsKey(PropertyInt.WieldRequirements))
+                use += "\n";
+
+            PropertiesString[PropertyString.Use] = use;
         }
 
         private void BuildArmor(WorldObject wo)
@@ -930,7 +1176,7 @@ namespace ACE.Server.Network.Structure
             if (!Success)
                 return;
 
-            var weaponProfile = new WeaponProfile(weapon);
+            var weaponProfile = new WeaponProfile(weapon, examiner);
 
             //WeaponHighlight = WeaponMaskHelper.GetHighlightMask(weapon, wielder);
             //WeaponColor = WeaponMaskHelper.GetColorMask(weapon, wielder);
@@ -970,12 +1216,14 @@ namespace ACE.Server.Network.Structure
 
             CreatureSkill skill = examiner.GetCreatureSkill(checkSkill);
 
-            // Slayer
-            if (weapon.SlayerCreatureType.HasValue)
+            // Slayer. The forge-only all-creatures flag (PropertyBool 50052) has no species to name.
+            var slayerAll = weapon.GetProperty(PropertyBool.SlayerAllCreatures) == true;
+            if (weapon.SlayerCreatureType.HasValue || slayerAll)
             {
                 var bonus = weapon.SlayerDamageBonus ?? 1.0;
-                var rawName = weapon.SlayerCreatureType.ToString();
-                var niceName = CreatureNameRegex().Replace(rawName, " $1");
+                var niceName = slayerAll
+                    ? "All Creatures"
+                    : CreatureNameRegex().Replace(weapon.SlayerCreatureType.ToString(), " $1");
                 effectDescriptions.Add($"- {niceName} Slayer: {bonus:0.##}x Damage");
             }
 
@@ -985,6 +1233,11 @@ namespace ACE.Server.Network.Structure
                 var val = weapon.CriticalFrequency.Value;
                 effectDescriptions.Add($"- Biting Strike: +{val:P0} Crit Chance");
             }
+
+            // Cleaving (multi-target): the raw prop stores TOTAL targets (extra + 1), so raw-prop
+            // readouts look one higher than authored — this line shows the true extra-target count.
+            if (weapon.IsCleaving)
+                effectDescriptions.Add($"- Cleaving: +{weapon.CleaveTargets} Targets");
 
             // Resistance Cleaving (Fixed Resistance Modifier)
             if (weapon.ResistanceModifier.HasValue && weapon.ResistanceModifierType.HasValue)
@@ -1010,29 +1263,42 @@ namespace ACE.Server.Network.Structure
                 effectDescriptions.Add($"- Split Arrow: +{count} Targets, {val:P0} Dmg");
             }
 
-            // Crushing Blow
+            // Crushing Blow: engine crit damage = 1 + CriticalMultiplier, so the true multiplier the
+            // player actually deals is prop + 1 (a stored 1.0 = normal 2x crit).
             if (weapon.GetProperty(PropertyFloat.CriticalMultiplier) > 1.0f)
             {
-                var val = weapon.GetProperty(PropertyFloat.CriticalMultiplier);
+                var val = weapon.GetProperty(PropertyFloat.CriticalMultiplier).Value + 1.0;
                 effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
             }
 
-            // Crippling Blow
-            if (weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow))
+            // Crippling Blow - hidden for players since 2026-08-25: WorldObject.CritImbuesSuppressed
+            // makes it inert on a player's weapon, and an item panel that advertises an effect doing
+            // exactly zero is worse for trust than an absent line. This panel is only ever built for
+            // a player examining something, so the const alone is the right test here.
+            if (weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow)
+                && !WorldObject.CritImbuesSuppressedForPlayers)
             {
                 var mod = WorldObject.GetCripplingBlowMod(skill);
                 effectDescriptions.Add($"- {ImbuedEffectType.CripplingBlow.DisplayName()}: {mod:0.##}x Crit Dmg");
             }
 
-            // Armor Rending
+            // Armor Rending: fraction of the target's armor IGNORED. Zone Control loot carries a
+            // per-weapon override (ArmorRendOverridePropId) = the configured fraction directly, which
+            // DamageEvent uses at hit time; retail weapons use the skill formula, which returns armor
+            // REMAINING, so the ignored fraction is 1 - that. (Old code showed the skill 'remaining'
+            // value mislabeled as "Ignored" and never reflected the Zone override.)
             if (weapon.HasImbuedEffect(ImbuedEffectType.ArmorRending))
             {
-                var mod = WorldObject.GetArmorRendingMod(skill);
-                effectDescriptions.Add($"- {ImbuedEffectType.ArmorRending.DisplayName()}: {mod:P1} Ignored");
+                var rendOverride = weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ArmorRendOverridePropId);
+                var ignored = rendOverride.HasValue
+                    ? Math.Clamp(rendOverride.Value, 0.0, 1.0)
+                    : 1.0 - WorldObject.GetArmorRendingMod(skill);
+                effectDescriptions.Add($"- {ImbuedEffectType.ArmorRending.DisplayName()}: {ignored:P1} Ignored");
             }
 
-            // Critical Strike
-            if (weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike))
+            // Critical Strike - hidden for players, same reason as Crippling Blow above.
+            if (weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike)
+                && !WorldObject.CritImbuesSuppressedForPlayers)
             {
                 var mod = WorldObject.GetCriticalStrikeMod(skill);
                 effectDescriptions.Add($"- {ImbuedEffectType.CriticalStrike.DisplayName()}: +{mod:P1} Crit Chance");
@@ -1056,10 +1322,34 @@ namespace ACE.Server.Network.Structure
                 if (weapon.HasImbuedEffect(type))
                 {
                     var mod = WorldObject.GetRendingMod(skill);
+
+                    // Zone Control loot: the rend power override substitutes for the skill formula
+                    // (rendingMod = 1 + override), mirroring GetWeaponResistanceModifier, so the tooltip
+                    // shows exactly the configured strength (e.g. wire 7.0 -> +700% Dmg).
+                    var rendOverride = weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId);
+                    if (rendOverride.HasValue && rendOverride.Value > 0)
+                        mod = 1.0f + (float)rendOverride.Value;
+
+                    // NO "(vuln)" SUFFIX (owner 2026-08-27: "Rend is not a vuln, text should not be
+                    // there"). It shared a slot with the vuln multiplier internally - they are MAX'd,
+                    // never stacked - but that is an implementation detail of the resist chain and has
+                    // no business on a player-facing line. A rend is a rend.
                     var bonusPct = (mod - 1.0);
-                    effectDescriptions.Add($"- {type.DisplayName()}: +{bonusPct:P0} Dmg (vuln)");
+                    effectDescriptions.Add($"- {type.DisplayName()}: +{bonusPct:P0} Dmg");
                 }
             }
+
+            // Shield Cleaving: fraction of the target's shield AL the weapon ignores. Stored directly on
+            // the weapon (PropertyFloat.IgnoreShield); GetIgnoreShieldMod reads it at hit time.
+            if (weapon.IgnoreShield.HasValue && weapon.IgnoreShield.Value > 0)
+                effectDescriptions.Add($"- Shield Cleaving: {Math.Clamp(weapon.IgnoreShield.Value, 0.0, 1.0):P0} Shield Ignored");
+
+            // Phantom (hollow): the weapon bypasses the target's protective magic - Impen/Banes on armor
+            // and Life prots. RETAIL ONLY as of 2026-08-25: our loot card was deleted, so every weapon
+            // reaching this line is a retail hollow weapon (~830 of them) or one a GM made by hand. Some
+            // set only one of the two properties, but it is the same category, so one line covers both.
+            if (weapon.IgnoreMagicArmor || weapon.IgnoreMagicResist)
+                effectDescriptions.Add("- Phantom: Ignores Magic Protections");
 
             // Calculate Effective Melee Defense
             var meleeSkill = examiner.GetCreatureSkill(Skill.MeleeDefense).Current;
@@ -1079,26 +1369,104 @@ namespace ACE.Server.Network.Structure
             uint emdVal = (uint)Math.Round(meleeSkill * meleeMod * burdenMod * 1.0f + meleeImbues + meleeLum);
 
             effectDescriptions.Sort();
-            effectDescriptions.Add($"- Effective Melee Defense: {emdVal}");
 
-            var useParts = new List<string>();
-            useParts.Add($"Property Details:\n{string.Join("\n", effectDescriptions)}");
-
-            if (PropertiesString.TryGetValue(PropertyString.Use, out string existingUse) && !string.IsNullOrWhiteSpace(existingUse))
+            // Weapon Grade pinned ABOVE the sorted list; wield gate pinned to the very BOTTOM
+            // (owner 2026-08-01). Weapons carry these here instead of in the description block
+            // (armor/jewelry have no Property Details section and keep the LongDesc line).
+            var wsQuality = weapon.GetProperty(PropertyInt.WeaponAugScaleQuality);
+            if (wsQuality != null)
             {
-                useParts.Add(existingUse);
+                // Sub-grade label (owner 2026-08-03): k and variance both resolve per SUB-grade
+                // now, so the label has to carry the same granularity — "B+" is a different
+                // weapon from "B-", and showing both as "B" would hide a real damage step.
+                var wsGrade = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetQualitySubGrade(wsQuality.Value);
+
+                // The percent is DAMAGE relative to a perfect roll, not the quality percentile
+                // (owner 2026-08-06). quality/10 was wrong twice over: an F- read "0 pct of max"
+                // while dealing 41.7 pct of an S weapon's damage, and two mechanically identical
+                // B+ weapons read 86 pct and 88 pct. Resolved off the SAME config the combat path
+                // reads, so the number cannot drift from what the weapon actually hits for.
+                var wsFamily = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFamilyKey(weapon);
+                var wsCfg = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.Current;
+                if (wsFamily != null && wsCfg.Scripts.TryGetValue(wsFamily, out var wsScript))
+                {
+                    var wsPct = ACE.Server.Managers.WeaponScaling.WeaponScalingManager
+                        .RelativeDamagePercent(wsScript, wsCfg.TightenStrength, wsQuality.Value);
+                    // "of max DAMAGE" (owner 2026-08-30): the percent measures dealt damage vs a
+                    // perfect roll, NOT the quality percentile, and family ladders have different
+                    // spreads - a bow F- honestly deals 72% of a perfect bow. Without the word
+                    // "damage" that read as a display bug ("how is the worst grade 72%?").
+                    effectDescriptions.Insert(0, $"- Weapon Grade: {wsGrade} ({wsPct}% of max damage)");
+                }
+                else
+                    effectDescriptions.Insert(0, $"- Weapon Grade: {wsGrade}");
             }
 
-            PropertiesString[PropertyString.Use] = string.Join("\n\n", useParts);
+            // Zone lock (owner 2026-08-30, "add the dormant line"): when the lock is ON and THIS
+            // examiner is standing outside every authored area, say so at the very top - the
+            // panel keeps showing the item's full power on purpose (players compare and trade in
+            // town, where gated numbers would make every drop read as junk), so this line is
+            // what reconciles the big numbers with the small hits. Absent when the lock is off,
+            // when the item is not ZC-stamped, or inside an authored area.
+            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, examiner))
+                effectDescriptions.Insert(0, ACE.Server.Managers.ZoneControl.ZoneControlManager.ZoneLockedAppraisalLine);
 
-            // Make sure there's a line break between the string and some of the other "details".
-            if (PropertiesInt.ContainsKey(PropertyInt.ItemMaxLevel) ||
-                PropertiesInt.ContainsKey(PropertyInt.ItemSpellcraft) ||
-                PropertiesInt.ContainsKey(PropertyInt.WieldRequirements))
-                PropertiesString[PropertyString.Use] += "\n";
+            // Cast on Strike (owner 2026-08-27: "Appraisal line should show Force Arc (13% proc chance)").
+            // One line PER SLOT - the arc and the ring are separate entities with separate rates, so a
+            // single merged line would hide which one a given rate belongs to. Names come from our own
+            // table, never from Spell.Name: the whole point is to drop the level marker.
+            var zcArcB = weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcArcDamagePropId);
+            var zcRingB = weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRingDamagePropId);
+            if ((zcArcB ?? 0) > 0 || (zcRingB ?? 0) > 0)
+            {
+                if (weapon.ProcSpell.HasValue &&
+                    ACE.Server.Managers.ZoneControl.ZoneLootMutator.TryGetProcDisplayName(weapon.ProcSpell.Value, out var arcName))
+                    effectDescriptions.Add($"- Cast on Strike: {arcName} ({(weapon.ProcSpellRate ?? 0f) * 100f:0.#}% proc chance)");
+
+                if (weapon.ProcSpell2.HasValue &&
+                    ACE.Server.Managers.ZoneControl.ZoneLootMutator.TryGetProcDisplayName(weapon.ProcSpell2.Value, out var ringName))
+                    effectDescriptions.Add($"- Cast on Strike: {ringName} ({(weapon.ProcSpellRate2 ?? 0f) * 100f:0.#}% proc chance)");
+            }
+
+            effectDescriptions.Add($"- Effective Melee Defense: {emdVal}");
+
+            if (weapon.WieldRequirements == WieldRequirement.Int64Stat &&
+                weapon.WieldSkillType == (int)PropertyInt64.LumAugItemCount)
+                effectDescriptions.Add($"- Wield requires: {weapon.WieldDifficulty ?? 0:N0} Item Augmentations");
+
+            // T16+ charm wield gates in slots 3/4 (owner 2026-08-15)
+            if (weapon.WieldRequirements3 == WieldRequirement.Int64Stat && weapon.WieldSkillType3 != null)
+                effectDescriptions.Add($"- Wield requires: {weapon.WieldDifficulty3 ?? 0:N0} {CharmCounterName((PropertyInt64)weapon.WieldSkillType3.Value)}");
+            if (weapon.WieldRequirements4 == WieldRequirement.Int64Stat && weapon.WieldSkillType4 != null)
+                effectDescriptions.Add($"- Wield requires: {weapon.WieldDifficulty4 ?? 0:N0} {CharmCounterName((PropertyInt64)weapon.WieldSkillType4.Value)}");
+
+            // Property Details renders via the LONG DESCRIPTION, not the Use string (owner
+            // 2026-08-01): the client draws its native caster sections (Mana Conversion, "Damage
+            // bonus for X spells") AFTER the Use text, so a Use-carried block sat ABOVE them on
+            // wands. Prepending to LongDesc puts the block below every native section and above
+            // the per-viewer bonus line + provenance (which were inserted earlier in the build).
+            var detailsBlock = $"Property Details:\n{string.Join("\n", effectDescriptions)}";
+            if (PropertiesString.TryGetValue(PropertyString.LongDesc, out var ldExisting) && !string.IsNullOrEmpty(ldExisting))
+                PropertiesString[PropertyString.LongDesc] = $"{detailsBlock}\n\n{ldExisting}";
+            else
+                PropertiesString[PropertyString.LongDesc] = detailsBlock;
 
             // item enchantments can also be on wielder currently
             AddEnchantments(weapon);
+        }
+
+        /// <summary>Display name for a growth-charm counter used as a T16+ wield gate.</summary>
+        private static string CharmCounterName(PropertyInt64 prop)
+        {
+            switch (prop)
+            {
+                case PropertyInt64.TriuneWeaveCount: return "Triune Weave";
+                case PropertyInt64.BattlemagesWrathCharmCount: return "Battlemage's Wrath";
+                case PropertyInt64.NetherVeilCharmCount: return "Nether Veil";
+                case PropertyInt64.CrashingSteelCharmCount: return "Crashing Steel";
+                case PropertyInt64.TrueShotCharmCount: return "True Shot";
+                default: return prop.ToString();
+            }
         }
 
         private void BuildHookProfile(WorldObject hookedItem)

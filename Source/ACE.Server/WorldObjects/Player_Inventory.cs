@@ -2473,6 +2473,14 @@ namespace ACE.Server.WorldObjects
                         return WeenieError.SkillTooLow;
                     break;
 
+                case WieldRequirement.Int64Stat:    // server-side extension (T11 item-aug gate)
+
+                    // verify PropertyInt64 minimum
+                    var propInt64 = GetProperty((PropertyInt64)skillOrAttribute) ?? 0;
+                    if (propInt64 < difficulty)
+                        return WeenieError.SkillTooLow;
+                    break;
+
                 case WieldRequirement.CreatureType:
 
                     // verify creature type

@@ -70,6 +70,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void Monster_Tick(double currentUnixTime)
         {
+            UpdateAuraBuffs(currentUnixTime);
+
             if (IsChessPiece && this is GamePiece gamePiece)
             {
                 // faster than vtable?

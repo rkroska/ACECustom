@@ -382,9 +382,9 @@ namespace ACE.Server.WorldObjects
 
             var og = new ObjectGuid(targetGuidFull);
             var rawOnActorLandblock = CurrentLandblock?.GetObject(og, true, true);
-            var effSelf = PrestigeManager.GetEffectiveVariationForVisibility(this);
-            var effOther = PrestigeManager.GetEffectiveVariationForVisibility(other);
-            var sameVar = PrestigeManager.SameVariationForVisibility(effSelf, effOther);
+            var effSelf = VariationManager.GetEffectiveVariationForVisibility(this);
+            var effOther = VariationManager.GetEffectiveVariationForVisibility(other);
+            var sameVar = VariationManager.SameVariationForVisibility(effSelf, effOther);
             var dist = (Location != null && other.Location != null) ? Location.DistanceTo(other.Location) : float.NaN;
 
             var actorMaint = ObjMaint;

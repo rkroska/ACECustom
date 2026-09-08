@@ -22,6 +22,14 @@ namespace ACE.Server.WorldObjects
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        /// <summary>Zone Control's cached read of this creature's own rank bools (50048-50050) and the
+        /// ExemptFromZoneScaling bool (50047): -1 = not read yet, else (int)ZcRank / 0-1. Filled by
+        /// ZoneControlManager in ONE biota read-lock pass; reset to -1 by SetProperty/RemoveProperty
+        /// (PropertyBool) for those ids, so the per-hit resolve path (ResolveForCreature, 29 call sites)
+        /// never takes the biota lock. Plain ints so a torn read is impossible.</summary>
+        public volatile int ZcRankCache = -1;
+        public volatile int ZcExemptCache = -1;
+
         public bool IsExhausted { get => Stamina.Current == 0; }
 
         protected QuestManager _questManager;

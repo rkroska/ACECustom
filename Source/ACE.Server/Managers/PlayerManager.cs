@@ -543,6 +543,7 @@ namespace ACE.Server.Managers
 
             player.SendFriendStatusUpdates(false);
             player.CleanupPrestigeEffects();
+            player.CleanupZoneBoundaryEffects();
             player.HandleAllegianceOnLogout();
 
             return true;

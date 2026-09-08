@@ -134,11 +134,60 @@ namespace ACE.Server.WorldObjects
             var enchantmentMod = EnchantmentManager.GetRegenerationMod(vital);
 
             var augMod = 1.0f;
-            if (this is Player player && player.AugmentationFasterRegen > 0)
-                augMod += player.AugmentationFasterRegen;
+            var zoneRegenMult = 1.0f;
+            var zoneProdigalBlocked = false;
+            var zcFlatRegenPct = 0;
+            if (this is Player player)
+            {
+                if (player.AugmentationFasterRegen > 0)
+                    augMod += player.AugmentationFasterRegen;
+
+                // Zone Control Regen slot special (key 46, bracers; prop 50231): FLAT pct of the vital's MAX
+                // added to every positive natural tick, MAX-wins across worn pieces (owner 2026-08-23: a
+                // multiplier compounded the shard's x900 buff stack into god-mode; flat reads as "+300 on a
+                // 1,700 tick" and can never compound). Applied after the tuner below (see zcFlatRegen).
+                zcFlatRegenPct = player.GetZoneModifierMax(ACE.Server.Managers.ZoneControl.ZoneModifiers.RegenSpecialMult);
+
+                // Zone Control Suppression: recompute the enchantment mod without the Prodigal regen line
+                // (uncached path — the cached mod can't know about zone borders), and pick up the regen tuner.
+                try
+                {
+                    var zfx = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveEffectsForPlayer(player);
+                    if (zfx != null && zfx.EffectiveSuppressEnabled)
+                    {
+                        if (zfx.EffectiveSuppressProdigal)
+                        {
+                            enchantmentMod = EnchantmentManager.GetRegenerationMod(vital,
+                                ACE.Server.Managers.ZoneControl.ZoneEffectManager.ProdigalRegenSpells);
+                            zoneProdigalBlocked = true;
+                        }
+                        zoneRegenMult = (float)zfx.EffectiveSuppressRegenMult;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // never let zone resolution break vital ticks - but do not lose the reason either
+                    if (log.IsDebugEnabled)
+                        log.Debug($"[ZoneControl] regen effect resolve failed for {player.Name}: {ex.Message}");
+                }
+            }
 
             // cap rate?
             var currentTick = vital.RegenRate * attributeMod * stanceMod * enchantmentMod * augMod;
+
+            // Suppression regen tuner: shrink POSITIVE regen only (a degen tick is never softened).
+            if (zoneRegenMult != 1.0f && currentTick > 0)
+                currentTick *= zoneRegenMult;
+
+            // Bracers Regeneration special: flat pct of max, only while the natural tick is regenerating
+            if (zcFlatRegenPct > 0 && currentTick >= 0)
+                currentTick += vitalMax * zcFlatRegenPct / 100.0f;
+
+            if (ACE.Server.Managers.ServerConfig.regen_diag_verbose.Value && this is Player)
+                log.Warn($"[RegenDiag] {Name} {vital.Vital}: {vitalCurrent}/{vitalMax} rate={vital.RegenRate} " +
+                         $"attr={attributeMod:F3} stance={stanceMod:F3} ench={enchantmentMod:F3}" +
+                         $"{(zoneProdigalBlocked ? " PRODIGAL-BLOCKED" : "")} aug={augMod:F3} bracersFlat={zcFlatRegenPct}pct " +
+                         $"zoneRegenMult={zoneRegenMult:F2} tick={currentTick:F3}");
 
             // add in partially accumulated / rounded vitals from previous tick(s)
             var totalTick = currentTick + vital.PartialRegen;

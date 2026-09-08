@@ -19,6 +19,8 @@ namespace ACE.Server.WorldObjects
 {
     public class SpellProjectile : WorldObject
     {
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         public const float DefaultSpellAttributeMult = 0.25f;
         public Spell Spell;
         public ProjectileSpellType SpellType { get; set; }
@@ -381,6 +383,7 @@ namespace ACE.Server.WorldObjects
 
             var forkEligibleOnImpact = creatureTarget.IsAlive
                 && !(targetPlayer?.Invincible ?? false)
+                && !(targetPlayer?.ZcDamageImmune ?? false)
                 && !(targetPlayer?.UnderLifestoneProtection ?? false);
 
             var pkError = ProjectileSource?.CheckPKStatusVsTarget(creatureTarget, Spell);
@@ -494,6 +497,22 @@ namespace ACE.Server.WorldObjects
         /// Calculates the damage for a spell projectile
         /// Used by war magic, void magic, and life magic projectiles
         /// </summary>
+        /// <summary>Lower-case element word for the Cast on Strike combat line ("... for 1,408 pierce
+        /// damage"). Deliberately the SPELL's damage type, which for this card is always the weapon's
+        /// own element.</summary>
+        private static string ZcElementWord(DamageType dt)
+        {
+            if (dt.HasFlag(DamageType.Slash)) return "slash";
+            if (dt.HasFlag(DamageType.Pierce)) return "pierce";
+            if (dt.HasFlag(DamageType.Bludgeon)) return "bludgeon";
+            if (dt.HasFlag(DamageType.Acid)) return "acid";
+            if (dt.HasFlag(DamageType.Cold)) return "cold";
+            if (dt.HasFlag(DamageType.Electric)) return "electric";
+            if (dt.HasFlag(DamageType.Fire)) return "fire";
+            if (dt.HasFlag(DamageType.Nether)) return "nether";
+            return "magic";
+        }
+
         public float? CalculateDamage(WorldObject source, Creature target, ref bool criticalHit, ref bool critDefended, ref bool overpower)
         {
             if (source == null || target == null)
@@ -501,8 +520,15 @@ namespace ACE.Server.WorldObjects
             var sourcePlayer = source as Player;
             var targetPlayer = target as Player;
 
-            if (source == null || !target.IsAlive || targetPlayer != null && targetPlayer.Invincible)
+            if (!target.IsAlive || targetPlayer != null && targetPlayer.Invincible)
                 return null;
+            if (targetPlayer != null && targetPlayer.ZcDamageImmune)
+            {
+                // Cheat Death window: the hit is absorbed here and never reaches DamageTarget, so the feedback the
+                // melee paths give from TakeDamage has to come from this bail-out
+                targetPlayer.ZcAnnounceAbsorb(ProjectileSource, $"{Spell.Name} ({Spell.DamageType.ToString().ToLowerInvariant()})");
+                return null;
+            }
 
             // check lifestone protection
             if (targetPlayer != null && targetPlayer.UnderLifestoneProtection)
@@ -589,26 +615,47 @@ namespace ACE.Server.WorldObjects
                 attribBonus += SkillFormula.GetAttributeMod((int)sourcePlayer.Focus.Current) * DefaultSpellAttributeMult;
                 attribBonus += SkillFormula.GetAttributeMod((int)sourcePlayer.Self.Current) * DefaultSpellAttributeMult;
             }
-            
+
+
             // life magic projectiles: ie., martyr's hecatomb
             if (Spell.MetaSpellType == ACE.Entity.Enum.SpellType.LifeProjectile)
             {
                 lifeMagicDamage = LifeProjectileDamage * Spell.DamageRatio;
 
-                // could life magic projectiles crit?
-                // if so, did they use the same 1.5x formula as war magic, instead of 2.0x?
+                // UNIFIED CRIT MODEL (owner 2026-08-29, "all 3 schools get the same treatment"):
+                // a crit deals CritX x the base - the old 0.5 coefficient that quietly halved
+                // Crushing Blow on every magic path is gone. mod is (CritX - 1), default 1.0,
+                // so a cardless crit = 2x, the same retail rule the melee path now follows. The bonus itself is
+                // derived below, once the base is final (life aug term, zone replacement, variance).
                 if (criticalHit)
-                {
-                    // verify: CriticalMultiplier only applied to the additional crit damage,
-                    // whereas CD/CDR applied to the total damage (base damage + additional crit damage)
                     weaponCritDamageMod = GetWeaponCritDamageMod(weapon, sourceCreature, attackSkill, target);
-
-                    critDamageBonus = lifeMagicDamage * 0.5f * weaponCritDamageMod;
-                }
 
                 if (sourceCreature != null && sourceCreature.EffectiveLifeAugCount >= 1)
                 {
                     lifeMagicDamage += sourceCreature.EffectiveLifeAugCount;
+                }
+
+                // Zone Control (retail-semantics since 2026-08-02, owner ruling — the old WYSIWYG felt-damage
+                // bypass is GONE): authored spell_damage REPLACES the life-projectile base + augs PRE-mitigation,
+                // exactly like attack_damage replaces weapon/part damage. Every downstream mod still applies:
+                // elemental/slayer, the defender's resists + absorb, and the rating chain in DamageTarget.
+                // spell_variance spreads each cast down from the base (unset = stock behavior above).
+                if (sourceCreature != null && !(sourceCreature is Player))
+                {
+                    var zpFlat = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(sourceCreature);
+                    if (zpFlat != null)
+                    {
+                        if (zpFlat.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellDamage))
+                        {
+                            // negative authored spell_damage would heal - floor at 0
+                            lifeMagicDamage = (float)Math.Max(zpFlat.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellDamage), 0.0);
+                        }
+                        if (zpFlat.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellVariance))
+                        {
+                            var sv = Math.Clamp(zpFlat.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellVariance), 0.0, 1.0);
+                            lifeMagicDamage *= (float)(1.0 - sv * ThreadSafeRandom.Next(0.0f, 1.0f));
+                        }
+                    }
                 }
 
                 weaponResistanceMod = GetWeaponResistanceModifier(weapon, sourceCreature, attackSkill, Spell.DamageType);
@@ -617,6 +664,10 @@ namespace ACE.Server.WorldObjects
                 // only pass if SpellProjectile has it directly, such as 2637 - Invoking Aun Tanua
 
                 resistanceMod = (float)Math.Max(0.0f, target.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
+
+                // UNIFIED CRIT: CritX x the base the hit ACTUALLY uses - player and governed casters alike
+                if (criticalHit)
+                    critDamageBonus = lifeMagicDamage * weaponCritDamageMod;
 
                 finalDamage = (lifeMagicDamage + critDamageBonus) * elementalDamageMod * slayerMod * resistanceMod * absorbMod * attribBonus;
             }
@@ -641,16 +692,14 @@ namespace ACE.Server.WorldObjects
                     // Starting in July, War Magic critical hits will instead add a multiple of the maximum damage of the spell.
                     // No more crits that do less damage than non-crits!
 
-                    if (isPVP) // PvP: 50% of the MIN damage added to normal damage roll
-                        critDamageBonus = Spell.MinDamage * 0.5f;
-                    else   // PvE: 50% of the MAX damage added to normal damage roll
-                        critDamageBonus = Spell.MaxDamage * 0.5f;
-
-                    // verify: CriticalMultiplier only applied to the additional crit damage,
-                    // whereas CD/CDR applied to the total damage (base damage + additional crit damage)
+                    // UNIFIED CRIT MODEL (owner 2026-08-29): PvE crit = CritX x the FULL composed
+                    // base (max roll + aug term + skill bonus) - computed AFTER the base is built,
+                    // in the unified block below, so procs / zone bases / augs all crit in full.
+                    // PvP keeps the retail halved-min rule, deliberately out of scope.
                     weaponCritDamageMod = GetWeaponCritDamageMod(weapon, sourceCreature, attackSkill, target);
 
-                    critDamageBonus *= weaponCritDamageMod;
+                    if (isPVP) // PvP: 50% of the MIN damage added to normal damage roll
+                        critDamageBonus = Spell.MinDamage * 0.5f * weaponCritDamageMod;
                 }
 
                 /* War Magic skill-based damage bonus
@@ -667,25 +716,88 @@ namespace ACE.Server.WorldObjects
                         skillBonus = Spell.MinDamage * percentageBonus;
                     }
                 }
-                baseDamage = ThreadSafeRandom.Next(Spell.MinDamage, Spell.MaxDamage);
+                // unified crit: a PvE crit uses the MAX roll (retail melee's own rule), so the
+                // CritX multiple below lands on the spell's ceiling, not a random roll
+                baseDamage = criticalHit && !isPVP
+                    ? Spell.MaxDamage
+                    : ThreadSafeRandom.Next(Spell.MinDamage, Spell.MaxDamage);
+
+                // Zone Control "Cast on Strike": an authored B REPLACES THE ROLLED SPELL BASE, and
+                // nothing else. The War/Void aug term below still applies on top of it - owner
+                // 2026-08-27: "The procs will be based simply off war or void just like originally
+                // coded. The procs are spells." So the BASE is the weapon's (banded, tunable, 440 = one
+                // melee hit at T11) and the SCALING is the caster's, exactly as for a hand-cast spell.
+                //
+                // Consequence, chosen deliberately: a melee character with no War or Void augs gets B
+                // and nothing more. Melee and Missile aug counts are NOT read here - an earlier build
+                // did that and it was wrong; a proc is a spell and scales with spell investment.
+                //
+                // WHICH slot fired decides which band applies - the arc and the ring carry separate
+                // damage now. Matched on the spell id rather than on a flag, because the projectile is
+                // all we have here and the two slots can never hold the same spell.
+                double? procDmgOverride = null;
+                if (FromProc && weapon != null)
+                {
+                    if (weapon.ProcSpell.HasValue && weapon.ProcSpell.Value == Spell.Id)
+                        procDmgOverride = weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcArcDamagePropId);
+                    else if (weapon.ProcSpell2.HasValue && weapon.ProcSpell2.Value == Spell.Id)
+                        procDmgOverride = weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRingDamagePropId);
+                }
+
+                var isZcProc = procDmgOverride.HasValue && procDmgOverride.Value > 0;
+
+                if (isZcProc)
+                    baseDamage = (long)Math.Round(procDmgOverride.Value);
 
                 if (sourceCreature != null)
                 {
                     // Effective counts: purchased gems plus the school's growth charm. Player_Magic's
                     // smart-ring path mirrors this method and must use the same counts.
+                    long augs = 0;
                     if (Spell.School == MagicSchool.WarMagic)
-                    {
-                        if (sourceCreature.EffectiveWarAugCount >= 1)
-                        {
-                            baseDamage += sourceCreature.EffectiveWarAugCount;
-                        }
-                    }
+                        augs = sourceCreature.EffectiveWarAugCount;
                     else if (Spell.School == MagicSchool.VoidMagic)
+                        augs = sourceCreature.EffectiveVoidAugCount;
+
+                    // The card's own ceiling on that term, stamped on the weapon at drop. Applies ONLY
+                    // to a Cast on Strike proc - a hand-cast spell is deliberately untouched, so this
+                    // cannot change what any existing spell does. Uncapped, the aug term is 0..10,000
+                    // flat on a 440 base, which is the wielder-driven spread the banded base exists to
+                    // contain re-entering through the aug door. Unset = uncapped.
+                    if (augs > 0 && isZcProc)
                     {
-                        if (sourceCreature.EffectiveVoidAugCount >= 1)
+                        var augCap = weapon?.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcAugCapPropId);
+                        if (augCap.HasValue && augCap.Value > 0)
+                            augs = Math.Min(augs, (long)Math.Round(augCap.Value));
+                    }
+
+                    if (augs > 0)
+                        baseDamage += augs;
+                }
+
+                // Zone Control (retail-semantics since 2026-08-02, owner ruling — the old WYSIWYG felt-damage
+                // bypass is GONE): authored spell_damage REPLACES the rolled spell base + augs PRE-mitigation,
+                // the exact analogue of attack_damage. All downstream mods still apply (elemental/slayer,
+                // defender resists + absorb, rating chain in DamageTarget). spell_variance spreads each cast
+                // down from the base (0 = flat, 0.5 = casts land 50-100% of base). Unset = stock behavior above.
+                if (sourceCreature != null && !(sourceCreature is Player))
+                {
+                    var zpFlat = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(sourceCreature);
+                    if (zpFlat != null)
+                    {
+                        var zoneReplaced = false;
+                        if (zpFlat.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellDamage))
                         {
-                            baseDamage += sourceCreature.EffectiveVoidAugCount;
+                            // negative authored spell_damage would heal - floor at 0
+                            baseDamage = (long)Math.Round(Math.Max(zpFlat.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellDamage), 0.0));
+                            zoneReplaced = true;
                         }
+                        if (zpFlat.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellVariance))
+                        {
+                            var sv = Math.Clamp(zpFlat.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellVariance), 0.0, 1.0);
+                            baseDamage = (long)Math.Round(baseDamage * (1.0 - sv * ThreadSafeRandom.Next(0.0f, 1.0f)));
+                        }
+                        // (crit handled by the unified block below, which reads the replaced base)
                     }
                 }
 
@@ -705,13 +817,61 @@ namespace ACE.Server.WorldObjects
                     resistanceMod *= (float)ServerConfig.void_pvp_modifier.Value;
                 }
 
+                // Per-hit variance, applied to the WHOLE base - B AND the aug term (owner 2026-08-27:
+                // "whole base"). Varying B alone would be invisible: at 9,000 War augs B is 4.7 pct of
+                // the base. Spreads DOWN from the rolled value, same shape as zone spell_variance, so
+                // the band stays the ceiling. Before the crit re-derivation, so a crit scales off the
+                // number the hit actually uses.
+                if (isZcProc && weapon != null)
+                {
+                    var vProp = weapon.ProcSpell.HasValue && weapon.ProcSpell.Value == Spell.Id
+                        ? ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcArcVariancePropId
+                        : ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRingVariancePropId;
+                    var variance = weapon.GetProperty((PropertyFloat)vProp) ?? 0.0;
+                    if (variance > 0)
+                    {
+                        variance = Math.Clamp(variance, 0.0, 1.0);
+                        baseDamage = (long)Math.Round(baseDamage * (1.0 - variance * ThreadSafeRandom.Next(0.0f, 1.0f)));
+                    }
+                }
+
+                // ══ UNIFIED CRIT (owner 2026-08-29, "all 3 schools get the same treatment"): the
+                // PvE crit bonus is computed HERE, after the base is fully composed (max roll or
+                // proc B or zone base, plus the aug term, post-variance), so the crit total is
+                // exactly CritX x the base the hit actually uses - on hand-casts, procs and mob
+                // casts alike. mod = CritX - 1 (default 1.0 = the retail 2x rule); the Crushing
+                // Blow band bounds it. This replaces the per-site 0.5f re-derives that quietly
+                // halved crush on every magic path. PvP keeps its retail bonus from above.
+                if (criticalHit && !isPVP)
+                    critDamageBonus = (float)((baseDamage + skillBonus) * weaponCritDamageMod);
+
                 finalDamage = baseDamage + critDamageBonus + skillBonus;
 
                 finalDamage *= elementalDamageMod * slayerMod * resistanceMod * absorbMod * attribBonus;
+
+                // [ZCPROC] diagnostic, added 2026-08-27 for the Cast on Strike bring-up. Combat chat
+                // never reaches ACE_Log.txt, so without this the only way to read a proc's terms is the
+                // owner pasting client text. Fires ONLY for our procs, so it cannot spam a live shard.
+                // REMOVE once the card is tuned.
+                if (isZcProc && ServerConfig.zc_proc_diag.Value)
+                    log.Info($"[ZCPROC] arc spell={Spell.Name} ({Spell.Id}) B={baseDamage} " +
+                             $"rendMod={weaponResistanceMod:F3} resistMod={resistanceMod:F4} " +
+                             $"attrib={attribBonus:F2} crit={criticalHit} preRating={finalDamage:F0} target={target.Name}");
             }
             // Fork Charm: reduce damage for fork projectiles based on tier multiplier.
             if (IsForkProjectile)
                 finalDamage *= ForkDamageMult;
+
+            // (The 2026-07-27 WYSIWYG felt-damage override that used to live here was REMOVED 2026-08-02:
+            // spell_damage is now a plain PRE-mitigation base replacement and rides the retail pipeline.)
+
+            // Zone Control: a governed monster's zone profile can scale its spell damage (players resolve null).
+            if (sourceCreature != null && !(sourceCreature is Player))
+            {
+                var zoneProfile = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(sourceCreature);
+                if (zoneProfile != null && zoneProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellDamageMult))
+                    finalDamage *= (float)zoneProfile.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellDamageMult);
+            }
 
             // show debug info (after fork mult so displayed damage matches actual dealt damage)
             if (sourceCreature != null && sourceCreature.DebugDamage.HasFlag(Creature.DebugDamageType.Attacker))
@@ -730,6 +890,30 @@ namespace ACE.Server.WorldObjects
                 var m = combatPet.GetSpellProjectileDamageTakenMultiplier();
                 if (m < 1.0f)
                     finalDamage *= m;
+            }
+
+            // v11+ percent-HP floor: applied in DamageTarget, AFTER the attacker/defender rating mods,
+            // so the floor lands at the felt scale (mirrors the melee DamageEvent ordering — taking it
+            // here let a governed mob's damage_rating inflate the floor value itself).
+
+            // Extensive spell-damage server log - same flags and defender gate as the melee/missile
+            // DamageEvent block (damage_event_debug_server_log; incoming damage on Players/CombatPets only).
+            if (ServerConfig.damage_event_debug_server_log.Value
+                && (targetPlayer != null || target is CombatPet)
+                && (!ServerConfig.damage_event_debug_only_nonplayer_attackers.Value || sourceCreature is not Player))
+            {
+                var sb = new System.Text.StringBuilder(1024);
+                sb.AppendLine("=== SpellDamage.Debug ===");
+                sb.AppendLine($"Attacker: {sourceCreature?.Name ?? "<null>"} ({sourceCreature?.Guid.ToString() ?? "?"}) wcid={sourceCreature?.WeenieClassId ?? 0} level={sourceCreature?.Level ?? 0}");
+                sb.AppendLine($"Defender: {target.Name} ({target.Guid}) wcid={target.WeenieClassId} level={target.Level ?? 0}");
+                sb.AppendLine($"spell: {Spell.Name} ({Spell.Id}) school={Spell.School} damageType={Spell.DamageType} power={Spell.Power} weapon={weapon?.Name ?? "<none>"}");
+                sb.AppendLine($"crit={criticalHit} critDefended={critDefended} overpower={overpower} critChance={criticalChance:F4}");
+                sb.AppendLine($"components: base={baseDamage:F2} critBonus={critDamageBonus:F2} skillBonus={skillBonus:F2} lifeMagic={lifeMagicDamage:F2} critDmgMod={weaponCritDamageMod:F4}");
+                sb.AppendLine($"mods: elemental={elementalDamageMod:F4} slayer={slayerMod:F4} resist={resistanceMod:F4} weapResist={weaponResistanceMod:F4} absorb={absorbMod:F4} attrib={attribBonus:F4}");
+                sb.AppendLine("(rating mods + pcthp floor apply post-CalculateDamage in DamageTarget; floor win logs as [SpellFloor])");
+                sb.AppendLine($"final: Damage={finalDamage:F4} defenderHealth: current={target.Health.Current} max={target.Health.MaxValue}");
+                sb.Append("=== end SpellDamage.Debug ===");
+                log.Info(sb.ToString());
             }
 
             return finalDamage;
@@ -970,7 +1154,9 @@ namespace ACE.Server.WorldObjects
         {
             var targetPlayer = target as Player;
 
-            if (targetPlayer != null && targetPlayer.Invincible || target.IsDead)
+            if (targetPlayer != null && targetPlayer.ZcDamageImmune && !targetPlayer.Invincible && !target.IsDead)
+                targetPlayer.ZcAnnounceAbsorb(ProjectileSource, $"{Math.Round(damage):N0} {Spell.DamageType.ToString().ToLowerInvariant()} damage ({Spell.Name})");
+            if (targetPlayer != null && (targetPlayer.Invincible || targetPlayer.ZcDamageImmune) || target.IsDead)
                 return;
 
             var sourceCreature = ProjectileSource as Creature;
@@ -1056,6 +1242,9 @@ namespace ACE.Server.WorldObjects
                     damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, pkDamageResistRatingMod);
                 }
 
+                // Rating chain applies unconditionally (2026-08-02, owner ruling): authored spell_damage
+                // is a PRE-mitigation base replacement, so Damage Rating and the defender's Damage Resist
+                // Rating hit spells exactly like they hit melee. (Old WYSIWYG skip removed.)
                 damage *= damageRatingMod * damageResistRatingMod;
 
                 // Apply enrage damage reduction for the defender
@@ -1064,6 +1253,30 @@ namespace ACE.Server.WorldObjects
                     var enrageReduction = target.EnrageDamageReduction ?? 0.0f; // Default to 0% reduction
                     damage *= (1.0f - enrageReduction);
                     //Console.WriteLine($"[DEBUG] Enrage Damage Reduction Applied by Defender: {enrageReduction * 100}%, Final Damage: {damage}");
+                }
+
+                // v11+ percent-HP floor: a high-variation monster's harmful health-damage spell always
+                // deals at least a %HP chunk to a player, bypassing life-aug damage reduction. Taken here,
+                // after the rating mods, so the floor lands at the felt scale (mirrors the melee ordering).
+                if (damage > 0 && Spell.IsHarmful && targetPlayer != null && sourceCreature != null
+                    && Spell.DamageType != DamageType.Stamina && Spell.DamageType != DamageType.Mana)
+                {
+                    var pctHpFloor = Creature.GetPercentHpFloorDamage(sourceCreature, targetPlayer, critical);
+                    if (pctHpFloor > damage)
+                    {
+                        if (ServerConfig.damage_event_debug_server_log.Value)
+                            log.Info($"[SpellFloor] floor won: preFloor={damage:F2} floor={pctHpFloor:F2} attacker={sourceCreature.Name} ({sourceCreature.Guid}) defender={targetPlayer.Name} spell={Spell.Name} ({Spell.Id})");
+                        damage = pctHpFloor;
+                    }
+                }
+
+                // Zone Control pct-HP damage special (key 44): flat pct of the mob's max HP, added AFTER
+                // every rating/mitigation step so nothing scales it (mirrors DamageEvent.cs). Player
+                // caster vs a zone-profiled monster only; NO-KILL + cooldown inside.
+                if (damage > 0 && sourcePlayer != null && targetPlayer == null)
+                {
+                    damage += sourcePlayer.ZcTryPctHpDamage(target);
+                    sourcePlayer.ZcTryLifeOnHit(target);             // key 48 Life on Hit (heals the caster; cooldown inside)
                 }
 
                 percent = damage / target.Health.MaxValue;
@@ -1100,11 +1313,21 @@ namespace ACE.Server.WorldObjects
                 else
                 {
                     spellPreHitHealth = (uint)Math.Max(0, target.Health.Current);
-                    amount = (uint)-target.UpdateVitalDelta(target.Health, (int)-Math.Round(damage));
-                    spellRoundedDamage = (uint)Math.Round(damage);
+                    var roundedDamage = (uint)Math.Round(damage);
+
+                    // Zone Control Cheat Death (key 45): lethal hit -> land on 1 HP + immunity window
+                    if (targetPlayer != null)
+                        roundedDamage = targetPlayer.ZcTryCheatDeath(ProjectileSource, roundedDamage);
+
+                    amount = (uint)-target.UpdateVitalDelta(target.Health, (int)-roundedDamage);
+                    spellRoundedDamage = roundedDamage;
                 }
 
                 target.DamageHistory.Add(ProjectileSource, Spell.DamageType, amount);
+
+                // Zone Control Battle Mending (key 42): survived, but under the threshold -> heal to full
+                if (targetPlayer != null && !mbResult.FullyAbsorbed)
+                    targetPlayer.ZcTryBattleMend(ProjectileSource);
                 // ───────────────────────────────────────────────────────────────────
 
                 if (target is CombatPet spellPet)
@@ -1147,12 +1370,23 @@ namespace ACE.Server.WorldObjects
                 // Show actual damage landed (0 when fully absorbed); mbSuffix describes what the barrier blocked.
                 var displayAmount = amount;
 
+                // Zone Control "Cast on Strike" reads with its OWN name and its own sentence (owner
+                // 2026-08-27). Gated on FromProc AND on the spell being one of ours, so every retail
+                // proc - cloaks, aetheria, the player Ring Glyph crafts - keeps the stock message.
+                // The rename exists because the client would otherwise print the DAT name, and "Nether
+                // Arc I" reads as a weak spell when the card is anything but.
+                var zcProcName = (string)null;
+                if (FromProc)
+                    ACE.Server.Managers.ZoneControl.ZoneLootMutator.TryGetProcDisplayName(Spell.Id, out zcProcName);
+
                 if (sourcePlayer != null)
                 {
                     var critProt = critDefended ? " Your critical hit was avoided with their augmentation!" : "";
                     var amtStr = Creature.FormatDamage(displayAmount, sourcePlayer.DamageNumberFormat);
 
-                    var attackerMsg = $"{critMsg}{overpowerMsg}{sneakMsg}You {verb} {target.Name} for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
+                    var attackerMsg = zcProcName != null
+                        ? $"{critMsg}{overpowerMsg}{sneakMsg}{zcProcName} hits {target.Name} for {amtStr} {ZcElementWord(Spell.DamageType)} damage.{critProt}{mbSuffix}"
+                        : $"{critMsg}{overpowerMsg}{sneakMsg}You {verb} {target.Name} for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
 
                     // could these crit / sneak attack?
                     if (nonHealth)
@@ -1170,7 +1404,9 @@ namespace ACE.Server.WorldObjects
                     var critProt = critDefended ? " Your augmentation allows you to avoid a critical hit!" : "";
                     var amtStr = Creature.FormatDamage(displayAmount, targetPlayer.DamageNumberFormat);
 
-                    var defenderMsg = $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
+                    var defenderMsg = zcProcName != null
+                        ? $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name}'s {zcProcName} hits you for {amtStr} {ZcElementWord(Spell.DamageType)} damage.{critProt}{mbSuffix}"
+                        : $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
 
                     if (nonHealth)
                     {

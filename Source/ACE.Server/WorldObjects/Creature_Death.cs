@@ -66,6 +66,10 @@ namespace ACE.Server.WorldObjects
 
             //QuestManager.OnDeath(lastDamager?.TryGetAttacker());
 
+            // Greater Rifts: progress + guardian-death detection. Fast-bails for the whole normal world
+            // (rift instances live exclusively at negative variations).
+            ACE.Server.Managers.Rifts.RiftManager.OnCreatureDeath(this, lastDamager);
+
             if (KillQuest != null)
                 OnDeath_HandleKillTask(KillQuest);
             if (KillQuest2 != null)
@@ -236,6 +240,24 @@ namespace ACE.Server.WorldObjects
             var monsterTier = PrestigeManager.GetKillScalingMonsterTier(this);
 
             var baseXp = (long)(XpOverride ?? 0);
+            long? luminanceAward = LuminanceAward;
+
+            // Owner ruling 2026-08-23: T11+ kill rewards are authored per zone by rank; weenie XpOverride/LuminanceAward are ignored when the zone sets them.
+            var killProfile = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this);
+            if (killProfile != null)
+            {
+                // ONE key since 2026-09-02 (owner D3): xp_kill. The profile is already the mob's RANK
+                // chain, so a Leader reads the Leader row's xp_kill and an unranked mob the Default
+                // row's - the 08-29 / 08-31 branch logic (minion master key, unranked pays minion)
+                // now lives in the resolver's layer order instead of here.
+                if (killProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.XpKill))
+                    baseXp = (long)Math.Round(killProfile.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.XpKill));
+                if (killProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.LumAward))
+                {
+                    var zoneLum = (long)Math.Round(killProfile.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LumAward));
+                    luminanceAward = zoneLum > 0 ? zoneLum : null;   // zone-provided 0 = grant nothing
+                }
+            }
 
             // One EarnXP / EarnLuminance per player: combine direct hits + all of that player's combat pets.
             // Avoids duplicate fellowship splits and matches "your kill bonuses apply to the full credit you earned on the mob."
@@ -277,10 +299,19 @@ namespace ACE.Server.WorldObjects
                     player.EarnXP((long)Math.Round(totalXP), XpType.Kill, ShareType.All, monsterTier);
                 }
 
-                if (LuminanceAward != null)
+                if (luminanceAward != null)
                 {
-                    var totalLuminance = LuminanceAward.Value * damagePercent;
+                    var totalLuminance = luminanceAward.Value * damagePercent;
                     player.EarnLuminance((long)Math.Round(totalLuminance), XpType.Kill, ShareType.All, monsterTier);
+                }
+
+                // Launch-day diagnostic (2026-08-23): the client filters XP/lum chat, so the log is the readout.
+                // One line per player per governed kill - switchable via zc_killxp_diag (review 2026-09-04).
+                if (killProfile != null && ServerConfig.zc_killxp_diag.Value)
+                {
+                    var (zcRank, rankSrc) = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveRankForCreature(this);
+                    var rank = ACE.Server.Managers.ZoneScaling.ZoneRank.Key(zcRank) + "/" + rankSrc;
+                    log.Info($"[KILLXP] {Name} ({WeenieClassId}, {rank}) -> {player.Name}: share {damagePercent:P0}, xp {(long)Math.Round(baseXp * damagePercent):N0} of {baseXp:N0}, lum {(luminanceAward.HasValue ? ((long)Math.Round(luminanceAward.Value * damagePercent)).ToString("N0") : "none")}, zone-authored xp={killProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.XpKill)} lum={killProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.LumAward)}");
                 }
             }
 
@@ -690,7 +721,7 @@ namespace ACE.Server.WorldObjects
                     var dropped = player.CalculateDeathItems_Olthoi(corpse, hadVitae, killerIsOlthoiPlayer, killerIsPkPlayer);
 
                     foreach (var wo in dropped)
-                        DoCantripLogging(killer, wo);
+                        DoModifierLogging(killer, wo);
 
                     corpse.RecalculateDecayTime(player);
 
@@ -739,7 +770,7 @@ namespace ACE.Server.WorldObjects
                                         foreach (var item in lootItems)
                                         {
                                             corpse.TryAddToInventory(item);
-                                            DoCantripLogging(killer, item);
+                                            DoModifierLogging(killer, item);
                                         }
                                     }
                                 }
@@ -901,21 +932,294 @@ namespace ACE.Server.WorldObjects
             var droppedItems = new List<WorldObject>();
             var tier = PrestigeManager.GetKillScalingMonsterTier(this);
 
+            // Zone Scaler loot: an authored profile can bump the loot tier/quality/quantity and inject bonus
+            // currency for this mob (null for players/exempt/non-endgame/no-match -> normal loot).
+            var zoneLoot = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this);
+
+            // Zone loot FLOOR (owner 2026-08-23): anything that dies inside a governed variant zone (v11+)
+            // drops that variation's set - a mis-tiered T8/T9/T10 WCID, a retail mob with its own table,
+            // or a retail mob with NO table (it gets the zone fallback profile). Exempt creatures never
+            // reach here (zoneLoot is null for them), T11+ profiles are untouched (max, not add).
+            var zoneFloorTier = zoneLoot != null ? (Location?.Variation ?? 0) : 0;
+            if (zoneFloorTier < ACE.Server.Managers.ZoneControl.ZoneControlManager.MinBoundedVariation) zoneFloorTier = 0;
+            var deathTreasure = DeathTreasure;
+            if (deathTreasure == null && zoneFloorTier > 0)
+                deathTreasure = DatabaseManager.World.GetCachedDeathTreasure(LootGenerationFactory.ZoneLootFallbackProfile);
+
             // create death treasure from loot generation factory
-            if (DeathTreasure != null)
+            if (deathTreasure != null)
             {
-                List<WorldObject> items = LootGenerationFactory.CreateRandomLootObjects(DeathTreasure);
+                // Zone Control loot tier = the zone floor: max(own tier, variation). (loot_tier_bonus,
+                // loot_quantity_mult, loot_quality_mult removed 2026-08-23.)
+                var effectiveTreasure = deathTreasure;
+                if (zoneFloorTier > 0 && effectiveTreasure.Tier < zoneFloorTier)
+                {
+                    effectiveTreasure = CloneTreasureDeath(effectiveTreasure);
+                    effectiveTreasure.Tier = zoneFloorTier;
+
+                    // ZONE SET ONLY (owner 2026-08-30). Raising the tier alone left the mob's OWN
+                    // retail chances intact, so a sub-tier-11 profile dying inside a v11+ zone rolled
+                    // its full retail payload AT THE RAISED TIER and then got the zone set on top -
+                    // e.g. tier-10 profile 3007 is 100/100/100 with 10 magic items, so ~11.5 extra
+                    // items per corpse. That is exactly the case this floor exists to serve (its own
+                    // comment names "a mis-tiered T8/T9/T10 WCID"), so it was a live double-drop on
+                    // the design's intended path - it just was not reachable yet, because no 3007 mob
+                    // is placed or generator-spawned in any authored zone landblock today.
+                    // The floor's contract is that such a mob drops THAT VARIATION'S SET, not its own
+                    // loot as well, so the three retail roll groups are zeroed here. Profiles already
+                    // at tier 11+ never enter this branch and are untouched; a mob with NO table of
+                    // its own already gets ZoneLootFallbackProfile (73001), which is all zeros too -
+                    // so after this every zone drop comes from one place.
+                    effectiveTreasure.ItemChance = 0;
+                    effectiveTreasure.MagicItemChance = 0;
+                    effectiveTreasure.MundaneItemChance = 0;
+                }
+
+                List<WorldObject> items = LootGenerationFactory.CreateRandomLootObjects(effectiveTreasure);
+
+                // Structured loot set: blank weapons + per-slot gear
+                // (items join the normal per-item mutation/corpse pipeline below).
+                //
+                // This is the DEFAULT for tier-11+ profiles and does not depend on Zone Control --
+                // those profiles carry zero item chances of their own, so without this they drop
+                // nothing. Every slot has its own count (default 1 at tier 11+, 0 below); a zone
+                // profile overrides individual slots via the loot_slot_* stats. There is no
+                // separate enable flag: a slot at 0 is off, and a zone can turn any slot on below
+                // tier 11 by giving it a count.
+                var slotCounts = LootGenerationFactory.ZoneLootSetCounts.TierDefault(effectiveTreasure.Tier);
+
+                if (zoneLoot != null)
+                {
+                    // Per-slot count. The loot_slot_<slot> stat is the MIN; the optional
+                    // loot_slot_<slot>_max turns it into a RANGE rolled uniform-inclusive, per slot,
+                    // per kill (owner 2026-08-24: "1-2 Weapons, 3-5 Chest", independent per slot).
+                    // Max undefined - the default and the pre-2026-08-24 behaviour - is an exact count.
+                    // Reversed pairs auto-swap, matching every other min/max pair in the profile.
+                    int Slot(string stat, int tierDefault)
+                    {
+                        var lo = (int)Math.Round(zoneLoot.Get(stat, tierDefault));
+                        var maxStat = stat + "_max";
+                        if (!zoneLoot.Has(maxStat))
+                            return lo;
+                        var hi = (int)Math.Round(zoneLoot.Get(maxStat, lo));
+                        if (hi < lo)
+                            (lo, hi) = (hi, lo);
+                        return hi > lo ? ACE.Common.ThreadSafeRandom.Next(lo, hi) : lo;   // inclusive both ends
+                    }
+
+                    slotCounts.Weapons = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotWeapons, slotCounts.Weapons);
+                    slotCounts.Helm = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotHelm, slotCounts.Helm);
+                    slotCounts.Chest = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotChest, slotCounts.Chest);
+                    slotCounts.Shoulder = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotShoulder, slotCounts.Shoulder);
+                    slotCounts.Bracer = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotBracer, slotCounts.Bracer);
+                    slotCounts.Glove = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotGlove, slotCounts.Glove);
+                    slotCounts.Girth = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotGirth, slotCounts.Girth);
+                    slotCounts.UpperLeg = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotUpperLeg, slotCounts.UpperLeg);
+                    slotCounts.LowerLeg = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotLowerLeg, slotCounts.LowerLeg);
+                    slotCounts.Boot = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotBoot, slotCounts.Boot);
+                    slotCounts.Shield = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotShield, slotCounts.Shield);
+                    slotCounts.Amulet = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotAmulet, slotCounts.Amulet);
+                    slotCounts.Ring = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotRing, slotCounts.Ring);
+                    slotCounts.Bracelet = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotBracelet, slotCounts.Bracelet);
+                    slotCounts.Trinket = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotTrinket, slotCounts.Trinket);
+                    slotCounts.Cloak = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotCloak, slotCounts.Cloak);
+                }
+                // LEGACY per-slot mode has no budget: its aggregate must respect the corpse cap too (the budget path
+                // clamps below). Weapons is a multiplier over the nine families.
+                if (zoneLoot != null && !zoneLoot.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.LootDropsMin))
+                {
+                    var perSlotTotal = slotCounts.Weapons * 9 + slotCounts.Helm + slotCounts.Chest + slotCounts.Shoulder + slotCounts.Bracer
+                        + slotCounts.Glove + slotCounts.Girth + slotCounts.UpperLeg + slotCounts.LowerLeg + slotCounts.Boot + slotCounts.Shield
+                        + slotCounts.Amulet + slotCounts.Ring + slotCounts.Bracelet + slotCounts.Trinket + slotCounts.Cloak;
+                    if (perSlotTotal > ZoneCorpseItemCap)
+                    {
+                        log.Warn($"[ZoneLoot] {Name} (0x{Guid}): per-slot counts total {perSlotTotal}, above the corpse cap {ZoneCorpseItemCap}; rolling a capped budget instead.");
+                        slotCounts = LootGenerationFactory.RollBudgetedCounts(slotCounts, ZoneCorpseItemCap, 1.0, 1.0, 1.0, 1.0);
+                    }
+                }
+
+                // BUDGET MODE (owner 2026-08-24): defining loot_max_drops switches from "every slot
+                // drops its own count" to "roll this many ITEMS total, distributed by category weight".
+                // The loot_slot_* values then mean WEIGHT WITHIN CATEGORY rather than count, and the
+                // budget is a CEILING - armor coverage credit can land the corpse under it. Slot
+                // specials below are deliberately OUTSIDE the budget. Unset = legacy, unchanged.
+                if (zoneLoot != null && zoneLoot.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.LootDropsMin))
+                {
+                    var budgetLo = (int)Math.Round(zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootDropsMin, 0.0));
+                    var budgetHi = budgetLo;
+                    if (zoneLoot.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.LootDropsMax))
+                        budgetHi = (int)Math.Round(zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootDropsMax, budgetLo));
+                    if (budgetHi < budgetLo)
+                        (budgetLo, budgetHi) = (budgetHi, budgetLo);
+                    var budget = budgetHi > budgetLo ? ACE.Common.ThreadSafeRandom.Next(budgetLo, budgetHi) : budgetLo;
+
+                    // A corpse holds 120 items (Corpse.cs:60-61) and TryAddToInventory's result is
+                    // DISCARDED at the fill sites below - so anything past 120 is silently destroyed,
+                    // not dropped to the ground and not logged. Clamp here rather than trust authoring.
+                    budget = Math.Min(budget, ZoneCorpseItemCap);
+
+                    slotCounts = LootGenerationFactory.RollBudgetedCounts(
+                        slotCounts, budget,
+                        zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightWeapon, 1.0),
+                        zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightArmor, 1.0),
+                        zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightJewelry, 1.0),
+                        zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightCloak, 1.0));
+                }
+
+                if (slotCounts.Any)
+                    items.AddRange(LootGenerationFactory.CreateZoneLootSet(effectiveTreasure, slotCounts));
+
+                // Armor v2 slot special (owner 2026-08-21): ONE roll per KILL, retail-rare model
+                // (1 in special_odds; IsZcBoss divides by special_boss_mult, IsZcLeader by
+                // special_leader_mult). On a hit pick one launch special at random and stamp the
+                // dropped piece of its slot (spawn one if the set has none). That piece becomes a
+                // PERFECT piece: core four + every line at band MAX (forceMax below). The flag is a
+                // LOCAL, never a prop - a 50200+ marker would be summed into the worn cache.
+                WorldObject specialPiece = null;
+                ACE.Server.Managers.ZoneControl.ZoneModifiers.Def specialDef = null;
+                // Zone Control off: no slot special is rolled at all (owner 2026-08-23) - the fallback
+                // is T10 max-rolled gear, which has no such thing.
+                if (zoneLoot != null && ServerConfig.zonecontrol_enabled.Value
+                    && effectiveTreasure.Tier >= LootGenerationFactory.ZoneLootSetMinTier)
+                {
+                    // special_odds is ABSOLUTE per rank since 2026-09-02 (owner D4): the profile is the
+                    // mob's rank chain, so a Boss reads the Boss row's own denominator. The old
+                    // special_boss_mult / special_leader_mult divisors were folded into those rows
+                    // by the migration SQL (151,200 / 3 and / 2 at T11).
+                    var odds = zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.SpecialOdds, 750000.0);
+                    var denom = Math.Max(1, (int)Math.Round(odds));
+
+                    if (ACE.Common.ThreadSafeRandom.Next(1, denom) == 1)
+                    {
+                        var specials = ACE.Server.Managers.ZoneControl.ZoneModifiers.SlotSpecials();
+                        // per-special on/off (owner 2026-08-23): a special turned off at this scope never rolls;
+                        // the odds are unchanged, the remaining specials share the hit
+                        specials.RemoveAll(d => !zoneLoot.SpecialEnabled(d.Key));
+                        if (specials.Count > 0)
+                        {
+                            specialDef = specials[ACE.Common.ThreadSafeRandom.Next(0, specials.Count - 1)];
+                            // the special's home slot: the zone / Default override when authored (`cantrip <scope>
+                            // slots <key> helm|...|cloak`, owner 2026-08-22), else the catalog's SpecialSlot
+                            var slotId = ACE.Server.Managers.ZoneControl.ZoneModifiers.EffectiveSpecialSlot(specialDef, zoneLoot.ModifierSlots);
+                            specialPiece = items.FirstOrDefault(i => ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialPieceMatches(i, slotId));
+                            if (specialPiece == null)
+                            {
+                                // the set rolled no piece for that slot (zone turned it off) - spawn exactly one
+                                var one = new LootGenerationFactory.ZoneLootSetCounts();
+                                switch (slotId)
+                                {
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Helm: one.Helm = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Chest: one.Chest = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Shoulders: one.Shoulder = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Bracers: one.Bracer = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Gauntlets: one.Glove = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Girth: one.Girth = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Tassets: one.UpperLeg = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Greaves: one.LowerLeg = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Boots: one.Boot = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Shield: one.Shield = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Neck: one.Amulet = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Trinket: one.Trinket = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Ring: one.Ring = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Bracelet: one.Bracelet = 1; break;
+                                    case ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialSlotId.Cloak: one.Cloak = 1; break;
+                                    default: one.Chest = 1; break;
+                                }
+                                var spawned = LootGenerationFactory.CreateZoneLootSet(effectiveTreasure, one);
+                                specialPiece = spawned.FirstOrDefault(i => ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialPieceMatches(i, slotId));
+                                items.AddRange(spawned);
+                            }
+
+                            if (specialPiece != null)
+                                log.Info($"[ZONELOOT] SLOT SPECIAL: {killer?.Name ?? "(unknown)"} killed {Name} ({WeenieClassId}) -> {specialDef.Name} (key {specialDef.Key}, {slotId}) on {specialPiece.Name}, odds 1 in {denom}");
+                            else
+                            {
+                                log.Warn($"[ZONELOOT] SLOT SPECIAL won by {killer?.Name ?? "(unknown)"} on {Name} ({WeenieClassId}) but no {slotId} piece could be found or spawned");
+                                specialDef = null;
+                            }
+                        }
+                    }
+                }
+
+                // Corpse display order (owner 2026-07-20): casters, missiles, UA, sword, other
+                // melee, then armor/shields/jewelry/cloaks. The client's loot window shows items
+                // in REVERSE insertion order, so insert in exact reverse of the desired display
+                // (stable sort + Reverse keeps within-group generation order correct on screen).
+                // Quest/create-list items are added AFTER treasure (below) so they display first.
+                if (effectiveTreasure.Tier >= LootGenerationFactory.ZoneLootSetMinTier)
+                    items = items.OrderBy(LootGenerationFactory.GetZoneLootDisplayOrder).Reverse().ToList();
+
                 foreach (WorldObject wo in items)
                 {
                     if (tier > 0)
                         PrestigeManager.ApplyLootScaling(wo, tier);
+
+                    // T11+ deterministic per-slot gear budget (fixed base; cantrips carry the
+                    // variance). BEFORE MutateLootItem so the cantrip
+                    // stamps layer ON TOP of it rather than being clobbered.
+                    var isSpecial = specialPiece != null && ReferenceEquals(wo, specialPiece);
+                    if (effectiveTreasure.Tier >= LootGenerationFactory.ZoneLootSetMinTier)
+                        LootGenerationFactory.ApplyT11GearStats(wo, effectiveTreasure.Tier, forceMax: isSpecial, p: zoneLoot);
+
+                    // Zone Control loot: post-roll per-item mutations (weapon stats, AL, workmanship, coins,
+                    // value, and the low-chance special-property rolls)
+                    ACE.Server.Managers.ZoneControl.ZoneLootMutator.MutateLootItem(wo, zoneLoot, this, effectiveTreasure.Tier, forceMax: isSpecial);
+
+                    // the slot special itself (Armor v2): rolled in ITS band (zone override wins), stamped
+                    // after the lines so it reads last among the "Zone Cantrip:" lines
+                    if (isSpecial && specialDef != null)
+                    {
+                        var (sMin, sMax) = zoneLoot.ModifierBands.TryGetValue(specialDef.Key, out var sBand)
+                            ? (sBand.Min, sBand.Max) : ACE.Server.Managers.ZoneControl.ZoneModifiers.CatalogBandAt(specialDef, effectiveTreasure.Tier);
+                        if (sMin > sMax) (sMin, sMax) = (sMax, sMin);
+                        // specials join the grade model (owner 2026-08-22): graded roll, recorded in ZcModifiers
+                        var sGrade = ACE.Server.Managers.ZoneControl.ZoneStatResolver.RollGrade(effectiveTreasure.Tier, false);
+                        ACE.Server.Managers.ZoneControl.ZoneModifiers.StampGraded(wo, specialDef, sGrade, (sMin, sMax));
+                    }
+
+                    // Tier 11+ presentation sweep. Runs LAST so it also covers values that came
+                    // from the base weenie or any mutation above.
+                    if (effectiveTreasure.Tier >= LootGenerationFactory.ZoneLootSetMinTier)
+                    {
+                        // ALL inherited wield reqs removed, replaced by the per-tier item-aug gate
+                        LootGenerationFactory.StripWieldRequirements(wo);
+                        LootGenerationFactory.ApplyT11WieldRequirement(wo, effectiveTreasure.Tier);
+
+                        // Weapon aug-scaling identity: quality roll + tier (weapons/casters only)
+                        LootGenerationFactory.ApplyWeaponAugScaleStamp(wo, effectiveTreasure.Tier);
+
+                        // one uniform resist value across all eight elements. Pass the tier AND the
+                        // zone profile: without the profile the armor_prot_equalize switch resolves
+                        // from the tier Default only, so a ZONE-level override would be silently
+                        // ignored on this path while working everywhere else.
+                        LootGenerationFactory.EqualizeT11ArmorResists(wo, effectiveTreasure.Tier, zoneLoot);
+
+                        // description cleanup LAST: drop inherited weenie flavor text, keep our
+                        // lines in order, provenance ("Dropped by") to the very bottom
+                        LootGenerationFactory.FinalizeT11LongDesc(wo);
+
+                        // Live stat resolution self-check: the record must resolve to exactly what
+                        // was stamped (grades are the truth, props the cache). Cheap, once per piece.
+                        VerifyLiveStatCache(wo);
+
+                        // NOTE (owner 2026-07-21): the server-composed info block / full panel
+                        // takeover was REVERTED -- the client renders its stock examine panel.
+                        // A future pass will APPEND extra lines to the bottom (LongDesc renders
+                        // last) without touching the default layout.
+
+                        // "T11 - [base name]" (material cleared -- the client would prefix it)
+                        LootGenerationFactory.ApplyT11NamePrefix(wo);
+
+                        // name tinted by damage element (trial 2026-07-20, may revert)
+                        LootGenerationFactory.ApplyT11ElementTint(wo);
+                    }
 
                     if (corpse != null)
                         corpse.TryAddToInventory(wo);
                     else
                         droppedItems.Add(wo);
 
-                    DoCantripLogging(killer, wo);
+                    DoModifierLogging(killer, wo);
                 }
             }
 
@@ -954,8 +1258,32 @@ namespace ACE.Server.WorldObjects
                     droppedItems.Add(item);
             }
 
-            // contain and non-wielded treasure create
-            if (Biota.PropertiesCreateList != null)
+            // contain and non-wielded treasure create (create-list: quest drops etc.)
+            // Runs LAST: the client's loot window displays in reverse insertion order, so the
+            // last-inserted quest/special items show FIRST (owner loot-order decision 2026-07-20).
+            //
+            // ZONE LOOT FLOOR SUPPRESSES CARRIED INVENTORY, OPT-IN PER MONSTER (owner 2026-09-01).
+            // Inside a governed v11+ zone a monster drops THAT VARIATION'S SET and nothing else. The
+            // three retail roll groups are already zeroed where the floor is applied above, but that
+            // only covers ROLLED treasure - create-list Contain items never pass through
+            // CreateRandomLootObjects at all, so they kept landing on the corpse. Found on retail wcid
+            // 4124 (Lich Overseer), which carries three Focusing Stones and tipped all three into a T12
+            // corpse alongside the zone set.
+            //
+            // NOT a blanket rule, because quest mobs deliver their quest item through exactly this
+            // channel (owner: none do today, but they will). drop_carried_inventory authored above 0 -
+            // normally on that ONE monster's per-WCID bucket - lets it hand over what it carries. So the
+            // default is "drop the zone set only" and a quest drop is one authored stat away, instead of
+            // the quest silently delivering nothing on the day it is built.
+            //
+            // Scope is deliberately narrow. This block takes Contain, and Treasure-without-Wield; the
+            // WIELDED gear above is a separate path with its own creatures_drop_createlist_wield config
+            // and is untouched - which matters because every custom T11 monster authors its kit as
+            // DestinationType.Wield (its look), and NONE of them use Contain.
+            var carriedAllowed = zoneFloorTier <= 0
+                || (zoneLoot != null && zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.DropCarriedInventory, 0.0) > 0.0);
+
+            if (Biota.PropertiesCreateList != null && carriedAllowed)
             {
                 var createList = Biota.PropertiesCreateList.Where(i => (i.DestinationType & DestinationType.Contain) != 0 ||
                                 (i.DestinationType & DestinationType.Treasure) != 0 && (i.DestinationType & DestinationType.Wield) == 0).ToList();
@@ -979,9 +1307,140 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-
+            // Zone Scaler: inject the custom bonus-currency token (independent of the loot table).
+            InjectZoneBonusCurrency(zoneLoot, killer, corpse, droppedItems);
 
             return droppedItems;
+        }
+
+        /// <summary>
+        /// Shallow field-copy of a TreasureDeath profile so per-kill scaling (zone / QB) can mutate a clone
+        /// without touching the shared cached row. Keep the field list in sync with TreasureDeath's columns.
+        /// </summary>
+        /// <summary>Hard ceiling on a budgeted drop set: a Corpse declares ItemCapacity 120
+        /// (Corpse.cs:61), and every corpse.TryAddToInventory call here ignores its return value, so
+        /// an item that will not fit is silently lost. Kept below the real cap so quest tokens,
+        /// currency and slot specials - all added OUTSIDE the budget - still have room.</summary>
+        private const int ZoneCorpseItemCap = 100;
+
+        private static ACE.Database.Models.World.TreasureDeath CloneTreasureDeath(ACE.Database.Models.World.TreasureDeath src)
+        {
+            return new ACE.Database.Models.World.TreasureDeath
+            {
+                Id = src.Id,
+                TreasureType = src.TreasureType,
+                Tier = src.Tier,
+                LootQualityMod = src.LootQualityMod,
+                UnknownChances = src.UnknownChances,
+                ItemChance = src.ItemChance,
+                ItemMinAmount = src.ItemMinAmount,
+                ItemMaxAmount = src.ItemMaxAmount,
+                ItemTreasureTypeSelectionChances = src.ItemTreasureTypeSelectionChances,
+                MagicItemChance = src.MagicItemChance,
+                MagicItemMinAmount = src.MagicItemMinAmount,
+                MagicItemMaxAmount = src.MagicItemMaxAmount,
+                MagicItemTreasureTypeSelectionChances = src.MagicItemTreasureTypeSelectionChances,
+                MundaneItemChance = src.MundaneItemChance,
+                MundaneItemMinAmount = src.MundaneItemMinAmount,
+                MundaneItemMaxAmount = src.MundaneItemMaxAmount,
+                MundaneItemTypeSelectionChances = src.MundaneItemTypeSelectionChances,
+                LastModified = src.LastModified,
+            };
+        }
+
+        /// <summary>
+        /// Zone Scaler: injects bonus currency onto the corpse/drop list. Two independent sources, both
+        /// loot-table independent: the legacy single-token bonus_currency stat (server-wide token wcid from
+        /// zonescale_bonus_currency_wcid) and the zone's per-entry currency drop table (each entry = its own
+        /// item wcid + stack amount + per-kill chance).
+        /// </summary>
+        private void InjectZoneBonusCurrency(ACE.Server.Managers.ZoneScaling.EvaluatedProfile profile, DamageHistoryInfo killer, Corpse corpse, List<WorldObject> dropped)
+        {
+            if (profile == null)
+                return;
+
+            if (profile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.BonusCurrency))
+            {
+                var amount = (int)Math.Round(profile.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.BonusCurrency));
+                var wcid = (uint)ServerConfig.zonescale_bonus_currency_wcid.Value;
+                if (amount > 0 && wcid != 0)
+                    SpawnZoneCurrency(wcid, amount, corpse, dropped);
+            }
+
+            if (profile.CurrencyDrops != null)
+            {
+                foreach (var drop in profile.CurrencyDrops)
+                {
+                    if (drop == null || drop.Wcid == 0 || drop.Amount <= 0)
+                        continue;
+                    if (drop.Chance < 1.0 && ACE.Common.ThreadSafeRandom.Next(0.0f, 1.0f) >= drop.Chance)
+                        continue;
+
+                    if (drop.Direct && TryGiveZoneCurrencyToKiller(killer, drop.Wcid, drop.Amount))
+                        continue;
+
+                    SpawnZoneCurrency(drop.Wcid, drop.Amount, corpse, dropped);
+                }
+            }
+        }
+
+        private static WorldObject CreateZoneCurrencyToken(uint wcid, int amount)
+        {
+            var token = WorldObjectFactory.CreateNewWorldObject(wcid);
+            if (token == null)
+                return null;
+
+            if (token.MaxStackSize.HasValue && amount > 1)
+                token.SetStackSize(Math.Min(amount, token.MaxStackSize.Value));
+
+            return token;
+        }
+
+        private static void SpawnZoneCurrency(uint wcid, int amount, Corpse corpse, List<WorldObject> dropped)
+        {
+            // an authored amount above the token's MaxStackSize spawns as several full stacks - never truncated silently
+            var remaining = Math.Max(amount, 0);
+            var guard = 0;
+            while (remaining > 0 && guard++ < 64)
+            {
+                var token = CreateZoneCurrencyToken(wcid, remaining);
+                if (token == null)
+                    return;
+                var stack = Math.Max(token.StackSize ?? 1, 1);
+                if (corpse != null)
+                    corpse.TryAddToInventory(token);
+                else
+                    dropped.Add(token);
+                remaining -= stack;
+            }
+            if (remaining > 0)
+                log.Warn($"[ZoneLoot] currency {wcid}: {remaining} of {amount} could not be spawned within 64 stacks - the authored amount is too large.");
+        }
+
+        /// <summary>Direct-delivery currency drop: straight into the killing player's inventory with a chat
+        /// message. Returns false (caller falls back to the corpse) when the killer isn't a player, the
+        /// token can't be created, or their inventory is full.</summary>
+        private static bool TryGiveZoneCurrencyToKiller(DamageHistoryInfo killer, uint wcid, int amount)
+        {
+            var player = killer?.TryGetPetOwnerOrAttacker() as Player;
+            if (player == null || player.Session == null)
+                return false;
+
+            var token = CreateZoneCurrencyToken(wcid, amount);
+            if (token == null)
+                return false;
+
+            if (!player.TryCreateInInventoryWithNetworking(token))
+            {
+                token.Destroy();
+                return false;
+            }
+
+            var qty = token.StackSize ?? 1;
+            var name = qty > 1 ? token.GetPluralName() : token.Name;
+            player.Session.Network.EnqueueSend(
+                new GameMessageSystemChat($"You receive {qty:N0} {name} from the kill!", ChatMessageType.Broadcast));
+            return true;
         }
 
         /// <summary>
@@ -999,7 +1458,55 @@ namespace ACE.Server.WorldObjects
             corpse.TryAddToInventory(slag);
         }
 
-        public void DoCantripLogging(DamageHistoryInfo killer, WorldObject wo)
+        /// <summary>
+        /// Debug assertion for live stat resolution (2026-08-22): ZoneStatResolver.Compute(wo) must equal the
+        /// props the producers stamped. Any difference means a producer bypassed the record, a zone override
+        /// (core anchor) diverged from the tier Default layer the resolver
+        /// reads, or a later mutation touched a ZC-owned prop. Warn only - never alters the drop.
+        /// </summary>
+        private static void VerifyLiveStatCache(WorldObject wo)
+        {
+            try
+            {
+                var r = ACE.Server.Managers.ZoneControl.ZoneStatResolver.Compute(wo);
+                if (r == null)
+                    return;
+                var diffs = new List<string>();
+                foreach (var kv in r.Ints)
+                {
+                    var cur = wo.GetProperty(kv.Key);
+                    if (cur != kv.Value)
+                        diffs.Add($"{kv.Key} item={(cur.HasValue ? cur.Value.ToString() : "null")} resolved={kv.Value}");
+                }
+                // WEAPON half (2026-08-25): every continuous weapon card is a PropertyFloat, so the
+                // same assertion has to walk r.Floats or the whole weapon lane would go unchecked.
+                //
+                // EPSILON, unlike the ints above: these are doubles produced by band interpolation, and
+                // the drop path and the resolve path reach the number by slightly different routes (the
+                // drop path clamps a freshly interpolated value; the resolve path re-interpolates from
+                // the stored grade). Bit-exact equality would make this warn on last-place noise and
+                // train everyone to ignore it. 1e-9 is far below the second decimal that any of these
+                // cards is designed in, so a REAL divergence - a producer bypassing the record, a
+                // Crushing Blow "- 1.0" applied twice, a zone band diverging from the tier Default the
+                // resolver reads - is still caught loudly.
+                foreach (var kv in r.Floats)
+                {
+                    var cur = wo.GetProperty(kv.Key);
+                    if (!cur.HasValue || Math.Abs(cur.Value - kv.Value) > 1e-9)
+                        diffs.Add($"{kv.Key} item={(cur.HasValue ? cur.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "null")} resolved={kv.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+                }
+                if (r.ArmorLevel.HasValue && wo.ArmorLevel != r.ArmorLevel.Value)
+                    diffs.Add($"ArmorLevel item={(wo.ArmorLevel.HasValue ? wo.ArmorLevel.Value.ToString() : "null")} resolved={r.ArmorLevel.Value}");
+                if (diffs.Count > 0)
+                    log.Warn($"[ZONELOOT] LIVESTAT MISMATCH on {wo.Name} ({wo.WeenieClassId}, tier {r.Tier}, record \"{wo.GetProperty(PropertyString.ZcModifiers)}\"): {string.Join(", ", diffs)}");
+            }
+            catch (Exception ex)
+            {
+                log.Warn($"[ZONELOOT] LIVESTAT self-check threw on {wo?.Name}: {ex.Message}");
+            }
+        }
+
+        public void DoModifierLogging(DamageHistoryInfo killer, WorldObject wo)
         {
             var epicCantrips = wo.EpicCantrips;
             var legendaryCantrips = wo.LegendaryCantrips;

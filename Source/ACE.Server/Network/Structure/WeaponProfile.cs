@@ -35,7 +35,7 @@ namespace ACE.Server.Network.Structure
 
         public double Enchantment_WeaponDefense;    // gets sent elsewhere, calculating here for consistency
 
-        public WeaponProfile(WorldObject weapon)
+        public WeaponProfile(WorldObject weapon, Player examiner = null)
         {
             Weapon = weapon;
 
@@ -52,7 +52,39 @@ namespace ACE.Server.Network.Structure
             WeaponSkill = (Skill)(weapon.GetProperty(PropertyInt.WeaponSkill) ?? 0);
             Damage = GetDamage(weapon);
             DamageVariance = GetDamageVariance(weapon);
-            DamageMod = GetDamageMultiplier(weapon);
+
+            // Weapon aug-scaling: fold the scaling term into the displayed range. WIELDED = the
+            // wielder's live value; UNWIELDED = the EXAMINER's own value (owner 2026-08-03), so a
+            // drop in a corpse or pack reads as what it would do in YOUR hands — floored at the
+            // tier's wield-floor value, which no real wielder can be below. (Superseded: showing
+            // every examiner the tier floor, owner 2026-08-01 — honest, but it made two drops
+            // looted at different aug counts read identically and confused the owner repeatedly.)
+            // In combat the term is a flat post-roll add (variance never touches it), so the
+            // reported variance is re-derived to keep the displayed MIN true: min = staticMin +
+            // term, max = staticMax + term — without this the client applies the weapon's
+            // variance to the whole and understates min ~2x.
+            var augTerm = weapon.Wielder is Player wielderPlayer
+                ? (int)ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFlatBonus(weapon, wielderPlayer)
+                : (int)ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetExamineBonus(weapon, examiner);
+            if (augTerm > 0)
+            {
+                if (ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetEffectiveVariance(weapon, out var vEff))
+                {
+                    // Scheme C: combat rolls the WHOLE envelope down from max by the quality-
+                    // tightened family variance — display exactly that so examine = what you roll.
+                    Damage = (uint)(Damage + augTerm);
+                    Enchantment_Damage += augTerm;   // green "buffed" coloring client-side
+                    DamageVariance = vEff;
+                }
+                else
+                {
+                    var trueMin = Damage * (1.0 - DamageVariance) + augTerm;
+                    Damage = (uint)(Damage + augTerm);
+                    Enchantment_Damage += augTerm;   // green "buffed" coloring client-side
+                    DamageVariance = Damage > 0 ? Math.Max(0.0, 1.0 - trueMin / Damage) : 0.0;
+                }
+            }
+            DamageMod = GetDamageMultiplier(weapon, examiner);
             WeaponLength = weapon.GetProperty(PropertyFloat.WeaponLength) ?? 1.0f;
             MaxVelocity = weapon.MaximumVelocity ?? 1.0f;
             WeaponOffense = GetWeaponOffense(weapon);
@@ -68,6 +100,8 @@ namespace ACE.Server.Network.Structure
             var damageBonus = weapon.EnchantmentManager.GetDamageBonus();
             var auraDamageBonus = weapon.Wielder != null && (weapon.WeenieType != WeenieType.Ammunition || ServerConfig.show_ammo_buff.Value) ? weapon.Wielder.EnchantmentManager.GetDamageBonus() : 0;
             Enchantment_Damage = weapon.IsEnchantable ? damageBonus + auraDamageBonus : damageBonus;
+            // (the aug-scaling term is folded in by the ctor AFTER variance is known, so the
+            // displayed min can be corrected to the true post-roll value)
             return (uint)Math.Max(0, baseDamage + Enchantment_Damage);
         }
 
@@ -99,9 +133,18 @@ namespace ACE.Server.Network.Structure
         /// <summary>
         /// Returns the weapon damage multiplier, with enchantments factored in
         /// </summary>
-        public float GetDamageMultiplier(WorldObject weapon)
+        public float GetDamageMultiplier(WorldObject weapon, Player examiner = null)
         {
-            var baseMultiplier = weapon.GetProperty(PropertyFloat.DamageMod) ?? 1.0f;
+            // Weapon aug-scaling: stamped T11+ launchers display the quality-GRADED, TIER-SCALED
+            // damage modifier (same resolver combat uses — replace semantics, authored value
+            // fallback). WIELDED reads the wielder's augs; UNWIELDED reads the examiner's, which
+            // is what finally makes two different-tier bows appraise differently — on 2026-08-06
+            // the owner compared a T11 and a T13 bow, saw identical +300% panels, and reasonably
+            // concluded the weapons were identical.
+            var holder = (weapon.Wielder as Player) ?? examiner;
+            var baseMultiplier = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetLauncherDamageMod(weapon, holder, out var gradedMod)
+                ? gradedMod
+                : weapon.GetProperty(PropertyFloat.DamageMod) ?? 1.0f;
             var damageMod = weapon.EnchantmentManager.GetDamageMod();
             var auraDamageMod = weapon.Wielder != null ? weapon.Wielder.EnchantmentManager.GetDamageMod() : 0.0f;
             Enchantment_DamageMod = weapon.IsEnchantable ? damageMod + auraDamageMod : damageMod;

@@ -106,6 +106,11 @@ namespace ACE.Server.Entity
         public float PkDamageResistanceMod;
 
         public float DamageMitigated;
+        // pct-of-max-HP floor readout (2026-09-02): the floor value computed for this hit, the damage before
+        // the floor was applied, and whether the floor won. Player defenders only; 0 / false otherwise.
+        public float DebugPctHpFloor;
+        public float DebugPreFloorDamage;
+        public bool DebugPctHpFloorWon;
 
         /// <summary>Amount of damage absorbed by Mana Barrier on the defending player this hit.</summary>
         public uint AmountAbsorbed;
@@ -139,6 +144,7 @@ namespace ACE.Server.Entity
 
         /// <summary>Flat luminance melee/missile damage bonus added to base damage (for diagnostics).</summary>
         public long DebugLuminanceFlatDamageBonus;
+        public float WeaponScalingFlatBonus;
 
         /// <summary>Damage immediately before combat-pet-only physical mitigation multipliers (same as final for player defenders).</summary>
         public float DebugDamagePrePetPhysicalMitigation;
@@ -205,6 +211,15 @@ namespace ACE.Server.Entity
 
             if (defender.Invincible)
                 return 0.0f;
+
+            // T11+ HIT GATE (owner 2026-08-31): an under-augmented player cannot land on a
+            // tier-11+ monster at all. Checked BEFORE Overpower on purpose - Overpower bypasses
+            // evade, so leaving it first would let it punch straight through the gate.
+            if (!ACE.Server.Managers.ZoneControl.TierHitGate.CanHitOrTell(attacker, defender))
+            {
+                Evaded = true;
+                return 0.0f;
+            }
 
             // overpower
             if (attacker.Overpower != null)
@@ -327,6 +342,36 @@ namespace ACE.Server.Entity
             BaseDamage += damageBonus;
             DebugLuminanceFlatDamageBonus = damageBonus;
 
+            // Weapon aug-scaling (T11 weapon relevance): per-strike flat = k(quality) x
+            // min(wielder's item augs, tier cap). LIVE read every event, never baked (plan §6.2).
+            // Lands here post-roll beside the aug flat — NOT in BaseDamageMod.DamageBonus, which
+            // launcher DamageMod would multiply ~3.6-3.9x on atlatls (§6.1). 0 when the master
+            // switch is off / weapon unstamped / attacker not a player.
+            if (playerAttacker != null)
+            {
+                // zone lock: outside authored areas the aug-scaling flat term is 0 (and Scheme C
+                // variance below rides it, so both vanish together)
+                WeaponScalingFlatBonus = Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(Weapon, playerAttacker)
+                    ? 0f
+                    : Managers.WeaponScaling.WeaponScalingCombat.GetFlatBonus(Weapon, playerAttacker);
+
+                // Scheme C (2026-08-03): when the weapon has an authored family variance, the
+                // WHOLE envelope (weenie base + aug term) rolls down from max by the quality-
+                // tightened fraction — replacing the base-only roll + flat add, which made every
+                // endgame hit land within the weenie's few-point spread. The luminance aug flat
+                // (damageBonus, already in BaseDamage) stays flat and crit-blind as always.
+                // Crits are untouched: max-forced at the full envelope (below).
+                if (WeaponScalingFlatBonus > 0
+                    && Managers.WeaponScaling.WeaponScalingCombat.TryGetEffectiveVariance(Weapon, out var schemeCVariance))
+                {
+                    var envelopeMax = BaseDamageMod.MaxDamage + WeaponScalingFlatBonus;
+                    BaseDamage = damageBonus
+                        + envelopeMax * (float)ThreadSafeRandom.Next(1.0f - (float)schemeCVariance, 1.0f);
+                }
+                else
+                    BaseDamage += WeaponScalingFlatBonus;
+            }
+
             // get damage modifiers
             PowerMod = attacker.GetPowerMod(Weapon);
             AttributeMod = attacker.GetAttributeMod(Weapon);
@@ -387,19 +432,29 @@ namespace ACE.Server.Entity
                         luminanceAugmentBonus = cachedLuminanceAugmentCount.Value * luminanceAugmentCritDamageMultiplier;
                     }
 
-                    // Update the CriticalDamageMod to include luminance augment bonus
+                    // ══ UNIFIED CRIT MODEL (owner 2026-08-29, "all 3 schools get the same crit
+                    // treatment"): a critical hit deals exactly CritX x A MAX NORMAL HIT, where the
+                    // max normal hit includes EVERY flat (weapon max, lum-aug flat, weapon-scaling
+                    // term) under the normal rating chain, and CritX = the Crushing Blow multiplier
+                    // (default 2.0 = the retail "twice the maximum damage" rule) plus the lum-aug
+                    // crit term. Crit Damage RATING stacks ON TOP (owner ruling); the defender's
+                    // Crit Damage Resist mitigates afterwards, unchanged.
+                    //
+                    // This REPLACES the 2026-08-01 composition where the lum-aug flat was crit-blind
+                    // and a launcher's multiplied k-slice crit in full - the asymmetry that made bow
+                    // crits land ~7x a normal hit and forced the player_crit_damage_cap clamp. The
+                    // clamp is RETIRED with it: CritX IS the ratio, the Crushing Blow band is the cap.
                     CriticalDamageMod = 1.0f + WorldObject.GetWeaponCritDamageMod(Weapon, attacker, attackSkill, defender) + luminanceAugmentBonus;
 
-                    // NEW: Apply enrage multiplier if attacker is a mob and enraged
+                    // Apply enrage multiplier if attacker is a mob and enraged
                     if (attacker.IsEnraged && !(attacker is Player))
-                    {
                         CriticalDamageMod *= attacker.EnrageDamageMultiplier ?? 1.0f;
-                        //Console.WriteLine($"[DEBUG] CriticalDamageMod After Mob Attacker Enrage Multiplier: {CriticalDamageMod}");
-                    }
 
-                    // Calculate damage before mitigation
-                    DamageBeforeMitigation = BaseDamageMod.MaxDamage * AttributeMod * PowerMod * SlayerMod * DamageRatingMod * CriticalDamageMod;
+                    // the full non-crit ceiling, ALL flats included, normal rating chain
+                    var maxNormalHit = (BaseDamageMod.MaxDamage + DebugLuminanceFlatDamageBonus + WeaponScalingFlatBonus)
+                                       * AttributeMod * PowerMod * SlayerMod * DamageRatingMod;
 
+                    DamageBeforeMitigation = maxNormalHit * CriticalDamageMod;
 
                     CriticalDamageRatingMod = Creature.GetPositiveRatingMod(attacker.GetCritDamageRating());
 
@@ -410,16 +465,27 @@ namespace ACE.Server.Entity
                     if (pkBattle)
                         DamageRatingMod = Creature.AdditiveCombine(DamageRatingMod, PkDamageMod);
 
-                    DamageBeforeMitigation *= Creature.AdditiveCombine(CriticalDamageRatingMod, 1.0f); // Apply only crit bonus
+                    DamageBeforeMitigation *= Creature.AdditiveCombine(CriticalDamageRatingMod, 1.0f); // Crit Damage Rating ON TOP
 
+                    // player_crit_damage_cap RETIRED here 2026-08-29 (owner): under the unified
+                    // model the Crushing Blow band bounds the ratio by construction, so the clamp
+                    // that contained the old bow inflation has nothing left to contain.
                 }
             }
 
             // armor rending and cleaving
+            // (zone lock: outside authored areas a ZC weapon's Armor Rend stamp reads as absent)
             var armorRendingMod = 1.0f;
-            if (Weapon != null && Weapon.HasImbuedEffect(ImbuedEffectType.ArmorRending))
+            if (Weapon != null && Weapon.HasImbuedEffect(ImbuedEffectType.ArmorRending)
+                && !Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(Weapon, attacker))
             {
                 armorRendingMod = WorldObject.GetArmorRendingMod(attackSkill);
+
+                // Zone Control loot: per-weapon armor-rend amount (fraction of armor ignored) replaces
+                // the skill-scaled formula (cap 0.6) for weapons stamped by ZoneLootMutator
+                var armorRendOverride = Weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ArmorRendOverridePropId);
+                if (armorRendOverride.HasValue)
+                    armorRendingMod = 1.0f - (float)Math.Clamp(armorRendOverride.Value, 0.0, 1.0);
             }
             else if (attacker is CombatPet && attacker.HasImbuedEffect(ImbuedEffectType.ArmorRending))
             {
@@ -556,6 +622,28 @@ namespace ACE.Server.Entity
                 //Console.WriteLine($"[DEBUG] Final Mob Defender Enrage Damage Reduction Applied: {damageReduction * 100}%, Final Damage: {Damage}");
             }
 
+            // v11+ percent-HP floor: a high-variation monster always deals at least a %HP chunk to a player,
+            // bypassing life-aug damage reduction. Whichever is larger — normal mitigated damage or the floor — wins.
+            // Stamina/Mana guard FIXED 2026-08-21 (owner ruling): the magic path already
+            // excludes vital-drain damage types (SpellProjectile.cs) but this one did not, so
+            // a mob whose melee attack is Stamina- or Mana-typed applied a HEALTH-percent
+            // floor to the wrong vital.
+            if (defender is Player pctHpPlayer && attacker != null
+                && DamageType != DamageType.Stamina && DamageType != DamageType.Mana)
+            {
+                var pctHpFloor = Creature.GetPercentHpFloorDamage(attacker, pctHpPlayer, IsCritical);
+                // Debug readout (2026-09-02, mob->player tuning): the floor used to win SILENTLY here - the
+                // extensive block showed only the final Damage, so a floored hit and a normal hit were
+                // indistinguishable in the log. Recorded for BuildExtensiveDebugLog's "pctHpFloor:" line.
+                DebugPctHpFloor = pctHpFloor;
+                DebugPreFloorDamage = Damage;
+                if (pctHpFloor > Damage)
+                {
+                    Damage = pctHpFloor;
+                    DebugPctHpFloorWon = true;
+                }
+            }
+
             DebugDamagePrePetPhysicalMitigation = Damage;
             DebugCombatPetPhysicalMitigationMultiplier = 1.0f;
             DebugCombatPetCritDamageTakenMultiplier = 1.0f;
@@ -581,6 +669,16 @@ namespace ACE.Server.Entity
             }
 
             DamageMitigated = DamageBeforeMitigation - Damage;
+
+            // Zone Control pct-HP damage special (key 44, gauntlets): flat pct of the defender's max HP,
+            // added AFTER DamageMitigated is booked so no crit/armor/DRR/pet mitigation touches it (and the
+            // mitigation figure does not go negative). Player attacker vs a zone-profiled monster only;
+            // the NO-KILL rule, immune bool and per-character cooldown live in Player.ZcTryPctHpDamage.
+            if (Damage > 0 && playerAttacker != null && playerDefender == null)
+            {
+                Damage += playerAttacker.ZcTryPctHpDamage(defender);
+                playerAttacker.ZcTryLifeOnHit(defender);            // key 48 Life on Hit (heals the attacker; cooldown inside)
+            }
 
             //Console.WriteLine($"[DEBUG] Final Damage: {Damage}");
             return Damage;
@@ -673,6 +771,14 @@ namespace ACE.Server.Entity
             AccuracyMod = attacker.GetAccuracyMod(Weapon);
 
             EffectiveAttackSkill = attacker.GetEffectiveAttackSkill();
+
+            // v11+ attack-skill floor: ensure endgame monsters can land hits vs very high player defense.
+            if (defender is Player v11Player)
+            {
+                var skillFloor = Creature.GetV11AttackSkillFloor(attacker, v11Player);
+                if (skillFloor > EffectiveAttackSkill)
+                    EffectiveAttackSkill = skillFloor;
+            }
 
             //var attackType = attacker.GetCombatType();
 
@@ -984,6 +1090,14 @@ namespace ACE.Server.Entity
             {
                 log.Info(BuildCombatPetOutgoingDebugLine(petAttacker, defender));
             }
+
+            // Weapon-scaling tuning aid: player -> mob OUTGOING hits — the case the defender-side
+            // logger above deliberately excludes (defender must be Player/CombatPet there).
+            if (ServerConfig.damage_event_debug_player_vs_mob.Value
+                && attacker is Player && defender != null && !(defender is Player))
+            {
+                log.Info(BuildExtensiveDebugLog(attacker, defender));
+            }
         }
 
         private string BuildCombatPetOutgoingDebugLine(CombatPet pet, Creature defender)
@@ -1020,7 +1134,7 @@ namespace ACE.Server.Entity
                 sb.AppendLine("weapon: <none>");
 
             if (BaseDamageMod != null)
-                sb.AppendLine($"baseDamage: rolled={BaseDamage} range={BaseDamageMod.Range} lumFlatBonus={DebugLuminanceFlatDamageBonus} bonus={BaseDamageMod.DamageBonus} mod={BaseDamageMod.DamageMod:F4} elemental={BaseDamageMod.ElementalBonus}");
+                sb.AppendLine($"baseDamage: rolled={BaseDamage} range={BaseDamageMod.Range} lumFlatBonus={DebugLuminanceFlatDamageBonus} wsFlatBonus={WeaponScalingFlatBonus:F1} bonus={BaseDamageMod.DamageBonus} mod={BaseDamageMod.DamageMod:F4} elemental={BaseDamageMod.ElementalBonus}");
             else
                 sb.AppendLine($"baseDamage: rolled={BaseDamage} (no BaseDamageMod) lumFlatBonus={DebugLuminanceFlatDamageBonus}");
 
@@ -1051,6 +1165,9 @@ namespace ACE.Server.Entity
             sb.AppendLine(
                 $"final: prePetPhysicalMit={DebugDamagePrePetPhysicalMitigation:F4} petCritMult={DebugCombatPetCritDamageTakenMultiplier:F4} petPhysicalMult={DebugCombatPetPhysicalMitigationMultiplier:F4} Damage={Damage:F4} mitigated(from preArmor pipeline)={DamageMitigated:F4}");
             sb.AppendLine($"defenderHealth: current={defender.Health.Current} max={defender.Health.MaxValue}");
+            // mob->player only (2026-09-02): the pct-of-max-HP floor, the pre-floor damage, and whether the floor won
+            if (defender is Player)
+                sb.AppendLine($"pctHpFloor: value={DebugPctHpFloor:F2} preFloor={DebugPreFloorDamage:F2} won={DebugPctHpFloorWon}");
 
             AppendLuminanceCombatSnapshot(sb, "Attacker luminance", attacker);
             AppendLuminanceCombatSnapshot(sb, "Defender luminance", defender);

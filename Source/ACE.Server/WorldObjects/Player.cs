@@ -267,6 +267,13 @@ namespace ACE.Server.WorldObjects
 
             ContainerCapacity = (byte)(7 + AugmentationExtraPackSlot);
 
+            // How many pack slots the CLIENT is actually showing. The client renders the slot count
+            // it read at login, so a PackSlot aug granted mid-session raises ContainerCapacity
+            // server-side while the extra slot stays invisible until relog - a pack placed there
+            // looks lost/buggy. Tooling that mints packs fills to THIS, never to live capacity
+            // (owner 2026-08-11: "dont want to get a buggy item").
+            ClientPackSlots = ContainerCapacity ?? 7;
+
             if (Session != null && AdvocateQuest && IsAdvocate) // Advocate permissions are per character regardless of override
             {
                 if (Session.AccessLevel == AccessLevel.Player)
@@ -1189,7 +1196,11 @@ namespace ACE.Server.WorldObjects
             return burdenMod;
         }
 
-        public bool Adminvision;
+        public bool Adminvision
+        {
+            get => GetProperty(PropertyBool.PersistentAdminvision) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.PersistentAdminvision); else SetProperty(PropertyBool.PersistentAdminvision, value); }
+        }
 
         public void HandleAdminvisionToggle(int choice)
         {

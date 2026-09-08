@@ -126,6 +126,26 @@ namespace ACE.Server.Entity
         /// </summary>
         private readonly List<WorldObject> _prestigeBoundaryMarkers = new List<WorldObject>();
 
+        private double _empowerSourcesRefreshedAt = -1;
+        private List<Creature> _empowerSources = new();
+
+        /// <summary>The IsEmpowerSource creatures on this landblock, rescanned at most once per <paramref name="maxAgeSeconds"/>.
+        /// Shared by every CanBeEmpowered creature here, so the per-second aura check is O(sources) rather than a full
+        /// physics-object scan per creature. Called from the landblock's own tick thread only.</summary>
+        internal List<Creature> GetEmpowerSources(double now, double maxAgeSeconds)
+        {
+            if (now - _empowerSourcesRefreshedAt < maxAgeSeconds)
+                return _empowerSources;
+            var list = new List<Creature>();
+            foreach (var obj in GetWorldObjectsForPhysicsHandling())
+                if (obj is Creature c && c.GetProperty(ACE.Entity.Enum.Properties.PropertyBool.IsEmpowerSource) == true)
+                    list.Add(c);
+            _empowerSources = list;
+            _empowerSourcesRefreshedAt = now;
+            return list;
+        }
+        private readonly List<WorldObject> _zoneBoundaryMarkers = new List<WorldObject>();
+
         private readonly ActionQueue actionQueue = new();
 
         public int WorldObjectCount
@@ -227,8 +247,16 @@ namespace ACE.Server.Entity
 
             lastActiveTime = DateTime.UtcNow;
 
+            // Void detection (2026-07-26): the watchdog below needs to know how long this instance has
+            // existed, NOT how long a spawn task has been running - a landblock whose Init never ran has
+            // no task to measure. See CheckInitSpawnWatchdog.
+            constructedTime = DateTime.UtcNow;
+
             var cellLandblock = DBObj.GetCellLandblock(Id.Raw | 0xFFFF);
             PhysicsLandblock = new Physics.Common.Landblock(cellLandblock, variation);
+
+            if (ServerConfig.landblock_lifecycle_diag_verbose.Value)
+                log.Warn($"[LbLife] CONSTRUCT {Id.Landblock:X4} v={variation?.ToString() ?? "null"} raw={Id.Raw:X8}");
         }
 
 
@@ -239,22 +267,142 @@ namespace ACE.Server.Entity
         /// <param name="reload"></param>
         public void Init(int? variationId, bool reload = false)
         {
+            initCalled = true;
+
+            if (ServerConfig.landblock_lifecycle_diag_verbose.Value)
+                log.Warn($"[LbLife] INIT {Id.Landblock:X4} v={variationId?.ToString() ?? "null"} reload={reload}");
+
             if (!reload)
                 PhysicsLandblock.PostInit();
-            
-            Task.Run(() =>
+            else
             {
-                //Console.WriteLine($"Landblock.Init({Id}) task started, variation: {VariationId}, v: {variationId}");
-                CreateWorldObjects(variationId);
-                
-                SpawnDynamicShardObjects();
+                // A deliberate reload (/reload-landblock) reuses THIS Landblock object. The
+                // CreateWorldObjectsCompleted guard below exists to swallow duplicate watchdog
+                // RETRIES of the same load - but on a reload it swallowed the fresh spawn payload
+                // too, leaving the block EMPTY (found 2026-07-21 testing terrain-override camp
+                // swaps). Clear it so the rebuilt payload lands; restart the watchdog counters.
+                CreateWorldObjectsCompleted = false;
+                initSpawnAttempts = 0;
+                initSpawnStillRunningLogged = false;
+                initSpawnGaveUpLogged = false;   // each reload may log the watchdog outcome again
+            }
 
-                SpawnEncounters();
-
-                SetEnvironmentConditions();
-            });
+            StartInitSpawnTask(variationId);
 
             //LoadMeshes(objects);
+        }
+
+        // Void-landblock root cause (2026-07-18, F658 v11): this spawn work used to run in a bare
+        // Task.Run. An exception thrown before CreateWorldObjects could enqueue its spawn action
+        // (DB instance/shard queries, object factory) killed the task with ZERO trace — the landblock
+        // stayed registered, ticking and walkable (physics is built in the ctor) but permanently
+        // EMPTY until its scheduled unload. TaskScheduler.UnobservedTaskException was not hooked, so
+        // nothing could ever surface it. The catch below makes the death visible and the heartbeat
+        // watchdog (CheckInitSpawnWatchdog) retries it.
+        private Task initSpawnTask;
+        private int? initSpawnVariationId;
+        private int initSpawnAttempts;
+        private DateTime initSpawnStartedTime;
+        private bool initSpawnStillRunningLogged;
+        private bool initSpawnGaveUpLogged;   // the terminal VOID log has its own latch (#30)
+
+        // 2026-07-26 (F559 v11): the above only guards a task that STARTED. A landblock constructed but
+        // never Init()'d has initSpawnTask == null, so the watchdog returned on its first line every
+        // heartbeat and the block stayed a walkable void for the whole session - exactly the state found
+        // on F559 v11 (base variation ticking, not one v11 guid ever created). These two track the
+        // never-began case so the watchdog can heal it.
+        private readonly DateTime constructedTime;
+        private bool initCalled;
+        private bool neverInitLogged;
+
+        private void StartInitSpawnTask(int? variationId)
+        {
+            initSpawnVariationId = variationId;
+            initSpawnAttempts++;
+            initSpawnStartedTime = DateTime.UtcNow;
+            initSpawnStillRunningLogged = false;
+
+            initSpawnTask = Task.Run(() =>
+            {
+                try
+                {
+                    CreateWorldObjects(variationId);
+
+                    SpawnDynamicShardObjects();
+
+                    SpawnEncounters();
+
+                    SetEnvironmentConditions();
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[VoidHeal] Landblock {Id.Landblock:X4} (Var {VariationId?.ToString() ?? "null"}) init spawn task FAILED (attempt {initSpawnAttempts}) - block would be a void without retry: {ex}");
+                }
+            });
+        }
+
+        /// <summary>
+        /// Heartbeat watchdog for the init spawn task: if the task ended (faulted or otherwise) without
+        /// CreateWorldObjects completing, the landblock is a void — retry up to 3 times. A task still
+        /// running past the threshold is logged once (DB stall) but not retried until it ends.
+        /// </summary>
+        private static readonly TimeSpan initSpawnWatchdogThreshold = TimeSpan.FromSeconds(60);
+
+        private void CheckInitSpawnWatchdog(DateTime thisHeartBeat)
+        {
+            if (CreateWorldObjectsCompleted)
+                return;
+
+            // NEVER-BEGAN void (2026-07-26): no spawn task was ever started on this instance. The old
+            // guard bailed here on `initSpawnTask == null` and could never see this, which is how F559
+            // v11 stayed empty for an entire session while the player stood on it. Anything registered
+            // this long with nothing created is a void by definition - start the spawn work.
+            if (initSpawnTask == null)
+            {
+                if (constructedTime + initSpawnWatchdogThreshold > thisHeartBeat)
+                    return;
+
+                if (!neverInitLogged)
+                {
+                    neverInitLogged = true;
+                    log.Error($"[VoidHeal] Landblock {Id.Landblock:X4} (Var {VariationId?.ToString() ?? "null"}) has been registered for " +
+                              $"{(thisHeartBeat - constructedTime).TotalSeconds:N0}s with NO init spawn task (Init called={initCalled}) - " +
+                              $"walkable VOID, starting spawn now.");
+                }
+
+                // Init() never ran: PostInit() (physics cells, CurLandblock) has to precede the spawn task
+                if (!initCalled)
+                    Init(VariationId);
+                else
+                    StartInitSpawnTask(VariationId);
+                return;
+            }
+
+            if (initSpawnStartedTime + initSpawnWatchdogThreshold > thisHeartBeat)
+                return;
+
+            if (!initSpawnTask.IsCompleted)
+            {
+                if (!initSpawnStillRunningLogged)
+                {
+                    initSpawnStillRunningLogged = true;
+                    log.Warn($"[VoidHeal] Landblock {Id.Landblock:X4} (Var {VariationId?.ToString() ?? "null"}) init spawn task still running after {initSpawnWatchdogThreshold.TotalSeconds:N0}s (attempt {initSpawnAttempts})");
+                }
+                return;
+            }
+
+            if (initSpawnAttempts >= 3)
+            {
+                if (!initSpawnGaveUpLogged)
+                {
+                    initSpawnGaveUpLogged = true;
+                    log.Error($"[VoidHeal] Landblock {Id.Landblock:X4} (Var {VariationId?.ToString() ?? "null"}) init spawn task never completed after {initSpawnAttempts} attempts - GIVING UP, block is a VOID (faulted={initSpawnTask.IsFaulted})");
+                }
+                return;
+            }
+
+            log.Error($"[VoidHeal] Landblock {Id.Landblock:X4} (Var {VariationId?.ToString() ?? "null"}) init spawn task ended without completing spawns (faulted={initSpawnTask.IsFaulted}) - RETRYING (attempt {initSpawnAttempts + 1}/3)");
+            StartInitSpawnTask(initSpawnVariationId);
         }
 
         public void SetEnvironmentConditions()
@@ -322,13 +470,51 @@ namespace ACE.Server.Entity
                 
             //    Console.WriteLine($"From: {new StackTrace()}");
             //}
-            var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, variationId);
-            var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, variationId);
+            // Greater Rifts: instance rows are per-variation EXACT-match and rift variations (negative) have
+            // none — load the run's configured source variation's rows instead. The source copy may be LIVE
+            // at the same time, so rift copies get the rows CLONED with fresh dynamic guids (static guids
+            // shared across two live landblocks break guid-keyed lookups: selection, attack targeting).
+            // Shard statics stay out of rift copies. The factory below still stamps every spawned object
+            // with THIS landblock's variation. Pass-through for non-rift loads.
+            var instanceVariationId = ACE.Server.Managers.Rifts.RiftManager.ResolveInstanceSourceVariation(variationId);
+
+            List<ACE.Database.Models.World.LandblockInstance> objects;
+            List<ACE.Database.Models.Shard.Biota> shardObjects;
+            if (!Nullable.Equals(instanceVariationId, variationId))
+            {
+                objects = ACE.Server.Managers.Rifts.RiftManager.CloneInstancesForRift(
+                    DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, instanceVariationId));
+                shardObjects = new List<ACE.Database.Models.Shard.Biota>();
+            }
+            else
+            {
+                objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, variationId);
+                shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, variationId);
+
+                // Zone Control terrain-override redirection (owner 2026-07-21): a zone that overrides
+                // this block's terrain at this variation swaps its standalone camp GENERATORS for ones
+                // drawn from the zone's blocks whose REAL terrain matches the override ("mark it
+                // obsidian, get the obsidian camps"). Rows are cloned (cache untouched), positions and
+                // guids stay, linked/quest instances are never swapped. No-op without an override.
+                objects = Managers.ZoneControl.ZoneControlManager.RedirectInstancesForTerrainOverride(
+                    Id.Landblock, variationId, objects);
+            }
+
             var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, variationId);
 
 
             actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
             {
+                // idempotence: the [VoidHeal] watchdog can retry the init spawn task; if a previous
+                // attempt's action already populated the block, drop this duplicate payload.
+                if (CreateWorldObjectsCompleted)
+                {
+                    // a fully built payload is being discarded: release its physics + dynamic guids
+                    foreach (var dup in factoryObjects)
+                        dup.Destroy(false);
+                    return;
+                }
+
                 // for mansion linking
                 var houses = new List<House>();
                 foreach (var fo in factoryObjects)
@@ -353,9 +539,15 @@ namespace ACE.Server.Entity
                     }
 
                     var res = AddWorldObject(fo, variationId);
-                    if (!res)
+                    if (!res && ServerConfig.spawn_diag_verbose.Value)
                     {
-                        Console.WriteLine($"Failed to add world object {fo.Name}, {fo.Guid} to landblock {Id.Landblock}");
+                        // WARN, not console: a static lost here is invisible/unusable until the landblock
+                        // reloads, and the console does not survive restarts (Guttering Ward-Lantern
+                        // incident, 2026-07-18 20:21 — fingerprint was lost with the console).
+                        log.Warn($"[SpawnDiag] CreateWorldObjects failed to add 0x{fo.Guid}:{fo.Name} " +
+                                 $"[{fo.WeenieClassId} - {fo.WeenieType}] to landblock {Id.Landblock:X4} " +
+                                 $"lbVar={VariationId?.ToString() ?? "null"} param={variationId?.ToString() ?? "null"} " +
+                                 $"loc={fo.Location}");
                     }
                     fo.ActivateLinks(objects, shardObjects, parent);
 
@@ -365,8 +557,16 @@ namespace ACE.Server.Entity
 
                 CreateWorldObjectsCompleted = true;
 
-                // Spawn prestige boundary markers after normal objects
+                if (ServerConfig.landblock_lifecycle_diag_verbose.Value)
+                    // pendingAdditions included: AddWorldObject always stages new objects there
+                    // (they merge into worldObjects NEXT tick), so worldObjects.Count alone reads
+                    // 0 on a healthy fresh spawn — a false void-block alarm (owner 2026-08-02).
+                    log.Warn($"[LbLife] SPAWN-COMPLETE {Id.Landblock:X4} v={VariationId?.ToString() ?? "null"} " +
+                             $"attempt={initSpawnAttempts} objects={worldObjects.Count + pendingAdditions.Count}");
+
+                // Spawn boundary markers after normal objects (two independent systems, each self-gating)
                 SpawnPrestigeBoundaryMarkers();
+                SpawnZoneBoundaryMarkers();
 
                 PhysicsLandblock.SortObjects();
             }, ActionPriority.Low));
@@ -415,7 +615,8 @@ namespace ACE.Server.Entity
             void SpawnMarkerAtPosition(float x, float y)
             {
                 const float cornerEpsilon = 0.25f;
-                foreach (var existing in _prestigeBoundaryMarkers)
+                // both marker systems can run on the same 11+ variation: never stack a lantern on a zone marker either
+                foreach (var existing in _prestigeBoundaryMarkers.Concat(_zoneBoundaryMarkers))
                 {
                     if (existing?.Location == null)
                         continue;
@@ -430,12 +631,16 @@ namespace ACE.Server.Entity
                     return;
                 }
 
-                marker.Name = "Prestige Boundary";
+                marker.Name = "Boundary Marker";
                 marker.SetProperty(PropertyFloat.DefaultScale, 2.5f);
-                
+
                 // Prevent despawning - make it persistent like static objects
                 marker.SetProperty(PropertyBool.Stuck, true);
                 marker.TimeToRot = -1;  // Never rot/despawn
+
+                // Ephemeral: re-derived at every load — must never be saved to the shard (persisted
+                // markers become permanent ghosts; 7000+ had accumulated in biota before this guard).
+                marker.SuppressShardPersistence = true;
 
                 // Use physics system to calculate proper position (like encounters do)
                 var pos = new Physics.Common.Position();
@@ -519,6 +724,176 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
+        /// Spawns Zone Control boundary perimeter markers (lanterns). Standalone system: consults only
+        /// <see cref="Managers.ZoneControl.ZoneControlManager"/> — markers appear on the edges of allowed
+        /// (bounded-zone member) landblocks that face landblocks outside the bounded union.
+        /// </summary>
+        private void SpawnZoneBoundaryMarkers()
+        {
+            // Boot-time landblocks (permaload) can reach here before any command touched Zone Control.
+            Managers.ZoneControl.ZoneControlManager.EnsureLoaded();
+
+            // Only spawn when a bounded zone exists at this landblock's variation
+            if (!Managers.ZoneControl.ZoneControlManager.HasBoundedZonesAt(VariationId))
+                return;
+
+            if (log.IsDebugEnabled)
+                log.Debug($"[ZoneControl] Landblock {Id.Landblock:X4} (Var {VariationId}): Checking boundary markers...");
+
+            // Only spawn markers in allowed (member) landblocks
+            if (!Managers.ZoneControl.ZoneControlManager.IsLandblockAllowed(VariationId, Id.Landblock))
+            {
+                if (log.IsDebugEnabled)
+                    log.Debug($"[ZoneControl] Landblock {Id.Landblock:X4} is outside the bounded union - skipping boundary markers.");
+                return;
+            }
+
+            var weenie = DatabaseManager.World.GetCachedWeenie((uint)ACE.Entity.Enum.WeenieClassName.W_SHOLANTERN_CLASS);
+            if (weenie == null)
+            {
+                log.Warn($"[ZoneControl] SpawnZoneBoundaryMarkers: W_SHOLANTERN_CLASS weenie not found!");
+                return;
+            }
+
+            // Edge boundaries (inset 10m from actual edge)
+            const float edgeMin = 10.0f;
+            const float edgeMax = 182.0f;
+            const int markersPerEdge = 6;
+
+            // Calculate evenly spaced positions including corners
+            float edgeLength = edgeMax - edgeMin;
+            float spacing = edgeLength / (markersPerEdge - 1);
+
+            bool MarkerExistsAt(List<WorldObject> markers, float x, float y)
+            {
+                const float cornerEpsilon = 0.25f;
+                foreach (var existing in markers)
+                {
+                    if (existing?.Location == null)
+                        continue;
+                    if (Math.Abs(existing.Location.PositionX - x) < cornerEpsilon && Math.Abs(existing.Location.PositionY - y) < cornerEpsilon)
+                        return true;
+                }
+                return false;
+            }
+
+            void SpawnMarkerAtPosition(float x, float y)
+            {
+                if (MarkerExistsAt(_zoneBoundaryMarkers, x, y))
+                    return;
+                // Cosmetic only: when another boundary system already placed a lantern on this exact spot
+                // (e.g. an overlapping perimeter at the same variation), don't stack a second one on top.
+                if (MarkerExistsAt(_prestigeBoundaryMarkers, x, y))
+                    return;
+
+                var marker = WorldObjectFactory.CreateNewWorldObject(weenie);
+                if (marker == null)
+                {
+                    log.Warn($"[ZoneControl] Failed to create marker WorldObject");
+                    return;
+                }
+
+                marker.Name = "Boundary Marker";
+                marker.SetProperty(PropertyFloat.DefaultScale, 2.5f);
+
+                // Prevent despawning - make it persistent like static objects
+                marker.SetProperty(PropertyBool.Stuck, true);
+                marker.TimeToRot = -1;  // Never rot/despawn
+
+                // Ephemeral: re-derived from the bounded union at every load — must never be saved to the
+                // shard (persisted markers become permanent ghosts that ignore later boundary changes).
+                marker.SuppressShardPersistence = true;
+
+                // Cosmetic best-effort: perimeter lanterns on a water-facing edge can land over open water
+                // where placement finds no floor (NoValidPosition). Skip those quietly instead of a [SpawnDiag] WARN.
+                marker.SuppressSpawnPlacementDiag = true;
+
+                // Use physics system to calculate proper position (like encounters do)
+                var pos = new Physics.Common.Position();
+                pos.ObjCellID = (uint)(Id.Landblock << 16) | 1;
+                pos.Variation = VariationId;
+                pos.Frame = new Physics.Animation.AFrame(new Vector3(x, y, 0), Quaternion.Identity);
+                pos.adjust_to_outside();
+
+                // Get terrain Z height
+                pos.Frame.Origin.Z = PhysicsLandblock.GetZ(pos.Frame.Origin);
+
+                marker.Location = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation, pos.Variation);
+                marker.Location.Variation = VariationId;
+
+                if (AddWorldObject(marker, VariationId))
+                {
+                    _zoneBoundaryMarkers.Add(marker);
+                }
+                else
+                {
+                    marker.Destroy();
+                }
+            }
+
+            void SpawnMarkersOnEdge(float fixedCoord, bool isXFixed)
+            {
+                for (int i = 0; i < markersPerEdge; i++)
+                {
+                    float offset = edgeMin + (i * spacing);
+                    float x = isXFixed ? fixedCoord : offset;
+                    float y = isXFixed ? offset : fixedCoord;
+                    SpawnMarkerAtPosition(x, y);
+                }
+            }
+
+            bool ShouldSpawnOnEdge(ushort neighborLB)
+            {
+                return !Managers.ZoneControl.ZoneControlManager.IsLandblockAllowed(VariationId, neighborLB);
+            }
+
+            // Check each cardinal direction and spawn markers on edges facing outside landblocks
+            // East edge (X = edgeMax)
+            if (Id.LandblockX < 255 && ShouldSpawnOnEdge(Id.East.Landblock))
+                SpawnMarkersOnEdge(edgeMax, true);
+
+            // West edge (X = edgeMin)
+            if (Id.LandblockX > 0 && ShouldSpawnOnEdge(Id.West.Landblock))
+                SpawnMarkersOnEdge(edgeMin, true);
+
+            // North edge (Y = edgeMax)
+            if (Id.LandblockY < 255 && ShouldSpawnOnEdge(Id.North.Landblock))
+                SpawnMarkersOnEdge(edgeMax, false);
+
+            // South edge (Y = edgeMin)
+            if (Id.LandblockY > 0 && ShouldSpawnOnEdge(Id.South.Landblock))
+                SpawnMarkersOnEdge(edgeMin, false);
+
+            if (_zoneBoundaryMarkers.Count > 0)
+            {
+                log.Info($"[ZoneControl] Landblock {Id.Landblock:X4} (Var {VariationId}): Spawned {_zoneBoundaryMarkers.Count} boundary markers.");
+            }
+        }
+
+        /// <summary>
+        /// Despawns and re-derives this landblock's Zone Control perimeter markers. Enqueued by
+        /// <see cref="Managers.LandblockManager.EnqueueRefreshLoadedZoneBoundaryMarkers"/> whenever a
+        /// mutation changes the bounded union at this landblock's variation.
+        /// </summary>
+        public void RefreshZoneBoundaryMarkers()
+        {
+            actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+            {
+                foreach (var marker in _zoneBoundaryMarkers.ToList())
+                {
+                    if (marker == null)
+                        continue;
+
+                    RemoveWorldObject(marker.Guid, false, false, false);
+                    marker.Destroy();
+                }
+
+                _zoneBoundaryMarkers.Clear();
+                SpawnZoneBoundaryMarkers();
+            }));
+        }
+
+        /// <summary>
         /// Corpses<para />
         /// This will be called from a separate task from our constructor. Use thread safety when interacting with this landblock.
         /// </summary>
@@ -551,6 +926,13 @@ namespace ACE.Server.Entity
 
             // get the encounter spawns for this landblock
             var encounters = DatabaseManager.World.GetCachedEncountersByLandblock(Id.Landblock);
+
+            // Zone Control terrain-override redirection (owner 2026-07-21): a zone that overrides this
+            // block's terrain at this variation swaps in encounter generators from the zone's blocks
+            // whose REAL terrain matches the override ("mark it obsidian, get the obsidian camps").
+            // No-op when no override applies; independent of the zone's Enabled flag.
+            encounters = Managers.ZoneControl.ZoneControlManager.RedirectEncountersForTerrainOverride(
+                Id.Landblock, VariationId, encounters);
 
             foreach (var encounter in encounters)
             {
@@ -882,6 +1264,8 @@ namespace ACE.Server.Entity
             {
                 var thisHeartBeat = DateTime.UtcNow;
 
+                CheckInitSpawnWatchdog(thisHeartBeat);
+
                 ProcessPendingWorldObjectAdditionsAndRemovals();
 
                 // Decay world objects
@@ -896,31 +1280,51 @@ namespace ACE.Server.Entity
                     }
                 }
 
-                if (!Permaload && HasNoKeepAliveObjects)
+                // players.Count guard: an occupied landblock must never go dormant or unload, even when the
+                // player-heartbeat SetActive refresh fails to reach it (observed on variant instances entered
+                // via a same-landblock variation teleport: lastActiveTime froze at creation, the instance went
+                // dormant at +1min — passive mobs — and unloaded at exactly +5min WITH the player inside,
+                // destroying every non-persisted creature; rift test-5's vanishing guardian, and the all-day
+                // 0148 cell-raw unloads in the 2026-07-11 log during authoring).
+                if (!Permaload && HasNoKeepAliveObjects && players.Count == 0)
                 {
-                    if (lastActiveTime + dormantInterval < thisHeartBeat)
+                    // Variation-instance guard: a player can be physically standing on this landblock
+                    // (or an adjacent one) while registered on a DIFFERENT variation instance, so this
+                    // instance's `players` list is empty even though someone is right here. Without this
+                    // the v11 instance the player is actually interacting with goes dormant at +1min ->
+                    // Monster AI + physics ticking suppressed -> mobs go passive (missiles/magic pass
+                    // through stale physics, no aggro/attack) while melee still works. Judge presence by
+                    // physical position across all variations, not the (drifting) instance bookkeeping.
+                    if (lastActiveTime + dormantInterval < thisHeartBeat && HasPhysicalPlayerOnOrAdjacent())
                     {
-                        if (!IsDormant)
+                        SetActive();
+                    }
+                    else
+                    {
+                        if (lastActiveTime + dormantInterval < thisHeartBeat)
                         {
-                            var spellProjectiles = worldObjects.Values.Where(i => i is SpellProjectile).ToList();
-                            foreach (var spellProjectile in spellProjectiles)
+                            if (!IsDormant)
                             {
-                                spellProjectile.PhysicsObj.set_active(false);
-                                spellProjectile.Destroy();
+                                var spellProjectiles = worldObjects.Values.Where(i => i is SpellProjectile).ToList();
+                                foreach (var spellProjectile in spellProjectiles)
+                                {
+                                    spellProjectile.PhysicsObj.set_active(false);
+                                    spellProjectile.Destroy();
+                                }
                             }
-                        }
 
-                        IsDormant = true;
-                    }
-                    if (lastActiveTime + UnloadInterval < thisHeartBeat)
-                    {
-                        // log.Info($"[Landblock Unload] Landblock {Id.Raw:X8} queuing for destruction. (UnloadInterval: {UnloadInterval})");
-                        LandblockManager.AddToDestructionQueue(this, this.VariationId);
-                    }
-                    else if (IsDormant && (DateTime.UtcNow.Second % 10 == 0)) // Log periodically if dormant but not unloading
-                    {
-                        // Debug logging to see why it's not unloading
-                        // log.Warn($"[Landblock Debug] {Id.Raw:X8} Dormant. Time until unload: {(lastActiveTime + UnloadInterval - thisHeartBeat).TotalSeconds:F1}s");
+                            IsDormant = true;
+                        }
+                        if (lastActiveTime + UnloadInterval < thisHeartBeat)
+                        {
+                            // log.Info($"[Landblock Unload] Landblock {Id.Raw:X8} queuing for destruction. (UnloadInterval: {UnloadInterval})");
+                            LandblockManager.AddToDestructionQueue(this, this.VariationId);
+                        }
+                        else if (IsDormant && (DateTime.UtcNow.Second % 10 == 0)) // Log periodically if dormant but not unloading
+                        {
+                            // Debug logging to see why it's not unloading
+                            // log.Warn($"[Landblock Debug] {Id.Raw:X8} Dormant. Time until unload: {(lastActiveTime + UnloadInterval - thisHeartBeat).TotalSeconds:F1}s");
+                        }
                     }
                 }
                 else if (!Permaload && thisHeartBeat.Second % 15 == 0)
@@ -1359,8 +1763,12 @@ namespace ACE.Server.Entity
                                 log.Debug($"[GENERATOR] Rate-limiter: {suppressed} similar generator placement failures were suppressed in the last 5m.");
                         }
                     }
-                    else if (wo.ProjectileTarget == null && wo is not SpellProjectile)
-                        Console.WriteLine($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location}");
+                    else if (wo.ProjectileTarget == null && wo is not SpellProjectile && ServerConfig.spawn_diag_verbose.Value)
+                        // WARN, not console (see CreateWorldObjects) — non-generator statics failing physics
+                        // placement are rare and each one is a quest object someone can't use.
+                        log.Warn($"[SpawnDiag] AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} " +
+                                 $"[{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location} | " +
+                                 $"lb={Id.Landblock:X4} lbVar={this.VariationId?.ToString() ?? "null"} param={VariationId?.ToString() ?? "null"}");
 
                     return false;
                 }
@@ -1480,7 +1888,63 @@ namespace ACE.Server.Entity
                 // really remove it - send message to client to remove object
                 wo.EnqueueActionBroadcast(p => p.RemoveTrackedObject(wo, fromPickup));
 
-                wo.PhysicsObj.DestroyObject();
+                // Ghost-mob safety net (2026-07-17): the broadcast above only reaches the object's
+                // KnownPlayers. That inverse link can be torn while a client still holds the CreateObject
+                // (transient variation refusal in ObjectMaint.AddKnownPlayer during leash teleports;
+                // stale-known CO resends never re-added it) — that client then keeps a frozen "ghost"
+                // that never receives this delete. Sweep every player on this landblock instance and its
+                // same-variation adjacents and send the delete to any player the object did NOT know:
+                // a delete for a guid the client doesn't hold is a no-op, so over-sending is harmless.
+                if (!fromPickup)
+                {
+                    var notified = new HashSet<uint>();
+                    if (wo.PhysicsObj != null)
+                        foreach (var kp in wo.PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
+                            notified.Add(kp.Guid.Full);
+
+                    var missed = 0;
+                    void SweepLandblock(Landblock lb)
+                    {
+                        foreach (var p in lb.players.ToList())
+                        {
+                            if (p == null || p.Guid == wo.Guid || !notified.Add(p.Guid.Full))
+                                continue;
+                            missed++;
+                            var player = p;
+                            player.EnqueueAction(new ActionEventDelegate(ActionType.WorldObjectNetworking_BroadcastOther,
+                                () => player.RemoveTrackedObject(wo, false)));
+                        }
+                    }
+
+                    SweepLandblock(this);
+
+                    if (missed > 0 && wo is Creature && ServerConfig.prestige_interaction_diag_verbose.Value)
+                        log.Warn($"[GhostMob] {wo.Name}(0x{wo.Guid.Full:X8}) destroy on lb 0x{Id.Landblock:X4} v={VariationId?.ToString() ?? "null"}: " +
+                                 $"delete sent to {missed} nearby same-variation player(s) missing from KnownPlayers (one-way CO healed).");
+                    // Adjacent instances tick on their own group threads and mutate their own `players` lists, so each
+                    // adjacent sweep runs ON THAT LANDBLOCK'S QUEUE with a read-only snapshot of who was already told.
+                    var alreadyNotified = new HashSet<uint>(notified);
+                    var deletedWo = wo;
+                    foreach (var adj in Adjacents.ToList())
+                    {
+                        if (adj == null)
+                            continue;
+                        var target = adj;
+                        target.EnqueueAction(new ActionEventDelegate(ActionType.WorldObjectNetworking_BroadcastOther, () =>
+                        {
+                            foreach (var p in target.players.ToList())
+                            {
+                                if (p == null || p.Guid == deletedWo.Guid || alreadyNotified.Contains(p.Guid.Full))
+                                    continue;
+                                var player = p;
+                                player.EnqueueAction(new ActionEventDelegate(ActionType.WorldObjectNetworking_BroadcastOther,
+                                    () => player.RemoveTrackedObject(deletedWo, false)));
+                            }
+                        }));
+                    }
+                }
+
+                wo.PhysicsObj?.DestroyObject();
             }
         }
 
@@ -1608,6 +2072,43 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
+        /// True when an online player is physically standing on this landblock id or an adjacent one,
+        /// regardless of which variation instance they are registered on. Keeps a landblock awake when
+        /// variation-instance player bookkeeping drifts (this instance's `players` list can be empty even
+        /// with a player right here). Only reached once a block has passed its dormant threshold.
+        /// </summary>
+        /// <remarks>
+        /// Reads <see cref="LandblockManager.OccupiedLandblocks"/>, the online-player landblock set snapshotted
+        /// once per multi-threaded tick batch, so each call is O(9) rather than O(online players): with many
+        /// variation instances all re-checking every dormant interval, a raw GetAllOnline() scan here was
+        /// O(landblocks x players) on the tick path.
+        /// </remarks>
+        private bool HasPhysicalPlayerOnOrAdjacent()
+        {
+            var occupied = LandblockManager.OccupiedLandblocks;
+            if (occupied.Count == 0)
+                return false;
+            // variation-aware: a player on the base twin must not keep every rift / prestige instance of this block alive
+            var myVariation = Managers.VariationManager.NormalizeBase(VariationId);
+
+            int thisX = (Id.Landblock >> 8) & 0xFF;
+            int thisY = Id.Landblock & 0xFF;
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    int nx = thisX + dx;
+                    int ny = thisY + dy;
+                    if (nx < 0 || nx > 255 || ny < 0 || ny > 255)
+                        continue;
+                    if (occupied.Contains(((ushort)((nx << 8) | ny), myVariation)))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Sets a landblock to active state, with the current time as the LastActiveTime
         /// </summary>
         /// <param name="isAdjacent">Public calls to this function should always set isAdjacent to false</param>
@@ -1637,6 +2138,46 @@ namespace ACE.Server.Entity
             //log.Debug($"Landblock.Unload({landblockID:X8})");
 
             ProcessPendingWorldObjectAdditionsAndRemovals();
+
+            // Cross-variation guard (2026-08-23): objects that belong to a SIBLING variation instance of
+            // this landblock can be parked in THIS instance's physics cells (stale PhysicsObj.Position
+            // .Variation - see WorldObject_Teleport.cs "Final authoritative variation reconcile"). Tearing
+            // those cells down orphaned them: still in the sibling's worldObjects, never streamed to any
+            // client ("Tou Tou v11 empty after the base twin unloaded", 2026-08-23 12:24). Re-home them to
+            // their own variation's physics before anything here is released.
+            var rehomed = 0;
+            try
+            {
+                foreach (var cell in PhysicsLandblock.LandCells.Values.ToList())
+                    foreach (var pobj in cell.ObjectList.ToList())   // leave_cell below removes from ObjectList
+                    {
+                        var fwo = pobj?.WeenieObj?.WorldObject;
+                        if (fwo == null || fwo.IsDestroyed || fwo is Player || fwo.Location == null)
+                            continue;
+                        if (Managers.VariationManager.SameVariationForVisibility(fwo.Location.Variation, VariationId))
+                            continue;
+                        // out of OUR cells (shadows + cell membership), then back in under ITS variation
+                        pobj.remove_shadows_from_cells();
+                        pobj.leave_cell(true);
+                        if (pobj.Position != null)
+                            pobj.Position.Variation = fwo.Location.Variation;
+                        if (!fwo.AddPhysicsObj(fwo.Location.Variation))
+                        {
+                            log.Warn($"[LbLife] UNLOAD {Id.Landblock:X4} v={VariationId?.ToString() ?? "null"}: re-home of 0x{fwo.Guid}:{fwo.Name} (v={fwo.Location.Variation?.ToString() ?? "null"}) did not re-enter physics");
+                            // AddPhysicsObj nulls PhysicsObj on failure; the sibling instance would NRE on its next tick,
+                            // so take the object out of the world instead of leaving a physics-less ghost behind
+                            fwo.Destroy(false);
+                            continue;
+                        }
+                        rehomed++;
+                    }
+            }
+            catch (Exception e)
+            {
+                log.Warn($"[LbLife] UNLOAD {Id.Landblock:X4} v={VariationId?.ToString() ?? "null"}: cross-variation re-home failed: {e.Message}");
+            }
+            if (rehomed > 0)
+                log.Warn($"[LbLife] UNLOAD {Id.Landblock:X4} v={VariationId?.ToString() ?? "null"}: re-homed {rehomed} object(s) belonging to a sibling variation out of this instance's physics cells");
 
             SaveDB();
             //Console.WriteLine($"Landblock.Unload({landblockID:X8}), removing {worldObjects.Count}");

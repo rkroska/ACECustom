@@ -1934,18 +1934,54 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("instance", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows the current instance")]
         public static void HandleInstanceInfo(Session session, params string[] parameters)
         {
-            var physicsObj = session.Player.PhysicsObj;
+            var player = session.Player;
+            var physicsObj = player.PhysicsObj;
 
-            var physInstance = physicsObj.Position.Variation;
-            var locInstance = session.Player.Location.Variation;
+            static string V(int? v) => v?.ToString() ?? "null";
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Physics Instance: {physInstance}\nLocation Instance: {locInstance}", ChatMessageType.Broadcast));
-            if (session.Player.CurrentLandblock != null)
+            var physInstance = physicsObj?.Position.Variation;
+            var locInstance = player.Location.Variation;
+            var curCell = physicsObj?.CurCell;
+
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                $"Physics Instance: {V(physInstance)}\nLocation Instance: {V(locInstance)}\n" +
+                $"Physics Cell: 0x{curCell?.ID ?? 0:X8} (v={V(curCell?.VariationId)})", ChatMessageType.Broadcast));
+
+            var lb = player.CurrentLandblock;
+            if (lb != null)
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Landblock World Object Count: {session.Player.CurrentLandblock.WorldObjectCount}", ChatMessageType.Broadcast));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Landblock Physics Object Count: {session.Player.CurrentLandblock.PhysicsObjectCount}", ChatMessageType.Broadcast));
+                var matches = lb.Id.Landblock == player.Location.LandblockId.Landblock && lb.VariationId == player.Location.Variation;
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"CurrentLandblock: 0x{lb.Id.Landblock:X4} (v={V(lb.VariationId)}) — {(matches ? "matches Location" : "STALE: does NOT match Location!")}", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Landblock World Object Count: {lb.WorldObjectCount}", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Landblock Physics Object Count: {lb.PhysicsObjectCount}", ChatMessageType.Broadcast));
             }
+            else
+                session.Network.EnqueueSend(new GameMessageSystemChat("CurrentLandblock: NULL (not resident in any landblock instance!)", ChatMessageType.Broadcast));
 
+            if (player.Attacking || player.MeleeTarget != null || player.MissileTarget != null)
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"Combat state: Attacking={player.Attacking} MeleeTarget={player.MeleeTarget?.Name ?? "null"} MissileTarget={player.MissileTarget?.Name ?? "null"}", ChatMessageType.Broadcast));
+        }
+
+        [CommandHandler("fixvariation", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Re-homes you into the landblock instance matching your current location (repairs variation/instance desync).")]
+        public static void HandleFixVariation(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+
+            // clear any stale attack-loop state that silently swallows new attack requests
+            player.OnAttackDone();
+
+            // re-home CurrentLandblock to the instance matching Location (landblock + variation)
+            LandblockManager.RelocateObjectForPhysics(player, true);
+
+            // refresh client-side visibility from the current cell PVS
+            player.ReconcileVisibilityAfterArrival();
+
+            var lb = player.CurrentLandblock;
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                $"Re-homed to landblock 0x{lb?.Id.Landblock:X4} (v={lb?.VariationId?.ToString() ?? "null"}), Location v={player.Location.Variation?.ToString() ?? "null"}.", ChatMessageType.Broadcast));
         }
 
         [CommandHandler("knownobjects", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows the current known objects")]

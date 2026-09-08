@@ -28,7 +28,6 @@ namespace ACE.Server.Factories
             switch (profile.Tier)
             {
                 case 1:
-                default:
                     maxType = LootTables.ArmorType.ChainmailArmor;
                     break;
                 case 2:
@@ -46,6 +45,7 @@ namespace ACE.Server.Factories
                     break;
                 case 7:
                 case 8:
+                default:    // tiers above the last authored case clamp to the highest
                     maxType = LootTables.ArmorType.OlthoiAlduressaArmor;
                     break;
             }
@@ -162,7 +162,7 @@ namespace ACE.Server.Factories
             if (roll != null && profile.Tier == 9)
                 TryMutateGearRatingT9(wo, profile, roll);
 
-            if (roll != null && profile.Tier == 10)
+            if (roll != null && profile.Tier >= 10)
                 TryMutateGearRatingT10(wo, profile, roll);
 
             // item value
@@ -392,6 +392,7 @@ namespace ACE.Server.Factories
                             armorModValue = ThreadSafeRandom.Next(107, 124);
                         break;
                     case 8:
+                    default:    // tiers above the last authored case clamp to the highest
                         if (wo.ArmorType == (int)ArmorType.Cloth)
                             armorModValue = ThreadSafeRandom.Next(175, 200);
                         if (wo.ArmorType == (int)ArmorType.Leather
@@ -435,7 +436,7 @@ namespace ACE.Server.Factories
                     {
                         7 => ThreadSafeRandom.Next(0, 40),
                         8 => ThreadSafeRandom.Next(91, 115),
-                        9 => ThreadSafeRandom.Next(115, 140),
+                        >= 9 => ThreadSafeRandom.Next(115, 140),    // tiers above the last authored arm clamp to the highest
                         _ => 0,
                     };
                 }
@@ -866,7 +867,7 @@ namespace ACE.Server.Factories
                 TryMutateGearRating(wo, profile, roll);
             else if (roll != null && profile.Tier == 9)
                 TryMutateGearRatingT9(wo, profile, roll);
-            else if (roll != null && profile.Tier == 10)
+            else if (roll != null && profile.Tier >= 10)
                 TryMutateGearRatingT10(wo, profile, roll);
 
             // item value
@@ -884,7 +885,6 @@ namespace ACE.Server.Factories
             {
                 case 1:
                 case 2:
-                default:
                     cloakLevel = 1;
                     break;
                 case 3:
@@ -933,6 +933,7 @@ namespace ACE.Server.Factories
                         cloakLevel = 5;
                     break;
                 case 9:  // From data, no chance to get a lvl 1 cloak
+                default:    // tiers above the last authored case clamp to the highest
                     if (chance <= 451)
                         cloakLevel = 3;
                     else if (chance <= 920)
@@ -1064,7 +1065,7 @@ namespace ACE.Server.Factories
 
             // ensure wield requirement is level 180?
             if (roll.ArmorType != TreasureArmorType.Society)
-                SetWieldLevelReq(wo, 180);
+                SetWieldLevelReq(wo, 180, profile.Tier);
 
             return true;
 
@@ -1117,7 +1118,7 @@ namespace ACE.Server.Factories
                 return false;
             }
             if (roll.ArmorType != TreasureArmorType.Society)
-                SetWieldLevelReq(wo, 550);
+                SetWieldLevelReq(wo, 550, profile.Tier);
 
             return true;
         }
@@ -1163,7 +1164,7 @@ namespace ACE.Server.Factories
 
         private static bool TryMutateGearRatingT10(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
         {
-            if (profile.Tier != 10)
+            if (profile.Tier < 10)  // tiers above 10 use the T10 (highest authored) ratings
                 return false;
 
             bool applied = false;
@@ -1176,7 +1177,7 @@ namespace ACE.Server.Factories
             {
                 void TryAssignRating(Action<int> assign)
                 {
-                    var val = GearRatingChance.RollT10(wo, profile, roll);
+                    var val = GearRatingChance.RollForTier(wo, profile, roll);
                     if (val > 0) assign(val);
                 }
 
@@ -1199,29 +1200,29 @@ namespace ACE.Server.Factories
             // 🎯 Armor/Underclothes/Cloaks
             else if (isArmorType)
             {
-                var netherResist = GearRatingChance.RollT10(wo, profile, roll);
+                var netherResist = GearRatingChance.RollForTier(wo, profile, roll);
                 if (netherResist > 0)
                     wo.GearNetherResistRating = netherResist;
 
                 if (ThreadSafeRandom.Next(0, 1) == 0)
                 {
-                    var dmg = GearRatingChance.RollT10(wo, profile, roll);
+                    var dmg = GearRatingChance.RollForTier(wo, profile, roll);
                     if (dmg > 0) wo.GearDamage = dmg;
                 }
                 else
                 {
-                    var dmgResist = GearRatingChance.RollT10(wo, profile, roll);
+                    var dmgResist = GearRatingChance.RollForTier(wo, profile, roll);
                     if (dmgResist > 0) wo.GearDamageResist = dmgResist;
                 }
 
                 if (ThreadSafeRandom.Next(0, 1) == 0)
                 {
-                    var crit = GearRatingChance.RollT10(wo, profile, roll);
+                    var crit = GearRatingChance.RollForTier(wo, profile, roll);
                     if (crit > 0) wo.GearCritDamage = crit;
                 }
                 else
                 {
-                    var critResist = GearRatingChance.RollT10(wo, profile, roll);
+                    var critResist = GearRatingChance.RollForTier(wo, profile, roll);
                     if (critResist > 0) wo.GearCritDamageResist = critResist;
                 }
 
@@ -1230,7 +1231,7 @@ namespace ACE.Server.Factories
             // 💍 Jewelry
             else if (isJewelry)
             {
-                var rating = GearRatingChance.RollT10(wo, profile, roll);
+                var rating = GearRatingChance.RollForTier(wo, profile, roll);
                 if (rating > 0)
                 {
                     if (ThreadSafeRandom.Next(0, 1) == 0)
@@ -1257,8 +1258,13 @@ namespace ACE.Server.Factories
             return applied;
         }
 
-        private static void SetWieldLevelReq(WorldObject wo, int level)
+        private static void SetWieldLevelReq(WorldObject wo, int level, int tier)
         {
+            // Tier 11+ loot carries NO character-level requirement (owner decision 2026-07-20).
+            // The T11 mutation scripts stamp none either; skill-based gates (RawSkill) are kept.
+            if (tier >= LootGenerationFactory.ZoneLootSetMinTier)
+                return;
+
             if (wo.WieldRequirements == WieldRequirement.Invalid)
             {
                 wo.WieldRequirements = WieldRequirement.Level;

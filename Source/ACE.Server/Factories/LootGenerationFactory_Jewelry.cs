@@ -87,7 +87,7 @@ namespace ACE.Server.Factories
             if (roll != null && profile.Tier == 9)
                 TryMutateGearRatingT9(wo, profile, roll);
 
-            if (roll != null && profile.Tier == 10)
+            if (roll != null && profile.Tier >= 10)
                 TryMutateGearRatingT10(wo, profile, roll);
 
             // item value

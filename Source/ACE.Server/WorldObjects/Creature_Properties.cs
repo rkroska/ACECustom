@@ -117,6 +117,34 @@ namespace ACE.Server.WorldObjects
 
             var vulnMod = EnchantmentManager.GetVulnerabilityResistanceMod(damageType);
 
+            // Zone Scaler: resolve the winning zone profile for this monster once (null for players/exempt/non-endgame/
+            // no-match). Consumers below prefer a profile-defined stat over the global v11_* knob. Global profile is
+            // seeded DISABLED, so with no authored scope this is null and behavior is unchanged.
+            var zoneProfile = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this as Creature);
+
+            // v11+ monster vuln-defense: compress the vuln (Imperil) multiplier so stacked vulns can't produce
+            // absurd damage against endgame mobs. Only the vuln enchantment bonus is touched here (before the
+            // weaponResistanceMod max below), so base damage, offensive augs, and weapon rending are unaffected.
+            // Player defenders never hit this: Player overrides GetResistanceMod. Gate is the monster's instance
+            // Variation (same convention as the v11+ percent-HP offense system) -> auto-applies to all v11+ mobs.
+            if (vulnMod > 1.0f && ServerConfig.v11_vuln_enabled.Value && !(this is Player)
+                && ((zoneProfile != null && zoneProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.VulnCap))
+                    || (ACE.Server.Managers.PrestigeManager.SystemsEnabled
+                        && ACE.Server.Managers.VariationManager.GetEffectiveEndgameVariation(this) >= ServerConfig.v11_vuln_min_variation.Value)))
+            {
+                var vulnEff = GetProperty(PropertyFloat.VulnEffectivenessOverride) ?? ServerConfig.v11_vuln_effectiveness.Value;
+                var vulnCap = GetProperty(PropertyFloat.VulnCapOverride) ?? ServerConfig.v11_vuln_cap.Value;
+                if (zoneProfile != null && zoneProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.VulnCap))
+                    vulnCap = zoneProfile.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.VulnCap);
+
+                // diminishing curve: only a fraction of the vuln bonus lands, then clamp to the cap
+                vulnMod = 1.0f + (vulnMod - 1.0f) * (float)vulnEff;
+                if (vulnMod > vulnCap)
+                    vulnMod = (float)vulnCap;
+                if (vulnMod < 1.0f)
+                    vulnMod = 1.0f;
+            }
+
             var naturalResistMod = GetNaturalResistance(damageType);
 
             // protection mod becomes either life protection or natural resistance,
@@ -154,7 +182,43 @@ namespace ACE.Server.WorldObjects
                 vulnMod = GetPositiveRatingMod(addVuln);
             }
 
-            return protMod * vulnMod;
+            var resistMod = protMod * vulnMod;
+
+            // v11+ monster damage-taken mitigation: scale ALL incoming damage against endgame mobs by a flat factor so they are
+            // hard to kill via mitigation (not evasion). Applied after armor/resist, so it is rending-proof. Bosses (IsEmpowerSource)
+            // take even less. Player defenders never hit this (Player overrides GetResistanceMod). Prestige-gated -> dormant while
+            // prestige is off. The zone damage_taken_mult stat that used to override this was REMOVED 2026-08-03 (owner):
+            // redundant with damage_resist_rating.
+            if (ServerConfig.v11_mob_dmg_taken_enabled.Value && !(this is Player)
+                && ACE.Server.Managers.PrestigeManager.SystemsEnabled
+                && ACE.Server.Managers.VariationManager.GetEffectiveEndgameVariation(this) >= ServerConfig.v11_mob_dmg_taken_min_variation.Value)
+            {
+                var dmgMult = GetProperty(PropertyFloat.MobDmgTakenOverride) ?? ServerConfig.v11_mob_dmg_taken_mult.Value;
+
+                if (GetProperty(PropertyBool.IsEmpowerSource) == true)
+                    dmgMult *= ServerConfig.v11_mob_dmg_taken_boss_mult.Value;
+
+                dmgMult = Math.Clamp(dmgMult, ServerConfig.v11_mob_dmg_taken_floor.Value, 1.0);
+
+                resistMod *= (float)dmgMult;
+            }
+
+            // Per-monster ELEMENTAL WEAKNESS: if the incoming damage type is in the mob's weakness mask, multiply the
+            // (post-mitigation) resistance mod so the right element does proportionally more. Independent of zone
+            // scaling; a relative reward that stays meaningful even against heavily-mitigated endgame mobs. Unset
+            // mask => no-op, so this changes nothing for existing mobs. Players never carry it.
+            if (!(this is Player))
+            {
+                var weakMask = GetProperty(PropertyInt.ElementalWeaknessMask);
+                if (weakMask.HasValue && weakMask.Value != 0 && ((DamageType)weakMask.Value & damageType) != 0)
+                {
+                    var weakFactor = GetProperty(PropertyFloat.ElementalWeaknessFactor) ?? ServerConfig.elemental_weakness_default_factor.Value;
+                    if (weakFactor > 0)
+                        resistMod *= (float)weakFactor;
+                }
+            }
+
+            return resistMod;
         }
 
         public virtual float GetNaturalResistance(DamageType damageType)
@@ -163,26 +227,35 @@ namespace ACE.Server.WorldObjects
             return 1.0f;
         }
 
+        /// <summary>Zone Control: a governed monster's zone profile can REPLACE a creature-level multiplier
+        /// (resists / armor-vs-type). Returns the fallback when unprofiled — players and exempt mobs always
+        /// resolve null, so this is a no-op for them.</summary>
+        private double ZoneStatOr(string statKey, double fallback)
+        {
+            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this as Creature);
+            return zp != null && zp.Has(statKey) ? zp.Get(statKey) : fallback;
+        }
+
         public double GetArmorVsType(DamageType damageType)
         {
             switch (damageType)
             {
                 case DamageType.Slash:
-                    return GetProperty(PropertyFloat.ArmorModVsSlash) ?? 1.0f;
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ArmorVsSlash, GetProperty(PropertyFloat.ArmorModVsSlash) ?? 1.0f);
                 case DamageType.Pierce:
-                    return GetProperty(PropertyFloat.ArmorModVsPierce) ?? 1.0f;
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ArmorVsPierce, GetProperty(PropertyFloat.ArmorModVsPierce) ?? 1.0f);
                 case DamageType.Bludgeon:
-                    return GetProperty(PropertyFloat.ArmorModVsBludgeon) ?? 1.0f;
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ArmorVsBludgeon, GetProperty(PropertyFloat.ArmorModVsBludgeon) ?? 1.0f);
                 case DamageType.Fire:
-                    return GetProperty(PropertyFloat.ArmorModVsFire) ?? 1.0f;
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ArmorVsFire, GetProperty(PropertyFloat.ArmorModVsFire) ?? 1.0f);
                 case DamageType.Cold:
-                    return GetProperty(PropertyFloat.ArmorModVsCold) ?? 1.0f;
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ArmorVsCold, GetProperty(PropertyFloat.ArmorModVsCold) ?? 1.0f);
                 case DamageType.Acid:
-                    return GetProperty(PropertyFloat.ArmorModVsAcid) ?? 1.0f;
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ArmorVsAcid, GetProperty(PropertyFloat.ArmorModVsAcid) ?? 1.0f);
                 case DamageType.Electric:
-                    return GetProperty(PropertyFloat.ArmorModVsElectric) ?? 1.0f;
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ArmorVsElectric, GetProperty(PropertyFloat.ArmorModVsElectric) ?? 1.0f);
                 case DamageType.Nether:
-                    return GetProperty(PropertyFloat.ArmorModVsNether) ?? 1.0f;
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ArmorVsNether, GetProperty(PropertyFloat.ArmorModVsNether) ?? 1.0f);
                 default:
                     return 1.0f;
             }
@@ -193,21 +266,21 @@ namespace ACE.Server.WorldObjects
             switch (resistance)
             {
                 case ResistanceType.Slash:
-                    return (ResistSlash ?? 1.0) * GetResistanceMod(DamageType.Slash, attacker, weapon, weaponResistanceMod);
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistSlash, ResistSlash ?? 1.0) * GetResistanceMod(DamageType.Slash, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Pierce:
-                    return (ResistPierce ?? 1.0) * GetResistanceMod(DamageType.Pierce, attacker, weapon, weaponResistanceMod);
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistPierce, ResistPierce ?? 1.0) * GetResistanceMod(DamageType.Pierce, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Bludgeon:
-                    return (ResistBludgeon ?? 1.0) * GetResistanceMod(DamageType.Bludgeon, attacker, weapon, weaponResistanceMod);
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistBludgeon, ResistBludgeon ?? 1.0) * GetResistanceMod(DamageType.Bludgeon, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Fire:
-                    return (ResistFire ?? 1.0) * GetResistanceMod(DamageType.Fire, attacker, weapon, weaponResistanceMod);
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistFire, ResistFire ?? 1.0) * GetResistanceMod(DamageType.Fire, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Cold:
-                    return (ResistCold ?? 1.0) * GetResistanceMod(DamageType.Cold, attacker, weapon, weaponResistanceMod);
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistCold, ResistCold ?? 1.0) * GetResistanceMod(DamageType.Cold, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Acid:
-                    return (ResistAcid ?? 1.0) * GetResistanceMod(DamageType.Acid, attacker, weapon, weaponResistanceMod);
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistAcid, ResistAcid ?? 1.0) * GetResistanceMod(DamageType.Acid, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Electric:
-                    return (ResistElectric ?? 1.0) * GetResistanceMod(DamageType.Electric, attacker, weapon, weaponResistanceMod);
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistElectric, ResistElectric ?? 1.0) * GetResistanceMod(DamageType.Electric, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Nether:
-                    return (ResistNether ?? 1.0) * GetResistanceMod(DamageType.Nether, attacker, weapon, weaponResistanceMod) * GetNetherResistRatingMod();
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistNether, ResistNether ?? 1.0) * GetResistanceMod(DamageType.Nether, attacker, weapon, weaponResistanceMod) * GetNetherResistRatingMod();
                 case ResistanceType.HealthBoost:
                     return (ResistHealthBoost ?? 1.0) * GetHealingRatingMod();
                 case ResistanceType.HealthDrain:

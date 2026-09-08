@@ -18,6 +18,8 @@ namespace ACE.Server.WorldObjects
 {
     partial class Player
     {
+        private static readonly log4net.ILog zcLog = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         // ── Charm redirect spell IDs ───────────────────────────────────────────
         private const uint SpellId_TectonicRiftsI  = 1789u;
         private const uint SpellId_TectonicRiftsII = 6196u;
@@ -1780,7 +1782,22 @@ namespace ACE.Server.WorldObjects
         /// derived from the drain rather than from the spell's Min/Max — see SpellProjectile.LifeProjectileDamage.
         /// </para>
         /// </summary>
-        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f)
+        /// <summary>Element word for the Cast on Strike ring line. Mirrors SpellProjectile.ZcElementWord;
+        /// the two message sites must read identically.</summary>
+        private static string ZcElementWord(DamageType dt)
+        {
+            if (dt.HasFlag(DamageType.Slash)) return "slash";
+            if (dt.HasFlag(DamageType.Pierce)) return "pierce";
+            if (dt.HasFlag(DamageType.Bludgeon)) return "bludgeon";
+            if (dt.HasFlag(DamageType.Acid)) return "acid";
+            if (dt.HasFlag(DamageType.Cold)) return "cold";
+            if (dt.HasFlag(DamageType.Electric)) return "electric";
+            if (dt.HasFlag(DamageType.Fire)) return "fire";
+            if (dt.HasFlag(DamageType.Nether)) return "nether";
+            return "magic";
+        }
+
+        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0)
         {
             var center = centerOverride ?? Location;
             if (center == null) return;
@@ -1830,7 +1847,14 @@ namespace ACE.Server.WorldObjects
             var attackSkill   = GetCreatureSkill(spell.School);
             var magicSkill    = attackSkill.Current;
             var resistanceType = Creature.GetResistanceType(spell.DamageType);
-            var weapon        = GetEquippedWand();
+            // PROC WEAPON WINS OVER THE EQUIPPED WAND. GetEquippedWand() is right for a hand-cast ring,
+            // but a ring fired as a weapon proc comes off a dagger/bow/wand that is NOT in the wand slot,
+            // so this returned NULL and every weapon-derived term silently vanished - above all the REND,
+            // since GetWeaponResistanceModifier bails on a null weapon. Measured in game 2026-08-27: the
+            // arc landed 56,378 and the ring 23,237 off the same Fire/Fire-Rending dagger, a 2.43x gap
+            // that is exactly the T11 rend band. Heritage bonus and the crit-damage mod were lost the
+            // same way.
+            var weapon        = procWeapon ?? GetEquippedWand();
 
             var isLifeProjectile = spell.MetaSpellType == ACE.Entity.Enum.SpellType.LifeProjectile;
 
@@ -1889,7 +1913,12 @@ namespace ACE.Server.WorldObjects
                     // Resist check — sends the resist message automatically.  A resisted spell still
                     // lands if the caster's Overpower procs, matching SpellProjectile.CalculateDamage,
                     // which only bails on `resisted && !overpower`.
-                    var resisted = TryResistSpell(creature, spell, null, true);
+                    // For a Cast on Strike proc the WEAPON is the itemCaster, so the resist rolls
+                    // against its ItemSpellcraft (the 9999 stamp) exactly as the arc path does via
+                    // resistSource - passing null here rolled the PLAYER's own War/Void skill, the
+                    // precise failure the spellcraft stamp exists to prevent (fixed 2026-08-28, the
+                    // sixth everything-must-be-done-TWICE bug). Hand-cast rings keep null = own skill.
+                    var resisted = TryResistSpell(creature, spell, fromProc && procBaseDamage > 0 ? weapon : null, true);
                     if (resisted && !(Overpower != null && Creature.GetOverpower(this, creature)))
                     {
                         dbgResist++;
@@ -1916,7 +1945,8 @@ namespace ACE.Server.WorldObjects
                     // on such spells.  Mirrors SpellProjectile.CalculateDamage's LifeProjectile branch.
                     var lifeMagicDamage = isLifeProjectile ? lifeProjectileDamage * spell.DamageRatio : 0.0f;
 
-                    // Crit chance — 5% base + player crit rating, mitigated by target resist rating.
+                    // Crit chance — 10% base since 2026-08-29 (unified with melee/missile) + player
+                    // crit rating, mitigated by target resist rating.
                     var critChance = GetWeaponMagicCritFrequency(weapon, this as Creature, attackSkill, creature);
                     if (ThreadSafeRandom.Next(0.0f, 1.0f) < critChance)
                     {
@@ -1932,12 +1962,18 @@ namespace ACE.Server.WorldObjects
                         if (!critDefended)
                         {
                             criticalHit = true;
-                            // Life: +50% of the drained damage (pre-aug, matching SpellProjectile).
-                            // War/Void — PvE: +50% of MaxDamage.  PvP: +50% of MinDamage.
-                            critDamageBonus  = isLifeProjectile
-                                ? lifeMagicDamage * 0.5f
-                                : (isPvP ? spell.MinDamage * 0.5f : spell.MaxDamage * 0.5f);
-                            critDamageBonus *= GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
+                            // UNIFIED CRIT MODEL (owner 2026-08-29, matching SpellProjectile): PvE
+                            // crit = CritX x the fully composed base, computed AFTER the aug term
+                            // below. Life: CritX x the drained base (0.5 coefficient gone). PvP
+                            // keeps the retail halved-min rule.
+                            // only the life / PvP branches use the mod here; the war/void PvE crit reads it
+                            // once in the unified block below (review 2026-09-04: it was computed twice)
+                            var earlyMod = isLifeProjectile || isPvP
+                                ? GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature)
+                                : 0f;
+                            critDamageBonus = isLifeProjectile
+                                ? lifeMagicDamage * earlyMod
+                                : (isPvP ? spell.MinDamage * 0.5f * earlyMod : 0f);
                         }
                     }
 
@@ -1966,23 +2002,45 @@ namespace ACE.Server.WorldObjects
                         if (magicSkill > spell.Power)
                             skillBonus = spell.MinDamage * (magicSkill - spell.Power) / 1000.0f;
 
-                        baseDamage = ThreadSafeRandom.Next(spell.MinDamage, spell.MaxDamage);
+                        // Zone Control "Cast on Strike" ring slot: the authored B replaces the rolled
+                        // spell base here exactly as it does on the projectile path. A ring's damage is
+                        // applied by THIS method and never reaches SpellProjectile.CalculateDamage, so
+                        // without this the ring fires on the spell's own base and the whole band is
+                        // ignored - which is what the first in-game test was actually measuring.
+                        baseDamage = procBaseDamage > 0
+                            ? (long)Math.Round(procBaseDamage)
+                            // unified crit: a PvE crit uses the MAX roll, matching SpellProjectile
+                            : (criticalHit && !isPvP
+                                ? spell.MaxDamage
+                                : ThreadSafeRandom.Next(spell.MinDamage, spell.MaxDamage));
 
                         // Luminance augment — the pool MUST match the spell's school.  This previously
                         // added the War count unconditionally, which fed a caster's War pool into Void
                         // rings (e.g. Clouded Soul) and dropped their Void pool entirely.
                         //
                         // Effective counts, matching SpellProjectile: gems plus the school's charm.
+                        long ringAugs = 0;
                         if (spell.School == MagicSchool.WarMagic)
-                        {
-                            if (EffectiveWarAugCount >= 1)
-                                baseDamage += EffectiveWarAugCount;
-                        }
+                            ringAugs = EffectiveWarAugCount;
                         else if (spell.School == MagicSchool.VoidMagic)
+                            ringAugs = EffectiveVoidAugCount;
+
+                        // The proc aug cap (prop 9061), mirroring SpellProjectile.CalculateDamage:
+                        // clamps the aug term for a Cast on Strike proc ONLY - a hand-cast ring is
+                        // deliberately untouched. The ring path never read the cap before 2026-08-28
+                        // (the fifth everything-must-be-done-TWICE bug on this card), so a capped
+                        // weapon still delivered the full 0..17,150 term on every ring hit.
+                        if (ringAugs > 0 && fromProc && procBaseDamage > 0)
                         {
-                            if (EffectiveVoidAugCount >= 1)
-                                baseDamage += EffectiveVoidAugCount;
+                            // PER-SLOT since 2026-08-29: the ring reads its OWN cap (prop 9064), falling
+                            // back to the old shared 9061 so pre-split test daggers keep theirs.
+                            var ringAugCap = weapon?.GetProperty((ACE.Entity.Enum.Properties.PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRingAugCapPropId)
+                                ?? weapon?.GetProperty((ACE.Entity.Enum.Properties.PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcAugCapPropId);
+                            if (ringAugCap.HasValue && ringAugCap.Value > 0)
+                                ringAugs = Math.Min(ringAugs, (long)Math.Round(ringAugCap.Value));
                         }
+                        if (ringAugs > 0)
+                            baseDamage += ringAugs;
                     }
 
                     // Elemental modifier (wand element vs target).
@@ -2015,6 +2073,32 @@ namespace ACE.Server.WorldObjects
                     }
 
                     // Damage selection:
+                    // Per-hit variance on the WHOLE base - see SpellProjectile for the reasoning.
+                    // Passed in rather than read off the weapon here, because this method is also the
+                    // Explosive Arrow path and must not start reading Cast on Strike props for it.
+                    if (procBaseDamage > 0 && procVariance > 0)
+                    {
+                        var v = Math.Clamp(procVariance, 0.0, 1.0);
+                        baseDamage = (long)Math.Round(baseDamage * (1.0 - v * ThreadSafeRandom.Next(0.0f, 1.0f)));
+                    }
+
+                    // Cast on Strike: re-derive the crit bonus from the REPLACED base. Stock computes it
+                    // from spell.MaxDamage, which for Cassius' Ring of Fire is 84 - so a crit added ~42
+                    // to a ~9,440 base and a proc could not meaningfully crit at all. Crushing Blow was
+                    // dead for the same reason: it feeds weaponCritDamageMod, which multiplied that same
+                    // 84. Measured in game 2026-08-27: a CRIT ring hit landed 0.16 pct above a non-crit
+                    // arc. Mirrors what the zone monster path already does after replacing a base.
+                    //
+                    // Placed AFTER the aug term so the crit scales with the whole base the hit uses, and
+                    // BEFORE preModDamage, which is the only consumer.
+                    // ══ UNIFIED CRIT (owner 2026-08-29): PvE war/void crit = CritX x the fully
+                    // composed base (max roll or ring B, plus the aug term, post-variance/cap) -
+                    // one formula for hand-casts and ring procs alike, replacing the 0.5f
+                    // proc-only re-derive. mod = CritX - 1 (default 1.0 = retail's 2x).
+                    if (criticalHit && !isLifeProjectile && !isPvP)
+                        critDamageBonus = (baseDamage + skillBonus)
+                            * GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
+
                     var preModDamage = isLifeProjectile
                         ? lifeMagicDamage + critDamageBonus
                         : baseDamage + critDamageBonus + skillBonus;
@@ -2078,6 +2162,14 @@ namespace ACE.Server.WorldObjects
                         percent = finalDamage / creature.Health.MaxValue;
                     }
 
+                    // [ZCPROC] diagnostic - see SpellProjectile for why. Fires only for our ring procs,
+                    // and only with the zc_proc_diag server property on (off by default since 2026-09-04).
+                    if (procBaseDamage > 0 && ServerConfig.zc_proc_diag.Value)
+                        zcLog.Info($"[ZCPROC] ring spell={spell.Name} ({spell.Id}) B={baseDamage} " +
+                                 $"weapon={(weapon?.Name ?? "NULL")} rendMod={weaponResistanceMod:F3} " +
+                                 $"resistMod={resistanceMod:F4} attrib={attribBonus:F2} crit={criticalHit} " +
+                                 $"final={finalDamage:F0} target={creature.Name}");
+
                     creature.TakeDamage(this, spell.DamageType, finalDamage, criticalHit);
 
                     // Only send "You hit X for Y" if the target survived
@@ -2089,7 +2181,19 @@ namespace ACE.Server.WorldObjects
                         string verb = null, plural = null;
                         Strings.GetAttackVerb(spell.DamageType, pct, ref verb, ref plural);
                         var critMsg     = criticalHit ? "Critical hit! " : "";
-                        var attackerMsg = $"{critMsg}You {verb} {creature.Name} for {amtStr} points with {spell.Name}.";
+
+                        // Zone Control "Cast on Strike" reads with its OWN name and sentence here too.
+                        // A ring proc never reaches SpellProjectile.DamageTarget - its damage is applied
+                        // by this method - so the message had to be matched in BOTH places or the arc
+                        // and the ring on the same weapon would print in two different formats, which is
+                        // exactly what the first in-game test showed.
+                        string zcRingName = null;
+                        if (fromProc)
+                            ACE.Server.Managers.ZoneControl.ZoneLootMutator.TryGetProcDisplayName(spell.Id, out zcRingName);
+
+                        var attackerMsg = zcRingName != null
+                            ? $"{critMsg}{zcRingName} hits {creature.Name} for {amtStr} {ZcElementWord(spell.DamageType)} damage."
+                            : $"{critMsg}You {verb} {creature.Name} for {amtStr} points with {spell.Name}.";
                         if (!SquelchManager.Squelches.Contains(creature, ACE.Entity.Enum.ChatMessageType.Magic))
                             Session?.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ACE.Entity.Enum.ChatMessageType.Magic));
 

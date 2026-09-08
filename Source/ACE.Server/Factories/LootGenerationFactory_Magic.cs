@@ -69,7 +69,7 @@ namespace ACE.Server.Factories
 
                 AddActivationRequirements(wo, roll);
 
-                if (profile.Tier == 10 && wo.WeenieType == WeenieType.Caster)
+                if (profile.Tier >= 10 && wo.WeenieType == WeenieType.Caster)
                 {
                     TryMutateGearRatingForWeapons(wo, profile, roll);
                 }
@@ -375,7 +375,7 @@ namespace ACE.Server.Factories
                 lootQualityMod = 1.0f - profile.LootQualityMod;
 
             // 25% base chance for no epics for tier 7
-            if (profile.Tier == 10)
+            if (profile.Tier >= 10)
             {
                 if (ThreadSafeRandom.Next(1, (int)(80 * dropRateMod * lootQualityMod)) == 1)
                     numEpics = 1;
@@ -421,7 +421,7 @@ namespace ACE.Server.Factories
             if (ServerConfig.loot_quality_mod.Value && profile.LootQualityMod > 0 && profile.LootQualityMod < 1)
                 lootQualityMod = 1.0f - profile.LootQualityMod;
 
-            if (profile.Tier == 10)
+            if (profile.Tier >= 10)
             {
                 if (ThreadSafeRandom.Next(1, (int)(60 * dropRateMod * lootQualityMod)) == 1)
                     numLegendaries = 1;
@@ -556,7 +556,7 @@ namespace ACE.Server.Factories
 
         private static int RollItemMaxMana(int tier, int numSpells)
         {
-            var range = itemMaxMana_RandomRange[tier - 1];
+            var range = TierTable.Entry(itemMaxMana_RandomRange, tier);
 
             var rng = ThreadSafeRandom.Next(range.min, range.max);
 

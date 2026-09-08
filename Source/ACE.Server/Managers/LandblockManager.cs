@@ -179,13 +179,14 @@ namespace ACE.Server.Managers
             if (landblockGroupPendingAdditions.IsEmpty)
                 return;
 
-            for (int i = landblockGroupPendingAdditions.Count - 1; i >= 0; i--)
+            // Snapshot keys and TryRemove-first: index-based ElementAt over a ConcurrentDictionary while
+            // physics worker threads TryAdd concurrently can skip an entry (delayed a tick) or process one
+            // TWICE (same landblock in two groups = double-ticked, and its group-removal at unload leaves
+            // a dead entry ticking forever). TryRemove guarantees exactly-once.
+            foreach (var pendingKey in landblockGroupPendingAdditions.Keys.ToList())
             {
-                var landlockToAdd = landblockGroupPendingAdditions.ElementAt(i).Value;
-                //if (landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString().StartsWith("019E"))
-                //{
-                //    Console.WriteLine("Adding landblock: " + landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString() + ", v:" + landblockGroupPendingAdditions.ElementAt(i).Value.VariationId + " to landblockGroups");
-                //}
+                if (!landblockGroupPendingAdditions.TryRemove(pendingKey, out var landlockToAdd))
+                    continue;
                 if (landlockToAdd.IsDungeon || landlockToAdd.VariationId.HasValue)
                 {
                     // Each dungeon exists in its own group
@@ -233,9 +234,6 @@ namespace ACE.Server.Managers
                         landblockGroups.Add(landblockGroup);
                     }
                 }
-
-                landblockGroupPendingAdditions.Remove(new VariantCacheId { Landblock = landlockToAdd.Id.Landblock, Variant = landlockToAdd.VariationId }, out _);                    
-                    
             }
 
             // Debugging todo: comment this out after enough testing
@@ -324,9 +322,33 @@ namespace ACE.Server.Managers
             }
         }
 
+        /// <summary>
+        /// Landblock ids holding at least one online player, snapshotted once at the start of each
+        /// multi-threaded tick batch. Per-landblock dormancy checks (Landblock.HasPhysicalPlayerOnOrAdjacent)
+        /// read this shared set instead of each rescanning every online player, turning what was an
+        /// O(landblocks x players) tick-path cost into a single O(players) build plus O(9) lookups.
+        /// Rebuilt before the parallel tick and only read during it, so no synchronization is needed.
+        /// </summary>
+        internal static HashSet<(ushort Landblock, int? Variation)> OccupiedLandblocks { get; private set; } = new();
+
+        private static void RefreshOccupiedLandblocks()
+        {
+            var set = new HashSet<(ushort Landblock, int? Variation)>();
+            foreach (var player in PlayerManager.GetAllOnline())
+            {
+                var loc = player.Location;
+                if (loc != null)
+                    set.Add(((ushort)loc.LandblockId.Landblock, VariationManager.NormalizeBase(loc.Variation)));
+            }
+            OccupiedLandblocks = set;
+        }
+
         private static void TickMultiThreadedWork()
         {
             ProcessPendingLandblockGroupAdditions();
+
+            // Snapshot online-player landblocks once for this batch (read by Landblock dormancy checks below).
+            RefreshOccupiedLandblocks();
 
             if (ConfigManager.Config.Server.Threading.MultiThreadedLandblockGroupTicking)
             {
@@ -442,6 +464,14 @@ namespace ACE.Server.Managers
             return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId }) != null;
         }
 
+        /// <summary>No-create lookup of the LOADED landblock instance for (landblock, variation) -
+        /// null when not loaded. Lets callers verify a held Landblock reference is still the live
+        /// one (see Player.ValidateCurrentLandblockTick's stale-instance void heal, 2026-08-10).</summary>
+        public static Landblock GetLoadedLandblock(LandblockId landblockId, int? variationId)
+        {
+            return GetLandblock(new VariantCacheId() { Landblock = landblockId.Landblock, Variant = variationId });
+        }
+
         /// <summary>
         /// Enqueues <see cref="Landblock.RefreshPrestigeBoundaryMarkers"/> on each matching loaded landblock (async per landblock queue); does not wait for completion.
         /// </summary>
@@ -467,6 +497,31 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
+        /// Enqueues <see cref="Landblock.RefreshZoneBoundaryMarkers"/> on each matching loaded landblock (async per landblock queue); does not wait for completion.
+        /// Called by ZoneControlManager whenever a mutation changes a variation's bounded union.
+        /// </summary>
+        /// <returns>Number of landblocks that had a refresh enqueued.</returns>
+        public static int EnqueueRefreshLoadedZoneBoundaryMarkers(int? variation = null)
+        {
+            var queued = 0;
+            var loaded = loadedLandblocks.Values.ToList();
+
+            foreach (var landblock in loaded)
+            {
+                if (landblock == null)
+                    continue;
+
+                if (variation.HasValue && landblock.VariationId != variation.Value)
+                    continue;
+
+                landblock.RefreshZoneBoundaryMarkers();
+                queued++;
+            }
+
+            return queued;
+        }
+
+        /// <summary>
         /// Returns a reference to a landblock, loading the landblock if not already active
         /// TODO: Make this Variation Aware
         /// </summary>
@@ -482,16 +537,32 @@ namespace ACE.Server.Managers
             {
                 // load up this landblock                    
                 landblock = new Landblock(landblockId, variation);
-                if(!AddUpdateLandblock(cacheKey, landblock))
+
+                // Both adds below used to `return landblock` on failure - handing back an instance whose
+                // physics was built in the ctor (so it is walkable) but whose Init() had NOT run, i.e. a
+                // permanent void. Losing an add almost always means another thread won the race, so the
+                // right answer is the WINNER's already-initialized landblock, not our orphan.
+                if (!AddUpdateLandblock(cacheKey, landblock))
                 {
-                    log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks!");
-                    return landblock;
+                    log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks! Falling back to the cached instance.");
+                    var existing = GetLandblock(cacheKey);
+                    if (existing != null)
+                        return existing;
+
+                    // No winner to fall back on - initialize ours rather than return a void.
+                    log.Error($"LandblockManager: no cached instance for {landblock.Id.Raw:X8}, v:{variation} after a failed add - initializing the new one to avoid a void landblock.");
+                    // fall through: register it in the group list below so it is ticked, watched and unloaded like any other
                 }
 
                 if (!loadedLandblocks.TryAdd(cacheKey, landblock))
                 {
-                    log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks!");
-                    return landblock;
+                    log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks! Falling back to the cached instance.");
+                    var existing = GetLandblock(cacheKey);
+                    if (existing != null && !ReferenceEquals(existing, landblock))
+                        return existing;
+
+                    log.Error($"LandblockManager: no distinct cached instance for {landblock.Id.Raw:X8}, v:{variation} after a failed add - initializing to avoid a void landblock.");
+                    // fall through: register it in the group list below so it is ticked, watched and unloaded like any other
                 }
 
                 bool res = landblockGroupPendingAdditions.TryAdd(cacheKey, landblock);

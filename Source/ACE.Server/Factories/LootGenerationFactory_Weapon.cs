@@ -44,10 +44,11 @@ namespace ACE.Server.Factories
 
         private static bool TryMutateGearRatingForWeapons(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
         {
-            if (profile.Tier != 10)
+            // was == 10, which silently dropped weapon gear ratings at tier 11+
+            if (profile.Tier < 10)
                 return false;
 
-            int gearRating = GearRatingChance.RollT10(wo, profile, roll); // Make sure this supports weapon types
+            int gearRating = GearRatingChance.RollForTier(wo, profile, roll); // Make sure this supports weapon types
 
             if (gearRating == 0)
                 return false;

@@ -48,8 +48,20 @@ namespace ACE.Server.WorldObjects
             var ignoreMagicArmor = (weapon?.IgnoreMagicArmor ?? false) || (attacker?.IgnoreMagicArmor ?? false);
             var ignoreMagicResist = (weapon?.IgnoreMagicResist ?? false) || (attacker?.IgnoreMagicResist ?? false);
 
-            // get base AL / RL
-            var armorVsType = Biota.Value.BaseArmor * (float)Creature.GetArmorVsType(damageType);
+            // get base AL / RL — Zone Control can set the monster's base armor absolutely (null profile -> weenie
+            // base_Armor). Precedence: armor_level (all parts) > per-part override > weenie (blanket beats
+            // per-part, owner ruling 2026-08-02) — the Defense-tab armor_level stays the live tuning lever;
+            // per-part armor (weak spots) only shows through on mobs with no blanket armor_level set.
+            var baseArmor = (float)Biota.Value.BaseArmor;
+            var zoneArm = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(Creature);
+            if (zoneArm != null)
+            {
+                if (zoneArm.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.ArmorLevel))
+                    baseArmor = (float)zoneArm.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.ArmorLevel);
+                else if (zoneArm.GetBodyPart((int)Biota.Key)?.Armor is double partArmor)
+                    baseArmor = (float)partArmor;
+            }
+            var armorVsType = baseArmor * (float)Creature.GetArmorVsType(damageType);
 
             // additive enchantments:
             // imperil / armor
