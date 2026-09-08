@@ -467,6 +467,9 @@ namespace ACE.Server.Entity.Actions
         // Always append new ActionTypes to avoid renumbering existing values.
         Landblock_Relocate_RemoveForPhysics,
         PlayerTracking_PostTeleportVisibilityReconcile,
+        BossGroupManager_KickSpawn,
+        Player_ZcCheatDeathExpired,   // Zone Control Cheat Death window closed notice (2026-08-23)
+        ZoneControl_LadderReresolve,   // live stat resolution: online worn-gear re-stamp after `ladder apply`
     }
     public static class ActionTypeConverter
     {

@@ -771,6 +771,15 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         EssenceSalvageYield                     = 9057,
 
+        // -- Weapon aug-scaling (T11 weapon relevance; server/custom) ----------------
+        /// <summary>On a T11+ weapon: the quality percentile roll (0-1000). The server-wide
+        /// weaponscaling_data config maps quality -> the k coefficient at swing time, so config
+        /// edits re-price every stamped weapon live. Absent = the weapon has no scaling term.</summary>
+        WeaponAugScaleQuality                   = 9060,
+        /// <summary>On a T11+ weapon: the loot tier it was stamped at. Selects the tier row
+        /// (scaling cap / min-wield augs) in the weaponscaling_data config.</summary>
+        WeaponAugScaleTier                      = 9061,
+
         /// <summary>
         /// The absolute Unix timestamp (in seconds since epoch) when the item expires.
         /// </summary>
@@ -797,6 +806,61 @@ namespace ACE.Entity.Enum.Properties
         /// 2 = Short (1.2K / 2.2M / 1.5B / 3.2T / 1Q)
         /// </summary>
         DamageNumberFormat = 50101,
+
+        /// <summary>
+        /// Group ID for the Empowered aura system. A creature with IsEmpowerSource only
+        /// empowers nearby creatures with CanBeEmpowered if they share the same EmpowerGroup value.
+        /// Example: Pirates = 1, Golems = 2, Gromnies = 3, etc.
+        /// </summary>
+        EmpowerGroup = 50102,
+
+        /// <summary>
+        /// If set on a generator, its total spawn count (InitCreate/MaxCreate) is overridden at
+        /// StartGenerator to: VariationScaledSpawnBase + (landblock variation - VariationScaledSpawnBaseline),
+        /// never dropping below the base. Used by prestige-zone camp generators.
+        /// </summary>
+        VariationScaledSpawnBase = 50103,
+
+        /// <summary>
+        /// The landblock variation at which a VariationScaledSpawnBase generator spawns exactly its
+        /// base count. Defaults to 11 (T11 Tou Tou) when not set.
+        /// </summary>
+        VariationScaledSpawnBaseline = 50104,
+
+        /// <summary>TEST HOOK (pairs with PropertyBool.ForceEndgameSystems): the ENDGAME CONTENT variation this
+        /// creature should SIMULATE when force-enabled at a non-endgame variation. Drives percent-HP growth and
+        /// the v11 combat gates. Unset — or any value below 11 — resolves to v11, i.e. the dummy behaves exactly
+        /// like a real Tide mob (see VariationManager.EndgameMinVariation). Never set on real mobs.</summary>
+        EndgameForcedVariation = 50105,
+
+        /// <summary>ELEMENTAL WEAKNESS: a bitmask of ACE.Entity.Enum.DamageType flags the monster takes EXTRA damage
+        /// from. When an incoming hit's damage type intersects this mask, its post-mitigation resistance mod is
+        /// multiplied by the weakness factor (PropertyFloat.ElementalWeaknessFactor, else the
+        /// elemental_weakness_default_factor knob). 0/unset = no weakness. Lets us make different mobs weak to
+        /// different elements (e.g. Cold=0x8, Fire=0x10, Cold+Fire=0x18, Nether=0x400).</summary>
+        ElementalWeaknessMask = 50106,
+
+        /// <summary>OFFENSE DAMAGE TYPE: a bitmask of ACE.Entity.Enum.DamageType flags a monster's natural/melee/missile
+        /// attacks should deal, OVERRIDING its body-part/weapon damage type. When set, each hit picks a random flag
+        /// from this mask (e.g. Cold 0x8, Fire 0x10, Cold+Fire 0x18 = randomly one per hit). 0/unset = normal weapon/
+        /// body-part type. Does NOT change magic-school (War/Void) spells — those come from the mob's spellbook.</summary>
+        OutgoingDamageTypeOverride = 50107,
+
+        /// <summary>BOSS GROUP: set on a GENERATOR weenie to join it to a named boss group. All generators
+        /// sharing this id (placed on any number of landblocks) keep exactly ONE spawn alive between them:
+        /// when it dies, one respawn delay (the profile's Delay) passes, then ONE randomly-chosen generator
+        /// of the group (among loaded landblocks) spawns the next one. Coordinated by BossGroupManager.
+        /// A boss-group generator should have MaxCreate 1 and boss-only entries — escorts belong on the
+        /// boss creature's own generator table, not on the group gen.</summary>
+        BossGroupId = 50108,
+
+        /// <summary>Zone Control live stat resolution (2026-08-22): the loot TIER a ZC-lined piece was
+        /// stamped at. Picks the ladder row (per-variation Default bands / core anchors) that resolves
+        /// its grades. Outside the 50200-50399 cantrip block on purpose - that block is summed on equip.</summary>
+        ZcTier = 50109,
+        /// <summary>The per-tier ladder version this piece's retail props were last resolved against
+        /// (ZoneControlManager.GetLadderVersion). A mismatch on equip re-resolves + re-stamps.</summary>
+        ZcResolvedVersion = 50110,
     }
 
     public static class PropertyIntExtensions

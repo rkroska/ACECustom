@@ -85,6 +85,12 @@ namespace ACE.Server.WorldObjects
 
         public bool IsOlthoiPlayer { get; set; }
 
+        /// <summary>Pack slots the CLIENT is showing - ContainerCapacity as read at login (7, or 8
+        /// with the PackSlot aug). Ephemeral, never persisted. A PackSlot aug granted mid-session
+        /// bumps ContainerCapacity but the client does not render the new slot until relog, so
+        /// anything minting packs should fill to this, not to live capacity.</summary>
+        public int ClientPackSlots { get; set; } = 7;
+
 
         public string GodState
         {

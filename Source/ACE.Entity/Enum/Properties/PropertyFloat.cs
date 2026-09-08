@@ -281,5 +281,39 @@ namespace ACE.Entity.Enum.Properties
         /// Used by ring-specific charms to increase coverage. Defaults to 1.0 if not set.
         /// </summary>
         AoeRangeMultiplier = 9048,
+        /// <summary>
+        /// v11+ percent-HP floor: per-weenie override for the floor fraction P (fraction of player max HP).
+        /// When set, skips the tier/boss calculation and uses this value directly.
+        /// </summary>
+        PercentHpDamageOverride = 9049,
+        /// <summary>
+        /// v11+ percent-HP floor: per-weenie override for the life-aug reduction cap (default from v11_pcthp_reduction_cap).
+        /// </summary>
+        PercentHpReductionCapOverride = 9050,
+        /// <summary>
+        /// v11+ percent-HP floor: per-weenie override for the reduction curve constant r (default from v11_pcthp_reduction_r).
+        /// </summary>
+        PercentHpReductionROverride = 9051,
+        /// <summary>
+        /// v11+ vuln compression: per-weenie override for the vuln effectiveness (default from v11_vuln_effectiveness).
+        /// Fraction of the vuln BONUS that lands against this monster. 1.0 = uncompressed (vanilla vulns), 0.0 = vulns do nothing.
+        /// </summary>
+        VulnEffectivenessOverride = 9052,
+        /// <summary>
+        /// v11+ vuln compression: per-weenie override for the max total vuln multiplier cap (default from v11_vuln_cap).
+        /// Set high (e.g. 999) together with VulnEffectivenessOverride = 1.0 to exempt this monster entirely.
+        /// </summary>
+        VulnCapOverride = 9053,
+        /// <summary>
+        /// v11+ mob damage-taken mitigation: per-weenie override for the incoming-damage multiplier (default from v11_mob_dmg_taken_mult).
+        /// Lower = the monster takes less damage (tankier). 1.0 = takes full damage (exempt). Multiplied by the boss factor if IsEmpowerSource.
+        /// </summary>
+        MobDmgTakenOverride = 9054,
+
+        /// <summary>ELEMENTAL WEAKNESS: per-monster damage multiplier applied when an incoming hit's damage type is in
+        /// PropertyInt.ElementalWeaknessMask. e.g. 3.0 = the mob takes 3x damage from its weak element(s). Unset =
+        /// the elemental_weakness_default_factor server knob. Applied after mitigation, so it's a relative reward for
+        /// using the right element even against heavily-mitigated endgame mobs.</summary>
+        ElementalWeaknessFactor = 9055,
     }
 }

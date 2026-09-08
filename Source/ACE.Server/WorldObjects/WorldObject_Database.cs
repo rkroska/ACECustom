@@ -114,6 +114,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public virtual void SaveBiotaToDatabase(bool enqueueSave = true)
         {
+            if (SuppressShardPersistence)
+                return;   // ephemeral object: never creates or updates a shard row
+
             // Capture name and guid early to avoid lock recursion when logging
             // The Name property getter calls GetProperty which tries to enter a read lock
             // If we're already in a read lock (like when checking biota properties below),
@@ -389,6 +392,21 @@ namespace ACE.Server.WorldObjects
             // Capture name and guid early to avoid lock recursion in callbacks
             var itemName = Name;
             var itemGuid = Guid;
+
+            if (SuppressShardPersistence)
+            {
+                // nothing to persist for an ephemeral object; the caller's wait is satisfied
+                try
+                {
+                    onCompleted?.Invoke(true);
+                }
+                catch (Exception ex)
+                {
+                    // captured values only: Name takes BiotaDatabaseLock, and a callback may still hold it
+                    log.Error($"Exception in suppressed save callback for {itemName} (0x{itemGuid}): {ex.Message}");
+                }
+                return;
+            }
             
             // Detect concurrent saves
             if (SaveInProgress)
@@ -480,11 +498,23 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Runtime-only flag: this object must NEVER be persisted to the shard, no matter what the
+        /// heuristics below decide. Set on ephemeral system spawns that are re-derived from live state
+        /// every boot (boundary perimeter lanterns, guide wisps). Without it, landblock unload's SaveDB
+        /// picked them up as ordinary dynamics — each boot then re-spawned fresh ones beside the loaded
+        /// ghosts and re-saved, accumulating thousands of duplicate rows in the biota table.
+        /// </summary>
+        public bool SuppressShardPersistence;
+
+        /// <summary>
         /// A static that should persist to the shard may be a hook with an item, or a house that's been purchased, or a housing chest that isn't empty, etc...<para />
         /// If the world object originated from the database or has been saved to the database, this will also return true.
         /// </summary>
         public bool IsStaticThatShouldPersistToShard()
         {
+            if (SuppressShardPersistence)
+                return false;
+
             if (!Guid.IsStatic())
                 return false;
 
@@ -522,6 +552,9 @@ namespace ACE.Server.WorldObjects
         /// <returns></returns>
         public bool IsDynamicThatShouldPersistToShard()
         {
+            if (SuppressShardPersistence)
+                return false;
+
             if (!Guid.IsDynamic())
                 return false;
 

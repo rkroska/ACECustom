@@ -292,7 +292,7 @@ namespace ACE.Server.Physics.Common
                 cellArray.add_cell(position.ObjCellID, visibleCell);
             }
             else
-                LandCell.add_all_outside_cells(position, numSphere, sphere, cellArray);
+                LandCell.add_all_outside_cells(position, numSphere, sphere, cellArray, variation);
 
             if (visibleCell != null && numSphere != 0)
             {

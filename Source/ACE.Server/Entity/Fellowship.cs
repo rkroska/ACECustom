@@ -466,11 +466,11 @@ namespace ACE.Server.Entity
             // quest turn-ins: flat share (retail default), only among fellows on the same prestige/visibility layer
             if (xpType == XpType.Quest && !ServerConfig.fellow_quest_bonus.Value)
             {
-                var earnerVar = PrestigeManager.GetEffectiveVariationForVisibility(player);
+                var earnerVar = VariationManager.GetEffectiveVariationForVisibility(player);
                 var sameLayer = new List<Player>();
                 foreach (var member in fellowshipMembers.Values)
                 {
-                    if (PrestigeManager.SameVariationForVisibility(earnerVar, PrestigeManager.GetEffectiveVariationForVisibility(member)))
+                    if (VariationManager.SameVariationForVisibility(earnerVar, VariationManager.GetEffectiveVariationForVisibility(member)))
                         sameLayer.Add(member);
                 }
 
@@ -731,9 +731,9 @@ namespace ACE.Server.Entity
             if (earner == null || fellow == null)
                 return 0.0f;
 
-            if (!PrestigeManager.SameVariationForVisibility(
-                    PrestigeManager.GetEffectiveVariationForVisibility(earner),
-                    PrestigeManager.GetEffectiveVariationForVisibility(fellow)))
+            if (!VariationManager.SameVariationForVisibility(
+                    VariationManager.GetEffectiveVariationForVisibility(earner),
+                    VariationManager.GetEffectiveVariationForVisibility(fellow)))
                 return 0.0f;
 
             if (xpType == XpType.Quest)

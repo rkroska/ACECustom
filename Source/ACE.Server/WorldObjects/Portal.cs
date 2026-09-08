@@ -106,7 +106,7 @@ namespace ACE.Server.WorldObjects
             // Don't fire portals that belong to a different variation than the player.
             // This prevents base-world portals (Town Network, lifestone recalls, etc.)
             // from being invisibly usable inside a prestige variation zone.
-            if (!PrestigeManager.SameVariationForVisibility(Location?.Variation, player.Location?.Variation))
+            if (!VariationManager.SameVariationForVisibility(Location?.Variation, player.Location?.Variation))
                 return;
 
             OnActivate(player);
@@ -366,11 +366,13 @@ namespace ACE.Server.WorldObjects
             var portalDest = new Position(Destination);
             AdjustDungeon(portalDest);
 
-
-            if (player.Location.Variation != portalDest.Variation) //immediately switch variation
-            {
-                player.Location.Variation = portalDest.Variation;
-            }
+            // Do NOT pre-set player.Location.Variation to the destination here. Teleport() decides
+            // variation-change handling (ghost-object sweep + landblock instance relocation) by
+            // comparing Location.Variation against the destination; mutating Location early makes
+            // them compare equal, which skips CurrentLandblock relocation on same-landblock
+            // variation portals and leaves creatures in the destination instance untargetable
+            // (Landblock.GetObject silently misses). It also leaves the player with a wrong
+            // Location.Variation for the full tick until the enqueued teleport actually runs.
 
             WorldManager.ThreadSafeTeleport(player, portalDest, new ActionEventDelegate(ActionType.Portal_Teleport, () =>
             {

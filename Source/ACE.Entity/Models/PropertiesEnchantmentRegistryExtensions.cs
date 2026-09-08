@@ -243,6 +243,46 @@ namespace ACE.Entity.Models
             }
         }
 
+        /// <summary>
+        /// Returns the top layers in each spell category for a StatMod type + key, EXCLUDING the given spell ids
+        /// BEFORE top-layer selection — so an excluded top spell exposes the next-strongest buff in its category
+        /// instead of killing the category outright. Used by Zone Control regen suppression (Prodigal block).
+        /// </summary>
+        public static List<PropertiesEnchantmentRegistry>? GetEnchantmentsTopLayerByStatModType(this ICollection<PropertiesEnchantmentRegistry> value, EnchantmentTypeFlags statModType, uint statModKey, ReaderWriterLockSlim rwLock, HashSet<int> setSpells, HashSet<int> excludeSpellIds, bool handleMultiple = false)
+        {
+            if (value == null)
+                return null;
+
+            rwLock.EnterReadLock();
+            try
+            {
+                var multipleStat = EnchantmentTypeFlags.Undef;
+
+                if (handleMultiple)
+                {
+                    multipleStat = statModType | EnchantmentTypeFlags.MultipleStat;
+
+                    statModType |= EnchantmentTypeFlags.SingleStat;
+                }
+
+                var valuesByStatModTypeAndKey = value.Where(e => (excludeSpellIds == null || !excludeSpellIds.Contains(e.SpellId)) && ((e.StatModType & statModType) == statModType && e.StatModKey == statModKey || (handleMultiple && (e.StatModType & multipleStat) == multipleStat && (e.StatModType & EnchantmentTypeFlags.Vitae) == 0 && e.StatModKey == 0)));
+
+                var results = from e in valuesByStatModTypeAndKey
+                    group e by e.SpellCategory
+                    into categories
+                    select categories.OrderByDescending(c => c.PowerLevel + (c.AugmentationLevelWhenCast ?? 0))
+                        .ThenByDescending(c => c.StatModValue)
+                        .ThenByDescending(c => Level8AuraSelfSpells.Contains(c.SpellId))
+                        .ThenByDescending(c => setSpells.Contains(c.SpellId) ? c.SpellId : c.StartTime).First();
+
+                return [.. results];
+            }
+            finally
+            {
+                rwLock.ExitReadLock();
+            }
+        }
+
         public static List<PropertiesEnchantmentRegistry>? HeartBeatEnchantmentsAndReturnExpired(this ICollection<PropertiesEnchantmentRegistry> value, double heartbeatInterval, ReaderWriterLockSlim rwLock)
         {
             if (value == null)

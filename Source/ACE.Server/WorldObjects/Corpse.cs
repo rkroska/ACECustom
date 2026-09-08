@@ -250,7 +250,7 @@ namespace ACE.Server.WorldObjects
         private string killerName;
 
         /// <summary>
-        /// Called to attempt to generate rare and add to corpse inventory
+        /// Called to attempt to generate rare and add to corpse inventory.
         /// </summary>
         public void TryGenerateRare(DamageHistoryInfo killer)
         {

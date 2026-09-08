@@ -103,9 +103,18 @@ namespace ACE.Server.Entity
                 return false;
             }
 
-            if (player.GetFreeInventorySlots() < 25)
+            // Room for what the ritual actually does: DequipAllItems drops every EquippedObjects
+            // entry into the MAIN pack, so the requirement is one slot per equipped item plus one,
+            // against the main pack only - a flat 25 against all packs refused characters the
+            // dequip would have fit, and passed characters it would not.
+            // The phrase "free inventory slots" is load-bearing: AutoEnlighten's chat classifier
+            // matches it to recognize this refusal.
+            var requiredSlots = player.EquippedObjects.Count + 1;
+            var freeMainPackSlots = player.GetFreeInventorySlots(includeSidePacks: false);
+            if (freeMainPackSlots < requiredSlots)
             {
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have at least 25 free inventory slots in your main pack for enlightenment, to unequip your gear automatically.", ChatMessageType.Broadcast));
+                var shortBy = requiredSlots - freeMainPackSlots;
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Enlightenment needs {shortBy} more free inventory slot{(shortBy == 1 ? "" : "s")} in your main pack.", ChatMessageType.Broadcast));
                 return false;
             }
 

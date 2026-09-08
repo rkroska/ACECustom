@@ -59,6 +59,34 @@ namespace ACE.Server.Managers
             log.Warn($"[VisibilityCO] ReconcileVisibilityAfterArrival viewer={FormatViewer(viewer)} visibleUnclamped={visibleCount} staleResendCO={resendCount} resendBeyondClamp={resendBeyondClamp} maxResendDist2D={maxResendDist2D:F1}m (#467 path: TrackObject bypasses AddVisibleObject clamp)");
         }
 
+        /// <summary>
+        /// Known-without-CreateObject heal fired (AddVisibleObjects found an object Known but not
+        /// Visible and not in the destruction queue — the "invisible until relog" state — and routed
+        /// it back through the CreateObject batch). Gated on prestige_interaction_diag_verbose (the
+        /// always-on tear diag, like [GhostMob]): each line is an object that WOULD have stayed invisible.
+        /// </summary>
+        public static void LogKnownNotVisibleHeal(Player viewer, Physics.PhysicsObj target)
+        {
+            if (!ServerConfig.prestige_interaction_diag_verbose.Value || viewer == null)
+                return;
+
+            log.Warn($"[VisibilityCO] KnownNotVisible CO heal viewer={FormatViewer(viewer)} target={FormatTarget(target)} (known w/o client CreateObject; resending via enqueue batch)");
+        }
+
+        /// <summary>
+        /// enqueue variation-skip purge fired (a CO send was skipped on a variation recheck AFTER the
+        /// object was already marked Known+Visible; the half-added state is purged so a later tick
+        /// re-adds cleanly instead of cementing a known-without-client tear). Same gating as above:
+        /// each line is a poisoning moment that WOULD have happened.
+        /// </summary>
+        public static void LogEnqueueSkipPurge(Player viewer, Physics.PhysicsObj target, string where)
+        {
+            if (!ServerConfig.prestige_interaction_diag_verbose.Value || viewer == null)
+                return;
+
+            log.Warn($"[VisibilityCO] enqueue variation-skip purge ({where}) viewer={FormatViewer(viewer)} target={FormatTarget(target)} (known/visible purged; re-approach re-adds cleanly)");
+        }
+
         public static float Distance2D(Player viewer, WorldObject target)
         {
             if (viewer?.PhysicsObj?.Position == null || target?.PhysicsObj?.Position == null)

@@ -74,9 +74,15 @@ namespace ACE.Server.Physics.Common
             for (var i = 0; i < 2; i++) Polygons.Add(null);
         }
 
-        public static void add_all_outside_cells(Position position, int numSphere, List<Sphere> spheres, CellArray cellArray)
+        public static void add_all_outside_cells(Position position, int numSphere, List<Sphere> spheres, CellArray cellArray, int? variation = null)
         {
             if (cellArray.AddedOutside) return;
+
+            // variation propagation: outdoor neighbor cells must be fetched at the MOVER's variation.
+            // A null here creates/fetches the BASE landblock when crossing into an unloaded block on foot
+            // (observed 2026-07-18: walking into an unloaded zone landblock at v11 loaded retail content
+            // while the v11 instance never spawned). Callers on the movement path pass Position.Variation.
+            variation ??= position.Variation;
 
             if (numSphere != 0)
             {
@@ -97,8 +103,8 @@ namespace ACE.Server.Physics.Common
                     var lcoord = LandDefs.gid_to_lcoord(cellPoint);
                     if (lcoord != null)
                     {
-                        add_outside_cell(cellArray, lcoord.Value);
-                        check_add_cell_boundary(cellArray, point, lcoord.Value, minRad, maxRad);
+                        add_outside_cell(cellArray, lcoord.Value, variation);
+                        check_add_cell_boundary(cellArray, point, lcoord.Value, minRad, maxRad, variation);
                     }
                 }
             }
@@ -108,7 +114,7 @@ namespace ACE.Server.Physics.Common
 
                 var lcoord = LandDefs.gid_to_lcoord(position.ObjCellID);
                 if (lcoord != null)
-                    add_outside_cell(cellArray, lcoord.Value);
+                    add_outside_cell(cellArray, lcoord.Value, variation);
             }
         }
 
@@ -203,7 +209,7 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public static void add_outside_cell(CellArray cellArray, float _x, float _y)
+        public static void add_outside_cell(CellArray cellArray, float _x, float _y, int? variation = null)
         {
             var x = (uint)_x;
             var y = (uint)_y;
@@ -211,46 +217,47 @@ namespace ACE.Server.Physics.Common
             if (x >= 0 && y >= 0 && x < 2040 && y < 2040)
             {
                 var cellID = (((y >> 3) | 32 * (x & 0xFFFFFFF8)) << 16) | ((y & 7) + 8 * (x & 7) + 1);
-                var landCell = Get(cellID, null);
+                // variation propagation: was hard-coded null, which created BASE landblocks on foot-crossings
+                var landCell = Get(cellID, variation);
                 if (landCell != null)
                     cellArray.add_cell(cellID, landCell);
             }
         }
 
-        public static void add_outside_cell(CellArray cellArray, Vector2 lcoord)
+        public static void add_outside_cell(CellArray cellArray, Vector2 lcoord, int? variation = null)
         {
-            add_outside_cell(cellArray, lcoord.X, lcoord.Y);
+            add_outside_cell(cellArray, lcoord.X, lcoord.Y, variation);
         }
 
         /// <summary>
         /// Checks if this sphere exceeds the boundaries of the cell
         /// if it does, adds the neighboring cells to cellArray
         /// </summary>
-        public static void check_add_cell_boundary(CellArray cellArray, Vector2 point, Vector2 lcoord, float minRad, float maxRad)
+        public static void check_add_cell_boundary(CellArray cellArray, Vector2 point, Vector2 lcoord, float minRad, float maxRad, int? variation = null)
         {
             float x = lcoord.X, y = lcoord.Y;
 
             if (point.X > maxRad)
             {
-                add_outside_cell(cellArray, x + 1, y);
+                add_outside_cell(cellArray, x + 1, y, variation);
                 if (point.Y > maxRad)
-                    add_outside_cell(cellArray, x + 1, y + 1);
+                    add_outside_cell(cellArray, x + 1, y + 1, variation);
                 if (point.Y < minRad)
-                    add_outside_cell(cellArray, x + 1, y - 1);
+                    add_outside_cell(cellArray, x + 1, y - 1, variation);
             }
             if (point.X < minRad)
             {
-                add_outside_cell(cellArray, x - 1, y);
+                add_outside_cell(cellArray, x - 1, y, variation);
                 if (point.Y > maxRad)
-                    add_outside_cell(cellArray, x - 1, y + 1);
+                    add_outside_cell(cellArray, x - 1, y + 1, variation);
                 if (point.Y < minRad)
-                    add_outside_cell(cellArray, x - 1, y - 1);
+                    add_outside_cell(cellArray, x - 1, y - 1, variation);
             }
             if (point.Y > maxRad)
-                add_outside_cell(cellArray, x, y + 1);
+                add_outside_cell(cellArray, x, y + 1, variation);
 
             if (point.Y < minRad)
-                add_outside_cell(cellArray, x, y - 1);
+                add_outside_cell(cellArray, x, y - 1, variation);
         }
 
         public bool find_terrain_poly(Vector3 origin, ref Polygon walkable)

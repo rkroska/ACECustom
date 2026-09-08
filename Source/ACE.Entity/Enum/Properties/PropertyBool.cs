@@ -325,6 +325,51 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Player is in unkillable developer mode.</summary>
         IsUnkillable = 50041,
 
+        /// <summary>Player has adminvision toggled on and it persists across sessions.</summary>
+        PersistentAdminvision = 50042,
+
+        /// <summary>If TRUE on a monster, it can receive the "Empowered" prefix when near an IsEmpowerSource creature.</summary>
+        CanBeEmpowered = 50043,
+
+        /// <summary>If TRUE on a monster, it grants the "Empowered" prefix to nearby CanBeEmpowered creatures within 20m.</summary>
+        IsEmpowerSource = 50044,
+
+        /// <summary>Runtime state set by the aura system while a CanBeEmpowered monster is near its boss.
+        /// Damage bonuses key off this, never off the display name (retail mobs are legitimately named "Empowered ...").</summary>
+        IsEmpowered = 50045,
+
+        /// <summary>TEST HOOK: if TRUE, the v11+ endgame combat systems (percent-HP floor, vuln compression,
+        /// damage-taken mitigation, per-tier scaling, attack-skill floor) treat this creature as endgame even
+        /// when spawned at a non-endgame variation (0). Lets a test dummy be spawned in a NORMAL landblock —
+        /// where /createinst /removeinst /reload-landblock work reliably — instead of the fragile variation layer.
+        /// Variation simulated = PropertyInt.EndgameForcedVariation (unset, or below 11, resolves to v11).
+        /// Never set on real mobs; rift creatures have it stripped at spawn (RiftScaling).</summary>
+        ForceEndgameSystems = 50046,
+
+        /// <summary>ZONE SCALER opt-out: if TRUE on a monster, the Zone Scaler leaves it untouched (keeps its
+        /// weenie stats/loot) even inside a scaled zone/landblock. Set on event NPCs, vendors, quest mobs, or any
+        /// creature that must not be auto-scaled. Default (unset) = the mob IS scaled by any matching zone profile.</summary>
+        ExemptFromZoneScaling = 50047,
+
+        /// <summary>ZONE CONTROL rank flags (owner block, 2026-08-21): authored in ace_world on the Tou Tou
+        /// mobs (ZcRankFlags_2026-08-21.sql). Boss / leader multiply the per-kill slot-special odds
+        /// (special_boss_mult / special_leader_mult); minion is the explicit baseline marker.</summary>
+        IsZcBoss = 50048,
+        IsZcLeader = 50049,
+        IsZcMinion = 50050,
+
+        /// <summary>ZONE CONTROL opt-out for the pct-HP-damage slot special (key 44): TRUE = this creature
+        /// takes no flat pct-of-max-HP add. Only mobs carrying a zone profile are eligible in the first
+        /// place; this bool exempts a zone boss from it.</summary>
+        ZcPctHpImmune = 50051,
+
+        /// <summary>FORGE-ONLY "slayer of all creatures" (owner 2026-09-01): TRUE = the weapon's SlayerDamageBonus
+        /// applies against EVERY target regardless of CreatureType (WorldObject_Weapon.GetWeaponCreatureSlayerModifier;
+        /// still subject to the weapon zone lock). Set only by /wsforge (cards:premade, or slayertype=all) on test
+        /// weapons; the drop path (ZoneLootMutator.TrySpecialRolls) attunes to the killed monster's kind and must
+        /// never set this. Appraisal reads "All Creatures Slayer".</summary>
+        SlayerAllCreatures = 50052,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }

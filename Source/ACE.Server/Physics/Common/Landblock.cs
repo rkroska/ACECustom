@@ -668,13 +668,17 @@ namespace ACE.Server.Physics.Common
         /// <param name="landblocks"></param>
         public void SetAdjacents(List<Server.Entity.Landblock> landblocks)
         {
-            if (adjacents == null)
-                adjacents = new List<Landblock>(landblocks.Count);
-            else
-                adjacents.Clear();
+            // Copy-on-write: readers (GetServerObjects / get_adjacents) enumerate lock-free, and
+            // adjacency rebuilds now happen mid-walk (landblock creation on movement paths since the
+            // variation-propagation fix). Clearing/refilling the live list raced those enumerations
+            // ("Collection was modified" in Landblock_CreateWorldObjects, 2026-07-18). Build fresh,
+            // swap the reference atomically; old snapshots stay valid for in-flight readers.
+            var newAdjacents = new List<Landblock>(landblocks.Count);
 
             foreach (var landblock in landblocks)
-                adjacents.Add(landblock.PhysicsLandblock);
+                newAdjacents.Add(landblock.PhysicsLandblock);
+
+            adjacents = newAdjacents;
         }
 
         public List<PhysicsObj> GetServerObjects(bool includeAdjacents)
@@ -684,9 +688,12 @@ namespace ACE.Server.Physics.Common
             lock (_serverObjectsLock)
                 results.AddRange(ServerObjects);
 
-            if (includeAdjacents && adjacents?.Count > 0)
+            // snapshot the reference: SetAdjacents swaps in a fresh list rather than mutating this one
+            var adjacentsSnapshot = adjacents;
+
+            if (includeAdjacents && adjacentsSnapshot?.Count > 0)
             {
-                foreach (var adjacent in adjacents)
+                foreach (var adjacent in adjacentsSnapshot)
                 {
                     // Use thread-safe copy from adjacent landblock
                     adjacent.CopyServerObjectsTo(results);

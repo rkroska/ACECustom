@@ -155,6 +155,19 @@ namespace ACE.Server.WorldObjects
                 {
                     if (!w.ClothingBase.HasValue || !DatManager.PortalDat.TryReadClothingTable((uint)w.ClothingBase, out item))
                     {
+                        // AddSetupAsClothingBase maps the ITEM's setup parts onto the CHARACTER's
+                        // animation parts by POSITIONAL INDEX. That is only meaningful for pieces
+                        // authored as body-part overlays (armour/clothing), where index i means the
+                        // same slot on both. A cloak is a standalone object with its own model
+                        // space, so index i is NOT the character's part i - the mesh lands on the
+                        // wrong slot with the wrong orientation (owner 2026-08-04: the T11 Cloak
+                        // rendered "horizontal not vertical").
+                        // Draw nothing rather than something mangled. This is damage control only:
+                        // the real fix is the missing ClothingBase entry - see
+                        // ClothingBase_Missing_2026-08-04.md.
+                        if ((w.CurrentWieldedLocation & EquipMask.Cloak) != 0)
+                            continue;
+
                         objDesc = AddSetupAsClothingBase(objDesc, w);
                         // Add any potentially added parts back into the coverage list
                         foreach(var a in objDesc.AnimPartChanges)
@@ -224,9 +237,10 @@ namespace ACE.Server.WorldObjects
                 {
                     var baseObjDesc = base.CalculateObjDesc();
                     baseObjDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
-                    return baseObjDesc;
+                    return ApplyBiotaPartOverrides(baseObjDesc);
                 }
-                return base.CalculateObjDesc();
+                // base.CalculateObjDesc only copies biota parts for players: overlay ours here too
+                return ApplyBiotaPartOverrides(base.CalculateObjDesc());
             }
 
             // Add the "naked" body parts. These are the ones not already covered.
@@ -245,6 +259,36 @@ namespace ACE.Server.WorldObjects
             {
                 objDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
             }
+
+            return ApplyBiotaPartOverrides(objDesc);
+        }
+
+        /// <summary>Overlay the biota anim-part + texture overrides (zone appearance, baked looks) onto an ObjDesc,
+        /// replacing any change at the same index / source texture so ours wins. No-op when the biota has none.</summary>
+        private ACE.Entity.ObjDesc ApplyBiotaPartOverrides(ACE.Entity.ObjDesc objDesc)
+        {
+            // Zone per-part / baked custom part overrides must win even when the creature has equipped items
+            // (eo.Count>0). That case skips the biota-parts early-return near the top, and the ObjDesc is re-sent
+            // whenever a creature equips - which clobbers a part swap that only survived the no-equipment path.
+            // Overlay the biota anim-part + texture overrides here, replacing any change at the same index so ours
+            // wins. No-op for creatures with no biota overrides (Clone returns null); Tusgian-style mobs with parts
+            // and no equipment already returned above, so they're untouched.
+            var _zcAnimOverrides = Biota.PropertiesAnimPart.Clone(BiotaDatabaseLock);
+            if (_zcAnimOverrides != null)
+                foreach (var p in _zcAnimOverrides)
+                {
+                    objDesc.AnimPartChanges.RemoveAll(c => c.Index == p.Index);
+                    objDesc.AnimPartChanges.Add(p);
+                }
+            var _zcTexOverrides = Biota.PropertiesTextureMap.Clone(BiotaDatabaseLock);
+            if (_zcTexOverrides != null)
+                foreach (var t in _zcTexOverrides)
+                {
+                    // AddTextureChange only de-duplicates an identical (part, old, new) triple; drop any earlier
+                    // mapping for the same part + source texture so the biota override is the one that ships
+                    objDesc.TextureChanges.RemoveAll(c => c.PartIndex == t.PartIndex && c.OldTexture == t.OldTexture);
+                    objDesc.AddTextureChange(t);
+                }
 
             return objDesc;
         }
