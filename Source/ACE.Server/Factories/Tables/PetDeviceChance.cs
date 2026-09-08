@@ -87,7 +87,7 @@ namespace ACE.Server.Factories.Tables
         public static int Roll(TreasureDeath profile)
         {
             var tier = Math.Clamp(profile.Tier, 1, 10);
-            var table = petLevelChances[tier - 1];
+            var table = TierTable.Entry(petLevelChances, tier);
 
             return table.Roll(profile.LootQualityMod);
         }

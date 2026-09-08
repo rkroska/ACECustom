@@ -35,7 +35,7 @@ namespace ACE.Server.Factories.Tables
             // quality mod?
             var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
 
-            return rng < TierChances[tier - 1];
+            return rng < TierTable.Entry(TierChances, tier);
         }
 
         // if the initial roll was successful for an elemental type,
@@ -114,7 +114,7 @@ namespace ACE.Server.Factories.Tables
             if (profile.Tier < 2)
                 return 0;
 
-            var table = qualityLevels[profile.Tier - 1];
+            var table = TierTable.Entry(qualityLevels, profile.Tier);
 
             // quality mod?
             return table.Roll(profile.LootQualityMod);

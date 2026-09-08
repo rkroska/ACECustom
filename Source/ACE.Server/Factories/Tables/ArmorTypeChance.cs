@@ -160,7 +160,7 @@ namespace ACE.Server.Factories.Tables
         {
             tier = Math.Clamp(tier, 1, 10);
 
-            return armorTiers[tier - 1].Roll();
+            return TierTable.Entry(armorTiers, tier).Roll();
         }
     }
 }

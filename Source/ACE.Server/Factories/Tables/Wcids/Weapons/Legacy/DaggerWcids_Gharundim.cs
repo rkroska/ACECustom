@@ -80,7 +80,7 @@ namespace ACE.Server.Factories.Tables.Wcids
             // todo: add unique profiles for t7 / t8?
             tier = Math.Clamp(tier, 1, 6);
 
-            return weaponTiers[tier - 1].Roll();
+            return TierTable.Entry(weaponTiers, tier).Roll();
         }
     }
 }

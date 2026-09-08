@@ -70,7 +70,7 @@ namespace ACE.Server.Factories.Tables
             // todo: add t7 / t8
             tier = Math.Clamp(tier, 1, 6);
 
-            var gemClassChanceTable = gemClassChances[tier - 1];
+            var gemClassChanceTable = TierTable.Entry(gemClassChances, tier);
 
             return gemClassChanceTable.Roll();
         }

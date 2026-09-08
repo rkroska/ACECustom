@@ -39,7 +39,7 @@ namespace ACE.Server.Factories.Tables.Wcids
             if (profile.Tier > 4)
                 return WeenieClassName.undef;
 
-            var table = tierChances[profile.Tier - 1];
+            var table = TierTable.Entry(tierChances, profile.Tier);
 
             return table.Roll(profile.LootQualityMod);
         }

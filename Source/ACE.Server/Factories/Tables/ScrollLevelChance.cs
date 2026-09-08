@@ -63,7 +63,7 @@ namespace ACE.Server.Factories.Tables
             if (profile.Tier >= 5)
                 return 7;
 
-            var table = scrollLevelChances[profile.Tier - 1];
+            var table = TierTable.Entry(scrollLevelChances, profile.Tier);
 
             return table.Roll(profile.LootQualityMod);
         }

@@ -1,13 +1,13 @@
 MaceJitte (FinesseWeapons) Mutation #0:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 100%:
 	    Damage = 7
 
 MaceJitte (FinesseWeapons) Mutation #1 (33 samples):
 
-Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 3%:
         Damage += 1
@@ -38,7 +38,7 @@ Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
 
 MaceJitte (FinesseWeapons) Mutation #2 (55 samples):
 
-Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0, 0
+Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 2%:
         Damage += 1
@@ -123,7 +123,7 @@ Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0, 0
 
 MaceJitte (FinesseWeapons) Mutation #3 (62 samples):
 
-Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0, 0
+Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 2%:
         Damage += 11
@@ -205,7 +205,7 @@ Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0, 0
 
 MaceJitte (FinesseWeapons) Mutation #4 (104 samples):
 
-Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 20%:
         Damage += 22
@@ -257,7 +257,7 @@ Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
 
 MaceJitte (FinesseWeapons) Mutation #5 (93 samples):
 
-Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
 
     - Chance: 25%:
         Damage += 26
@@ -309,7 +309,7 @@ Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0, 0
 
 MaceJitte (FinesseWeapons) Mutation #6 (201 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0
 
     - Chance: 15%:
         Damage += 30
@@ -385,7 +385,7 @@ Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0, 0
 
 MaceJitte (FinesseWeapons) Mutation #7 (63 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0
 
     - Chance: 10%:
         Damage += 38
@@ -455,7 +455,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0, 0
 
 MaceJitte (FinesseWeapons) Mutation #8 (86 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0
 
     - Chance: 2%:
         Damage += 39
@@ -543,7 +543,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
 
 MaceJitte (FinesseWeapons) Mutation #9:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 10%:
         DamageVariance = 0.5
@@ -562,7 +562,7 @@ Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 
 MaceJitte (FinesseWeapons) Mutation #10 (1,143 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
 
     - Chance: 15%:
         Damage += 63
@@ -662,7 +662,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
 
         MaceJitte (FinesseWeapons) Mutation #11 (1,143 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
 
     - Chance: 15%:
         Damage += 98
@@ -735,3 +735,79 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
         WieldDifficulty = 800
+
+Tier 11 Mutation #12:
+
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 15%:
+        Damage += 180
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1025
+
+    - Chance: 10%:
+        Damage += 181
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1025
+
+    - Chance: 6%:
+        Damage += 182
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1025
+
+    - Chance: 4%:
+        Damage += 183
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1025
+
+    - Chance: 13%:
+        Damage += 192
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1100
+
+    - Chance: 10%:
+        Damage += 193
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1100
+
+    - Chance: 7%:
+        Damage += 194
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1100
+
+    - Chance: 5%:
+        Damage += 195
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1100
+
+    - Chance: 12%:
+        Damage += 204
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1175
+
+    - Chance: 8%:
+        Damage += 205
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1175
+
+    - Chance: 6%:
+        Damage += 206
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1175
+
+    - Chance: 4%:
+        Damage += 207
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1175

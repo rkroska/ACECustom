@@ -108,7 +108,7 @@ namespace ACE.Server.Factories.Tables
         {
             tier = Math.Clamp(tier, 1, 10);
 
-            return spellLevelChances[tier - 1].Roll();
+            return TierTable.Entry(spellLevelChances, tier).Roll();
         }
     }
 }

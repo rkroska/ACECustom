@@ -71,7 +71,7 @@ namespace ACE.Server.Factories.Tables.Wcids
             // todo: add unique profiles for t7 / t8?
             tier = Math.Clamp(tier, 1, 6);
 
-            return tierChances[tier - 1].Roll();
+            return TierTable.Entry(tierChances, tier).Roll();
         }
 
         private static readonly HashSet<WeenieClassName> _combined = new HashSet<WeenieClassName>();
