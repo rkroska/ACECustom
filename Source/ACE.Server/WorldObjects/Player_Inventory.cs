@@ -195,6 +195,14 @@ namespace ACE.Server.WorldObjects
         {
             var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
 
+            // Every object whose flags this save is responsible for, captured NOW. The callback
+            // clears flags on this set AND on whatever the container holds when the save completes,
+            // because each side misses a case the other covers: a sub-item that leaves the container
+            // in flight is only in the captured set, and a sub-item with no changes to write (so not
+            // in biotas) that a player batch save left SaveInProgress is only found by walking the
+            // container. Setting a flag false twice is harmless.
+            var savedObjects = new List<WorldObject> { item };
+
             if (item.ChangesDetected)
                 biotas.Add((item.Biota, item.BiotaDatabaseLock));
 
@@ -204,6 +212,8 @@ namespace ACE.Server.WorldObjects
             {
                 foreach (var subItem in container.Inventory.Values)
                 {
+                    savedObjects.Add(subItem);
+
                     if (subItem.ChangesDetected)
                         biotas.Add((subItem.Biota, subItem.BiotaDatabaseLock));
                 }
@@ -229,10 +239,13 @@ namespace ACE.Server.WorldObjects
                 var clearFlagsAction = new ActionChain();
                 clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.PlayerInventory_DeepSaveCallback, () =>
                 {
-                    if (!item.IsDestroyed)
+                    foreach (var wo in savedObjects)
                     {
-                        item.SaveInProgress = false;
-                        item.SaveStartTime = DateTime.MinValue; // Reset for next save
+                        if (wo.IsDestroyed)
+                            continue;
+
+                        wo.SaveInProgress = false;
+                        wo.SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
 
                     if (item is Container savedContainer)
