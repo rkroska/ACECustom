@@ -86,6 +86,7 @@ namespace ACE.Server.Entity.Actions
         Player_SetNonBusy,
         PlayerAllegiance_HandleLogin,
         PlayerDatabase_SaveBiotasInParallelCallback,
+        PlayerInventory_DeepSaveCallback,
         PlayerCombat_ChangeCombatMode,
         PlayerCombat_ChangeCombatModeCallback,
         PlayerCombat_SetActionType,

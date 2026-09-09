@@ -196,10 +196,7 @@ namespace ACE.Server.WorldObjects
             var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
 
             if (item.ChangesDetected)
-            {
-                // REMOVE THIS LINE: item.SaveBiotaToDatabase(false);
                 biotas.Add((item.Biota, item.BiotaDatabaseLock));
-            }
 
             // if the player is dropping a container to the landblock,
             // we must ensure any items within the container also have the correct properties
@@ -208,27 +205,55 @@ namespace ACE.Server.WorldObjects
                 foreach (var subItem in container.Inventory.Values)
                 {
                     if (subItem.ChangesDetected)
-                    {
-                        // REMOVE THIS LINE: subItem.SaveBiotaToDatabase(false);
                         biotas.Add((subItem.Biota, subItem.BiotaDatabaseLock));
-                    }
                 }
             }
 
+            // Always enqueue, even with nothing to write: the callback below is the only thing that
+            // clears a SaveInProgress a player batch save may have left on an item that has since
+            // left the player's inventory - the batch callback only touches current possessions.
+
+            // The sourceTrace becomes the UniqueQueue key ("SaveBiotasInParallel " + trace), and
+            // UniqueQueue REPLACES a pending entry that shares a key - the earlier task and its
+            // callback never run. A bare player guid was the same key SavePlayerToDatabase uses, so:
+            //   - a DeepSave replacing a pending batch save dropped every batched write, and left
+            //     SaveInProgress stranded true on the player (which blocks login) and its possessions;
+            //   - a later enqueue replacing a pending DeepSave meant the dropped item's new ContainerId
+            //     was never written - log out and back in before the landblock saved and the item
+            //     loaded back into the player's inventory.
+            // Keyed per player AND per item so neither can happen. Player_Trade.cs already uses a
+            // composite key for the same reason.
             DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
             {
-                // Clear save flags
-                item.SaveInProgress = false;
-                item.SaveStartTime = DateTime.MinValue; // Reset for next save
-                if (item is Container container)
+                // Clear the flags on the world thread, matching the other SaveBiotasInParallel callers.
+                var clearFlagsAction = new ActionChain();
+                clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.PlayerInventory_DeepSaveCallback, () =>
                 {
-                    foreach (var subItem in container.Inventory.Values)
+                    if (!item.IsDestroyed)
                     {
-                        subItem.SaveInProgress = false;
-                        subItem.SaveStartTime = DateTime.MinValue; // Reset for next save
+                        item.SaveInProgress = false;
+                        item.SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
-                }
-            }, this.Guid.ToString());
+
+                    if (item is Container savedContainer)
+                    {
+                        foreach (var subItem in savedContainer.Inventory.Values)
+                        {
+                            if (subItem.IsDestroyed)
+                                continue;
+
+                            subItem.SaveInProgress = false;
+                            subItem.SaveStartTime = DateTime.MinValue; // Reset for next save
+                        }
+                    }
+
+                    // ChangesDetected is deliberately left alone here, so a failed write is picked up
+                    // by the next landblock or player batch save rather than lost.
+                    if (!result)
+                        log.Warn($"[SAVE] DeepSave failed for {Name} - {item.Name} (0x{item.Guid}), {biotas.Count} biota(s) will be retried by the next batch save");
+                });
+                clearFlagsAction.EnqueueChain();
+            }, this.Guid.ToString() + " : DeepSave : " + item.Guid.ToString());
         }
 
         public enum RemoveFromInventoryAction
