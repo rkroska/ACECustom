@@ -207,9 +207,10 @@ namespace ACE.Server.WorldObjects
             // other save. A flag set BEFORE this enqueue belongs to a save that is already ahead of us
             // in the single-threaded queue (or was orphaned by one) - safe to clear once ours completes.
             // A flag set AFTER this enqueue belongs to a newer save still in flight; clearing it would
-            // hand the object to a third save early. SaveBiotaToDatabase stamps SaveStartTime together
-            // with SaveInProgress, so the timestamp is the ownership test.
-            var enqueuedAt = DateTime.UtcNow;
+            // hand the object to a third save early. SaveBiotaToDatabase stamps a monotonic SaveToken
+            // together with SaveInProgress; the counter's value now is the cutoff (see
+            // WorldObject_Database.cs for why a token and not a timestamp).
+            var enqueuedToken = CurrentSaveToken;
 
             if (item.ChangesDetected)
                 biotas.Add((item.Biota, item.BiotaDatabaseLock));
@@ -251,7 +252,7 @@ namespace ACE.Server.WorldObjects
                     {
                         if (wo.IsDestroyed || !wo.SaveInProgress)
                             return;
-                        if (wo.SaveStartTime > enqueuedAt)
+                        if (!SaveFlagOwnedAtOrBefore(wo.SaveToken, enqueuedToken))
                             return;   // a newer save owns this flag; its own callback clears it
 
                         wo.SaveInProgress = false;

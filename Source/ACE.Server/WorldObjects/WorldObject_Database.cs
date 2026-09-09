@@ -38,6 +38,27 @@ namespace ACE.Server.WorldObjects
         internal DateTime SaveStartTime { get; set; }
         private int? LastSavedStackSize { get; set; }  // Track last saved value to detect corruption
 
+        // Save ownership (2026-09-09). Every SaveBiotaToDatabase that raises SaveInProgress also stamps a
+        // token from one process-wide monotonic counter. A callback that wants to clear the flag captures
+        // the counter at ITS enqueue and clears only flags whose token is not newer - so a save that
+        // started after the enqueue keeps its flag until its own callback runs. Tokens, not timestamps:
+        // DateTime.UtcNow can repeat within its resolution and can step backwards under NTP, and either
+        // would let an older callback wipe a newer save's flag.
+        private static long _saveTokenSequence;
+
+        /// <summary>The token stamped by the SaveBiotaToDatabase that last raised SaveInProgress here.</summary>
+        internal long SaveToken { get; private set; }
+
+        /// <summary>The counter's current value - capture this at enqueue as the ownership cutoff.</summary>
+        public static long CurrentSaveToken => System.Threading.Interlocked.Read(ref _saveTokenSequence);
+
+        private void StampSaveToken() => SaveToken = System.Threading.Interlocked.Increment(ref _saveTokenSequence);
+
+        /// <summary>True when a flag stamped with <paramref name="token"/> belongs to a save that was
+        /// already in flight when a callback captured <paramref name="cutoff"/> - i.e. that callback may
+        /// clear it. A token newer than the cutoff is a later save's, and is left alone.</summary>
+        public static bool SaveFlagOwnedAtOrBefore(long token, long cutoff) => token <= cutoff;
+
         /// <summary>
         /// This variable is set to true when a change is made, and set to false before a save is requested.<para />
         /// The primary use for this is to trigger save on add/modify/remove of properties.
@@ -259,6 +280,7 @@ namespace ACE.Server.WorldObjects
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
             SaveStartTime = DateTime.UtcNow;
+            StampSaveToken();
             LastSavedStackSize = StackSize;
             
             // For batch saves (enqueueSave=false), don't clear ChangesDetected here
@@ -425,6 +447,7 @@ namespace ACE.Server.WorldObjects
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
             SaveStartTime = DateTime.UtcNow;
+            StampSaveToken();
             LastSavedStackSize = StackSize;
             ChangesDetected = false;
 
