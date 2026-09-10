@@ -195,11 +195,25 @@ namespace ACE.Server.WorldObjects
         {
             var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
 
+            // Every object whose flags this save is responsible for, captured NOW. The callback
+            // clears flags on this set AND on whatever the container holds when the save completes,
+            // because each side misses a case the other covers: a sub-item that leaves the container
+            // in flight is only in the captured set, and a sub-item with no changes to write (so not
+            // in biotas) that a player batch save left SaveInProgress is only found by walking the
+            // container.
+            var savedObjects = new List<WorldObject> { item };
+
+            // Ownership: DeepSave never SETS SaveInProgress, so every flag it clears was set by some
+            // other save. A flag set BEFORE this enqueue belongs to a save that is already ahead of us
+            // in the single-threaded queue (or was orphaned by one) - safe to clear once ours completes.
+            // A flag set AFTER this enqueue belongs to a newer save still in flight; clearing it would
+            // hand the object to a third save early. SaveBiotaToDatabase stamps a monotonic SaveToken
+            // together with SaveInProgress; the counter's value now is the cutoff (see
+            // WorldObject_Database.cs for why a token and not a timestamp).
+            var enqueuedToken = CurrentSaveToken;
+
             if (item.ChangesDetected)
-            {
-                // REMOVE THIS LINE: item.SaveBiotaToDatabase(false);
                 biotas.Add((item.Biota, item.BiotaDatabaseLock));
-            }
 
             // if the player is dropping a container to the landblock,
             // we must ensure any items within the container also have the correct properties
@@ -207,28 +221,60 @@ namespace ACE.Server.WorldObjects
             {
                 foreach (var subItem in container.Inventory.Values)
                 {
+                    savedObjects.Add(subItem);
+
                     if (subItem.ChangesDetected)
-                    {
-                        // REMOVE THIS LINE: subItem.SaveBiotaToDatabase(false);
                         biotas.Add((subItem.Biota, subItem.BiotaDatabaseLock));
-                    }
                 }
             }
 
+            // Always enqueue, even with nothing to write: the callback below is the only thing that
+            // clears a SaveInProgress a player batch save may have left on an item that has since
+            // left the player's inventory - the batch callback only touches current possessions.
+
+            // The sourceTrace becomes the UniqueQueue key ("SaveBiotasInParallel " + trace), and
+            // UniqueQueue REPLACES a pending entry that shares a key - the earlier task and its
+            // callback never run. A bare player guid was the same key SavePlayerToDatabase uses, so:
+            //   - a DeepSave replacing a pending batch save dropped every batched write, and left
+            //     SaveInProgress stranded true on the player (which blocks login) and its possessions;
+            //   - a later enqueue replacing a pending DeepSave meant the dropped item's new ContainerId
+            //     was never written - log out and back in before the landblock saved and the item
+            //     loaded back into the player's inventory.
+            // Keyed per player AND per item so neither can happen. Player_Trade.cs already uses a
+            // composite key for the same reason.
             DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
             {
-                // Clear save flags
-                item.SaveInProgress = false;
-                item.SaveStartTime = DateTime.MinValue; // Reset for next save
-                if (item is Container container)
+                // Clear the flags on the world thread, matching the other SaveBiotasInParallel callers.
+                var clearFlagsAction = new ActionChain();
+                clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.PlayerInventory_DeepSaveCallback, () =>
                 {
-                    foreach (var subItem in container.Inventory.Values)
+                    void ClearIfOurs(WorldObject wo)
                     {
-                        subItem.SaveInProgress = false;
-                        subItem.SaveStartTime = DateTime.MinValue; // Reset for next save
+                        if (wo.IsDestroyed || !wo.SaveInProgress)
+                            return;
+                        if (!SaveFlagOwnedAtOrBefore(wo.SaveToken, enqueuedToken))
+                            return;   // a newer save owns this flag; its own callback clears it
+
+                        wo.SaveInProgress = false;
+                        wo.SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
-                }
-            }, this.Guid.ToString());
+
+                    foreach (var wo in savedObjects)
+                        ClearIfOurs(wo);
+
+                    if (item is Container savedContainer)
+                    {
+                        foreach (var subItem in savedContainer.Inventory.Values)
+                            ClearIfOurs(subItem);
+                    }
+
+                    // ChangesDetected is deliberately left alone here, so a failed write is picked up
+                    // by the next landblock or player batch save rather than lost.
+                    if (!result)
+                        log.Warn($"[SAVE] DeepSave failed for {Name} - {item.Name} (0x{item.Guid}), {biotas.Count} biota(s) will be retried by the next batch save");
+                });
+                clearFlagsAction.EnqueueChain();
+            }, this.Guid.ToString() + " : DeepSave : " + item.Guid.ToString());
         }
 
         public enum RemoveFromInventoryAction
