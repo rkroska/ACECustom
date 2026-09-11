@@ -450,9 +450,20 @@ namespace ACE.Server.Entity
                     if (attacker.IsEnraged && !(attacker is Player))
                         CriticalDamageMod *= attacker.EnrageDamageMultiplier ?? 1.0f;
 
+                    // GATED 2026-09-10 (owner, "full restore to old"). Folding the lum-aug flat and the
+                    // weapon-scaling flat into the crit base is a v11-25 rule, but it shipped
+                    // unconditional. Both terms are player-only (assigned inside `if (playerAttacker
+                    // != null)`), so monsters were unaffected - but every base-world PLAYER had their
+                    // lum-aug flat multiplied through the whole crit chain instead of being ignored,
+                    // which is what made bow crits read far higher than before the series.
+                    // Pre-series baseline (9d128e912) was exactly the `else` branch below.
+                    var endgameCrit = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(attacker, Weapon);
+
                     // the full non-crit ceiling, ALL flats included, normal rating chain
-                    var maxNormalHit = (BaseDamageMod.MaxDamage + DebugLuminanceFlatDamageBonus + WeaponScalingFlatBonus)
-                                       * AttributeMod * PowerMod * SlayerMod * DamageRatingMod;
+                    var maxNormalHit = endgameCrit
+                        ? (BaseDamageMod.MaxDamage + DebugLuminanceFlatDamageBonus + WeaponScalingFlatBonus)
+                              * AttributeMod * PowerMod * SlayerMod * DamageRatingMod
+                        : BaseDamageMod.MaxDamage * AttributeMod * PowerMod * SlayerMod * DamageRatingMod;
 
                     DamageBeforeMitigation = maxNormalHit * CriticalDamageMod;
 

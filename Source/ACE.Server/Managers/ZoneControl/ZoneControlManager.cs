@@ -1081,6 +1081,141 @@ namespace ACE.Server.Managers.ZoneControl
         public static bool IsZcGear(WorldObject wo)
             => (wo?.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ZcTier) ?? 0) >= 11;
 
+        // =====================================================================================
+        // THE CANONICAL ENDGAME GATE (owner rulings 2026-09-10)
+        // =====================================================================================
+        // WHY THIS EXISTS: the T11 series (#510-#513) was meant to change only variation 11-25,
+        // but seven separate sites each decided for themselves whether to gate, and several did
+        // not. The base world (variation_Id NULL/0 - 78,101 creature placements against 822 at
+        // v11) took a ~1.6x monster magic crit, a doubled crit frequency, a player crit-imbue
+        // kill, an uncapped player crit, a halved monster proc rate, and - with the master toggle
+        // OFF - a 211-point cap applied to max health that stopped players healing entirely.
+        //
+        // EVERY T11 behavior should ask one of the FOUR methods below, so the next change cannot
+        // quietly escape and an audit is close to a single grep.
+        //
+        // Two sites in this commit deliberately do NOT call them, and both are documented in place:
+        // SpellProjectile's arc-band guard keys off the already-computed `endgameCrit` local (so the
+        // band and the crit model can never disagree), and Hotspot tests ZcDamageImmune directly
+        // because Cheat Death is player-carried and must hold regardless of where the pad sits.
+        // Grep for `endgameCrit`, `endgameCast` and `zcProc` as well as the method names.
+        //
+        // RULING 1 - "fully inert": zonecontrol_enabled OFF means every gate below returns false, so
+        // no COMBAT-MODEL behavior in this series applies. A kill switch that still imposes its own
+        // numbers is not a kill switch. It also supersedes the 2026-08-23 "the T10 fallback cap wins
+        // outright" ruling for the WORN-GEAR CAPS specifically - that is what capped GearMaxHealth
+        // (hit points) with CapLine (a rating-line ceiling) and stranded players below their own max.
+        //
+        // 🔴 SCOPE, corrected after review - do NOT read this as "the whole fallback set is gone".
+        // With the toggle OFF, ZoneStatResolver STILL applies the rest of ZoneFallback to ZC-stamped
+        // ITEMS: Band (:257), AnchorDr / AnchorCdr 92/73 (:413) and ArmorLevel 732 (:456, :469). That
+        // is item re-pricing, which is the fallback's actual job and is deliberately untouched here.
+        // Only the CAP half went inert. The two are easy to conflate and an earlier version of this
+        // comment did exactly that.
+        //
+        // RULING 2 - the gate is SPLIT, by whose behavior is being decided:
+        //   MONSTERS gate by LOCATION, behind a hard floor at variation 11. A monster never leaves
+        //   its zone, so the location test is both free and exact. "Retail" means EVERY variation
+        //   below 11 (owner 2026-09-10) - the base world AND v1-v5 - not just variation_Id 0.
+        //   PLAYERS gate by GEAR STAMP. A player carries their gear across zone borders; gating
+        //   them by location would flip their own damage numbers mid-fight at the boundary.
+        //   Retail gear never carries ZcTier, so a base-world player on retail gear takes the
+        //   pre-series path in every case - which is exactly the restore target.
+
+        /// <summary>
+        /// Monster half of the endgame gate: does this CREATURE play by T11-25 rules?
+        /// Location-based - true only for a non-player creature inside an enabled authored zone
+        /// at variation 11 or above. Always false when the master toggle is off, and false for a
+        /// creature carrying ExemptFromZoneScaling (pets are NOT exempt here - see the body).
+        /// </summary>
+        public static bool EndgameRulesApplyToMonster(Creature creature)
+        {
+            if (!ServerConfig.zonecontrol_enabled.Value)
+                return false;
+            if (creature == null || creature is Player)
+                return false;
+
+            // FindZoneRef, NOT ResolveForCreature (fixed 2026-09-10 after review). ResolveForCreature
+            // bails on IsZoneScalingExempt, which is true for every Pet - but that exemption answers
+            // "may a zone RE-PRICE this creature's stats", a DIFFERENT question from "which combat
+            // model applies". Routing the gate through it made the T11 crit model permanently false
+            // for every pet in every zone: a T25 player summoning a pet inside a v22 zone had the
+            // pet silently drop the summoner's lum-aug crit flat (CombatPet copies the summoner's
+            // LuminanceAugmentMelee/MissileCount) and revert to the double-roll proc scan.
+            //
+            // Order matters for cost: FindZoneRef opens with a lock-free O(1)
+            // snap.EnabledLandblocks.Contains bail, so the ~78k base-world placements return here
+            // without touching a biota lock.
+            //
+            // CORRECTION 2026-09-10 (second review): an earlier version of this comment claimed the
+            // floor runs after the bail "because GetEffectiveVariation takes a lock". That is FALSE -
+            // FindZoneRef already calls GetEffectiveVariation itself when the landblock matches, so by
+            // the time we reach the floor the read has happened either way. The floor below is
+            // therefore REDUNDANT for correctness today (FindZoneRef only matches a zone whose
+            // Variation equals the creature's, and nothing is authored below v11) and is kept purely
+            // as the owner's belt-and-braces guarantee that authoring a zone at v5 can never promote
+            // its monsters. It is a cheap cached-path read, not a second lock.
+            //
+            // KNOWN LIMITATION (pre-existing, not introduced here): because an authored enabled zone
+            // is required, PropertyBool.ForceEndgameSystems alone cannot make a test dummy in an
+            // ordinary landblock take the endgame path. Dummy-based testing of T11 combat needs the
+            // dummy inside an enabled zone at its variation.
+            if (FindZoneRef(creature) == null)
+                return false;
+
+            // EXPLICIT PER-MONSTER OPT-OUT (review 2026-09-11). Bypassing IsZoneScalingExempt above
+            // was only meant to keep PETS on the endgame model; it also skipped the weenie bool
+            // ExemptFromZoneScaling, which is documented as the global "leave this creature alone"
+            // switch (a vendor or quest NPC standing inside a v11+ zone) and which TierHitGate already
+            // honours. Re-check just that bool here, after the lock-free landblock bail so the base
+            // world never pays for it. Pets are deliberately NOT excluded - see the note above.
+            if (ExemptBoolOf(creature))
+                return false;
+
+            // HARD VARIATION FLOOR (owner 2026-09-10): "retail" is EVERY variation under 11, not
+            // just the base world - v1-v5 are retail content and must never pick up T11 rules.
+            // Today no zone is authored below v11, so this is belt-and-braces: authoring a zone at
+            // v5 must NOT silently promote its monsters.
+            return GetEffectiveVariation(creature) >= VariationManager.EndgameMinVariation;
+        }
+
+        /// <summary>
+        /// Player half of the endgame gate: does this ITEM carry T11-25 rules?
+        /// Gear-stamp based, so a player's numbers do not change because they crossed a border.
+        /// Always false when the master toggle is off. A null item (an unarmed swing, a wandless
+        /// cast) is retail by definition - there is no stamp to honour.
+        /// </summary>
+        public static bool EndgameRulesApplyToPlayerGear(WorldObject item)
+        {
+            if (!ServerConfig.zonecontrol_enabled.Value)
+                return false;
+            return IsZcGear(item);
+        }
+
+        /// <summary>
+        /// The combat-site convenience: picks the correct half of the split for whoever is acting.
+        /// Pass the weapon/caster actually used for the attack (null for unarmed or wandless).
+        /// This is the call nearly every damage site should make.
+        /// </summary>
+        public static bool EndgameRulesApply(Creature actor, WorldObject weapon)
+            => actor is Player
+                ? EndgameRulesApplyToPlayerGear(weapon)
+                : EndgameRulesApplyToMonster(actor);
+
+        /// <summary>
+        /// Placed-content half of the gate: for a non-creature world object (a hotspot, a trap) whose
+        /// behavior is a property of WHERE IT SITS rather than of who walks into it. Variation floor
+        /// only - placed content resolves no creature profile. Always false when the toggle is off.
+        /// </summary>
+        public static bool EndgameRulesApplyToPlacedContent(WorldObject wo)
+        {
+            if (!ServerConfig.zonecontrol_enabled.Value)
+                return false;
+            if (wo == null)
+                return false;
+            return GetEffectiveVariation(wo) >= VariationManager.EndgameMinVariation;
+        }
+
         /// <summary>The appraisal line both weapon and armor panels pin while their power is
         /// suppressed for the examiner (wording owner-approved 2026-08-30). ONE constant so the
         /// two panels can never drift.</summary>
@@ -1125,6 +1260,16 @@ namespace ACE.Server.Managers.ZoneControl
         public static ZoneEffects ResolveEffectsForPlayer(Player player)
         {
             if (player == null)
+                return null;
+
+            // RULING 1 (added 2026-09-10): zonecontrol_enabled OFF means fully inert. This resolver had
+            // NO master-toggle check, so with Zone Control off a player standing in an area whose
+            // Effects carry SuppressEnabled still had zone effects applied to them - most visibly
+            // SuppressProdigal, which strips Prodigal Regeneration / Rejuvenation / Mana Renewal out of
+            // the regen enchantment mod in Creature_Vitals.VitalHeartBeat. Tou Tou (v11, 90 landblocks)
+            // authors exactly that, so the kill switch did not stop it. Also gates the DoT / slow /
+            // charm effects and the regen tuner, all of which are Zone Control features by definition.
+            if (!ServerConfig.zonecontrol_enabled.Value)
                 return null;
 
             // Fully lock-free: read the immutable published snapshot.

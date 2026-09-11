@@ -1856,6 +1856,13 @@ namespace ACE.Server.WorldObjects
             // same way.
             var weapon        = procWeapon ?? GetEquippedWand();
 
+            // THE canonical endgame gate (owner 2026-09-10). Rings are cast by a PLAYER, so this is the
+            // GEAR half of the split: ZC-stamped caster = T11 rules anywhere, retail caster = retail
+            // math anywhere. A ring's damage is applied by THIS method and never reaches
+            // SpellProjectile.CalculateDamage, so the unified crit had to be gated here separately -
+            // without it, hand-cast rings kept critting for ~2x in the base world.
+            var endgameCrit = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon);
+
             var isLifeProjectile = spell.MetaSpellType == ACE.Entity.Enum.SpellType.LifeProjectile;
 
             // CR-2: use scanOrigin's ObjMaint when the detonation center differs from the caster
@@ -1971,8 +1978,14 @@ namespace ACE.Server.WorldObjects
                             var earlyMod = isLifeProjectile || isPvP
                                 ? GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature)
                                 : 0f;
+                            // GATED 2026-09-10: the life branch dropped the retail 0.5f coefficient
+                            // unconditionally, so a RETAIL-geared player critting with a Life ring
+                            // spell got double the baseline crit bonus. Missed on the first pass -
+                            // only the war/void ring branch below was gated.
                             critDamageBonus = isLifeProjectile
-                                ? lifeMagicDamage * earlyMod
+                                ? (endgameCrit
+                                    ? lifeMagicDamage * earlyMod
+                                    : lifeMagicDamage * 0.5f * earlyMod)
                                 : (isPvP ? spell.MinDamage * 0.5f * earlyMod : 0f);
                         }
                     }
@@ -2010,7 +2023,7 @@ namespace ACE.Server.WorldObjects
                         baseDamage = procBaseDamage > 0
                             ? (long)Math.Round(procBaseDamage)
                             // unified crit: a PvE crit uses the MAX roll, matching SpellProjectile
-                            : (criticalHit && !isPvP
+                            : (endgameCrit && criticalHit && !isPvP
                                 ? spell.MaxDamage
                                 : ThreadSafeRandom.Next(spell.MinDamage, spell.MaxDamage));
 
@@ -2096,8 +2109,12 @@ namespace ACE.Server.WorldObjects
                     // one formula for hand-casts and ring procs alike, replacing the 0.5f
                     // proc-only re-derive. mod = CritX - 1 (default 1.0 = retail's 2x).
                     if (criticalHit && !isLifeProjectile && !isPvP)
-                        critDamageBonus = (baseDamage + skillBonus)
-                            * GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
+                        critDamageBonus = endgameCrit
+                            ? (baseDamage + skillBonus)
+                                * GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature)
+                            // retail: half of MAX, and the skill bonus is NOT folded into the crit term
+                            : spell.MaxDamage * 0.5f
+                                * GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
 
                     var preModDamage = isLifeProjectile
                         ? lifeMagicDamage + critDamageBonus

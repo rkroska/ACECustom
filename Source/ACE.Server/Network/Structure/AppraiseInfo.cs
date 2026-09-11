@@ -1271,12 +1271,16 @@ namespace ACE.Server.Network.Structure
                 effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
             }
 
-            // Crippling Blow - hidden for players since 2026-08-25: WorldObject.CritImbuesSuppressed
-            // makes it inert on a player's weapon, and an item panel that advertises an effect doing
-            // exactly zero is worse for trust than an absent line. This panel is only ever built for
-            // a player examining something, so the const alone is the right test here.
+            // Crippling Blow - hidden only when it is actually inert on THIS weapon. An item panel
+            // that advertises an effect doing exactly zero is worse for trust than an absent line,
+            // but so is hiding one that works. Since the 2026-09-10 gating, suppression requires
+            // ZC-stamped gear, so a RETAIL weapon's imbue is live again and must be shown.
+            // CritImbuesSuppressedOnItem is the panel-side form of the combat test - the wielder check
+            // is implicit because this panel is only ever built for a player examining something.
+            // (The older comment here said "the const alone is the right test", which stopped being
+            // true when the const gained the gear gate.)
             if (weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow)
-                && !WorldObject.CritImbuesSuppressedForPlayers)
+                && !WorldObject.CritImbuesSuppressedOnItem(weapon))
             {
                 var mod = WorldObject.GetCripplingBlowMod(skill);
                 effectDescriptions.Add($"- {ImbuedEffectType.CripplingBlow.DisplayName()}: {mod:0.##}x Crit Dmg");
@@ -1298,9 +1302,12 @@ namespace ACE.Server.Network.Structure
 
             // Critical Strike - hidden for players, same reason as Crippling Blow above.
             if (weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike)
-                && !WorldObject.CritImbuesSuppressedForPlayers)
+                && !WorldObject.CritImbuesSuppressedOnItem(weapon))
             {
-                var mod = WorldObject.GetCriticalStrikeMod(skill);
+                // pass the gear half of the gate so the panel shows the floor this weapon actually gets
+                // (retail 5 pct vs ZC-stamped 10 pct) - GetCriticalStrikeMod defaults to retail
+                var mod = WorldObject.GetCriticalStrikeMod(skill, false,
+                    ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon));
                 effectDescriptions.Add($"- {ImbuedEffectType.CriticalStrike.DisplayName()}: +{mod:P1} Crit Chance");
             }
 

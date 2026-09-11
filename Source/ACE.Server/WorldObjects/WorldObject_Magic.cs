@@ -1118,12 +1118,49 @@ namespace ACE.Server.WorldObjects
             {
                 // Carry the proc flag and the authored ring band through - a ring's damage AND its
                 // combat message are both produced inside that method, never on the projectile path.
-                var zcRingB = fromProc
+                // GATED 2026-09-10 (review). The authored ring band was read with no toggle check, so
+                // with zonecontrol_enabled OFF a ZC-stamped weapon still REPLACED the base with its
+                // band (~9,440) while the crit term fell back to the spell's own retail derivation
+                // (Spell.MaxDamage * 0.5f, ~42) - a hit that cannot meaningfully crit. Ruling 1 says
+                // ZC powers go fully inert when the toggle is off, and ZcPowerSuppressed already
+                // encodes exactly that (plus the weapon zone lock), so the band now vanishes with the
+                // rest of the weapon's ZC power instead of being left stranded.
+                // 🔴 ONE GATE FOR THE WHOLE ZC-PROC HANDOFF (2026-09-10, second parity sweep).
+                // Baseline called this method as `ApplyRingSpellAreaDamage(spell, lifeProjectileDamage: damage)`
+                // - fromProc took its DEFAULT false, so the proccing item never reached the method at all.
+                // The series began passing fromProc/procWeapon/procBaseDamage/procVariance unconditionally,
+                // which is right for ZC Cast-on-Strike and wrong for the ~11,700 retail Ring Glyph crafts.
+                // `zcProc` is that handoff: true only for a ZC-stamped proc, and everything below keys off it
+                // so the four arguments can never disagree with each other again.
+                var zcProc = fromProc
+                    && ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon)
+                    && !ZcPowerSuppressed(weapon, ringPlayer);
+
+                var zcRingB = zcProc
                     ? (weapon?.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRingDamagePropId) ?? 0)
                     : 0;
+                // WHY EACH ARGUMENT KEYS OFF zcProc AND NOT fromProc:
+                //
+                // procWeapon - the method resolves `weapon = procWeapon ?? GetEquippedWand()`. Baseline
+                //   used the WAND SLOT only, null on a melee/missile character, so every weapon-derived
+                //   term took its default. Ungated, a retail Ring Glyph inherited the PROCCING weapon's
+                //   stats: crit chance 0.05 -> up to 0.50 (Critical Strike), crit damage mod 1.0 -> up
+                //   to 6.0 (Crippling Blow), plus rending (to x2.5), slayer and heritage baseline never
+                //   applied. That was the "players critting insanely hard" report.
+                //
+                // fromProc - baseline let this DEFAULT to false on the ring path, and three consumers
+                //   read it: Player_Magic.cs:1827 gates the Smart Ring multi-proc loop (baseline ran the
+                //   damage loop 1-3x, forcing true pins it at 1), :2218 fires the equipped cloak's proc
+                //   per hit target, and :2229 awards the War/Void Proficiency tick. Forcing it true was
+                //   three silent LOSSES for retail proc rings - the opposite direction to procWeapon,
+                //   which is exactly why both need the same gate rather than separate judgement.
+                //
+                // The underlying change is RIGHT for ZC Cast-on-Strike - a proc ring comes off a dagger
+                // or bow, not the wand slot, and rend was silently vanishing - so it is kept for
+                // ZC-stamped gear and reverted to baseline for retail, per the 100% restore.
                 ringPlayer.ApplyRingSpellAreaDamage(spell, lifeProjectileDamage: damage,
-                    fromProc: fromProc, procBaseDamage: zcRingB, procWeapon: fromProc ? weapon : null,
-                    procVariance: fromProc
+                    fromProc: zcProc, procBaseDamage: zcRingB, procWeapon: zcProc ? weapon : null,
+                    procVariance: zcProc
                         ? (weapon?.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRingVariancePropId) ?? 0)
                         : 0);
             }
