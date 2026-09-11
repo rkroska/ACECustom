@@ -256,6 +256,36 @@ namespace ACE.Server.Command.Handlers
             Console.WriteLine($"{string.Join("\n", compatibleCBs.ToArray())}");
         }
 
+        [CommandHandler("testcb", AccessLevel.Developer, CommandHandlerFlag.ConsoleInvoke, "Test TryReadClothingTable for a clothing base ID")]
+        public static void HandleTestClothingBase(Session session, params string[] parameters)
+        {
+            if (parameters.Length == 0)
+            {
+                Console.WriteLine("Usage: @testcb <hexClothingBaseId>");
+                return;
+            }
+
+            var arg = parameters[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? parameters[0].Substring(2) : parameters[0];
+            if (!uint.TryParse(arg, System.Globalization.NumberStyles.HexNumber, null, out var cbId))
+            {
+                Console.WriteLine($"Invalid hex ID: {parameters[0]}");
+                return;
+            }
+
+            bool success = DatManager.PortalDat.TryReadClothingTable(cbId, out var ct);
+            Console.WriteLine($"[TESTCB] TryReadClothingTable(0x{cbId:X8}) => {success}");
+            if (success && ct != null)
+            {
+                Console.WriteLine($"  ClothingBaseEffects count: {ct.ClothingBaseEffects.Count}");
+                Console.WriteLine($"  ClothingSubPalEffects count: {ct.ClothingSubPalEffects.Count}");
+                foreach (var kvp in ct.ClothingBaseEffects)
+                {
+                    Console.WriteLine($"    SetupId: 0x{kvp.Key:X8}, CloObjectEffects: {kvp.Value.CloObjectEffects.Count}");
+                }
+            }
+        }
+
+
 
         // ==================================
         // Client Testing
