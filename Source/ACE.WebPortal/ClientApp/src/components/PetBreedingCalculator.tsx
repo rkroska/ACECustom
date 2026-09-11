@@ -842,7 +842,7 @@ export default function PetBreedingCalculator() {
             <div className="text-xs">
               <span className="font-extrabold text-white uppercase tracking-wider mr-2">Breeding Quick Guide:</span>
               <span className="text-neutral-300">
-                1. Designate <strong>Alpha Stud</strong> (10 daily charges) • 2. Bring <strong>Non-Alpha Donor</strong> (4h cooldown) • 3. Stand within 5m in <strong>Seedy Motel</strong> & perform <code>/dance</code>!
+                1. Designate <strong>Alpha Stud</strong> (10 daily charges) • 2. Bring <strong>Non-Alpha Donor</strong> (4h cooldown) • 3. Stand within 5m in <strong>Seedy Motel</strong> & perform <code>*dance*</code> (or <code>@dance</code>)!
               </span>
             </div>
           </div>
@@ -1124,7 +1124,7 @@ export default function PetBreedingCalculator() {
                     }`}
                   >
                     <Heart className="w-4 h-4 fill-white" /> 
-                    {alphaCharges > 0 ? 'Perform /dance Breeding Ritual' : 'Alpha Charges Exhausted (0/10)'}
+                    {alphaCharges > 0 ? 'Perform *dance* Breeding Ritual' : 'Alpha Charges Exhausted (0/10)'}
                   </button>
 
                   <div className="flex gap-2">
@@ -1159,7 +1159,7 @@ export default function PetBreedingCalculator() {
                 <div className="p-8 text-center border border-dashed border-neutral-800 rounded-xl space-y-1">
                   <Heart className="w-6 h-6 text-neutral-700 mx-auto" />
                   <div className="text-xs font-bold text-neutral-500 uppercase tracking-wider">No Offspring Bred Yet</div>
-                  <p className="text-[11px] text-neutral-600">Configure Parent Alpha and Parent Beta above and click "Perform /dance Breeding Ritual".</p>
+                  <p className="text-[11px] text-neutral-600">Configure Parent Alpha and Parent Beta above and click "Perform *dance* Breeding Ritual".</p>
                 </div>
               ) : (
                 <div className="max-h-56 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
@@ -1466,10 +1466,10 @@ export default function PetBreedingCalculator() {
               <div className="bg-neutral-950 border border-neutral-800 p-5 rounded-xl space-y-2">
                 <h3 className="font-extrabold text-white text-base flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-rose-500 text-white text-xs flex items-center justify-center font-black">2</span>
-                  The Seedy Motel `/dance` Ritual
+                  The Seedy Motel Dance Ritual (*dance*)
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  Two players stand side-by-side in the <strong>Seedy Motel</strong> with active combat pets summoned (within 5m distance) and execute the <code>/dance</code> emote to initiate breeding.
+                  Two players stand side-by-side in the <strong>Seedy Motel</strong> with active combat pets summoned (within 5m distance) and execute the <code>*dance*</code> emote (or type <code>@dance</code>) to initiate breeding.
                 </p>
               </div>
 

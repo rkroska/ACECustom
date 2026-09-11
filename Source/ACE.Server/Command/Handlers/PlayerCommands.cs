@@ -1,4 +1,4 @@
-﻿using ACE.Common;
+using ACE.Common;
 using ACE.Database;
 using ACE.Database.Models.Auth;
 using ACE.Entity;
@@ -4070,6 +4070,12 @@ namespace ACE.Server.Command.Handlers
 
                 session.Network.EnqueueSend(new GameMessageSystemChat($"- {corpse.name} (Rot: {timeStr}){loadStatus} @ {locStr}", ChatMessageType.Broadcast));
             }
+        }
+
+        [CommandHandler("dance", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Performs the courtship dance.", "")]
+        public static void HandleDance(Session session, string[] parameters)
+        {
+            session.Player.HandleActionSoulEmote("*dance*");
         }
     }
 }

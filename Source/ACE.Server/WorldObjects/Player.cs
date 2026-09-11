@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Linq;
@@ -986,7 +986,7 @@ namespace ACE.Server.WorldObjects
                 {
                     // BroadcastMovement() already triggers breeding off the DrudgeDance motion. Only fall
                     // back to the chat-emote text when that path did not just fire for this same emote,
-                    // otherwise a single /dance runs the ritual twice.
+                    // otherwise a single *dance* runs the ritual twice.
                     var motionAlreadyFired = (LastSoulEmote == MotionCommand.DrudgeDance || LastSoulEmote == MotionCommand.DrudgeDanceState)
                         && DateTime.UtcNow < LastSoulEmoteEndTime;
 

@@ -210,7 +210,7 @@ namespace ACE.Server.WorldObjects
                 if (player1.IsAdmin)
                     player1.SendMessage($"[Breeding Debug] No eligible partner found: needs to be in the breeding area, have danced within {danceWindow.TotalSeconds:0.#}s, and have a summoned pet sharing your pet's landcell. (Checked {onlinePlayers.Count} online players)");
                 else if (!forced)
-                    player1.SendMessage("[Breeding] Your pet performs the courtship dance, waiting for a partner... (Your partner must have their pet summoned in the same room and /dance within 5 seconds).");
+                    player1.SendMessage("[Breeding] Your pet performs the courtship dance, waiting for a partner... (Your partner must have their pet summoned in the same room and *dance* within 5 seconds).");
                 return;
             }
 
