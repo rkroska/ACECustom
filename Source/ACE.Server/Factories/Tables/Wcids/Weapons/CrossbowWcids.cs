@@ -107,7 +107,7 @@ namespace ACE.Server.Factories.Tables.Wcids
 
         public static WeenieClassName Roll(int tier)
         {
-            return crossbowTiers[tier - 1].Roll();
+            return TierTable.Entry(crossbowTiers, tier).Roll();
         }
 
         private static readonly Dictionary<WeenieClassName, TreasureWeaponType> _combined = new Dictionary<WeenieClassName, TreasureWeaponType>();

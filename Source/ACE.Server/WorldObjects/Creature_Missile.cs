@@ -146,7 +146,8 @@ namespace ACE.Server.WorldObjects
             proj.EnqueueBroadcast(new GameMessageScript(proj.Guid, PlayScript.Launch, 0f));
 
             // Create split arrows if weapon has split property
-            if (weapon != null)
+            // (zone lock: outside authored areas a ZC launcher's Split Arrows stamp reads as absent)
+            if (weapon != null && !ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, this))
             {
                 var hasSplitArrows = weapon.GetProperty(PropertyBool.SplitArrows);
                 if (hasSplitArrows == true)

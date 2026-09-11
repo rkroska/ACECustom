@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Linq;
+using System.Globalization;
 
 using ACE.Common;
 using ACE.Database;
@@ -768,52 +769,259 @@ namespace ACE.Server.WorldObjects
         /// If a regular player logs out in one of these landblocks,
         /// they will be transported back to the lifestone when they log back in.
         /// </summary>
-        private static HashSet<ushort> NoLog_Landblocks =
-        [
+        /// <summary>
+        /// A list of landblocks the player cannot relog directly into
+        /// 
+        /// If a regular player logs out in one of these landblocks,
+        /// they will be transported back to the lifestone when they log back in.
+        ///
+        /// 2026-08-31: was a HashSet; now carries the FRIENDLY NAME as data rather than as a
+        /// comment, so /nolog list and the plugin can show what each landblock actually is.
+        /// Names are the curated ones that were already here - they beat deriving a name from
+        /// the portal that lands there, which gives things like "Cow Level" for Tainted Grotto.
+        /// </summary>
+        private static readonly Dictionary<ushort, string> NoLog_Landblocks = new()
+        {
             // https://asheron.fandom.com/wiki/Special:Search?query=Lifestone+on+Relog%3A+Yes+
             // https://docs.google.com/spreadsheets/d/122xOw3IKCezaTDjC_hggWSVzYJ_9M_zUUtGEXkwNXfs/edit#gid=846612575
 
-            0x0002,     // Viamontian Garrison
-            0x0007,     // Town Network
-            0x0056,     // Augmentation Realm Main Level
-            0x005F,     // Tanada House of Pancakes (Seasonal)
-            0x0067,     // PKL Arena
-            0x006D,     // Augmentation Realm Upper Level
-            0x007D,     // Augmentation Realm Lower Level
-            0x00AB,     // Derethian Combat Arena
-            0x00AC,     // Derethian Combat Arena
-            0x00C3,     // Blighted Putrid Moarsman Tunnels
-            0x00D7,     // Jester's Prison
-            0x00EA,     // Mhoire Armory
-            0x015D,     // Mountain Cavern
-            0x027F,     // East Fork Dam Hive
-            0x03A7,     // Mount Elyrii Hive
-            0x5764,     // Oubliette of Mhoire Castle
-            0x634C,     // Tainted Grotto
-            0x6544,     // Greater Battle Dungeon
-            0x6651,     // Hoshino Tower
-            0x7E04,     // Thug Hideout
-            0x8A04,     // Night Club (Seasonal Anniversary)
-            0x8B04,     // Frozen Wight Lair
-            0x9EE5,     // Northwatch Castle Black Market
-            0xB5F0,     // Aerfalle's Sanctum
-            0xF92F,     // Freebooter Keep Black Market
-            0x00B0,     // Colosseum Arena One
-            0x00B1,     // Colosseum Arena Two
-            0x00B2,     // Colosseum Arena Three
-            0x00B3,     // Colosseum Arena Four
-            0x00B4,     // Colosseum Arena Five
-            0x00B6,     // Colosseum Arena Mini-Bosses
-            0x5954,     // Catacombs of Torment
-            0x5960,     // Gauntlet Arena One (Celestial Hand)
-            0x5961,     // Gauntlet Arena Two (Celestial Hand)
-            0x5962,     // Gauntlet Arena One (Eldritch Web)
-            0x5963,     // Gauntlet Arena Two (Eldritch Web)
-            0x5964,     // Gauntlet Arena One (Radiant Blood)
-            0x5965,     // Gauntlet Arena Two (Radiant Blood)
-            0x79E9,     // Bloodstone Factory
-            0x654C,
-        ];
+            { 0x0002, "Viamontian Garrison" },
+            { 0x0007, "Town Network" },
+            { 0x0056, "Augmentation Realm Main Level" },
+            { 0x005F, "Tanada House of Pancakes (Seasonal)" },
+            { 0x0067, "PKL Arena" },
+            { 0x006D, "Augmentation Realm Upper Level" },
+            { 0x007D, "Augmentation Realm Lower Level" },
+            { 0x00AB, "Derethian Combat Arena" },
+            { 0x00AC, "Derethian Combat Arena" },
+            { 0x00C3, "Blighted Putrid Moarsman Tunnels" },
+            { 0x00D7, "Jester's Prison" },
+            { 0x00EA, "Mhoire Armory" },
+            { 0x015D, "Mountain Cavern" },
+            { 0x027F, "East Fork Dam Hive" },
+            { 0x03A7, "Mount Elyrii Hive" },
+            { 0x5764, "Oubliette of Mhoire Castle" },
+            { 0x634C, "Tainted Grotto" },
+            { 0x6544, "Greater Battle Dungeon" },
+            { 0x6651, "Hoshino Tower" },
+            { 0x7E04, "Thug Hideout" },
+            { 0x8A04, "Night Club (Seasonal Anniversary)" },
+            { 0x8B04, "Frozen Wight Lair" },
+            { 0x9EE5, "Northwatch Castle Black Market" },
+            { 0xB5F0, "Aerfalle's Sanctum" },
+            { 0xF92F, "Freebooter Keep Black Market" },
+            { 0x00B0, "Colosseum Arena One" },
+            { 0x00B1, "Colosseum Arena Two" },
+            { 0x00B2, "Colosseum Arena Three" },
+            { 0x00B3, "Colosseum Arena Four" },
+            { 0x00B4, "Colosseum Arena Five" },
+            { 0x00B6, "Colosseum Arena Mini-Bosses" },
+            { 0x5954, "Catacombs of Torment" },
+            { 0x5960, "Gauntlet Arena One (Celestial Hand)" },
+            { 0x5961, "Gauntlet Arena Two (Celestial Hand)" },
+            { 0x5962, "Gauntlet Arena One (Eldritch Web)" },
+            { 0x5963, "Gauntlet Arena Two (Eldritch Web)" },
+            { 0x5964, "Gauntlet Arena One (Radiant Blood)" },
+            { 0x5965, "Gauntlet Arena Two (Radiant Blood)" },
+            { 0x79E9, "Bloodstone Factory" },
+            { 0x654C, "Enchanted Mnemosyne (undocumented - resolved from its portal)" },
+        };
+
+        // -- no-log OVERRIDES (2026-08-31) ---------------------------------------------
+        //
+        // The list above stays the RETAIL SEED and is still the whole story on a server that authors
+        // nothing. On top of it sits one ordinary server property, ServerConfig.nolog_landblocks, so
+        // no-log areas can be edited live (/nolog, or /modifystring) instead of needing a recompile.
+        //
+        // Two things the seed cannot express and the overrides can:
+        //   - a VARIATION. The seed is base-landblock-only by construction; an override can name a
+        //     specific variation, or "all" for base plus every variation.
+        //   - REMOVAL. A minus token suppresses an entry, including one from the seed, so a server can
+        //     opt out of a retail no-log area without editing this file.
+        //
+        // NULL AND 0 BOTH MEAN BASE. VariationManager.NormalizeBase is the single normalizer and it is
+        // used on BOTH sides - here and in the /nolog command that writes the string. Do not normalize
+        // with anything else: GetEffectiveVariation looks similar but also applies the
+        // ForceEndgameSystems dev override, so a dev with that set would author entries that could
+        // never match at login.
+
+        /// <summary>Pseudo-variation keys inside a parsed override set. Real variations are 1 or above.</summary>
+        private const int NoLogBaseKey = -1;   // the base landblock (VariationId null or 0)
+        private const int NoLogAllKey = -2;    // base AND every variation
+
+        private static readonly object NoLogParseLock = new();
+        /// <summary>One parsed override set, published as a single reference so a reader never pairs a new
+        /// raw string with stale dictionaries (writers replace the whole object under NoLogParseLock).</summary>
+        private sealed class NoLogOverrides
+        {
+            public readonly string Raw;
+            public readonly Dictionary<ushort, HashSet<int>> Adds;
+            public readonly Dictionary<ushort, HashSet<int>> Removes;
+            public NoLogOverrides(string raw, Dictionary<ushort, HashSet<int>> adds, Dictionary<ushort, HashSet<int>> removes)
+            { Raw = raw; Adds = adds; Removes = removes; }
+        }
+        private static volatile NoLogOverrides _noLog = new(null, new(), new());
+
+        /// <summary>
+        /// Parse ServerConfig.nolog_landblocks on demand, caching against the exact string it was built
+        /// from - so an edit through /nolog, /modifystring or a direct DB change is picked up on the next
+        /// login with no invalidation hook to forget. Parsing is total: a malformed token is skipped,
+        /// never thrown, because this runs on the login path.
+        /// </summary>
+        private static void EnsureNoLogOverrides()
+        {
+            var raw = ServerConfig.nolog_landblocks?.Value ?? "";
+            if (_noLog.Raw == raw)
+                return;
+
+            lock (NoLogParseLock)
+            {
+                if (_noLog.Raw == raw)
+                    return;
+
+                var adds = new Dictionary<ushort, HashSet<int>>();
+                var removes = new Dictionary<ushort, HashSet<int>>();
+
+                foreach (var token in raw.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (!TryParseNoLogToken(token, out var landblock, out var key, out var suppress))
+                        continue;
+                    var target = suppress ? removes : adds;
+                    if (!target.TryGetValue(landblock, out var set))
+                        target[landblock] = set = new HashSet<int>();
+                    set.Add(key);
+                }
+
+                _noLog = new NoLogOverrides(raw, adds, removes);
+            }
+        }
+
+        /// <summary>
+        /// One override token: [+|-]HEX[:base|all|variation]. Shared by the parser above and by the
+        /// /nolog command, so the two can never disagree about what a token means.
+        /// </summary>
+        public static bool TryParseNoLogToken(string token, out ushort landblock, out int variationKey, out bool suppress)
+        {
+            landblock = 0;
+            variationKey = NoLogBaseKey;
+            suppress = false;
+
+            if (string.IsNullOrWhiteSpace(token))
+                return false;
+
+            token = token.Trim();
+            if (token.StartsWith("-", StringComparison.Ordinal)) { suppress = true; token = token.Substring(1).Trim(); }
+            else if (token.StartsWith("+", StringComparison.Ordinal)) { token = token.Substring(1).Trim(); }
+
+            var parts = token.Split(':');
+            var lbText = parts[0].Trim();
+            if (lbText.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                lbText = lbText.Substring(2);
+            if (!ushort.TryParse(lbText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out landblock))
+                return false;
+
+            if (parts.Length == 1)
+                return true;                                     // no variation given = base only
+            if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[1]))
+                return false;                                    // '0002:' or '0002:all:x' are not tokens
+
+            var varText = parts[1].Trim();
+            if (varText.Equals("base", StringComparison.OrdinalIgnoreCase)) { variationKey = NoLogBaseKey; return true; }
+            if (varText.Equals("all", StringComparison.OrdinalIgnoreCase)) { variationKey = NoLogAllKey; return true; }
+            if (!int.TryParse(varText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v))
+                return false;
+            if (v < 0)
+                return false;   // -1 / -2 would alias the base / all pseudo-keys
+
+            variationKey = NoLogVariationKey(v);
+            return true;
+        }
+
+        /// <summary>A raw variation to its lookup key, collapsing the null/0 base bucket.</summary>
+        public static int NoLogVariationKey(int? variation)
+        {
+            var normalized = VariationManager.NormalizeBase(variation);
+            return normalized.HasValue ? normalized.Value : NoLogBaseKey;
+        }
+
+        /// <summary>The token an override entry is written as - the inverse of TryParseNoLogToken.</summary>
+        public static string NoLogTokenFor(ushort landblock, int variationKey, bool suppress)
+        {
+            var scope = variationKey == NoLogBaseKey ? "base"
+                : variationKey == NoLogAllKey ? "all"
+                : variationKey.ToString(CultureInfo.InvariantCulture);
+            return (suppress ? "-" : "") + landblock.ToString("X4") + ":" + scope;
+        }
+
+        private static bool NoLogSetMatches(Dictionary<ushort, HashSet<int>> map, ushort landblock, int variationKey)
+            => map.TryGetValue(landblock, out var set) && (set.Contains(NoLogAllKey) || set.Contains(variationKey));
+
+        /// <summary>
+        /// Is this (landblock, variation) a no-log area? Precedence: an explicit suppress override beats
+        /// everything, then an add override, then the retail seed - which only ever covers the BASE
+        /// landblock. Safe to call before the Player object exists.
+        /// </summary>
+        public static bool IsNoLogArea(ushort landblock, int? variation)
+        {
+            EnsureNoLogOverrides();
+            return IsNoLogArea(_noLog, landblock, variation);
+        }
+
+        /// <summary>Same test against one captured snapshot, so a caller walking several sets sees one configuration.</summary>
+        private static bool IsNoLogArea(NoLogOverrides o, ushort landblock, int? variation)
+        {
+            var key = NoLogVariationKey(variation);
+
+            if (NoLogSetMatches(o.Removes, landblock, key))
+                return false;
+            if (NoLogSetMatches(o.Adds, landblock, key))
+                return true;
+
+            return key == NoLogBaseKey && NoLog_Landblocks.ContainsKey(landblock);
+        }
+
+        /// <summary>The base-bucket scope key, for callers that need to test scope without a magic number.</summary>
+        public static int NoLogBaseScopeKey => NoLogBaseKey;
+
+        /// <summary>True when this exact entry comes from the built-in retail list rather than an override.</summary>
+        public static bool IsNoLogSeed(ushort landblock, int variationKey)
+            => variationKey == NoLogBaseKey && NoLog_Landblocks.ContainsKey(landblock);
+
+        /// <summary>Every no-log entry in force, seed and overrides merged - for /nolog list.</summary>
+        public static List<(ushort Landblock, int VariationKey)> NoLogEntries()
+        {
+            EnsureNoLogOverrides();
+            var o = _noLog;
+
+            var result = new List<(ushort, int)>();
+
+            foreach (var lb in NoLog_Landblocks.Keys)
+                if (IsNoLogArea(o, lb, null))
+                    result.Add((lb, NoLogBaseKey));
+
+            foreach (var kvp in o.Adds)
+                foreach (var key in kvp.Value)
+                {
+                    if (IsNoLogSeed(kvp.Key, key))
+                        continue;                                 // already listed from the seed
+                    if (NoLogSetMatches(o.Removes, kvp.Key, key))
+                        continue;
+                    result.Add((kvp.Key, key));
+                }
+
+            result.Sort((a, b) => a.Item1 != b.Item1 ? a.Item1.CompareTo(b.Item1) : a.Item2.CompareTo(b.Item2));
+            return result;
+        }
+
+        /// <summary>The friendly name of a built-in no-log landblock, or empty for anything else.</summary>
+        public static string NoLogSeedName(ushort landblock)
+            => NoLog_Landblocks.TryGetValue(landblock, out var n) ? n : "";
+
+        /// <summary>Human label for a variation key, matching the token vocabulary.</summary>
+        public static string NoLogScopeName(int variationKey)
+            => variationKey == NoLogBaseKey ? "base"
+             : variationKey == NoLogAllKey ? "all"
+             : "variation " + variationKey.ToString(CultureInfo.InvariantCulture);
 
         /// <summary>
         /// Called when a player first logs in
@@ -822,6 +1030,9 @@ namespace ACE.Server.WorldObjects
         {
             playerWasMovedFromNoLogLandblock = false;
 
+            // NOTE: Admin and Sentinel are exempt - upstream behaviour, so a dev working inside a
+            // dungeon is not thrown to their lifestone on every relog. It also means no-log CANNOT be
+            // tested on an admin character; use a Player-level one (verified 2026-08-31).
             if (biota.WeenieType == WeenieType.Sentinel || biota.WeenieType == WeenieType.Admin) return;
 
             if (!biota.PropertiesPosition.TryGetValue(PositionType.Location, out var location))
@@ -829,15 +1040,19 @@ namespace ACE.Server.WorldObjects
 
             var landblock = (ushort)(location.ObjCellId >> 16);
 
-            if (!NoLog_Landblocks.Contains(landblock))
+            // 2026-08-31: the retail seed PLUS any authored overrides, and variation-aware. The old
+            // "if (location.VariationId.HasValue) return;" guard is GONE - a variation can now be a
+            // no-log area in its own right (owner). Base-only behaviour is unchanged when nothing is
+            // authored, because the seed is only ever consulted for the base bucket.
+            if (!IsNoLogArea(landblock, location.VariationId))
                 return;
 
+            // No lifestone = nowhere to send them, so they stay put. Worth a warning: the area IS
+            // no-log and the player is silently getting away with it.
             if (!biota.PropertiesPosition.TryGetValue(PositionType.Sanctuary, out var lifestone))
-                return;
-
-            if (location.VariationId.HasValue)
             {
-                return; // Variations can't be no-log landblocks. Reserved for base landblocks only.
+                log.Warn($"[NOLOG] {landblock:X4} is a no-log area but the character has no lifestone - cannot move them.");
+                return;
             }
 
             location.ObjCellId = lifestone.ObjCellId;

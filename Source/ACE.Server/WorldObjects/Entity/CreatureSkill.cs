@@ -225,6 +225,12 @@ namespace ACE.Server.WorldObjects.Entity
             if (AdvancementClass == SkillAdvancementClass.Specialized && player.LumAugSkilledSpec != 0)
                 total += (uint)player.LumAugSkilledSpec * 2;
 
+            // Zone Control cantrip gear: flat per-skill bonus summed across equipped items,
+            // outside all enchantment stacking categories (always applies on top, not scaled by vitae)
+            var zoneModifier = player.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.SkillBonusBase + (int)Skill);
+            if (zoneModifier > 0)
+                total += (uint)zoneModifier;
+
             return total;
         }
     }

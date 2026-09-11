@@ -33,6 +33,9 @@ namespace ACE.Server.WorldObjects
         private double houseRentWarnTimestamp;
         private const double houseRentWarnInterval = 3600;
 
+        /// <summary>Zone Control: unix time this player is next due for a zone-effect tick (see ZoneEffectManager).</summary>
+        public double ZoneEffectNextTick;
+
         public void Player_Tick(double currentUnixTime)
         {
             if (CharacterSaveFailed)
@@ -65,6 +68,10 @@ namespace ACE.Server.WorldObjects
 
             UCMChecker.Tick();
             TickJail();
+
+            // Zone Control: per-zone player effects (DoT, etc.), self-timed so ticks can be as fast as 1s
+            // regardless of the 5s heartbeat.
+            ACE.Server.Managers.ZoneControl.ZoneEffectManager.Tick(this, currentUnixTime);
 
             var recoverySecs = ServerConfig.PortalStuckRecoverySecondsEffective;
             if (Teleporting && PortalSpaceEnteredUtc.HasValue && recoverySecs > 0)
@@ -118,11 +125,25 @@ namespace ACE.Server.WorldObjects
             }
             
             
-            // Sync Location with Physics before boundary checks; skip prestige logic when physics has no cell (stale Location).
+            // Sync Location with Physics before boundary checks; skip boundary logic when physics has no cell (stale Location).
+            // The two boundary systems are independent: prestige enforces its tier table, Zone Control enforces
+            // its bounded-zone unions (Player_ZoneBoundary.cs). Each gates itself and no-ops when not applicable.
             if (PhysicsObj?.CurCell != null)
             {
-                SyncLocationWithPhysics();
+                // SyncLocationWithPhysics advances Location to the physics position AND reports whether
+                // that crossed into a different landblock. Discarding that flag (as this call used to)
+                // left Location in the NEW block while CurrentLandblock still pointed at the OLD one
+                // until the movedObjects queue relocated the player after the tick. During that window
+                // Landblock.GetObject resolves through the stale CurrentLandblock, so nearby creatures
+                // are untargetable and objects can be missed - and the [VoidHeal] guard below fires a
+                // WARN every time, which reads like a broken landblock but is only this ordering gap
+                // (chased for an evening on 2026-07-26 before the cause was found here).
+                // Relocating from heartbeat context is the same call ValidateCurrentLandblockTick makes.
+                if (SyncLocationWithPhysics())
+                    LandblockManager.RelocateObjectForPhysics(this, true);
+
                 CheckPrestigeBoundary();
+                CheckZoneBoundary();
             }
 
             // Staggered choreographed visual animation playout for Auto-Rebuff Charm
@@ -151,6 +172,8 @@ namespace ACE.Server.WorldObjects
         public override void Heartbeat(double currentUnixTime)
         {
             NotifyLandblocks();
+
+            ValidateCurrentLandblockTick();
 
             ManaConsumersTick();
 
@@ -525,6 +548,11 @@ namespace ACE.Server.WorldObjects
 
             _lastPrestigeBoundaryCheck = Time.GetUnixTime();
 
+            // Master kill-switch: with prestige systems off, the whole boundary loop is inert
+            // (GetTier=0 would make every landblock allowed anyway — this just skips the work).
+            if (!PrestigeManager.SystemsEnabled)
+                return;
+
             var variation = Location.Variation;
             var currentLBVal = (ushort)(Location.Cell >> 16);
 
@@ -574,11 +602,13 @@ namespace ACE.Server.WorldObjects
                     // 2. Text: Center Screen (Yellow) ONLY
                     Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
                         Session, 
-                        "!!! YOU ARE LEAVING THE PRESTIGE ZONE! RETURN IMMEDIATELY! !!!"));
+                        "!!! YOU ARE LEAVING THE ZONE! RETURN IMMEDIATELY! !!!"));
 
                     // 3. Damage: Force update vital (Direct HP reduction)
+                    // Zone Control Cheat Death window (ZcDamageImmune): warning + wisp still fire, no HP loss.
                     var dmg = (int)(Health.MaxValue * 0.05f);
                     if (dmg < 10) dmg = 10;
+                    if (ZcDamageImmune) dmg = 0;
                     
                     UpdateVitalDelta(Health, -dmg);
                     Session.Network.EnqueueSend(new ACE.Server.Network.GameMessages.Messages.GameMessagePrivateUpdateVital(this, Health));
@@ -604,7 +634,7 @@ namespace ACE.Server.WorldObjects
                 if (danger)
                 {
                     Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
-                        Session, "!!! PRESTIGE BOUNDARY NEARBY !!!"));
+                        Session, "!!! ZONE BOUNDARY NEARBY !!!"));
                 }
                 else
                 {
@@ -700,7 +730,8 @@ namespace ACE.Server.WorldObjects
                             var wisp = Factories.WorldObjectFactory.CreateNewWorldObject(weenie) as Creature;
                             if (wisp != null)
                             {
-                                wisp.Name = "Prestige Guide";
+                                wisp.Name = "Guide";
+                                wisp.SuppressShardPersistence = true; // ephemeral escort — never save to shard
                                 wisp.SetProperty(PropertyBool.Invincible, true);
                                 wisp.SetProperty(PropertyBool.IgnoreCollisions, true);
                                 wisp.SetProperty(PropertyBool.Attackable, false);
@@ -832,6 +863,53 @@ namespace ACE.Server.WorldObjects
             Location = new ACE.Entity.Position(blockcell, pos, rotate, variation);
 
             return landblockUpdate;
+        }
+
+        /// <summary>
+        /// Void-landblock self-heal (2026-07-18): a player's Location can cross into a landblock whose
+        /// (landblock, variation) instance never got created — observed walking into F658 v11 ~2 min
+        /// after its unload: server Location updated, no create fired, and the block stayed a void
+        /// (no statics/gens). With players present a void block never unloads, so on live it could
+        /// stay broken until restart. Whatever the upstream leak, the invariant is enforceable here:
+        /// CurrentLandblock must match Location's (landblock, variation). On mismatch, run the normal
+        /// relocation path — it creates and initializes the landblock if missing (same call
+        /// Monster_Navigation makes from tick context, so thread-deferral is already handled).
+        /// </summary>
+        private void ValidateCurrentLandblockTick()
+        {
+            if (Teleporting || Session == null || PhysicsObj == null || Location == null || IsInDeathProcess)
+                return;
+
+            var locLb = (ushort)(Location.Cell >> 16);
+            var curLb = CurrentLandblock;
+
+            if (curLb != null && curLb.Id.Landblock == locLb &&
+                VariationManager.SameVariationForVisibility(curLb.VariationId, Location.Variation))
+            {
+                // Liveness check (2026-08-10, F35A v11 void with THIS guard silent): the id+variation
+                // match above trusts CurrentLandblock, but says nothing about the MANAGER still
+                // holding that instance. A block unloaded (or replaced) out from under the player
+                // passes it while the world it represents is gone - an unhealable void until a manual
+                // /reload-landblock. Verify by reference against the manager's loaded instance; on
+                // mismatch, relocate (which creates/reattaches to the live instance).
+                var live = LandblockManager.GetLoadedLandblock(curLb.Id, curLb.VariationId);
+                if (ReferenceEquals(live, curLb))
+                    return;
+
+                log.Warn($"[VoidHeal] {Name} (0x{Guid}) CurrentLandblock {curLb.Id.Landblock:X4} v={curLb.VariationId?.ToString() ?? "null"} " +
+                         $"matches Location lb={locLb:X4} v={Location.Variation?.ToString() ?? "null"} but is " +
+                         $"{(live == null ? "NOT LOADED in the manager (unloaded out from under the player?)" : "a STALE instance (the manager holds a different one)")} - " +
+                         "forcing relocation (creates/reattaches the landblock).");
+
+                LandblockManager.RelocateObjectForPhysics(this, true);
+                return;
+            }
+
+            log.Warn($"[VoidHeal] {Name} (0x{Guid}) Location lb={locLb:X4} v={Location.Variation?.ToString() ?? "null"} " +
+                     $"but CurrentLandblock={(curLb == null ? "null" : $"{curLb.Id.Landblock:X4} v={curLb.VariationId?.ToString() ?? "null"}")} - " +
+                     $"forcing relocation (creates the landblock if missing).");
+
+            LandblockManager.RelocateObjectForPhysics(this, true);
         }
 
         private bool gagNoticeSent = false;

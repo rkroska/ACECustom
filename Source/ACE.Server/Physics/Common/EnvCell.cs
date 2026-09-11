@@ -390,7 +390,7 @@ namespace ACE.Server.Physics.Common
                 }
             }
             if (checkOutside)
-                LandCell.add_all_outside_cells(position, numSphere, spheres, cellArray);
+                LandCell.add_all_outside_cells(position, numSphere, spheres, cellArray, position.Variation ?? Pos.Variation);
         }
 
         public void init_static_objects(int? variation)

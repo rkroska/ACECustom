@@ -49,7 +49,19 @@ namespace ACE.Server.Entity
             DamageBonus += weapon.EnchantmentManager.GetDamageBonus();
             VarianceMod *= weapon.EnchantmentManager.GetVarianceMod();
 
-            DamageMod = (float)(weapon.GetProperty(PropertyFloat.DamageMod) ?? 1.0f) + weapon.EnchantmentManager.GetDamageMod();
+            // Weapon aug-scaling: a stamped T11+ launcher's quality roll GRADES the damage
+            // modifier, then the weapon's TIER scales it by however many tier steps the wielder's
+            // item augs have actually unlocked (replace semantics — launchers scale through the
+            // mod, never a flat term); authored DamageMod is the fallback whenever the system is
+            // off or the launcher is unstamped legacy.
+            // (zone lock: outside authored areas the graded launcher mod is suppressed - the
+            // authored DamageMod fallback IS the base-stats behaviour the lock lands on)
+            var baseDamageMod = !Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, wielder)
+                    && Managers.WeaponScaling.WeaponScalingCombat.TryGetLauncherDamageMod(weapon, wielder as Player, out var gradedMod)
+                ? gradedMod
+                : (float)(weapon.GetProperty(PropertyFloat.DamageMod) ?? 1.0f);
+
+            DamageMod = baseDamageMod + weapon.EnchantmentManager.GetDamageMod();
 
             if (weapon.IsEnchantable)
             {
@@ -59,6 +71,7 @@ namespace ACE.Server.Entity
 
                 DamageMod += wielder.EnchantmentManager.GetDamageMod();
             }
+
         }
     }
 }

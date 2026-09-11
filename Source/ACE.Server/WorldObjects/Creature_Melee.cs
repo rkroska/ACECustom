@@ -96,6 +96,10 @@ namespace ACE.Server.WorldObjects
 
             if (!weapon.IsCleaving) return null;
 
+            // zone lock: outside authored areas a ZC weapon's Cleave stamp reads as absent
+            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, this))
+                return null;
+
             // sort visible objects by ascending distance
             var visible = PhysicsObj.ObjMaint.GetVisibleObjectsValuesWhere(o => o.WeenieObj.WorldObject != null);
             visible.Sort(DistanceComparator);

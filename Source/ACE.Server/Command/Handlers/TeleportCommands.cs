@@ -31,7 +31,7 @@ namespace ACE.Server.Command.Handlers
                                               "  player <name>\n" +
                                               "  dungeon <name|hex>\n" +
                                               "  poi <name>\n" +
-                                              "  variant <retail|default|null|id> (retail/default/null = base; 0 = variation 0)\n" +
+                                              "  variant <retail|default|null|id> (retail/default/null/0 = base world)\n" +
                                               "  xyz <cell> <x> <y> <z>...\n" +
                                               "  type <id>\n" +
                                               "  dist <distance>\n" +
@@ -51,7 +51,7 @@ namespace ACE.Server.Command.Handlers
                                                 "  player <name>\n" +
                                                 "  dungeon <name|hex>\n" +
                                                 "  poi <name>\n" +
-                                                "  variant <retail|default|null|id> (retail/default/null = base; 0 = variation 0)\n" +
+                                                "  variant <retail|default|null|id> (retail/default/null/0 = base world)\n" +
                                                 "  xyz <cell> <x> <y> <z>...\n" +
                                                 "  type <id>\n" +
                                                 "  dist <distance>\n" +
@@ -263,7 +263,8 @@ namespace ACE.Server.Command.Handlers
             if (args.Length > 0)
             {
                 var a = args[0].Trim();
-                // Same semantics as @televariant: retail/default/null => unlayered base; 0 is explicit variation 0
+                // Same semantics as @televariant: retail/default/null/0 all mean the unlayered base world
+                // (explicit "layer 0" is a separate empty landblock instance — never teleport anyone there)
                 if (string.Equals(a, "null", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(a, "retail", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(a, "default", StringComparison.OrdinalIgnoreCase))
@@ -274,8 +275,8 @@ namespace ACE.Server.Command.Handlers
                 }
                 if (int.TryParse(a, out var variant))
                 {
-                    pos.Variation = variant;
-                    name = $"variant {variant}";
+                    pos.Variation = variant == 0 ? null : variant;
+                    name = variant == 0 ? "variant base (0 = retail base)" : $"variant {variant}";
                     return true;
                 }
             }

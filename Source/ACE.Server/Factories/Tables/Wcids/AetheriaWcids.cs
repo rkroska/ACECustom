@@ -36,6 +36,15 @@ namespace ACE.Server.Factories.Tables
                 case 10:
                     rng = ThreadSafeRandom.Next(0, 2);
                     return aetheriaColors[rng];
+
+                default:
+                    // tiers above the last authored case clamp to the highest; below tier 5 = no aetheria
+                    if (tier > 10)
+                    {
+                        rng = ThreadSafeRandom.Next(0, 2);
+                        return aetheriaColors[rng];
+                    }
+                    break;
             }
             return WeenieClassName.undef;
         }

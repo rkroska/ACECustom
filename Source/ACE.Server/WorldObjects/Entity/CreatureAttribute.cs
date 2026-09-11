@@ -147,6 +147,10 @@ namespace ACE.Server.WorldObjects.Entity
 
             total = total.Round();
 
+            // Zone Control cantrip gear: flat bonus summed across equipped items, outside all
+            // enchantment stacking categories (always applies on top)
+            total += creature.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.AttrBonusBase + (int)Attribute);
+
             // attributes cannot be debuffed below 10 normally,
             // or 1 for creatures with very low starting attributes
             var minimumAttribute = Base >= 10 ? 10 : 1;

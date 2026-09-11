@@ -84,7 +84,7 @@ namespace ACE.Server.Factories.Tables
             // todo: add t7 / t8
             tier = Math.Clamp(tier, 1, 6);
 
-            var workmanshipChance = workmanshipChances[tier - 1];
+            var workmanshipChance = TierTable.Entry(workmanshipChances, tier);
 
             return workmanshipChance.Roll();
         }

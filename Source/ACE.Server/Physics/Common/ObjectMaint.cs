@@ -29,15 +29,19 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         private static int? GetVariationForVisibility(PhysicsObj obj, int? variationOverride = null)
         {
-            if (variationOverride.HasValue)
-                return variationOverride;
-
-            return PrestigeManager.GetEffectiveVariationForVisibility(obj?.WeenieObj?.WorldObject) ?? obj?.Position?.Variation;
+            // Always prefer the effective (Location-first) variation so this matches the
+            // networking/visibility gates. A raw physics-position variation passed by a caller is
+            // only a last-resort fallback for objects that have no WorldObject/Location yet
+            // (e.g. a projectile mid-flight); it must never override the effective value, or a
+            // Location/Position variation split makes missiles/spells enumerate the wrong layer.
+            return VariationManager.GetEffectiveVariationForVisibility(obj?.WeenieObj?.WorldObject)
+                ?? obj?.Position?.Variation
+                ?? variationOverride;
         }
 
         private static bool SameVariationForVisibility(PhysicsObj a, PhysicsObj b, int? aOverride = null, int? bOverride = null)
         {
-            return PrestigeManager.SameVariationForVisibility(
+            return VariationManager.SameVariationForVisibility(
                 GetVariationForVisibility(a, aOverride),
                 GetVariationForVisibility(b, bOverride));
         }
@@ -350,7 +354,10 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterReadLock();
             try
             {
-                return VisibleObjects.Values.Where(x=>x.Position.Variation == Variation).ToList();
+                // Filter by the effective (Location-first) variation of self vs each candidate,
+                // consistent with GetVisibleObjects. The passed Variation is retained for call
+                // compatibility but is no longer trusted as a raw physics-position value.
+                return VisibleObjects.Values.Where(x => SameVariationForVisibility(PhysicsObj, x)).ToList();
             }
             finally
             {
@@ -498,8 +505,19 @@ namespace ACE.Server.Physics.Common
         /// <returns>TRUE if object was previously not visible, and added to the visible list</returns>
         public bool AddVisibleObject(PhysicsObj obj)
         {
+            return AddVisibleObject(obj, out _);
+        }
+
+        /// <summary>
+        /// Adds an object to the list of visible objects, reporting whether it was already in
+        /// KnownObjects at add time (see the known-without-CreateObject heal in <see cref="AddVisibleObjects"/>).
+        /// </summary>
+        /// <returns>TRUE if object was previously not visible, and added to the visible list</returns>
+        public bool AddVisibleObject(PhysicsObj obj, out bool wasKnownAlready)
+        {
             bool added = false;
             bool callInverse = false;
+            wasKnownAlready = false;
 
             rwLock.EnterWriteLock();
             try
@@ -512,6 +530,7 @@ namespace ACE.Server.Physics.Common
                     return false;
 
                 var wasKnown = KnownObjects.ContainsKey(obj.ID);
+                wasKnownAlready = wasKnown;
                 var dist2DSq = PhysicsObj.Position.Distance2DSquared(obj.Position);
 
                 // Always clamp distance — do not skip when already in KnownObjects (AddTrackedObject used to
@@ -559,16 +578,37 @@ namespace ACE.Server.Physics.Common
             // No outer lock — each call manages its own lock and cross-instance calls
             // are made outside their respective locks (matching the pattern used by AddVisibleTargets).
             var visibleAdded = new List<PhysicsObj>();
+            List<PhysicsObj> knownNotVisibleHeals = null;
 
             foreach (var obj in objs)
             {
-                if (AddVisibleObject(obj))
-                    visibleAdded.Add(obj);
+                if (!AddVisibleObject(obj, out var wasKnownAlready))
+                    continue;
+
+                visibleAdded.Add(obj);
+
+                // Known-without-CreateObject heal: a healthy object is Known while not Visible only
+                // inside the <=25s destruction-queue window (DestroyObjects removes Known at expiry).
+                // Known + not visible + NOT queued means the client never got (or no longer has) this
+                // object while the known-flag suppresses every CreateObject path — the "invisible
+                // until relog" state. Route it through the caller's CreateObject batch; a duplicate
+                // CO for an object the client does hold is a no-op (post-teleport reconcile relies
+                // on that already). Queue membership must be read before RemoveObjectsToBeDestroyed
+                // below rescues re-entering objects.
+                if (wasKnownAlready && !IsInDestructionQueue(obj))
+                {
+                    (knownNotVisibleHeals ??= new List<PhysicsObj>()).Add(obj);
+                    if (PhysicsObj.IsPlayer && PhysicsObj.WeenieObj.WorldObject is Player viewerHeal)
+                        VisibilityCreateObjectDiag.LogKnownNotVisibleHeal(viewerHeal, obj);
+                }
             }
 
             RemoveObjectsToBeDestroyed(objs);
 
-            return AddKnownObjects(visibleAdded);
+            var newlyKnown = AddKnownObjects(visibleAdded);
+            if (knownNotVisibleHeals != null)
+                newlyKnown.AddRange(knownNotVisibleHeals);
+            return newlyKnown;
         }
 
         /// <summary>
@@ -675,6 +715,20 @@ namespace ACE.Server.Physics.Common
         /// Removes an object from the destruction queue if it has been invisible for less than 25s
         /// this is only used for players
         /// </summary>
+        /// <summary>Read-only destruction-queue membership check (see the known-without-CreateObject heal in AddVisibleObjects).</summary>
+        public bool IsInDestructionQueue(PhysicsObj obj)
+        {
+            rwLock.EnterReadLock();
+            try
+            {
+                return DestructionQueue.ContainsKey(obj);
+            }
+            finally
+            {
+                rwLock.ExitReadLock();
+            }
+        }
+
         public bool RemoveObjectToBeDestroyed(PhysicsObj obj)
         {
             rwLock.EnterWriteLock();
@@ -849,7 +903,9 @@ namespace ACE.Server.Physics.Common
         /// to all players who currently know about this object
         /// </summary>
         /// <returns>true if previously an unknown object</returns>
-        private bool AddKnownPlayer(PhysicsObj obj)
+        /// <remarks>Public since the ghost-mob fix (2026-07-17): the stale-known CO resend path
+        /// re-adds the inverse link from Player_Tracking to heal one-way objects.</remarks>
+        public bool AddKnownPlayer(PhysicsObj obj)
         {
             rwLock.EnterWriteLock();
             try
@@ -880,7 +936,15 @@ namespace ACE.Server.Physics.Common
             }
             if (!SameVariationForVisibility(PhysicsObj, obj))
             {
-                log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player in a different Variation");
+                // Ghost-mob diagnostic (2026-07-17): this refusal is the primary tear point for one-way
+                // CreateObjects (client renders an object whose KnownPlayers list misses them, so death
+                // deletes and movement updates skip that client). It used to be log.Debug = invisible.
+                if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                    log.Warn($"[GhostMob] {PhysicsObj.Name}(0x{PhysicsObj.ID:X8}).AddKnownPlayer({obj.Name}): REFUSED - different variation " +
+                             $"(objVar={GetVariationForVisibility(PhysicsObj)?.ToString() ?? "null"} playerVar={GetVariationForVisibility(obj)?.ToString() ?? "null"}); " +
+                             $"if a CreateObject was already delivered this is now a one-way object for that client.");
+                else
+                    log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player in a different Variation");
                 return false;
             }
 
@@ -1025,22 +1089,14 @@ namespace ACE.Server.Physics.Common
                         return new List<Creature>();
                     }
 
-                    int? curVariation = this.PhysicsObj?.Position?.Variation;
-                    if (curVariation.HasValue)
-                    {
-                        return VisibleTargets.Values
-                            .Where(v => v.WeenieObj.WorldObject?.Location.Variation == curVariation)
-                            .Select(v => v.WeenieObj.WorldObject)
-                            .OfType<Creature>()
-                            .ToList();
-                    }
-                    else
-                    {
-                        return VisibleTargets.Values
-                            .Select(v => v.WeenieObj.WorldObject)
-                            .OfType<Creature>()
-                            .ToList();
-                    }
+                    // Match targets on the effective (Location-first) variation of self vs each
+                    // candidate - consistent with visibility/collision, so a Location/Position
+                    // variation split can't drop valid targets (mob wouldn't aggro / retaliate).
+                    return VisibleTargets.Values
+                        .Where(v => SameVariationForVisibility(PhysicsObj, v))
+                        .Select(v => v.WeenieObj.WorldObject)
+                        .OfType<Creature>()
+                        .ToList();
                 }
                 finally
                 {

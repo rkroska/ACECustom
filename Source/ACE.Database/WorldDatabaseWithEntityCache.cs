@@ -749,9 +749,10 @@ namespace ACE.Database
                 .Where(r => r.Landblock == landblock && r.VariationId == variation)
                 .ToList();
 
-            cachedLandblockInstances.TryAdd(cacheKey, results);
-
-            return cachedLandblockInstances[cacheKey];
+            // GetOrAdd, not TryAdd + indexer: ClearLandblockCache (unload path) can remove the key
+            // between the add and the read-back, and the indexer then throws KeyNotFoundException
+            // into the landblock init spawn task (silent void-landblock, 2026-07-18).
+            return cachedLandblockInstances.GetOrAdd(cacheKey, results);
         }
 
         /// <summary>

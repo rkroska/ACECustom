@@ -12,11 +12,18 @@ namespace ACE.Server.Managers
 {
     public static class PrestigeManager
     {
-        // Tier 1 starts at Variation 11
-        // Retail is 0-10 (technically 0 is main world, others are specialized)
-        public const int PRESTIGE_VAR_OFFSET = 10;
+        // Prestige tiers live ABOVE this offset so they never collide with other explicit
+        // variation layers. Variations 1..PRESTIGE_VAR_OFFSET are ordinary explicit layers
+        // (retail instanced content, Zone Control's Tide v11-25, rifts, etc.) and are NOT
+        // owned by the prestige system — see IsPrestigeVariation. Tier N == PRESTIGE_VAR_OFFSET + N.
+        public const int PRESTIGE_VAR_OFFSET = 1000;
         public const int PRESTIGE_BASE_VARIATION = PRESTIGE_VAR_OFFSET + 1;
         private const int DEFAULT_PRESTIGE_MAX_TIER = 10;
+
+        // The v11+ endgame-content floor and its ForceEndgameSystems-aware resolver moved to
+        // VariationManager (2026-07-30 decouple): "is this object on v11+ content" is a layer
+        // question, not a prestige one, and prestige is no longer in the v11 combat path.
+        // See VariationManager.EndgameMinVariation / GetEffectiveEndgameVariation.
 
         /// <summary>
         /// Defines allowed landblocks for each prestige tier.
@@ -65,13 +72,23 @@ namespace ACE.Server.Managers
             }
         }
 
+        /// <summary>Master kill-switch for every prestige system (config <c>prestige_systems_enabled</c>).
+        /// When false, <see cref="GetTier(int)"/> reports 0 for every variation, which neutralizes all
+        /// tier-driven systems (spawn scaling, boundaries/markers/wisp, live combat tier mods, kill
+        /// XP/luminance and loot scaling); the variation-triggered v11 combat rules check this flag at
+        /// their own gates. Variation instancing itself (visibility, effective variation) is NOT gated —
+        /// other systems (Zone Control, rifts) depend on it.</summary>
+        public static bool SystemsEnabled => ServerConfig.prestige_systems_enabled.Value;
+
         /// <summary>
         /// Converts a Variation ID to a Prestige Tier.
         /// Retail (Null/0-10) returns 0.
         /// Variation 11 returns Tier 1.
+        /// Always 0 when <see cref="SystemsEnabled"/> is off (the master kill-switch choke point).
         /// </summary>
         public static int GetTier(int variation)
         {
+            if (!SystemsEnabled) return 0;
             if (variation <= PRESTIGE_VAR_OFFSET) return 0;
             return variation - PRESTIGE_VAR_OFFSET;
         }
@@ -324,30 +341,35 @@ namespace ACE.Server.Managers
              return 1.0f + (tier * 0.15f);
         }
 
+        // REMOVED 2026-07-30 (owner ruling): the v11-era per-tier retrofit — GetLiveScalingTier,
+        // GetDefenseSkillModifier, GetAttackSkillModifier, GetVulnEffectivenessReduction,
+        // GetDamageTakenTierReduction, the geometric branches above, and the v11_tier_* config block.
+        // None of it was original prestige code; it was added by the Zone Control effort and bolted
+        // onto prestige, and it could never fire at the content variations (11-25) because GetTier is
+        // keyed on PRESTIGE_VAR_OFFSET (1000). Prestige keeps its OWN depth scaling — the linear
+        // formulas above, untouched from master. Zone Control authors depth explicitly via
+        // per-variation Defaults instead of deriving it from the variation number.
+        // See ZoneControl_Roadmap_2026-07-30.md §1. Recoverable from git history if ever wanted.
+
         /// <summary>
         /// Returns the XP multiplier for a given tier.
         /// Baseline: 1.0
         /// </summary>
         public static float GetXPRewardModifier(int tier)
         {
-            if (tier <= 0) return 1.0f;
-            // +10% XP per tier
-            return 1.0f + (tier * 0.10f);
+            // 2026-08-23 (owner): T11+ XP is AUTHORED per zone/mob, never scaled by tier. Kill
+            // multiplier retired; the master switch stays on for loot value / landblock gating.
+            return 1.0f;
         }
 
         /// <summary>
-        /// Returns the XP multiplier for a player killing a monster.
-        /// Applies a 20% penalty for each tier the player is ABOVE the monster.
+        /// Returns the XP multiplier for a player killing a monster. Retired 2026-08-23 together with the
+        /// reward modifier: always 1.0f, no tier-difference penalty.
         /// </summary>
         public static float GetXPPenaltyMultiplier(int playerTier, int monsterTier)
         {
-            if (playerTier <= monsterTier) return 1.0f;
-
-            var diff = playerTier - monsterTier;
-            // -20% XP per tier diff
-            var multiplier = 1.0f - (diff * 0.20f);
-
-            return Math.Max(0.0f, multiplier);
+            // 2026-08-23 (owner): retired together with the reward modifier - no tier-diff penalty.
+            return 1.0f;
         }
 
 
@@ -431,12 +453,22 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Applies HP and Damage scaling to a spawned creature based on its location's prestige tier.
+        /// Prestige-only: Zone Control's spawn snapshot is applied independently (ZoneSpawnScaler) at the
+        /// same spawn call sites — the two systems don't consult each other.
         /// </summary>
         public static void ApplyPrestigeScaling(Creature creature, int? variation = null)
         {
             var prev = creature.GetProperty(PropertyInt.PrestigeLevel) ?? 0;
-            // Variations 11-20 are Prestige Tiers 1-10
-            var tier = GetTier(variation ?? creature.Location?.Variation);
+            // Tier N == PRESTIGE_VAR_OFFSET + N (see GetTier). Use the ForceEndgameSystems-aware
+            // effective variation (not the raw Location.Variation) so a test dummy resolves the same
+            // way the live combat systems do while standing in a normal (variation 0) landblock.
+            // An explicit endgame variation from the caller (spawn paths pass the generator's / admin's
+            // variation before Location is settled) wins; anything else resolves through the effective
+            // variation so a ForceEndgameSystems dummy still behaves like a real Tide mob.
+            var tier = GetTier(variation.HasValue && variation.Value >= VariationManager.EndgameMinVariation
+                ? variation.Value
+                : VariationManager.GetEffectiveEndgameVariation(creature));
+
             if (tier <= 0)
             {
                 if (prev > 0)
@@ -450,7 +482,8 @@ namespace ACE.Server.Managers
             if (prev > 0)
                 RemovePrestigeScaling(creature);
 
-            // 1. HP Scaling (Multiply Base) — keep current health % across max-HP change (no free full heal)
+            // 1. HP Scaling: geometric per-tier hpMod on the health StartingValue, preserving the current %
+            // across the max change (no free heal/refill).
             var hpMod = GetHPModifier(tier);
             if (hpMod != 1.0f)
             {
@@ -496,75 +529,14 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Prefer <see cref="WorldObject.Location"/>.Variation, then physics position variation, when comparing who should see whom.
+        /// Generic variation identity now lives in <see cref="VariationManager"/>. These thin
+        /// delegators remain only for source compatibility; the prestige system does not own
+        /// generic visibility/collision variation logic.
         /// </summary>
-        public static int? GetEffectiveVariationForVisibility(WorldObject wo)
-        {
-            if (wo == null)
-                return null;
+        public static int? GetEffectiveVariationForVisibility(WorldObject wo) => VariationManager.GetEffectiveVariationForVisibility(wo);
 
-            // Most world objects have a location (or physics position) with a variation.
-            // However, non-spatial objects (inventory items, escrow items, etc.) may not.
-            // For networking boundaries we still need a deterministic "effective variation"
-            // so we inherit it from the closest spatial owner (wielder/container/owner player).
-
-            var direct = wo.Location?.Variation ?? wo.PhysicsObj?.Position.Variation;
-            if (direct.HasValue)
-                return direct;
-
-            // Walk wielder / container chain (nested packs, etc.): same precedence as single-hop (wielder before container).
-            var visited = new HashSet<uint> { wo.Guid.Full };
-            for (var curr = wo; ; )
-            {
-                WorldObject next = null;
-                if (curr.Wielder != null)
-                    next = curr.Wielder;
-                else if (curr.Container != null)
-                    next = curr.Container;
-                if (next == null)
-                    break;
-                if (!visited.Add(next.Guid.Full))
-                    break;
-                curr = next;
-                var v = curr.Location?.Variation ?? curr.PhysicsObj?.Position.Variation;
-                if (v.HasValue)
-                    return v;
-            }
-
-            // Fallback for typical inventory items: inherit from online player owner.
-            // (OwnerId is usually set for items in a player's inventory/equipment.)
-            if (wo.OwnerId.HasValue)
-            {
-                var ownerPlayer = PlayerManager.GetOnlinePlayer(wo.OwnerId.Value);
-                var viaOwnerPlayer = ownerPlayer?.Location?.Variation ?? ownerPlayer?.PhysicsObj?.Position.Variation;
-                if (viaOwnerPlayer.HasValue)
-                    return viaOwnerPlayer;
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// True when two variation values should share client <c>CreateObject</c> networking.
-        /// Prestige variations (&gt; <see cref="PRESTIGE_VAR_OFFSET"/>) require an exact nullable match.
-        /// Retail treats <c>null</c> and <c>0</c> as one &quot;base&quot; bucket; explicit retail layers <c>1..PRESTIGE_VAR_OFFSET</c> match only the same value.
-        /// </summary>
-        public static bool SameVariationForVisibility(int? a, int? b)
-        {
-            if (IsPrestigeVariation(a) || IsPrestigeVariation(b))
-                return a == b;
-
-            static int? NormalizeRetailBase(int? v)
-            {
-                if (!v.HasValue || v.Value == 0)
-                    return null;
-                return v;
-            }
-
-            var ca = NormalizeRetailBase(a);
-            var cb = NormalizeRetailBase(b);
-            return ca == cb;
-        }
+        /// <inheritdoc cref="VariationManager.SameVariationForVisibility"/>
+        public static bool SameVariationForVisibility(int? a, int? b) => VariationManager.SameVariationForVisibility(a, b);
 
         public static int GetBasePrestigeVariation()
         {

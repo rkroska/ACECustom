@@ -79,7 +79,7 @@ namespace ACE.Server.Factories.Tables
         public static int Roll_ItemMaxLevel(TreasureDeath profile)
         {
             var tier = Math.Clamp(profile.Tier, 1, 10);
-            var table = cloakLevels[tier - 1];
+            var table = TierTable.Entry(cloakLevels, tier);
 
             return table.Roll(profile.LootQualityMod);
         }

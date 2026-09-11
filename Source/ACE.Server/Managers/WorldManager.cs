@@ -164,6 +164,8 @@ namespace ACE.Server.Managers
 
             Player.HandleNoLogLandblock(playerBiota, out var playerLoggedInOnNoLogLandblock);
 
+            Rifts.RiftManager.HandleLoginInRiftInstance(playerBiota);
+
             var stripAdminProperties = false;
             var addAdminProperties = false;
             var addSentinelProperties = false;
@@ -270,7 +272,17 @@ namespace ACE.Server.Managers
             var savedLoc = playerBiota.GetPosition(PositionType.Location, new ReaderWriterLockSlim());
             if (savedLoc != null)
             {
-                session.Player.Location.Variation = savedLoc.Variation;
+                // Variation 0 means the retail base world (ZoneControl + visibility convention), but the
+                // landblock/physics caches key 0 and null as SEPARATE instances. Restoring an explicit 0
+                // strands the player in an empty parallel copy of the landblock where the base mobs don't
+                // exist (presents as invisible/unattackable mobs every login until the save is healed).
+                if (savedLoc.Variation == 0)
+                {
+                    log.Warn($"{session.Player.Name}: saved Location had explicit variation 0 at 0x{savedLoc.Cell:X8}; normalizing to base (null)");
+                    session.Player.Location.Variation = null;
+                }
+                else
+                    session.Player.Location.Variation = savedLoc.Variation;
             }
             else
             {
@@ -495,6 +507,13 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Projected to run at a reasonable rate for gameplay (30-60fps)
         /// </summary>
+        /// <summary>Runs one subsystem tick; an exception is logged and swallowed so it can never take the world thread down.</summary>
+        private static void SafeTick(string name, Action tick)
+        {
+            try { tick(); }
+            catch (Exception ex) { log.Error($"[WorldManager] {name} threw: {ex}"); }
+        }
+
         public static bool UpdateGameWorld()
         {
             if (updateGameWorldRateLimiter.GetSecondsToWaitBeforeNextEvent() > 0)
@@ -510,6 +529,10 @@ namespace ACE.Server.Managers
             HouseManager.Tick();
 
             PowerballManager.Tick();
+
+            SafeTick("ZoneControlCommands.PushTick", ACE.Server.Command.Handlers.ZoneControlCommands.PushTick);
+            SafeTick("WeaponScalingCommands.PushTick", ACE.Server.Command.Handlers.WeaponScalingCommands.PushTick);
+            SafeTick("RiftManager.Tick", Rifts.RiftManager.Tick);
 
             ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.UpdateGameWorld_Entire);
             ServerPerformanceMonitor.RegisterCumulativeEvents();

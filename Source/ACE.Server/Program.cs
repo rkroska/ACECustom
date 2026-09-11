@@ -52,6 +52,16 @@ namespace ACE.Server
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
             AppDomain.CurrentDomain.ProcessExit += new EventHandler(OnProcessExit);
 
+            // Fire-and-forget Task exceptions are invisible without this hook (UnhandledException does
+            // NOT fire for faulted Tasks) — a landblock init spawn task died silently this way and left
+            // a walkable-but-empty "void" landblock (2026-07-18). Log and mark observed so it can't
+            // also tear down the process at GC time.
+            TaskScheduler.UnobservedTaskException += (sender, e) =>
+            {
+                log.Error($"Unobserved task exception: {e.Exception}");
+                e.SetObserved();
+            };
+
             // Typically, you wouldn't force the current culture on an entire application unless you know sure your application is used in a specific region (which ACE is not)
             // We do this because almost all of the client/user input/output code does not take culture into account, and assumes en-US formatting.
             // Without this, many commands that require special characters like , and . will break

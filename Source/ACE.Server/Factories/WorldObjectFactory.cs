@@ -285,16 +285,34 @@ namespace ACE.Server.Factories
             // spawn direct landblock objects
             foreach (var instance in sourceObjects.Where(x => x.IsLinkChild == false))
             {
+                try
+                {
+                    CreateNewWorldObjectFromInstance(instance, sourceObjects, biotas, restrict_wcid, variationId, results);
+                }
+                catch (Exception ex)
+                {
+                    // A single bad instance (bad weenie data, a throw from prestige/zone scaling, etc.)
+                    // must not abort spawning of every remaining instance in this landblock — that
+                    // landblock then stays cached with the rest missing (generators included) for the
+                    // life of the process, since GetLandblock only calls Init() once per (lb, variant).
+                    log.Error($"CreateNewWorldObjects: failed to spawn instance 0x{instance.Guid:X8} (wcid {instance.WeenieClassId}): {ex}");
+                }
+            }
+            return results;
+        }
+
+        private static void CreateNewWorldObjectFromInstance(LandblockInstance instance, List<LandblockInstance> sourceObjects, List<Biota> biotas, uint? restrict_wcid, int? variationId, List<WorldObject> results)
+        {
                 var weenie = DatabaseManager.World.GetCachedWeenie(instance.WeenieClassId);
 
                 if (weenie == null)
                 {
                     log.Warn($"CreateNewWorldObjects: Database does not contain weenie {instance.WeenieClassId} for instance 0x{instance.Guid:X8} at {new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW)}");
-                    continue;
+                    return;
                 }
 
                 if (restrict_wcid != null && restrict_wcid.Value != instance.WeenieClassId)
-                    continue;
+                    return;
 
                 var guid = new ObjectGuid(instance.Guid);
 
@@ -326,7 +344,11 @@ namespace ACE.Server.Factories
                 }
 
                 if (worldObject is Creature creature)
+                {
                     PrestigeManager.ApplyPrestigeScaling(creature, variationId);
+                    Managers.ZoneControl.ZoneSpawnScaler.ApplyToSpawn(creature);
+                    Managers.Rifts.RiftManager.TryApplyRiftScaling(creature, variationId);
+                }
 
                 if (worldObject != null)
                 {
@@ -341,8 +363,6 @@ namespace ACE.Server.Factories
 
                     results.Add(worldObject);
                 }
-            }
-            return results;
         }
 
         /// <summary>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 using ACE.Database;
 using ACE.Database.Models.Auth;
@@ -148,27 +149,42 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        // portal_bypass
+        // portal_bypass [on|off]
         [CommandHandler("portal_bypass", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 0,
-            "Toggles the ability to bypass portal restrictions.",
-            "")]
+            "Toggles or sets the ability to bypass portal restrictions.",
+            "[on|off|true|false|enable|disable]\n" +
+            "With no argument this toggles, as it always has. An explicit on/off sets the state outright,\n" +
+            "so a button (Zone Control plugin) can't get out of step with the flag.")]
         public static void HandlePortalBypass(Session session, params string[] parameters)
         {
             // @portal_bypass - Toggles the ability to bypass portal restrictions.
+            // Arg parsing added 2026-07-29, same shape as @unkillable: no-arg still toggles.
 
-            var param = session.Player.IgnorePortalRestrictions;
+            bool newValue;
 
-            switch (param)
+            if (parameters == null || parameters.Length == 0)
             {
-                case true:
-                    session.Player.IgnorePortalRestrictions = false;
-                    session.Network.EnqueueSend(new GameMessageSystemChat("You are once again bound by portal restrictions.", ChatMessageType.Broadcast));
-                    break;
-                case false:
-                    session.Player.IgnorePortalRestrictions = true;
-                    session.Network.EnqueueSend(new GameMessageSystemChat("You are no longer bound by portal restrictions.", ChatMessageType.Broadcast));
-                    break;
+                newValue = !session.Player.IgnorePortalRestrictions;
             }
+            else
+            {
+                var arg = parameters[0].ToLower();
+                if (arg == "on" || arg == "true" || arg == "enable")
+                    newValue = true;
+                else if (arg == "off" || arg == "false" || arg == "disable")
+                    newValue = false;
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Usage: @portal_bypass [on|off|true|false|enable|disable]", ChatMessageType.Broadcast));
+                    return;
+                }
+            }
+
+            session.Player.IgnorePortalRestrictions = newValue;
+
+            session.Network.EnqueueSend(new GameMessageSystemChat(newValue
+                ? "You are no longer bound by portal restrictions."
+                : "You are once again bound by portal restrictions.", ChatMessageType.Broadcast));
         }
 
         // fellowbuff [name]
@@ -208,6 +224,32 @@ namespace ACE.Server.Command.Handlers
             Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters), fallbackToSelf: true);
             if (target == null) return;
             session.Player.CreateSentinelBuffPlayers(new Player[] { target }, target == session.Player, maxLevel);
+
+            // Owner 2026-09-01: proper test buffing includes the surges the WORN aetheria would proc.
+            // Self-targeted surges (Destruction / Protection / Regeneration) are cast now through the
+            // real proc path at 100 pct; the two that land on a monster (Affliction / Festering) cannot
+            // be pre-cast and are reported. No aetheria worn = nothing happens.
+            var surged = new List<string>();
+            var skipped = new List<string>();
+            foreach (var item in target.EquippedObjects.Values.ToList())
+            {
+                if (!Aetheria.IsAetheria(item.WeenieClassId) || item.ProcSpell == null)
+                    continue;
+                var surge = new Spell(item.ProcSpell.Value);
+                if (surge.NotFound)
+                    continue;
+                if (item.ProcSpellSelfTargeted)
+                {
+                    item.ForceProcSpell(target, target, true);
+                    surged.Add(surge.Name);
+                }
+                else
+                    skipped.Add(surge.Name);
+            }
+            if (surged.Count > 0)
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Aetheria surges cast: {string.Join(", ", surged)}", ChatMessageType.Broadcast));
+            if (skipped.Count > 0)
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Aetheria surges that only land on a monster (not cast): {string.Join(", ", skipped)}", ChatMessageType.Broadcast));
         }
 
         // run < on | off | toggle | check >

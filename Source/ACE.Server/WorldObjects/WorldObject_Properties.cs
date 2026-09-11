@@ -105,6 +105,18 @@ namespace ACE.Server.WorldObjects
                 if (changed)
                     ChangesDetected = true;
             }
+            InvalidateZcBoolCache(property);
+        }
+
+        /// <summary>The Zone Control rank / exempt bools (50047-50050) are cached on the Creature so the
+        /// per-hit resolve never takes the biota lock; any write to one of them drops that cache.</summary>
+        private void InvalidateZcBoolCache(PropertyBool property)
+        {
+            if ((int)property >= (int)PropertyBool.ExemptFromZoneScaling && (int)property <= (int)PropertyBool.ExemptFromZoneScaling + 3 && this is Creature c)
+            {
+                c.ZcRankCache = -1;
+                c.ZcExemptCache = -1;
+            }
         }
         public void SetProperty(PropertyDataId property, uint value)
         {
@@ -229,6 +241,7 @@ namespace ACE.Server.WorldObjects
                 if (Biota.TryRemoveProperty(property, BiotaDatabaseLock))
                     ChangesDetected = true;
             }
+            InvalidateZcBoolCache(property);
         }
         public void RemoveProperty(PropertyDataId property)
         {

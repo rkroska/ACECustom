@@ -49,9 +49,10 @@ namespace ACE.Server.Factories
             // Check to make sure there *IS* a chance. Less than/equal to 0 would mean zero chance, so we can stop here
             if (rare_drop_rate_percent <= 0)
                 return null;
-            
-            rare_drop_rate_percent = Math.Min(rare_drop_rate_percent/100, 1); 
+
+            rare_drop_rate_percent = Math.Min(rare_drop_rate_percent/100, 1);
             int t1_chance = (int)Math.Round(1 / rare_drop_rate_percent); // Default PropertyManager value results in a 1 in 2,500 chance
+
             t1_chance = Math.Max(t1_chance - luck, 1);
 
             int tier = 0;

@@ -52,7 +52,11 @@ namespace ACE.Server.WorldObjects
             // handle aetheria procs
             if (attacker is Creature wielder)
             {
-                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => i.HasProc && i.ProcSpellSelfTargeted == selfTarget);
+                // BUGFIX 2026-08-27: this loop walks EVERY equipped item with a proc, and the wielded
+                // weapon (and `this`, e.g. equipped ammo) are IN EquippedObjects - so anything already
+                // rolled above was rolling a SECOND time here. A 5 pct weapon fired at 1-(0.95^2) = 9.75 pct.
+                // TryProcWeaponOnCleaveTarget already excluded the weapon this way; the primary path did not.
+                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => i != weapon && i != this && i.HasProc && i.ProcSpellSelfTargeted == selfTarget);
 
                 // aetheria
                 foreach (var aetheria in equippedAetheria)
@@ -86,7 +90,11 @@ namespace ACE.Server.WorldObjects
             // handle aetheria procs
             if (attacker is Creature wielder)
             {
-                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => i.HasProc && i.ProcSpellSelfTargeted == selfTarget && i.IsProcSafeForCleave());
+                // BUGFIX 2026-08-27: this loop walks EVERY equipped item with a proc, and the wielded
+                // weapon (and `this`, e.g. equipped ammo) are IN EquippedObjects - so anything already
+                // rolled above was rolling a SECOND time here. A 5 pct weapon fired at 1-(0.95^2) = 9.75 pct.
+                // TryProcWeaponOnCleaveTarget already excluded the weapon this way; the primary path did not.
+                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => i != weapon && i != this && i.HasProc && i.ProcSpellSelfTargeted == selfTarget && i.IsProcSafeForCleave());
 
                 foreach (var aetheria in equippedAetheria)
                     aetheria.TryProcItem(attacker, target, selfTarget);
@@ -315,7 +323,11 @@ namespace ACE.Server.WorldObjects
             // handle aetheria procs
             if (attacker is Creature wielder)
             {
-                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => i.HasProc && i.ProcSpellSelfTargeted == selfTarget);
+                // BUGFIX 2026-08-27: this loop walks EVERY equipped item with a proc, and the wielded
+                // weapon (and `this`, e.g. equipped ammo) are IN EquippedObjects - so anything already
+                // rolled above was rolling a SECOND time here. A 5 pct weapon fired at 1-(0.95^2) = 9.75 pct.
+                // TryProcWeaponOnCleaveTarget already excluded the weapon this way; the primary path did not.
+                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => i != weapon && i != this && i.HasProc && i.ProcSpellSelfTargeted == selfTarget);
 
                 foreach (var aetheria in equippedAetheria)
                     aetheria.TryProcItemWithChanceMod(attacker, target, selfTarget, chanceMultiplier);

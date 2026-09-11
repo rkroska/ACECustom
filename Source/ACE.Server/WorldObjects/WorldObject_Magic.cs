@@ -145,9 +145,19 @@ namespace ACE.Server.WorldObjects
 
             if (casterCreature != null)
             {
-                // Retrieve caster's skill level in the Magic School
-                magicSkill = casterCreature.GetCreatureSkill(spell.School).Current;
-
+                // Zone Scaler (2026-08-31): an authored profile sets the monster's OFFENSIVE magic
+                // skill absolutely, exactly like attack_skill does for melee/missile in
+                // Creature_Combat.GetEffectiveAttackSkill. ResolveForCreature returns null for
+                // players, exempt creatures and unauthored zones, so this falls through to the normal
+                // skill everywhere else. Without it, zone-authored spell damage lands on a mob's
+                // retail-level War Magic and players resist essentially every cast.
+                var zoneMagic = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(casterCreature);
+                if (zoneMagic != null && zoneMagic.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.MagicSkill))
+                    // floor at 0: a negative authored value would wrap through the uint cast
+                    magicSkill = (uint)Math.Round(Math.Max(0.0, zoneMagic.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.MagicSkill)));
+                else
+                    // Retrieve caster's skill level in the Magic School
+                    magicSkill = casterCreature.GetCreatureSkill(spell.School).Current;
             }
             else if (caster.ItemSpellcraft != null)
             {
@@ -171,6 +181,13 @@ namespace ACE.Server.WorldObjects
 
             //Console.WriteLine($"{target.Name}.ResistSpell({Name}, {spell.Name}): magicSkill: {magicSkill}, difficulty: {difficulty}");
             bool resisted = MagicDefenseCheck(magicSkill, difficulty, out float resistChance);
+
+            // T11+ HIT GATE (owner 2026-08-31): an under-augmented player's spells are resisted
+            // outright by a tier-11+ monster, whatever the skill check said. Same all-or-nothing
+            // rule as melee/missile in DamageEvent.
+            if (!resisted && this is Creature gateCaster
+                && !ACE.Server.Managers.ZoneControl.TierHitGate.CanHitOrTell(gateCaster, targetCreature))
+                resisted = true;
 
             var player = this as Player;
             var targetPlayer = target as Player;
@@ -222,6 +239,18 @@ namespace ACE.Server.WorldObjects
             if (targetCreature != null && targetCreature.DebugDamage.HasFlag(Creature.DebugDamageType.Defender))
             {
                 ShowResistInfo(targetCreature, this, target, spell, magicSkill, difficulty, resistChance, resisted);
+            }
+
+            // Server-log spell-resist visibility - same flags as damage_event_debug_server_log
+            // (incoming spells on Players/CombatPets; logs BOTH outcomes so resisted casts are visible).
+            if (ServerConfig.damage_event_debug_server_log.Value
+                && (target is Player || target is CombatPet)
+                && (!ServerConfig.damage_event_debug_only_nonplayer_attackers.Value || caster is not Player))
+            {
+                log.Info($"[SpellResist] attacker={Name} ({Guid}) wcid={WeenieClassId} spell={spell.Name} ({spell.Id}) " +
+                         $"school={spell.School} castSkill={magicSkill} vs magicDef={difficulty} chance={resistChance:F4} " +
+                         $"resisted={resisted} defender={targetCreature.Name} ({targetCreature.Guid}) " +
+                         $"hp={targetCreature.Health.Current}/{targetCreature.Health.MaxValue}");
             }
 
             return resisted;
@@ -549,15 +578,15 @@ namespace ACE.Server.WorldObjects
                     tryBoost = boost = reduced;
                 }
             }
-            // Normally, LuminanceAugmentLifeCount adds a flat bonus to all Boost spell damage/healing.
+            // Normally, life augs (gem count + Triune Weave) add a flat bonus to all Boost spell damage/healing.
             // When useHarmCap is active, we skip this so the damage stays within the spell's fixed raw range.
-            if (!useHarmCap && player != null && player.LuminanceAugmentLifeCount.HasValue && tryBoost > 0)
+            if (!useHarmCap && player != null && tryBoost > 0)
             {
-                tryBoost += (int)player.LuminanceAugmentLifeCount;
+                tryBoost += (int)player.EffectiveLifeAugCount;
             }
-            if (!useHarmCap && player != null && player.LuminanceAugmentLifeCount.HasValue && tryBoost < 0)
+            if (!useHarmCap && player != null && tryBoost < 0)
             {
-                tryBoost -= (int)player.LuminanceAugmentLifeCount;
+                tryBoost -= (int)player.EffectiveLifeAugCount;
             }
 
             string srcVital;
@@ -650,7 +679,7 @@ namespace ACE.Server.WorldObjects
 
             if (player != null && minBoostValue < 0 && spell.VitalDamageType == DamageType.Health)
             {
-                var lumBonus = !useHarmCap && player.LuminanceAugmentLifeCount.HasValue ? (int)player.LuminanceAugmentLifeCount.Value : 0;
+                var lumBonus = !useHarmCap ? (int)player.EffectiveLifeAugCount : 0;
                 log.Debug($"[HARM_CAP] {player.Name} -> {targetCreature.Name} | spell: {spell.Name} | lumBonus: {lumBonus} | tryBoost: {tryBoostAfterAugment} | finalBoost: {boost} | targetHP: {targetCreature.Health.Current}/{targetCreature.Health.MaxValue}");
             }
 
@@ -900,26 +929,15 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            if (player != null && player.LuminanceAugmentLifeCount.HasValue)
+            if (player != null)
             {
+                // Only boost a transfer that is actually moving something. These are unsigned
+                // magnitudes, so subtracting from a zero change wraps to ~uint.MaxValue.
                 if (srcVitalChange > 0)
-                {
-                    srcVitalChange += (uint)player.LuminanceAugmentLifeCount;
-                }
-                else
-                {
-                    srcVitalChange -= (uint)player.LuminanceAugmentLifeCount;
-                }
+                    srcVitalChange += (uint)player.EffectiveLifeAugCount;
 
                 if (destVitalChange > 0)
-                {
-                    destVitalChange += (uint)player.LuminanceAugmentLifeCount;
-                }
-                else
-                {
-                    destVitalChange -= (uint)player.LuminanceAugmentLifeCount;
-                }
-
+                    destVitalChange += (uint)player.EffectiveLifeAugCount;
             }
 
             string srcVital, destVital;
@@ -1096,10 +1114,23 @@ namespace ACE.Server.WorldObjects
 
             // For ring spells cast by a player, apply guaranteed radius-based area damage
             // unless the player has opted into Classic mode (physics collision / multi-hit).
+            // `damage` is the vital drained above for LifeProjectile spells (0 otherwise) — it must be
+            // forwarded, since those spells derive their damage from the drain and not from Min/Max.
             if (SpellProjectile.GetProjectileSpellType(spell.Id) == ProjectileSpellType.Ring
                 && this is Player ringPlayer
                 && !(ringPlayer.GetProperty(PropertyBool.ClassicRingAoe) ?? false))
-                ringPlayer.ApplyRingSpellAreaDamage(spell);
+            {
+                // Carry the proc flag and the authored ring band through - a ring's damage AND its
+                // combat message are both produced inside that method, never on the projectile path.
+                var zcRingB = fromProc
+                    ? (weapon?.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRingDamagePropId) ?? 0)
+                    : 0;
+                ringPlayer.ApplyRingSpellAreaDamage(spell, lifeProjectileDamage: damage,
+                    fromProc: fromProc, procBaseDamage: zcRingB, procWeapon: fromProc ? weapon : null,
+                    procVariance: fromProc
+                        ? (weapon?.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRingVariancePropId) ?? 0)
+                        : 0);
+            }
 
             if (spell.School == MagicSchool.LifeMagic)
             {
@@ -2268,15 +2299,15 @@ namespace ACE.Server.WorldObjects
             {
                 if (spell.School == MagicSchool.VoidMagic)
                 {
-                    lumAug += player.LuminanceAugmentVoidCount ?? 0f;
+                    lumAug += player.EffectiveVoidAugCount;
                 }
                 if (spell.School == MagicSchool.WarMagic)
                 {
-                    lumAug += player.LuminanceAugmentWarCount ?? 0f;
+                    lumAug += player.EffectiveWarAugCount;
                 }
                 if (spell.School == MagicSchool.LifeMagic)
                 {
-                    lumAug += player.LuminanceAugmentLifeCount ?? 0f;
+                    lumAug += player.EffectiveLifeAugCount;
                 }
                 lumAug *= 0.01f;
             }

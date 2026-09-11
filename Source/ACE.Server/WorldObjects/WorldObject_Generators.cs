@@ -5,6 +5,7 @@ using System.Threading;
 
 using ACE.Common;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Server.Diagnostics;
 using ACE.Server.Entity;
@@ -58,6 +59,13 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// TRUE when [GenDiag] tracing is on for THIS generator.
+        /// Off by default; generator_diag_wcid narrows it to a single generator wcid (0 = all).
+        /// </summary>
+        public bool GenDiag => ServerConfig.generator_diag_verbose.Value
+            && (ServerConfig.generator_diag_wcid.Value == 0 || ServerConfig.generator_diag_wcid.Value == WeenieClassId);
+
+        /// <summary>
         /// Initialize Generator system
         /// </summary>
         public void InitializeGenerator()
@@ -72,6 +80,24 @@ namespace ACE.Server.WorldObjects
             }
 
             AddGeneratorProfiles();
+
+            if (GenDiag)
+            {
+                // What the SERVER actually loaded - compare against the world DB rows.
+                log.Warn($"[GenDiag] InitializeGenerator 0x{Guid}:{Name} [{WeenieClassId}] {WeenieClassName} " +
+                         $"MaxGeneratedObjects={MaxGeneratedObjects} InitGeneratedObjects={InitGeneratedObjects} " +
+                         $"GeneratorRadius(f43)={GetProperty(PropertyFloat.GeneratorRadius)?.ToString() ?? "null"} " +
+                         $"RegenerationInterval(f41)={RegenerationInterval} Profiles={GeneratorProfiles.Count} " +
+                         $"LOC={Location}");
+
+                for (var p = 0; p < GeneratorProfiles.Count; p++)
+                {
+                    var gp = GeneratorProfiles[p];
+                    log.Warn($"[GenDiag]   profile[{p}] wcid={gp.Biota.WeenieClassId} prob={gp.Biota.Probability} " +
+                             $"init={gp.Biota.InitCreate} max={gp.Biota.MaxCreate} " +
+                             $"where={gp.Biota.WhereCreate} when={gp.Biota.WhenCreate}");
+                }
+            }
         }
 
         /// <summary>
@@ -117,6 +143,11 @@ namespace ACE.Server.WorldObjects
             //History.Add($"[{DateTime.UtcNow}] - SelectAProfile()");
 
             //bool rng_selected = false;
+
+            if (GenDiag)
+                log.Warn($"[GenDiag] SelectAProfile 0x{Guid}:{Name} [{WeenieClassId}] " +
+                         $"CurrentCreate={CurrentCreate} MaxCreate={MaxCreate} InitCreate={InitCreate} " +
+                         $"poweringUp={CurrentlyPoweringUp} stop={GenStopSelectProfileConditions} totalProb={GetTotalProbability()}");
 
             if (GenStopSelectProfileConditions)
                 return;
@@ -165,6 +196,11 @@ namespace ACE.Server.WorldObjects
                 {
                     var numObjects = GetSpawnObjectsForProfile(profile);
                     profile.Enqueue(numObjects);
+
+                    if (GenDiag)
+                        log.Warn($"[GenDiag]   ENQUEUE profile[{i}] wcid={profile.Biota.WeenieClassId} " +
+                                 $"numObjects={numObjects} prob={probability} rng={rng} " +
+                                 $"CurrentCreate(now)={CurrentCreate} MaxCreate={MaxCreate}");
                     //log.Info($"[GENERATOR] 0x{Guid} {Name}.SelectAProfile(): profile[{i}] Enqueued {numObjects} {profile.Biota.WeenieClassId} for spawning. MaxObjectsSpawned = {profile.MaxObjectsSpawned} | Exhusted = {profile.RemoveQueue.Count == profile.MaxCreate} | {profile.CurrentCreate} | {profile.MaxCreate} | {profile.Spawned.Count} | {profile.RemoveQueue.Count}");
 
                     //var rng_str = probability == -1 ? "" : "RNG ";
@@ -311,6 +347,12 @@ namespace ACE.Server.WorldObjects
 
             if (profile.MaxCreate != -1 && profileSlotsAvailable < numObjects)
                 numObjects = profileSlotsAvailable;
+
+            if (GenDiag)
+                log.Warn($"[GenDiag]   GetSpawnObjectsForProfile wcid={profile.Biota.WeenieClassId} " +
+                         $"profile.init={profile.InitCreate} profile.max={profile.MaxCreate} profile.current={profile.CurrentCreate} " +
+                         $"gen.MaxCreate={MaxCreate} gen.CurrentCreate={CurrentCreate} " +
+                         $"genSlots={genSlotsAvailable} profileSlots={profileSlotsAvailable} -> numObjects={numObjects}");
 
             if (numObjects == 0 && initCreate == 0)
                 log.Warn($"[GENERATOR] 0x{Guid}:{WeenieClassId} {Name}.GetSpawnObjectsForProfile(profile[{profile.LinkId}]): profile.InitCreate = {profile.InitCreate} | profile.MaxCreate = {profile.MaxCreate} | profile.WeenieClassId = {profile.WeenieClassId} | Profile Init invalid, cannot spawn.");
@@ -541,6 +583,8 @@ namespace ACE.Server.WorldObjects
             if (CurrentlyPoweringUp)
                 return;
 
+            ApplyVariationScaledSpawnCount();
+
             CurrentlyPoweringUp = true;
 
             // Calculate initial spawn time with optional randomization
@@ -583,6 +627,29 @@ namespace ACE.Server.WorldObjects
                 if (InitCreate == 0)
                     CurrentlyPoweringUp = false;
             }
+        }
+
+        /// <summary>
+        /// For generators flagged with VariationScaledSpawnBase, overrides the total spawn count to
+        /// base + (landblock variation - baseline). A v11 camp spawns its base count, v12 base+1, etc.
+        /// The count never drops below the base, so an unset/missing variation behaves like the baseline.
+        /// </summary>
+        private void ApplyVariationScaledSpawnCount()
+        {
+            var spawnBase = GetProperty(PropertyInt.VariationScaledSpawnBase);
+            if (spawnBase == null)
+                return;
+
+            var baseline = GetProperty(PropertyInt.VariationScaledSpawnBaseline) ?? 11;
+            var variation = Location?.Variation ?? baseline;
+
+            var count = spawnBase.Value + Math.Max(0, variation - baseline);
+
+            InitCreate = count;
+            MaxCreate = count;
+
+            if (ServerConfig.log_generator_debug.Value)
+                log.Debug($"[GENERATOR][VARIATION] 0x{Guid} {Name} ({WeenieClassId}): variation={Location?.Variation.ToString() ?? "null"}, baseline={baseline}, base={spawnBase.Value} -> InitCreate/MaxCreate={count}");
         }
 
         private double GetNextRegenerationTime(double generatorInitialDelay)

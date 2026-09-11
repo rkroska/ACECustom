@@ -100,7 +100,7 @@ namespace ACE.Server.Factories.Tables
         public static int RollNumCantrips(TreasureDeath profile)
         {
             var tier = Math.Clamp(profile.Tier, 1, 10);
-            return numCantrips[tier - 1].Roll(profile.LootQualityMod);
+            return TierTable.Entry(numCantrips, tier).Roll(profile.LootQualityMod);
         }
 
 
@@ -181,7 +181,7 @@ namespace ACE.Server.Factories.Tables
         public static int RollCantripLevel(TreasureDeath profile)
         {
             var tier = Math.Clamp(profile.Tier, 1, 10);
-            return cantripLevels[tier - 1].Roll(profile.LootQualityMod);
+            return TierTable.Entry(cantripLevels, tier).Roll(profile.LootQualityMod);
         }
 
 

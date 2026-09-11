@@ -314,9 +314,15 @@ namespace ACE.Server.Network.Handlers
 
             GameMessageCharacterList characterListMessage = new GameMessageCharacterList(session.Characters, session);
             GameMessageServerName serverNameMessage = new GameMessageServerName(ConfigManager.Config.Server.WorldName, PlayerManager.GetOnlineCount(), (int)ConfigManager.Config.Server.Network.MaximumAllowedSessions);
-            GameMessageDDDInterrogation dddInterrogation = new GameMessageDDDInterrogation();
 
             session.Network.EnqueueSend(characterListMessage, serverNameMessage);
+
+            // REVERTED 2026-08-04: the DIAGNOSTIC gate that lived here (send only when
+            // DDD.EnableDATPatching) HUNG THE CLIENT at "Connected! / Update progress" - the client
+            // waits on this interrogation to finish the connect handshake, so suppressing it stalls
+            // login outright. It never helped the black-screen symptom and it confounded every test
+            // run against the server that started 2026-08-04 00:11:59. Send unconditionally, as stock.
+            GameMessageDDDInterrogation dddInterrogation = new GameMessageDDDInterrogation();
             session.Network.EnqueueSend(dddInterrogation);
         }
     }

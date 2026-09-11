@@ -38,6 +38,27 @@ namespace ACE.Server.WorldObjects
         internal DateTime SaveStartTime { get; set; }
         private int? LastSavedStackSize { get; set; }  // Track last saved value to detect corruption
 
+        // Save ownership (2026-09-09). Every SaveBiotaToDatabase that raises SaveInProgress also stamps a
+        // token from one process-wide monotonic counter. A callback that wants to clear the flag captures
+        // the counter at ITS enqueue and clears only flags whose token is not newer - so a save that
+        // started after the enqueue keeps its flag until its own callback runs. Tokens, not timestamps:
+        // DateTime.UtcNow can repeat within its resolution and can step backwards under NTP, and either
+        // would let an older callback wipe a newer save's flag.
+        private static long _saveTokenSequence;
+
+        /// <summary>The token stamped by the SaveBiotaToDatabase that last raised SaveInProgress here.</summary>
+        internal long SaveToken { get; private set; }
+
+        /// <summary>The counter's current value - capture this at enqueue as the ownership cutoff.</summary>
+        public static long CurrentSaveToken => System.Threading.Interlocked.Read(ref _saveTokenSequence);
+
+        private void StampSaveToken() => SaveToken = System.Threading.Interlocked.Increment(ref _saveTokenSequence);
+
+        /// <summary>True when a flag stamped with <paramref name="token"/> belongs to a save that was
+        /// already in flight when a callback captured <paramref name="cutoff"/> - i.e. that callback may
+        /// clear it. A token newer than the cutoff is a later save's, and is left alone.</summary>
+        public static bool SaveFlagOwnedAtOrBefore(long token, long cutoff) => token <= cutoff;
+
         /// <summary>
         /// This variable is set to true when a change is made, and set to false before a save is requested.<para />
         /// The primary use for this is to trigger save on add/modify/remove of properties.
@@ -114,6 +135,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public virtual void SaveBiotaToDatabase(bool enqueueSave = true)
         {
+            if (SuppressShardPersistence)
+                return;   // ephemeral object: never creates or updates a shard row
+
             // Capture name and guid early to avoid lock recursion when logging
             // The Name property getter calls GetProperty which tries to enter a read lock
             // If we're already in a read lock (like when checking biota properties below),
@@ -256,6 +280,7 @@ namespace ACE.Server.WorldObjects
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
             SaveStartTime = DateTime.UtcNow;
+            StampSaveToken();
             LastSavedStackSize = StackSize;
             
             // For batch saves (enqueueSave=false), don't clear ChangesDetected here
@@ -389,6 +414,21 @@ namespace ACE.Server.WorldObjects
             // Capture name and guid early to avoid lock recursion in callbacks
             var itemName = Name;
             var itemGuid = Guid;
+
+            if (SuppressShardPersistence)
+            {
+                // nothing to persist for an ephemeral object; the caller's wait is satisfied
+                try
+                {
+                    onCompleted?.Invoke(true);
+                }
+                catch (Exception ex)
+                {
+                    // captured values only: Name takes BiotaDatabaseLock, and a callback may still hold it
+                    log.Error($"Exception in suppressed save callback for {itemName} (0x{itemGuid}): {ex.Message}");
+                }
+                return;
+            }
             
             // Detect concurrent saves
             if (SaveInProgress)
@@ -407,6 +447,7 @@ namespace ACE.Server.WorldObjects
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
             SaveStartTime = DateTime.UtcNow;
+            StampSaveToken();
             LastSavedStackSize = StackSize;
             ChangesDetected = false;
 
@@ -480,11 +521,23 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Runtime-only flag: this object must NEVER be persisted to the shard, no matter what the
+        /// heuristics below decide. Set on ephemeral system spawns that are re-derived from live state
+        /// every boot (boundary perimeter lanterns, guide wisps). Without it, landblock unload's SaveDB
+        /// picked them up as ordinary dynamics — each boot then re-spawned fresh ones beside the loaded
+        /// ghosts and re-saved, accumulating thousands of duplicate rows in the biota table.
+        /// </summary>
+        public bool SuppressShardPersistence;
+
+        /// <summary>
         /// A static that should persist to the shard may be a hook with an item, or a house that's been purchased, or a housing chest that isn't empty, etc...<para />
         /// If the world object originated from the database or has been saved to the database, this will also return true.
         /// </summary>
         public bool IsStaticThatShouldPersistToShard()
         {
+            if (SuppressShardPersistence)
+                return false;
+
             if (!Guid.IsStatic())
                 return false;
 
@@ -522,6 +575,9 @@ namespace ACE.Server.WorldObjects
         /// <returns></returns>
         public bool IsDynamicThatShouldPersistToShard()
         {
+            if (SuppressShardPersistence)
+                return false;
+
             if (!Guid.IsDynamic())
                 return false;
 

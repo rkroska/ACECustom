@@ -75,7 +75,7 @@ namespace ACE.Server.Factories
         {
             var spellLevelIdx = ThreadSafeRandom.Next(0, 1);
             var tier = Math.Clamp(profile.Tier, 1, 8);
-            var spellLevel = LootTables.GemSpellIndexMatrix[tier - 1][spellLevelIdx];
+            var spellLevel = TierTable.Entry(LootTables.GemSpellIndexMatrix, tier)[spellLevelIdx];
 
             var magicSchool = ThreadSafeRandom.Next(0, 1);
 

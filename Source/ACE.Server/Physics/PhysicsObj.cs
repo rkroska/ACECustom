@@ -624,6 +624,7 @@ namespace ACE.Server.Physics
         {
             if (newCell == null) return SetPositionError.NoCell;
             set_frame(pos.Frame);
+            Position.Variation = pos.Variation;   // the forced cell is in pos's variation; keep the physics position in step
             if (CurCell != newCell)
             {
                 change_cell(newCell);
@@ -1044,12 +1045,18 @@ namespace ACE.Server.Physics
 
             // modified: maintain consistency for Position.Frame in change_cell
             set_frame(curPos.Frame);
+            Position.Variation = curPos.Variation;   // change_cell / enter_cell never touch it; a variation-only move must not keep the old one
 
-            if (transitCell.VariationId != CurCell?.VariationId)
+            // Outdoor LandCells never carry a VariationId and ObjCell.Equals is ID-only, so a
+            // same-spot variation switch (e.g. /tv) yielded "equal" cells from two different
+            // landblock instances and skipped change_cell, stranding CurCell/CurLandblock on the
+            // old variation (player sees an empty world until relog). Instance identity is the
+            // only reliable "already in this cell" test across variations and landblock reloads.
+            if (!ReferenceEquals(transitCell, CurCell))
             {
                 change_cell(transitCell);
             }
-            else if (transitCell.Equals(CurCell))
+            else
             {
                 Position.ObjCellID = curPos.ObjCellID;
                 if (PartArray != null && !State.HasFlag(PhysicsState.ParticleEmitter))
@@ -1064,10 +1071,6 @@ namespace ACE.Server.Physics
                             child.PartArray.SetCellID(curPos.ObjCellID);
                     }
                 }
-            }
-            else
-            {
-                change_cell(transitCell);
             }
 
             //set_frame(curPos.Frame);
@@ -1156,8 +1159,31 @@ namespace ACE.Server.Physics
             //transition.CellArray.DoNotLoadCells = true;
 
             if (!CheckPositionInternal(newCell, pos, transition, setPos))
-                return handle_all_collisions(transition.CollisionInfo, false, false) ?
-                    SetPositionError.Collided : SetPositionError.NoValidPosition;
+            {
+                var collided = handle_all_collisions(transition.CollisionInfo, false, false);
+                // handle_all_collisions only reports whether a collision CALLBACK fired; a non-reporting object can
+                // hit the environment with collided == false. Key the exception on the physical collision state.
+                var physicalCollision = collided
+                    || transition.CollisionInfo.CollidedWithEnvironment
+                    || (transition.CollisionInfo.CollideObject?.Count ?? 0) > 0;
+
+                // Shallow-water spawn tolerance (2026-07-19): this world's water is knee-deep, walkable "land",
+                // but the physics won't SPAWN an object onto a water-typed terrain cell -- ValidateWalkable
+                // rejects it, yielding NoValidPosition (confirmed via /fixinstz: the lakebed terrain is already
+                // at the objects' Z, they are not buried). Deep water is handled upstream (an EntirelyWater block
+                // returns Collided in LandCell.FindEnvCollisions), so a NON-colliding failure on a water cell is
+                // exactly the shallow-water case: force the object into its resolved cell so water-camp generators
+                // AND their spawned creatures populate. Solid collisions and dry no-floor failures (e.g. a spawn
+                // point in mid-air off a cliff) still fail normally.
+                // Placement only (enter_world), and only inside the requested landblock: a teleport or a live
+                // move keeps the full transition contract, and an edge spawn is never forced into a neighbour.
+                if (!physicalCollision && newCell.WaterType != LandDefs.WaterType.NotWater
+                    && setPos.Flags.HasFlag(SetPositionFlags.Placement)
+                    && (newCell.ID >> 16) == pos.Landblock)
+                    return ForceIntoCell(newCell, pos);
+
+                return physicalCollision ? SetPositionError.Collided : SetPositionError.NoValidPosition;
+            }
 
             if (transition.SpherePath.CurCell == null) return SetPositionError.NoCell;
 
@@ -1249,6 +1275,16 @@ namespace ACE.Server.Physics
 
         private static float ScatterThreshold_Z = 10.0f;
 
+        // Outdoor scatter tries are clamped INSIDE the generator's own landblock with this margin from
+        // the block edge. The margin must exceed any scatter-spawned creature's sphere radius: the
+        // placement transition probes neighbor cells within sphere-reach of a boundary
+        // (check_add_cell_boundary), and a cell probe into an unloaded block CREATES that landblock
+        // server-side. With the old 0.5f clamp, out-of-block tries piled up ON the boundary and edge
+        // generators (Tou Tou water gens at x/y=24/168) chain-created the entire ocean at v11 in a
+        // ~14s/ring wavefront (2026-07-18 21:04-21:07 log) — that create/unload churn is what exposed
+        // the void-landblock init race. Owner call 2026-07-18: "clamp the scatter to its own landblock".
+        private const float ScatterEdgeMargin = 5.0f;
+
         public SetPositionError SetScatterPositionInternal(SetPosition setPos, Transition transition)
         {
             var result = SetPositionError.GeneralFailure;
@@ -1260,11 +1296,12 @@ namespace ACE.Server.Physics
                 newPos.Frame.Origin.X += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadX;
                 newPos.Frame.Origin.Y += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadY;
 
-                // customized
+                // customized: clamp scatter to the generator's own landblock, inset by ScatterEdgeMargin
+                // so boundary probes can never reach (and thereby create) a neighboring landblock
                 if ((newPos.ObjCellID & 0xFFFF) < 0x100)
                 {
-                    newPos.Frame.Origin.X = Math.Clamp(newPos.Frame.Origin.X, 0.5f, 191.5f);
-                    newPos.Frame.Origin.Y = Math.Clamp(newPos.Frame.Origin.Y, 0.5f, 191.5f);
+                    newPos.Frame.Origin.X = Math.Clamp(newPos.Frame.Origin.X, ScatterEdgeMargin, 192.0f - ScatterEdgeMargin);
+                    newPos.Frame.Origin.Y = Math.Clamp(newPos.Frame.Origin.Y, ScatterEdgeMargin, 192.0f - ScatterEdgeMargin);
                 }
 
                 // get cell for this position
@@ -1294,11 +1331,16 @@ namespace ACE.Server.Physics
                         var landblock = LScape.get_landblock(newPos.ObjCellID, newPos.Variation);
                         var groundZ = landblock.GetZ(newPos.Frame.Origin) + 0.05f;
 
+                        // The cell is already confirmed walkable (slope check above) and non-building, so the object
+                        // belongs on the terrain here. ALWAYS snap to ground Z. Previously a ground-Z diff beyond
+                        // ScatterThreshold_Z left the object at the generator's Z instead — which floats/sinks it and
+                        // makes SetPositionInternal reject the placement, so scatter spawns over uneven terrain (e.g.
+                        // large-radius camp generators on hilly Tou Tou blocks) silently failed. We keep the large-diff
+                        // case as a debug log for visibility but no longer skip the ground snap.
                         if (Math.Abs(newPos.Frame.Origin.Z - groundZ) > ScatterThreshold_Z)
-                            log.Debug($"{Name} ({ID:X8}).SetScatterPositionInternal() - tried to spawn outdoor object @ {newPos} ground Z {groundZ} (diff: {newPos.Frame.Origin.Z - groundZ}), investigate ScatterThreshold_Z");
-                        else
-                            newPos.Frame.Origin.Z = groundZ;
+                            log.Debug($"{Name} ({ID:X8}).SetScatterPositionInternal() - large ground-Z snap @ {newPos} ground Z {groundZ} (diff: {newPos.Frame.Origin.Z - groundZ})");
 
+                        newPos.Frame.Origin.Z = groundZ;
                     }
                     //else
                     //indoors = true;
@@ -1911,7 +1953,7 @@ namespace ACE.Server.Physics
             if (!IsPlayer || WeenieObj.WorldObject is not Player player)
                 return;
 
-            var playerVar = PrestigeManager.GetEffectiveVariationForVisibility(player);
+            var playerVar = VariationManager.GetEffectiveVariationForVisibility(player);
 
             if (DateTime.UtcNow - player.LastTeleportTime < TeleportCreateObjectDelay)
             {
@@ -1919,14 +1961,26 @@ namespace ACE.Server.Physics
                 actionChain.AddDelaySeconds(TeleportCreateObjectDelay.TotalSeconds);
                 actionChain.AddAction(player, ActionType.PhysicsObj_TrackObjects, () =>
                 {
+                    // Re-evaluate at fire time: during a variation-switch teleport this chain is
+                    // queued while the player still carries the ORIGIN variation, so the captured
+                    // playerVar would let origin-variation objects through (ghost mobs after /tv).
+                    var playerVarNow = VariationManager.GetEffectiveVariationForVisibility(player);
                     foreach (var obj in newlyVisible)
                     {
                         var wo = obj.WeenieObj.WorldObject;
                         if (wo == null)
                             continue;
 
-                        if (!PrestigeManager.SameVariationForVisibility(playerVar, PrestigeManager.GetEffectiveVariationForVisibility(wo)))
+                        if (!VariationManager.SameVariationForVisibility(playerVarNow, VariationManager.GetEffectiveVariationForVisibility(wo)))
+                        {
+                            // Non-cementing skip: AddVisibleObjects already marked this object
+                            // Known+Visible; dropping the CO here would leave a permanent
+                            // known-without-client tear (object invisible until relog). Purge so a
+                            // later visibility tick re-adds it cleanly once variations agree.
+                            ObjMaint.RemoveObject(obj);
+                            ACE.Server.Managers.VisibilityCreateObjectDiag.LogEnqueueSkipPurge(player, obj, "enqueue_objs_post_teleport_delay");
                             continue;
+                        }
 
                         player.TrackObject(wo, true, "enqueue_objs_post_teleport_delay");
                     }
@@ -1942,8 +1996,13 @@ namespace ACE.Server.Physics
                     if (wo == null)
                         continue;
 
-                    if (!PrestigeManager.SameVariationForVisibility(playerVar, PrestigeManager.GetEffectiveVariationForVisibility(wo)))
+                    if (!VariationManager.SameVariationForVisibility(playerVar, VariationManager.GetEffectiveVariationForVisibility(wo)))
+                    {
+                        // Non-cementing skip — see the post-teleport branch above.
+                        ObjMaint.RemoveObject(obj);
+                        ACE.Server.Managers.VisibilityCreateObjectDiag.LogEnqueueSkipPurge(player, obj, "enqueue_objs_handle_visible_cells");
                         continue;
+                    }
 
                     if (wo.Teleporting)
                     {
@@ -1968,16 +2027,36 @@ namespace ACE.Server.Physics
             if (wo == null)
                 return;
 
-            if (!PrestigeManager.SameVariationForVisibility(
-                    PrestigeManager.GetEffectiveVariationForVisibility(player),
-                    PrestigeManager.GetEffectiveVariationForVisibility(wo)))
+            if (!VariationManager.SameVariationForVisibility(
+                    VariationManager.GetEffectiveVariationForVisibility(player),
+                    VariationManager.GetEffectiveVariationForVisibility(wo)))
+            {
+                // Non-cementing skip — see enqueue_objs.
+                ObjMaint.RemoveObject(newlyVisible);
+                ACE.Server.Managers.VisibilityCreateObjectDiag.LogEnqueueSkipPurge(player, newlyVisible, "enqueue_obj_outer");
                 return;
+            }
 
             if (DateTime.UtcNow - player.LastTeleportTime < TeleportCreateObjectDelay)
             {
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(TeleportCreateObjectDelay.TotalSeconds);
-                actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo, true, "enqueue_obj_post_teleport_delay"));
+                actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () =>
+                {
+                    // Same fire-time recheck as enqueue_objs: the outer variation check above ran
+                    // while the player could still carry the origin variation mid-teleport.
+                    if (!VariationManager.SameVariationForVisibility(
+                            VariationManager.GetEffectiveVariationForVisibility(player),
+                            VariationManager.GetEffectiveVariationForVisibility(wo)))
+                    {
+                        // Non-cementing skip — see enqueue_objs.
+                        ObjMaint.RemoveObject(newlyVisible);
+                        ACE.Server.Managers.VisibilityCreateObjectDiag.LogEnqueueSkipPurge(player, newlyVisible, "enqueue_obj_post_teleport_delay");
+                        return;
+                    }
+
+                    player.TrackObject(wo, true, "enqueue_obj_post_teleport_delay");
+                });
                 actionChain.EnqueueChain();
             }
             else
@@ -2049,6 +2128,10 @@ namespace ACE.Server.Physics
 
         public bool entering_world;
 
+        // Last SetPosition result from enter_world; surfaced by [SpawnDiag] to name why a placement failed
+        // (e.g. NoValidPosition/collision over water vs a cell-resolution miss).
+        public SetPositionError LastEnterWorldError;
+
         public bool enter_world(Position pos)
         {
             entering_world = true;
@@ -2075,6 +2158,7 @@ namespace ACE.Server.Physics
                 setPos.Flags |= SetPositionFlags.Slide;
             //Console.WriteLine($"enter_world {this.Name} setPos v: {setPos.Pos.Variation}");
             var result = SetPosition(setPos);
+            LastEnterWorldError = result;
             if (result != SetPositionError.OK)
                 return false;
 
@@ -2435,9 +2519,9 @@ namespace ACE.Server.Physics
             var isVisible = CurCell.IsVisible(obj.CurCell);
             if (isVisible)
             {
-                var myVar = PrestigeManager.GetEffectiveVariationForVisibility(WeenieObj?.WorldObject);
-                var objVar = PrestigeManager.GetEffectiveVariationForVisibility(obj.WeenieObj?.WorldObject);
-                if (!PrestigeManager.SameVariationForVisibility(myVar, objVar))
+                var myVar = VariationManager.GetEffectiveVariationForVisibility(WeenieObj?.WorldObject);
+                var objVar = VariationManager.GetEffectiveVariationForVisibility(obj.WeenieObj?.WorldObject);
+                if (!VariationManager.SameVariationForVisibility(myVar, objVar))
                     isVisible = false;
             }
 
@@ -2899,11 +2983,16 @@ namespace ACE.Server.Physics
 
         public void set_current_pos(Position newPos)
         {
+            // Capture before overwrite: comparing Position.Variation to newPos.Variation after the
+            // assignment below made the variation-change clause always false, so a same-cell
+            // variation switch never refetched the cell (CurCell stayed on the old variation).
+            var prevVariation = Position.Variation;
+
             Position.ObjCellID = newPos.ObjCellID;
             Position.Variation = newPos.Variation;
             Position.Frame = new AFrame(newPos.Frame);
 
-            if (CurCell == null || CurCell.ID != Position.ObjCellID || Position.Variation != newPos.Variation)
+            if (CurCell == null || CurCell.ID != Position.ObjCellID || prevVariation != newPos.Variation)
             {
                 var newCell = LScape.get_landcell(newPos.ObjCellID, newPos.Variation);
 

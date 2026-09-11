@@ -250,6 +250,13 @@ namespace ACE.Server.Entity
         /// </summary>
         public List<WorldObject> Spawn()
         {
+            // boss groups: gens sharing a BossGroupId keep ONE spawn alive between them across any
+            // number of landblocks. Deny = drop this attempt BEFORE creating the object (a denied
+            // profile just retries next cycle — must not enter the FirstSpawn failed-slot path).
+            var bossGroup = Generator.GetProperty(PropertyInt.BossGroupId);
+            if (bossGroup != null && !BossGroupManager.TryClaimSpawn(bossGroup.Value, Generator, Delay))
+                return null;
+
             var objects = new List<WorldObject>();
 
             if (RegenLocationType.HasFlag(RegenLocationType.Treasure))
@@ -298,8 +305,23 @@ namespace ACE.Server.Entity
                 ConsecutiveSpawnFailures = 0;
                 if (wo is Creature creature && creature.IsMonster && creature.Attackable)
                 {
+                    // PROVISIONAL LOCATION (2026-07-30): zone resolution keys on Location (landblock +
+                    // variation), but the Spawn_* handlers below don't assign one until after this block —
+                    // so every generator-spawned mob resolved landblock 0, matched no zone, and silently
+                    // received NO spawn snapshot: attributes, max health/stamina/mana, crit resist ratings,
+                    // prop stamps and APPEARANCE were all skipped. Placed (landblock_instance) mobs were
+                    // unaffected because WorldObjectFactory sets Location first, which is why this went
+                    // unnoticed until a variation Default authored spawn-snapshot stats for the first time.
+                    // Safe: Spawn_Scatter and Spawn_Default both open by overwriting Location outright, so
+                    // this value only ever survives long enough to be resolved against.
+                    var generatorVariation = Generator.Location?.Variation;   // null while the generator has no Location yet
+                    if (Generator.Location != null)
+                        wo.Location = new ACE.Entity.Position(Generator.Location);
+
                     CreatureVariantHelper.MaybeApplyRandomVariant(creature, (float)ServerConfig.creature_variant_chance.Value);
-                    PrestigeManager.ApplyPrestigeScaling(creature, Generator.Location.Variation);
+                    PrestigeManager.ApplyPrestigeScaling(creature, generatorVariation);
+                    Managers.ZoneControl.ZoneSpawnScaler.ApplyToSpawn(creature);
+                    Managers.Rifts.RiftManager.TryApplyRiftScaling(creature, generatorVariation);
                 }
 
                 if (Biota.PaletteId.HasValue && Biota.PaletteId > 0)
@@ -342,6 +364,17 @@ namespace ACE.Server.Entity
 
                 else
                     success = Spawn_Default(obj);
+
+                if (bossGroup != null && success)
+                    BossGroupManager.OnBossSpawned(bossGroup.Value, Generator, obj);
+
+                // The one that answers "who spawned this mob" - every object, tagged with its generator.
+                if (Generator.GenDiag)
+                    log.Warn($"[GenDiag] SPAWN {obj.Name} [{obj.WeenieClassId}] 0x{obj.Guid} " +
+                             $"by 0x{Generator.Guid}:{Generator.Name} [{Generator.WeenieClassId}] " +
+                             $"success={success} where={RegenLocationType} " +
+                             $"gen.CurrentCreate={Generator.CurrentCreate} gen.MaxCreate={Generator.MaxCreate} " +
+                             $"loc={obj.Location}");
 
                 // if first spawn fails, don't continually attempt to retry
                 if (success || FirstSpawn)
@@ -410,6 +443,11 @@ namespace ACE.Server.Entity
         public bool Spawn_Scatter(WorldObject obj)
         {
             float genRadius = (float)(Generator.GetProperty(PropertyFloat.GeneratorRadius) ?? 0f);
+
+            // boss groups: a runtime radius override (plugin/command tuning) beats the weenie value
+            var scatterBossGroup = Generator.GetProperty(PropertyInt.BossGroupId);
+            if (scatterBossGroup != null && BossGroupManager.GetRadiusOverride(scatterBossGroup.Value) is float ovRadius)
+                genRadius = ovRadius;
             obj.Location = new ACE.Entity.Position(Generator.Location);
 
             // Skipping using same offset code above for offsetting scatter pos due to issues with rotation that were not expected at time content was rebuilt (Colo, others)
@@ -446,6 +484,20 @@ namespace ACE.Server.Entity
             var success = obj.EnterWorld();
 
             obj.ScatterPos = null;
+
+            // Fallback: scatter can exhaust all NumTries when the terrain within genRadius is largely non-walkable
+            // (water, steep slopes, cliffs) -> the child silently fails to spawn and the camp comes up short/empty.
+            // The generator's own position is known-valid (it spawned there), so retry once there (no scatter). Better
+            // to cluster a member at the center than to drop it entirely.
+            if (!success)
+            {
+                obj.Location = new ACE.Entity.Position(Generator.Location);
+                obj.Location.PositionZ += 0.05f;
+                success = obj.EnterWorld();
+
+                if (!success)
+                    log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn_Scatter({obj.Name}) - scatter AND center fallback both failed");
+            }
 
             return success;
         }
@@ -562,7 +614,9 @@ namespace ACE.Server.Entity
                 log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.RemoveTreasure(): container not found");
                 return;
             }
-            foreach (var spawned in Spawned.Keys)
+            // Snapshot first: inventoryObj.Destroy -> NotifyGenerator -> Spawned.Remove would
+            // mutate the dictionary we're enumerating.
+            foreach (var spawned in new List<uint>(Spawned.Keys))
             {
                 var inventoryObjGuid = new ObjectGuid(spawned);
                 if (!container.Inventory.TryGetValue(inventoryObjGuid, out var inventoryObj))
@@ -618,12 +672,18 @@ namespace ACE.Server.Entity
 
             Spawned.Remove(woi.Guid.Full);
 
+            var bossGroup = Generator.GetProperty(PropertyInt.BossGroupId);
+            if (bossGroup != null)
+                BossGroupManager.OnBossRemoved(bossGroup.Value, woi.Guid.Full);
+
             NextAvailable = DateTime.UtcNow.AddSeconds(Delay);
         }
 
         public void Reset()
         {
-            foreach (var rNode in Spawned.Values)
+            // Snapshot first: wo.Destroy raises NotifyOfEvent(Destruction) -> NotifyGenerator ->
+            // Spawned.Remove, which would mutate the dictionary we're enumerating.
+            foreach (var rNode in new List<WorldObjectInfo>(Spawned.Values))
             {
                 var wo = rNode.TryGetWorldObject();
 
@@ -648,7 +708,9 @@ namespace ACE.Server.Entity
 
         public void KillAll()
         {
-            foreach (var rNode in Spawned.Values)
+            // Snapshot first: Smite -> death -> NotifyGenerator can call Spawned.Remove, which would
+            // mutate the dictionary we're enumerating and throw "Collection was modified".
+            foreach (var rNode in new List<WorldObjectInfo>(Spawned.Values))
             {
                 var wo = rNode.TryGetWorldObject();
 
@@ -661,7 +723,10 @@ namespace ACE.Server.Entity
 
         public void DestroyAll(bool fromLandblockUnload = false)
         {
-            foreach (var rNode in Spawned.Values)
+            // Snapshot first: wo.Destroy raises NotifyOfEvent(Destruction) -> NotifyGenerator ->
+            // Spawned.Remove, which would mutate the dictionary we're enumerating and throw
+            // "Collection was modified" (aborting removeinst/landblock-unload mid-destroy).
+            foreach (var rNode in new List<WorldObjectInfo>(Spawned.Values))
             {
                 var wo = rNode.TryGetWorldObject();
 

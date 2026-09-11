@@ -62,7 +62,7 @@ namespace ACE.Server.Entity
                 }
 
                 // Re-validate since 14 seconds have passed.
-                if (!VerifyRequirements(player)) return;
+                if (!VerifyRequirements(player, isRevalidation: true)) return;
 
                 if (!SpendLuminance(player))
                 {
@@ -89,7 +89,13 @@ namespace ACE.Server.Entity
 
         }
 
-        private static bool VerifyRequirements(Player player)
+        /// <param name="isRevalidation">
+        /// True for the second pass at the end of the 14 second chain. That pass skips the
+        /// start-only Contact check while retaining the other validation checks.
+        /// The concurrency guards that actually prevent a double resolve - Teleporting, TooBusyToRecall
+        /// and IsInDeathProcess - are still enforced on both passes.
+        /// </param>
+        private static bool VerifyRequirements(Player player, bool isRevalidation = false)
         {
             if (player.Level < (275 + player.Enlightenment))
             {
@@ -97,9 +103,18 @@ namespace ACE.Server.Entity
                 return false;
             }
 
-            if (player.GetFreeInventorySlots() < 25)
+            // Room for what the ritual actually does: DequipAllItems drops every EquippedObjects
+            // entry into the MAIN pack, so the requirement is one slot per equipped item plus one,
+            // against the main pack only - a flat 25 against all packs refused characters the
+            // dequip would have fit, and passed characters it would not.
+            // The phrase "free inventory slots" is load-bearing: AutoEnlighten's chat classifier
+            // matches it to recognize this refusal.
+            var requiredSlots = player.EquippedObjects.Count + 1;
+            var freeMainPackSlots = player.GetFreeInventorySlots(includeSidePacks: false);
+            if (freeMainPackSlots < requiredSlots)
             {
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have at least 25 free inventory slots in your main pack for enlightenment, to unequip your gear automatically.", ChatMessageType.Broadcast));
+                var shortBy = requiredSlots - freeMainPackSlots;
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Enlightenment needs {shortBy} more free inventory slot{(shortBy == 1 ? "" : "s")} in your main pack.", ChatMessageType.Broadcast));
                 return false;
             }
 
@@ -109,9 +124,35 @@ namespace ACE.Server.Entity
                 return false;
             }
 
-            if (player.Teleporting || player.TooBusyToRecall || player.IsAnimating || player.IsInDeathProcess)
+            if (player.Teleporting || player.TooBusyToRecall || player.IsInDeathProcess)
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot enlighten while teleporting or busy. Complete your movement and try again. Neener neener.", ChatMessageType.System));
+                return false;
+            }
+
+            // Both feet on the ground. This replaces an IsAnimating check that was wrong in BOTH
+            // directions:
+            //
+            //   * It did not stop what it looked like it was for. Jump, let the jump animation
+            //     finish, answer the confirmation while still falling, and the ritual ran in
+            //     mid-air - because falling is not animating. The 14 second chain is a blind timer
+            //     and never verifies the motion played, so the animation was skipped entirely.
+            //   * It DID refuse a character standing perfectly still whose motion flag had gone
+            //     stale. Since the command handler does not check IsAnimating, the server raised
+            //     the confirmation, took the player's Yes, and only then refused - on a flag it had
+            //     never tested before asking.
+            //
+            // Contact rather than OnWalkable on purpose. Contact means "touching something", which
+            // is the exact opposite of airborne. OnWalkable additionally fails on ground too steep
+            // to stand on, and refusing someone for standing on a slope is precisely the kind of
+            // over-strictness being removed here.
+            //
+            // Start only. Jumping mid-ritual is already answered by the distance check at the end,
+            // and re-testing at re-validation would just move the failure to 14 seconds in.
+            if (!isRevalidation && player.PhysicsObj != null
+                && !player.PhysicsObj.TransientState.HasFlag(ACE.Server.Physics.TransientStateFlags.Contact))
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You cannot begin the enlightenment ritual in mid-air. Find your footing and try again.", ChatMessageType.System));
                 return false;
             }
 

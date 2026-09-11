@@ -37,7 +37,12 @@ namespace ACE.Server.WorldObjects
                 var worldObject = WorldObjectFactory.CreateWorldObject(biota);
                 EquippedObjects[worldObject.Guid] = worldObject;
 
+                // live stat resolution: a piece whose tier ladder moved since it was last resolved
+                // re-stamps its cache BEFORE the rating / cantrip caches read it (login path)
+                ACE.Server.Managers.ZoneControl.ZoneStatResolver.ApplyIfStale(worldObject);
+
                 AddItemToEquippedItemsRatingCache(worldObject);
+                UpdateZoneModifierCache(worldObject, +1);
 
                 EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
             }
@@ -212,40 +217,64 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private Dictionary<PropertyInt, int> equippedItemsRatingCache;
 
+        /// <summary>The ZC-ITEM PORTION of equippedItemsRatingCache (owner 2026-08-30, the armor
+        /// zone lock): every value a ZcTier 11+ item contributed, maintained by the same
+        /// add/remove pair so the two can never drift. When the lock suppresses this wearer,
+        /// reads return total minus this - retail cloaks/aetheria keep contributing, ZC lines go
+        /// dormant. Null until the first ZC rated item is worn.</summary>
+        private Dictionary<PropertyInt, int> equippedItemsZcRatingCache;
+
+        private static readonly PropertyInt[] RatingCacheProps =
+        {
+            PropertyInt.GearDamage, PropertyInt.GearDamageResist, PropertyInt.GearCritDamage,
+            PropertyInt.GearCritDamageResist, PropertyInt.GearHealingBoost, PropertyInt.GearMaxHealth,
+            PropertyInt.GearPKDamageRating, PropertyInt.GearPKDamageResistRating, PropertyInt.GearCrit,
+            PropertyInt.GearCritResist, PropertyInt.GearNetherResist,
+        };
+
+        private static int RatingOf(WorldObject wo, PropertyInt rating)
+            => rating switch
+            {
+                PropertyInt.GearDamage => wo.GearDamage ?? 0,
+                PropertyInt.GearDamageResist => wo.GearDamageResist ?? 0,
+                PropertyInt.GearCritDamage => wo.GearCritDamage ?? 0,
+                PropertyInt.GearCritDamageResist => wo.GearCritDamageResist ?? 0,
+                PropertyInt.GearHealingBoost => wo.GearHealingBoost ?? 0,
+                PropertyInt.GearMaxHealth => wo.GearMaxHealth ?? 0,
+                PropertyInt.GearPKDamageRating => wo.GearPKDamageRating ?? 0,
+                PropertyInt.GearPKDamageResistRating => wo.GearPKDamageResistRating ?? 0,
+                PropertyInt.GearCrit => wo.GearCrit ?? 0,
+                PropertyInt.GearCritResist => wo.GearCritResist ?? 0,
+                PropertyInt.GearNetherResist => wo.GearNetherResistRating ?? 0,
+                _ => 0,
+            };
+
+        private static Dictionary<PropertyInt, int> NewRatingCache()
+        {
+            var cache = new Dictionary<PropertyInt, int>();
+            foreach (var p in RatingCacheProps)
+                cache[p] = 0;
+            return cache;
+        }
+
         private void AddItemToEquippedItemsRatingCache(WorldObject wo)
         {
-            if ((wo.GearDamage ?? 0) == 0 && (wo.GearDamageResist ?? 0) == 0 && (wo.GearCritDamage ?? 0) == 0 && (wo.GearCritDamageResist ?? 0) == 0 && (wo.GearHealingBoost ?? 0) == 0 && (wo.GearMaxHealth ?? 0) == 0 && (wo.GearPKDamageRating ?? 0) == 0 && (wo.GearPKDamageResistRating ?? 0) == 0 && (wo.GearCrit ?? 0) == 0 && (wo.GearCritResist ?? 0) == 0 && (wo.GearNetherResistRating ?? 0) == 0)
+            var any = false;
+            foreach (var p in RatingCacheProps)
+                if (RatingOf(wo, p) != 0) { any = true; break; }
+            if (!any)
                 return;
 
-            if (equippedItemsRatingCache == null)
-            {
-                equippedItemsRatingCache = new Dictionary<PropertyInt, int>
-                {
-                    { PropertyInt.GearDamage, 0 },
-                    { PropertyInt.GearDamageResist, 0 },
-                    { PropertyInt.GearCritDamage, 0 },
-                    { PropertyInt.GearCritDamageResist, 0 },
-                    { PropertyInt.GearHealingBoost, 0 },
-                    { PropertyInt.GearMaxHealth, 0 },
-                    { PropertyInt.GearPKDamageRating, 0 },
-                    { PropertyInt.GearPKDamageResistRating, 0 },
-                    { PropertyInt.GearCrit, 0 },
-                    { PropertyInt.GearCritResist, 0 },
-                    { PropertyInt.GearNetherResist, 0 }
-                };
-            }
+            equippedItemsRatingCache ??= NewRatingCache();
+            foreach (var p in RatingCacheProps)
+                equippedItemsRatingCache[p] += RatingOf(wo, p);
 
-            equippedItemsRatingCache[PropertyInt.GearDamage] += (wo.GearDamage ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearDamageResist] += (wo.GearDamageResist ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCritDamage] += (wo.GearCritDamage ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCritDamageResist] += (wo.GearCritDamageResist ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearHealingBoost] += (wo.GearHealingBoost ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearMaxHealth] += (wo.GearMaxHealth ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearPKDamageRating] += (wo.GearPKDamageRating ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearPKDamageResistRating] += (wo.GearPKDamageResistRating ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCrit] += (wo.GearCrit ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCritResist] += (wo.GearCritResist ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearNetherResist] += (wo.GearNetherResistRating ?? 0);
+            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo))
+            {
+                equippedItemsZcRatingCache ??= NewRatingCache();
+                foreach (var p in RatingCacheProps)
+                    equippedItemsZcRatingCache[p] += RatingOf(wo, p);
+            }
         }
 
         private void RemoveItemFromEquippedItemsRatingCache(WorldObject wo)
@@ -253,17 +282,195 @@ namespace ACE.Server.WorldObjects
             if (equippedItemsRatingCache == null)
                 return;
 
-            equippedItemsRatingCache[PropertyInt.GearDamage] -= (wo.GearDamage ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearDamageResist] -= (wo.GearDamageResist ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCritDamage] -= (wo.GearCritDamage ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCritDamageResist] -= (wo.GearCritDamageResist ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearHealingBoost] -= (wo.GearHealingBoost ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearMaxHealth] -= (wo.GearMaxHealth ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearPKDamageRating] -= (wo.GearPKDamageRating ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearPKDamageResistRating] -= (wo.GearPKDamageResistRating ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCrit] -= (wo.GearCrit ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCritResist] -= (wo.GearCritResist ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearNetherResist] -= (wo.GearNetherResistRating ?? 0);
+            foreach (var p in RatingCacheProps)
+                equippedItemsRatingCache[p] -= RatingOf(wo, p);
+
+            if (equippedItemsZcRatingCache != null && ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo))
+                foreach (var p in RatingCacheProps)
+                    equippedItemsZcRatingCache[p] -= RatingOf(wo, p);
+        }
+
+        /// <summary>
+        /// Zone Control cantrip gear: per-creature sums of the custom cantrip props (block 50200-50399,
+        /// see ZoneModifiers) across equipped items. Maintained on equip/dequip alongside the rating cache;
+        /// null until the first cantripped item is worn, so non-cantrip creatures pay nothing.
+        /// </summary>
+        private Dictionary<int, int> zoneModifierCache;
+
+        /// <summary>Per-prop MAX across worn pieces - the slot specials' combine rule - maintained beside the
+        /// sum cache (review 2026-09-04): GetZoneModifierMax used to scan every equipped item under its biota
+        /// lock on each read, and CreatureVital.GetMaxValue reads it (Fortify Vitals) many times per hit.
+        /// Add = Math.Max; remove = recompute the touched keys from what is still worn (dequip is rare).</summary>
+        private Dictionary<int, int> zoneModifierMaxCache;
+
+        /// <summary>
+        /// Live stat resolution, `ladder apply` online path (owner 2026-08-23): re-resolve every WORN piece
+        /// whose tier ladder moved, keeping the rating + cantrip caches exact (subtract the old numbers,
+        /// re-stamp, add the new). Bounded by what this creature wears. Returns the number of pieces whose
+        /// values actually changed. Call from the World Manager thread (an ActionChain on the creature).
+        /// </summary>
+        public int ReresolveWornZoneGear()
+        {
+            var changed = 0;
+            foreach (var wo in EquippedObjects.Values)
+            {
+                if (!ACE.Server.Managers.ZoneControl.ZoneStatResolver.HasRecord(wo))
+                    continue;
+                RemoveItemFromEquippedItemsRatingCache(wo);
+                UpdateZoneModifierCache(wo, -1);
+                if (ACE.Server.Managers.ZoneControl.ZoneStatResolver.ApplyIfStale(wo))
+                    changed++;
+                AddItemToEquippedItemsRatingCache(wo);
+                UpdateZoneModifierCache(wo, +1);
+            }
+            return changed;
+        }
+
+        private void UpdateZoneModifierCache(WorldObject wo, int sign)
+        {
+            List<int> removedKeys = null;
+            wo.BiotaDatabaseLock.EnterReadLock();
+            try
+            {
+                if (wo.Biota.PropertiesInt == null)
+                    return;
+
+                foreach (var kv in wo.Biota.PropertiesInt)
+                {
+                    var id = (int)kv.Key;
+                    if (id < ACE.Server.Managers.ZoneControl.ZoneModifiers.PropMin || id > ACE.Server.Managers.ZoneControl.ZoneModifiers.PropMax)
+                        continue;
+
+                    zoneModifierCache ??= new Dictionary<int, int>();
+                    zoneModifierCache.TryGetValue(id, out var cur);
+                    zoneModifierCache[id] = cur + sign * kv.Value;
+
+                    if (sign > 0)
+                    {
+                        zoneModifierMaxCache ??= new Dictionary<int, int>();
+                        zoneModifierMaxCache.TryGetValue(id, out var curMax);
+                        if (kv.Value > curMax)
+                            zoneModifierMaxCache[id] = kv.Value;
+                    }
+                    else
+                        (removedKeys ??= new List<int>()).Add(id);
+                }
+            }
+            finally
+            {
+                wo.BiotaDatabaseLock.ExitReadLock();
+            }
+
+            // the departing piece may have been the max for a key: recompute those keys from what is still
+            // worn, EXCLUDING the piece itself (TryDequipObject has already removed it; ReresolveWornZoneGear
+            // has not, and re-adds it with its re-resolved values right after)
+            if (removedKeys != null)
+                RecomputeZoneModifierMax(removedKeys, wo);
+        }
+
+        private void RecomputeZoneModifierMax(List<int> propIds, WorldObject except)
+        {
+            if (zoneModifierMaxCache == null)
+                return;
+            foreach (var id in propIds)
+            {
+                var max = 0;
+                foreach (var item in EquippedObjects.Values)
+                {
+                    if (ReferenceEquals(item, except))
+                        continue;
+                    var v = item.GetProperty((PropertyInt)id) ?? 0;
+                    if (v > max)
+                        max = v;
+                }
+                zoneModifierMaxCache[id] = max;
+            }
+        }
+
+        /// <summary>
+        /// Sum of a Zone Control cantrip prop across this creature's equipped items, HARD-CAPPED for the
+        /// anchored SET lines (gear_cap_line): the six attributes (key 43), Max Stamina 20, Max Mana 21
+        /// and every aug track 34-40. The cache keeps the TRUE sum so dequip arithmetic stays exact; the
+        /// cap is applied here at read time only. Everything else in the block (skills, spell duration,
+        /// specials) is uncapped. Creature_Rating clamps the retail-prop lines (Dmg / CritDmg / MaxHP /
+        /// HealBoost) the same way on the rating cache.
+        /// </summary>
+        public int GetZoneModifierBonus(int propId)
+        {
+            if (zoneModifierCache == null)
+                return 0;
+            // armor zone lock: the whole 50200 block is ZC-line-only (retail items never carry
+            // these props), so outside authored areas the worn lines contribute nothing at all
+            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this))
+                return 0;
+            if (!zoneModifierCache.TryGetValue(propId, out var v))
+                return 0;
+            if (v > 0 && IsGearCapLineProp(propId))
+                v = Math.Min(v, GetGearCap(ACE.Server.Managers.ZoneScaling.ZoneStat.GearCapLine, 2500));
+            return v;
+        }
+
+        /// <summary>The 50200-block props that are anchored SET lines and read under gear_cap_line.</summary>
+        private static bool IsGearCapLineProp(int propId)
+        {
+            const int attrLo = ACE.Server.Managers.ZoneControl.ZoneModifiers.AttrBonusBase + 1;     // 50201 Strength
+            const int attrHi = ACE.Server.Managers.ZoneControl.ZoneModifiers.AttrBonusBase + 6;     // 50206 Self
+            return propId >= attrLo && propId <= attrHi;
+        }
+
+        /// <summary>
+        /// Worn-gear hard cap knob (gear_cap_dr / gear_cap_cdr / gear_cap_line). Players read the zone
+        /// DEFAULT they stand in; no governing zone (or a monster) = the C# default, so the cap holds
+        /// everywhere and a zone only re-tunes it. Never below 0.
+        /// </summary>
+        public int GetGearCap(string capStat, int ladderCap)
+        {
+            // Zone Control off: the T10 fallback cap wins outright - no zone is consulted (owner 2026-08-23).
+            if (!ServerConfig.zonecontrol_enabled.Value)
+                return ACE.Server.Managers.ZoneControl.ZoneFallback.GearCap(capStat);
+            if (this is not Player player)
+                return ladderCap;
+            var zone = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveZoneDefaultForPlayer(player);
+            if (zone == null || !zone.Has(capStat))
+                return ladderCap;
+            return Math.Max(0, (int)Math.Round(zone.Get(capStat, ladderCap)));
+        }
+
+        /// <summary>
+        /// <see cref="GetEquippedItemsRatingSum"/> clamped to a worn-gear cap. Owner 2026-08-21: a set
+        /// anchored at 2500 reads EXACTLY 2500, not 2502 (18 x 139 flat bands). Equipment term only -
+        /// enchantments / augs / enlightenment stack on top untouched in the rating getters.
+        /// The cap arguments are the LADDER ceilings (gear_cap_dr 2500, gear_cap_cdr 1500,
+        /// gear_cap_line 2500) - calibrated so a maxed T25 set lands EXACTLY on them. A zone that
+        /// authors gear_cap_* tightens them for its own content; with zonecontrol_enabled OFF the
+        /// T10 fallback set replaces them entirely (ZoneFallback).
+        /// </summary>
+        public int GetEquippedItemsRatingSumCapped(PropertyInt rating, string capStat, int defaultCap)
+        {
+            var sum = GetEquippedItemsRatingSum(rating);
+            if (sum <= 0)
+                return sum;
+            return Math.Min(sum, GetGearCap(capStat, defaultCap));
+        }
+
+        /// <summary>
+        /// MAX (not sum) of a Zone Control cantrip prop across this creature's equipped items — the
+        /// combine rule for the slot SPECIALS (Fortify 41, Battle Mending 42, pct-HP 44, Cheat Death 45,
+        /// Regen 46): the highest single piece wins, two pieces never stack. Read from the max cache
+        /// maintained on equip/dequip (review 2026-09-04) - O(1), no biota lock - so creatures wearing
+        /// nothing cantripped pay nothing. 0 when no equipped item carries the prop.
+        /// </summary>
+        public int GetZoneModifierMax(int propId)
+        {
+            if (zoneModifierMaxCache == null || !zoneModifierMaxCache.TryGetValue(propId, out var max) || max <= 0)
+                return 0;
+
+            // armor zone lock: the slot specials (Cheat Death, Battle Mending, Fortify, pct-HP,
+            // Regen) go dormant with the rest of the lines
+            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this))
+                return 0;
+
+            return max;
         }
 
         public int GetEquippedItemsRatingSum(PropertyInt rating)
@@ -272,7 +479,15 @@ namespace ACE.Server.WorldObjects
                 return 0;
 
             if (equippedItemsRatingCache.TryGetValue(rating, out var value))
+            {
+                // armor zone lock: subtract exactly what the worn ZC pieces contributed - retail
+                // cloaks / aetheria keep counting, the ZC lines go dormant outside authored areas
+                if (value != 0 && equippedItemsZcRatingCache != null
+                    && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this)
+                    && equippedItemsZcRatingCache.TryGetValue(rating, out var zcPortion))
+                    value -= zcPortion;
                 return value;
+            }
 
             log.Error($"Creature_Equipment.GetEquippedItemsRatingsSum() does not support {rating}");
             return 0;
@@ -327,7 +542,11 @@ namespace ACE.Server.WorldObjects
 
             EquippedObjects[worldObject.Guid] = worldObject;
 
+            // live stat resolution (plan §3): resolve-on-EQUIP, the only place the cache is re-stamped
+            ACE.Server.Managers.ZoneControl.ZoneStatResolver.ApplyIfStale(worldObject);
+
             AddItemToEquippedItemsRatingCache(worldObject);
+            UpdateZoneModifierCache(worldObject, +1);
 
             EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
             Value += (worldObject.Value ?? 0);
@@ -387,6 +606,7 @@ namespace ACE.Server.WorldObjects
             }
 
             RemoveItemFromEquippedItemsRatingCache(worldObject);
+            UpdateZoneModifierCache(worldObject, -1);
 
             wieldedLocation = worldObject.CurrentWieldedLocation ?? EquipMask.None;
 

@@ -95,7 +95,7 @@ namespace ACE.Server.Factories.Tables.Wcids
                     return Roll_Level8SpellComponent(profile);
             }
             var tier = Math.Clamp(profile.Tier, 1, 10);
-            var table = peaTiers[tier - 1];
+            var table = TierTable.Entry(peaTiers, tier);
 
             return table.Roll(profile.LootQualityMod);
         }

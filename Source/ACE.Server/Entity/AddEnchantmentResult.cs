@@ -64,19 +64,19 @@ namespace ACE.Server.Entity
                 switch (spell.School)
                 {
                     case ACE.Entity.Enum.MagicSchool.WarMagic:
-                        augmentLevel = creature.LuminanceAugmentWarCount ?? 0;
+                        augmentLevel = creature.EffectiveWarAugCount;
                         break;
                     case ACE.Entity.Enum.MagicSchool.LifeMagic:
-                        augmentLevel = creature.LuminanceAugmentLifeCount ?? 0;
+                        augmentLevel = creature.EffectiveLifeAugCount;
                         break;
                     case ACE.Entity.Enum.MagicSchool.ItemEnchantment:
-                        augmentLevel = creature.LuminanceAugmentItemCount ?? 0;
+                        augmentLevel = creature.EffectiveItemAugCount;
                         break;
                     case ACE.Entity.Enum.MagicSchool.CreatureEnchantment:
-                        augmentLevel = creature.LuminanceAugmentCreatureCount ?? 0;
+                        augmentLevel = creature.EffectiveCreatureAugCount;
                         break;
                     case ACE.Entity.Enum.MagicSchool.VoidMagic:
-                        augmentLevel = creature.LuminanceAugmentVoidCount ?? 0;
+                        augmentLevel = creature.EffectiveVoidAugCount;
                         break;
                     case ACE.Entity.Enum.MagicSchool.None:
                     default:
@@ -117,9 +117,10 @@ namespace ACE.Server.Entity
                         // handle special case to prevent message: Pumpkin Shield casts Web of Defense on you, refreshing Aura of Defense
                         var spellDuration = equip ? double.PositiveInfinity : spell.Duration;
 
-                        if (!equip && caster is Player player && (player.AugmentationIncreasedSpellDuration + player.LuminanceAugmentSpellDurationCount ?? 0) > 0)
+                        if (!equip && caster is Player player && ((player.AugmentationIncreasedSpellDuration + player.LuminanceAugmentSpellDurationCount ?? 0) > 0 || player.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.SpellDurationLevels) > 0))
                         {
-                            spellDuration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f);
+                            spellDuration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f)
+                                + (player.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.SpellDurationLevels) * 0.2f);
                             spellDuration += (((caster as Player).LuminanceAugmentSpellDurationCount ?? 0) * 0.05f);
                         }
                         var entryDuration = entry.Duration == -1 ? double.PositiveInfinity : entry.Duration;

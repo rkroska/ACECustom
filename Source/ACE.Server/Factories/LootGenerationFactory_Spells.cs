@@ -203,7 +203,7 @@ namespace ACE.Server.Factories
         {
             var tierChances = roll.IsCaster ? EnchantmentChances_Caster : EnchantmentChances_Armor_MeleeMissileWeapon;
 
-            var chance = tierChances[profile.Tier - 1];
+            var chance = TierTable.Entry(tierChances, profile.Tier);
 
             var rng = ThreadSafeRandom.NextInterval(profile.LootQualityMod);
 

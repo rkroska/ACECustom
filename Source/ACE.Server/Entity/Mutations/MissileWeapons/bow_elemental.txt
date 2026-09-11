@@ -25,7 +25,7 @@ Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 0
 
 Bow (MissileWeapons) Mutation #2 (6,996 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
 
     - Chance: 10%:
         DamageMod = 2.46
@@ -50,7 +50,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
 
 Bow (MissileWeapons) Mutation #3 (6,996 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
 
     - Chance: 10%:
         DamageMod = 2.84
@@ -367,7 +367,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0
 
 Bow (MissileWeapons) Mutation #9 (1,607 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
 
     - Chance: 13%:
         ElementalDamageBonus = 21
@@ -467,7 +467,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
 
 Bow (MissileWeapons) Mutation #10 (1,355 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
 
     - Chance: 13%:
         ElementalDamageBonus = 28
@@ -564,3 +564,128 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
         WieldDifficulty = 725
+
+Tier 11 Mutation #11:
+
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 10%:
+        DamageMod = 3.66
+
+    - Chance: 10%:
+        DamageMod = 3.7
+
+    - Chance: 10%:
+        DamageMod = 3.74
+
+    - Chance: 10%:
+        DamageMod = 3.78
+
+    - Chance: 15%:
+        DamageMod = 3.82
+
+    - Chance: 30%:
+        DamageMod = 3.86
+
+    - Chance: 15%:
+        DamageMod = 3.9
+
+Tier 11 Mutation #12:
+
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 13%:
+        ElementalDamageBonus = 42
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 950
+
+    - Chance: 7%:
+        ElementalDamageBonus = 43
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 950
+
+    - Chance: 3%:
+        ElementalDamageBonus = 44
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 950
+
+    - Chance: 2%:
+        ElementalDamageBonus = 45
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 950
+
+    - Chance: 13%:
+        ElementalDamageBonus = 43
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 950
+
+    - Chance: 7%:
+        ElementalDamageBonus = 44
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 950
+
+    - Chance: 3%:
+        ElementalDamageBonus = 45
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1025
+
+    - Chance: 2%:
+        ElementalDamageBonus = 46
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1025
+
+    - Chance: 13%:
+        ElementalDamageBonus = 44
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1025
+
+    - Chance: 7%:
+        ElementalDamageBonus = 45
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1025
+
+    - Chance: 3%:
+        ElementalDamageBonus = 46
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1025
+
+    - Chance: 2%:
+        ElementalDamageBonus = 47
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1025
+
+    - Chance: 13%:
+        ElementalDamageBonus = 45
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1100
+
+    - Chance: 7%:
+        ElementalDamageBonus = 46
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1100
+
+    - Chance: 3%:
+        ElementalDamageBonus = 47
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1100
+
+    - Chance: 2%:
+        ElementalDamageBonus = 48
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 1100

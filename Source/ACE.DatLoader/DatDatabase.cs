@@ -67,6 +67,8 @@ namespace ACE.DatLoader
         /// Reads a portal clothing table (0x10xxxxxx). Returns false when the id is not a clothing DID
         /// or the cache already holds a different file type for this id (e.g. Setup cached first).
         /// </summary>
+        private static readonly ConcurrentDictionary<uint, byte> missingClothingWarned = new();
+
         public bool TryReadClothingTable(uint fileId, out ClothingTable clothingTable)
         {
             clothingTable = null;
@@ -76,6 +78,20 @@ namespace ACE.DatLoader
 
             if (FileCache.TryGetValue(fileId, out FileType cached) && cached is not ClothingTable)
                 return false;
+
+            // The dat must actually CONTAIN this id before we read it. ReadFromDat returns a new EMPTY
+            // ClothingTable when the file is absent - GetReaderForFile returns null, the datReader guard
+            // is skipped, nothing throws so the catch never runs - and then caches that empty object.
+            // Returning true in that case handed callers a table with no ClothingBaseEffects, which
+            // silently defeated their AddSetupAsClothingBase fallback and rendered the item with no
+            // model or texture at all. Returning false lets the fallback do its job.
+            if (!AllFiles.ContainsKey(fileId))
+            {
+                if (missingClothingWarned.TryAdd(fileId, 0))
+                    log.Warn($"ClothingBase 0x{fileId:X8} is referenced by content but is not present in {Enum.GetName(typeof(DatDatabaseType), Header.DataSet)} - falling back to SetupId. Fix the content or update the dats.");
+
+                return false;
+            }
 
             clothingTable = ReadFromDat<ClothingTable>(fileId);
             return true;

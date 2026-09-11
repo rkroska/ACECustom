@@ -47,9 +47,29 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Returns TRUE if monster has known spells
+        /// Returns TRUE if monster has known spells (or zone-ADDED spells - a zone can make a caster
+        /// out of a mob with an empty book).
+        ///
+        /// 2026-08-31: the old wording said "provided its combat style allows magic". That is NOT
+        /// true in this codebase and it sent a Bestiary audit chasing a gate that does not exist -
+        /// GetNextAttackType tests only `HasKnownSpells &amp;&amp; TryRollSpell()`, and nothing anywhere
+        /// reads AiAllowedCombatStyle for magic (it is used for DualWield and StubbornMissile only).
+        /// Zone-added spells fire regardless of combat style.
         /// </summary>
-        private bool HasKnownSpells => Biota.HasKnownSpell(BiotaDatabaseLock);
+        private bool HasKnownSpells => Biota.HasKnownSpell(BiotaDatabaseLock) || ZoneHasAddedSpells();
+
+        /// <summary>True when the governing zone's spell rules ADD at least one castable spell
+        /// this monster's own book doesn't contain.</summary>
+        private bool ZoneHasAddedSpells()
+        {
+            var rules = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this)?.SpellRules;
+            if (rules == null)
+                return false;
+            foreach (var r in rules)
+                if (!r.Disabled && (Biota.PropertiesSpellBook == null || !Biota.PropertiesSpellBook.ContainsKey(r.SpellId)))
+                    return true;
+            return false;
+        }
 
         /// <summary>
         /// The next spell the monster will attempt to cast
@@ -69,30 +89,84 @@ namespace ACE.Server.WorldObjects
             // there were probably other criteria used to select these spells (emote responses, monster ai responses)
             // for now, 2.0 base just becomes a 2% chance
 
-            if (Biota.PropertiesSpellBook == null)
+            // Zone Control spell rules (disable / chance override / added spells) - read-time, so
+            // toggles apply LIVE to spawned monsters. Rules hold chance in PERCENT.
+            var zoneRules = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this)?.SpellRules;
+
+            if (Biota.PropertiesSpellBook == null && zoneRules == null)
                 return false;
 
             // We don't use thread safety here. Monster spell books aren't mutated cross-threads.
             // This reduces memory consumption by not cloning the spell book every single TryRollSpell()
             //foreach (var spell in Biota.CloneSpells(BiotaDatabaseLock)) // Thread-safe
-            foreach (var spell in Biota.PropertiesSpellBook) // Not thread-safe
+            if (Biota.PropertiesSpellBook != null)
             {
-                var probability = spell.Value > 2.0f ? spell.Value - 2.0f : spell.Value / 100.0f;
-
-                var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
-
-                if (rng < probability)
+                foreach (var spell in Biota.PropertiesSpellBook) // Not thread-safe
                 {
-                    CurrentSpell = new Spell(spell.Key);
-                    if (CurrentSpell.NotFound)
+                    var probability = spell.Value > 2.0f ? spell.Value - 2.0f : spell.Value / 100.0f;
+
+                    if (zoneRules != null)
                     {
-                        CurrentSpell = null;
-                        continue;
+                        var rule = FindSpellRule(zoneRules, spell.Key);
+                        if (rule != null)
+                        {
+                            if (rule.Disabled)
+                                continue;
+                            if (rule.Chance.HasValue)
+                                probability = (float)(rule.Chance.Value / 100.0);
+                        }
                     }
-                    return true;
+
+                    var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
+
+                    if (rng < probability)
+                    {
+                        CurrentSpell = new Spell(spell.Key);
+                        if (CurrentSpell.NotFound)
+                        {
+                            CurrentSpell = null;
+                            continue;
+                        }
+                        return true;
+                    }
+                }
+            }
+
+            // zone-ADDED spells (not in the weenie book) roll after the book, same independent-chance model
+            if (zoneRules != null)
+            {
+                foreach (var rule in zoneRules)
+                {
+                    if (rule.Disabled)
+                        continue;
+                    if (Biota.PropertiesSpellBook != null && Biota.PropertiesSpellBook.ContainsKey(rule.SpellId))
+                        continue;
+
+                    var probability = (float)((rule.Chance ?? 2.0) / 100.0);
+                    var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
+
+                    if (rng < probability)
+                    {
+                        CurrentSpell = new Spell(rule.SpellId);
+                        if (CurrentSpell.NotFound)
+                        {
+                            CurrentSpell = null;
+                            continue;
+                        }
+                        return true;
+                    }
                 }
             }
             return false;
+        }
+
+        private static ACE.Server.Managers.ZoneScaling.ZoneSpellRule FindSpellRule(
+            System.Collections.Generic.IReadOnlyList<ACE.Server.Managers.ZoneScaling.ZoneSpellRule> rules, int spellId)
+        {
+            for (int i = 0; i < rules.Count; i++)
+                if (rules[i].SpellId == spellId)
+                    return rules[i];
+            return null;
         }
 
         /// <summary>
@@ -102,11 +176,39 @@ namespace ACE.Server.WorldObjects
         {
             var probabilities = new List<float>();
 
-            foreach (var spell in Biota.GetKnownSpellsProbabilities(BiotaDatabaseLock))
-            {
-                var probability = spell > 2.0f ? spell - 2.0f : spell / 100.0f;
+            // mirror TryRollSpell: zone rules disable/override book chances and can add spells
+            var zoneRules = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this)?.SpellRules;
 
-                probabilities.Add(probability);
+            if (Biota.PropertiesSpellBook != null)
+            {
+                foreach (var spell in Biota.PropertiesSpellBook)
+                {
+                    var probability = spell.Value > 2.0f ? spell.Value - 2.0f : spell.Value / 100.0f;
+                    if (zoneRules != null)
+                    {
+                        var rule = FindSpellRule(zoneRules, spell.Key);
+                        if (rule != null)
+                        {
+                            if (rule.Disabled)
+                                continue;
+                            if (rule.Chance.HasValue)
+                                probability = (float)(rule.Chance.Value / 100.0);
+                        }
+                    }
+                    probabilities.Add(probability);
+                }
+            }
+
+            if (zoneRules != null)
+            {
+                foreach (var rule in zoneRules)
+                {
+                    if (rule.Disabled)
+                        continue;
+                    if (Biota.PropertiesSpellBook != null && Biota.PropertiesSpellBook.ContainsKey(rule.SpellId))
+                        continue;
+                    probabilities.Add((float)((rule.Chance ?? 2.0) / 100.0));
+                }
             }
 
             return Probability.GetProbabilityAny(probabilities);

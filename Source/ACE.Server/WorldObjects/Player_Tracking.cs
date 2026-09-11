@@ -72,9 +72,9 @@ namespace ACE.Server.WorldObjects
             if (worldObject.Visibility && !Adminvision)
                 return;
 
-            if (!PrestigeManager.SameVariationForVisibility(
-                    PrestigeManager.GetEffectiveVariationForVisibility(this),
-                    PrestigeManager.GetEffectiveVariationForVisibility(worldObject)))
+            if (!VariationManager.SameVariationForVisibility(
+                    VariationManager.GetEffectiveVariationForVisibility(this),
+                    VariationManager.GetEffectiveVariationForVisibility(worldObject)))
                 return;
 
             if (!string.IsNullOrEmpty(createObjectPath))
@@ -106,13 +106,13 @@ namespace ACE.Server.WorldObjects
             if (worldObject?.PhysicsObj == null || PhysicsObj == null)
                 return false;
 
-            var myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
-            var objVar = PrestigeManager.GetEffectiveVariationForVisibility(worldObject);
+            var myVar = VariationManager.GetEffectiveVariationForVisibility(this);
+            var objVar = VariationManager.GetEffectiveVariationForVisibility(worldObject);
 
             // Pre-prestige: return false when already known. Prestige (#421): purge stale links on variation mismatch.
             if (ObjMaint.KnownObjectsContainsValue(worldObject.PhysicsObj))
             {
-                if (!PrestigeManager.SameVariationForVisibility(myVar, objVar))
+                if (!VariationManager.SameVariationForVisibility(myVar, objVar))
                 {
                     if (ServerConfig.prestige_interaction_diag_verbose.Value)
                     {
@@ -128,14 +128,14 @@ namespace ACE.Server.WorldObjects
                     ObjMaint.RemoveObject(worldObject.PhysicsObj);
                     RemoveTrackedObject(worldObject, false);
 
-                    myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
-                    objVar = PrestigeManager.GetEffectiveVariationForVisibility(worldObject);
+                    myVar = VariationManager.GetEffectiveVariationForVisibility(this);
+                    objVar = VariationManager.GetEffectiveVariationForVisibility(worldObject);
                 }
                 else
                     return false;
             }
 
-            if (!PrestigeManager.SameVariationForVisibility(myVar, objVar))
+            if (!VariationManager.SameVariationForVisibility(myVar, objVar))
             {
                 if (ServerConfig.prestige_interaction_diag_verbose.Value)
                 {
@@ -172,14 +172,26 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            if (!PrestigeManager.SameVariationForVisibility(
-                    PrestigeManager.GetEffectiveVariationForVisibility(this),
-                    PrestigeManager.GetEffectiveVariationForVisibility(worldObject)))
+            if (!VariationManager.SameVariationForVisibility(
+                    VariationManager.GetEffectiveVariationForVisibility(this),
+                    VariationManager.GetEffectiveVariationForVisibility(worldObject)))
                 return false;
 
+            // Ghost-mob fix (2026-07-17): a stale-known resend used to refresh only the CLIENT
+            // (CreateObject). If the object-side inverse link (KnownPlayers) was torn by a transient
+            // variation refusal, the bare resend cemented a ONE-WAY state — the client renders an
+            // object whose death/despawn broadcasts skip this player. Re-add the inverse here:
+            // AddKnownPlayer is variation-guarded and idempotent (no-op when the link is intact).
+            // Runs AFTER the initial-distance clamp (physics can mark an object known before the client has
+            // its CreateObject, and a clamped resend never sends one, so restoring the link there could
+            // aim broadcasts at a client without the object) but BEFORE the debounce, whose suppression only
+            // means a resend went out moments ago - that client has the object, so the link must heal.
             var dist2D = VisibilityCreateObjectDiag.Distance2D(this, worldObject);
             if (ObjectMaint.InitialClamp && dist2D > ObjectMaint.InitialClamp_Dist)
                 return false;
+
+            if (PhysicsObj != null)
+                worldObject.PhysicsObj.ObjMaint?.AddKnownPlayer(PhysicsObj);
 
             var key = worldObject.Guid.Full;
             var now = Environment.TickCount64;
@@ -201,7 +213,7 @@ namespace ACE.Server.WorldObjects
             if (ObjMaint == null || Session == null || PhysicsObj?.CurCell == null)
                 return;
 
-            var myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
+            var myVar = VariationManager.GetEffectiveVariationForVisibility(this);
             var allCandidates = ObjMaint.GetVisibleObjects(PhysicsObj.CurCell, ObjectMaint.VisibleObjectType.All, myVar);
 
             var resendCount = 0;

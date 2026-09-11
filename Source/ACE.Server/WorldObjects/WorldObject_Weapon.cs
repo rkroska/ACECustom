@@ -346,6 +346,48 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.CriticalFrequency); else SetProperty(PropertyFloat.CriticalFrequency, value.Value); }
         }
 
+        /// <summary>
+        /// OWNER RULING 2026-08-25: Biting Strike and Crushing Blow - the Zone Control weapon cards -
+        /// are the ONLY sources of crit chance and crit damage on a PLAYER's weapon. The two vanilla
+        /// imbues that do the same job are suppressed for players:
+        ///   Critical Strike  - a FLAT 0.50 crit chance at capped skill (MaxCriticalStrikeMod)
+        ///   Crippling Blow   - 6.0 stored, which the engine turns into 7.0x in combat
+        /// Both meet our card through Math.Max, so an unsuppressed imbue is a free floor the card has
+        /// to clear before it means anything. Suppressing them makes the band the whole story.
+        ///
+        /// PLAYERS ONLY, deliberately (owner's word). A monster's own imbues are part of ITS balance
+        /// and keep working exactly as before - suppressing shard-wide would quietly re-tune every mob
+        /// carrying one, which nobody asked for.
+        ///
+        /// WHY A READ-SITE GUARD rather than blocking the crafts. Two reasons the craft gate cannot
+        /// cover, both measured 2026-08-25:
+        ///   - 125 weenies carry these imbues BAKED IN (55 of them casters). No crafting gate ever
+        ///     sees those; they arrive already imbued.
+        ///   - The gate's layer-2 rule is "a weaker imbue cannot go on, but NOT-imbued could", so a
+        ///     weapon with no card would accept Critical Strike for ever, by design.
+        /// Craft-gate denies are still worth having as a second line - they give the player a refusal
+        /// reason, which a silent read-site guard cannot - but only this expresses NEVER.
+        ///
+        /// NOTE this does not touch the OTHER crit contributors: the weapon aug-scaling crit term, the
+        /// luminance-aug crit term or gear crit rating. (A historical note here about the
+        /// player_crit_damage_cap clamp binding on melee is obsolete - that clamp was deleted
+        /// 2026-08-29 with the unified crit model; the Crushing Blow band bounds the ratio now.)
+        ///
+        /// Flip this const to restore retail behaviour; it is the single switch.
+        /// </summary>
+        public const bool CritImbuesSuppressedForPlayers = true;
+
+        /// <summary>True when Critical Strike / Crippling Blow must be ignored for this wielder.</summary>
+        public static bool CritImbuesSuppressed(Creature wielder)
+            => CritImbuesSuppressedForPlayers && wielder is Player;
+
+        /// <summary>The weapon zone lock (owner 2026-08-30): true when this ZC weapon's custom
+        /// power is suppressed for this swing - toggle on, player wielder, ZcTier 11+ item,
+        /// outside every enabled authored area. One name so the card read sites below stay
+        /// one-line gates; the rule itself lives in ZoneControlManager.WeaponPowerSuppressed.</summary>
+        public static bool ZcPowerSuppressed(WorldObject weapon, Creature wielder)
+            => ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, wielder);
+
         private const float defaultPhysicalCritFrequency = 0.1f;    // 10% base chance
 
         /// <summary>
@@ -353,9 +395,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public static float GetWeaponCriticalChance(WorldObject weapon, Creature wielder, CreatureSkill skill, Creature target)
         {
-            var critRate = (float)(weapon?.CriticalFrequency ?? defaultPhysicalCritFrequency);
+            // zone lock: outside authored areas a ZC weapon's Biting Strike stamp reads as absent
+            var critRate = ZcPowerSuppressed(weapon, wielder)
+                ? defaultPhysicalCritFrequency
+                : (float)(weapon?.CriticalFrequency ?? defaultPhysicalCritFrequency);
 
-            if (weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike))
+            if (weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike)
+                && !CritImbuesSuppressed(wielder))   // owner 2026-08-25: Biting Strike is the only crit-chance source on a player weapon
             {
                 var criticalStrikeBonus = GetCriticalStrikeMod(skill);
 
@@ -365,11 +411,41 @@ namespace ACE.Server.WorldObjects
             if (wielder != null)
                 critRate += wielder.GetCritRating() * 0.01f;
 
+            // Zone Control: an authored crit_rating REPLACES the governed monster's crit chance outright
+            // (value in percent; the defender's crit-resist below still applies)
+            var zoneCrit = GetZoneCritChanceOverride(wielder);
+            if (zoneCrit.HasValue)
+                critRate = zoneCrit.Value;
+
             // mitigation
             var critResistRatingMod = Creature.GetNegativeRatingMod(target.GetCritResistRating());
             critRate *= critResistRatingMod;
 
             return critRate;
+        }
+
+        /// <summary>Zone Control: zone-authored crit_rating REPLACES a governed monster's crit chance
+        /// (stat value in percent, e.g. 25 = crits 25% of the time). Null for players/ungoverned mobs.</summary>
+        private static float? GetZoneCritChanceOverride(Creature wielder)
+        {
+            if (wielder == null || wielder is Player)
+                return null;
+            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(wielder);
+            if (zp == null || !zp.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.CritRating))
+                return null;
+            return (float)(zp.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.CritRating) / 100.0);
+        }
+
+        /// <summary>Zone Control: zone-authored crit_damage_rating IS a governed monster's final crit
+        /// multiplier (e.g. 4 = crits deal 4x). Null for players/ungoverned mobs.</summary>
+        private static float? GetZoneCritDamageOverride(Creature wielder)
+        {
+            if (wielder == null || wielder is Player)
+                return null;
+            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(wielder);
+            if (zp == null || !zp.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.CritDamageRating))
+                return null;
+            return (float)zp.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.CritDamageRating);
         }
 
         // http://acpedia.org/wiki/Announcements_-_2002/08_-_Atonement#Letter_to_the_Players - 2% originally
@@ -379,7 +455,11 @@ namespace ACE.Server.WorldObjects
         // what this was actually increased to for base, was never stated directly in the dev notes
         // speculation is that it was 5%, to align with the minimum that CS magic scales from
 
-        private const float defaultMagicCritFrequency = 0.05f;
+        // UNIFIED 2026-08-29 (owner, "all 3 should get the same crit treatment"): magic's base crit
+        // chance comes up from retail's speculative 0.05 to match melee/missile's 0.10, so Biting
+        // Strike means the same thing on every school. The retail note this shadowed was itself
+        // speculation ("what this was actually increased to ... was never stated").
+        private const float defaultMagicCritFrequency = 0.10f;
 
         /// <summary>
         /// Returns the critical chance for the caster weapon
@@ -389,11 +469,23 @@ namespace ACE.Server.WorldObjects
             // TODO : merge with above function
 
             if (weapon == null)
-                return defaultMagicCritFrequency;
+            {
+                // Wandless casters = MONSTERS only (players cannot cast without a wielded caster).
+                // FIXED 2026-08-21 (owner ruling): the target's Crit Resist now applies on this
+                // branch too - it was silently skipped, making mob-caster crits un-resistable
+                // while the same mob's MELEE crits were reduced. Zone-authored crit chance still
+                // replaces the default first, same as the with-wand path below.
+                var wandlessRate = GetZoneCritChanceOverride(wielder) ?? defaultMagicCritFrequency;
+                return wandlessRate * Creature.GetNegativeRatingMod(target.GetCritResistRating());
+            }
 
-            var critRate = (float)(weapon.GetProperty(PropertyFloat.CriticalFrequency) ?? defaultMagicCritFrequency);
+            // zone lock: outside authored areas a ZC weapon's Biting Strike stamp reads as absent
+            var critRate = ZcPowerSuppressed(weapon, wielder)
+                ? defaultMagicCritFrequency
+                : (float)(weapon.GetProperty(PropertyFloat.CriticalFrequency) ?? defaultMagicCritFrequency);
 
-            if (weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike))
+            if (weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike)
+                && !CritImbuesSuppressed(wielder))   // same ruling on the magic path
             {
                 var isPvP = wielder is Player && target is Player;
 
@@ -403,6 +495,11 @@ namespace ACE.Server.WorldObjects
             }
 
             critRate += wielder.GetCritRating() * 0.01f;
+
+            // Zone Control: authored crit_rating REPLACES the governed monster's crit chance (see melee path)
+            var zoneCrit = GetZoneCritChanceOverride(wielder);
+            if (zoneCrit.HasValue)
+                critRate = zoneCrit.Value;
 
             // mitigation
             var critResistRatingMod = Creature.GetNegativeRatingMod(target.GetCritResistRating());
@@ -418,14 +515,35 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public static float GetWeaponCritDamageMod(WorldObject weapon, Creature wielder, CreatureSkill skill, Creature target)
         {
-            var critDamageMod = (float)(weapon?.GetProperty(PropertyFloat.CriticalMultiplier) ?? defaultCritDamageMultiplier);
+            // zone lock: outside authored areas a ZC weapon's Crushing Blow stamp AND its
+            // aug-scaling crit term both read as absent
+            var zcSuppressed = ZcPowerSuppressed(weapon, wielder);
 
-            if (weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow))
+            var critDamageMod = zcSuppressed
+                ? defaultCritDamageMultiplier
+                : (float)(weapon?.GetProperty(PropertyFloat.CriticalMultiplier) ?? defaultCritDamageMultiplier);
+
+            if (weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow)
+                && !CritImbuesSuppressed(wielder))   // owner 2026-08-25: Crushing Blow is the only crit-damage source on a player weapon
             {
                 var cripplingBlowMod = GetCripplingBlowMod(skill);
 
-                critDamageMod = Math.Max(critDamageMod, cripplingBlowMod); 
+                critDamageMod = Math.Max(critDamageMod, cripplingBlowMod);
             }
+
+            // Weapon aug-scaling crit term (T11 weapon relevance): kc(quality) x per-aug crit
+            // modifier x min(matching combat augs, tier cap) — the aug-pegged floor. Math.Max so
+            // a Crushing Blow card / big CriticalMultiplier stays the jackpot above it (§7.10).
+            if (!zcSuppressed)
+                critDamageMod = Math.Max(critDamageMod,
+                    ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetCritDamageBonus(weapon, wielder));
+
+            // Zone Control: authored crit_damage_rating IS the final multiplier; engine computes 1 + mod,
+            // so store value - 1 (e.g. authored 4 -> crits deal exactly 4x)
+            var zoneCritDmg = GetZoneCritDamageOverride(wielder);
+            if (zoneCritDmg.HasValue)
+                critDamageMod = Math.Max(0f, zoneCritDmg.Value - 1.0f);
+
             return critDamageMod;
         }
 
@@ -442,15 +560,34 @@ namespace ACE.Server.WorldObjects
             if (wielder == null || !(weapon is Caster) || weapon.W_DamageType != damageType)
                 return 1.0f;
 
-            var elementalDamageMod = weapon.ElementalDamageMod ?? 1.0f;
-
-            // additive to base multiplier
             var wielderEnchantments = wielder.EnchantmentManager.GetElementalDamageMod();
             var weaponEnchantments = weapon.EnchantmentManager.GetElementalDamageMod();
 
             var enchantments = wielderEnchantments + weaponEnchantments;
 
-            var modifier = (float)(elementalDamageMod + enchantments);
+            // Weapon aug-scaling: a stamped T11+ caster's quality roll GRADES its elemental
+            // modifier and the weapon's TIER scales it — the launcher mechanism on a different
+            // property (owner 2026-08-06: "keep bow and caster weapons scaling identical").
+            //
+            // COMPOSITION (owner GO 2026-08-06, CasterDamageShare_Plan): the resolved mod
+            // MULTIPLIES the enchantment sum, the way the bow's DamageMod multiplies Blood
+            // Drinker. Stock math added them, which made Spirit Drinker (+17.50 at 3,500 augs)
+            // an additive peer ~11x the wand — the wand was ~8 pct of its own multiplier and a
+            // T11 vs T14 wand measured ~1 pct apart. The rescale anchors S grade to the old
+            // totals exactly (r = 1/kMax); see CasterAuraRescale in WeaponScalingManager.
+            //
+            // Replace semantics: the STOCK ADDITIVE path is the fallback whenever the system is
+            // off or the caster is unstamped legacy — bit-for-bit pre-system behavior, so the
+            // kill switch has a clean prediction.
+            // zone lock: outside authored areas the graded caster mod is suppressed - the stock
+            // additive fallback below IS the base-stats behaviour the lock lands on
+            float modifier;
+            if (!ZcPowerSuppressed(weapon, wielder)
+                && ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetCasterElementalMod(weapon, wielder as Player, out var gradedMod))
+                modifier = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.ComposeCasterModifier(
+                    gradedMod, enchantments, ACE.Server.Managers.WeaponScaling.WeaponScalingManager.Current.CasterAuraRescale);
+            else
+                modifier = (float)((weapon.ElementalDamageMod ?? 1.0f) + enchantments);
 
             if (modifier > 1.0f && target is Player)
                 modifier = 1.0f + (modifier - 1.0f) * ElementalDamageBonusPvPReduction;
@@ -491,8 +628,15 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public static float GetWeaponCreatureSlayerModifier(WorldObject weapon, Creature wielder, Creature target)
         {
-            if (weapon != null && weapon.SlayerCreatureType != null && weapon.SlayerDamageBonus != null &&
-                target != null && weapon.SlayerCreatureType == target.CreatureType)
+            // zone lock: outside authored areas a ZC weapon's Slayer stamp reads as absent
+            if (ZcPowerSuppressed(weapon, wielder))
+                return defaultModifier;
+
+            if (weapon != null && weapon.SlayerDamageBonus != null && target != null
+                && ((weapon.SlayerCreatureType != null && weapon.SlayerCreatureType == target.CreatureType)
+                    // forge-only "slayer of all creatures" (PropertyBool 50052; /wsforge cards:premade or
+                    // slayertype=all): the bonus applies to every target. Drops never carry it.
+                    || weapon.GetProperty(PropertyBool.SlayerAllCreatures) == true))
             {
                 // TODO: scale with base weapon skill?
                 return (float)weapon.SlayerDamageBonus;
@@ -573,9 +717,22 @@ namespace ACE.Server.WorldObjects
                 hasRending = true;
             }
 
+            // zone lock: outside authored areas a ZC weapon's Rend (and its rolled power) reads
+            // as absent - suppressed here, after eligibility, so retail/pet rends stay untouched
+            if (hasRending && ZcPowerSuppressed(weapon, wielder))
+                hasRending = false;
+
             if (hasRending && skill != null)
             {
                 var rendingMod = GetRendingMod(skill);
+
+                // Zone Control loot: per-weapon rend power override (ZoneLootMutator stamp) is a DIRECT
+                // vuln bonus (wire 1.5..10.0 = +150%..+1000%). rendingMod = 1 + override, REPLACING the
+                // skill-scaled formula and its 2.5 cap, so the drop's rolled strength is exactly 1000% max.
+                var rendOverride = weapon?.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId);
+                if (rendOverride.HasValue && rendOverride.Value > 0)
+                    rendingMod = 1.0f + (float)rendOverride.Value;
+
                 resistMod = Math.Max(resistMod, rendingMod);
             }
 
@@ -901,7 +1058,11 @@ namespace ACE.Server.WorldObjects
         public float GetIgnoreShieldMod(WorldObject weapon)
         {
             var creatureMod = IgnoreShield ?? 0.0f;
-            var weaponMod = weapon?.IgnoreShield ?? 0.0f;
+            // zone lock: outside authored areas a ZC weapon's Shield Cleaving stamp reads as
+            // absent (the attacker's own creature-side IgnoreShield is never gated)
+            var weaponMod = ZcPowerSuppressed(weapon, this as Creature)
+                ? 0.0
+                : weapon?.IgnoreShield ?? 0.0f;
 
             return 1.0f - (float)Math.Max(creatureMod, weaponMod);
         }
@@ -1109,7 +1270,10 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Returns TRUE if this item has a proc / 'cast on strike' spell
         /// </summary>
-        public bool HasProc => ProcSpell != null;
+        /// <summary>True when EITHER Cast on Strike slot is filled. This has to include slot 2: every
+        /// caller in WorldObject_Combat gates on HasProc before calling TryProcItem, so a weapon that
+        /// rolled only a ring would otherwise never fire it.</summary>
+        public bool HasProc => ProcSpell != null || ProcSpell2 != null;
 
         /// <summary>
         /// Returns TRUE if this item has a proc spell
@@ -1120,60 +1284,36 @@ namespace ACE.Server.WorldObjects
             return HasProc && ProcSpell == spellID;
         }
 
+        /// <summary>Cast on Strike slot 2 - the RING. Slot 1 (the arc) is the engine's own ProcSpell,
+        /// so nothing outside this file needs to know a second slot exists: TryProcItem rolls both.</summary>
+        public uint? ProcSpell2
+        {
+            get => GetProperty((PropertyDataId)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcSpell2PropId);
+            set { if (!value.HasValue) RemoveProperty((PropertyDataId)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcSpell2PropId); else SetProperty((PropertyDataId)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcSpell2PropId, value.Value); }
+        }
+
+        /// <summary>Slot 2's own per-hit rate. Independent of slot 1's (owner 2026-08-27).</summary>
+        public double? ProcSpellRate2
+        {
+            get => GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRate2PropId);
+            set { if (!value.HasValue) RemoveProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRate2PropId); else SetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRate2PropId, value.Value); }
+        }
+
+        public bool HasProc2 => ProcSpell2 != null;
+
+        /// <summary>
+        /// Rolls BOTH Cast on Strike slots. Two independent rolls, not one roll that picks a spell
+        /// (owner 2026-08-27: the arc and the ring are separate entities) - so a weapon carrying both
+        /// procs more often than one carrying either, which is the only version where the second slot
+        /// is actually worth rolling.
+        ///
+        /// Kept as a single public entry point on purpose: every caller in WorldObject_Combat and the
+        /// cleave paths already calls TryProcItem, so folding slot 2 in here means the second slot
+        /// needs no call-site changes anywhere and cannot be forgotten at one of them.
+        /// </summary>
         public void TryProcItem(WorldObject attacker, Creature target, bool selfTarget)
         {
-            // roll for a chance of casting spell
-            var chance = ProcSpellRate ?? 0.0f;
-
-            // special handling for aetheria
-            if (Aetheria.IsAetheria(WeenieClassId) && attacker is Creature wielder)
-                chance = Aetheria.CalcProcRate(this, wielder);
-
-            var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
-            if (rng >= chance)
-                return;
-
-            var spell = new Spell(ProcSpell.Value);
-
-            if (spell.NotFound)
-            {
-                if (attacker is Player player)
-                {
-                    if (spell._spellBase == null)
-                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"SpellId {ProcSpell.Value} Invalid.", ChatMessageType.System));
-                    else
-                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{spell.Name} spell not implemented, yet!", ChatMessageType.System));
-                }
-                return;
-            }
-
-            // not sure if this should go before or after the resist check
-            // after would match Player_Magic, but would require changing the signature of TryCastSpell yet again
-            // starting with the simpler check here
-            if (!selfTarget && target != null && target.NonProjectileMagicImmune && !spell.IsProjectile)
-            {
-                if (attacker is Player player)
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You fail to affect {target.Name} with {spell.Name}", ChatMessageType.Magic));
-
-                return;
-            }
-
-            var itemCaster = this is Creature ? null : this;
-
-            // For self-targeted spells, use the attacker as the target
-            var spellTarget = selfTarget ? attacker : target;
-
-            if (spell.NonComponentTargetType == ItemType.None)
-                attacker.TryCastSpell(spell, null, itemCaster, itemCaster, true, true);
-            else if (spell.NonComponentTargetType == ItemType.Vestements)
-            {
-                // TODO: spell.NonComponentTargetType should probably always go through TryCastSpell_WithItemRedirects,
-                // however i don't feel like testing every possible known type of item procspell in the current db to ensure there are no regressions
-                // current test case: 33990 Composite Bow casting Tattercoat
-                attacker.TryCastSpell_WithRedirects(spell, spellTarget, itemCaster, itemCaster, true, true);
-            }
-            else
-                attacker.TryCastSpell(spell, spellTarget, itemCaster, itemCaster, true, true);
+            TryProcItemWithChanceMod(attacker, target, selfTarget, 1.0f);
         }
 
         /// <summary>
@@ -1181,25 +1321,58 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void TryProcItemWithChanceMod(WorldObject attacker, Creature target, bool selfTarget, float chanceMultiplier)
         {
-            var baseChance = ProcSpellRate ?? 0.0f;
+            // zone lock: outside authored areas a ZC weapon's Cast on Strike slots (arc AND ring)
+            // never fire. `this` is the proccing item, so cloaks/aetheria/player Ring Glyph
+            // crafts are untouched - they never carry ZcTier.
+            if (ZcPowerSuppressed(this, attacker as Creature))
+                return;
 
-            if (Aetheria.IsAetheria(WeenieClassId) && attacker is Creature wielder)
-                baseChance = Aetheria.CalcProcRate(this, wielder);
+            // Slot 1 - the arc, and every pre-existing proc on the shard (cloaks, aetheria, the ~11,700
+            // player Ring Glyph crafts). Aetheria's own rate curve applies here and only here.
+            if (ProcSpell != null)
+            {
+                var baseChance = ProcSpellRate ?? 0.0f;
 
-            var chance = Math.Clamp(baseChance * Math.Max(0f, chanceMultiplier), 0f, 1f);
+                if (Aetheria.IsAetheria(WeenieClassId) && attacker is Creature wielder)
+                    baseChance = Aetheria.CalcProcRate(this, wielder);
+
+                TryProcOneSpell(attacker, target, selfTarget, ProcSpell.Value, baseChance, chanceMultiplier);
+            }
+
+            // Slot 2 - the ring. Rolled separately against its own rate.
+            if (ProcSpell2 != null)
+                TryProcOneSpell(attacker, target, selfTarget, ProcSpell2.Value, ProcSpellRate2 ?? 0.0, chanceMultiplier);
+        }
+
+        /// <summary>The body that was TryProcItem before the card gained a second slot - one roll, one
+        /// spell. Unchanged in behaviour; it just takes the spell and rate as arguments now.</summary>
+        /// <summary>Fires this item's primary proc spell with a 100 pct chance - the owner's /buff leg
+        /// (2026-09-01) uses it to pre-cast the self-targeted surge of each worn aetheria, through the
+        /// exact cast path a real proc takes (item caster, no creature-aug bake), so a test character
+        /// starts a fight with the surges a real fight would have produced.</summary>
+        public void ForceProcSpell(WorldObject attacker, Creature target, bool selfTarget)
+        {
+            if (ProcSpell == null)
+                return;
+            TryProcOneSpell(attacker, target, selfTarget, ProcSpell.Value, 1.0, 1.0f);
+        }
+
+        private void TryProcOneSpell(WorldObject attacker, Creature target, bool selfTarget, uint procSpellId, double baseChance, float chanceMultiplier)
+        {
+            var chance = Math.Clamp(baseChance * Math.Max(0f, chanceMultiplier), 0.0, 1.0);
 
             var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
             if (rng >= chance)
                 return;
 
-            var spell = new Spell(ProcSpell.Value);
+            var spell = new Spell(procSpellId);
 
             if (spell.NotFound)
             {
                 if (attacker is Player player)
                 {
                     if (spell._spellBase == null)
-                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"SpellId {ProcSpell.Value} Invalid.", ChatMessageType.System));
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"SpellId {procSpellId} Invalid.", ChatMessageType.System));
                     else
                         player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{spell.Name} spell not implemented, yet!", ChatMessageType.System));
                 }

@@ -72,6 +72,24 @@ namespace ACE.Server.Managers
                 return;
             }
 
+            // ── Tier 11+ crafting gate (owner 2026-08-24) ─────────────────────────────────────
+            // T11+ gear drops FINISHED: the Zone Control loot mutator authors its specials against a
+            // tier ladder. A player tinker that writes any of those same properties is, at best, a
+            // weaker duplicate and, at worst, a downgrade - several custom recipes SetValue rather
+            // than add, so they overwrite a good roll with a flat constant in BOTH directions.
+            //
+            // Placed here deliberately: this is the ONLY entry point (the confirmation dialog
+            // re-enters this same method, Confirmation.cs:76-101), and it sits BEFORE
+            // CreateDestroyItems, so a blocked attempt costs the player no salvage.
+            // `source` is passed so the gate can read the SALVAGE's MaterialType - that is the row of the
+            // authorable layer-1 matrix (ZoneCraftGateStore).
+            if (ACE.Server.Managers.ZoneControl.ZoneCraftGate.IsBlocked(recipe, source, target, out var gateReason))
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat(gateReason, ChatMessageType.Craft));
+                player.SendUseDoneEvent();
+                return;
+            }
+
             // verify requirements
             if (!VerifyRequirements(recipe, player, source, target))
             {

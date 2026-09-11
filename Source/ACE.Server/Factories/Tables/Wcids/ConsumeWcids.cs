@@ -128,7 +128,7 @@ namespace ACE.Server.Factories.Tables.Wcids
         {
             var tier = Math.Clamp(profile.Tier, 1, 10);
             // todo: verify t7 / t8 chances
-            var table = consumeTiers[tier - 1];
+            var table = TierTable.Entry(consumeTiers, tier);
 
             // quality mod?
             return table.Roll(profile.LootQualityMod);

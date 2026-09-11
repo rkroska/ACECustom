@@ -215,10 +215,10 @@ Everything that reaches the AC client must be 7-bit ASCII with `\n` line endings
 | PropertyInt.PetMutationCount | 9075 | written, never read (was 9058, collided with Vitality) |
 | PropertyInt.EssenceSalvageYield | 9076 | (was 9057, collided with charges) |
 | PropertyInt.PetMaturityKills | 9077 | presence = bred |
-| PropertyFloat.PetNextBreedingTime | 9049 | |
-| PropertyFloat.PetMaleChargesRefreshTime | 9050 | |
-| PropertyBool.PetIsMaleOverride | 50042 | |
-| PropertyBool.PetIsJuvenile | 50043 | |
+| PropertyFloat.PetNextBreedingTime | 9056 | |
+| PropertyFloat.PetMaleChargesRefreshTime | 9057 | |
+| PropertyBool.PetIsMaleOverride | 50053 | |
+| PropertyBool.PetIsJuvenile | 50054 | |
 
 Before adding an id, grep the enum for the number. Two collisions shipped on this branch before they
 were caught.

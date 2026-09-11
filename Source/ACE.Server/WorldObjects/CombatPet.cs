@@ -484,10 +484,13 @@ namespace ACE.Server.WorldObjects
 
             LuminanceAugmentSummonCount = summonAugCount;
 
-            LuminanceAugmentMeleeCount = Math.Min(summonAugCount, player.LuminanceAugmentMeleeCount ?? 0);
-            LuminanceAugmentMissileCount = Math.Min(summonAugCount, player.LuminanceAugmentMissileCount ?? 0);
-            LuminanceAugmentWarCount = Math.Min(summonAugCount, player.LuminanceAugmentWarCount ?? 0);
-            LuminanceAugmentVoidCount = Math.Min(summonAugCount, player.LuminanceAugmentVoidCount ?? 0);
+            // Effective counts, so a growth charm reaches the pet the same way it reaches its owner -
+            // the Item and Life tracks below already inherit that way. Still capped by summoning:
+            // a charm raises the ceiling the pet can inherit UP TO, it does not bypass the cap.
+            LuminanceAugmentMeleeCount = Math.Min(summonAugCount, player.EffectiveMeleeAugCount);
+            LuminanceAugmentMissileCount = Math.Min(summonAugCount, player.EffectiveMissileAugCount);
+            LuminanceAugmentWarCount = Math.Min(summonAugCount, player.EffectiveWarAugCount);
+            LuminanceAugmentVoidCount = Math.Min(summonAugCount, player.EffectiveVoidAugCount);
             // Match Creature_Combat.GetEffectiveDefenseSkill: flat +MeleeD/+MissileD luminance aug counts (capped like other tracks).
             LuminanceAugmentMeleeDefenseCount = Math.Min(summonAugCount, player.LuminanceAugmentMeleeDefenseCount ?? 0);
             LuminanceAugmentMissileDefenseCount = Math.Min(summonAugCount, player.LuminanceAugmentMissileDefenseCount ?? 0);
@@ -523,7 +526,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Store item augmentation bonuses directly (not as enchantments), capped by summoning aug count.
-            var itemAugCount = (long)(player.LuminanceAugmentItemCount ?? 0);
+            var itemAugCount = player.EffectiveItemAugCount;
             var itemAugEffective = Math.Min(summonAugCount, itemAugCount);
             if (itemAugEffective > 0)
             {
@@ -561,7 +564,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Store life augmentation protection rating directly (not as enchantments), capped by summoning aug count.
-            var lifeAugCount = (long)(player.LuminanceAugmentLifeCount ?? 0);
+            var lifeAugCount = player.EffectiveLifeAugCount;
             var lifeAugEffective = Math.Min(summonAugCount, lifeAugCount);
             if (lifeAugEffective > 0)
             {
@@ -1700,7 +1703,14 @@ namespace ACE.Server.WorldObjects
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float GetItemAugPercentageRating(long itemAugAmt)
         {
+            // Beyond the last band every point adds the same 0.00100f, so the tail is closed-form
+            // and the loop cannot scale with uncapped charm-driven effective counts.
             float bonus = 0;
+            if (itemAugAmt > 450)
+            {
+                bonus += (itemAugAmt - 450) * 0.00100f;
+                itemAugAmt = 450;
+            }
             for (int x = 0; x < itemAugAmt; x++)
             {
                 if (x < 100)
@@ -1748,7 +1758,14 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public static float GetLifeAugProtectRating(long lifeAugAmt)
         {
+            // Beyond the last band every point adds the same 0.00001f, so the tail is closed-form
+            // and the loop cannot scale with uncapped charm-driven effective counts.
             float bonus = 0;
+            if (lifeAugAmt > 225)
+            {
+                bonus += (lifeAugAmt - 225) * 0.0000100f;
+                lifeAugAmt = 225;
+            }
             for (int x = 0; x < lifeAugAmt; x++)
             {
                 if (x < 10)

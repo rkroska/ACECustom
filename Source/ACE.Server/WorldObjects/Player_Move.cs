@@ -281,7 +281,7 @@ namespace ACE.Server.WorldObjects
 
         public void TakeDamage_Falling(float amount)
         {
-            if (IsDead || Invincible) return;
+            if (IsDead || Invincible || ZcDamageImmune) return;   // ZcDamageImmune = Zone Control Cheat Death window
 
             // handle lifestone protection?
             if (UnderLifestoneProtection)

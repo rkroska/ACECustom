@@ -303,6 +303,30 @@ namespace ACE.Server.WorldObjects
 
         public DamageType GetDamageType(PropertiesBodyPart attackPart, CombatType? combatType = null)
         {
+            // Zone Control offense element: attack_damage_type scalar > per-part DamageType override >
+            // OutgoingDamageTypeOverride prop > weapon/body-part (blanket beats per-part, owner ruling
+            // 2026-08-02). Random flag per hit when multi-flag.
+            var zoneProfile = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this);
+            if (zoneProfile != null)
+            {
+                if (zoneProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.AttackDamageType))
+                {
+                    var mask = (int)zoneProfile.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.AttackDamageType);
+                    if (mask != 0)
+                        return EnumFlagRandom.SelectRandomFlag((DamageType)mask, DamageType.Physical);
+                }
+
+                var zonePart = FindZoneBodyPart(zoneProfile, attackPart);
+                if (zonePart?.DamageType is int partMask && partMask != 0)
+                    return EnumFlagRandom.SelectRandomFlag((DamageType)partMask, DamageType.Physical);
+            }
+
+            // OFFENSE DAMAGE TYPE override: force this mob's physical/melee/missile attacks to a chosen element,
+            // regardless of weapon or body-part type. Picks one random flag from the mask per hit. 0/unset = no-op.
+            var outOverride = GetProperty(PropertyInt.OutgoingDamageTypeOverride);
+            if (outOverride.HasValue && outOverride.Value != 0)
+                return EnumFlagRandom.SelectRandomFlag((DamageType)outOverride.Value, DamageType.Physical);
+
             // If there is a weapon equipped, get the damage type from that weapon.
             var weapon = GetEquippedWeapon();
             if (weapon != null) return GetDamageType(false, combatType);

@@ -9,7 +9,9 @@ namespace ACE.Database.Models.Auth;
 /// Requires auth MySQL user to have SELECT on ace_shard.* (same as CALL-based procs).
 /// Character exclusion: <see cref="PropertyBool.ExcludeFromLeaderboards"/> (9011) on biota_properties_bool.
 /// Account exclusion: non-player access levels (staff) and accounts with an active ban (ban_Expire_Time in the future).
-/// Mule characters (PropertyBool.IsMule) are eligible unless individually flagged ExcludeFromLeaderboards.
+/// Mule characters (PropertyBool.IsMule) are hidden from the per-character boards, but only the mule
+/// itself: the flag never removes the rest of the account. The account-scoped quest bonus board
+/// therefore excludes on ExcludeFromLeaderboards only, or a single mule would hide its owner's score.
 /// </summary>
 public static class LeaderboardInlineSql
 {
@@ -120,7 +122,7 @@ public static class LeaderboardInlineSql
         HAVING `Character` IS NOT NULL
         AND NOT EXISTS (
             SELECT 1 FROM ace_shard.character cex
-            INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type IN (9011, 131) AND bx.value <> 0
+            INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
             WHERE cex.account_Id = a.accountId AND cex.is_Deleted = 0
         )
         ORDER BY Score DESC, a.accountId DESC
@@ -346,7 +348,7 @@ public static class LeaderboardInlineSql
             HAVING `Character` IS NOT NULL
             AND NOT EXISTS (
                 SELECT 1 FROM ace_shard.character cex
-                INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type IN (9011, 131) AND bx.value <> 0
+                INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
                 WHERE cex.account_Id = a.accountId AND cex.is_Deleted = 0
             )
           ) agg

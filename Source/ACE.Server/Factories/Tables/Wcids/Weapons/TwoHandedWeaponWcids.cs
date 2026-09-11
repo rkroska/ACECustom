@@ -146,6 +146,27 @@ namespace ACE.Server.Factories.Tables.Wcids
             ( Spadones,           TreasureWeaponType.TwoHandedSword ),
         };
 
+
+        /// <summary>
+        /// Rolls a wcid restricted to a single weapon subtype (Zone Control structured loot set).
+        /// Returns undef when this skill has no tables for that subtype.
+        /// </summary>
+        public static WeenieClassName RollForWeaponType(TreasureWeaponType requestedType)
+        {
+            var matching = new List<ChanceTable<WeenieClassName>>();
+
+            foreach (var entry in twoHandedWeaponTables)
+            {
+                if (entry.weaponType == requestedType)
+                    matching.Add(entry.table);
+            }
+
+            if (matching.Count == 0)
+                return WeenieClassName.undef;
+
+            return matching[ThreadSafeRandom.Next(0, matching.Count - 1)].Roll();
+        }
+
         public static WeenieClassName Roll(out TreasureWeaponType weaponType)
         {
             // even chance of selecting each weapon table
