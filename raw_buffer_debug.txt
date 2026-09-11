@@ -1,2 +1,0 @@
-PortalDat Raw Len=17
-HighResDat Raw: null

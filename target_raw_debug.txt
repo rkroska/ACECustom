@@ -1,2 +1,0 @@
-PortalDat Raw: null
-HighResDat Raw: null

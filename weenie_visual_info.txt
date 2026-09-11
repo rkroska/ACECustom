@@ -1,1 +1,0 @@
-WCID 25749 (olthoiharvester): Setup=0x02000AAC, PaletteSet=0x04001114, PaletteTemplate=8, Shade=0.5, NativePaletteId=0xFF213953 (4280367443)

@@ -1,9 +1,0 @@
-Palette 0x04001114 total colors = 2048 (Blocks = 8):
-Block 0 (start 0): #0=#001021, #16=#45003C
-Block 1 (start 256): #0=#100810, #16=#190908
-Block 2 (start 512): #0=#1D1025, #16=#082129
-Block 3 (start 768): #0=#103139, #16=#19293A
-Block 4 (start 1024): #0=#29394A, #16=#194352
-Block 5 (start 1280): #0=#215363, #16=#21456F
-Block 6 (start 1536): #0=#3A636B, #16=#3A6373
-Block 7 (start 1792): #0=#5A7482, #16=#4F7B8C

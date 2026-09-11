@@ -308,6 +308,7 @@ docker-compose.yml
 /httplocalhost8000contentuser=rudy&p.txt
 
 # Local dev scratch (repo root / server tree)
+scratch/
 /build_log*.txt
 /diff*.txt
 /diff_*.txt
