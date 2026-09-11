@@ -118,6 +118,20 @@ function App() {
 
 
 
+  if (!isAuthenticated && (location.pathname === '/map' || location.pathname === '/pet-breeding')) {
+    return (
+      <MainLayout>
+        <Routes>
+          <Route path="/map" element={
+            <div className="w-full h-full bg-neutral-950"><WorldViewer /></div>
+          } />
+          <Route path="/pet-breeding" element={<PetBreedingCalculator />} />
+          <Route path="*" element={<Navigate to="/map" replace />} />
+        </Routes>
+      </MainLayout>
+    );
+  }
+
   if (!isAuthenticated) {
     return <LoginPage />
   }

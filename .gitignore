@@ -298,6 +298,7 @@ AppVeyor/
 # ACEmulator specific files
 Source/ACE.Server/config.js
 Source/ACE.Server/Config.js
+Source/ACE.Server/config.json
 Database/tools/password.txt
 Database/tools/.env.readonly
 Database/tools/.env.write

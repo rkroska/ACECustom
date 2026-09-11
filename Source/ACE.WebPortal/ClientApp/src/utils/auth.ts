@@ -16,10 +16,11 @@ export const getRoleName = (level: number): string => {
 export const DEFAULT_RESTRICTED_PAGE_MIN_LEVEL = 4;
 
 export const canAccessPage = (userLevel: number | null, pageAccess: Record<string, boolean> | null, pageKey: string): boolean => {
+  if (pageKey === 'map' || pageKey === 'pet-breeding' || pageKey === 'patch-notes') return true;
   if (userLevel === null) return false;
   if (pageAccess && pageKey in pageAccess) return pageAccess[pageKey];
   // Fallback when server has not sent pageAccess (older build)
-  if (pageKey === 'characters' || pageKey === 'leaderboards' || pageKey === 'patch-notes') return true;
+  if (pageKey === 'characters' || pageKey === 'leaderboards') return true;
   if (pageKey === 'patch-notes-admin') return userLevel >= DEFAULT_RESTRICTED_PAGE_MIN_LEVEL;
   return userLevel >= DEFAULT_RESTRICTED_PAGE_MIN_LEVEL;
 };

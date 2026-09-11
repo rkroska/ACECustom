@@ -28,17 +28,17 @@ const applyAuthPayload = (data: { username: string; accessLevel: number; pageAcc
 });
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  isAuthenticated: true,
-  user: 'Admin',
-  accessLevel: 100,
+  isAuthenticated: false,
+  user: null,
+  accessLevel: null,
   pageAccess: null,
   error: null,
   isLoading: false,
-  isBootstrapping: false,
+  isBootstrapping: true,
   isPortalDisabled: false,
   setPortalDisabled: (disabled) => set({ isPortalDisabled: disabled }),
   setPageAccess: (pageAccess) => set({ pageAccess }),
-  canAccessPage: (pageKey) => checkPageAccess(get().accessLevel, get().pageAccess, pageKey) || true,
+  canAccessPage: (pageKey) => checkPageAccess(get().accessLevel, get().pageAccess, pageKey),
   login: async (username, password) => {
     set({ isLoading: true, error: null, isPortalDisabled: false });
     try {
@@ -81,6 +81,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   clearError: () => set({ error: null }),
   bootstrap: async () => {
-    set({ isAuthenticated: true, user: 'Admin', accessLevel: 100, isBootstrapping: false });
+    try {
+      const response = await fetch('/api/auth/me');
+      if (response.ok) {
+        const data = await response.json().catch(() => null);
+        if (data && data.username && data.accessLevel !== undefined) {
+          set(applyAuthPayload(data));
+          return;
+        }
+      }
+      set({ isAuthenticated: false, user: null, accessLevel: null, pageAccess: null });
+    } catch (err) {
+      set({ isAuthenticated: false, user: null, accessLevel: null, pageAccess: null });
+    } finally {
+      set({ isBootstrapping: false });
+    }
   },
 }));

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -779,7 +779,7 @@ namespace ACE.Server.WorldObjects
             player.Session.Network.EnqueueSend(new GameMessageSystemChat(
                 $"Your pet was in combat recently; you cannot recall it for about {secShow} more second(s).",
                 ChatMessageType.System));
-            TraceRecallBlockStatic(pet, debugTag, $"essence_stow_denied remaining≈{rem:F1}s");
+            TraceRecallBlockStatic(pet, debugTag, $"essence_stow_denied remaining~{rem:F1}s");
             return true;
         }
 

@@ -51,7 +51,7 @@ namespace ACE.Server.Web
                 return configured;
             }
 
-            log.Warn("[WEB PORTAL] WebPortal.JwtSecret is not set in Config.js — a new secret is generated every restart and all portal logins expire on restart.");
+            log.Warn("[WEB PORTAL] WebPortal.JwtSecret is not set in Config.js -- a new secret is generated every restart and all portal logins expire on restart.");
             return GenerateDynamicSecret();
         }
 

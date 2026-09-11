@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -1217,7 +1217,7 @@ namespace ACE.Server.WorldObjects
                     pet.GetCombatTable();
                 }
                 else
-                    log.Warn($"{nameof(ApplyVisualOverridesTo)}: {nameof(VisualOverrideCombatTable)} is 0 for device {Name} ({Guid}) — skipping combat table override.");
+                    log.Warn($"{nameof(ApplyVisualOverridesTo)}: {nameof(VisualOverrideCombatTable)} is 0 for device {Name} ({Guid}) -- skipping combat table override.");
             }
 
             if (VisualOverrideSoundTable.HasValue)

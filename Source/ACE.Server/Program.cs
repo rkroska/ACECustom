@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -417,7 +417,7 @@ namespace ACE.Server
                 if (Interlocked.CompareExchange(ref ctrlCShutdownStarted, 1, 0) != 0)
                     return;
 
-                log.Info("Ctrl+C received — initiating cooperative shutdown...");
+                log.Info("Ctrl+C received -- initiating cooperative shutdown...");
                 try
                 {
                     ServerManager.DoShutdownNow();
@@ -448,7 +448,7 @@ namespace ACE.Server
             }
             else
             {
-                log.Info("[WEB PORTAL] enable_web_portal is false — skipping web portal host startup.");
+                log.Info("[WEB PORTAL] enable_web_portal is false -- skipping web portal host startup.");
             }
 
             // Keep the server alive (ACE uses a manual loop or waits for shutdown elsewhere)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -371,10 +371,12 @@ namespace ACE.Server.WorldObjects
             }
 
             if (ServerConfig.pet_visual_packet_debug.Value)
-                log.Info($"[CREATURE PACKET DEBUG] {Name} (WCID {WeenieClassId}): Setup=0x{SetupTableId:X8}, ClothingBase=0x{(ClothingBase ?? 0):X8}, PaletteID=0x{objDesc.PaletteID:X8}, PaletteTemplate=0x{(PaletteTemplate ?? 0):X8}, Shade={(Shade?.ToString("F2") ?? "null")}, SubPalettes={objDesc.SubPalettes.Count}, AnimParts={objDesc.AnimPartChanges.Count}, Textures={objDesc.TextureChanges.Count}");
-            foreach (var sp in objDesc.SubPalettes)
             {
-                log.Info($"   -> SubPalette: Id=0x{sp.SubPaletteId:X4}, Offset={sp.Offset}, Length={sp.Length}");
+                log.Info($"[CREATURE PACKET DEBUG] {Name} (WCID {WeenieClassId}): Setup=0x{SetupTableId:X8}, ClothingBase=0x{(ClothingBase ?? 0):X8}, PaletteID=0x{objDesc.PaletteID:X8}, PaletteTemplate=0x{(PaletteTemplate ?? 0):X8}, Shade={(Shade?.ToString("F2") ?? "null")}, SubPalettes={objDesc.SubPalettes.Count}, AnimParts={objDesc.AnimPartChanges.Count}, Textures={objDesc.TextureChanges.Count}");
+                foreach (var sp in objDesc.SubPalettes)
+                {
+                    log.Info($"   -> SubPalette: Id=0x{sp.SubPaletteId:X4}, Offset={sp.Offset}, Length={sp.Length}");
+                }
             }
 
             return objDesc;

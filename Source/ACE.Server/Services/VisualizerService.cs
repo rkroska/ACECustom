@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -183,7 +183,7 @@ namespace ACE.Server.Services
         private static List<SmartPaletteDto> BuildSmartPalettePool()
         {
             var results = new List<SmartPaletteDto>();
-            var portalDb = new PortalDatDatabase(DatManager.PortalDat.FilePath, keepOpen: false);
+            var portalDb = DatManager.PortalDat;
 
             foreach (var kvp in portalDb.AllFiles)
             {
@@ -468,7 +468,7 @@ namespace ACE.Server.Services
 
                         string name = customNames.TryGetValue(templateId, out var customName) ? $"Variant {templateId} ({customName})" : $"Variant {templateId}";
                         bool isDefault = (defaultTemplate != 0 && templateId == defaultTemplate);
-                        if (isDefault) name += " ⭐ [Default]";
+                        if (isDefault) name += " * [Default]";
 
                         result.Add(new SpeciesPaletteDto 
                         { 
@@ -521,7 +521,7 @@ namespace ACE.Server.Services
                             result.Add(new SpeciesPaletteDto
                             {
                                 TemplateId = currentPalId,
-                                Name = isDefault ? $"Species Palette 0x{currentPalId:X8} ⭐ [Default]" : $"Species Palette 0x{currentPalId:X8}",
+                                Name = isDefault ? $"Species Palette 0x{currentPalId:X8} * [Default]" : $"Species Palette 0x{currentPalId:X8}",
                                 PaletteSetId = paletteSetId,
                                 PaletteId = currentPalId,
                                 Swatches = swatches,
@@ -551,7 +551,7 @@ namespace ACE.Server.Services
                     result.Add(new SpeciesPaletteDto
                     {
                         TemplateId = paletteId,
-                        Name = "Native Species Palette ⭐ [Default]",
+                        Name = "Native Species Palette * [Default]",
                         PaletteSetId = 0,
                         PaletteId = paletteId,
                         Swatches = swatches,
@@ -574,7 +574,7 @@ namespace ACE.Server.Services
                 Mode = profile.ModeName,
                 Reason = profile.Reason,
                 WarningMessage = !profile.IsSupported
-                    ? $"⚠️ Notice: Palette recoloring is not supported for this creature rig ({profile.Reason}). In-game palette swaps will have no effect."
+                    ? $"[Notice] Palette recoloring is not supported for this creature rig ({profile.Reason}). In-game palette swaps will have no effect."
                     : null
             };
         }
@@ -870,32 +870,32 @@ namespace ACE.Server.Services
             var items = new List<TextureLibraryItemDto>
             {
                 // Armor / Metallic
-                new TextureLibraryItemDto { Category = "Armor/Metal", TextureId = 0x0600021A, HexId = "0x0600021A", Name = "🛡️ Chainmail Weave" },
-                new TextureLibraryItemDto { Category = "Armor/Metal", TextureId = 0x0600021C, HexId = "0x0600021C", Name = "🛡️ Polished Platemail" },
-                new TextureLibraryItemDto { Category = "Armor/Metal", TextureId = 0x0600021E, HexId = "0x0600021E", Name = "🛡️ Bronze Scale Armor" },
-                new TextureLibraryItemDto { Category = "Armor/Metal", TextureId = 0x06003110, HexId = "0x06003110", Name = "🛡️ Dark Steel Plate" },
+                new TextureLibraryItemDto { Category = "Armor/Metal", TextureId = 0x0600021A, HexId = "0x0600021A", Name = "Chainmail Weave" },
+                new TextureLibraryItemDto { Category = "Armor/Metal", TextureId = 0x0600021C, HexId = "0x0600021C", Name = "Polished Platemail" },
+                new TextureLibraryItemDto { Category = "Armor/Metal", TextureId = 0x0600021E, HexId = "0x0600021E", Name = "Bronze Scale Armor" },
+                new TextureLibraryItemDto { Category = "Armor/Metal", TextureId = 0x06003110, HexId = "0x06003110", Name = "Dark Steel Plate" },
 
                 // Chitin / Insectoid
-                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004067, HexId = "0x06004067", Name = "🦂 Dark Olthoi Carapace" },
-                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004FD3, HexId = "0x06004FD3", Name = "🐝 Red Phyntos Chitin" },
-                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004FD4, HexId = "0x06004FD4", Name = "🐝 Gold Wing Veins" },
-                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004068, HexId = "0x06004068", Name = "🦂 Olthoi Carapace Trim" },
-                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x05003306, HexId = "0x05003306", Name = "💀 Skull Mask & Orb Surface" },
-                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x050030C9, HexId = "0x050030C9", Name = "🐙 Void Tentacle Skin" },
-                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x0500303D, HexId = "0x0500303D", Name = "🔥 Flame Collar Aura" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004067, HexId = "0x06004067", Name = "Dark Olthoi Carapace" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004FD3, HexId = "0x06004FD3", Name = "Red Phyntos Chitin" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004FD4, HexId = "0x06004FD4", Name = "Gold Wing Veins" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x06004068, HexId = "0x06004068", Name = "Olthoi Carapace Trim" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x05003306, HexId = "0x05003306", Name = "Skull Mask & Orb Surface" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x050030C9, HexId = "0x050030C9", Name = "Void Tentacle Skin" },
+                new TextureLibraryItemDto { Category = "Chitin/Insect", TextureId = 0x0500303D, HexId = "0x0500303D", Name = "Flame Collar Aura" },
 
                 // Fur & Hide
-                new TextureLibraryItemDto { Category = "Fur/Hide", TextureId = 0x060012E4, HexId = "0x060012E4", Name = "🐺 Tusker Brown Pelt" },
-                new TextureLibraryItemDto { Category = "Fur/Hide", TextureId = 0x06003112, HexId = "0x06003112", Name = "🐺 Shadow Creature Hide" },
-                new TextureLibraryItemDto { Category = "Fur/Hide", TextureId = 0x060018A2, HexId = "0x060018A2", Name = "🐺 Dire Wolf Fur" },
+                new TextureLibraryItemDto { Category = "Fur/Hide", TextureId = 0x060012E4, HexId = "0x060012E4", Name = "Tusker Brown Pelt" },
+                new TextureLibraryItemDto { Category = "Fur/Hide", TextureId = 0x06003112, HexId = "0x06003112", Name = "Shadow Creature Hide" },
+                new TextureLibraryItemDto { Category = "Fur/Hide", TextureId = 0x060018A2, HexId = "0x060018A2", Name = "Dire Wolf Fur" },
 
                 // Undead & Bone
-                new TextureLibraryItemDto { Category = "Undead/Bone", TextureId = 0x060020B1, HexId = "0x060020B1", Name = "💀 Decayed Zombie Flesh" },
-                new TextureLibraryItemDto { Category = "Undead/Bone", TextureId = 0x060021C0, HexId = "0x060021C0", Name = "💀 Bleached Skeleton Bone" },
+                new TextureLibraryItemDto { Category = "Undead/Bone", TextureId = 0x060020B1, HexId = "0x060020B1", Name = "Decayed Zombie Flesh" },
+                new TextureLibraryItemDto { Category = "Undead/Bone", TextureId = 0x060021C0, HexId = "0x060021C0", Name = "Bleached Skeleton Bone" },
 
                 // Elemental & Crystal
-                new TextureLibraryItemDto { Category = "Elemental", TextureId = 0x06003B21, HexId = "0x06003B21", Name = "🔮 Volcanic Fire Crystal" },
-                new TextureLibraryItemDto { Category = "Elemental", TextureId = 0x06003B22, HexId = "0x06003B22", Name = "🔮 Glacial Frost Ice" }
+                new TextureLibraryItemDto { Category = "Elemental", TextureId = 0x06003B21, HexId = "0x06003B21", Name = "Volcanic Fire Crystal" },
+                new TextureLibraryItemDto { Category = "Elemental", TextureId = 0x06003B22, HexId = "0x06003B22", Name = "Glacial Frost Ice" }
             };
 
             if (!string.IsNullOrEmpty(category) && !category.Equals("all", StringComparison.OrdinalIgnoreCase))
@@ -1619,7 +1619,7 @@ namespace ACE.Server.Services
             if (texture == null || texture.Width == 0 || texture.Height == 0 || texture.Format == SurfacePixelFormat.PFID_UNKNOWN || texture.SourceData == null || texture.SourceData.Length == 0)
                 return null;
 
-            log.Info($"🎨 [SHOWROOM TEXTURE AUDIT] reqTex=0x{textureId:X8} (wcid={wcid}, palId=0x{paletteId:X8}, slot={paletteSlot}) | Format={texture.Format}, DefaultPal=0x{(texture.DefaultPaletteId.HasValue ? texture.DefaultPaletteId.Value.ToString("X8") : "00000000")}, Size={texture.Width}x{texture.Height}");
+            log.Info($"[SHOWROOM TEXTURE AUDIT] reqTex=0x{textureId:X8} (wcid={wcid}, palId=0x{paletteId:X8}, slot={paletteSlot}) | Format={texture.Format}, DefaultPal=0x{(texture.DefaultPaletteId.HasValue ? texture.DefaultPaletteId.Value.ToString("X8") : "00000000")}, Size={texture.Width}x{texture.Height}");
 
             if (texture.Format == SurfacePixelFormat.PFID_P8 || texture.Format == SurfacePixelFormat.PFID_INDEX16)
             {
@@ -1817,7 +1817,7 @@ namespace ACE.Server.Services
                     }
                     else
                     {
-                        log.Warn($"🎨 [PALETTE OVERRIDE WARN] PaletteID 0x{paletteId:X8} was not found in DAT. Retaining default creature texture colors.");
+                        log.Warn($"[PALETTE OVERRIDE WARN] PaletteID 0x{paletteId:X8} was not found in DAT. Retaining default creature texture colors.");
                     }
                 }
                 else if ((paletteId & 0xFF000000) == 0x0F000000)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -5034,8 +5034,8 @@ namespace ACE.Server.Command.Handlers
             log.Info($"[PetDesc] {player.Name}:\n{sb}");
         }
 
-        [CommandHandler("breed-debug", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows live breeding diagnostics for current location, pets, and nearby players.", "@breed-debug")]
-        [CommandHandler("pet-debug", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows live breeding diagnostics for current location, pets, and nearby players.", "@pet-debug")]
+        [CommandHandler("breed-debug", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows live breeding diagnostics for current location, pets, and nearby players.", "@breed-debug")]
+        [CommandHandler("pet-debug", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows live breeding diagnostics for current location, pets, and nearby players.", "@pet-debug")]
         public static void HandleBreedDebug(Session session, params string[] parameters)
         {
             var player = session.Player;
