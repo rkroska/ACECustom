@@ -567,6 +567,15 @@ namespace ACE.Server.WorldObjects
             if (resisted && !overpower)
                 return null;
 
+            // THE canonical endgame gate for this cast (owner 2026-09-10): a governed monster at
+            // variation 11+, or a player casting with ZC-stamped gear. Everything else - the whole
+            // base world, v1-v5, and any player on retail gear - takes the PRE-SERIES crit math
+            // below. The 08-29 unified crit was never meant to leave v11-25, but it shipped
+            // unconditional and gave 35,834 base-world caster placements a 1.60x crit.
+            // Deliberately placed AFTER the resist bail (third review) - a resisted spell returns
+            // above, so computing the gate first was wasted work on every resist.
+            var endgameCrit = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(sourceCreature, weapon);
+
             CreatureSkill attackSkill = null;
             if (sourceCreature != null)
                 attackSkill = sourceCreature.GetCreatureSkill(Spell.School);
@@ -630,6 +639,15 @@ namespace ACE.Server.WorldObjects
                 if (criticalHit)
                     weaponCritDamageMod = GetWeaponCritDamageMod(weapon, sourceCreature, attackSkill, target);
 
+                // ORDERING MATTERS FOR THE RETAIL BRANCH (found by review 2026-09-10). Baseline
+                // (9d128e912:606) computed the crit bonus from the PRE-AUG base, then added the aug
+                // afterwards. The series moved the crit derivation below the aug term, so simply
+                // restoring the 0.5f coefficient still left retail life crits larger than baseline by
+                // exactly 0.5 x EffectiveLifeAugCount x weaponCritDamageMod. Capture the pre-aug value
+                // so the retail branch can reproduce baseline exactly; the governed branch deliberately
+                // keeps the new "crit off the fully composed base" model.
+                var lifeMagicDamagePreAug = lifeMagicDamage;
+
                 if (sourceCreature != null && sourceCreature.EffectiveLifeAugCount >= 1)
                 {
                     lifeMagicDamage += sourceCreature.EffectiveLifeAugCount;
@@ -655,6 +673,14 @@ namespace ACE.Server.WorldObjects
                             var sv = Math.Clamp(zpFlat.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellVariance), 0.0, 1.0);
                             lifeMagicDamage *= (float)(1.0 - sv * ThreadSafeRandom.Next(0.0f, 1.0f));
                         }
+
+                        // RE-SYNC (second review). An authored spell_damage REPLACES the whole composed
+                        // value - base AND the life aug term - and spell_variance then spreads it, so the
+                        // pre-aug capture taken further up is meaningless once either fires. Without this
+                        // the ungoverned crit branch would derive from a stale number unrelated to the
+                        // damage actually dealt. Unreachable while nothing is authored below v11, but the
+                        // capture must not silently rot if a zone ever is.
+                        lifeMagicDamagePreAug = lifeMagicDamage;
                     }
                 }
 
@@ -667,7 +693,11 @@ namespace ACE.Server.WorldObjects
 
                 // UNIFIED CRIT: CritX x the base the hit ACTUALLY uses - player and governed casters alike
                 if (criticalHit)
-                    critDamageBonus = lifeMagicDamage * weaponCritDamageMod;
+                    critDamageBonus = endgameCrit
+                        ? lifeMagicDamage * weaponCritDamageMod
+                        // retail: HALF, and off the PRE-AUG base - baseline derived this before the
+                        // life aug term was added (see lifeMagicDamagePreAug above)
+                        : lifeMagicDamagePreAug * 0.5f * weaponCritDamageMod;
 
                 finalDamage = (lifeMagicDamage + critDamageBonus) * elementalDamageMod * slayerMod * resistanceMod * absorbMod * attribBonus;
             }
@@ -718,7 +748,7 @@ namespace ACE.Server.WorldObjects
                 }
                 // unified crit: a PvE crit uses the MAX roll (retail melee's own rule), so the
                 // CritX multiple below lands on the spell's ceiling, not a random roll
-                baseDamage = criticalHit && !isPVP
+                baseDamage = endgameCrit && criticalHit && !isPVP
                     ? Spell.MaxDamage
                     : ThreadSafeRandom.Next(Spell.MinDamage, Spell.MaxDamage);
 
@@ -735,8 +765,31 @@ namespace ACE.Server.WorldObjects
                 // WHICH slot fired decides which band applies - the arc and the ring carry separate
                 // damage now. Matched on the spell id rather than on a flag, because the projectile is
                 // all we have here and the two slots can never hold the same spell.
+                // GATED 2026-09-10 (second review). The RING band in WorldObject_Magic was given a
+                // ZcPowerSuppressed check and this ARC band was not, so the same stranded-band bug
+                // survived here: with zonecontrol_enabled OFF (or the weapon zone lock on and the
+                // wielder outside a zone), the arc still REPLACED baseDamage with its authored band
+                // (~9,440) while endgameCrit was false, leaving the crit term on the spell's own retail
+                // derivation (Spell.MaxDamage * 0.5f, ~42) - a hit that cannot meaningfully crit.
+                // Ruling 1: the toggle makes ZC weapon power inert, bands included.
+                //
+                // GATED ON endgameCrit ITSELF (fourth review). Two earlier attempts got this wrong in
+                // the same way, so the guard now keys off the crit model rather than trying to restate
+                // its conditions:
+                //   - ZcPowerSuppressed alone failed because WeaponPowerSuppressed returns false
+                //     immediately for a non-Player wielder, BEFORE it reads zonecontrol_enabled.
+                //   - Adding an explicit zonecontrol_enabled test fixed only the toggle-OFF case; with
+                //     the toggle ON a BASE-WORLD monster still passed every condition while
+                //     endgameCrit was false, leaving the band (~9,440) paired with a retail crit term
+                //     (Spell.MaxDamage * 0.5f, ~42) - a hit that cannot meaningfully crit.
+                // The invariant that kept breaking is "band applies IFF the unified crit applies", so
+                // it is now expressed directly and cannot drift again. endgameCrit already folds in the
+                // master toggle, the v11 floor and the gear stamp. ZcPowerSuppressed still adds the
+                // player weapon zone lock on top.
                 double? procDmgOverride = null;
-                if (FromProc && weapon != null)
+                if (FromProc && weapon != null
+                    && endgameCrit
+                    && !ZcPowerSuppressed(weapon, sourceCreature))
                 {
                     if (weapon.ProcSpell.HasValue && weapon.ProcSpell.Value == Spell.Id)
                         procDmgOverride = weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcArcDamagePropId);
@@ -843,7 +896,9 @@ namespace ACE.Server.WorldObjects
                 // Blow band bounds it. This replaces the per-site 0.5f re-derives that quietly
                 // halved crush on every magic path. PvP keeps its retail bonus from above.
                 if (criticalHit && !isPVP)
-                    critDamageBonus = (float)((baseDamage + skillBonus) * weaponCritDamageMod);
+                    critDamageBonus = endgameCrit
+                        ? (float)((baseDamage + skillBonus) * weaponCritDamageMod)
+                        : Spell.MaxDamage * 0.5f * weaponCritDamageMod;   // retail: half of MAX, skillBonus NOT doubled
 
                 finalDamage = baseDamage + critDamageBonus + skillBonus;
 
@@ -1371,13 +1426,27 @@ namespace ACE.Server.WorldObjects
                 var displayAmount = amount;
 
                 // Zone Control "Cast on Strike" reads with its OWN name and its own sentence (owner
-                // 2026-08-27). Gated on FromProc AND on the spell being one of ours, so every retail
-                // proc - cloaks, aetheria, the player Ring Glyph crafts - keeps the stock message.
-                // The rename exists because the client would otherwise print the DAT name, and "Nether
-                // Arc I" reads as a weak spell when the card is anything but.
+                // 2026-08-27). The rename exists because the client would otherwise print the DAT
+                // name, and "Nether Arc I" reads as a weak spell when the card is anything but.
+                //
+                // 🔴 FIXED 2026-09-10 (fourth review): the old comment here claimed "every retail proc
+                // - cloaks, aetheria, the player Ring Glyph crafts - keeps the stock message", and the
+                // code did the OPPOSITE. TryGetProcDisplayName is keyed on SPELL ID ALONE, and its
+                // table is full of RETAIL ids - 2753 Blade Arc, 2718 Force Arc, the 1783-1789 ring set.
+                // Those are exactly the spells the ~11,700 player Ring Glyph crafts use, so a
+                // base-world player proccing a retail weapon got renamed attacker- AND defender-side
+                // combat lines. Damage was never affected; this is message text only. Now gated on the
+                // same endgameCrit that governs the rest of this cast, so the name follows the model.
+                // (endgameCrit is a local in CalculateDamage and not in scope here, so the same gate is
+                // recomputed from the instance members it was built from: the casting creature and
+                // ProjectileLauncher.)
                 var zcProcName = (string)null;
-                if (FromProc)
+                if (FromProc
+                    && ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(
+                        ProjectileSource as Creature, ProjectileLauncher))
+                {
                     ACE.Server.Managers.ZoneControl.ZoneLootMutator.TryGetProcDisplayName(Spell.Id, out zcProcName);
+                }
 
                 if (sourcePlayer != null)
                 {

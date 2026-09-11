@@ -298,9 +298,9 @@ namespace ACE.Server.Managers.ZoneScaling
         // augs / enlightenment. Read for PLAYERS via the zone default the player stands in; no zone = the C#
         // default, so the caps apply everywhere. Creature.GetGearCap / GetEquippedItemsRatingSumCapped /
         // GetZoneModifierBonus are the read sites.
-        public const string GearCapDr = "gear_cap_dr";                     // worn Damage Resist sum (ladder ceiling 2500; ZoneFallback.CapDr 92 when zonecontrol_enabled is off)
-        public const string GearCapCdr = "gear_cap_cdr";                   // worn CritDmgResist / CritResist / NetherResist sums, EACH (ladder ceiling 1500; ZoneFallback.CapCdr 73 when off)
-        public const string GearCapLine = "gear_cap_line";                 // every anchored cantrip line: Dmg / CritDmg / MaxHP / MaxStam / MaxMana / HealBoost / each aug track / each attribute (ladder ceiling 2500; ZoneFallback.CapLine 211 when off)
+        public const string GearCapDr = "gear_cap_dr";                     // worn Damage Resist sum (ladder ceiling 2500; NO cap at all when zonecontrol_enabled is off - owner 2026-09-10)
+        public const string GearCapCdr = "gear_cap_cdr";                   // worn CritDmgResist / CritResist / NetherResist sums, EACH (ladder ceiling 1500; NO cap at all when off - owner 2026-09-10)
+        public const string GearCapLine = "gear_cap_line";                 // every anchored cantrip line: Dmg / CritDmg / MaxHP / MaxStam / MaxMana / HealBoost / each aug track / each attribute (ladder ceiling 2500; NO cap at all when off - the 211 line ceiling capped GearMaxHealth, measured in HIT POINTS, and stopped players healing)
         public const string XpKill = "xp_kill";
         public const string LumAward = "lum_award";
 

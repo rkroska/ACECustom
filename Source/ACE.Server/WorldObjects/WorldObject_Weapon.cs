@@ -377,9 +377,46 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public const bool CritImbuesSuppressedForPlayers = true;
 
-        /// <summary>True when Critical Strike / Crippling Blow must be ignored for this wielder.</summary>
-        public static bool CritImbuesSuppressed(Creature wielder)
-            => CritImbuesSuppressedForPlayers && wielder is Player;
+        /// <summary>
+        /// True when Critical Strike / Crippling Blow must be ignored for this wielder's weapon.
+        ///
+        /// GATED 2026-09-10 (owner, "full restore to old"): this was an unconditional
+        /// `wielder is Player` test, so it killed Critical Strike (crit rate 0.50 -> 0.10) and
+        /// Crushing Blow (crit multiplier 1+6.0 -> 1+1.0) for EVERY player on EVERY weapon,
+        /// retail gear included - a change that was only ever meant for v11-25. It now applies
+        /// through the gear half of the canonical gate, so a retail weapon keeps its imbues and a
+        /// ZC-stamped weapon still defers to Biting Strike / Crushing Blow as designed.
+        /// </summary>
+        /// <remarks>
+        /// `wielder is Player` is tested HERE, before the gate call (third review): passing
+        /// EndgameRulesApplyToPlayerGear as an ARGUMENT made C# evaluate the ZcTier biota read first, so
+        /// every MONSTER swing with a Critical Strike or Crippling Blow weapon paid a read lock whose
+        /// answer was then discarded - twice per swing, from GetWeaponCriticalChance and
+        /// GetWeaponCritDamageMod. Monster swings dominate on a populated server.
+        /// </remarks>
+        public static bool CritImbuesSuppressed(Creature wielder, WorldObject weapon)
+            => CritImbuesSuppressedForPlayers
+                && wielder is Player
+                && ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon);
+
+        /// <summary>
+        /// Pre-resolved form for hot paths that already computed the gear half of the gate.
+        /// EndgameRulesApplyToPlayerGear reads PropertyInt.ZcTier, which takes the biota read lock the
+        /// 2026-09-04 review moved off the per-hit path - so a method that needs the answer more than
+        /// once must take it ONCE and pass the bool, never call the resolving overload twice.
+        /// </summary>
+        public static bool CritImbuesSuppressed(Creature wielder, bool endgameGear)
+            => CritImbuesSuppressedForPlayers && wielder is Player && endgameGear;
+
+        /// <summary>
+        /// Panel-side form of <see cref="CritImbuesSuppressed"/>. An item panel is only ever built for
+        /// a player examining something, so the wielder test is implicit and only the gear half remains.
+        /// ONE expression shared with the combat path so the panel can never advertise an imbue that is
+        /// inert, nor hide one that now works again on retail gear.
+        /// </summary>
+        public static bool CritImbuesSuppressedOnItem(WorldObject weapon)
+            => CritImbuesSuppressedForPlayers
+                && ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon);
 
         /// <summary>The weapon zone lock (owner 2026-08-30): true when this ZC weapon's custom
         /// power is suppressed for this swing - toggle on, player wielder, ZcTier 11+ item,
@@ -401,9 +438,10 @@ namespace ACE.Server.WorldObjects
                 : (float)(weapon?.CriticalFrequency ?? defaultPhysicalCritFrequency);
 
             if (weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike)
-                && !CritImbuesSuppressed(wielder))   // owner 2026-08-25: Biting Strike is the only crit-chance source on a player weapon
+                && !CritImbuesSuppressed(wielder, weapon))   // owner 2026-08-25: Biting Strike is the only crit-chance source on a player weapon
             {
-                var criticalStrikeBonus = GetCriticalStrikeMod(skill);
+                // physical path: the magic-only floor never applies, so endgameGear is irrelevant here
+                var criticalStrikeBonus = GetCriticalStrikeMod(skill, false, false);
 
                 critRate = Math.Max(critRate, criticalStrikeBonus);
             }
@@ -462,6 +500,16 @@ namespace ACE.Server.WorldObjects
         private const float defaultMagicCritFrequency = 0.10f;
 
         /// <summary>
+        /// RETAIL magic crit chance, restored for ungoverned content (owner 2026-09-10).
+        /// The 08-29 unification above raised every caster on the shard from 0.05 to 0.10, not just
+        /// v11-25 - doubling the crit RATE of all 35,834 base-world caster placements on top of the
+        /// ~1.6x crit DAMAGE from the SpellProjectile rewrite. The unified value stays for governed
+        /// content; anything below variation 11, and any player on retail gear, reads retail again.
+        /// </summary>
+        private const float retailMagicCritFrequency = 0.05f;
+
+
+        /// <summary>
         /// Returns the critical chance for the caster weapon
         /// </summary>
         public static float GetWeaponMagicCritFrequency(WorldObject weapon, Creature wielder, CreatureSkill skill, Creature target)
@@ -475,21 +523,41 @@ namespace ACE.Server.WorldObjects
                 // branch too - it was silently skipped, making mob-caster crits un-resistable
                 // while the same mob's MELEE crits were reduced. Zone-authored crit chance still
                 // replaces the default first, same as the with-wand path below.
+                // FULL RESTORE (owner 2026-09-10, "the same retail experience before part 1,2,3,4"):
+                // pre-series this branch returned the bare default and SKIPPED the target's Crit Resist
+                // entirely. The 2026-08-21 fix that applies it is a genuine improvement and it makes mob
+                // crits resistable - but it shipped inside the series and changed base-world behavior,
+                // so it is now GOVERNED-ONLY. Revisit when the series is re-landed properly.
+                if (!ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToMonster(wielder))
+                    return retailMagicCritFrequency;
+
                 var wandlessRate = GetZoneCritChanceOverride(wielder) ?? defaultMagicCritFrequency;
                 return wandlessRate * Creature.GetNegativeRatingMod(target.GetCritResistRating());
             }
 
+            // ONE gate read for this whole call (hoisted 2026-09-10 - it was taken twice, and the
+            // ZcTier read behind it holds the biota lock).
+            //
+            // FIXED 2026-09-10 (third review): this hoist originally called EndgameRulesApplyToPlayerGear
+            // - the PLAYER half - for EVERY wielder, which quietly halved governed caster MOBS. A v22 mob
+            // holding an ordinary wand has no ZcTier, so it read 0.05 instead of 0.10, while the SAME mob
+            // casting wandless still got 0.10 from the monster branch above. Ruling 2: monsters gate by
+            // LOCATION. EndgameRulesApply picks the correct half per wielder.
+            var endgameCast = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(wielder, weapon);
+
             // zone lock: outside authored areas a ZC weapon's Biting Strike stamp reads as absent
+            var baseRate = endgameCast ? defaultMagicCritFrequency : retailMagicCritFrequency;
             var critRate = ZcPowerSuppressed(weapon, wielder)
-                ? defaultMagicCritFrequency
-                : (float)(weapon.GetProperty(PropertyFloat.CriticalFrequency) ?? defaultMagicCritFrequency);
+                ? baseRate
+                : (float)(weapon.GetProperty(PropertyFloat.CriticalFrequency) ?? baseRate);
 
             if (weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike)
-                && !CritImbuesSuppressed(wielder))   // same ruling on the magic path
+                && !CritImbuesSuppressed(wielder, endgameCast))   // same ruling on the magic path
             {
                 var isPvP = wielder is Player && target is Player;
 
-                var criticalStrikeMod = GetCriticalStrikeMod(skill, isPvP);
+                // endgameGear threaded through: an ungated floor would put a RETAIL caster at 10 pct
+                var criticalStrikeMod = GetCriticalStrikeMod(skill, isPvP, endgameCast);
 
                 critRate = Math.Max(critRate, criticalStrikeMod);
             }
@@ -524,7 +592,7 @@ namespace ACE.Server.WorldObjects
                 : (float)(weapon?.GetProperty(PropertyFloat.CriticalMultiplier) ?? defaultCritDamageMultiplier);
 
             if (weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow)
-                && !CritImbuesSuppressed(wielder))   // owner 2026-08-25: Crushing Blow is the only crit-damage source on a player weapon
+                && !CritImbuesSuppressed(wielder, weapon))   // owner 2026-08-25: Crushing Blow is the only crit-damage source on a player weapon
             {
                 var cripplingBlowMod = GetCripplingBlowMod(skill);
 
@@ -863,7 +931,21 @@ namespace ACE.Server.WorldObjects
 
         public static float MaxCriticalStrikeMod = 0.5f;
 
-        public static float GetCriticalStrikeMod(CreatureSkill skill, bool isPvP = false)
+        /// <param name="endgameGear">
+        /// True only when the wielder's caster is ZC-stamped (the gear half of the canonical gate).
+        /// Added 2026-09-10 after review: the magic FLOOR below reads defaultMagicCritFrequency, which
+        /// the series raised 0.05 -> 0.10. Because this method is ungated, a RETAIL caster carrying a
+        /// Critical Strike imbue was floored at 10 pct instead of the baseline 5 pct whenever its base
+        /// magic skill was low enough for the floor to win - and GetWeaponMagicCritFrequency then takes
+        /// Math.Max(critRate, this). Defaults to FALSE so every existing caller stays on retail.
+        /// </param>
+        /// <remarks>
+        /// `endgameGear` is deliberately NOT defaulted (fourth review). Two adjacent defaulted bools
+        /// made `GetCriticalStrikeMod(skill, endgameGear)` compile and bind silently to `isPvP` -
+        /// halving the magic mod AND leaving the retail floor in place, with no diagnostic. Requiring
+        /// it turns that mistake into a compile error.
+        /// </remarks>
+        public static float GetCriticalStrikeMod(CreatureSkill skill, bool isPvP, bool endgameGear)
         {
             var baseMod = 0.0f;
 
@@ -917,7 +999,9 @@ namespace ACE.Server.WorldObjects
             if (baseMod >= minEffective)
                 criticalStrikeMod = baseMod;*/
 
-            var defaultCritFrequency = skillType == ImbuedSkillType.Magic ? defaultMagicCritFrequency : defaultPhysicalCritFrequency;
+            var defaultCritFrequency = skillType == ImbuedSkillType.Magic
+                ? (endgameGear ? defaultMagicCritFrequency : retailMagicCritFrequency)
+                : defaultPhysicalCritFrequency;   // physical floor is 0.1f at baseline and now - untouched
 
             var criticalStrikeMod = Math.Max(defaultCritFrequency, baseMod);
 
