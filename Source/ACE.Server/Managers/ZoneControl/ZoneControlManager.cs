@@ -1125,7 +1125,8 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>
         /// Monster half of the endgame gate: does this CREATURE play by T11-25 rules?
         /// Location-based - true only for a non-player creature inside an enabled authored zone
-        /// at variation 11 or above. Always false when the master toggle is off.
+        /// at variation 11 or above. Always false when the master toggle is off, and false for a
+        /// creature carrying ExemptFromZoneScaling (pets are NOT exempt here - see the body).
         /// </summary>
         public static bool EndgameRulesApplyToMonster(Creature creature)
         {
@@ -1160,6 +1161,15 @@ namespace ACE.Server.Managers.ZoneControl
             // ordinary landblock take the endgame path. Dummy-based testing of T11 combat needs the
             // dummy inside an enabled zone at its variation.
             if (FindZoneRef(creature) == null)
+                return false;
+
+            // EXPLICIT PER-MONSTER OPT-OUT (review 2026-09-11). Bypassing IsZoneScalingExempt above
+            // was only meant to keep PETS on the endgame model; it also skipped the weenie bool
+            // ExemptFromZoneScaling, which is documented as the global "leave this creature alone"
+            // switch (a vendor or quest NPC standing inside a v11+ zone) and which TierHitGate already
+            // honours. Re-check just that bool here, after the lock-free landblock bail so the base
+            // world never pays for it. Pets are deliberately NOT excluded - see the note above.
+            if (ExemptBoolOf(creature))
                 return false;
 
             // HARD VARIATION FLOOR (owner 2026-09-10): "retail" is EVERY variation under 11, not
