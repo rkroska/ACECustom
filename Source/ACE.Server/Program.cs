@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -390,6 +390,11 @@ namespace ACE.Server
 
             log.Info("Initializing EventManager...");
             EventManager.Initialize();
+
+            // Breeding picks a mutation palette from this pool on the world thread. Building it scans
+            // several thousand DAT records, so warm it here rather than stalling the first breed.
+            log.Info("Initializing PetMutationService...");
+            ACE.Server.Services.PetMutationService.Initialize();
 
             if (ConfigManager.Config.Server.Network.ContentPort.HasValue)
             {

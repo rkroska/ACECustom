@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Heart, Dna, Info, Sparkles, RefreshCw, ChevronRight, Award, Copy, BarChart3, HelpCircle, RotateCcw, Terminal, Check } from 'lucide-react'
 import WorldViewer from './WorldViewer'
 import { copyToClipboard } from '../utils/clipboard'
@@ -56,14 +56,15 @@ const COLOR_FAMILIES: { [key: string]: { name: string, hex: string, swatches: st
     hex: '#3B82F6',
     swatches: ['#3B82F6', '#2563EB', '#1D4ED8', '#1E40AF', '#1E3A8A', '#172554', '#0F172A', '#020617'],
     templates: {
-      'Olthoi': { templateId: 2, paletteId: 0x040005F0, hueShift: 0 },
-      'Gromnie': { templateId: 11, paletteId: 0x040001BB, hueShift: 0 },
-      'Drudge': { templateId: 3, paletteId: 0x0400025F, hueShift: 0 },
+      'Olthoi': { templateId: 39, paletteId: 0x04001165, hueShift: 0 },
+      'Gromnie': { templateId: 11, paletteId: 0x04001DB4, hueShift: 0 },
+      'Drudge': { templateId: 21, paletteId: 0x0400102F, hueShift: 0 },
       'Mattekar': { templateId: 1, paletteId: 0x040001A9, hueShift: 0 },
-      'Lugian': { templateId: 2, paletteId: 0x040001D4, hueShift: 0 },
-      'Banderling': { templateId: 2, paletteId: 0x040001EA, hueShift: 0 },
+      'Lugian': { templateId: 2, paletteId: 0x040010CA, hueShift: 0 },
+      'Banderling': { templateId: 14, paletteId: 0x0400142E, hueShift: 0 },
+      'Burun': { templateId: 2, paletteId: 0x040017AF, hueShift: 0 },
       'Tusker': { templateId: 2, paletteId: 0x040001F6, hueShift: 0 },
-      'Viridian Statue': { templateId: 1, paletteId: 0x04000210, hueShift: 0 },
+      'Viridian Statue': { templateId: 27, paletteId: 0x04001356, hueShift: 0 },
     }
   },
   amber: {
@@ -71,14 +72,15 @@ const COLOR_FAMILIES: { [key: string]: { name: string, hex: string, swatches: st
     hex: '#F59E0B',
     swatches: ['#F59E0B', '#D97706', '#B45309', '#78350F', '#451A03', '#27272A', '#18181B', '#09090B'],
     templates: {
-      'Olthoi': { templateId: 17, paletteId: 0x040005AD, hueShift: 0 },
-      'Gromnie': { templateId: 15, paletteId: 0x040001BF, hueShift: 0 },
-      'Drudge': { templateId: 2, paletteId: 0x0400025D, hueShift: 0 },
+      'Olthoi': { templateId: 10, paletteId: 0x04001342, hueShift: 0 },
+      'Gromnie': { templateId: 15, paletteId: 0x0400135E, hueShift: 0 },
+      'Drudge': { templateId: 40, paletteId: 0x0400197B, hueShift: 0 },
       'Mattekar': { templateId: 2, paletteId: 0x040001A8, hueShift: 0 },
-      'Lugian': { templateId: 3, paletteId: 0x040001D2, hueShift: 0 },
-      'Banderling': { templateId: 3, paletteId: 0x040001E8, hueShift: 0 },
+      'Lugian': { templateId: 10, paletteId: 0x0400118C, hueShift: 0 },
+      'Banderling': { templateId: 18, paletteId: 0x04001437, hueShift: 0 },
+      'Burun': { templateId: 58, paletteId: 0x040017A7, hueShift: 0 },
       'Tusker': { templateId: 3, paletteId: 0x040001F4, hueShift: 0 },
-      'Viridian Statue': { templateId: 1, paletteId: 0x04000210, hueShift: 0 },
+      'Viridian Statue': { templateId: 25, paletteId: 0x0400135F, hueShift: 0 },
     }
   },
   crimson: {
@@ -86,14 +88,15 @@ const COLOR_FAMILIES: { [key: string]: { name: string, hex: string, swatches: st
     hex: '#EF4444',
     swatches: ['#EF4444', '#DC2626', '#B91C1C', '#991B1B', '#7F1D1D', '#450A0A', '#260404', '#000000'],
     templates: {
-      'Olthoi': { templateId: 14, paletteId: 0x040005C3, hueShift: 0 },
-      'Gromnie': { templateId: 12, paletteId: 0x040001BC, hueShift: 0 },
-      'Drudge': { templateId: 4, paletteId: 0x04000261, hueShift: 0 },
+      'Olthoi': { templateId: 13, paletteId: 0x04001162, hueShift: 0 },
+      'Gromnie': { templateId: 12, paletteId: 0x04001DB7, hueShift: 0 },
+      'Drudge': { templateId: 13, paletteId: 0x040019F9, hueShift: 0 },
       'Mattekar': { templateId: 3, paletteId: 0x040001AA, hueShift: 0 },
-      'Lugian': { templateId: 4, paletteId: 0x040001D6, hueShift: 0 },
-      'Banderling': { templateId: 4, paletteId: 0x040001EC, hueShift: 0 },
+      'Lugian': { templateId: 4, paletteId: 0x040010D2, hueShift: 0 },
+      'Banderling': { templateId: 81, paletteId: 0x04001432, hueShift: 0 },
+      'Burun': { templateId: 62, paletteId: 0x040017A8, hueShift: 0 },
       'Tusker': { templateId: 4, paletteId: 0x040001F8, hueShift: 0 },
-      'Viridian Statue': { templateId: 1, paletteId: 0x04000210, hueShift: 0 },
+      'Viridian Statue': { templateId: 39, paletteId: 0x04001E9B, hueShift: 0 },
     }
   },
   emerald: {
@@ -101,14 +104,15 @@ const COLOR_FAMILIES: { [key: string]: { name: string, hex: string, swatches: st
     hex: '#10B981',
     swatches: ['#10B981', '#059669', '#047857', '#065F46', '#064E3B', '#022C22', '#061D15', '#000000'],
     templates: {
-      'Olthoi': { templateId: 1, paletteId: 0x040005F3, hueShift: 0 },
-      'Gromnie': { templateId: 14, paletteId: 0x040001BE, hueShift: 0 },
-      'Drudge': { templateId: 1, paletteId: 0x0400025C, hueShift: 0 },
+      'Olthoi': { templateId: 8, paletteId: 0x04001163, hueShift: 0 },
+      'Gromnie': { templateId: 14, paletteId: 0x04001DB3, hueShift: 0 },
+      'Drudge': { templateId: 89, paletteId: 0x04001E11, hueShift: 0 },
       'Mattekar': { templateId: 4, paletteId: 0x040001AB, hueShift: 0 },
-      'Lugian': { templateId: 1, paletteId: 0x040001D3, hueShift: 0 },
-      'Banderling': { templateId: 1, paletteId: 0x040001E9, hueShift: 0 },
+      'Lugian': { templateId: 9, paletteId: 0x040010C7, hueShift: 0 },
+      'Banderling': { templateId: 64, paletteId: 0x04001434, hueShift: 0 },
+      'Burun': { templateId: 8, paletteId: 0x040017AE, hueShift: 0 },
       'Tusker': { templateId: 1, paletteId: 0x040001F5, hueShift: 0 },
-      'Viridian Statue': { templateId: 1, paletteId: 0x04000210, hueShift: 0 },
+      'Viridian Statue': { templateId: 5, paletteId: 0x04000FEA, hueShift: 0 },
     }
   },
   gold: {
@@ -116,14 +120,15 @@ const COLOR_FAMILIES: { [key: string]: { name: string, hex: string, swatches: st
     hex: '#EAB308',
     swatches: ['#EAB308', '#CA8A04', '#A16207', '#854D0E', '#713F12', '#451A03', '#1C1917', '#000000'],
     templates: {
-      'Olthoi': { templateId: 17, paletteId: 0x040005AD, hueShift: 0 },
-      'Gromnie': { templateId: 10, paletteId: 0x040001BA, hueShift: 0 },
-      'Drudge': { templateId: 5, paletteId: 0x04000262, hueShift: 0 },
+      'Olthoi': { templateId: 20, paletteId: 0x04001343, hueShift: 0 },
+      'Gromnie': { templateId: 10, paletteId: 0x04001DAC, hueShift: 0 },
+      'Drudge': { templateId: 17, paletteId: 0x040019FC, hueShift: 0 },
       'Mattekar': { templateId: 5, paletteId: 0x040001AC, hueShift: 0 },
-      'Lugian': { templateId: 5, paletteId: 0x040001D7, hueShift: 0 },
-      'Banderling': { templateId: 5, paletteId: 0x040001ED, hueShift: 0 },
+      'Lugian': { templateId: 8, paletteId: 0x040010D0, hueShift: 0 },
+      'Banderling': { templateId: 45, paletteId: 0x04001439, hueShift: 0 },
+      'Burun': { templateId: 19, paletteId: 0x040017B0, hueShift: 0 },
       'Tusker': { templateId: 5, paletteId: 0x040001F9, hueShift: 0 },
-      'Viridian Statue': { templateId: 1, paletteId: 0x04000210, hueShift: 0 },
+      'Viridian Statue': { templateId: 8, paletteId: 0x04000FEB, hueShift: 0 },
     }
   },
   cobalt: {
@@ -131,35 +136,41 @@ const COLOR_FAMILIES: { [key: string]: { name: string, hex: string, swatches: st
     hex: '#6366F1',
     swatches: ['#6366F1', '#4F46E5', '#4338CA', '#3730A3', '#312E81', '#1E1B4B', '#0F172A', '#000000'],
     templates: {
-      'Olthoi': { templateId: 12, paletteId: 0x040005CB, hueShift: 0 },
-      'Gromnie': { templateId: 6, paletteId: 0x040001B6, hueShift: 0 },
-      'Drudge': { templateId: 3, paletteId: 0x0400025F, hueShift: 0 },
+      'Olthoi': { templateId: 82, paletteId: 0x04001164, hueShift: 0 },
+      'Gromnie': { templateId: 6, paletteId: 0x040018BB, hueShift: 0 },
+      'Drudge': { templateId: 76, paletteId: 0x040019FB, hueShift: 0 },
       'Mattekar': { templateId: 6, paletteId: 0x040001AD, hueShift: 0 },
-      'Lugian': { templateId: 6, paletteId: 0x040001D8, hueShift: 0 },
-      'Banderling': { templateId: 6, paletteId: 0x040001EE, hueShift: 0 },
+      'Lugian': { templateId: 13, paletteId: 0x040010CD, hueShift: 0 },
+      'Banderling': { templateId: 16, paletteId: 0x04001433, hueShift: 0 },
+      'Burun': { templateId: 13, paletteId: 0x040017AD, hueShift: 0 },
       'Tusker': { templateId: 6, paletteId: 0x040001FA, hueShift: 0 },
-      'Viridian Statue': { templateId: 1, paletteId: 0x04000210, hueShift: 0 },
+      'Viridian Statue': { templateId: 76, paletteId: 0x0400130F, hueShift: 0 },
     }
   },
-
   steel: {
     name: 'Steel Slate',
     hex: '#64748B',
     swatches: ['#64748B', '#475569', '#334155', '#1E293B', '#0F172A', '#020617', '#000000', '#000000'],
     templates: {
-      'Olthoi': { templateId: 20, paletteId: 0x0F000014, hueShift: 0 },
-      'Gromnie': { templateId: 4, paletteId: 0x040001B4, hueShift: 0 },
-      'Drudge': { templateId: 2, paletteId: 0x0400025D, hueShift: 0 },
+      'Olthoi': { templateId: 8, paletteId: 0x04001163, hueShift: 0 },
+      'Gromnie': { templateId: 4, paletteId: 0x04001DAE, hueShift: 0 },
+      'Drudge': { templateId: 12, paletteId: 0x040019FA, hueShift: 0 },
       'Mattekar': { templateId: 2, paletteId: 0x040001A8, hueShift: 0 },
-      'Lugian': { templateId: 2, paletteId: 0x040001D4, hueShift: 0 },
-      'Banderling': { templateId: 2, paletteId: 0x040001EA, hueShift: 0 },
+      'Lugian': { templateId: 20, paletteId: 0x040010CB, hueShift: 0 },
+      'Banderling': { templateId: 25, paletteId: 0x04001438, hueShift: 0 },
+      'Burun': { templateId: 52, paletteId: 0x040017AC, hueShift: 0 },
       'Tusker': { templateId: 2, paletteId: 0x040001F6, hueShift: 0 },
-      'Viridian Statue': { templateId: 1, paletteId: 0x04000210, hueShift: 0 },
+      'Viridian Statue': { templateId: 14, paletteId: 0x04001310, hueShift: 0 },
     }
   }
 }
 
-function resolvePaletteForSpecies(parentPal: PetPalette, targetSpecies: string, inheritedParentName: string): PetPalette {
+function resolvePaletteForSpecies(
+  parentPal: PetPalette, 
+  targetSpecies: string, 
+  inheritedParentName: string,
+  availableVariants: any[] = []
+): PetPalette {
   let familyKey = 'azure'
   const palName = parentPal.name.toLowerCase()
   if (palName.includes('amber') || parentPal.hex === '#F59E0B') {
@@ -177,15 +188,41 @@ function resolvePaletteForSpecies(parentPal: PetPalette, targetSpecies: string, 
   }
 
   const fam = COLOR_FAMILIES[familyKey] || COLOR_FAMILIES['azure']
-  const specMap = fam.templates[targetSpecies] || { templateId: parentPal.templateId || 1, paletteId: parentPal.paletteId || 1, hueShift: parentPal.hueShift || 0 }
+  let specTemplateId = 1
+  let specPaletteId = 0
+  let swatches = fam.swatches
+
+  if (fam.templates[targetSpecies]) {
+    specTemplateId = fam.templates[targetSpecies].templateId
+    specPaletteId = fam.templates[targetSpecies].paletteId
+  } else if (parentPal.templateId) {
+    specTemplateId = parentPal.templateId
+  }
+
+  // If availableVariants are provided from DATs, resolve the exact 0x04... paletteId!
+  if (availableVariants && availableVariants.length > 0) {
+    const matched = availableVariants.find((v: any) => v.templateId === specTemplateId) 
+      || availableVariants.find((v: any) => (v.paletteId & 0xFF000000) === 0x04000000)
+      || availableVariants[0]
+
+    if (matched) {
+      specTemplateId = matched.templateId
+      if (matched.paletteId && (matched.paletteId & 0xFF000000) === 0x04000000) {
+        specPaletteId = matched.paletteId
+      }
+      if (matched.swatches && matched.swatches.length > 0) {
+        swatches = matched.swatches
+      }
+    }
+  }
 
   return {
     name: `${inheritedParentName}'s ${fam.name}`,
     hex: fam.hex,
-    templateId: specMap.templateId,
-    paletteId: specMap.paletteId,
+    templateId: specTemplateId,
+    paletteId: specPaletteId,
     hueShift: 0,
-    swatches: parentPal.swatches && parentPal.swatches.length > 0 ? parentPal.swatches : fam.swatches
+    swatches: parentPal.swatches && parentPal.swatches.length > 0 ? parentPal.swatches : swatches
   }
 }
 
@@ -198,14 +235,14 @@ export default function PetBreedingCalculator() {
     { name: 'Acid Elemental', wcid: 14513, creatureTypeId: 60, setupId: '0x02000BEE' },
     { name: 'Anekshay', wcid: 44021, creatureTypeId: 101, setupId: '0x02001AA3' },
     { name: 'Armoredillo', wcid: 19, creatureTypeId: 17, setupId: '0x02000004' },
-    { name: 'Auroch', wcid: 20017, creatureTypeId: 11, setupId: '0x02000CD0' },
-    { name: 'Banderling', wcid: 6, creatureTypeId: 2, setupId: '0x02000E08' },
+    { name: 'Auroch', wcid: 28637, creatureTypeId: 11, setupId: '0x02000CD0' },
+    { name: 'Banderling', wcid: 183, creatureTypeId: 2, setupId: '0x02000E08' },
     { name: 'Burun', wcid: 26012, creatureTypeId: 75, setupId: '0x02001036' },
     { name: 'Carenzi', wcid: 11468, creatureTypeId: 55, setupId: '0x02000A95' },
-    { name: 'Chittick', wcid: 4242, creatureTypeId: 33, setupId: '0x02000E66' },
+    { name: 'Chittick', wcid: 4243, creatureTypeId: 33, setupId: '0x02000E66' },
     { name: 'Cow', wcid: 3110132, creatureTypeId: 12, setupId: '0x02000006' },
     { name: 'Deru', wcid: 4262, creatureTypeId: 37, setupId: '0x020002D9' },
-    { name: 'Drudge', wcid: 7, creatureTypeId: 3, setupId: '0x020007DD' },
+    { name: 'Drudge', wcid: 28640, creatureTypeId: 3, setupId: '0x020007DD' },
     { name: 'Fae', wcid: 99999989, creatureTypeId: 18, setupId: '0x02001A10' },
     { name: 'Fire Elemental', wcid: 5705, creatureTypeId: 38, setupId: '0x020006A3' },
     { name: 'Frost Elemental', wcid: 14512, creatureTypeId: 61, setupId: '0x02000BEF' },
@@ -215,20 +252,20 @@ export default function PetBreedingCalculator() {
     { name: 'Grievver', wcid: 7978, creatureTypeId: 44, setupId: '0x020008DA' },
     { name: 'Gromnie', wcid: 17, creatureTypeId: 15, setupId: '0x02000037' },
     { name: 'Gurog', wcid: 43391, creatureTypeId: 100, setupId: '0x02001A2B' },
-    { name: 'Knathtead', wcid: 1536, creatureTypeId: 21, setupId: '0x020004AF' },
+    { name: 'Knathtead', wcid: 28659, creatureTypeId: 21, setupId: '0x020004AF' },
     { name: 'Lightning Elemental', wcid: 6379, creatureTypeId: 42, setupId: '0x020006AC' },
     { name: 'Lugian', wcid: 5, creatureTypeId: 5, setupId: '0x02000A0B' },
-    { name: 'Mattekar', wcid: 2580, creatureTypeId: 23, setupId: '0x02000486' },
+    { name: 'Mattekar', wcid: 2581, creatureTypeId: 23, setupId: '0x02000486' },
     { name: 'Merwart', wcid: 32051, creatureTypeId: 90, setupId: '0x0200003A' },
     { name: 'Mite', wcid: 10, creatureTypeId: 7, setupId: '0x02001080' },
     { name: 'Moarsman', wcid: 4246, creatureTypeId: 34, setupId: '0x02000992' },
     { name: 'Monouga', wcid: 2574, creatureTypeId: 28, setupId: '0x020002FF' },
     { name: 'Mosswart', wcid: 8, creatureTypeId: 4, setupId: '0x02000B4F' },
     { name: 'Mukkir', wcid: 31897, creatureTypeId: 89, setupId: '0x020014BD' },
-    { name: 'Niffis', wcid: 7984, creatureTypeId: 45, setupId: '0x02000926' },
+    { name: 'Niffis', wcid: 7985, creatureTypeId: 45, setupId: '0x02000926' },
     { name: 'Olthoi', wcid: 3, creatureTypeId: 1, setupId: '0x02000AAC' },
     { name: 'Phyntos Wasp', wcid: 12, creatureTypeId: 9, setupId: '0x02001121' },
-    { name: 'Rabbit', wcid: 2566, creatureTypeId: 25, setupId: '0x0200047B' },
+    { name: 'Rabbit', wcid: 2567, creatureTypeId: 25, setupId: '0x0200047B' },
     { name: 'Rat', wcid: 13, creatureTypeId: 10, setupId: '0x0200003D' },
     { name: 'Reedshark', wcid: 18, creatureTypeId: 16, setupId: '0x02000039' },
     { name: 'Ruschk', wcid: 28666, creatureTypeId: 81, setupId: '0x02001240' },
@@ -237,15 +274,15 @@ export default function PetBreedingCalculator() {
     { name: 'Shallows Shark', wcid: 2577, creatureTypeId: 27, setupId: '0x02001480' },
     { name: 'Shreth', wcid: 4108, creatureTypeId: 32, setupId: '0x020005C4' },
     { name: 'Siraluun', wcid: 11486, creatureTypeId: 56, setupId: '0x02000A43' },
-    { name: 'Skeleton', wcid: 1759, creatureTypeId: 30, setupId: '0x02000059' },
+    { name: 'Skeleton', wcid: 1760, creatureTypeId: 30, setupId: '0x02000059' },
     { name: 'Snowman', wcid: 5760, creatureTypeId: 39, setupId: '0x020006FD' },
     { name: 'Thrungus', wcid: 28672, creatureTypeId: 82, setupId: '0x02001253' },
     { name: 'Tumerok', wcid: 226, creatureTypeId: 6, setupId: '0x02001408' },
     { name: 'Tusker', wcid: 11, creatureTypeId: 8, setupId: '0x02000964' },
-    { name: 'Undead', wcid: 16, creatureTypeId: 14, setupId: '0x02000197' },
-    { name: 'Ursuin', wcid: 7989, creatureTypeId: 46, setupId: '0x02000925' },
-    { name: 'Viridian Statue', wcid: 420600, creatureTypeId: 68, setupId: '0x020008DA' },
-    { name: 'Virindi', wcid: 23, creatureTypeId: 19, setupId: '0x02000041' },
+    { name: 'Undead', wcid: 950, creatureTypeId: 14, setupId: '0x02000197' },
+    { name: 'Ursuin', wcid: 7991, creatureTypeId: 46, setupId: '0x02000925' },
+    { name: 'Viridian Statue', wcid: 19267, creatureTypeId: 68, setupId: '0x020008DA' },
+    { name: 'Virindi', wcid: 238, creatureTypeId: 19, setupId: '0x02000041' },
     { name: 'Wisp', wcid: 1535, creatureTypeId: 20, setupId: '0x0200059A' },
     { name: 'Zefir', wcid: 2608, creatureTypeId: 29, setupId: '0x0200049A' },
   ]
@@ -300,7 +337,7 @@ export default function PetBreedingCalculator() {
 
   // Live Debug Terminal State
   const [debugLogs, setDebugLogs] = useState<string[]>([
-    `[${new Date().toLocaleTimeString()}] 🚀 Pet Breeding Visualizer Debug Console Ready`
+    `[${new Date().toLocaleTimeString()}] Pet Breeding Visualizer Debug Console Ready`
   ])
   const [copiedDebug, setCopiedDebug] = useState<boolean>(false)
   const [isConsoleOpen, setIsConsoleOpen] = useState<boolean>(true)
@@ -319,20 +356,86 @@ export default function PetBreedingCalculator() {
   const validLevels = [50, 80, 100, 125, 150, 180, 200, 250, 300]
   const masteries = ['Primalist', 'Necromancer', 'Naturalist']
 
+  const [serverBreedingConfig, setServerBreedingConfig] = useState<any>({
+    baseMutationChance: 0.20,
+    potencyMutationChance: 0.03,
+    mutationDecayRate: 0.35,
+    mutationMinFloor: 0.02,
+    damageMutationStep: 10,
+    drMutationStep: 10,
+    critMutationStep: 5,
+    vitalityMutationStep: 200,
+    potencyMutationStep: 25,
+    potencyHardCap: 0,
+    maxStatMutations: 0,
+    forceMutation: false
+  })
+
+  useEffect(() => {
+    fetch('/api/visualizer/breeding-config')
+      .then(res => res.json())
+      .then(data => {
+        if (data && typeof data.baseMutationChance === 'number') {
+          setServerBreedingConfig(data)
+        }
+      })
+      .catch(e => console.error('Failed to fetch server breeding config', e))
+  }, [])
+
   // Calculate diminishing mutation probability
   const getMutationChance = (mutations: number) => {
-    return Math.max(0.015, 0.15 / (1.0 + 0.75 * mutations))
+    const base = serverBreedingConfig.baseMutationChance ?? 0.15
+    const decay = serverBreedingConfig.mutationDecayRate ?? 0.75
+    const floor = serverBreedingConfig.mutationMinFloor ?? 0.015
+    return Math.max(floor, base / (1.0 + decay * mutations))
   }
 
   const alphaMutChance = getMutationChance(alphaMutations + betaMutations)
 
+  const speciesPalettesCache = useRef<{ [wcid: number]: any[] }>({})
+  const masterMutationPoolRef = useRef<any[]>([])
+
+  const fetchMasterMutationPool = async (): Promise<any[]> => {
+    if (masterMutationPoolRef.current.length > 0) {
+      return masterMutationPoolRef.current
+    }
+    try {
+      const res = await fetch('/api/visualizer/master-mutation-pool')
+      const data = await res.json()
+      if (Array.isArray(data) && data.length > 0) {
+        masterMutationPoolRef.current = data
+        return data
+      }
+    } catch (e) {
+      console.error('Failed to fetch master mutation pool', e)
+    }
+    return []
+  }
+
+  const fetchSpeciesPalettes = async (wcid: number): Promise<any[]> => {
+    if (speciesPalettesCache.current[wcid]) {
+      return speciesPalettesCache.current[wcid]
+    }
+    try {
+      const res = await fetch(`/api/visualizer/species-palettes/${wcid}`)
+      const data = await res.json()
+      if (Array.isArray(data)) {
+        speciesPalettesCache.current[wcid] = data
+        return data
+      }
+    } catch (e) {
+      console.error('Failed to fetch species palettes for wcid', wcid, e)
+    }
+    return []
+  }
+
   // Simulate single breed
-  const handleBreedSimulation = () => {
-    addDebugLog(`─────────── [BREEDING RITUAL INITIATED] ───────────`)
-    addDebugLog(`🧬 [PARENTS] Alpha (Stud): ${alphaSpecies} (Lvl ${alphaLvl}, ${alphaMutations} Muts, Palette: "${alphaPalette.name}") x Beta (Donor): ${betaSpecies} (Lvl ${betaLvl}, ${betaMutations} Muts, Palette: "${betaPalette.name}")`)
+  const handleBreedSimulation = async () => {
+    addDebugLog(`--- [BREEDING RITUAL INITIATED] ---`)
+    addDebugLog(`[PARENTS] Alpha (Stud): ${alphaSpecies} (Lvl ${alphaLvl}, ${alphaMutations} Muts, Palette: "${alphaPalette.name}") x Beta (Donor): ${betaSpecies} (Lvl ${betaLvl}, ${betaMutations} Muts, Palette: "${betaPalette.name}")`)
 
     if (alphaCharges <= 0) {
-      addDebugLog(`⚠️ [ERROR] Alpha Stud is out of daily breeding charges (0/10)!`)
+      addDebugLog(`[ERROR] Alpha Stud is out of daily breeding charges (0/10)!`)
       alert("Alpha Stud is out of daily breeding charges (0/10)! Rest for 24h or click 'Reset Alpha Charges'.")
       return
     }
@@ -341,8 +444,9 @@ export default function PetBreedingCalculator() {
     const inheritedParent: 'Alpha' | 'Beta' = inheritFromAlpha ? 'Alpha' : 'Beta'
     const babyLevel = inheritFromAlpha ? alphaLvl : betaLvl
     const babySpecies = Math.random() < 0.50 ? alphaSpecies : betaSpecies
+    const babyWcid = speciesList.find(s => s.name === babySpecies)?.wcid || 25749
 
-    addDebugLog(`🎲 [SPECIES ROLL] 50/50 Roll Result -> Birthed Species: ${babySpecies} (Stat Lineage Winner: Parent ${inheritedParent})`)
+    addDebugLog(`[SPECIES ROLL] 50/50 Roll Result -> Birthed Species: ${babySpecies} (Stat Lineage Winner: Parent ${inheritedParent})`)
 
     // Stat Inheritance (55/45 Rule)
     const inheritStat = (valAlpha: number, mutCountAlpha: number, valBeta: number, mutCountBeta: number) => {
@@ -374,95 +478,130 @@ export default function PetBreedingCalculator() {
     let babyCritResist = Math.round(babyDR * 0.8)
     let babyCritDmgResist = Math.round(babyDR * 0.6)
 
-    // Roll 1: Normal Stat Mutation (15% base decaying odds, capped at 20 muts per stat)
+    // Roll 1: Normal Stat Mutation (decaying odds per stat line, max stat mutations per line)
     const statRoll = Math.random()
-    const isMutated = statRoll < alphaMutChance
-    const isColorMutated = isMutated
+    const isMutated = serverBreedingConfig.forceMutation || statRoll < alphaMutChance
 
-    // Roll 2: Independent Potency Mutation Roll (2.0% Fixed Rare Chance, Uncapped)
+    // Roll 2: Independent Potency Mutation Roll
+    const potChance = serverBreedingConfig.potencyMutationChance ?? 0.02
     const potRoll = Math.random()
-    const isPotencyMutated = potRoll < 0.02
+    const isPotencyMutated = potRoll < potChance
+    const isColorMutated = isMutated || isPotencyMutated
 
     let mutatedStatName: string | null = null
     let mutatedStatBoost = 0
 
     if (isMutated && isPotencyMutated) {
-      addDebugLog(`🌟 [DOUBLE MUTATION JACKPOT!] Birthed BOTH a Stat Mutation AND a Potency Mutation!`)
+      addDebugLog(`[DOUBLE MUTATION JACKPOT] Birthed BOTH a Stat Mutation AND a Potency Mutation!`)
     }
 
     if (isPotencyMutated) {
-      const potBoost = 20 // Fixed +20 Potency Step
-      babyPot += potBoost
-      addDebugLog(`🔮 [POTENCY MUTATION] Roll ${potRoll.toFixed(4)} < 0.0200 -> Rare Potency Mutation! Boosted Potency by +${potBoost} (Total Potency: ${babyPot})`)
+      const potStep = serverBreedingConfig.potencyMutationStep ?? 25
+      babyPot += potStep
+      addDebugLog(`[POTENCY MUTATION] Roll ${potRoll.toFixed(4)} < ${potChance.toFixed(4)} -> Rare Potency Mutation! Boosted Potency by +${potStep} (Total Potency: ${babyPot})`)
     }
+
+    const maxStatMuts = serverBreedingConfig.maxStatMutations ?? 0
+    const dmgStep = serverBreedingConfig.damageMutationStep ?? 10
+    const drStep = serverBreedingConfig.drMutationStep ?? 10
+    const critStep = serverBreedingConfig.critMutationStep ?? 5
+    const vitStep = serverBreedingConfig.vitalityMutationStep ?? 200
 
     if (isMutated) {
       const statsToMutate: string[] = []
-      if (babyDmgMuts < 20) statsToMutate.push('DamageRating')
-      if (babyDrMuts < 20) statsToMutate.push('DamageResistRating')
-      if (babyCritMuts < 20) statsToMutate.push('CritRating')
-      if (babyVitMuts < 20) statsToMutate.push('Vitality')
+      if (maxStatMuts <= 0 || babyDmgMuts < maxStatMuts) statsToMutate.push('DamageRating')
+      if (maxStatMuts <= 0 || babyDrMuts < maxStatMuts) statsToMutate.push('DamageResistRating')
+      if (maxStatMuts <= 0 || babyCritMuts < maxStatMuts) statsToMutate.push('CritRating')
+      if (maxStatMuts <= 0 || babyVitMuts < maxStatMuts) statsToMutate.push('Vitality')
 
       if (statsToMutate.length > 0) {
         mutatedStatName = statsToMutate[Math.floor(Math.random() * statsToMutate.length)]
 
         if (mutatedStatName === 'DamageRating') {
-          mutatedStatBoost = 3 // Fixed +3 Step
+          mutatedStatBoost = dmgStep
           babyDmg += mutatedStatBoost
           babyDmgMuts += 1
         } else if (mutatedStatName === 'DamageResistRating') {
-          mutatedStatBoost = 3 // Fixed +3 Step
+          mutatedStatBoost = drStep
           babyDR += mutatedStatBoost
           babyDrMuts += 1
         } else if (mutatedStatName === 'CritRating') {
-          mutatedStatBoost = 2 // Fixed +2 Step
+          mutatedStatBoost = critStep
           babyCrit += mutatedStatBoost
           babyCritMuts += 1
         } else if (mutatedStatName === 'Vitality') {
-          mutatedStatBoost = 200 // Fixed +200 HP Step
+          mutatedStatBoost = vitStep
           babyVit += mutatedStatBoost
           babyVitMuts += 1
         }
-        addDebugLog(`🌟 [STAT MUTATION] Roll ${statRoll.toFixed(4)} < Chance ${alphaMutChance.toFixed(4)} -> MUTATED! Boosted ${mutatedStatName} by +${mutatedStatBoost} (Fixed Step)`)
+        const capInfo = maxStatMuts > 0 ? ` (Mutation ${maxStatMuts})` : ''
+        addDebugLog(`[STAT MUTATION] Roll ${statRoll.toFixed(4)} < Chance ${alphaMutChance.toFixed(4)} -> MUTATED! Boosted ${mutatedStatName} by +${mutatedStatBoost}${capInfo}`)
       } else {
-        addDebugLog(`🛑 [MUTATION CAP REACHED] All stat lines at 20/20 max mutations!`)
+        addDebugLog(`[MUTATION CAP REACHED] All stat lines at max mutations (${maxStatMuts}/${maxStatMuts})!`)
       }
     } else if (!isPotencyMutated) {
-      addDebugLog(`📊 [STAT INHERITANCE] Stat Roll ${statRoll.toFixed(4)} >= Chance ${alphaMutChance.toFixed(4)} -> Normal Breed (No Stat Mutation)`)
+      addDebugLog(`[STAT INHERITANCE] Stat Roll ${statRoll.toFixed(4)} >= Chance ${alphaMutChance.toFixed(4)} -> Normal Breed (No Stat Mutation)`)
     }
 
     // Mendelian Palette Inheritance vs Color Mutation
     let babyPalette: PetPalette
+    const availableVariants = await fetchSpeciesPalettes(babyWcid)
 
     if (!isColorMutated) {
       const parentPal = inheritFromAlpha ? alphaPalette : betaPalette
-      babyPalette = resolvePaletteForSpecies(parentPal, babySpecies, inheritedParent)
-      addDebugLog(`🎨 [PALETTE RESOLUTION] Inherited Parent ${inheritedParent}'s Color Family "${parentPal.name}"`)
-      addDebugLog(`🖼️ [DAT MAPPING] Mapped to ${babySpecies} DAT Palette Entry #${babyPalette.templateId} (PaletteID: 0x${babyPalette.paletteId.toString(16).toUpperCase()}, HueShift: ${babyPalette.hueShift}°)`)
+      babyPalette = resolvePaletteForSpecies(parentPal, babySpecies, inheritedParent, availableVariants)
+      addDebugLog(`[PALETTE RESOLUTION] Inherited Parent ${inheritedParent}'s Color Family "${parentPal.name}"`)
+      addDebugLog(`[DAT MAPPING] Mapped to ${babySpecies} DAT Palette Entry #${babyPalette.templateId} (PaletteID: 0x${babyPalette.paletteId ? babyPalette.paletteId.toString(16).toUpperCase() : '0'}, HueShift: ${babyPalette.hueShift}deg)`)
     } else {
-      // COLOR MUTATION: Birthed a NEW RARE DAT MUTATED PALETTE FAMILY!
-      const mutKeys = ['emerald', 'gold', 'cobalt', 'steel', 'crimson']
-      const chosenKey = mutKeys[Math.floor(Math.random() * mutKeys.length)]
-      const mutFam = COLOR_FAMILIES[chosenKey] || COLOR_FAMILIES['emerald']
-      const specMap = mutFam.templates[babySpecies] || { templateId: 1, paletteId: 0x040001BE, hueShift: 0 }
-
-      babyPalette = {
-        name: `⭐ Rare Mutation (${mutFam.name})`,
-        hex: mutFam.hex,
-        templateId: specMap.templateId,
-        paletteId: specMap.paletteId,
-        hueShift: 0,
-        swatches: mutFam.swatches
+      // UNIVERSAL COLOR MUTATION: Pull from the entire 4,500+ master verified palette pool!
+      const masterPool = await fetchMasterMutationPool()
+      if (masterPool.length > 0) {
+        const chosenPal = masterPool[Math.floor(Math.random() * masterPool.length)]
+        babyPalette = {
+          name: `Universal Mutation (${chosenPal.paletteHex})`,
+          hex: chosenPal.swatches && chosenPal.swatches.length > 0 ? chosenPal.swatches[0] : '#F59E0B',
+          templateId: 0,
+          paletteId: chosenPal.paletteId,
+          hueShift: 0,
+          swatches: chosenPal.swatches || []
+        }
+        addDebugLog(`[UNIVERSAL COLOR MUTATION ACTIVATED] Birthed EXOTIC DAT PALETTE ${chosenPal.paletteHex}!`)
+      } else {
+        const nonDefaultVariants = availableVariants.filter((v: any) => !v.isDefault)
+        if (nonDefaultVariants.length > 0) {
+          const chosenVar = nonDefaultVariants[Math.floor(Math.random() * nonDefaultVariants.length)]
+          babyPalette = {
+            name: `Rare Mutation (${chosenVar.name})`,
+            hex: chosenVar.swatches && chosenVar.swatches.length > 0 ? chosenVar.swatches[0] : '#F59E0B',
+            templateId: chosenVar.templateId,
+            paletteId: chosenVar.paletteId,
+            hueShift: 0,
+            swatches: chosenVar.swatches || []
+          }
+          addDebugLog(`[COLOR MUTATION ACTIVATED] Birthed NEW RARE DAT MUTATION PALETTE "${chosenVar.name}"! (DAT PaletteID: 0x${chosenVar.paletteId ? chosenVar.paletteId.toString(16).toUpperCase() : '0'}, Template #${chosenVar.templateId})`)
+        } else {
+          const mutKeys = ['emerald', 'gold', 'cobalt', 'steel', 'crimson', 'amber', 'azure']
+          const chosenKey = mutKeys[Math.floor(Math.random() * mutKeys.length)]
+          const mutFam = COLOR_FAMILIES[chosenKey] || COLOR_FAMILIES['emerald']
+          const specMap = mutFam.templates[babySpecies] || { templateId: 1, paletteId: 0, hueShift: 0 }
+          babyPalette = {
+            name: `Rare Mutation (${mutFam.name})`,
+            hex: mutFam.hex,
+            templateId: specMap.templateId,
+            paletteId: specMap.paletteId,
+            hueShift: Math.floor(Math.random() * 360),
+            swatches: mutFam.swatches
+          }
+          addDebugLog(`[COLOR MUTATION ACTIVATED] Birthed NEW RARE MUTATION ESSENCE "${mutFam.name}"!`)
+        }
       }
-      addDebugLog(`🌈 [COLOR MUTATION ACTIVATED] Stat Mutation Triggered -> Birthed NEW RARE DAT MUTATION PALETTE "${mutFam.name}"! (DAT PaletteID: 0x${specMap.paletteId.toString(16).toUpperCase()}, Template #${specMap.templateId})`)
     }
 
     const babyTotalMuts = babyDmgMuts + babyDrMuts + babyCritMuts + babyVitMuts
     const babyId = `baby_${Date.now()}_${Math.floor(Math.random() * 1000)}`
 
-    const babyWcid = speciesList.find(s => s.name === babySpecies)?.wcid || 25749
     const palHex = babyPalette.paletteId ? `0x${babyPalette.paletteId.toString(16).toUpperCase()}` : '0'
-    addDebugLog(`📋 [IN-GAME COMMAND] @create ${babyWcid} 1 ${palHex} 0.5`)
+    addDebugLog(`[IN-GAME COMMAND] @create ${babyWcid} 1 ${palHex} 0.5`)
 
     const newResult: SimulationResult = {
       id: babyId,
@@ -509,7 +648,7 @@ export default function PetBreedingCalculator() {
   }
 
   const resetSimulation = () => {
-    addDebugLog(`🔄 [RESET] Simulation reset to Generation 1 (10 Alpha Stud Charges restored)`)
+    addDebugLog(`[RESET] Simulation reset to Generation 1 (10 Alpha Stud Charges restored)`)
     setSimResults([])
     setSelectedBabyId(null)
     setCurrentGen(1)
@@ -558,9 +697,26 @@ export default function PetBreedingCalculator() {
     if (isSkinCleansed || (!activeSelectedBaby.paletteId && !activeSelectedBaby.paletteTemplateId)) {
       cmd = `@create ${babyWcid} 1 0`
     } else {
-      const palVal = activeSelectedBaby.paletteId || activeSelectedBaby.paletteTemplateId || 0
-      const palHex = `0x${palVal.toString(16).toUpperCase()}`
-      cmd = `@create ${babyWcid} 1 ${palHex} 0.5`
+      let palParam = '0';
+      const pId = activeSelectedBaby.paletteId || 0;
+      const pTemp = activeSelectedBaby.paletteTemplateId || 0;
+
+      if ((pId & 0xFF000000) === 0x04000000) {
+        palParam = `0x${pId.toString(16).toUpperCase()}`;
+      } else {
+        const variants = speciesPalettesCache.current[babyWcid] || [];
+        const matched = variants.find((v: any) => v.templateId === pTemp || v.templateId === pId || v.paletteId === pId);
+        if (matched && matched.paletteId && (matched.paletteId & 0xFF000000) === 0x04000000) {
+          palParam = `0x${matched.paletteId.toString(16).toUpperCase()}`;
+        } else if (matched && matched.paletteHex && matched.paletteHex.startsWith('0x04')) {
+          palParam = matched.paletteHex;
+        } else if (pTemp > 0) {
+          palParam = `${pTemp}`;
+        } else if (pId > 0 && (pId & 0xFF000000) !== 0x0F000000) {
+          palParam = `${pId}`;
+        }
+      }
+      cmd = `@create ${babyWcid} 1 ${palParam} 0.5`
     }
     const success = await copyToClipboard(cmd)
     if (success) {
@@ -571,17 +727,22 @@ export default function PetBreedingCalculator() {
 
   const handleCopySql = async () => {
     if (!activeSelectedBaby) return
-    const palVal = activeSelectedBaby.paletteId || activeSelectedBaby.paletteTemplateId || 0
-    const palHex = `0x${palVal.toString(16).toUpperCase()}`
-    const sql = `INSERT INTO \`weenie_properties_did\` (\`object_wcid\`, \`type\`, \`value\`) VALUES (YOUR_WCID, 8, ${palHex});`
+    const pId = activeSelectedBaby.paletteId || 0;
+    const pTemp = activeSelectedBaby.paletteTemplateId || 0;
+    let sql = '';
+    if ((pId & 0xFF000000) === 0x04000000) {
+      const palHex = `0x${pId.toString(16).toUpperCase()}`;
+      sql = `INSERT INTO \`weenie_properties_did\` (\`object_wcid\`, \`type\`, \`value\`) VALUES (YOUR_WCID, 8, ${palHex});`;
+    } else {
+      const palVal = pTemp > 0 ? pTemp : (pId > 0 && (pId & 0xFF000000) !== 0x0F000000 ? pId : 0);
+      sql = `INSERT INTO \`weenie_properties_int\` (\`object_wcid\`, \`type\`, \`value\`) VALUES (YOUR_WCID, 23, ${palVal});`;
+    }
     const success = await copyToClipboard(sql)
     if (success) {
       setCopiedSql(true)
       setTimeout(() => setCopiedSql(false), 2000)
     }
   }
-
-
 
   // Time-to-Target Calculator Estimations
   const getBreedsPerDay = () => {

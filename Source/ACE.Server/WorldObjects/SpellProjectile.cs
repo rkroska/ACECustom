@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -969,6 +969,9 @@ namespace ACE.Server.WorldObjects
             var targetPlayer = target as Player;
 
             if (targetPlayer != null && targetPlayer.Invincible || target.IsDead)
+                return;
+
+            if (!target.CanBeDamagedBy(ProjectileSource))
                 return;
 
             var sourceCreature = ProjectileSource as Creature;

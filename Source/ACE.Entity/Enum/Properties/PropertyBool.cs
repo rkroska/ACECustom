@@ -1,4 +1,4 @@
-namespace ACE.Entity.Enum.Properties
+﻿namespace ACE.Entity.Enum.Properties
 {
     public enum PropertyBool : ushort
     {
@@ -329,9 +329,13 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Player is in unkillable developer mode.</summary>
         IsUnkillable = 50041,
 
-        /// <summary>Combat pet device is designated as an Alpha Stud (10 daily breeding charges).</summary>
+        /// <summary>Combat pet device is designated as an Stud (10 daily breeding charges).</summary>
         [AssessmentProperty]
-        IsAlphaPet = 50042,
+        PetIsMaleOverride = 50042,
+
+        /// <summary>Bred combat pet essence that has not yet reached adulthood (server/custom).</summary>
+        [AssessmentProperty]
+        PetIsJuvenile = 50043,
     }
 }
 

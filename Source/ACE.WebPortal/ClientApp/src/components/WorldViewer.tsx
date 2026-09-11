@@ -739,6 +739,7 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
     }
   }, [propHueShift]);
   const [speciesPalettes, setSpeciesPalettes] = useState<any[]>([]);
+  const [compatibility, setCompatibility] = useState<{ isSupported: boolean; mode: string; reason: string; warningMessage: string | null } | null>(null);
   const [textureReplacements, setTextureReplacements] = useState<any[]>([]);
   const [activeTexReplaceIdx, setActiveTexReplaceIdx] = useState<number>(-1);
 
@@ -1012,6 +1013,7 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
     setSpeciesPalettes([]);
     setTextureReplacements([]);
     setCreatureSurfaces([]);
+    setCompatibility(null);
 
     fetch(`/api/visualizer/species-palettes/${wcid}`)
       .then(r => r.json())
@@ -1056,6 +1058,11 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
       .then(r => r.json())
       .then(data => setTextureLibrary(data))
       .catch(e => console.error(e));
+
+    fetch(`/api/visualizer/compatibility/${wcid}`)
+      .then(r => r.json())
+      .then(data => setCompatibility(data))
+      .catch(() => setCompatibility(null));
   }, [wcid]);
 
   // Interactive Curation States
@@ -1884,6 +1891,32 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
         {/* TAB 1: SPECIES & PALETTES */}
         {sidebarTab === 'palettes' && (
           <div className="flex flex-col gap-3">
+            {/* Compatibility Warning / Info Banner */}
+            {compatibility && !compatibility.isSupported && (
+              <div className="p-3 bg-amber-950/40 border border-amber-500/50 rounded-xl flex flex-col gap-1.5 shadow-lg">
+                <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wide">
+                  <span className="text-base">⚠️</span> Palette Swaps Not Supported
+                </div>
+                <p className="text-[11px] text-amber-200/90 leading-relaxed font-sans">
+                  {compatibility.reason}
+                </p>
+                <div className="text-[10px] text-amber-400/80 font-mono italic bg-black/40 p-1.5 rounded border border-amber-500/20">
+                  Note: In-game @create / @set palette commands and pet color mutations will have no visual effect on this monster.
+                </div>
+              </div>
+            )}
+
+            {compatibility && compatibility.mode === 'ModulatedDiffuseTint' && (
+              <div className="p-2.5 bg-blue-950/40 border border-blue-500/40 rounded-xl flex flex-col gap-1 shadow-sm">
+                <div className="flex items-center gap-1.5 text-blue-300 font-bold text-[11px] uppercase tracking-wide">
+                  <span>💡</span> Direct3D Diffuse Tint Model
+                </div>
+                <p className="text-[10px] text-blue-200/80 leading-relaxed font-sans">
+                  This creature supports whole-model diffuse color modulation. Palette commands will tint the entire 3D model.
+                </p>
+              </div>
+            )}
+
             {/* Palette Selector */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">

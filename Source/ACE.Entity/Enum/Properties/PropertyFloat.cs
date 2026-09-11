@@ -1,4 +1,4 @@
-namespace ACE.Entity.Enum.Properties
+﻿namespace ACE.Entity.Enum.Properties
 {
     public enum PropertyFloat : ushort
     {
@@ -287,5 +287,12 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         [AssessmentProperty]
         PetNextBreedingTime = 9049,
+
+        /// <summary>
+        /// Unix timestamp of the last Stud breeding-charge refill. Charges are topped back up to
+        /// pet_breeding_male_max_charges once pet_breeding_male_charge_reset_hours has elapsed.
+        /// </summary>
+        [AssessmentProperty]
+        PetMaleChargesRefreshTime = 9050,
     }
 }

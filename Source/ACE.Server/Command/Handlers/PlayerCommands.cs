@@ -1,4 +1,4 @@
-using ACE.Common;
+﻿using ACE.Common;
 using ACE.Database;
 using ACE.Database.Models.Auth;
 using ACE.Entity;
@@ -489,7 +489,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b w n mmd - Withdraw 250k trade note", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b w n c 5 - Withdraw 5 trade notes of 10k each", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b t p 1m \"Player Name\" - Transfer 1M pyreals to Player Name", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/b t n mmd 50 PlayerName - Transfer 50× 250k notes worth (12.5M pyreals)", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b t n mmd 50 PlayerName - Transfer 50x 250k notes worth (12.5M pyreals)", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.System));
 
                 return;
@@ -804,7 +804,7 @@ namespace ACE.Server.Command.Handlers
                     {
                         // Transfer succeeded - the method already sent base message
                         // Just note it was a trade note equivalent transfer
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"(Equivalent to {noteCount}× {denomination.ToUpper()} notes)", ChatMessageType.System));
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"(Equivalent to {noteCount}x {denomination.ToUpper()} notes)", ChatMessageType.System));
                     }
                     
                     return;

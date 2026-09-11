@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using ACE.Common;
+using Microsoft.EntityFrameworkCore;
 using ACE.Database;
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
@@ -58,6 +59,15 @@ namespace ACE.Server.Services
         public List<string> Swatches { get; set; } = new List<string>();
         public int ConfidenceScore { get; set; } = 80;
         public string TierGrade { get; set; } = "S";
+    }
+
+    public class SpeciesCompatibilityDto
+    {
+        public uint Wcid { get; set; }
+        public bool IsSupported { get; set; }
+        public string Mode { get; set; }
+        public string Reason { get; set; }
+        public string WarningMessage { get; set; }
     }
 
     public class CreatureSurfaceDto
@@ -357,6 +367,24 @@ namespace ACE.Server.Services
                 }
             }
 
+            if (clothingBase == 0)
+            {
+                uint sId = 0;
+                if (weenie != null && weenie.PropertiesDID != null) weenie.PropertiesDID.TryGetValue(PropertyDataId.Setup, out sId);
+                if (sId == 0)
+                {
+                    var dbWeenie = DatabaseManager.World?.GetWeenie(wcid);
+                    if (dbWeenie?.WeeniePropertiesDID != null)
+                    {
+                        foreach (var prop in dbWeenie.WeeniePropertiesDID)
+                        {
+                            if (prop.Type == (ushort)PropertyDataId.Setup) { sId = prop.Value; break; }
+                        }
+                    }
+                }
+                if (sId != 0) clothingBase = PetMutationService.GetDefaultClothingBaseForSetup(sId);
+            }
+
             if (clothingBase == 0 && (wcid == 41224 || wcid == 41244)) clothingBase = 0x10000764;
             if (paletteBase == 0 && (wcid == 41224 || wcid == 41244)) paletteBase = 0x04001A25;
 
@@ -534,6 +562,21 @@ namespace ACE.Server.Services
             }
 
             return result;
+        }
+
+        public static SpeciesCompatibilityDto GetSpeciesCompatibility(uint wcid)
+        {
+            var profile = PetMutationService.GetProfile(wcid);
+            return new SpeciesCompatibilityDto
+            {
+                Wcid = wcid,
+                IsSupported = profile.IsSupported,
+                Mode = profile.ModeName,
+                Reason = profile.Reason,
+                WarningMessage = !profile.IsSupported
+                    ? $"⚠️ Notice: Palette recoloring is not supported for this creature rig ({profile.Reason}). In-game palette swaps will have no effect."
+                    : null
+            };
         }
 
         private static Dictionary<uint, string> MergeCustomClothingBaseJson(uint clothingBaseId, ClothingTable clothingTable)
@@ -2812,47 +2855,88 @@ namespace ACE.Server.Services
             public string Category { get; set; }
         }
 
+        // Creature name index for search. The previous implementation loaded every weenie in the world
+        // database, with its string properties, on every keystroke, then looked each match up again in
+        // the shared weenie cache. This builds one (wcid, name) list of creature-type weenies with a
+        // single query and refreshes it every few minutes so newly added creatures still show up.
+        private static readonly object _creatureIndexLock = new object();
+        private static List<(uint Wcid, string Name, string NameLower)> _creatureIndex;
+        private static DateTime _creatureIndexBuiltUtc = DateTime.MinValue;
+        private static readonly TimeSpan CreatureIndexTtl = TimeSpan.FromMinutes(10);
+
+        private static List<(uint Wcid, string Name, string NameLower)> GetCreatureIndex()
+        {
+            var index = _creatureIndex;
+            if (index != null && DateTime.UtcNow - _creatureIndexBuiltUtc < CreatureIndexTtl)
+                return index;
+
+            lock (_creatureIndexLock)
+            {
+                index = _creatureIndex;
+                if (index != null && DateTime.UtcNow - _creatureIndexBuiltUtc < CreatureIndexTtl)
+                    return index;
+
+                var built = new List<(uint, string, string)>();
+                try
+                {
+                    using var ctx = new ACE.Database.Models.World.WorldDbContext();
+                    var rows = ctx.Weenie
+                        .AsNoTracking()
+                        .Where(w => w.Type == (int)WeenieType.Creature)
+                        .Select(w => new
+                        {
+                            w.ClassId,
+                            Name = w.WeeniePropertiesString
+                                .Where(p => p.Type == (ushort)PropertyString.Name)
+                                .Select(p => p.Value)
+                                .FirstOrDefault()
+                        })
+                        .ToList();
+
+                    foreach (var r in rows)
+                    {
+                        if (string.IsNullOrEmpty(r.Name)) continue;
+                        built.Add((r.ClassId, r.Name, r.Name.ToLowerInvariant()));
+                    }
+                    built.Sort((x, y) => string.CompareOrdinal(x.Item3, y.Item3));
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[Visualizer] Failed to build creature search index: {ex.Message}");
+                    if (_creatureIndex != null)
+                        return _creatureIndex;
+                }
+
+                _creatureIndex = built;
+                _creatureIndexBuiltUtc = DateTime.UtcNow;
+                return built;
+            }
+        }
+
         public static List<CreatureSearchResultDto> SearchCreatures(string query, int maxResults = 15)
         {
+            var results = new List<CreatureSearchResultDto>();
             if (string.IsNullOrWhiteSpace(query))
-                return new List<CreatureSearchResultDto>();
+                return results;
 
             query = query.Trim().ToLowerInvariant();
+            if (query.Length > 64)
+                query = query.Substring(0, 64);
             bool isWcid = uint.TryParse(query, out uint searchWcid);
+            if (!isWcid && query.Length < 2)
+                return results;
 
-            var results = new List<CreatureSearchResultDto>();
+            maxResults = Math.Clamp(maxResults, 1, 50);
 
             try
             {
-                if (DatabaseManager.World != null)
+                foreach (var (wcid, name, nameLower) in GetCreatureIndex())
                 {
-                    var allNames = DatabaseManager.World.GetAllWeenieNames();
-                    if (allNames != null)
-                    {
-                        foreach (var kvp in allNames)
-                        {
-                            uint wcid = kvp.Key;
-                            string name = kvp.Value;
-                            if (string.IsNullOrEmpty(name)) continue;
+                    bool isMatch = isWcid ? wcid == searchWcid : nameLower.Contains(query);
+                    if (!isMatch) continue;
 
-                            bool isMatch = isWcid ? wcid == searchWcid : name.ToLowerInvariant().Contains(query);
-                            if (isMatch)
-                            {
-                                var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
-                                if (weenie != null && weenie.WeenieType == WeenieType.Creature)
-                                {
-                                    results.Add(new CreatureSearchResultDto
-                                    {
-                                        Wcid = wcid,
-                                        Name = name,
-                                        Category = "Creature"
-                                    });
-
-                                    if (results.Count >= maxResults) break;
-                                }
-                            }
-                        }
-                    }
+                    results.Add(new CreatureSearchResultDto { Wcid = wcid, Name = name, Category = "Creature" });
+                    if (results.Count >= maxResults) break;
                 }
             }
             catch (Exception ex)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -577,6 +577,10 @@ namespace ACE.Server.WorldObjects
                 tryBoost = -(int)Math.Round(fDamage);
             }
             // ─────────────────────────────────────────────────────────────────────
+
+            // A creature that refuses damage from this caster takes no harm/drain (heals still apply).
+            if (tryBoost < 0 && !targetCreature.CanBeDamagedBy(this))
+                tryBoost = 0;
 
             switch (spell.VitalDamageType)
             {

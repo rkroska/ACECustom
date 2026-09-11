@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 using log4net;
@@ -59,6 +59,13 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// A new biota be created taking all of its values from weenie.
         /// </summary>
+        /// <summary>
+        /// Source-aware damage gate. Melee, missile, spell projectiles and life magic all consult this
+        /// before applying health damage, so a creature can refuse damage from everything but chosen
+        /// attackers (the mating guardian only takes damage from the two parent pets).
+        /// </summary>
+        public virtual bool CanBeDamagedBy(WorldObject source) => true;
+
         public Creature(Weenie weenie, ObjectGuid guid) : base(weenie, guid)
         {
             InitializePropertyDictionaries();

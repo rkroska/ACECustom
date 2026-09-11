@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 
 namespace ACE.Entity.Enum.Properties
@@ -763,9 +763,9 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         PetPotencyStored                        = 9056,
 
-        /// <summary>Daily breeding charges remaining on Alpha Stud pet device (default 10).</summary>
+        /// <summary>Daily breeding charges remaining on Stud pet device (default 10).</summary>
         [AssessmentProperty]
-        PetAlphaStamina                         = 9057,
+        PetMaleBreedingCharges                         = 9057,
 
         /// <summary>Bonus health vitality rating on combat pet device (server/custom).</summary>
         [AssessmentProperty]
@@ -777,11 +777,11 @@ namespace ACE.Entity.Enum.Properties
         /// award a fixed amount of Savage Echo (before shiny multiplier) instead of the
         /// default formula. 0 or absent = use formula.
         /// </summary>
-        EssenceSalvageYield                     = 9057,
+        EssenceSalvageYield                     = 9076, // was 9057, which collided with PetMaleBreedingCharges
 
         /// <summary>Number of genetic mutations this combat pet has accumulated via breeding (server/custom).</summary>
         [AssessmentProperty]
-        PetMutationCount                        = 9058,
+        PetMutationCount                        = 9075, // was 9058, which collided with Vitality
 
         PetMutDamageRating                      = 9060,
         PetMutDamageResistRating                = 9061,
@@ -791,6 +791,16 @@ namespace ACE.Entity.Enum.Properties
         PetMutCritDamageResistRating            = 9065,
         PetMutVitality                          = 9066,
         PetMutPotency                           = 9067,
+
+        PetMutDamageCount                       = 9070,
+        PetMutDamageResistCount                 = 9071,
+        PetMutCritCount                         = 9072,
+        PetMutVitalityCount                     = 9073,
+        PetMutPotencyCount                      = 9074,
+
+        /// <summary>Kills credited toward a bred pet's maturity (server/custom). Present only on essences born from a breed.</summary>
+        [AssessmentProperty]
+        PetMaturityKills                        = 9077,
 
         /// <summary>
         /// The absolute Unix timestamp (in seconds since epoch) when the item expires.

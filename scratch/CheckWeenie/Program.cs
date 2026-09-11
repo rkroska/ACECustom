@@ -1,8 +1,8 @@
 using System;
+using System.Collections.Generic;
+using ACE.Database;
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
-using ACE.Entity.Enum.Properties;
-using ACE.Database;
 
 namespace CheckWeenie
 {
@@ -15,57 +15,31 @@ namespace CheckWeenie
                 var portalDb = new PortalDatDatabase("c:\\ACE\\Dats\\client_portal.dat", keepOpen: false);
                 PortalDatDatabase highResDb = null;
                 try { highResDb = new PortalDatDatabase("c:\\ACE\\Dats\\client_highres.dat", keepOpen: false); } catch { }
-                
-                uint setupId = 0x02001BCE;
-                var setup = portalDb.ReadFromDat<SetupModel>(setupId);
-                if (setup != null)
-                {
-                    Console.WriteLine("\n--- Setup 0x" + setupId.ToString("X8") + " ---");
-                    foreach (var part in setup.Parts)
-                    {
-                        var gfxObj = portalDb.ReadFromDat<GfxObj>(part);
-                        if (gfxObj != null)
-                        {
-                            Console.WriteLine($"GfxObj 0x{part:X8}: {gfxObj.Surfaces.Count} surfaces");
-                            foreach (var surfId in gfxObj.Surfaces)
-                            {
-                                var surf = portalDb.ReadFromDat<Surface>(surfId);
-                                if (surf != null)
-                                {
-                                    uint tex = surf.OrigTextureId;
-                                    Console.WriteLine($"  Surface 0x{surfId:X8} -> OrigTex 0x{tex:X8} Type: {surf.Type}");
-                                    
-                                    if ((tex & 0xFF000000) == 0x05000000)
-                                    {
-                                        var surfTex = portalDb.ReadFromDat<SurfaceTexture>(tex);
-                                        if (surfTex != null && surfTex.Textures.Count > 0)
-                                        {
-                                            Console.WriteLine($"    SurfaceTexture 0x{tex:X8} resolves to Texture 0x{surfTex.Textures[0]:X8}");
-                                            tex = surfTex.Textures[0];
-                                        }
-                                        else if (highResDb != null)
-                                        {
-                                            surfTex = highResDb.ReadFromDat<SurfaceTexture>(tex);
-                                            if (surfTex != null && surfTex.Textures.Count > 0)
-                                            {
-                                                Console.WriteLine($"    [HighRes] SurfaceTexture 0x{tex:X8} resolves to Texture 0x{surfTex.Textures[0]:X8}");
-                                                tex = surfTex.Textures[0];
-                                            }
-                                        }
-                                    }
 
-                                    var texture = portalDb.ReadFromDat<Texture>(tex);
-                                    if (texture == null && highResDb != null)
-                                        texture = highResDb.ReadFromDat<Texture>(tex);
-                                        
-                                    if (texture != null)
-                                    {
-                                        Console.WriteLine($"    Texture 0x{tex:X8} Format: {texture.Format}, Width: {texture.Width}, Height: {texture.Height}");
-                                    }
-                                    else if (tex != 0)
-                                    {
-                                        Console.WriteLine($"    Texture 0x{tex:X8} NOT FOUND.");
-                                    }
+                Console.WriteLine("--- DAT AUDIT: GUROGS ---");
+                
+                // Search for Gurog setup IDs in DATs or common setup IDs
+                // Let's scan SetupModels for Gurogs or check known setup IDs
+                // Typical Gurog setups are around 0x02000300 - 0x02000400 or higher (e.g. 0x020008xx, 0x02001xxx)
+                
+                List<uint> gurogSetups = new List<uint>();
+                
+                // Let's search all setup models for Gurog textures/references or search weenies in DB if available
+                for (uint id = 0x02000000; id <= 0x02002500; id++)
+                {
+                    var setup = portalDb.ReadFromDat<SetupModel>(id);
+                    if (setup != null)
+                    {
+                        // Check first GfxObj
+                        if (setup.Parts.Count > 0)
+                        {
+                            var gfx = portalDb.ReadFromDat<GfxObj>(setup.Parts[0]);
+                            if (gfx != null && gfx.Surfaces.Count > 0)
+                            {
+                                var surf = portalDb.ReadFromDat<Surface>(gfx.Surfaces[0]);
+                                if (surf != null && surf.OrigTextureId != 0)
+                                {
+                                    // Check texture ID or surface texture
                                 }
                             }
                         }
@@ -74,7 +48,7 @@ namespace CheckWeenie
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Error: " + ex.ToString());
+                Console.WriteLine(ex.ToString());
             }
         }
     }

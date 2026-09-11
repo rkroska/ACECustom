@@ -1,4 +1,4 @@
-# Savage Echo & Pet Potency — Developer & Content Guide
+﻿# Savage Echo & Pet Potency — Developer & Content Guide
 
 **Audience:** Engineers, GMs, content designers, and anyone tuning the feature — **no programming required** for the first half; code map at the end for implementers.
 
@@ -230,7 +230,7 @@ Then GM-grant WCID **78780013** for spend/balance testing.
 
 ```
 Potency: 25 stored (10 active, 15 dormant)
-Body Training: +20% damage from potency (active)
+Potency Bonus: +20% damage (from active potency)
 ```
 
 ---

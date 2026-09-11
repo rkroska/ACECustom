@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -72,6 +72,9 @@ namespace ACE.Server.WorldObjects
                 OnDeath_HandleKillTask(KillQuest2);
             if (KillQuest3 != null)
                 OnDeath_HandleKillTask(KillQuest3);
+
+            // Pet maturity credit is independent of XP: it only cares who did the damage.
+            PetDevice.CreditMaturityKills(this);
 
             if (!IsOnNoDeathXPLandblock)
                 OnDeath_GrantXP();

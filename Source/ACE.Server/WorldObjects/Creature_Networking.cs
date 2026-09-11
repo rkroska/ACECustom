@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -259,6 +259,13 @@ namespace ACE.Server.WorldObjects
                     if ((palOption & 0xFF000000) == 0x04000000)
                     {
                         ushort itemPal = (ushort)(palOption & 0xFFFF);
+
+                        // Subpalettes overlay the base PaletteID. If the base is unset the client has nothing
+                        // to overlay onto and discards the whole palette block, rendering the model default.
+                        // The ClothingSubPalEffects branch below already guards this; mirror it here.
+                        if (objDesc.PaletteID == 0)
+                            objDesc.PaletteID = (uint)(0x04000000 | itemPal);
+
                         objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 0, Length = 255 });
                         objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 255, Length = 1 });
                     }
@@ -363,7 +370,8 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            log.Info($"[CREATURE PACKET DEBUG] {Name} (WCID {WeenieClassId}): SubPalettes.Count={objDesc.SubPalettes.Count}, PaletteTemplate=0x{(PaletteTemplate ?? 0):X8}");
+            if (ServerConfig.pet_visual_packet_debug.Value)
+                log.Info($"[CREATURE PACKET DEBUG] {Name} (WCID {WeenieClassId}): Setup=0x{SetupTableId:X8}, ClothingBase=0x{(ClothingBase ?? 0):X8}, PaletteID=0x{objDesc.PaletteID:X8}, PaletteTemplate=0x{(PaletteTemplate ?? 0):X8}, Shade={(Shade?.ToString("F2") ?? "null")}, SubPalettes={objDesc.SubPalettes.Count}, AnimParts={objDesc.AnimPartChanges.Count}, Textures={objDesc.TextureChanges.Count}");
             foreach (var sp in objDesc.SubPalettes)
             {
                 log.Info($"   -> SubPalette: Id=0x{sp.SubPaletteId:X4}, Offset={sp.Offset}, Length={sp.Length}");
@@ -372,33 +380,56 @@ namespace ACE.Server.WorldObjects
             return objDesc;
         }
 
-        private static uint GetSetupDefaultPaletteId(uint setupId)
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, uint> _setupDefaultPaletteCache = new();
+        private static PortalDatDatabase _highResDb;
+
+        /// <summary>
+        /// The native base palette of a creature model: the DefaultPaletteId baked into its textures.
+        /// Creature texture data lives in client_highres.dat; the portal copies are stubs whose
+        /// DefaultPaletteId is 0, so reading only the portal DAT (as this used to) returned 0 for
+        /// every creature and silently disabled the native-base fallback in CalculateObjDesc.
+        /// Cached per setup: this runs on every creature ObjDesc build.
+        /// </summary>
+        internal static uint GetSetupDefaultPaletteId(uint setupId)
         {
             if (setupId == 0) return 0;
-            var setupModel = DatManager.PortalDat.ReadFromDat<SetupModel>(setupId);
-            if (setupModel == null || setupModel.Parts == null) return 0;
+            return _setupDefaultPaletteCache.GetOrAdd(setupId, ResolveSetupDefaultPaletteId);
+        }
 
-            for (int i = 0; i < setupModel.Parts.Count; i++)
+        private static uint ResolveSetupDefaultPaletteId(uint setupId)
+        {
+            var setupModel = DatManager.PortalDat.ReadFromDat<SetupModel>(setupId);
+            if (setupModel?.Parts == null) return 0;
+
+            if (_highResDb == null && DatManager.HighResDat != null)
+                _highResDb = new PortalDatDatabase(DatManager.HighResDat.FilePath, keepOpen: false);
+
+            foreach (var partId in setupModel.Parts)
             {
-                var gfx = DatManager.PortalDat.ReadFromDat<GfxObj>(setupModel.Parts[i]);
-                if (gfx == null || gfx.Surfaces == null) continue;
+                var gfx = DatManager.PortalDat.ReadFromDat<GfxObj>(partId);
+                if (gfx?.Surfaces == null) continue;
 
                 foreach (var sId in gfx.Surfaces)
                 {
                     var surf = DatManager.PortalDat.ReadFromDat<Surface>(sId);
-                    if (surf == null || surf.OrigTextureId == 0) continue;
+                    uint tex = surf?.OrigTextureId ?? 0;
+                    if (tex == 0) continue;
 
-                    var st = DatManager.PortalDat.ReadFromDat<SurfaceTexture>(surf.OrigTextureId);
-                    if (st == null || st.Textures == null) continue;
-
-                    foreach (var tId in st.Textures)
+                    // 0x05 SurfaceTexture -> its first 0x06 Texture; 0x06 is usable directly.
+                    if ((tex & 0xFF000000) == 0x05000000)
                     {
-                        var tex = DatManager.PortalDat.ReadFromDat<ACE.DatLoader.FileTypes.Texture>(tId);
-                        if (tex != null && tex.DefaultPaletteId.HasValue && tex.DefaultPaletteId.Value > 0)
-                        {
-                            return tex.DefaultPaletteId.Value;
-                        }
+                        var st = DatManager.PortalDat.ReadFromDat<SurfaceTexture>(tex)
+                                 ?? _highResDb?.ReadFromDat<SurfaceTexture>(tex);
+                        if (st?.Textures == null || st.Textures.Count == 0) continue;
+                        tex = st.Textures[0];
                     }
+
+                    var t = DatManager.PortalDat.ReadFromDat<ACE.DatLoader.FileTypes.Texture>(tex);
+                    if ((t?.DefaultPaletteId ?? 0) == 0)
+                        t = _highResDb?.ReadFromDat<ACE.DatLoader.FileTypes.Texture>(tex);
+
+                    if (t?.DefaultPaletteId is uint pal && pal > 0)
+                        return pal;
                 }
             }
             return 0;

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -146,11 +146,11 @@ namespace ACE.Server.WorldObjects
                 skipTargetTypeCheck = true;
             else if (sourceItem.WeenieClassId == PetPotency.EssenceResonatorWcid && PetPotency.IsSalvageableCapturedEssence(target))
                 skipTargetTypeCheck = true;
-            else if (sourceItem.WeenieClassId == 98760399 && target is PetDevice)
+            else if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.NeuteringKitWcid && target is PetDevice)
                 skipTargetTypeCheck = true;
-            else if (sourceItem.WeenieClassId == 98760400 && target is PetDevice)
+            else if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.TailoringKitWcid && target is PetDevice)
                 skipTargetTypeCheck = true;
-            else if (sourceItem.WeenieClassId == 98760401 && target is PetDevice)
+            else if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.FilledTailoringKitWcid && target is PetDevice)
                 skipTargetTypeCheck = true;
 
             var sourceTargetType = sourceItem.TargetType ?? ItemType.None;
@@ -165,7 +165,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (sourceItem.WeenieClassId == 98760399) // Neutering Kit
+            if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.NeuteringKitWcid) // Neutering Kit
             {
                 if (target is not PetDevice petDevice)
                 {
@@ -198,174 +198,16 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (sourceItem.WeenieClassId == 98760400) // Pet Tailoring Kit (Base Tool)
+            if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.TailoringKitWcid)
             {
-                if (target is not PetDevice sourcePet)
-                {
-                    SendTransientError("This tool can only be used to extract skins from combat pet devices.");
-                    SendUseDoneEvent();
-                    return;
-                }
-
-                // Verify items can be consumed prior to creation
-                if (!TryConsumeFromInventoryWithNetworking(sourcePet, 1) || !TryConsumeFromInventoryWithNetworking(sourceItem, 1))
-                {
-                    SendTransientError("Failed to consume tailoring tool or source pet device.");
-                    SendUseDoneEvent();
-                    return;
-                }
-
-                // Create the Intermediate Kit
-                var intermediateKit = global::ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject(98760401) as WorldObject;
-                if (intermediateKit == null)
-                {
-                    SendTransientError("Failed to create Intermediate Pet Tailoring Kit.");
-                    SendUseDoneEvent();
-                    return;
-                }
-
-                // Copy visual override properties from sourcePet to intermediateKit
-                intermediateKit.SetProperty(PropertyDataId.VisualOverrideSetup, sourcePet.VisualOverrideSetup ?? 0);
-                intermediateKit.SetProperty(PropertyDataId.VisualOverrideMotionTable, sourcePet.VisualOverrideMotionTable ?? 0);
-                intermediateKit.SetProperty(PropertyDataId.VisualOverrideCombatTable, sourcePet.VisualOverrideCombatTable ?? 0);
-                intermediateKit.SetProperty(PropertyDataId.VisualOverrideSoundTable, sourcePet.VisualOverrideSoundTable ?? 0);
-                intermediateKit.SetProperty(PropertyDataId.VisualOverridePaletteBase, sourcePet.VisualOverridePaletteBase ?? 0);
-                intermediateKit.SetProperty(PropertyDataId.VisualOverrideClothingBase, sourcePet.VisualOverrideClothingBase ?? 0);
-                intermediateKit.SetProperty(PropertyFloat.VisualOverrideScale, sourcePet.VisualOverrideScale ?? 0.0);
-                intermediateKit.SetProperty(PropertyString.CapturedCreatureName, sourcePet.VisualOverrideName ?? "");
-                intermediateKit.SetProperty(PropertyInt.CapturedCreatureVariant, sourcePet.VisualOverrideCreatureVariant ?? 0);
-                intermediateKit.SetProperty(PropertyInt.CapturedCreatureType, sourcePet.VisualOverrideCreatureType ?? 0);
-
-                var capAnim = sourcePet.GetProperty(PropertyString.CapturedObjDescAnimParts);
-                if (!string.IsNullOrEmpty(capAnim)) intermediateKit.SetProperty(PropertyString.CapturedObjDescAnimParts, capAnim);
-
-                var capPals = sourcePet.GetProperty(PropertyString.CapturedObjDescPalettes);
-                if (!string.IsNullOrEmpty(capPals)) intermediateKit.SetProperty(PropertyString.CapturedObjDescPalettes, capPals);
-
-                var capTex = sourcePet.GetProperty(PropertyString.CapturedObjDescTextures);
-                if (!string.IsNullOrEmpty(capTex)) intermediateKit.SetProperty(PropertyString.CapturedObjDescTextures, capTex);
-
-                var capWcid = sourcePet.GetProperty(PropertyInt.CapturedCreatureWCID);
-                if (capWcid.HasValue) intermediateKit.SetProperty(PropertyInt.CapturedCreatureWCID, capWcid.Value);
-
-                var capDmg = sourcePet.GetProperty(PropertyInt.CapturedSourceDamageType);
-                if (capDmg.HasValue) intermediateKit.SetProperty(PropertyInt.CapturedSourceDamageType, capDmg.Value);
-
-                var capPaletteTemplate = sourcePet.VisualOverridePaletteTemplate;
-                if (capPaletteTemplate.HasValue) intermediateKit.SetProperty(PropertyInt.VisualOverridePaletteTemplate, capPaletteTemplate.Value);
-
-                var capShade = sourcePet.VisualOverrideShade;
-                if (capShade.HasValue) intermediateKit.SetProperty(PropertyFloat.VisualOverrideShade, capShade.Value);
-
-                // Set dynamic display name on the intermediate kit
-                var creatureName = sourcePet.VisualOverrideName ?? sourcePet.Name;
-                intermediateKit.Name = $"Pet Tailoring Kit ({creatureName})";
-
-                if (TryCreateInInventoryWithNetworking(intermediateKit))
-                {
-                    PlayParticleEffect(PlayScript.AttribDownRed, target.Guid);
-                    SendMessage($"You extract the visual skin from {sourcePet.Name} and store it in the kit. The source pet is consumed.");
-                }
-                else
-                {
-                    SendTransientError("Inventory full. Could not extract pet skin.");
-                    intermediateKit.Destroy();
-                }
-
+                ACE.Server.Entity.PetTailoring.HandleExtract(this, sourceItem, target);
                 SendUseDoneEvent();
                 return;
             }
 
-            if (sourceItem.WeenieClassId == 98760401) // Intermediate Pet Tailoring Kit
+            if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.FilledTailoringKitWcid)
             {
-                if (target is not PetDevice targetPet)
-                {
-                    SendTransientError("This tool can only be used on combat pet devices.");
-                    SendUseDoneEvent();
-                    return;
-                }
-
-                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
-                {
-                    SendTransientError("Failed to consume tailoring skin kit.");
-                    SendUseDoneEvent();
-                    return;
-                }
-
-                // Copy visual properties from intermediateKit to targetPet
-                var setupVal = sourceItem.GetProperty(PropertyDataId.VisualOverrideSetup);
-                targetPet.VisualOverrideSetup = setupVal > 0 ? setupVal : null;
-
-                var motionVal = sourceItem.GetProperty(PropertyDataId.VisualOverrideMotionTable);
-                targetPet.VisualOverrideMotionTable = motionVal > 0 ? motionVal : null;
-
-                var combatVal = sourceItem.GetProperty(PropertyDataId.VisualOverrideCombatTable);
-                targetPet.VisualOverrideCombatTable = combatVal > 0 ? combatVal : null;
-
-                var soundVal = sourceItem.GetProperty(PropertyDataId.VisualOverrideSoundTable);
-                targetPet.VisualOverrideSoundTable = soundVal > 0 ? soundVal : null;
-
-                var palBaseVal = sourceItem.GetProperty(PropertyDataId.VisualOverridePaletteBase);
-                targetPet.VisualOverridePaletteBase = palBaseVal > 0 ? palBaseVal : null;
-
-                var clothBaseVal = sourceItem.GetProperty(PropertyDataId.VisualOverrideClothingBase);
-                targetPet.VisualOverrideClothingBase = clothBaseVal > 0 ? clothBaseVal : null;
-
-                var scaleVal = sourceItem.GetProperty(PropertyFloat.VisualOverrideScale);
-                targetPet.VisualOverrideScale = scaleVal > 0.0 ? scaleVal : null;
-
-                var nameVal = sourceItem.GetProperty(PropertyString.CapturedCreatureName);
-                targetPet.VisualOverrideName = !string.IsNullOrEmpty(nameVal) ? nameVal : null;
-
-                var variantVal = sourceItem.GetProperty(PropertyInt.CapturedCreatureVariant);
-                targetPet.VisualOverrideCreatureVariant = variantVal > 0 ? variantVal : null;
-
-                var typeVal = sourceItem.GetProperty(PropertyInt.CapturedCreatureType);
-                targetPet.VisualOverrideCreatureType = typeVal > 0 ? typeVal : null;
-
-                var capAnim = sourceItem.GetProperty(PropertyString.CapturedObjDescAnimParts);
-                if (!string.IsNullOrEmpty(capAnim)) targetPet.SetProperty(PropertyString.CapturedObjDescAnimParts, capAnim);
-                else targetPet.RemoveProperty(PropertyString.CapturedObjDescAnimParts);
-
-                var capPals = sourceItem.GetProperty(PropertyString.CapturedObjDescPalettes);
-                if (!string.IsNullOrEmpty(capPals)) targetPet.SetProperty(PropertyString.CapturedObjDescPalettes, capPals);
-                else targetPet.RemoveProperty(PropertyString.CapturedObjDescPalettes);
-
-                var capTex = sourceItem.GetProperty(PropertyString.CapturedObjDescTextures);
-                if (!string.IsNullOrEmpty(capTex)) targetPet.SetProperty(PropertyString.CapturedObjDescTextures, capTex);
-                else targetPet.RemoveProperty(PropertyString.CapturedObjDescTextures);
-
-                var capWcid = sourceItem.GetProperty(PropertyInt.CapturedCreatureWCID);
-                if (capWcid.HasValue) targetPet.SetProperty(PropertyInt.CapturedCreatureWCID, capWcid.Value);
-                else targetPet.RemoveProperty(PropertyInt.CapturedCreatureWCID);
-
-                var capDmg = sourceItem.GetProperty(PropertyInt.CapturedSourceDamageType);
-                if (capDmg.HasValue) targetPet.SetProperty(PropertyInt.CapturedSourceDamageType, capDmg.Value);
-                else targetPet.RemoveProperty(PropertyInt.CapturedSourceDamageType);
-
-                var capPaletteTemplate = sourceItem.GetProperty(PropertyInt.VisualOverridePaletteTemplate);
-                if (capPaletteTemplate.HasValue) targetPet.VisualOverridePaletteTemplate = capPaletteTemplate.Value;
-                else targetPet.VisualOverridePaletteTemplate = null;
-
-                var capShade = sourceItem.GetProperty(PropertyFloat.VisualOverrideShade);
-                if (capShade.HasValue) targetPet.VisualOverrideShade = capShade.Value;
-                else targetPet.VisualOverrideShade = null;
-
-                // Rebuild target pet name
-                var baseName = targetPet.Name ?? "";
-                var index = baseName.IndexOf(" Essence");
-                var baseClean = index >= 0 ? baseName.Substring(0, index + 8) : baseName;
-                var rebuiltName = PetDevice.BuildDisplayNameAfterCaptureApply(baseClean, null, targetPet.VisualOverrideName);
-                if (!string.IsNullOrEmpty(rebuiltName))
-                    targetPet.Name = rebuiltName;
-
-                targetPet.ChangesDetected = true;
-                targetPet.SaveBiotaToDatabase();
-
-                PlayParticleEffect(PlayScript.EnchantUpPurple, target.Guid);
-                SendMessage($"You successfully tailored the appearance onto {targetPet.Name}!");
-                TryConsumeFromInventoryWithNetworking(sourceItem, 1);
-
+                ACE.Server.Entity.PetTailoring.HandleApply(this, sourceItem, target);
                 SendUseDoneEvent();
                 return;
             }

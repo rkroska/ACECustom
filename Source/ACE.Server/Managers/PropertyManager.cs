@@ -1,4 +1,4 @@
-using ACE.Database;
+﻿using ACE.Database;
 using ACE.Database.Models.Shard;
 using log4net;
 using System;
@@ -521,13 +521,50 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> pet_residue_salvage_shiny_mult { get; private set; } = new(5.0, "Shiny essence salvage multiplier (applied on top of base or creature override).");
 
         // Pet breeding (custom)
-        public static ConfigProperty<bool> pet_breeding_enabled { get; private set; } = new(false, "If TRUE, enables pet breeding by using one combat pet device on another in the Seedy Motel.");
-        public static ConfigProperty<double> pet_breeding_cooldown_hours { get; private set; } = new(24.0, "Cooldown period in hours before a parent combat pet device can be bred again.");
-        public static ConfigProperty<long> pet_breeding_min_bond { get; private set; } = new(100, "Minimum bond level required on parent devices to breed.");
-        public static ConfigProperty<long> pet_breeding_min_parent_level { get; private set; } = new(50, "Minimum level/tier of parent combat pet devices required to breed.");
-        public static ConfigProperty<long> pet_breeding_allowed_landblock { get; private set; } = new(0x013A02AEL, "Landblock raw ID where breeding is allowed (0x013A02AE is Seedy Motel). 0 = allowed anywhere.");
-        public static ConfigProperty<long> pet_breeding_allowed_variant { get; private set; } = new(3, "Landblock variation ID where breeding is allowed. -1 = ignore variation.");
+        public static ConfigProperty<bool> pet_breeding_enabled { get; private set; } = new(true, "If TRUE, enables pet breeding by using one combat pet device on another in the Seedy Motel.");
+        public static ConfigProperty<double> pet_breeding_cooldown_hours { get; private set; } = new(4.0, "Recovery cooldown in hours before a female combat pet device can be bred again. The baby is delivered at the breed itself, so this is rest, not gestation.");
+        public static ConfigProperty<long> pet_breeding_min_bond { get; private set; } = new(1, "Minimum bond level required on parent devices to breed.");
+        public static ConfigProperty<long> pet_breeding_min_parent_level { get; private set; } = new(1, "Minimum level/tier of parent combat pet devices required to breed.");
+        public static ConfigProperty<long> pet_breeding_allowed_landblock { get; private set; } = new(0x016CL, "Landblock raw ID where breeding is allowed (0x016C is Seedy Motel). 0 = allowed anywhere.");
+        public static ConfigProperty<long> pet_breeding_allowed_variant { get; private set; } = new(-1, "Landblock variation ID where breeding is allowed. -1 = ignore variation.");
         public static ConfigProperty<bool> pet_breeding_force_mutation { get; private set; } = new(false, "If TRUE, forces a mutation and color mutation to occur on every breed roll.");
+        public static ConfigProperty<double> pet_breeding_base_mutation_chance { get; private set; } = new(0.05, "Flat mutation chance for stat lines per breed (0.05 = 5%). With decay at 0 this is constant regardless of accumulated mutations.");
+        public static ConfigProperty<double> pet_breeding_potency_mutation_chance { get; private set; } = new(0.03, "Independent chance for a rare Potency mutation to occur (0.03 = 3.0%).");
+        public static ConfigProperty<double> pet_breeding_mutation_decay_rate { get; private set; } = new(0.0, "Decay factor per inherited mutation. 0 = flat chance (no diminishing returns; fits an uncapped server). Raise for catch-up-style diminishing returns.");
+        public static ConfigProperty<bool> pet_breeding_bypass_male_charges { get; private set; } = new(false, "TEST ONLY: if TRUE, male breeding charges are neither checked nor consumed.");
+        public static ConfigProperty<bool> pet_breeding_bypass_female_cooldown { get; private set; } = new(false, "TEST ONLY: if TRUE, the female recovery cooldown is neither checked nor written.");
+        public static ConfigProperty<bool> pet_breeding_dismiss_after_breed { get; private set; } = new(true, "If TRUE, both parents' summoned pets are dismissed after a successful breed, so re-breeding requires a re-summon (and its use cooldown).");
+        public static ConfigProperty<double> pet_breeding_mutation_min_floor { get; private set; } = new(0.02, "Absolute minimum mutation chance floor (0.02 = 2.0%).");
+        public static ConfigProperty<long> pet_breeding_damage_mutation_step { get; private set; } = new(10, "Damage rating bonus granted per damage mutation.");
+        public static ConfigProperty<long> pet_breeding_dr_mutation_step { get; private set; } = new(10, "Damage resist rating bonus granted per DR mutation.");
+        public static ConfigProperty<long> pet_breeding_crit_mutation_step { get; private set; } = new(5, "Crit rating bonus granted per crit mutation.");
+        public static ConfigProperty<long> pet_breeding_vitality_mutation_step { get; private set; } = new(200, "Max health bonus granted per vitality mutation.");
+        public static ConfigProperty<long> pet_breeding_potency_mutation_step { get; private set; } = new(25, "Potency gained per potency mutation.");
+        public static ConfigProperty<long> pet_breeding_potency_soft_cap { get; private set; } = new(1000, "Potency level above which potency mutation gains diminish.");
+        public static ConfigProperty<long> pet_breeding_potency_hard_cap { get; private set; } = new(0, "Maximum allowable potency from breeding (0 = uncapped).");
+        public static ConfigProperty<long> pet_breeding_max_stat_mutations { get; private set; } = new(0, "Maximum mutation points allowed per individual stat line (0 = uncapped).");
+        public static ConfigProperty<double> pet_breeding_dance_sync_seconds { get; private set; } = new(5.0, "Seconds within which both partners must dance for breeding to trigger.");
+        public static ConfigProperty<long> pet_breeding_male_max_charges { get; private set; } = new(10, "Breeding charges an male device holds when fully rested.");
+        public static ConfigProperty<double> pet_breeding_male_charge_reset_hours { get; private set; } = new(24.0, "Hours before a male device refills its breeding charges (0 = never refill).");
+        public static ConfigProperty<bool> pet_breeding_guardian_enabled { get; private set; } = new(false, "If TRUE, a mutation breed spawns a mating guardian wearing the offspring's look; the two parent pets must kill it to complete the birth.");
+        public static ConfigProperty<double> pet_breeding_guardian_timeout_seconds { get; private set; } = new(90.0, "Seconds the mating guardian stands before it fades. On timeout the birth still completes (no-fail).");
+        public static ConfigProperty<long> pet_breeding_guardian_template_wcid { get; private set; } = new(7, "Creature weenie used as the mating guardian's combat template (default 7 = drudgeskulker). Its look is replaced by the offspring's.");
+        public static ConfigProperty<double> pet_breeding_guardian_health_mult { get; private set; } = new(1.0, "Mating guardian max health = (parent pet 1 max health + parent pet 2 max health) x this.");
+        public static ConfigProperty<double> pet_breeding_guardian_damage_mult { get; private set; } = new(0.5, "Damage multiplier applied to the mating guardian's outgoing damage via DamageRating (0.5 = half).");
+        public static ConfigProperty<double> pet_breeding_guardian_translucency { get; private set; } = new(0.6, "How see-through the mating guardian is (0 = solid, 1 = invisible). Retail ghosts use 0.5-0.65.");
+
+        // Pet maturity: bred babies grow into adults by killing creatures at or above their tier.
+        public static ConfigProperty<bool> pet_maturity_enabled { get; private set; } = new(true, "If TRUE, bred pet essences are born juvenile: smaller, weaker, unable to breed, and grow by kills. Existing essences are unaffected.");
+        public static ConfigProperty<long> pet_maturity_kills_required { get; private set; } = new(300, "Kills a juvenile needs to reach adulthood. Only creatures at or above the essence tier count.");
+        public static ConfigProperty<long> pet_maturity_stages { get; private set; } = new(5, "Growth stages between birth and adulthood; each stage steps size and strength toward adult.");
+        public static ConfigProperty<string> pet_maturity_stage_names { get; private set; } = new("Newborn,Whelp,Juvenile,Adolescent,Young Adult", "Comma-separated growth stage names, first = newborn. Used in the pet's name, growth messages and the ID panel. Missing entries fall back to 'Stage N'.");
+        public static ConfigProperty<double> pet_maturity_min_damage_share { get; private set; } = new(0.10, "Fraction of a creature's health the juvenile must have dealt for the kill to count (0.10 = 10%).");
+        public static ConfigProperty<double> pet_maturity_juvenile_scale { get; private set; } = new(0.5, "Size of a stage-1 juvenile relative to adult (0.5 = half size). Grows per stage.");
+        public static ConfigProperty<double> pet_maturity_juvenile_strength { get; private set; } = new(0.5, "Fraction of adult strength a stage-1 juvenile fights with: max health, outgoing damage, and all combat ratings. Grows per stage.");
+        public static ConfigProperty<bool> pet_maturity_imprint_on_summon { get; private set; } = new(true, "If TRUE, a bred essence imprints on the first character to summon it: attuned, no trade, no drop, usable by nobody else. Newborns stay tradeable until summoned.");
+        public static ConfigProperty<bool> pet_breeding_allow_shiny { get; private set; } = new(false, "If FALSE (default), shiny essences cannot breed and the shiny variant is never inherited. Shiny stays a capture-only trait.");
+        public static ConfigProperty<bool> pet_breeding_verbose_logging { get; private set; } = new(false, "If TRUE, every dance trigger and location/enable failure is logged at INFO. Off by default: any player can spam these with a dance macro.");
+        public static ConfigProperty<bool> pet_visual_packet_debug { get; private set; } = new(false, "If TRUE, logs the [CREATURE PACKET DEBUG] line for every creature ObjDesc built. Very noisy; turn on only while diagnosing appearance problems.");
         public static ConfigProperty<long> pet_strain_potency_threshold { get; private set; } = new(50, "No bond strain at or below this active potency.");
         public static ConfigProperty<double> pet_strain_per_potency_level { get; private set; } = new(1.0, "Player DR penalty per active level above strain threshold.");
         public static ConfigProperty<long> pet_strain_max_rating { get; private set; } = new(0, "Cap bond strain magnitude (0 = no cap).");

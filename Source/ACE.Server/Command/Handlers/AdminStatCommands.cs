@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
@@ -283,12 +283,12 @@ namespace ACE.Server.Command.Handlers
             var spread = tickDelays.Max() - tickDelays.Min();
             if (spread < 0.1)
             {
-                sb.Append($"{'\n'}⚠️ WARNING: Ticks are SYNCHRONIZED (spread < 0.1s){'\n'}");
+                sb.Append($"{'\n'}[WARNING] Ticks are SYNCHRONIZED (spread < 0.1s){'\n'}");
                 sb.Append($"   Desynchronization may not be working!{'\n'}");
             }
             else
             {
-                sb.Append($"{'\n'}✅ Ticks are DESYNCHRONIZED (spread = {spread:F3}s){'\n'}");
+                sb.Append($"{'\n'}[OK] Ticks are DESYNCHRONIZED (spread = {spread:F3}s){'\n'}");
                 sb.Append($"   Load should be well-distributed across server ticks.{'\n'}");
             }
             

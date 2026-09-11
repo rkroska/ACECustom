@@ -1,5 +1,7 @@
-using System;
+﻿using System;
+using System.Linq;
 using System.Threading.Tasks;
+using ACE.Server.Managers;
 using ACE.Server.Services;
 using ACE.Server.Web.Controllers;
 using Microsoft.AspNetCore.Authorization;
@@ -46,6 +48,44 @@ namespace ACE.Server.Controllers
             return Ok(result);
         }
 
+        [HttpGet("compatibility/{wcid}")]
+        public IActionResult GetSpeciesCompatibility(uint wcid)
+        {
+            if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
+
+            var result = VisualizerService.GetSpeciesCompatibility(wcid);
+            return Ok(result);
+        }
+
+        [HttpGet("master-mutation-pool")]
+        public IActionResult GetMasterMutationPool()
+        {
+            var pool = PetMutationService.GetMasterPalettePool();
+            return Ok(pool);
+        }
+
+        [HttpGet("breeding-config")]
+        public IActionResult GetBreedingConfig()
+        {
+            var config = new
+            {
+                baseMutationChance = ServerConfig.pet_breeding_base_mutation_chance.Value,
+                potencyMutationChance = ServerConfig.pet_breeding_potency_mutation_chance.Value,
+                mutationDecayRate = ServerConfig.pet_breeding_mutation_decay_rate.Value,
+                mutationMinFloor = ServerConfig.pet_breeding_mutation_min_floor.Value,
+                damageMutationStep = ServerConfig.pet_breeding_damage_mutation_step.Value,
+                drMutationStep = ServerConfig.pet_breeding_dr_mutation_step.Value,
+                critMutationStep = ServerConfig.pet_breeding_crit_mutation_step.Value,
+                vitalityMutationStep = ServerConfig.pet_breeding_vitality_mutation_step.Value,
+                potencyMutationStep = ServerConfig.pet_breeding_potency_mutation_step.Value,
+                potencySoftCap = ServerConfig.pet_breeding_potency_soft_cap.Value,
+                potencyHardCap = ServerConfig.pet_breeding_potency_hard_cap.Value,
+                maxStatMutations = ServerConfig.pet_breeding_max_stat_mutations.Value,
+                forceMutation = ServerConfig.pet_breeding_force_mutation.Value
+            };
+            return Ok(config);
+        }
+
         [HttpGet("surfaces/{wcid}")]
         public IActionResult GetCreatureSurfaces(uint wcid)
         {
@@ -74,16 +114,17 @@ namespace ACE.Server.Controllers
         {
             if (item == null || item.CreatureWcid == 0) return BadRequest("Invalid Curation Data.");
 
-            var result = CurationService.AddOrUpdateCuration(item.CreatureWcid, item.CreatureName, item.TextureId, item.PaletteId, item.Rating);
+            // Bound everything a client can put in the curation file.
+            if (item.Rating < -1 || item.Rating > 1) return BadRequest("Rating must be -1, 0 or 1.");
+            var name = (item.CreatureName ?? "").Trim();
+            if (name.Length > 64) name = name.Substring(0, 64);
+
+            var result = CurationService.AddOrUpdateCuration(item.CreatureWcid, name, item.TextureId, item.PaletteId, item.Rating);
             return Ok(result);
         }
 
-        [HttpPost("clear-cache")]
-        public IActionResult ClearCache()
-        {
-            VisualizerService.ClearCache();
-            return Ok(new { success = true, message = "Visualizer cache cleared successfully." });
-        }
+        // The anonymous clear-cache endpoint was a free way to force every mesh and texture to
+        // regenerate. The eviction service manages the cache; an admin can delete the folder.
 
         [HttpGet("curation/{wcid}")]
         public IActionResult GetCurations(uint wcid)
@@ -238,18 +279,47 @@ namespace ACE.Server.Controllers
             if (request == null || string.IsNullOrEmpty(request.DataUrl) || string.IsNullOrEmpty(request.Filename))
                 return BadRequest("Invalid request data.");
 
-            var safeFilename = System.IO.Path.GetFileName(request.Filename);
-            if (string.IsNullOrEmpty(safeFilename))
+            // This folder is served as static content, so what lands here must be an image and nothing
+            // else: PNG signature checked, extension forced, size and count capped, decode guarded.
+            const int maxBytes = 5 * 1024 * 1024;
+            const int maxFiles = 500;
+
+            var safeFilename = System.IO.Path.GetFileNameWithoutExtension(System.IO.Path.GetFileName(request.Filename));
+            safeFilename = new string(safeFilename.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-').ToArray());
+            if (string.IsNullOrEmpty(safeFilename) || safeFilename.Length > 80)
                 return BadRequest("Invalid filename.");
+            safeFilename += ".png";
 
             var base64Data = request.DataUrl;
             if (base64Data.Contains(","))
                 base64Data = base64Data.Split(',')[1];
+            if (base64Data.Length > maxBytes * 4 / 3 + 4)
+                return BadRequest("Screenshot too large.");
 
-            var bytes = Convert.FromBase64String(base64Data);
+            byte[] bytes;
+            try
+            {
+                bytes = Convert.FromBase64String(base64Data);
+            }
+            catch (FormatException)
+            {
+                return BadRequest("Invalid image data.");
+            }
+
+            if (bytes.Length > maxBytes)
+                return BadRequest("Screenshot too large.");
+
+            // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+            if (bytes.Length < 8 || bytes[0] != 0x89 || bytes[1] != 0x50 || bytes[2] != 0x4E || bytes[3] != 0x47
+                || bytes[4] != 0x0D || bytes[5] != 0x0A || bytes[6] != 0x1A || bytes[7] != 0x0A)
+                return BadRequest("Only PNG screenshots are accepted.");
+
             var dir = System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot", "screenshots");
             if (!System.IO.Directory.Exists(dir))
                 System.IO.Directory.CreateDirectory(dir);
+
+            if (System.IO.Directory.GetFiles(dir).Length >= maxFiles)
+                return StatusCode(507, "Screenshot storage is full.");
 
             var path = System.IO.Path.Combine(dir, safeFilename);
             await System.IO.File.WriteAllBytesAsync(path, bytes);

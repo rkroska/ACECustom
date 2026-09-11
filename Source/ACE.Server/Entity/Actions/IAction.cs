@@ -1,4 +1,4 @@
-using ACE.Server.Network.GameAction;
+﻿using ACE.Server.Network.GameAction;
 using ACE.Server.Network.GameMessages;
 using System;
 
@@ -74,6 +74,8 @@ namespace ACE.Server.Entity.Actions
         MonsterMissile_SwitchToMeleeAttackInnerInner,
         MonsterNavigation_Sleep,
         PetDevice_Refill,
+        PetDevice_DismissAfterBreed,
+        PetDevice_GuardianTimeout,
         PhysicsObj_TrackObject,
         PhysicsObj_TrackObjects,
         PKModifier_EnqueueDissonanceAndReset,

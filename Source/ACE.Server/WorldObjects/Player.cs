@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Linq;
@@ -981,6 +981,21 @@ namespace ACE.Server.WorldObjects
                     EnqueueBroadcast(new GameMessageSoulEmote(Guid.Full, Name, message), LocalBroadcastRange);
 
                 OnTalk(message);
+
+                if (!string.IsNullOrEmpty(message) && message.Contains("dance", StringComparison.OrdinalIgnoreCase))
+                {
+                    // BroadcastMovement() already triggers breeding off the DrudgeDance motion. Only fall
+                    // back to the chat-emote text when that path did not just fire for this same emote,
+                    // otherwise a single /dance runs the ritual twice.
+                    var motionAlreadyFired = (LastSoulEmote == MotionCommand.DrudgeDance || LastSoulEmote == MotionCommand.DrudgeDanceState)
+                        && DateTime.UtcNow < LastSoulEmoteEndTime;
+
+                    if (!motionAlreadyFired)
+                    {
+                        LastDanceTime = DateTime.UtcNow;
+                        PetDevice.CheckMultiplayerBreeding(this, $"ChatEmote: {message}");
+                    }
+                }
             }
             else
                 SendGagError();

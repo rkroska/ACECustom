@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -284,6 +284,10 @@ namespace ACE.Server.Entity
                 GetBaseDamage(playerAttacker);
             else
                 GetBaseDamage(attacker, AttackMotion ?? MotionCommand.Invalid, AttackHook);
+
+            // Juvenile combat pets hit for a percentage of their adult damage.
+            if (attacker is CombatPet maturingPet && maturingPet.MaturityDamageMult < 0.999f)
+                BaseDamage *= maturingPet.MaturityDamageMult;
 
             // NEW: Apply enrage multiplier if the attacker is a mob and enraged
             if (attacker.IsEnraged && !(attacker is Player))
