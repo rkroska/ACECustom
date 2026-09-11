@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 
 using ACE.Common;
@@ -139,11 +139,17 @@ namespace ACE.Server.WorldObjects
             var danceWindow = TimeSpan.FromSeconds(ServerConfig.pet_breeding_dance_sync_seconds.Value);
             var nowUtc = DateTime.UtcNow;
 
+            var device1 = pet1.TryGetSummoningDevice() ?? player1.FindObject(pet1.SummoningDeviceGuid.Full, Player.SearchLocations.Everywhere) as PetDevice;
+            if (device1 == null)
+            {
+                player1.SendTransientError("Failed to locate parent summoning device.");
+                return;
+            }
+
             // 3. Scan for a partner: same landblock, also inside the breeding area, who danced within
             //    the sync window, and whose pet shares a landcell with ours.
             var onlinePlayers = PlayerManager.GetAllOnline();
-            Player partner = null;
-            CombatPet pet2 = null;
+            var roomCandidates = new System.Collections.Generic.List<(Player Player, CombatPet Pet)>();
 
             foreach (var otherPlayer in onlinePlayers)
             {
@@ -196,18 +202,55 @@ namespace ACE.Server.WorldObjects
                     continue;
                 }
 
-                partner = otherPlayer;
-                pet2 = otherPet;
-                if (player1.IsAdmin) player1.SendMessage($"[Breeding Debug] Matched partner {partner.Name} ({dist:F1}m away) with summoned pet {pet2.Name} in landcell 0x{pet2.Location.Cell:X8}!");
-                break;
+                roomCandidates.Add((otherPlayer, otherPet));
             }
 
-            if (partner == null || pet2 == null)
+            if (roomCandidates.Count == 0)
             {
                 if (player1.IsAdmin)
                     player1.SendMessage($"[Breeding Debug] No eligible partner found: needs to be in the breeding area, have danced within {danceWindow.TotalSeconds:0.#}s, and have a summoned pet sharing your pet's landcell. (Checked {onlinePlayers.Count} online players)");
+                else if (!forced)
+                    player1.SendMessage("[Breeding] Your pet performs the courtship dance, waiting for a partner... (Your partner must have their pet summoned in the same room and /dance within 5 seconds).");
                 return;
             }
+
+            // In crowded rooms with multiple pairs dancing, prioritize candidates whose pets are mutually compatible
+            // (opposite sex, not neutered, adult, charges/cooldowns ready) so bystanders do not block valid pairs.
+            bool IsCandidateCompatible(Player p, CombatPet cp)
+            {
+                if (p.IsBusy) return false;
+                var dev = cp.TryGetSummoningDevice() ?? p.FindObject(cp.SummoningDeviceGuid.Full, Player.SearchLocations.Everywhere) as PetDevice;
+                if (dev == null) return false;
+                if (device1.IsMale == dev.IsMale) return false;
+                if (device1.GetProperty(PropertyBool.PetNeutered) == true || dev.GetProperty(PropertyBool.PetNeutered) == true) return false;
+                if (device1.IsJuvenile || dev.IsJuvenile) return false;
+                if (!ServerConfig.pet_breeding_allow_shiny.Value && (device1.IsShiny || dev.IsShiny)) return false;
+
+                if (!ServerConfig.pet_breeding_bypass_male_charges.Value)
+                {
+                    var maleDev = device1.IsMale ? device1 : dev;
+                    var charges = maleDev.GetProperty(PropertyInt.PetMaleBreedingCharges) ?? (int)ServerConfig.pet_breeding_male_max_charges.Value;
+                    if (charges <= 0) return false;
+                }
+
+                if (!ServerConfig.pet_breeding_bypass_female_cooldown.Value)
+                {
+                    var femaleDev = device1.IsMale ? dev : device1;
+                    var nextBreed = femaleDev.GetProperty(PropertyFloat.PetNextBreedingTime) ?? 0.0;
+                    if (nextBreed > (double)DateTimeOffset.UtcNow.ToUnixTimeSeconds()) return false;
+                }
+
+                return true;
+            }
+
+            var compatibleCandidates = roomCandidates.Where(c => IsCandidateCompatible(c.Player, c.Pet)).ToList();
+            var chosen = compatibleCandidates.Count > 0
+                ? compatibleCandidates.OrderBy(c => player1.GetDistance(c.Player)).First()
+                : roomCandidates.OrderBy(c => player1.GetDistance(c.Player)).First();
+
+            Player partner = chosen.Player;
+            CombatPet pet2 = chosen.Pet;
+            if (player1.IsAdmin) player1.SendMessage($"[Breeding Debug] Matched partner {partner.Name} ({player1.GetDistance(partner):F1}m away) with summoned pet {pet2.Name} in landcell 0x{pet2.Location.Cell:X8}!");
 
             if (player1.IsBusy || partner.IsBusy)
             {
@@ -231,10 +274,9 @@ namespace ACE.Server.WorldObjects
 
             try
             {
-                var device1 = pet1.TryGetSummoningDevice() ?? player1.FindObject(pet1.SummoningDeviceGuid.Full, Player.SearchLocations.Everywhere) as PetDevice;
                 var device2 = pet2.TryGetSummoningDevice() ?? partner.FindObject(pet2.SummoningDeviceGuid.Full, Player.SearchLocations.Everywhere) as PetDevice;
 
-                if (device1 == null || device2 == null)
+                if (device2 == null)
                 {
                     player1.SendTransientError("Failed to locate parent summoning devices.");
                     partner.SendTransientError("Failed to locate parent summoning devices.");
