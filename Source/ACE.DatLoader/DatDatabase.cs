@@ -31,6 +31,13 @@ namespace ACE.DatLoader
 
         public ConcurrentDictionary<uint, FileType> FileCache { get; } = new ConcurrentDictionary<uint, FileType>();
 
+        /// <summary>
+        /// Protected constructor for derived test/mock implementations
+        /// </summary>
+        protected DatDatabase()
+        {
+        }
+
         public DatDatabase(string filePath, bool keepOpen = false)
         {
             if (!File.Exists(filePath))
@@ -76,25 +83,33 @@ namespace ACE.DatLoader
             if (!IsClothingBaseId(fileId))
                 return false;
 
-            if (FileCache.TryGetValue(fileId, out FileType cached) && cached is not ClothingTable)
-                return false;
-
-            // The dat must actually CONTAIN this id before we read it. ReadFromDat returns a new EMPTY
-            // ClothingTable when the file is absent - GetReaderForFile returns null, the datReader guard
-            // is skipped, nothing throws so the catch never runs - and then caches that empty object.
-            // Returning true in that case handed callers a table with no ClothingBaseEffects, which
-            // silently defeated their AddSetupAsClothingBase fallback and rendered the item with no
-            // model or texture at all. Returning false lets the fallback do its job.
-            if (!AllFiles.ContainsKey(fileId))
+            if (FileCache.TryGetValue(fileId, out FileType cached))
             {
-                if (missingClothingWarned.TryAdd(fileId, 0))
-                    log.Warn($"ClothingBase 0x{fileId:X8} is referenced by content but is not present in {Enum.GetName(typeof(DatDatabaseType), Header.DataSet)} - falling back to SetupId. Fix the content or update the dats.");
+                if (cached is ClothingTable cachedTable && (cachedTable.ClothingBaseEffects.Count > 0 || cachedTable.ClothingSubPalEffects.Count > 0))
+                {
+                    clothingTable = cachedTable;
+                    return true;
+                }
 
                 return false;
             }
 
+            // ReadFromDat allows Harmony mods (such as CustomClothingBase JSON loader) or DAT files
+            // to provide the ClothingTable.
             clothingTable = ReadFromDat<ClothingTable>(fileId);
-            return true;
+
+            if (clothingTable != null && (clothingTable.ClothingBaseEffects.Count > 0 || clothingTable.ClothingSubPalEffects.Count > 0))
+                return true;
+
+            clothingTable = null;
+
+            // The table is genuinely absent from both the dat and any mods/cache:
+            // ReadFromDat returned an empty ClothingTable with no effects. Returning false
+            // lets callers fall back to AddSetupAsClothingBase so the item can still render.
+            if (missingClothingWarned.TryAdd(fileId, 0))
+                log.Warn($"ClothingBase 0x{fileId:X8} is referenced by content but is not present in {Enum.GetName(typeof(DatDatabaseType), Header.DataSet)} - falling back to SetupId. Fix the content or update the dats.");
+
+            return false;
         }
 
         public T ReadFromDat<T>(uint fileId) where T : FileType, new()
