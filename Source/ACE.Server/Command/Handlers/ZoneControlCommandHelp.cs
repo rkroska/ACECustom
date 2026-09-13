@@ -109,6 +109,7 @@ namespace ACE.Server.Command.Handlers
             E("Generators", "/zonecontrol geninfo", "<wcid>", "One generator's knobs: delay, radius, stagger, init, max."),
             E("Generators", "/zonecontrol genedit", "<wcid> delay|radius|stagger|init|max <value>", "Edit a generator weenie (ace_world) and clear its cache."),
             E("Generators", "/bossgroup", "status [--wire] | set <group> delay|radius <v> | clear <group> delay|radius | enable|disable <group> | respawn <group>", "Boss groups: generators sharing a BossGroupId. Overrides are runtime (shard store)."),
+            E("Weapon Scaling", "/missilepower", "[<fast> <full> [<mid>]]", "Show or set the missile power ladder: damage multiplier at full speed / mid / full draw (0.1-10; mid omitted = the average). Only in force while missile_power_bar (Bow Power Bar) is ON. No restart."),
             E("Territory", "/zonecontrol survey", "<name> [lbHex]", "Per-landblock survey: generators and creatures reachable."),
             E("Territory", "/zonecontrol terrain", "<name> <hex> <type|clear>", "Terrain override for a landblock (spawn redirection)."),
             E("Territory", "/zonecontrol quests", "<name>", "The zone's quest registry rows."),

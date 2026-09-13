@@ -62,12 +62,12 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Known-without-CreateObject heal fired (AddVisibleObjects found an object Known but not
         /// Visible and not in the destruction queue — the "invisible until relog" state — and routed
-        /// it back through the CreateObject batch). Gated on prestige_interaction_diag_verbose (the
+        /// it back through the CreateObject batch). Gated on variation_interaction_diag_verbose (the
         /// always-on tear diag, like [GhostMob]): each line is an object that WOULD have stayed invisible.
         /// </summary>
         public static void LogKnownNotVisibleHeal(Player viewer, Physics.PhysicsObj target)
         {
-            if (!ServerConfig.prestige_interaction_diag_verbose.Value || viewer == null)
+            if (!ServerConfig.variation_interaction_diag_verbose.Value || viewer == null)
                 return;
 
             log.Warn($"[VisibilityCO] KnownNotVisible CO heal viewer={FormatViewer(viewer)} target={FormatTarget(target)} (known w/o client CreateObject; resending via enqueue batch)");
@@ -81,7 +81,7 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void LogEnqueueSkipPurge(Player viewer, Physics.PhysicsObj target, string where)
         {
-            if (!ServerConfig.prestige_interaction_diag_verbose.Value || viewer == null)
+            if (!ServerConfig.variation_interaction_diag_verbose.Value || viewer == null)
                 return;
 
             log.Warn($"[VisibilityCO] enqueue variation-skip purge ({where}) viewer={FormatViewer(viewer)} target={FormatTarget(target)} (known/visible purged; re-approach re-adds cleanly)");

@@ -692,17 +692,49 @@ namespace ACE.Server.WorldObjects
             if (weapon == null || !weapon.IsRanged)
                 return PowerLevel + 0.5f;
             else if (ServerConfig.missile_power_bar.Value)
-                return AccuracyLevel + 0.5f;
+                // Missile ladder (owner 2026-09-12), defaults 1.0 / 1.75 / 2.5. The 08-17 ladder (0.5 / 1.0 / 1.5) made
+                // full speed - the way everyone plays - a half-damage shot, and players rejected it. Full speed is now
+                // pre-merge parity (1.0); drawing the bar adds damage on top. With 60-80% crit rates and one-shot
+                // kills, full speed still wins on kills per minute (overkill wastes the draw), so the top of the bar
+                // is a burst option for mobs that survive a shot. Live-tunable: /missilepower <fast> <full> [mid].
+                return MissilePowerLadder(AccuracyLevel);
             else
                 return 1.0f;
         }
 
+        /// <summary>The missile power ladder as a function of the accuracy bar (0 = full speed, 1 = full draw).
+        /// Piecewise linear through fast (bar 0), mid (bar 0.5) and full (bar 1); mid unset (0) = the average of
+        /// fast and full, i.e. one straight line. Values come from the shard config (/missilepower) and are only
+        /// consulted while missile_power_bar is TRUE - the caller checks that.</summary>
+        /// <summary>Hard bounds on every ladder value at the point of use (owner 2026-09-12). /missilepower checks the
+        /// same range on input, but /modifydouble and a hand-edited shard row do not, and a NaN or a 500x must never
+        /// reach a damage roll.</summary>
+        public const float MissilePowerMin = 0.1f, MissilePowerMax = 10f;
+
+        private static float ClampMissilePower(double v)
+            => double.IsFinite(v) ? Math.Clamp((float)v, MissilePowerMin, MissilePowerMax) : 1.0f;
+
+        public static float MissilePowerLadder(float bar)
+        {
+            var fast = ClampMissilePower(ServerConfig.missile_power_fast.Value);
+            var full = ClampMissilePower(ServerConfig.missile_power_full.Value);
+            var midRaw = ServerConfig.missile_power_mid.Value;
+            var mid = midRaw > 0 ? ClampMissilePower(midRaw) : (fast + full) * 0.5f;
+            bar = Math.Clamp(bar, 0f, 1f);
+            return bar <= 0.5f
+                ? fast + (mid - fast) * (bar / 0.5f)
+                : mid + (full - mid) * ((bar - 0.5f) / 0.5f);
+        }
+
         public override float GetAccuracyMod(WorldObject weapon)
         {
-            if (weapon != null && weapon.IsRanged && !ServerConfig.missile_power_bar.Value)
-                return AccuracyLevel + 0.6f;
-            else
+            if (weapon == null || !weapon.IsRanged)
                 return 1.0f;
+            if (!ServerConfig.missile_power_bar.Value)
+                return AccuracyLevel + 0.6f;            // retail: attack skill 0.6x (full speed) .. 1.6x (full draw)
+            // Bow Power Bar ON (owner 2026-09-12): keep the accuracy BONUS of the draw alongside the damage ladder,
+            // but never the retail penalty at full speed - 1.0x at full speed, 1.6x at full draw, linear.
+            return 1.0f + 0.6f * AccuracyLevel;
         }
 
         public float GetPowerAccuracyBar()

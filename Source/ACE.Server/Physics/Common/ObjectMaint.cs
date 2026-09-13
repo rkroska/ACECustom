@@ -939,7 +939,7 @@ namespace ACE.Server.Physics.Common
                 // Ghost-mob diagnostic (2026-07-17): this refusal is the primary tear point for one-way
                 // CreateObjects (client renders an object whose KnownPlayers list misses them, so death
                 // deletes and movement updates skip that client). It used to be log.Debug = invisible.
-                if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                if (ServerConfig.variation_interaction_diag_verbose.Value)
                     log.Warn($"[GhostMob] {PhysicsObj.Name}(0x{PhysicsObj.ID:X8}).AddKnownPlayer({obj.Name}): REFUSED - different variation " +
                              $"(objVar={GetVariationForVisibility(PhysicsObj)?.ToString() ?? "null"} playerVar={GetVariationForVisibility(obj)?.ToString() ?? "null"}); " +
                              $"if a CreateObject was already delivered this is now a one-way object for that client.");

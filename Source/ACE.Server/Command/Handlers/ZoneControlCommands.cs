@@ -2879,6 +2879,22 @@ namespace ACE.Server.Command.Handlers
               .Append(ServerConfig.zc_armor_zone_lock.Value ? '1' : '0');
         }
 
+        /// <summary>"|missilepower=fast,full,mid" - the missile power ladder (owner 2026-09-12) so the Bow Power Bar
+        /// tooltip can show the numbers and the command that changes them. mid is the EFFECTIVE mid (the average
+        /// when unset). APPEND-ONLY: sent after the ladder tag on both [[ZC]] and [[ZCSESS]]; an older plugin
+        /// ignores the tag.</summary>
+        private static void AppendMissilePower(StringBuilder sb)
+        {
+            var fast = ServerConfig.missile_power_fast.Value;
+            var full = ServerConfig.missile_power_full.Value;
+            var midCfg = ServerConfig.missile_power_mid.Value;
+            var mid = midCfg > 0 ? midCfg : (fast + full) / 2.0;
+            sb.Append("|missilepower=")
+              .Append(fast.ToString("0.###", CultureInfo.InvariantCulture)).Append(',')
+              .Append(full.ToString("0.###", CultureInfo.InvariantCulture)).Append(',')
+              .Append(mid.ToString("0.###", CultureInfo.InvariantCulture));
+        }
+
         /// <summary>"[[ZCSESS]]|sess=..|combatdefs=.." â€” the GM Tools state alone, for a bare
         /// "/zonecontrol get" with no zone name. Session flags and shard-combat rules are not zone
         /// state, so the plugin must be able to fetch them with no Zone loaded (owner 2026-08-17:
@@ -2889,6 +2905,7 @@ namespace ACE.Server.Command.Handlers
             AppendSessionState(sb, session);
             AppendCombatDefs(sb);
             AppendLadder(sb);   // APPEND-ONLY (2026-08-22): ladder apply versions, last so older plugins ignore it
+            AppendMissilePower(sb);   // APPEND-ONLY (2026-09-12): the missile power ladder, after the ladder tag
             return sb.ToString();
         }
 
@@ -3672,6 +3689,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             AppendLadder(sb);   // APPEND-ONLY (2026-08-22): ladder apply versions, last so older plugins ignore it
+            AppendMissilePower(sb);   // APPEND-ONLY (2026-09-12): the missile power ladder, after the ladder tag
             // APPEND-ONLY (2026-08-25), and genuinely last in the [[ZC]] payload. ðŸ”´ vp here is
             // ResolveProfileForDisplay - the EVALUATED view after the Default -> zone -> wcid merge, which is
             // the convention every other layered tag in this payload already uses (the stat rows, cantrips=,

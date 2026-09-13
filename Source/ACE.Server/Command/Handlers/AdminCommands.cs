@@ -7445,6 +7445,65 @@ namespace ACE.Server.Command.Handlers
         /// A landblock+variation pair can be turned OFF as well as on, including a pair that comes from
         /// the retail seed, which is why removal writes a suppress token rather than just deleting one.
         /// </summary>
+        /// <summary>/missilepower [fast full [mid]] - show or set the missile power ladder (owner 2026-09-12).
+        /// The ladder is the damage multiplier across the missile accuracy bar and is only in force while
+        /// missile_power_bar is TRUE (the GM Tools "Bow Power Bar" toggle). Values persist in the shard config
+        /// like every other server property; no restart, the next shot uses them.</summary>
+        [CommandHandler("missilepower", AccessLevel.Admin, CommandHandlerFlag.None, 0,
+            "Show or set the missile power ladder (damage multiplier at full speed / mid / full draw). Only active while missile_power_bar is TRUE.",
+            "[<fast> <full> [<mid>]]  - no args shows the ladder; mid omitted = the average of fast and full")]
+        public static void HandleMissilePower(Session session, params string[] parameters)
+        {
+            void Msg(string s) => CommandHandlerHelper.WriteOutputInfo(session, s);
+
+            var fast = ServerConfig.missile_power_fast.Value;
+            var full = ServerConfig.missile_power_full.Value;
+            var midCfg = ServerConfig.missile_power_mid.Value;
+            var active = ServerConfig.missile_power_bar.Value;
+
+            string Ladder(double f, double u, double m)
+            {
+                var mid = m > 0 ? m : (f + u) / 2.0;
+                return $"fast {f:0.##} / mid {mid:0.##}{(m > 0 ? "" : " (avg)")} / full {u:0.##}";
+            }
+
+            if (parameters.Length == 0)
+            {
+                Msg($"Missile power ladder: {Ladder(fast, full, midCfg)} - {(active ? "ACTIVE (missile_power_bar is on)" : "INACTIVE - missile_power_bar is off, the bar scales attack skill and damage is flat")}");
+                Msg("Set: /missilepower <fast> <full> [mid]   (0.1 - 10; mid omitted = the average)");
+                return;
+            }
+
+            if (parameters.Length < 2 || parameters.Length > 3
+                || !double.TryParse(parameters[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var nFast)
+                || !double.TryParse(parameters[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var nFull)
+                || (parameters.Length == 3 && !double.TryParse(parameters[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var _)))
+            {
+                Msg("Usage: /missilepower <fast> <full> [mid]  - e.g. /missilepower 1.0 2.5");
+                return;
+            }
+            var nMid = parameters.Length == 3 ? double.Parse(parameters[2], CultureInfo.InvariantCulture) : 0.0;
+
+            double Min = Player.MissilePowerMin, Max = Player.MissilePowerMax;   // one source of truth with the read-side clamp
+            // TryParse accepts "NaN" and "Infinity"; a NaN would pass the range test and reach the damage formula.
+            if (!double.IsFinite(nFast) || !double.IsFinite(nFull) || !double.IsFinite(nMid)
+                || nFast < Min || nFast > Max || nFull < Min || nFull > Max || (nMid != 0 && (nMid < Min || nMid > Max)))
+            {
+                Msg($"Every value must be a number between {Min} and {Max}. Nothing changed.");
+                return;
+            }
+            var effMid = nMid > 0 ? nMid : (nFast + nFull) / 2.0;
+            if (nFast > effMid || effMid > nFull)
+                Msg("Warning: the ladder is not rising (fast <= mid <= full). Applying anyway.");
+
+            ServerConfig.SetValue("missile_power_fast", nFast);
+            ServerConfig.SetValue("missile_power_full", nFull);
+            ServerConfig.SetValue("missile_power_mid", nMid);
+
+            Msg($"Missile power ladder set: {Ladder(nFast, nFull, nMid)} - {(active ? "active now" : "stored; INACTIVE until missile_power_bar is turned on")}");
+            PlayerManager.BroadcastToAuditChannel(session?.Player, $"Missile power ladder set to {Ladder(nFast, nFull, nMid)} (was {Ladder(fast, full, midCfg)})");
+        }
+
         [CommandHandler("nolog", AccessLevel.Developer, CommandHandlerFlag.None, 0,
             "List or edit the no-log areas - log out in one and you log back in at your lifestone.",
             "nolog list | add <where> [scope] | remove <where> [scope] | check [where] | help")]
