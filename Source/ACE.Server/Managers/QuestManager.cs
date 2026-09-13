@@ -955,7 +955,7 @@ namespace ACE.Server.Managers
                                 //DatabaseManager.Shard.SaveBiota //try this?
                                 // clear landblock cache
                               
-                                DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L.Id.Raw, Variation);
+                                DatabaseManager.World.ClearCachedInstancesByLandblock(L.Id.Landblock, Variation);   // variant review item 8: (ushort)Raw was the CELL, never the landblock - the clear was a no-op
 
                                 // reload landblock
                                 L.Init(Variation, true);
@@ -990,7 +990,7 @@ namespace ACE.Server.Managers
                                 if (L2 != null)
                                 {
                                     L2.DestroyAllNonPlayerObjects();
-                                    DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L2.Id.Raw, Variation);
+                                    DatabaseManager.World.ClearCachedInstancesByLandblock(L2.Id.Landblock, Variation);   // variant review item 8
                                     L2.Init(Variation, true);
                                 }
                             }
