@@ -507,6 +507,8 @@ namespace ACE.Server.Managers
 
             AllegianceManager.LoadPlayer(player);
 
+            ApplyAccountGag(player);   // account-wide gag, 2026-09-13
+
             player.SendFriendStatusUpdates();
 
             return true;
@@ -885,22 +887,140 @@ namespace ACE.Server.Managers
             }
         }
 
-        public static bool GagPlayer(Player issuer, string playerName)
+        public const double DefaultGagSeconds = 300;
+
+        /// <summary>
+        /// Gags a character for <paramref name="durationSeconds"/> of WALL-CLOCK time (2026-09-13: it used to count down
+        /// only while the player was online, one heartbeat at a time, so a long gag on a player who logged out never
+        /// ran out). GagTimestamp + GagDuration is the expiry; Player.GagsTick enforces it on every heartbeat.
+        /// </summary>
+        public static bool GagPlayer(Player issuer, string playerName, double durationSeconds = DefaultGagSeconds, string reason = null)
         {
             var player = FindByName(playerName);
 
             if (player == null)
                 return false;
 
-            player.SetProperty(ACE.Entity.Enum.Properties.PropertyBool.IsGagged, true);
-            player.SetProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagTimestamp, Common.Time.GetUnixTime());
-            player.SetProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagDuration, 300);
+            if (durationSeconds <= 0)
+                durationSeconds = DefaultGagSeconds;
 
-            player.SaveBiotaToDatabase();
+            var timestamp = Common.Time.GetUnixTime();
 
-            BroadcastToAuditChannel(issuer, $"{issuer.Name} has gagged {player.Name} for five minutes.");
+            // ACCOUNT-WIDE (owner 2026-09-13): a gag by character name used to follow that one character, so switching
+            // characters walked around it. Every character on the account gets the same gag now; a character created
+            // later inherits it at login (ApplyAccountGag).
+            var characters = GetAccountCharacters(player);
+            foreach (var character in characters)
+            {
+                character.SetProperty(ACE.Entity.Enum.Properties.PropertyBool.IsGagged, true);
+                character.SetProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagTimestamp, timestamp);
+                character.SetProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagDuration, durationSeconds);
+                character.SaveBiotaToDatabase();
+
+                // an online character hears about it now, not on the next heartbeat
+                if (character is Player online)
+                    online.NotifyGagged();
+            }
+
+            var reasonText = string.IsNullOrWhiteSpace(reason) ? "" : $" Reason: {reason.Trim()}";
+            var othersText = characters.Count > 1 ? $" and {characters.Count - 1} other character(s) on the account" : "";
+            BroadcastToAuditChannel(issuer, $"{issuer.Name} has gagged {player.Name}{othersText} for {FormatDuration(durationSeconds)}.{reasonText}");
 
             return true;
+        }
+
+        /// <summary>Every character (online and offline) on the same account as <paramref name="player"/>, the player itself included.
+        /// Falls back to just the player when the account is unknown.</summary>
+        public static List<IPlayer> GetAccountCharacters(IPlayer player)
+        {
+            var result = new List<IPlayer>();
+            var accountId = player?.Account?.AccountId;
+            if (accountId == null)
+            {
+                if (player != null) result.Add(player);
+                return result;
+            }
+
+            playersLock.EnterReadLock();
+            try
+            {
+                foreach (var p in onlinePlayers.Values)
+                    if (p.Account?.AccountId == accountId) result.Add(p);
+                foreach (var p in offlinePlayers.Values)
+                    if (p.Account?.AccountId == accountId) result.Add(p);
+            }
+            finally
+            {
+                playersLock.ExitReadLock();
+            }
+
+            if (result.Count == 0)
+                result.Add(player);
+            return result;
+        }
+
+        /// <summary>
+        /// Login half of the account-wide gag: if any other character on the account carries an active gag that
+        /// outlasts this character's own, copy it over. Covers a character created after the gag and any gag set
+        /// before gags became account-wide.
+        /// </summary>
+        public static void ApplyAccountGag(Player player)
+        {
+            if (player?.Account == null)
+                return;
+
+            var now = Common.Time.GetUnixTime();
+            var ownExpiry = player.IsGagged ? player.GagTimestamp + player.GagDuration : 0;
+            IPlayer source = null;
+            double sourceTimestamp = 0, sourceDuration = 0, bestExpiry = ownExpiry;
+
+            foreach (var other in GetAccountCharacters(player))
+            {
+                if (ReferenceEquals(other, player))
+                    continue;
+                if (!(other.GetProperty(ACE.Entity.Enum.Properties.PropertyBool.IsGagged) ?? false))
+                    continue;
+
+                var ts = other.GetProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagTimestamp) ?? 0;
+                var dur = other.GetProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagDuration) ?? 0;
+                var expiry = ts + dur;
+                if (expiry > now && expiry > bestExpiry)
+                {
+                    bestExpiry = expiry;
+                    source = other;
+                    sourceTimestamp = ts;
+                    sourceDuration = dur;
+                }
+            }
+
+            if (source == null)
+                return;
+
+            player.IsGagged = true;
+            player.GagTimestamp = sourceTimestamp;
+            player.GagDuration = sourceDuration;
+            player.SaveBiotaToDatabase();
+            log.Info($"[GAG] {player.Name} inherited the account gag from {source.Name} at login: {FormatDuration(bestExpiry - now)} remaining.");
+        }
+
+        /// <summary>"1 day 2 hours 5 minutes" - the largest three units that are non-zero, seconds only under a minute.</summary>
+        public static string FormatDuration(double seconds)
+        {
+            if (seconds < 60)
+                return $"{(int)Math.Ceiling(seconds)} second{((int)Math.Ceiling(seconds) == 1 ? "" : "s")}";
+
+            var total = (long)Math.Round(seconds);
+            var days = total / 86400; total %= 86400;
+            var hours = total / 3600; total %= 3600;
+            var minutes = (long)Math.Ceiling(total / 60.0);
+            if (minutes == 60) { hours++; minutes = 0; }
+            if (hours == 24) { days++; hours = 0; }
+
+            var parts = new List<string>();
+            if (days > 0) parts.Add($"{days} day{(days == 1 ? "" : "s")}");
+            if (hours > 0) parts.Add($"{hours} hour{(hours == 1 ? "" : "s")}");
+            if (minutes > 0) parts.Add($"{minutes} minute{(minutes == 1 ? "" : "s")}");
+            return string.Join(" ", parts);
         }
 
         public static bool UnGagPlayer(Player issuer, string playerName)
@@ -910,13 +1030,21 @@ namespace ACE.Server.Managers
             if (player == null)
                 return false;
 
-            player.RemoveProperty(ACE.Entity.Enum.Properties.PropertyBool.IsGagged);
-            player.RemoveProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagTimestamp);
-            player.RemoveProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagDuration);
+            var characters = GetAccountCharacters(player);
+            foreach (var character in characters)
+            {
+                var wasGagged = character.GetProperty(ACE.Entity.Enum.Properties.PropertyBool.IsGagged) ?? false;
+                character.RemoveProperty(ACE.Entity.Enum.Properties.PropertyBool.IsGagged);
+                character.RemoveProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagTimestamp);
+                character.RemoveProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagDuration);
+                character.SaveBiotaToDatabase();
 
-            player.SaveBiotaToDatabase();
+                if (wasGagged && character is Player online)
+                    online.NotifyUngagged();
+            }
 
-            BroadcastToAuditChannel(issuer, $"{issuer.Name} has ungagged {player.Name}.");
+            var othersText = characters.Count > 1 ? $" and {characters.Count - 1} other character(s) on the account" : "";
+            BroadcastToAuditChannel(issuer, $"{issuer.Name} has ungagged {player.Name}{othersText}.");
 
             return true;
         }

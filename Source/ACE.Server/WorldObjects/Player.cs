@@ -950,15 +950,28 @@ namespace ACE.Server.WorldObjects
                 SendGagError();
         }
 
+        /// <summary>Seconds left on the gag by wall clock; 0 when not gagged or already expired.</summary>
+        public double GagSecondsRemaining
+        {
+            get
+            {
+                if (!IsGagged) return 0;
+                var remaining = GagTimestamp + GagDuration - Time.GetUnixTime();
+                return remaining > 0 ? remaining : 0;
+            }
+        }
+
+        private string GagRemainingText => GagSecondsRemaining > 0 ? $" {PlayerManager.FormatDuration(GagSecondsRemaining)} remaining." : "";
+
         public void SendGagError()
         {
-            var msg = "You are unable to talk locally, globally, or send tells because you have been gagged.";
+            var msg = $"You are unable to talk, emote, send tells or use any chat channel because you have been gagged.{GagRemainingText}";
             Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, msg), new GameMessageSystemChat(msg,ChatMessageType.WorldBroadcast));
         }
 
         public void SendGagNotice()
         {
-            var msg = "Your chat privileges have been suspended.";
+            var msg = $"Your chat privileges have been suspended.{GagRemainingText}";
             Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, msg), new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
         }
 

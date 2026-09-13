@@ -914,6 +914,20 @@ namespace ACE.Server.WorldObjects
 
         private bool gagNoticeSent = false;
 
+        /// <summary>Called by the gag command for an online target: the notice goes out now and the tick does not repeat it.</summary>
+        public void NotifyGagged()
+        {
+            SendGagNotice();
+            gagNoticeSent = true;
+        }
+
+        /// <summary>Called by the ungag command for an online character: the restore notice goes out now and the next gag re-announces.</summary>
+        public void NotifyUngagged()
+        {
+            SendUngagNotice();
+            gagNoticeSent = false;
+        }
+
         public void GagsTick()
         {
             if (IsGagged)
@@ -924,10 +938,9 @@ namespace ACE.Server.WorldObjects
                     gagNoticeSent = true;
                 }
 
-                // check for gag expiration, if expired, remove gag.
-                GagDuration -= CachedHeartbeatInterval;
-
-                if (GagDuration <= 0)
+                // check for gag expiration, if expired, remove gag. 2026-09-13: wall clock (GagTimestamp + GagDuration),
+                // not a per-heartbeat countdown that only ran while online - a gag now ends when a ban would.
+                if (GagTimestamp + GagDuration <= Time.GetUnixTime())
                 {
                     IsGagged = false;
                     GagTimestamp = 0;

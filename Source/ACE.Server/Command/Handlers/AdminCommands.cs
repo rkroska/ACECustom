@@ -2335,33 +2335,53 @@ namespace ACE.Server.Command.Handlers
         }
 
 
-        // gag < char name >
+        // gag < char name > [days hours minutes] [reason]
         [CommandHandler("gag", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1,
-            "Prevents a character from talking.",
-            "< char name >\nThe character will not be able to @tell or use chat normally.")]
+            "Prevents a character from talking: say, emotes, tells, fellowship, allegiance and every chat channel.",
+            "< char name > [days hours minutes] [reason]\n"
+            + "Same duration syntax as @ban. Without a duration the gag lasts five minutes. The clock keeps running while the character is offline.\n"
+            + "Example: @gag Some Name 0 0 30\n"
+            + "Example: @gag Some Name 1 0 0 spamming trade\n"
+            + "@ungag < char name > lifts it early.")]
         public static void HandleGag(Session session, params string[] parameters)
         {
-            // usage: @gag < char name >
-            // This command gags the specified character for five minutes.  The character will not be able to @tell or use chat normally.
-            // @gag - Prevents a character from talking.
-            // @ungag -Allows a gagged character to talk again.
+            // usage: @gag < char name > [days hours minutes] [reason]
+            // 2026-09-13: the retail five-minute gag gained a ban-style duration (days hours minutes, all three) and an
+            // optional reason. The name may contain spaces, so the duration is the FIRST run of three non-negative
+            // numbers after at least one name word; everything after the triple is the reason.
 
-            if (parameters.Length > 0)
+            if (parameters.Length == 0)
+                return;
+
+            var nameEnd = parameters.Length;   // exclusive
+            double days = 0, hours = 0, minutes = 0;
+            var hasDuration = false;
+            for (var i = 1; i + 2 < parameters.Length; i++)
             {
-                var playerName = string.Join(" ", parameters);
-
-                var msg = "";
-                if (PlayerManager.GagPlayer(session.Player, playerName))
+                if (double.TryParse(parameters[i], out days) && double.TryParse(parameters[i + 1], out hours) && double.TryParse(parameters[i + 2], out minutes)
+                    && days >= 0 && hours >= 0 && minutes >= 0)
                 {
-                    msg = $"{playerName} has been gagged for five minutes.";
+                    nameEnd = i;
+                    hasDuration = true;
+                    break;
                 }
-                else
-                {
-                    msg = $"Unable to gag a character named {playerName}, check the name and re-try the command.";
-                }
-
-                CommandHandlerHelper.WriteOutputInfo(session, msg, ChatMessageType.WorldBroadcast);
             }
+
+            var playerName = string.Join(" ", parameters, 0, nameEnd);
+            var reason = hasDuration && nameEnd + 3 < parameters.Length ? string.Join(" ", parameters, nameEnd + 3, parameters.Length - nameEnd - 3) : null;
+
+            var durationSeconds = hasDuration ? days * 86400 + hours * 3600 + minutes * 60 : PlayerManager.DefaultGagSeconds;
+            if (hasDuration && durationSeconds <= 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "The gag duration must be longer than zero. Example: @gag Some Name 0 0 30", ChatMessageType.WorldBroadcast);
+                return;
+            }
+
+            var msg = PlayerManager.GagPlayer(session.Player, playerName, durationSeconds, reason)
+                ? $"{playerName} has been gagged for {PlayerManager.FormatDuration(durationSeconds)}."
+                : $"Unable to gag a character named {playerName}, check the name and re-try the command.";
+
+            CommandHandlerHelper.WriteOutputInfo(session, msg, ChatMessageType.WorldBroadcast);
         }
 
         // ungag < char name >
