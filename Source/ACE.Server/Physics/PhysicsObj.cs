@@ -1289,12 +1289,55 @@ namespace ACE.Server.Physics
         {
             var result = SetPositionError.GeneralFailure;
 
-            for (var i = 0; i < setPos.NumTries; i++)
+            // NumTries random points, then ONE last try at the scatter origin itself (the generator's own spot,
+            // known-valid because the generator stands there). This replaces the GeneratorProfile.Spawn_Scatter
+            // "center fallback" that re-entered the world with the SAME WorldObject after a failed enter_world:
+            // that first failure had already (a) destroyed a PhysicsObj viewers now "knew" under this guid, so the
+            // re-entered object never got a CreateObject and stood invisible until relog, and (b) run the
+            // landblock's failure path, which nulls the generator link, so the re-entered creature never freed
+            // its slot on death and the camp stuck at 4-of-5 then 0. Retrying HERE keeps it one enter_world.
+            // Live case 2026-09-12: Idols 0x2C30 v2, gen 702C305E, ghost idol F000285E on the generator.
+            int diagOutside = 0, diagSlope = 0, diagCollided = 0, diagNoValid = 0, diagNoCell = 0, diagOther = 0;
+            var diagCenter = "not-reached";
+
+            // Outdoor ground snap, option 2 (owner 2026-09-12). #511 made the snap unconditional so camps on hilly
+            // terrain stopped failing, but that also dropped the spawns of every generator that stands on a
+            // STRUCTURE (pillar, platform, bridge - live case: gen 19845029 on a pillar at 8866, z 64, spawning
+            // K'nath Eltrey at the pillar base). Decide once per scatter from the generator's own spot: if the
+            // generator itself is within ScatterThreshold_Z of the terrain it is a ground camp and every try snaps
+            // to terrain (the hilly-camp fix); if it is elevated, keep the stock rule - snap only tries whose
+            // terrain is within the threshold, otherwise keep the generator's Z so the structure's own surface
+            // catches the placement.
+            var scatterOriginOnTerrain = true;
+            if ((setPos.Pos.ObjCellID & 0xFFFF) < 0x100)
+            {
+                var originLb = LScape.get_landblock(setPos.Pos.ObjCellID, setPos.Pos.Variation);
+                if (originLb != null)
+                {
+                    var originGroundZ = originLb.GetZ(setPos.Pos.Frame.Origin);
+                    scatterOriginOnTerrain = Math.Abs(setPos.Pos.Frame.Origin.Z - originGroundZ) <= ScatterThreshold_Z;
+                }
+            }
+
+            // Adaptive radius (owner 2026-09-12, from the Idols breakdowns: 7-10 of 10 tries "outside every cell",
+            // the rest collided). The authored radius is a box the room may not hold, and the same box was thrown
+            // ten times. Now each rejection steers the next try by its reason: a point in rock / on a bad slope
+            // shrinks the radius (the floor is nearer the origin), a collision grows it (the free floor is farther
+            // out, capped so the box never leaves the authored area by much), a no-valid-position leaves it alone.
+            // The final center try is unaffected. Every try still goes through the full placement check.
+            const float ScatterShrink = 0.6f, ScatterGrow = 1.25f, ScatterScaleMin = 0.125f, ScatterScaleMax = 1.5f;
+            var radScale = 1.0f;
+            float diagScaleMin = 1.0f, diagScaleMax = 1.0f;
+
+            for (var i = 0; i <= setPos.NumTries; i++)
             {
                 var newPos = new Position(setPos.Pos);
 
-                newPos.Frame.Origin.X += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadX;
-                newPos.Frame.Origin.Y += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadY;
+                if (i < setPos.NumTries)
+                {
+                    newPos.Frame.Origin.X += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadX * radScale;
+                    newPos.Frame.Origin.Y += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadY * radScale;
+                }
 
                 // customized: clamp scatter to the generator's own landblock, inset by ScatterEdgeMargin
                 // so boundary probes can never reach (and thereby create) a neighboring landblock
@@ -1318,7 +1361,12 @@ namespace ACE.Server.Physics
 
                     Polygon walkable = null;
                     landcell.find_terrain_poly(newPos.Frame.Origin, ref walkable);
-                    if (walkable == null || !is_valid_walkable(walkable.Plane.Normal)) continue;
+                    if (walkable == null || !is_valid_walkable(walkable.Plane.Normal))
+                    {
+                        diagSlope++; if (i == setPos.NumTries) diagCenter = "bad-slope";
+                        radScale = Math.Max(ScatterScaleMin, radScale * ScatterShrink); diagScaleMin = Math.Min(diagScaleMin, radScale);
+                        continue;
+                    }
 
                     // account for buildings
                     // if original position was outside, and scatter position is in a building, should we even try to spawn?
@@ -1331,16 +1379,20 @@ namespace ACE.Server.Physics
                         var landblock = LScape.get_landblock(newPos.ObjCellID, newPos.Variation);
                         var groundZ = landblock.GetZ(newPos.Frame.Origin) + 0.05f;
 
-                        // The cell is already confirmed walkable (slope check above) and non-building, so the object
-                        // belongs on the terrain here. ALWAYS snap to ground Z. Previously a ground-Z diff beyond
-                        // ScatterThreshold_Z left the object at the generator's Z instead — which floats/sinks it and
-                        // makes SetPositionInternal reject the placement, so scatter spawns over uneven terrain (e.g.
-                        // large-radius camp generators on hilly Tou Tou blocks) silently failed. We keep the large-diff
-                        // case as a debug log for visibility but no longer skip the ground snap.
-                        if (Math.Abs(newPos.Frame.Origin.Z - groundZ) > ScatterThreshold_Z)
-                            log.Debug($"{Name} ({ID:X8}).SetScatterPositionInternal() - large ground-Z snap @ {newPos} ground Z {groundZ} (diff: {newPos.Frame.Origin.Z - groundZ})");
-
-                        newPos.Frame.Origin.Z = groundZ;
+                        // Ground camp (origin on terrain): ALWAYS snap - a diff beyond ScatterThreshold_Z here is just
+                        // a hillside, and leaving the try at the generator's Z made it float/sink and fail (#511).
+                        // Elevated generator: stock rule - snap only when the try's terrain is near the generator's
+                        // Z, else keep that Z so the pillar/platform surface catches the placement (see the block
+                        // above the loop).
+                        var groundDiff = Math.Abs(newPos.Frame.Origin.Z - groundZ);
+                        if (scatterOriginOnTerrain || groundDiff <= ScatterThreshold_Z)
+                        {
+                            if (groundDiff > ScatterThreshold_Z)
+                                log.Debug($"{Name} ({ID:X8}).SetScatterPositionInternal() - large ground-Z snap @ {newPos} ground Z {groundZ} (diff: {newPos.Frame.Origin.Z - groundZ})");
+                            newPos.Frame.Origin.Z = groundZ;
+                        }
+                        else
+                            log.Debug($"{Name} ({ID:X8}).SetScatterPositionInternal() - elevated generator, keeping Z {newPos.Frame.Origin.Z} over terrain {groundZ} @ {newPos}");
                     }
                     //else
                     //indoors = true;
@@ -1371,15 +1423,35 @@ namespace ACE.Server.Physics
                             break;
                         }
                     }
-                    if (!found) continue;
+                    if (!found)
+                    {
+                        diagOutside++; if (i == setPos.NumTries) diagCenter = "outside-every-cell";
+                        radScale = Math.Max(ScatterScaleMin, radScale * ScatterShrink); diagScaleMin = Math.Min(diagScaleMin, radScale);
+                        continue;
+                    }
                 }
 
                 result = SetPositionInternal(newPos, setPos, transition);
                 if (result == SetPositionError.OK) break;
+
+                switch (result)
+                {
+                    case SetPositionError.Collided:
+                        diagCollided++;
+                        radScale = Math.Min(ScatterScaleMax, radScale * ScatterGrow); diagScaleMax = Math.Max(diagScaleMax, radScale);
+                        break;
+                    case SetPositionError.NoValidPosition: diagNoValid++; break;
+                    case SetPositionError.NoCell: diagNoCell++; break;
+                    default: diagOther++; break;
+                }
+                if (i == setPos.NumTries) diagCenter = result + "@" + newPos.ObjCellID.ToString("X8");
             }
 
-            //if (result != SetPositionError.OK)
-            //Console.WriteLine($"Couldn't spawn {Name} after {setPos.NumTries} retries @ {setPos.Pos}");
+            // Why-it-failed breakdown for the [SpawnDiag] line (2026-09-12, Idols): which gate rejected each try.
+            // "outside" = point in no cell's BSP (indoor) / "slope" = unwalkable terrain (outdoor); the rest are the
+            // physics placement's own verdicts. "center" is the final try at the scatter origin itself.
+            LastScatterDiag = result == SetPositionError.OK ? null
+                : $"tries={setPos.NumTries}+center rad={setPos.RadX:0.#} scale={diagScaleMin:0.##}..{diagScaleMax:0.##} outside={diagOutside} slope={diagSlope} collided={diagCollided} novalid={diagNoValid} nocell={diagNoCell} other={diagOther} center={diagCenter}";
 
             return result;
         }
@@ -2131,6 +2203,10 @@ namespace ACE.Server.Physics
         // Last SetPosition result from enter_world; surfaced by [SpawnDiag] to name why a placement failed
         // (e.g. NoValidPosition/collision over water vs a cell-resolution miss).
         public SetPositionError LastEnterWorldError;
+
+        /// <summary>Per-try breakdown of the last FAILED scatter placement (null after a success); see
+        /// SetScatterPositionInternal. Surfaced by the [SpawnDiag] enter_world FAILED line.</summary>
+        public string LastScatterDiag;
 
         public bool enter_world(Position pos)
         {

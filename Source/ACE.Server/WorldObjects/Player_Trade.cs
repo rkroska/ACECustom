@@ -40,8 +40,8 @@ namespace ACE.Server.WorldObjects
             {
                 if (initiator)
                 {
-                    if (ServerConfig.prestige_interaction_diag_verbose.Value)
-                        log.Warn($"[PrestigeInteraction] OpenTradeNegotiations: initiator={Name}({Guid.Full:X8}) tradePartnerGuid={tradePartnerGuid:X8} not in onlinePlayers (no matching session).");
+                    if (ServerConfig.variation_interaction_diag_verbose.Value)
+                        log.Warn($"[VariationInteraction] OpenTradeNegotiations: initiator={Name}({Guid.Full:X8}) tradePartnerGuid={tradePartnerGuid:X8} not in onlinePlayers (no matching session).");
                 }
                 return;
             }
@@ -81,14 +81,14 @@ namespace ACE.Server.WorldObjects
                 {
                     if (!success)
                     {
-                        if (ServerConfig.prestige_interaction_diag_verbose.Value)
-                            log.Warn($"[PrestigeInteraction] OpenTradeNegotiations: initiator={Name}({Guid.Full:X8}) partner={tradePartner.Name}({tradePartner.Guid.Full:X8}) MoveToChain failed (likely range/validTarget).");
+                        if (ServerConfig.variation_interaction_diag_verbose.Value)
+                            log.Warn($"[VariationInteraction] OpenTradeNegotiations: initiator={Name}({Guid.Full:X8}) partner={tradePartner.Name}({tradePartner.Guid.Full:X8}) MoveToChain failed (likely range/validTarget).");
                         Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.TradeMaxDistanceExceeded));
                         return;
                     }
 
-                    if (ServerConfig.prestige_interaction_diag_verbose.Value)
-                        log.Warn($"[PrestigeInteraction] OpenTradeNegotiations: initiator={Name}({Guid.Full:X8}) partner={tradePartner.Name}({tradePartner.Guid.Full:X8}) MoveToChain success; sending RegisterTrade.");
+                    if (ServerConfig.variation_interaction_diag_verbose.Value)
+                        log.Warn($"[VariationInteraction] OpenTradeNegotiations: initiator={Name}({Guid.Full:X8}) partner={tradePartner.Name}({tradePartner.Guid.Full:X8}) MoveToChain success; sending RegisterTrade.");
                     Session.Network.EnqueueSend(new GameEventRegisterTrade(Session, Guid, tradePartner.Guid));
 
                     tradePartner.HandleActionOpenTradeNegotiations(Guid.Full, false);
@@ -117,8 +117,8 @@ namespace ACE.Server.WorldObjects
         {
             if (TradeTransferInProgress) return;
 
-            if (ServerConfig.prestige_interaction_diag_verbose.Value)
-                log.Warn($"[PrestigeInteraction] CloseTradeNegotiations: player={Name}({Guid.Full:X8}) reason={endTradeReason} partnerGuid={(uint)TradePartner.Full:X8} IsTrading={IsTrading}");
+            if (ServerConfig.variation_interaction_diag_verbose.Value)
+                log.Warn($"[VariationInteraction] CloseTradeNegotiations: player={Name}({Guid.Full:X8}) reason={endTradeReason} partnerGuid={(uint)TradePartner.Full:X8} IsTrading={IsTrading}");
 
             IsTrading = false;
             TradeAccepted = false;

@@ -485,19 +485,14 @@ namespace ACE.Server.Entity
 
             obj.ScatterPos = null;
 
-            // Fallback: scatter can exhaust all NumTries when the terrain within genRadius is largely non-walkable
-            // (water, steep slopes, cliffs) -> the child silently fails to spawn and the camp comes up short/empty.
-            // The generator's own position is known-valid (it spawned there), so retry once there (no scatter). Better
-            // to cluster a member at the center than to drop it entirely.
-            if (!success)
-            {
-                obj.Location = new ACE.Entity.Position(Generator.Location);
-                obj.Location.PositionZ += 0.05f;
-                success = obj.EnterWorld();
-
-                if (!success)
-                    log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn_Scatter({obj.Name}) - scatter AND center fallback both failed");
-            }
+            // The "retry once at the generator's own position" fallback (2026-07, for camps whose scatter radius is
+            // mostly water / cliff) now lives INSIDE PhysicsObj.SetScatterPositionInternal as the last try, so it
+            // happens within the ONE enter_world. Doing it here with a second obj.EnterWorld() after a failure
+            // produced ghost creatures (viewers already "knew" the guid from the destroyed first PhysicsObj, so the
+            // re-entered one never got a CreateObject) and orphaned them from the generator (the landblock failure
+            // path nulls obj.Generator), which leaked spawn slots until the landblock reloaded. Idols 0x2C30 v2,
+            // 2026-09-12. A false here is now a real failure: Spawn() destroys the object and the profile retries on
+            // its next regen cycle, exactly as stock.
 
             return success;
         }

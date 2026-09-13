@@ -1453,16 +1453,16 @@ namespace ACE.Server.WorldObjects
         {
             // send create object network message to visible players
             var viewers = PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer();
-            if (ServerConfig.prestige_interaction_diag_verbose.Value && this is Player)
+            if (ServerConfig.variation_interaction_diag_verbose.Value && this is Player)
             {
-                log.Warn($"[PrestigeInteraction] NotifyPlayers(Player): target={Name}({Guid.Full:X8}) cell={Location?.Cell:X8} locVar={Location?.Variation?.ToString() ?? "null"} physVar={PhysicsObj?.Position?.Variation?.ToString() ?? "null"} viewers={viewers?.Count.ToString() ?? "null"}");
+                log.Warn($"[VariationInteraction] NotifyPlayers(Player): target={Name}({Guid.Full:X8}) cell={Location?.Cell:X8} locVar={Location?.Variation?.ToString() ?? "null"} physVar={PhysicsObj?.Position?.Variation?.ToString() ?? "null"} viewers={viewers?.Count.ToString() ?? "null"}");
             }
             foreach (var player in viewers)
             {
                 var added = player.AddTrackedObject(this);
-                if (ServerConfig.prestige_interaction_diag_verbose.Value && this is Player)
+                if (ServerConfig.variation_interaction_diag_verbose.Value && this is Player)
                 {
-                    log.Warn($"[PrestigeInteraction] NotifyPlayers -> AddTrackedObject: viewer={player.Name}({player.Guid.Full:X8}) target={Name}({Guid.Full:X8}) result={(added ? "added" : "skipped")}");
+                    log.Warn($"[VariationInteraction] NotifyPlayers -> AddTrackedObject: viewer={player.Name}({player.Guid.Full:X8}) target={Name}({Guid.Full:X8}) result={(added ? "added" : "skipped")}");
                 }
             }
 

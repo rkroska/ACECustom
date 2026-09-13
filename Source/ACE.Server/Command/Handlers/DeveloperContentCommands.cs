@@ -4240,7 +4240,12 @@ namespace ACE.Server.Command.Handlers.Processors
                 {
                     //session.Network.EnqueueSend(new GameMessageSystemChat($"Moving {obj.Name} ({obj.Guid}) to home position: {obj.Location} to {instance.ObjCellId:X8} [{instance.OriginX} {instance.OriginY} {instance.OriginZ}]", ChatMessageType.Broadcast));
 
-                    var homePos = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW);
+                    // The home reset must carry the object's own variation (2026-09-12). This overload defaults
+                    // VariationId to null, and since #511 SetPositionInternal(Transition) honours the transition's
+                    // variation, so a null here re-filed the object into the BASE landblock instance and the
+                    // persist below wrote variation_Id NULL. That is how the Quarry plate (v2) lost its variation:
+                    // a gravity object drifts from its row origin, this branch fires, the null wins.
+                    var homePos = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW, false, variation);
 
                     // slide?
                     var setPos = new Physics.Common.SetPosition(homePos.PhysPosition(), Physics.Common.SetPositionFlags.Teleport /* | Physics.Common.SetPositionFlags.Slide*/);
@@ -4280,6 +4285,11 @@ namespace ACE.Server.Command.Handlers.Processors
             // update ace location
             var prevLoc = new Position(obj.Location);
             obj.Location = obj.PhysicsObj.Position.ACEPosition();
+            // Never let the LIVE object sit in its variation's instance with a null Location.Variation: the
+            // visibility filter compares effective variations, so a null here hides it from its own layer's
+            // players until the next reload (review 2026-09-12). The row lookup above used `variation`.
+            if (obj.Location.Variation == null && variation != null)
+                obj.Location.Variation = variation;
 
             if (prevLoc.Landblock != obj.Location.Landblock)
                 LandblockManager.RelocateObjectForPhysics(obj, true);
@@ -4294,7 +4304,9 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.OriginX = obj.Location.PositionX;
             instance.OriginY = obj.Location.PositionY;
             instance.OriginZ = obj.Location.PositionZ;
-            instance.VariationId = obj.Location.Variation;
+            // The row was looked up by (landblock, variation), so it can never legitimately change variation here;
+            // fall back to the lookup variation if the physics round-trip ever drops it again.
+            instance.VariationId = obj.Location.Variation ?? variation;
             UpdateInstanceInWorldDatabase(instance);
             //SyncInstances(session, landblock_id, instances, variation);
         }
@@ -4411,8 +4423,10 @@ namespace ACE.Server.Command.Handlers.Processors
             // get landblock for static guid
             var landblock_id = (ushort)(obj.Guid.Full >> 12);
 
-            // get instances for landblock
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id);
+            // get instances for landblock - in the OBJECT's variation (2026-09-12): the cache filters rows by
+            // variation, so the bare call only ever saw NULL-variation rows and any v2 object answered
+            // "Couldn't find instance". Same lookup nudge already does.
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id, obj.Location.Variation);
 
             // find instance
             var instance = instances.FirstOrDefault(i => i.Guid == obj.Guid.Full);
@@ -4518,8 +4532,8 @@ namespace ACE.Server.Command.Handlers.Processors
             // get landblock for static guid
             var landblock_id = (ushort)(obj.Guid.Full >> 12);
 
-            // get instances for landblock
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id);
+            // get instances for landblock - in the OBJECT's variation (2026-09-12, see /rotate above)
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id, variation);
 
             // find instance
             var instance = instances.FirstOrDefault(i => i.Guid == obj.Guid.Full);
