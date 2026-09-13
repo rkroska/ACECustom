@@ -32,6 +32,37 @@ namespace ACE.Server.Managers
         private static readonly Dictionary<uint, Player> onlinePlayers = new Dictionary<uint, Player>();
         private static readonly Dictionary<uint, OfflinePlayer> offlinePlayers = new Dictionary<uint, OfflinePlayer>();
 
+        /// <summary>accountId -> character guids (online and offline), so an account lookup is bounded by the account's
+        /// character count instead of a scan of every player on the shard (CodeRabbit #520). Guarded by playersLock.</summary>
+        private static readonly Dictionary<uint, HashSet<uint>> accountCharacters = new Dictionary<uint, HashSet<uint>>();
+
+        /// <summary>Caller holds playersLock in write mode.</summary>
+        private static void IndexAccountCharacter(IPlayer player)
+        {
+            var accountId = player?.Account?.AccountId;
+            if (accountId == null)
+                return;
+
+            if (!accountCharacters.TryGetValue(accountId.Value, out var guids))
+            {
+                guids = new HashSet<uint>();
+                accountCharacters[accountId.Value] = guids;
+            }
+            guids.Add(player.Guid.Full);
+        }
+
+        /// <summary>Caller holds playersLock in write mode.</summary>
+        private static void UnindexAccountCharacter(IPlayer player)
+        {
+            var accountId = player?.Account?.AccountId;
+            if (accountId == null || !accountCharacters.TryGetValue(accountId.Value, out var guids))
+                return;
+
+            guids.Remove(player.Guid.Full);
+            if (guids.Count == 0)
+                accountCharacters.Remove(accountId.Value);
+        }
+
         /// <summary>
         /// OfflinePlayers will be saved to the database every 1 hour
         /// </summary>
@@ -64,6 +95,17 @@ namespace ACE.Server.Managers
                     log.Error($"[PLAYERMANAGER] Failed to initialize OfflinePlayer for Biota.Id={result.Id}: {ex}");
                 }
             });
+
+            playersLock.EnterWriteLock();
+            try
+            {
+                foreach (var offlinePlayer in offlinePlayers.Values)
+                    IndexAccountCharacter(offlinePlayer);
+            }
+            finally
+            {
+                playersLock.ExitWriteLock();
+            }
         }
 
         private static readonly LinkedList<Player> playersPendingLogoff = new LinkedList<Player>();
@@ -224,6 +266,7 @@ namespace ACE.Server.Managers
             {
                 var offlinePlayer = new OfflinePlayer(player.Biota);
                 offlinePlayers[offlinePlayer.Guid.Full] = offlinePlayer;
+                IndexAccountCharacter(offlinePlayer);
             }
             finally
             {
@@ -572,6 +615,8 @@ namespace ACE.Server.Managers
             {
                 if (!offlinePlayers.Remove(guid, out var offlinePlayer))
                     return false; // This should never happen
+
+                UnindexAccountCharacter(offlinePlayer);
             }
             finally
             {
@@ -944,10 +989,16 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                foreach (var p in onlinePlayers.Values)
-                    if (p.Account?.AccountId == accountId) result.Add(p);
-                foreach (var p in offlinePlayers.Values)
-                    if (p.Account?.AccountId == accountId) result.Add(p);
+                if (accountCharacters.TryGetValue(accountId.Value, out var guids))
+                {
+                    foreach (var guid in guids)
+                    {
+                        if (onlinePlayers.TryGetValue(guid, out var online))
+                            result.Add(online);
+                        else if (offlinePlayers.TryGetValue(guid, out var offline))
+                            result.Add(offline);
+                    }
+                }
             }
             finally
             {
@@ -994,7 +1045,18 @@ namespace ACE.Server.Managers
             }
 
             if (source == null)
+            {
+                // No sibling gag to inherit: an expired gag of our own is cleared now rather than on the first
+                // heartbeat, so the first chat line after login is not refused (CodeRabbit #520).
+                if (player.IsGagged && ownExpiry <= now)
+                {
+                    player.IsGagged = false;
+                    player.GagTimestamp = 0;
+                    player.GagDuration = 0;
+                    player.SaveBiotaToDatabase();
+                }
                 return;
+            }
 
             player.IsGagged = true;
             player.GagTimestamp = sourceTimestamp;
