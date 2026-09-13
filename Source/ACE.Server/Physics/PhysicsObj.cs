@@ -1340,8 +1340,10 @@ namespace ACE.Server.Physics
                 }
 
                 // customized: clamp scatter to the generator's own landblock, inset by ScatterEdgeMargin
-                // so boundary probes can never reach (and thereby create) a neighboring landblock
-                if ((newPos.ObjCellID & 0xFFFF) < 0x100)
+                // so boundary probes can never reach (and thereby create) a neighboring landblock.
+                // Random tries only: the final try is the generator's own spot, which already exists there
+                // (review #517) - clamping it would slide a generator within 5 m of a block edge off its surface.
+                if (i < setPos.NumTries && (newPos.ObjCellID & 0xFFFF) < 0x100)
                 {
                     newPos.Frame.Origin.X = Math.Clamp(newPos.Frame.Origin.X, ScatterEdgeMargin, 192.0f - ScatterEdgeMargin);
                     newPos.Frame.Origin.Y = Math.Clamp(newPos.Frame.Origin.Y, ScatterEdgeMargin, 192.0f - ScatterEdgeMargin);
@@ -1363,7 +1365,8 @@ namespace ACE.Server.Physics
                     landcell.find_terrain_poly(newPos.Frame.Origin, ref walkable);
                     if (walkable == null || !is_valid_walkable(walkable.Plane.Normal))
                     {
-                        diagSlope++; if (i == setPos.NumTries) diagCenter = "bad-slope";
+                        diagSlope++;
+                        if (i == setPos.NumTries) { diagCenter = "bad-slope"; result = SetPositionError.NoValidPosition; }   // review #517: the error code must match the center verdict
                         radScale = Math.Max(ScatterScaleMin, radScale * ScatterShrink); diagScaleMin = Math.Min(diagScaleMin, radScale);
                         continue;
                     }
@@ -1425,7 +1428,8 @@ namespace ACE.Server.Physics
                     }
                     if (!found)
                     {
-                        diagOutside++; if (i == setPos.NumTries) diagCenter = "outside-every-cell";
+                        diagOutside++;
+                        if (i == setPos.NumTries) { diagCenter = "outside-every-cell"; result = SetPositionError.NoCell; }   // review #517
                         radScale = Math.Max(ScatterScaleMin, radScale * ScatterShrink); diagScaleMin = Math.Min(diagScaleMin, radScale);
                         continue;
                     }

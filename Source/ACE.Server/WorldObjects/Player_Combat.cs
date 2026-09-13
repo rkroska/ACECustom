@@ -706,12 +706,20 @@ namespace ACE.Server.WorldObjects
         /// Piecewise linear through fast (bar 0), mid (bar 0.5) and full (bar 1); mid unset (0) = the average of
         /// fast and full, i.e. one straight line. Values come from the shard config (/missilepower) and are only
         /// consulted while missile_power_bar is TRUE - the caller checks that.</summary>
+        /// <summary>Hard bounds on every ladder value at the point of use (owner 2026-09-12). /missilepower checks the
+        /// same range on input, but /modifydouble and a hand-edited shard row do not, and a NaN or a 500x must never
+        /// reach a damage roll.</summary>
+        public const float MissilePowerMin = 0.1f, MissilePowerMax = 10f;
+
+        private static float ClampMissilePower(double v)
+            => double.IsFinite(v) ? Math.Clamp((float)v, MissilePowerMin, MissilePowerMax) : 1.0f;
+
         public static float MissilePowerLadder(float bar)
         {
-            var fast = (float)ServerConfig.missile_power_fast.Value;
-            var full = (float)ServerConfig.missile_power_full.Value;
-            var midCfg = (float)ServerConfig.missile_power_mid.Value;
-            var mid = midCfg > 0f ? midCfg : (fast + full) * 0.5f;
+            var fast = ClampMissilePower(ServerConfig.missile_power_fast.Value);
+            var full = ClampMissilePower(ServerConfig.missile_power_full.Value);
+            var midRaw = ServerConfig.missile_power_mid.Value;
+            var mid = midRaw > 0 ? ClampMissilePower(midRaw) : (fast + full) * 0.5f;
             bar = Math.Clamp(bar, 0f, 1f);
             return bar <= 0.5f
                 ? fast + (mid - fast) * (bar / 0.5f)

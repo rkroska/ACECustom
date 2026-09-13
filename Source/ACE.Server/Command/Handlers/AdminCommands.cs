@@ -7484,10 +7484,12 @@ namespace ACE.Server.Command.Handlers
             }
             var nMid = parameters.Length == 3 ? double.Parse(parameters[2], CultureInfo.InvariantCulture) : 0.0;
 
-            const double Min = 0.1, Max = 10.0;
-            if (nFast < Min || nFast > Max || nFull < Min || nFull > Max || (nMid != 0 && (nMid < Min || nMid > Max)))
+            double Min = Player.MissilePowerMin, Max = Player.MissilePowerMax;   // one source of truth with the read-side clamp
+            // TryParse accepts "NaN" and "Infinity"; a NaN would pass the range test and reach the damage formula.
+            if (!double.IsFinite(nFast) || !double.IsFinite(nFull) || !double.IsFinite(nMid)
+                || nFast < Min || nFast > Max || nFull < Min || nFull > Max || (nMid != 0 && (nMid < Min || nMid > Max)))
             {
-                Msg($"Every value must be between {Min} and {Max}. Nothing changed.");
+                Msg($"Every value must be a number between {Min} and {Max}. Nothing changed.");
                 return;
             }
             var effMid = nMid > 0 ? nMid : (nFast + nFull) / 2.0;
