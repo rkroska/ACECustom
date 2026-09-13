@@ -291,6 +291,14 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool Teleporting { get; set; } = false;
 
+        /// <summary>Variant review 2026-09-12 (item 9): while a teleport is in flight, the variation the object is GOING
+        /// to. The visibility resolver prefers this over Location.Variation, which still holds the origin until the
+        /// physics placement completes - otherwise the placement's cell-entry passes classified the player as still
+        /// in the origin layer and tracked/sent that layer's objects, only for the post-placement sweep to delete
+        /// them again. Valid only while HasTeleportDestination is true.</summary>
+        public int? TeleportDestinationVariation { get; set; }
+        public bool HasTeleportDestination { get; set; }
+
         public bool HasGiveOrRefuseEmoteForItem(Session session, WorldObject item, out PropertiesEmote emote)
         {
             // NPC refuses this item, with a custom response

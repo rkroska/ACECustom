@@ -99,6 +99,12 @@ namespace ACE.Server.Managers
             if (wo == null)
                 return null;
 
+            // Variant review 2026-09-12 (item 9): a teleport in flight is already IN its destination layer for
+            // visibility purposes, even though Location still says the origin until the placement lands. A null
+            // destination is the base world, so this must not fall through to Location.
+            if (wo.Teleporting && wo.HasTeleportDestination)
+                return wo.TeleportDestinationVariation;
+
             var direct = wo.Location?.Variation ?? wo.PhysicsObj?.Position?.Variation;
             if (direct.HasValue)
                 return direct;
