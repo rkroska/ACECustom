@@ -286,11 +286,16 @@ namespace ACE.Server.WorldObjects
 
             // If target is a combat pet in the motel/encounter, scale heal amount proportionally to pet health so kits remain effective
             float petHealScale = 1.0f;
-            if (target is CombatPet pet && pet.IsInMotelOrEncounter() && healer.Health.MaxValue > 0)
+            if (target is CombatPet pet && pet.IsInMotelOrEncounter())
             {
-                petHealScale = Math.Min(8.0f, (float)pet.Health.MaxValue / healer.Health.MaxValue);
-                if (petHealScale > 1.0f)
-                    healAmount *= petHealScale;
+                var healerHp = healer.Health?.MaxValue ?? 0;
+                var petHp = pet.Health?.MaxValue ?? 0;
+                if (healerHp > 0 && petHp > 0)
+                {
+                    petHealScale = Math.Clamp((float)petHp / healerHp, 1.0f, 8.0f);
+                    if (petHealScale > 1.0f)
+                        healAmount *= petHealScale;
+                }
             }
 
             // chance for critical healing

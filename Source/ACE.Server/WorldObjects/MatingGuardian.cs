@@ -29,6 +29,7 @@ namespace ACE.Server.WorldObjects
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, MatingGuardian> activeGuardiansByPet = new System.Collections.Concurrent.ConcurrentDictionary<uint, MatingGuardian>();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, MatingGuardian> activeGuardiansByOwner = new System.Collections.Concurrent.ConcurrentDictionary<uint, MatingGuardian>();
 
         /// <summary>GUIDs of the two parent pets; the only objects allowed to damage or be targeted.</summary>
         private readonly HashSet<uint> allowedPetGuids = new HashSet<uint>();
@@ -48,12 +49,22 @@ namespace ACE.Server.WorldObjects
 
         public bool IsResolved => resolved;
 
+        public static bool IsActiveParentPet(CombatPet pet)
+        {
+            if (pet == null) return false;
+            if (activeGuardiansByPet.ContainsKey(pet.Guid.Full)) return true;
+            if (pet.P_PetOwner != null && activeGuardiansByOwner.TryGetValue(pet.P_PetOwner.Guid.Full, out var guardian) && guardian.IsParentPet(pet))
+                return true;
+            return false;
+        }
+
         public static bool IsActiveParentPet(uint petGuid) => activeGuardiansByPet.ContainsKey(petGuid);
 
         public static void NotifyParentPetDied(CombatPet pet)
         {
             if (pet == null) return;
-            if (activeGuardiansByPet.TryGetValue(pet.Guid.Full, out var guardian))
+            if (activeGuardiansByPet.TryGetValue(pet.Guid.Full, out var guardian) ||
+                (pet.P_PetOwner != null && activeGuardiansByOwner.TryGetValue(pet.P_PetOwner.Guid.Full, out guardian) && guardian.IsParentPet(pet)))
             {
                 guardian.OnParentDied(pet);
             }
@@ -93,9 +104,20 @@ namespace ACE.Server.WorldObjects
             allowedOwnerGuids.Add(owner2.Guid.Full);
             activeGuardiansByPet[pet1.Guid.Full] = this;
             activeGuardiansByPet[pet2.Guid.Full] = this;
+            activeGuardiansByOwner[owner1.Guid.Full] = this;
+            activeGuardiansByOwner[owner2.Guid.Full] = this;
             onSlain = onSlainCallback;
             onLost = onLostCallback;
             SpawnTime = Timers.RunningTime;
+        }
+
+        /// <summary>Unregisters all parent pet and owner mappings from the active encounter registry.</summary>
+        public void Unbind()
+        {
+            foreach (var petGuid in allowedPetGuids)
+                activeGuardiansByPet.TryRemove(petGuid, out _);
+            foreach (var ownerGuid in allowedOwnerGuids)
+                activeGuardiansByOwner.TryRemove(ownerGuid, out _);
         }
 
         /// <summary>True if the object is one of the parent pets, or a pet belonging to one of the two owners.</summary>
@@ -108,7 +130,12 @@ namespace ACE.Server.WorldObjects
                 return true;
 
             if (wo is CombatPet pet && pet.P_PetOwner != null && allowedOwnerGuids.Contains(pet.P_PetOwner.Guid.Full))
+            {
+                // Dynamically track replacement pet in encounter registry
+                allowedPetGuids.Add(pet.Guid.Full);
+                activeGuardiansByPet[pet.Guid.Full] = this;
                 return true;
+            }
 
             return false;
         }
@@ -124,7 +151,10 @@ namespace ACE.Server.WorldObjects
             {
                 if (current is Creature)
                     return current;
-                current = current.ProjectileSource;
+                if (current.ProjectileSource != null)
+                    current = current.ProjectileSource;
+                else
+                    break;
             }
             return source;
         }
@@ -134,7 +164,11 @@ namespace ACE.Server.WorldObjects
         /// vital change, no damage history entry, and therefore no XP credit or death attribution
         /// for anyone else.
         /// </summary>
-        public override bool CanBeDamagedBy(WorldObject source) => IsParentPet(ResolveDamageSource(source));
+        public override bool CanBeDamagedBy(WorldObject source)
+        {
+            var realSource = ResolveDamageSource(source);
+            return IsParentPet(realSource);
+        }
 
         public override uint TakeDamage(WorldObject source, DamageType damageType, float amount, bool crit = false)
         {
@@ -144,7 +178,11 @@ namespace ACE.Server.WorldObjects
             // Self-normalizing dynamic Damage Reduction:
             // N_raw = bossHP / rawAmount (hits to kill at zero mitigation)
             var bossHp = (float)Health.MaxValue;
-            var nRaw = bossHp / Math.Max(1.0f, amount);
+            if (bossHp <= 0 || float.IsNaN(bossHp))
+                return 0;
+
+            var rawHit = Math.Max(1.0f, amount);
+            var nRaw = bossHp / rawHit;
 
             // Dynamic scaling dial: N_ref = 30, gamma = 0.19 -> exponent = 0.81
             var mod = (float)Math.Clamp(Math.Pow(nRaw / 30.0, 0.81), 0.01, 1.0);
@@ -154,6 +192,9 @@ namespace ACE.Server.WorldObjects
             var maxAllowedHit = bossHp / 10.0f;
             if (appliedDamage > maxAllowedHit)
                 appliedDamage = maxAllowedHit;
+
+            if (float.IsNaN(appliedDamage) || float.IsInfinity(appliedDamage) || appliedDamage < 1.0f)
+                appliedDamage = 1.0f;
 
             return base.TakeDamage(source, damageType, appliedDamage, crit);
         }
@@ -243,8 +284,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
         {
-            foreach (var petGuid in allowedPetGuids)
-                activeGuardiansByPet.TryRemove(petGuid, out _);
+            Unbind();
 
             if (!resolved)
             {

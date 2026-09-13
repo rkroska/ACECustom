@@ -208,7 +208,7 @@ VALUES (98760418,  1, 'Chromatic Catalyst')
 /* ========================================================================= */
 DELETE FROM `weenie_properties_create_list` WHERE `object_Id` = 78780201 AND `weenie_Class_Id` IN (98760410, 98760411, 98760412, 98760415, 98760418);
 INSERT INTO `weenie_properties_create_list` (`object_Id`, `destination_Type`, `weenie_Class_Id`, `stack_Size`, `palette`, `shade`, `try_To_Bond`)
-SELECT 78780201, 1, items.weenie_id, 1, 0, 0, 0
+SELECT 78780201, 4, items.weenie_id, 1, 0, 0, 0
 FROM (
     SELECT 98760410 AS weenie_id UNION ALL
     SELECT 98760411 UNION ALL

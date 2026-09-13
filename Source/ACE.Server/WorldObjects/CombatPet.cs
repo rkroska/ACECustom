@@ -1824,7 +1824,7 @@ namespace ACE.Server.WorldObjects
             if (Location?.LandblockId.Landblock == 0x013A)
                 return true;
 
-            if (MatingGuardian.IsActiveParentPet(Guid.Full))
+            if (MatingGuardian.IsActiveParentPet(this))
                 return true;
 
             return false;
@@ -1832,7 +1832,7 @@ namespace ACE.Server.WorldObjects
 
         protected override void Die(DamageHistoryInfo lastDamager, DamageHistoryInfo topDamager)
         {
-            if (MatingGuardian.IsActiveParentPet(Guid.Full))
+            if (MatingGuardian.IsActiveParentPet(this))
             {
                 MatingGuardian.NotifyParentPetDied(this);
             }

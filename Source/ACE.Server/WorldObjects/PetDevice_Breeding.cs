@@ -472,9 +472,9 @@ namespace ACE.Server.WorldObjects
                 var potHardCap = (int)ServerConfig.pet_breeding_potency_hard_cap.Value;
                 var maxStatMuts = (int)ServerConfig.pet_breeding_max_stat_mutations.Value;
 
-                // Courtship Incense bonus: check device1 and device2
-                var incenseBonus = (device1.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0) +
-                                   (device2.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0);
+                // Courtship Incense bonus: check device1 and device2 (clamped to max +50% bonus)
+                var incenseBonus = Math.Clamp((device1.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0) +
+                                              (device2.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0), 0.0, 0.50);
 
                 // Chromatic Catalyst: check device1 and device2
                 var chromaticCatalystActive = (device1.GetProperty(PropertyBool.PetChromaticCatalystActive) ?? false) ||
@@ -487,11 +487,12 @@ namespace ACE.Server.WorldObjects
                 device2.RemoveProperty(PropertyBool.PetChromaticCatalystActive);
 
                 // Roll 1: Normal Stat Mutation (decaying odds per stat line, max stat mutations per line)
-                var mutChance = Math.Max(minFloor, baseMutChance / (1.0 + decayRate * totalParentStatMuts)) + incenseBonus;
+                var mutChance = Math.Clamp(Math.Max(minFloor, baseMutChance / (1.0 + decayRate * totalParentStatMuts)) + incenseBonus, 0.0, 1.0);
                 var isMutated = ServerConfig.pet_breeding_force_mutation.Value || ThreadSafeRandom.Next(0.0f, 1.0f) < mutChance;
 
                 // Roll 2: Independent Potency Mutation Roll
-                var isPotencyMutated = ThreadSafeRandom.Next(0.0f, 1.0f) < potChance;
+                var potChanceClamped = Math.Clamp(potChance, 0.0, 1.0);
+                var isPotencyMutated = ThreadSafeRandom.Next(0.0f, 1.0f) < potChanceClamped;
 
                 var mutationSummary = new System.Collections.Generic.List<string>();
 
@@ -644,6 +645,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private static bool TrySpawnMatingGuardian(PendingBreed p)
         {
+            MatingGuardian guardian = null;
             try
             {
                 var pet1 = p.Pet1; var pet2 = p.Pet2;
@@ -661,7 +663,7 @@ namespace ACE.Server.WorldObjects
                     return false;
                 }
 
-                var guardian = new MatingGuardian(weenie, GuidManager.NewDynamicGuid());
+                guardian = new MatingGuardian(weenie, GuidManager.NewDynamicGuid());
 
                 // Look: exactly what the baby will look like. Same dressing path as a summon, then the
                 // same base/template rule the baby uses (native base, mutation in the template), and
@@ -709,6 +711,7 @@ namespace ACE.Server.WorldObjects
                 if (!guardian.EnterWorld())
                 {
                     log.Warn("[PetBreeding] Guardian skipped: EnterWorld failed. Completing birth immediately.");
+                    guardian.Unbind();
                     return false;
                 }
 
@@ -744,6 +747,7 @@ namespace ACE.Server.WorldObjects
             catch (Exception ex)
             {
                 log.Error($"[PetBreeding] Guardian spawn threw; completing birth immediately. {ex}");
+                guardian?.Unbind();
                 return false;
             }
         }

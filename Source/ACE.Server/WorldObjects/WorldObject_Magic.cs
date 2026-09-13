@@ -587,10 +587,11 @@ namespace ACE.Server.WorldObjects
                 // Scale heal proportionally to pet max health so player heals remain effective on 3000+ HP pets
                 if (targetCreature is CombatPet targetPet && targetPet.IsInMotelOrEncounter())
                 {
-                    var casterHp = player.Health.MaxValue;
-                    if (casterHp > 0 && targetPet.Health.MaxValue > casterHp)
+                    var casterHp = player.Health?.MaxValue ?? 0;
+                    var petHp = targetPet.Health?.MaxValue ?? 0;
+                    if (casterHp > 0 && petHp > casterHp)
                     {
-                        var scale = Math.Min(8.0f, (float)targetPet.Health.MaxValue / casterHp);
+                        var scale = Math.Clamp((float)petHp / casterHp, 1.0f, 8.0f);
                         tryBoost = (int)Math.Round(tryBoost * scale);
                     }
                 }
