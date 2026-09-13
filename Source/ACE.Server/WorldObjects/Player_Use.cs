@@ -169,6 +169,13 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            if (target is PetDevice && target.CurrentLandblock != null)
+            {
+                SendTransientError("The pet device must be in your inventory.");
+                SendUseDoneEvent();
+                return;
+            }
+
             if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.NeuteringKitWcid) // Neutering Kit
             {
                 if (target is not PetDevice petDevice)

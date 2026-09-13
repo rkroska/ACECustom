@@ -529,7 +529,7 @@ namespace ACE.Server.WorldObjects
 
                     if (eligibleStats.Count > 0)
                     {
-                        var chosenStat = eligibleStats[ThreadSafeRandom.Next(0, eligibleStats.Count)];
+                        var chosenStat = eligibleStats[ThreadSafeRandom.Next(0, eligibleStats.Count - 1)];
                         if (chosenStat == "DamageRating")
                         {
                             mutationSummary.Add($"+{dmgStep} Damage Rating");
@@ -584,7 +584,7 @@ namespace ACE.Server.WorldObjects
                 }
 
                 // Roll 50/50 for species donor parent and winner
-                var donor = ThreadSafeRandom.Next(0, 2) == 0 ? device1 : device2;
+                var donor = ThreadSafeRandom.Next(0, 1) == 0 ? device1 : device2;
                 // The baby always goes to the female's owner. A coin flip meant the player who ate the
                 // recovery cooldown could walk away with nothing, which reads as being robbed.
                 var winner = femaleDevice == device1 ? player1 : partner;
@@ -601,7 +601,7 @@ namespace ACE.Server.WorldObjects
                             ? ACE.Server.Services.PetMutationService.GetVibrantPalettePool()
                             : ACE.Server.Services.PetMutationService.GetMasterPalettePool();
                         if (pool != null && pool.Count > 0)
-                            babyPaletteBase = pool[ThreadSafeRandom.Next(0, pool.Count)].PaletteId;
+                            babyPaletteBase = pool[ThreadSafeRandom.Next(0, pool.Count - 1)].PaletteId;
                     }
                     catch (Exception ex)
                     {
