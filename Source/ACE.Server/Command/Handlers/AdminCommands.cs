@@ -2335,6 +2335,8 @@ namespace ACE.Server.Command.Handlers
         }
 
 
+        private const double MaxGagSeconds = 365 * 86400;
+
         // gag < char name > [days hours minutes] [reason]
         [CommandHandler("gag", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1,
             "Prevents a character from talking: say, emotes, tells, fellowship, allegiance and every chat channel.",
@@ -2359,6 +2361,7 @@ namespace ACE.Server.Command.Handlers
             for (var i = 1; i + 2 < parameters.Length; i++)
             {
                 if (double.TryParse(parameters[i], out days) && double.TryParse(parameters[i + 1], out hours) && double.TryParse(parameters[i + 2], out minutes)
+                    && double.IsFinite(days) && double.IsFinite(hours) && double.IsFinite(minutes)
                     && days >= 0 && hours >= 0 && minutes >= 0)
                 {
                     nameEnd = i;
@@ -2371,9 +2374,10 @@ namespace ACE.Server.Command.Handlers
             var reason = hasDuration && nameEnd + 3 < parameters.Length ? string.Join(" ", parameters, nameEnd + 3, parameters.Length - nameEnd - 3) : null;
 
             var durationSeconds = hasDuration ? days * 86400 + hours * 3600 + minutes * 60 : PlayerManager.DefaultGagSeconds;
-            if (hasDuration && durationSeconds <= 0)
+            if (hasDuration && (!double.IsFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > MaxGagSeconds))
             {
-                CommandHandlerHelper.WriteOutputInfo(session, "The gag duration must be longer than zero. Example: @gag Some Name 0 0 30", ChatMessageType.WorldBroadcast);
+                // CodeRabbit #520: finite components can still overflow to infinity; a gag longer than a year is a ban's job
+                CommandHandlerHelper.WriteOutputInfo(session, "The gag duration must be longer than zero and at most 365 days. Example: @gag Some Name 0 0 30", ChatMessageType.WorldBroadcast);
                 return;
             }
 
