@@ -310,7 +310,8 @@ namespace ACE.Server.Physics.Common
         {
             // Lock Safety: Always update local state first, release lock, THEN update remote state.
             bool removed = false;
-            
+            PhysicsObj current = null;
+
             rwLock.EnterWriteLock();
             try
             {
@@ -318,7 +319,7 @@ namespace ACE.Server.Physics.Common
                 // PhysicsObj of the SAME WorldObject (review 2026-09-13: a failed AddPhysicsObj re-inits a fresh
                 // PhysicsObj on the WO, and the sweeps pass the WO's current one; the old ID-keyed remove cleared
                 // that entry, so this must too). A recycled guid belongs to a DIFFERENT WorldObject and stays.
-                if (KnownObjects.TryGetValue(obj.ID, out var current) && SameInstanceOrSameWorldObject(current, obj))
+                if (KnownObjects.TryGetValue(obj.ID, out current) && SameInstanceOrSameWorldObject(current, obj))
                     removed = KnownObjects.Remove(obj.ID);
             }
             finally
@@ -326,12 +327,14 @@ namespace ACE.Server.Physics.Common
                 rwLock.ExitWriteLock();
             }
 
-            // Remote update outside lock to prevent deadlocks
+            // Remote update outside lock to prevent deadlocks. The inverse link lives on the instance the table
+            // HELD (CodeRabbit #519): when that is an older PhysicsObj of the same WorldObject, the caller's fresh
+            // instance has an empty tracker and the stale one would keep pointing at us.
             if (removed && inversePlayer && PhysicsObj.IsPlayer)
             {
                  // We don't need a lock here because we are calling a method on another object
                  // that will handle its own locking.
-                 obj.ObjMaint.RemoveKnownPlayer(PhysicsObj);
+                 (current ?? obj).ObjMaint.RemoveKnownPlayer(PhysicsObj);
             }
 
             return removed;
@@ -687,11 +690,12 @@ namespace ACE.Server.Physics.Common
         public bool RemoveVisibleObject(PhysicsObj obj, bool inverseTarget = true)
         {
             bool removed = false;
+            PhysicsObj current = null;
             rwLock.EnterWriteLock();
             try
             {
                 // Variant review 2026-09-12 (item 3): identity-checked, see RemoveKnownObject.
-                if (VisibleObjects.TryGetValue(obj.ID, out var current) && SameInstanceOrSameWorldObject(current, obj))
+                if (VisibleObjects.TryGetValue(obj.ID, out current) && SameInstanceOrSameWorldObject(current, obj))
                     removed = VisibleObjects.Remove(obj.ID);
             }
             finally
@@ -699,9 +703,9 @@ namespace ACE.Server.Physics.Common
                 rwLock.ExitWriteLock();
             }
 
-            // Cross-instance call OUTSIDE the lock to prevent deadlock
+            // Cross-instance call OUTSIDE the lock to prevent deadlock - on the instance the table held (see RemoveKnownObject)
             if (removed && inverseTarget)
-                obj.ObjMaint.RemoveVisibleTarget(PhysicsObj);
+                (current ?? obj).ObjMaint.RemoveVisibleTarget(PhysicsObj);
 
             return removed;
         }

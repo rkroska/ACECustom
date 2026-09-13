@@ -213,7 +213,7 @@ namespace ACE.Server.WorldObjects
                 log.Warn($"[SpawnDiag] AddPhysicsObj: 0x{Guid}:{Name} Location v={Location.Variation} but the caller asked for v={VariationId} - refusing (audit C2: registration and physics must share one instance)");
                 return false;
             }
-            VariationId = Location.Variation ?? VariationId;
+            VariationId = VariationManager.NormalizeBase(Location.Variation) ?? VariationId;   // an explicit 0 must not key a second set of cells
 
             var cell = LScape.get_landcell(Location.Cell, VariationId);
             if (cell == null)

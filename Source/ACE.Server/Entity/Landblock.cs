@@ -1736,17 +1736,19 @@ namespace ACE.Server.Entity
             var ownVariation = VariationManager.NormalizeBase(wo.Location.Variation);
             if (wo.Location.Variation.HasValue && ownVariation != VariationManager.NormalizeBase(this.VariationId))
             {
-                var ownInstance = LandblockManager.GetLandblock(Id, false, wo.Location.Variation);
+                // Look up and continue with the NORMALIZED value (CodeRabbit #519): the landblock cache keys raw int?, so
+                // a raw 0 would miss the null-keyed base instance and build a separate "v0" one.
+                var ownInstance = LandblockManager.GetLandblock(Id, false, ownVariation);
                 if (ownInstance != null && !ReferenceEquals(ownInstance, this))
                 {
                     log.Warn($"[SpawnDiag] AddWorldObjectInternal: 0x{wo.Guid}:{wo.Name} Location v={wo.Location.Variation?.ToString() ?? "null"} arrived at instance v={this.VariationId?.ToString() ?? "null"} of 0x{Id.Landblock:X4} - re-routing to its own instance (audit C2)");
                     if (LandblockManager.CurrentlyTickingLandblockGroupsMultiThreaded && ownInstance.CurrentLandblockGroup != null
                         && !ReferenceEquals(ownInstance.CurrentLandblockGroup, LandblockManager.CurrentMultiThreadedTickingLandblockGroup.Value))
                     {
-                        ownInstance.EnqueueAddWorldObjectForPhysics(wo, wo.Location.Variation);
+                        ownInstance.EnqueueAddWorldObjectForPhysics(wo, ownVariation);
                         return true;
                     }
-                    return ownInstance.AddWorldObjectInternal(wo, wo.Location.Variation);
+                    return ownInstance.AddWorldObjectInternal(wo, ownVariation);
                 }
             }
 
