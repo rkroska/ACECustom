@@ -728,10 +728,13 @@ namespace ACE.Server.WorldObjects
 
         public override float GetAccuracyMod(WorldObject weapon)
         {
-            if (weapon != null && weapon.IsRanged && !ServerConfig.missile_power_bar.Value)
-                return AccuracyLevel + 0.6f;
-            else
+            if (weapon == null || !weapon.IsRanged)
                 return 1.0f;
+            if (!ServerConfig.missile_power_bar.Value)
+                return AccuracyLevel + 0.6f;            // retail: attack skill 0.6x (full speed) .. 1.6x (full draw)
+            // Bow Power Bar ON (owner 2026-09-12): keep the accuracy BONUS of the draw alongside the damage ladder,
+            // but never the retail penalty at full speed - 1.0x at full speed, 1.6x at full draw, linear.
+            return 1.0f + 0.6f * AccuracyLevel;
         }
 
         public float GetPowerAccuracyBar()
