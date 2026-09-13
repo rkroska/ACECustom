@@ -395,6 +395,20 @@ namespace ACE.Server.Managers
         {
             var block = GetLandblock(worldObject.Location.LandblockId, loadAdjacents, worldObject.Location.Variation, false);
 
+            // Thread audit 2026-09-13 (C6): a generator's Spawn_Specific to an absolute cell (or any add issued from a
+            // landblock thread) can target a block in ANOTHER group - more than 5 blocks away, or a dungeon. Entering that
+            // block's physics from this thread is the race AddWorldObjectInternal only logs ("PLEASE REPORT"); run the add on
+            // the target block's own queue instead. A later placement failure still reaches the generator (PickUp notify).
+            if (CurrentlyTickingLandblockGroupsMultiThreaded)
+            {
+                var current = CurrentMultiThreadedTickingLandblockGroup.Value;
+                if (current != null && block.CurrentLandblockGroup != null && !ReferenceEquals(block.CurrentLandblockGroup, current))
+                {
+                    block.EnqueueAddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
+                    return true;
+                }
+            }
+
             return block.AddWorldObject(worldObject, worldObject.Location.Variation);
         }
 
@@ -527,6 +541,18 @@ namespace ACE.Server.Managers
         /// </summary>
         public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, int? variation, bool permaload = false)
         {
+            // Thread audit 2026-09-13 (C3): the landblock cache, the group key and the adjacency wiring are all EXACT on
+            // int?, while visibility/targeting treat 0 and null as one base bucket. A raw 0 arriving here used to build a
+            // separate "v0" instance - its own group, adjacent only to other v0 blocks - whose objects could still see and
+            // hit base objects ticked by another thread. Normalize once here instead of at every producer (teleport and
+            // login already did; nothing else needs to remember).
+            if (variation.HasValue && variation.Value == 0)
+            {
+                if (ACE.Server.Diagnostics.LogRateLimiter.ShouldEmit("landblock_variation_zero", TimeSpan.FromMinutes(5), out var suppressedZero))
+                    log.Warn($"LandblockManager.GetLandblock: explicit variation 0 requested for 0x{landblockId.Landblock:X4} - normalized to base (null); {suppressedZero} similar in the last 5m. Stack: {System.Environment.StackTrace}");
+                variation = null;
+            }
+
             Landblock landblock;
 
             bool setAdjacents = false;
@@ -625,7 +651,9 @@ namespace ACE.Server.Managers
             foreach (var adjacentID in adjacentIDs)
             {
                 var adjacent = GetLandblock(new VariantCacheId() { Landblock = adjacentID.Landblock, Variant = variationId });
-                if (adjacent != null)
+                // Thread audit 2026-09-13 (C8): dungeon ids occupy grid slots (ocean coordinates); a loaded dungeon is a solo
+                // group and must never receive SetActive/dormancy writes from an outdoor neighbour's thread.
+                if (adjacent != null && !adjacent.IsDungeon)
                     adjacents.Add(adjacent);
             }
 

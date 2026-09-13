@@ -6,6 +6,7 @@ using System.Linq;
 using ACE.Common;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
@@ -450,6 +451,20 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
+        /// Audit 2026-09-13 (C5): a fellowship share is granted from the earner's landblock thread; a member elsewhere
+        /// (quest shares have no distance limit, kill shares reach 600 units) may be ticked by another group. Run the
+        /// grant directly only when the member's landblock ticks on this thread, otherwise on the member's own queue.
+        /// </summary>
+        private static void GrantOnMemberThread(Player origin, Player member, Action grant)
+        {
+            var originGroup = origin?.CurrentLandblock?.CurrentLandblockGroup;
+            if (ReferenceEquals(member, origin) || (originGroup != null && ReferenceEquals(member.CurrentLandblock?.CurrentLandblockGroup, originGroup)))
+                grant();
+            else
+                member.EnqueueAction(new ActionEventDelegate(ActionType.Fellowship_GrantShare, grant));
+        }
+
+        /// <summary>
         /// Splits XP amongst fellowship members, depending on XP type and fellow settings
         /// </summary>
         /// <param name="amount">The input amount of XP</param>
@@ -493,14 +508,9 @@ namespace ACE.Server.Entity
                     }
 
                     var fellowXpType = player == member ? XpType.Quest : XpType.Fellowship;
-                    if (member.HasVitae && member.IsVPHardcore)
-                    {
-                        member.GrantXP(0, fellowXpType, shareType);
-                    }
-                    else
-                    {
-                        member.GrantXP(shareAmount, fellowXpType, shareType);
-                    }
+                    var questShare = (member.HasVitae && member.IsVPHardcore) ? 0 : shareAmount;
+                    var questMember = member;
+                    GrantOnMemberThread(player, member, () => questMember.GrantXP(questShare, fellowXpType, shareType));
                 }
             }
 
@@ -536,14 +546,9 @@ namespace ACE.Server.Entity
                     }
 
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
-                    if (member.HasVitae && member.IsVPHardcore)
-                    {
-                        member.GrantXP(0, fellowXpType, shareType);
-                    }
-                    else
-                    {
-                        member.GrantXP((long)Math.Round(shareAmount), fellowXpType, shareType);
-                    }
+                    var killShare = (member.HasVitae && member.IsVPHardcore) ? 0 : (long)Math.Round(shareAmount);
+                    var killMember = member;
+                    GrantOnMemberThread(player, member, () => killMember.GrantXP(killShare, fellowXpType, shareType));
                 }
             }
         }
@@ -606,7 +611,9 @@ namespace ACE.Server.Entity
                         playerTotal *= PrestigeManager.GetXPPenaltyMultiplier(memberTier, monsterTier);
                     }
 
-                    member.GrantLuminance((long)Math.Round(playerTotal), fellowXpType, shareType);
+                    var lumShare = (long)Math.Round(playerTotal);
+                    var lumMember = member;
+                    GrantOnMemberThread(player, member, () => lumMember.GrantLuminance(lumShare, fellowXpType, shareType));
                 }
             }
         }

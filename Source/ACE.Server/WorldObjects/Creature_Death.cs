@@ -49,8 +49,7 @@ namespace ACE.Server.WorldObjects
             IsTurning = false;
             IsMoving = false;
 
-            grappleLoopCTS?.Cancel();
-            hotspotLoopCTS?.Cancel();
+            StopEnrageLoops();   // audit 2026-09-13 (C1): orphans the enrage action chains
 
             // Reset fog to Clear upon death only if the creature was enraged
             if (IsEnraged && CurrentLandblock != null)
@@ -293,17 +292,26 @@ namespace ACE.Server.WorldObjects
                 if (damagePercent <= 0)
                     continue;
 
-                if (baseXp > 0)
+                // Audit 2026-09-13 (C5): a damager may have portaled or logged to another landblock group by the time the
+                // kill lands. EarnXP writes level/vitae/packets, so it runs on the player's own thread unless that is
+                // already this one (the common case: the killer is standing here).
+                var xpGrant = baseXp > 0 ? (long)Math.Round(baseXp * damagePercent) : 0L;
+                var lumGrant = luminanceAward != null ? (long)Math.Round(luminanceAward.Value * damagePercent) : 0L;
+                var hasLum = luminanceAward != null;
+                var tierForGrant = monsterTier;
+                Action grant = () =>
                 {
-                    var totalXP = baseXp * damagePercent;
-                    player.EarnXP((long)Math.Round(totalXP), XpType.Kill, ShareType.All, monsterTier);
-                }
+                    if (xpGrant > 0)
+                        player.EarnXP(xpGrant, XpType.Kill, ShareType.All, tierForGrant);
+                    if (hasLum)
+                        player.EarnLuminance(lumGrant, XpType.Kill, ShareType.All, tierForGrant);
+                };
 
-                if (luminanceAward != null)
-                {
-                    var totalLuminance = luminanceAward.Value * damagePercent;
-                    player.EarnLuminance((long)Math.Round(totalLuminance), XpType.Kill, ShareType.All, monsterTier);
-                }
+                var myGroup = CurrentLandblock?.CurrentLandblockGroup;
+                if (myGroup != null && ReferenceEquals(player.CurrentLandblock?.CurrentLandblockGroup, myGroup))
+                    grant();
+                else
+                    player.EnqueueAction(new ActionEventDelegate(ActionType.CreatureDeath_GrantKillXp, grant));
 
                 // Launch-day diagnostic (2026-08-23): the client filters XP/lum chat, so the log is the readout.
                 // One line per player per governed kill - switchable via zc_killxp_diag (review 2026-09-04).

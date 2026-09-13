@@ -512,157 +512,149 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        private CancellationTokenSource hotspotLoopCTS;
-        private Task hotspotLoopTask;
+        // Audit 2026-09-13 (C1): the enrage loops used to run on thread-pool tasks (Task.Run + await Task.Delay) and
+        // touched the world from there - AttackTarget/WakeUp writes, hotspot EnterWorld into the target's landblock,
+        // target picks across variation layers by raw distance. They are now ActionChains on this creature's own
+        // landblock queue, so every step runs on the group thread that owns the boss, and GetPlayersInRange only
+        // returns players on the boss's layer whose landblock ticks on that same thread. A generation counter replaces
+        // the CancellationTokenSource: bumping it (death, or a new enrage) orphans every chain still in flight.
+        private int hotspotLoopGeneration;
+        private int grappleLoopGeneration;
+
+        public void StopEnrageLoops()
+        {
+            hotspotLoopGeneration++;
+            grappleLoopGeneration++;
+        }
+
+        private bool EnrageLoopAlive(int generation, int current)
+        {
+            return generation == current && IsEnraged && IsAlive && !IsDestroyed && CurrentLandblock != null;
+        }
 
         public void StartHotspotSpawnLoopWithDelay()
         {
-            hotspotLoopCTS?.Cancel();
-            hotspotLoopCTS = new CancellationTokenSource();
-
-            hotspotLoopTask = Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(5), hotspotLoopCTS.Token);
-                    await StartHotspotSpawnLoopAsync(hotspotLoopCTS.Token);
-                }
-                catch (Exception ex) when (ex is not TaskCanceledException)
-                {
-                    Console.WriteLine($"{Name}: hotspot loop terminated unexpectedly.");
-                }
-            });
+            var gen = ++hotspotLoopGeneration;
+            ScheduleHotspotTick(gen, 5.0);
         }
 
+        private void ScheduleHotspotTick(int gen, double delaySeconds)
+        {
+            var chain = new ActionChain();
+            chain.AddDelaySeconds(delaySeconds);
+            chain.AddAction(this, ActionType.MonsterCombat_EnrageLoop, () => HotspotTick(gen));
+            chain.EnqueueChain();
+        }
 
+        private void HotspotTick(int gen)
+        {
+            if (!EnrageLoopAlive(gen, hotspotLoopGeneration) || !CanAOE)
+                return;
 
-        private CancellationTokenSource grappleLoopCTS;
-        private Task grappleLoopTask;
+            var playersInRange = GetPlayersInRange(250.0f);
+            if (playersInRange.Count > 0)
+            {
+                var targetPlayer = playersInRange[ThreadSafeRandom.Next(0, playersInRange.Count - 1)];
+
+                if (targetPlayer == lastGrappleTarget && playersInRange.Count > 1)
+                    targetPlayer = playersInRange.FirstOrDefault(p => p != lastGrappleTarget) ?? targetPlayer;
+
+                lastHotspotTarget = targetPlayer;
+                SpawnObjectAtPlayer(targetPlayer);
+            }
+
+            ScheduleHotspotTick(gen, ThreadSafeRandom.Next(10000, 15000) / 1000.0);
+        }
 
         public void StartGrappleLoopWithDelay()
         {
-            grappleLoopCTS?.Cancel();
-            grappleLoopCTS = new CancellationTokenSource();
-
-            grappleLoopTask = Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(5), grappleLoopCTS.Token);
-                    await StartGrappleLoopAsync(grappleLoopCTS.Token);
-                }
-                catch (Exception ex) when (ex is not TaskCanceledException)
-                {
-                    Console.WriteLine($"{Name}: grapple loop terminated unexpectedly.");
-                }
-            });
+            var gen = ++grappleLoopGeneration;
+            ScheduleGrappleTick(gen, 5.0);
         }
 
-
-        private async Task StartGrappleLoopAsync(CancellationToken ct)
+        private void ScheduleGrappleTick(int gen, double delaySeconds)
         {
-            var random = new Random();
-
-            try
-            {
-                while (IsEnraged && IsAlive && !ct.IsCancellationRequested)
-                {
-                    var playersInRange = GetPlayersInRange(250.0f);
-                    if (playersInRange.Count > 1)
-                    {
-                        var validTargets = new List<Player>();
-                        foreach (var p in playersInRange)
-                        {
-                            if (p != lastHotspotTarget)
-                                validTargets.Add(p);
-                        }
-                        if (validTargets.Count > 0)
-                        {
-                            var targetPlayer = validTargets[random.Next(validTargets.Count)];
-                            lastGrappleTarget = targetPlayer;
-
-                            BroadcastMessage($"{Name} Lashes out, attempting to drag his next victim closer!", 250.0f);
-
-                            await Task.Delay(2500, ct);
-                            if (targetPlayer != null && this != null && !ct.IsCancellationRequested)
-                                await MoveTargetToMeAsync(targetPlayer, ct);
-
-                            await Task.Delay(random.Next(8000, 12000), ct);
-                        }
-                    }
-                    else if (playersInRange.Count == 1)
-                    {
-                        lastGrappleTarget = playersInRange.First();
-                        if (!ct.IsCancellationRequested)
-                            await MoveTargetToMeAsync(lastGrappleTarget, ct);
-                    }
-
-                    await Task.Delay(30000, ct);
-                }
-            }
-            catch (TaskCanceledException)
-            {
-                // Expected on shutdown or despawn
-            }
+            var chain = new ActionChain();
+            chain.AddDelaySeconds(delaySeconds);
+            chain.AddAction(this, ActionType.MonsterCombat_EnrageLoop, () => GrappleTick(gen));
+            chain.EnqueueChain();
         }
 
-
-        private async Task StartHotspotSpawnLoopAsync(CancellationToken ct)
+        private void GrappleTick(int gen)
         {
-            var random = new Random();
-
-            try
-            {
-                while (IsEnraged && IsAlive && CanAOE && !ct.IsCancellationRequested)
-                {
-                    var playersInRange = GetPlayersInRange(250.0f);
-                    if (playersInRange.Count > 0)
-                    {
-                        var targetPlayer = playersInRange[random.Next(playersInRange.Count)];
-
-                        if (targetPlayer == lastGrappleTarget && playersInRange.Count > 1)
-                        {
-                            targetPlayer = playersInRange.FirstOrDefault(p => p != lastGrappleTarget) ?? targetPlayer;
-                        }
-
-                        lastHotspotTarget = targetPlayer;
-                        //Console.WriteLine($"[DEBUG] Targeted {targetPlayer.Name} for hotspot spawn.");
-                        SpawnObjectAtPlayer(targetPlayer);
-                    }
-
-                    int nextHotspotTime = random.Next(10000, 15000);
-                    await Task.Delay(nextHotspotTime, ct);
-                }
-            }
-            catch (TaskCanceledException)
-            {
-                // Clean cancel; no logging necessary
-            }
-        }
-
-        private async Task MoveTargetToMeAsync(Player targetPlayer, CancellationToken ct = default)
-        {
-            if (targetPlayer == null || ct.IsCancellationRequested)
+            if (!EnrageLoopAlive(gen, grappleLoopGeneration))
                 return;
 
-            BroadcastMessage($"Get Over Here {targetPlayer.Name}!", 250.0f);
-
-            var destination = new Position(this.Location)
+            var playersInRange = GetPlayersInRange(250.0f);
+            if (playersInRange.Count > 1)
             {
-                Rotation = targetPlayer.Location.Rotation
-            };
+                var validTargets = new List<Player>();
+                foreach (var p in playersInRange)
+                {
+                    if (p != lastHotspotTarget)
+                        validTargets.Add(p);
+                }
 
-            WorldManager.ThreadSafeTeleport(targetPlayer, destination);
+                if (validTargets.Count > 0)
+                {
+                    var targetPlayer = validTargets[ThreadSafeRandom.Next(0, validTargets.Count - 1)];
+                    lastGrappleTarget = targetPlayer;
 
-            // Wait before switching target
-            await Task.Delay(2500, ct);
-            if (ct.IsCancellationRequested) return;
+                    BroadcastMessage($"{Name} Lashes out, attempting to drag his next victim closer!", 250.0f);
 
-            this.AttackTarget = targetPlayer;
-            this.WakeUp();
+                    // same cadence as before: 2.5 s warning, pull, 2.5 s, retarget, 6 s AI hold, 8-12 s, 30 s until the next pick
+                    ScheduleGrappleMove(gen, targetPlayer, 2.5, ThreadSafeRandom.Next(8000, 12000) / 1000.0 + 30.0);
+                    return;
+                }
+            }
+            else if (playersInRange.Count == 1)
+            {
+                lastGrappleTarget = playersInRange[0];
+                ScheduleGrappleMove(gen, lastGrappleTarget, 0.0, 30.0);
+                return;
+            }
 
-            // Delay further AI switching
-            await Task.Delay(6000, ct);
+            ScheduleGrappleTick(gen, 30.0);
+        }
+
+        /// <summary>
+        /// Pulls the target to the boss, retargets it 2.5 s later, holds the AI 6 s, then schedules the next grapple pick.
+        /// Every step re-checks the generation so a death or a fresh enrage orphans the chain.
+        /// </summary>
+        private void ScheduleGrappleMove(int gen, Player targetPlayer, double initialDelay, double delayAfter)
+        {
+            var chain = new ActionChain();
+            if (initialDelay > 0)
+                chain.AddDelaySeconds(initialDelay);
+
+            chain.AddAction(this, ActionType.MonsterCombat_EnrageLoop, () =>
+            {
+                if (!EnrageLoopAlive(gen, grappleLoopGeneration) || targetPlayer == null || targetPlayer.Location == null)
+                    return;
+
+                BroadcastMessage($"Get Over Here {targetPlayer.Name}!", 250.0f);
+
+                var destination = new Position(Location)
+                {
+                    Rotation = targetPlayer.Location.Rotation
+                };
+
+                WorldManager.ThreadSafeTeleport(targetPlayer, destination);
+            });
+
+            chain.AddDelaySeconds(2.5);
+            chain.AddAction(this, ActionType.MonsterCombat_EnrageLoop, () =>
+            {
+                if (!EnrageLoopAlive(gen, grappleLoopGeneration) || targetPlayer == null)
+                    return;
+
+                AttackTarget = targetPlayer;
+                WakeUp();
+            });
+
+            chain.AddDelaySeconds(6.0 + delayAfter);
+            chain.AddAction(this, ActionType.MonsterCombat_EnrageLoop, () => GrappleTick(gen));
+            chain.EnqueueChain();
         }
 
 
@@ -676,9 +668,21 @@ namespace ACE.Server.WorldObjects
             var playersInRange = new List<Player>();
             var mobPosition = new Position(Location); // Get mob's position
 
+            // Audit 2026-09-13 (C1): only players on this creature's layer whose landblock ticks on THIS thread (same
+            // LandblockGroup) - the callers write AttackTarget, spawn hotspots at the player and teleport them, all of
+            // which must stay on one thread. A base-twin player at the same coordinates is no longer "in range".
+            var myGroup = CurrentLandblock?.CurrentLandblockGroup;
+            var myVariation = VariationManager.GetEffectiveVariationForVisibility(this);
+
             foreach (var player in PlayerManager.GetAllOnline())
             {
-                if (player == null || !player.IsAlive)
+                if (player == null || !player.IsAlive || player.Location == null)
+                    continue;
+
+                if (!VariationManager.SameVariationForVisibility(myVariation, VariationManager.GetEffectiveVariationForVisibility(player)))
+                    continue;
+
+                if (myGroup != null && !ReferenceEquals(player.CurrentLandblock?.CurrentLandblockGroup, myGroup))
                     continue;
 
                 var playerPosition = new Position(player.Location);

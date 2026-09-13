@@ -77,6 +77,11 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public static ObjCell get_landcell(uint blockCellID, int? variationId)
         {
+            // Thread audit 2026-09-13 (C3): same base-bucket rule as LandblockManager.GetLandblock - an explicit 0 must not
+            // key a second set of cells (envVariation below falls back to the caller's value when the landblock has none).
+            if (variationId.HasValue && variationId.Value == 0)
+                variationId = null;
+
             var landblock = get_landblock(blockCellID, variationId);
             if (landblock == null)
                 return null;
