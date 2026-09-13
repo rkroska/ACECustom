@@ -2232,6 +2232,10 @@ namespace ACE.Server.Command.Handlers.Processors
                     if (link != null)
                     {
                         parent.LandblockInstanceLink.Remove(link);
+                        // Variant review 2026-09-12 (item 4): the FK cascade only follows the PARENT, so deleting a
+                        // child left its link row pointing at a guid that no longer existed (411 such links on the
+                        // test world) and every later /removeinst on that parent reported a phantom child.
+                        DeleteLinkFromWorldDatabase(link);
                         break;
                     }
                 }
@@ -2306,6 +2310,24 @@ namespace ACE.Server.Command.Handlers.Processors
             }
         }
 
+        /// <summary>Deletes one landblock_instance_link row (variant review 2026-09-12, item 4). The FK cascade removes
+        /// links only when their PARENT row goes; a deleted CHILD's link has to be removed explicitly.</summary>
+        public static void DeleteLinkFromWorldDatabase(LandblockInstanceLink link)
+        {
+            try
+            {
+                using (var ctx = new WorldDbContext())
+                {
+                    ctx.LandblockInstanceLink.Remove(link);
+                    ctx.SaveChanges();
+                }
+            }
+            catch (Exception)
+            {
+
+            }
+        }
+
         /// <summary>
         /// Updates a LandblockInstance in the World database.
         /// WARNING: This is one of the few places where World database writes occur.
@@ -2370,6 +2392,12 @@ namespace ACE.Server.Command.Handlers.Processors
 
             foreach (var subLink in child.LandblockInstanceLink)
                 RemoveChild(session, subLink, instances);
+
+            // Variant review 2026-09-12 (item 4): the child's ROW was never deleted - only the parent's, whose FK
+            // cascade took the link rows with it - so every removed child survived as is_Link_Child = 1 with no
+            // link: unspawnable forever and a static guid slot burned (1,971 such rows on the test world). Grand-
+            // children are handled by the recursion above before this row goes; its own links cascade with it.
+            DeleteInstanceFromWorldDatabase(child);
         }
 
         public static EncounterSQLWriter LandblockEncounterWriter;
