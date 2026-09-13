@@ -1816,8 +1816,27 @@ namespace ACE.Server.WorldObjects
             return bonus;
         }
 
+        /// <summary>
+        /// True if this pet is inside the Seedy Motel dungeon cell or actively registered in a mating guardian encounter.
+        /// </summary>
+        public bool IsInMotelOrEncounter()
+        {
+            if (Location?.LandblockId.Landblock == 0x013A)
+                return true;
+
+            if (MatingGuardian.IsActiveParentPet(Guid.Full))
+                return true;
+
+            return false;
+        }
+
         protected override void Die(DamageHistoryInfo lastDamager, DamageHistoryInfo topDamager)
         {
+            if (MatingGuardian.IsActiveParentPet(Guid.Full))
+            {
+                MatingGuardian.NotifyParentPetDied(this);
+            }
+
             if (P_PetOwner?.Session != null)
             {
                 P_PetOwner.Session.Network.EnqueueSend(new GameMessageSystemChat(

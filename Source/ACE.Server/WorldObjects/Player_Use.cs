@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -152,6 +152,10 @@ namespace ACE.Server.WorldObjects
                 skipTargetTypeCheck = true;
             else if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.FilledTailoringKitWcid && target is PetDevice)
                 skipTargetTypeCheck = true;
+            else if ((sourceItem.WeenieClassId >= 98760410 && sourceItem.WeenieClassId <= 98760412 ||
+                      sourceItem.WeenieClassId == 98760415 ||
+                      sourceItem.WeenieClassId == 98760418) && target is PetDevice)
+                skipTargetTypeCheck = true;
 
             var sourceTargetType = sourceItem.TargetType ?? ItemType.None;
             var targetItemType = target.ItemType;
@@ -208,6 +212,131 @@ namespace ACE.Server.WorldObjects
             if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.FilledTailoringKitWcid)
             {
                 ACE.Server.Entity.PetTailoring.HandleApply(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Courtship Incense (98760410 - 98760412)
+            if (sourceItem.WeenieClassId >= 98760410 && sourceItem.WeenieClassId <= 98760412)
+            {
+                if (target is not PetDevice petDevice)
+                {
+                    SendTransientError("Courtship Incense can only be used on combat pet devices.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (petDevice.GetProperty(PropertyBool.PetNeutered) == true)
+                {
+                    SendTransientError("A spayed or neutered pet cannot be anointed with Courtship Incense.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                var bonus = sourceItem.WeenieClassId switch
+                {
+                    98760410 => 0.025f, // Lesser: +2.5%
+                    98760411 => 0.050f, // Refined: +5.0%
+                    98760412 => 0.100f, // Exquisite: +10.0%
+                    _ => 0.025f
+                };
+
+                var currentBonus = petDevice.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0f;
+                if (currentBonus >= bonus)
+                {
+                    SendTransientError($"{petDevice.Name} is already primed with equal or stronger Courtship Incense (+{currentBonus * 100:0.#}%).");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                petDevice.SetProperty(PropertyFloat.PetIncenseBonus, bonus);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    SendTransientError("Failed to consume Courtship Incense.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                PlayParticleEffect(PlayScript.HealthUpRed, target.Guid);
+                SendMessage($"You have anointed {petDevice.Name} with {sourceItem.Name}! Its next breeding will grant a +{bonus * 100:0.#}% mutation bonus.");
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Chromatic Catalyst (98760418)
+            if (sourceItem.WeenieClassId == 98760418)
+            {
+                if (target is not PetDevice petDevice)
+                {
+                    SendTransientError("The Chromatic Catalyst can only be used on combat pet devices.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (petDevice.GetProperty(PropertyBool.PetChromaticCatalystActive) == true)
+                {
+                    SendTransientError($"{petDevice.Name} is already infused with a Chromatic Catalyst.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                petDevice.SetProperty(PropertyBool.PetChromaticCatalystActive, true);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    SendTransientError("Failed to consume Chromatic Catalyst.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                PlayParticleEffect(PlayScript.EnchantUpBlue, target.Guid);
+                SendMessage($"You infuse {petDevice.Name} with the Chromatic Catalyst! If a palette mutation occurs on its next breed, it will roll vibrant, high-saturation colors.");
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Nurturing Draught (98760415)
+            if (sourceItem.WeenieClassId == 98760415)
+            {
+                if (target is not PetDevice petDevice)
+                {
+                    SendTransientError("Nurturing Draughts can only be given to combat pet devices.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (petDevice.GetProperty(PropertyBool.PetIsJuvenile) != true)
+                {
+                    SendTransientError("Nurturing Draughts can only be given to juvenile combat pets that have not yet reached adulthood.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if ((petDevice.GetProperty(PropertyFloat.PetMaturityXpMultiplier) ?? 1.0f) >= 2.0f)
+                {
+                    SendTransientError($"{petDevice.Name} is already under the effects of a Nurturing Draught.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                petDevice.SetProperty(PropertyFloat.PetMaturityXpMultiplier, 2.0f);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    SendTransientError("Failed to consume Nurturing Draught.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                PlayParticleEffect(PlayScript.HealthUpYellow, target.Guid);
+                SendMessage($"You administer the Nurturing Draught to {petDevice.Name}. It now earns 2x maturity kill credit until adulthood!");
                 SendUseDoneEvent();
                 return;
             }

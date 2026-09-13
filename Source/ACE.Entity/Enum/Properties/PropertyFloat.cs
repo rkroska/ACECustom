@@ -328,5 +328,17 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         [AssessmentProperty]
         PetMaleChargesRefreshTime = 9057,
+
+        /// <summary>
+        /// Mutation chance bonus granted by Courtship Incense applied to a pet device for its next breed.
+        /// </summary>
+        [AssessmentProperty]
+        PetIncenseBonus = 9058,
+
+        /// <summary>
+        /// Maturity kill credit multiplier granted by Nurturing Draughts (e.g. 2.0 = double XP per kill).
+        /// </summary>
+        [AssessmentProperty]
+        PetMaturityXpMultiplier = 9059,
     }
 }

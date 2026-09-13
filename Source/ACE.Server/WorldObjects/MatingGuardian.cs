@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -28,6 +28,7 @@ namespace ACE.Server.WorldObjects
     public class MatingGuardian : Creature
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, MatingGuardian> activeGuardiansByPet = new System.Collections.Concurrent.ConcurrentDictionary<uint, MatingGuardian>();
 
         /// <summary>GUIDs of the two parent pets; the only objects allowed to damage or be targeted.</summary>
         private readonly HashSet<uint> allowedPetGuids = new HashSet<uint>();
@@ -47,6 +48,35 @@ namespace ACE.Server.WorldObjects
 
         public bool IsResolved => resolved;
 
+        public static bool IsActiveParentPet(uint petGuid) => activeGuardiansByPet.ContainsKey(petGuid);
+
+        public static void NotifyParentPetDied(CombatPet pet)
+        {
+            if (pet == null) return;
+            if (activeGuardiansByPet.TryGetValue(pet.Guid.Full, out var guardian))
+            {
+                guardian.OnParentDied(pet);
+            }
+        }
+
+        public void OnParentDied(CombatPet pet)
+        {
+            if (resolved) return;
+            resolved = true;
+            log.Info($"[PetBreeding] Parent pet {pet.Name} (0x{pet.Guid.Full:X8}) died during mating ritual with {Name}; resolving breed as lost.");
+
+            try
+            {
+                onLost?.Invoke(this);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[PetBreeding] Mating guardian onLost callback threw: {ex}");
+            }
+
+            Fade();
+        }
+
         public MatingGuardian(Weenie weenie, ObjectGuid guid) : base(weenie, guid)
         {
         }
@@ -61,6 +91,8 @@ namespace ACE.Server.WorldObjects
             allowedPetGuids.Add(pet2.Guid.Full);
             allowedOwnerGuids.Add(owner1.Guid.Full);
             allowedOwnerGuids.Add(owner2.Guid.Full);
+            activeGuardiansByPet[pet1.Guid.Full] = this;
+            activeGuardiansByPet[pet2.Guid.Full] = this;
             onSlain = onSlainCallback;
             onLost = onLostCallback;
             SpawnTime = Timers.RunningTime;
@@ -109,7 +141,21 @@ namespace ACE.Server.WorldObjects
             if (!CanBeDamagedBy(source))
                 return 0;
 
-            return base.TakeDamage(source, damageType, amount, crit);
+            // Self-normalizing dynamic Damage Reduction:
+            // N_raw = bossHP / rawAmount (hits to kill at zero mitigation)
+            var bossHp = (float)Health.MaxValue;
+            var nRaw = bossHp / Math.Max(1.0f, amount);
+
+            // Dynamic scaling dial: N_ref = 30, gamma = 0.19 -> exponent = 0.81
+            var mod = (float)Math.Clamp(Math.Pow(nRaw / 30.0, 0.81), 0.01, 1.0);
+            var appliedDamage = amount * mod;
+
+            // Hard anti-one-shot guarantee: no single hit exceeds 10% of max HP
+            var maxAllowedHit = bossHp / 10.0f;
+            if (appliedDamage > maxAllowedHit)
+                appliedDamage = maxAllowedHit;
+
+            return base.TakeDamage(source, damageType, appliedDamage, crit);
         }
 
         /// <summary>
@@ -197,6 +243,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
         {
+            foreach (var petGuid in allowedPetGuids)
+                activeGuardiansByPet.TryRemove(petGuid, out _);
+
             if (!resolved)
             {
                 resolved = true;

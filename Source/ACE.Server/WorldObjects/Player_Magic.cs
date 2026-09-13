@@ -616,7 +616,10 @@ namespace ACE.Server.WorldObjects
 
             // Invalidate beneficial spells against Creature/Non-player targets
             if (targetCreature != null && targetPlayer == null && spell.IsBeneficial)
-                return true;
+            {
+                if (!(targetCreature is CombatPet pet && pet.P_PetOwner == this && pet.IsInMotelOrEncounter()))
+                    return true;
+            }
 
             // check item spells
             if (targetCreature == null && target.WielderId != null)

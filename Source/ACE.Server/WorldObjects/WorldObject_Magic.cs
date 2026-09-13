@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -583,6 +583,17 @@ namespace ACE.Server.WorldObjects
             if (!useHarmCap && player != null && tryBoost > 0)
             {
                 tryBoost += (int)player.EffectiveLifeAugCount;
+
+                // Scale heal proportionally to pet max health so player heals remain effective on 3000+ HP pets
+                if (targetCreature is CombatPet targetPet && targetPet.IsInMotelOrEncounter())
+                {
+                    var casterHp = player.Health.MaxValue;
+                    if (casterHp > 0 && targetPet.Health.MaxValue > casterHp)
+                    {
+                        var scale = Math.Min(8.0f, (float)targetPet.Health.MaxValue / casterHp);
+                        tryBoost = (int)Math.Round(tryBoost * scale);
+                    }
+                }
             }
             if (!useHarmCap && player != null && tryBoost < 0)
             {

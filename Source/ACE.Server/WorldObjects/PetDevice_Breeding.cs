@@ -472,8 +472,22 @@ namespace ACE.Server.WorldObjects
                 var potHardCap = (int)ServerConfig.pet_breeding_potency_hard_cap.Value;
                 var maxStatMuts = (int)ServerConfig.pet_breeding_max_stat_mutations.Value;
 
+                // Courtship Incense bonus: check device1 and device2
+                var incenseBonus = (device1.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0) +
+                                   (device2.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0);
+
+                // Chromatic Catalyst: check device1 and device2
+                var chromaticCatalystActive = (device1.GetProperty(PropertyBool.PetChromaticCatalystActive) ?? false) ||
+                                              (device2.GetProperty(PropertyBool.PetChromaticCatalystActive) ?? false);
+
+                // Consume incense and catalyst from both devices
+                device1.RemoveProperty(PropertyFloat.PetIncenseBonus);
+                device2.RemoveProperty(PropertyFloat.PetIncenseBonus);
+                device1.RemoveProperty(PropertyBool.PetChromaticCatalystActive);
+                device2.RemoveProperty(PropertyBool.PetChromaticCatalystActive);
+
                 // Roll 1: Normal Stat Mutation (decaying odds per stat line, max stat mutations per line)
-                var mutChance = Math.Max(minFloor, baseMutChance / (1.0 + decayRate * totalParentStatMuts));
+                var mutChance = Math.Max(minFloor, baseMutChance / (1.0 + decayRate * totalParentStatMuts)) + incenseBonus;
                 var isMutated = ServerConfig.pet_breeding_force_mutation.Value || ThreadSafeRandom.Next(0.0f, 1.0f) < mutChance;
 
                 // Roll 2: Independent Potency Mutation Roll
@@ -579,7 +593,9 @@ namespace ACE.Server.WorldObjects
                     // and not species-gated: the whole point is that the result is a lottery.
                     try
                     {
-                        var pool = ACE.Server.Services.PetMutationService.GetMasterPalettePool();
+                        var pool = chromaticCatalystActive
+                            ? ACE.Server.Services.PetMutationService.GetVibrantPalettePool()
+                            : ACE.Server.Services.PetMutationService.GetMasterPalettePool();
                         if (pool != null && pool.Count > 0)
                             babyPaletteBase = pool[ThreadSafeRandom.Next(0, pool.Count)].PaletteId;
                     }
@@ -814,24 +830,22 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// The guardian was removed without dying (landblock unload, admin delete). The parents already
-        /// paid, so the birth completes exactly as on a timeout.
+        /// The guardian was lost (a parent pet died, or guardian was removed without dying).
+        /// Breed fails, no baby awarded.
         /// </summary>
         private static void OnGuardianLost(MatingGuardian guardian)
         {
             if (!pendingGuardianBreeds.TryRemove(guardian.Guid.Full, out var p))
                 return;
 
-            var lostMsg = $"{guardian.Name} has vanished. The birth proceeds regardless.";
+            var lostMsg = $"[Breeding] The mating ritual failed! {guardian.Name} could not be overcome.";
             p.Player1.SendMessage(lostMsg);
             p.Partner.SendMessage(lostMsg);
-
-            CompleteBirth(p);
+            log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) lost; breeding failed for {p.Player1.Name} and {p.Partner.Name}.");
         }
 
         /// <summary>
-        /// The guardian outlived its window: it fades and the birth completes anyway. The ritual is
-        /// a spectacle, never a way to lose a breed the parents already paid for.
+        /// The guardian outlived its window without being slain: it fades and the breeding ritual fails.
         /// </summary>
         private static void OnGuardianTimeout(MatingGuardian guardian)
         {
@@ -845,15 +859,13 @@ namespace ACE.Server.WorldObjects
             }
 
             var fightSeconds = ACE.Server.Entity.Timers.RunningTime - guardian.SpawnTime;
-            log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) timed out after {fightSeconds:F0}s with {guardian.Health.Current}/{guardian.Health.MaxValue} health left; completing birth.");
+            log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) timed out after {fightSeconds:F0}s with {guardian.Health.Current}/{guardian.Health.MaxValue} health left; breeding failed.");
 
             guardian.Fade();
 
-            var fadeMsg = $"{guardian.Name} fades before it can be bested. The birth proceeds regardless.";
+            var fadeMsg = $"[Breeding] Time has expired! {guardian.Name} roars and dissolves into the ether. The mating ritual was not completed in time.";
             p.Player1.SendMessage(fadeMsg);
             p.Partner.SendMessage(fadeMsg);
-
-            CompleteBirth(p);
         }
 
         /// <summary>

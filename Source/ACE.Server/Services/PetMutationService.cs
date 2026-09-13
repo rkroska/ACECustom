@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -47,6 +47,7 @@ namespace ACE.Server.Services
         private static readonly ConcurrentDictionary<uint, CreaturePaletteProfile> _profileCache = new ConcurrentDictionary<uint, CreaturePaletteProfile>();
         private static readonly List<uint> _masterVerifiedPalettePool = new List<uint>();
         private static readonly List<MasterPaletteDto> _masterPaletteDtos = new List<MasterPaletteDto>();
+        private static readonly List<MasterPaletteDto> _vibrantPaletteDtos = new List<MasterPaletteDto>();
         private static readonly object _initLock = new object();
         private static bool _isInitialized = false;
 
@@ -54,6 +55,12 @@ namespace ACE.Server.Services
         {
             if (!_isInitialized) Initialize();
             return _masterPaletteDtos;
+        }
+
+        public static List<MasterPaletteDto> GetVibrantPalettePool()
+        {
+            if (!_isInitialized) Initialize();
+            return _vibrantPaletteDtos.Count > 0 ? _vibrantPaletteDtos : _masterPaletteDtos;
         }
 
         // Known hard-incompatible Setup Model DIDs
@@ -125,18 +132,22 @@ namespace ACE.Server.Services
                                     swatches.Add($"#{r:X2}{g:X2}{b:X2}");
                                 }
 
-                                _masterPaletteDtos.Add(new MasterPaletteDto
+                                var dto = new MasterPaletteDto
                                 {
                                     PaletteId = p,
                                     PaletteHex = $"0x{p:X8}",
                                     Name = $"Exotic Mutation 0x{p:X7}",
                                     Swatches = swatches
-                                });
+                                };
+                                _masterPaletteDtos.Add(dto);
+
+                                if (IsVibrantCreaturePalette(pal))
+                                    _vibrantPaletteDtos.Add(dto);
                             }
                         }
                     }
 
-                    log.Info($"PetMutationService initialized with {_masterVerifiedPalettePool.Count} verified master palette lookup entries.");
+                    log.Info($"PetMutationService initialized with {_masterVerifiedPalettePool.Count} verified master palette lookup entries ({_vibrantPaletteDtos.Count} vibrant).");
                     _isInitialized = true;
                 }
                 catch (Exception ex)
@@ -172,6 +183,51 @@ namespace ACE.Server.Services
             double blackFrac = (double)black / pal.Colors.Count;
             double meanLum = lum / pal.Colors.Count;
             return blackFrac < 0.40 && meanLum >= 0.15;
+        }
+
+        /// <summary>
+        /// Algorithmic HSL saturation filter for Chromatic Catalyst mutations.
+        /// Ensures selected palettes have high color saturation and richness across their color range,
+        /// avoiding murky greys, washed out pastels, or near-monochrome palettes.
+        /// </summary>
+        private static bool IsVibrantCreaturePalette(Palette pal)
+        {
+            if (!IsUsableCreaturePalette(pal))
+                return false;
+
+            double totalSat = 0;
+            double maxSat = 0;
+            int vibrantCount = 0;
+
+            foreach (var c in pal.Colors)
+            {
+                float r = ((c >> 16) & 0xFF) / 255.0f;
+                float g = ((c >> 8) & 0xFF) / 255.0f;
+                float b = (c & 0xFF) / 255.0f;
+
+                float max = Math.Max(r, Math.Max(g, b));
+                float min = Math.Min(r, Math.Min(g, b));
+                float delta = max - min;
+
+                float l = (max + min) / 2.0f;
+                float s = 0;
+                if (delta > 0.001f)
+                {
+                    s = l > 0.5f ? delta / (2.0f - max - min) : delta / (max + min);
+                }
+
+                totalSat += s;
+                if (s > maxSat) maxSat = s;
+                if (s >= 0.40f && l >= 0.18f && l <= 0.85f)
+                    vibrantCount++;
+            }
+
+            double meanSat = totalSat / pal.Colors.Count;
+            double vibrantFrac = (double)vibrantCount / pal.Colors.Count;
+
+            // Vibrant palettes feature strong peak saturation (>=0.65), healthy average saturation (>=0.25),
+            // and at least 20% of their entries in the rich/vibrant color range.
+            return maxSat >= 0.65 && meanSat >= 0.25 && vibrantFrac >= 0.20;
         }
 
         public static CreaturePaletteProfile GetProfile(uint wcid)

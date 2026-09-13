@@ -382,6 +382,10 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         PetIsJuvenile = 50054,
 
+        /// <summary>Chromatic Catalyst is active on this pet device, ensuring high-saturation/vibrant palette mutations on next breed.</summary>
+        [AssessmentProperty]
+        PetChromaticCatalystActive = 50055,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }

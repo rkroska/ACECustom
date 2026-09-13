@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 using ACE.Entity.Enum;
@@ -245,8 +245,10 @@ namespace ACE.Server.WorldObjects
         /// <summary>Records one kill, advancing a stage or reaching adulthood when the counter crosses a boundary.</summary>
         private void AddMaturityKill(Player owner, CombatPet pet)
         {
+            var multiplier = (float)(GetProperty(PropertyFloat.PetMaturityXpMultiplier) ?? 1.0);
+            var killsToAdd = (int)Math.Max(1, Math.Round(multiplier));
             var before = MaturityStage;
-            var kills = MaturityKills + 1;
+            var kills = MaturityKills + killsToAdd;
             SetProperty(PropertyInt.PetMaturityKills, kills);
 
             var displayName = GetBondMessageDisplayName();
@@ -254,6 +256,7 @@ namespace ACE.Server.WorldObjects
             if (kills >= MaturityKillsRequired)
             {
                 RemoveProperty(PropertyBool.PetIsJuvenile);
+                RemoveProperty(PropertyFloat.PetMaturityXpMultiplier);
                 ChangesDetected = true;
                 SaveBiotaToDatabase();
 
