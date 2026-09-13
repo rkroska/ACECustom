@@ -3420,7 +3420,11 @@ namespace ACE.Server.Command.Handlers
         public static void HandleReloadLandblocks(Session session, params string[] parameters)
         {
             var landblock = session.Player.CurrentLandblock;
-            var variation = session.Player.Location.Variation;
+            // Variant review 2026-09-12 (item 5): reload the INSTANCE you stand in, at ITS variation. The player's
+            // Location.Variation can differ from CurrentLandblock's for a tick after a same-spot variation
+            // teleport, and feeding that pair into Init rewrote a base instance's variation (see
+            // Landblock.CreateWorldObjects).
+            var variation = landblock.VariationId;
 
             var landblockId = landblock.Id.Raw | 0xFFFF;
 

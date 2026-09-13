@@ -460,9 +460,16 @@ namespace ACE.Server.Entity
         /// </summary>
         private void CreateWorldObjects(int? variationId)
         {
-            if (VariationId == null && variationId != null)
+            // Variant review 2026-09-12 (item 5): NEVER rewrite this instance's variation. It is registered under a
+            // fixed (landblock, variation) key; the old "adopt the requested variation when mine is null" turned a
+            // BASE instance into a v11-labelled one when /reload-landblock ran during a CurrentLandblock/Location
+            // drift, after which dormancy judged it as v11, the unload was queued under the wrong key, the registry
+            // removal missed, and every base player got a registered, walkable, permanently EMPTY landblock.
+            // Spawn for the variation this instance IS; say so if the caller asked for another.
+            if (!VariationManager.SameVariationForVisibility(VariationId, variationId))
             {
-                VariationId = variationId.Value;
+                log.Warn($"[Landblock] CreateWorldObjects {Id.Landblock:X4}: asked to spawn v={variationId?.ToString() ?? "null"} on the v={VariationId?.ToString() ?? "null"} instance - spawning for the instance's own variation");
+                variationId = VariationId;
             }
             //Console.WriteLine($"CreateWOs in landblock {this.Id} v:{variationId}, group: {this.CurrentLandblockGroup}\n");
             //if (this.Id.ToString().StartsWith("019E"))
