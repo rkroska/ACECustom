@@ -1,4 +1,4 @@
-﻿# 🧪 ACE Server & Web Portal - Pet Breeding & Visualizer Master Test Plan
+# 🧪 ACE Server & Web Portal - Pet Breeding & Visualizer Master Test Plan
 
 This document contains **exact step-by-step instructions** with in-game admin commands (`@create`, `@set`, `@appraise`), expected chat messages, and web portal verification steps. Check off each box (`[x]`) as you test!
 
@@ -184,7 +184,7 @@ Sex is computed from the device GUID, not stored, so every essence already in th
 ### Test 1.9: Master 0x04 DAT Palette Assignment on Mutation
 - [ ] **Step 1**: Perform a breed that triggers a color mutation.
 - [ ] **Step 2**: Run `@appraise` on the baby pet device.
-- [ ] **Verification**: Confirm `PaletteBase` is assigned a master 2,048-color DAT Palette ID starting with `0x04......` (e.g. `0x040001BE`), and the pet's 3D mesh renders with the rare mutated color palette!
+- [ ] **Verification**: Confirm `PaletteBase` holds the native setup palette and `PaletteTemplate` is assigned a master 2,048-color DAT Palette ID starting with `0x04......` (e.g. `0x040001BE`), and the pet's 3D mesh renders with the rare mutated color palette!
 
 ---
 

@@ -458,10 +458,10 @@ export default function PetBreedingCalculator() {
     }
 
     const potRes = inheritStat(alphaPot, 0, betaPot, 0)
-    const dmgRes = inheritStat(alphaDamageRating, Math.floor((alphaDamageRating - 10) / 3), betaDamageRating, Math.floor((betaDamageRating - 10) / 3))
-    const drRes = inheritStat(alphaDamageResist, Math.floor((alphaDamageResist - 8) / 3), betaDamageResist, Math.floor((betaDamageResist - 8) / 3))
-    const critRes = inheritStat(alphaCritRating, Math.floor((alphaCritRating - 5) / 2), betaCritRating, Math.floor((betaCritRating - 5) / 2))
-    const vitRes = inheritStat(alphaVitality, Math.floor((alphaVitality - 1000) / 200), betaVitality, Math.floor((betaVitality - 1000) / 200))
+    const dmgRes = inheritStat(alphaDamageRating, Math.max(0, Math.floor((alphaDamageRating - 10) / 3)), betaDamageRating, Math.max(0, Math.floor((betaDamageRating - 10) / 3)))
+    const drRes = inheritStat(alphaDamageResist, Math.max(0, Math.floor((alphaDamageResist - 8) / 3)), betaDamageResist, Math.max(0, Math.floor((betaDamageResist - 8) / 3)))
+    const critRes = inheritStat(alphaCritRating, Math.max(0, Math.floor((alphaCritRating - 5) / 2)), betaCritRating, Math.max(0, Math.floor((betaCritRating - 5) / 2)))
+    const vitRes = inheritStat(alphaVitality, Math.max(0, Math.floor((alphaVitality - 1000) / 200)), betaVitality, Math.max(0, Math.floor((betaVitality - 1000) / 200)))
 
     let babyPot = potRes.val
     let babyDmg = dmgRes.val
@@ -621,7 +621,7 @@ export default function PetBreedingCalculator() {
       vitality: babyVit,
       isMutated: isMutated || isPotencyMutated,
       mutatedStatName: mutatedStatName || (isPotencyMutated ? 'Potency' : null),
-      mutatedStatBoost: mutatedStatBoost || (isPotencyMutated ? 20 : 0),
+      mutatedStatBoost: mutatedStatBoost || (isPotencyMutated ? (serverBreedingConfig.potencyMutationStep ?? 25) : 0),
       isColorMutated,
       mastery: masteries[Math.floor(Math.random() * masteries.length)],
       alphaMutations: Math.floor(babyTotalMuts / 2),

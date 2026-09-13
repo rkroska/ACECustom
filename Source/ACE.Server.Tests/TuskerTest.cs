@@ -12,11 +12,14 @@ namespace ACE.Server.Tests
     public class TuskerTest
     {
         [TestMethod]
+        [Ignore("Ad-hoc local investigation script requiring local DATs and live DB")]
         public void InvestigateTuskerProtector()
         {
-            DatManager.Initialize(@"C:\ACE\Dats\", false, false, false);
+            var datPath = System.Environment.GetEnvironmentVariable("ACE_DAT_DIR") ?? @"C:\ACE\Dats\";
+            if (!Directory.Exists(datPath)) return;
+            DatManager.Initialize(datPath, false, false, false);
             
-            var connectionString = "Server=127.0.0.1;Port=3306;Database=ace_world;Uid=root;Pwd=Bas3drums128$;";
+            var connectionString = System.Environment.GetEnvironmentVariable("ACE_DB_CONN") ?? "Server=127.0.0.1;Port=3306;Database=ace_world;Uid=root;Pwd=;";
             uint clothingBaseId = 0;
             using (var conn = new MySqlConnection(connectionString))
             {

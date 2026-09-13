@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -397,6 +397,9 @@ namespace ACE.Server.WorldObjects
 
                 return;
             }
+
+            if (!creatureTarget.CanBeDamagedBy(ProjectileSource))
+                return;
 
             var critical = false;
             var critDefended = false;

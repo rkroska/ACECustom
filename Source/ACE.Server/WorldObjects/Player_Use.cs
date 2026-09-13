@@ -185,16 +185,16 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                petDevice.SetProperty(global::ACE.Entity.Enum.Properties.PropertyBool.PetNeutered, true);
-                petDevice.ChangesDetected = true;
-                petDevice.SaveBiotaToDatabase();
-
                 if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
                 {
                     SendTransientError("Failed to consume neutering kit tool.");
                     SendUseDoneEvent();
                     return;
                 }
+
+                petDevice.SetProperty(global::ACE.Entity.Enum.Properties.PropertyBool.PetNeutered, true);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
 
                 PlayParticleEffect(PlayScript.AttribDownRed, target.Guid);
                 SendMessage($"You have permanently spayed/neutered {petDevice.Name}. It can no longer be used for breeding!");
@@ -249,16 +249,16 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                petDevice.SetProperty(PropertyFloat.PetIncenseBonus, bonus);
-                petDevice.ChangesDetected = true;
-                petDevice.SaveBiotaToDatabase();
-
                 if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
                 {
                     SendTransientError("Failed to consume Courtship Incense.");
                     SendUseDoneEvent();
                     return;
                 }
+
+                petDevice.SetProperty(PropertyFloat.PetIncenseBonus, bonus);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
 
                 PlayParticleEffect(PlayScript.HealthUpRed, target.Guid);
                 SendMessage($"You have anointed {petDevice.Name} with {sourceItem.Name}! Its next breeding will grant a +{bonus * 100:0.#}% mutation bonus.");
@@ -283,16 +283,16 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                petDevice.SetProperty(PropertyBool.PetChromaticCatalystActive, true);
-                petDevice.ChangesDetected = true;
-                petDevice.SaveBiotaToDatabase();
-
                 if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
                 {
                     SendTransientError("Failed to consume Chromatic Catalyst.");
                     SendUseDoneEvent();
                     return;
                 }
+
+                petDevice.SetProperty(PropertyBool.PetChromaticCatalystActive, true);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
 
                 PlayParticleEffect(PlayScript.EnchantUpBlue, target.Guid);
                 SendMessage($"You infuse {petDevice.Name} with the Chromatic Catalyst! If a palette mutation occurs on its next breed, it will roll vibrant, high-saturation colors.");
@@ -324,16 +324,16 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                petDevice.SetProperty(PropertyFloat.PetMaturityXpMultiplier, 2.0f);
-                petDevice.ChangesDetected = true;
-                petDevice.SaveBiotaToDatabase();
-
                 if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
                 {
                     SendTransientError("Failed to consume Nurturing Draught.");
                     SendUseDoneEvent();
                     return;
                 }
+
+                petDevice.SetProperty(PropertyFloat.PetMaturityXpMultiplier, 2.0f);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
 
                 PlayParticleEffect(PlayScript.HealthUpYellow, target.Guid);
                 SendMessage($"You administer the Nurturing Draught to {petDevice.Name}. It now earns 2x maturity kill credit until adulthood!");

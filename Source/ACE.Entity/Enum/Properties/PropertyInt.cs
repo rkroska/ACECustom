@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 
 namespace ACE.Entity.Enum.Properties
@@ -783,8 +783,8 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         PetMutationCount                        = 9075, // was 9058, which collided with Vitality
 
-        PetMutDamageRating                      = 9060,
-        PetMutDamageResistRating                = 9061,
+        PetMutDamageRating                      = 9068, // was 9060, which collided with WeaponAugScaleQuality
+        PetMutDamageResistRating                = 9069, // was 9061, which collided with WeaponAugScaleTier
         PetMutCritRating                        = 9062,
         PetMutCritDamageRating                  = 9063,
         PetMutCritResistRating                  = 9064,

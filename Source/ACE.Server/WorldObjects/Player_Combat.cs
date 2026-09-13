@@ -357,6 +357,9 @@ namespace ACE.Server.WorldObjects
             if (target.Health.Current <= 0)
                 return null;
 
+            if (!target.CanBeDamagedBy(this))
+                return null;
+
             var targetPlayer = target as Player;
 
             // check PK status

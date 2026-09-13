@@ -210,7 +210,7 @@ namespace ACE.Server.WorldObjects
                                 itemSubPal = item.ClothingSubPalEffects[item.ClothingSubPalEffects.Keys.ElementAt(0)];
                             }
 
-                            float shade = 0.5f;
+                            float shade = 0.0f;
                             if (w.Shade.HasValue)
                                 shade = (float)w.Shade.Value;
                             for (int i = 0; i < itemSubPal.CloSubPalettes.Count; i++)
@@ -436,7 +436,6 @@ namespace ACE.Server.WorldObjects
         }
 
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, uint> _setupDefaultPaletteCache = new();
-        private static PortalDatDatabase _highResDb;
 
         /// <summary>
         /// The native base palette of a creature model: the DefaultPaletteId baked into its textures.
@@ -456,9 +455,6 @@ namespace ACE.Server.WorldObjects
             var setupModel = DatManager.PortalDat.ReadFromDat<SetupModel>(setupId);
             if (setupModel?.Parts == null) return 0;
 
-            if (_highResDb == null && DatManager.HighResDat != null)
-                _highResDb = new PortalDatDatabase(DatManager.HighResDat.FilePath, keepOpen: false);
-
             foreach (var partId in setupModel.Parts)
             {
                 var gfx = DatManager.PortalDat.ReadFromDat<GfxObj>(partId);
@@ -474,14 +470,14 @@ namespace ACE.Server.WorldObjects
                     if ((tex & 0xFF000000) == 0x05000000)
                     {
                         var st = DatManager.PortalDat.ReadFromDat<SurfaceTexture>(tex)
-                                 ?? _highResDb?.ReadFromDat<SurfaceTexture>(tex);
+                                 ?? DatManager.HighResDat?.ReadFromDat<SurfaceTexture>(tex);
                         if (st?.Textures == null || st.Textures.Count == 0) continue;
                         tex = st.Textures[0];
                     }
 
                     var t = DatManager.PortalDat.ReadFromDat<ACE.DatLoader.FileTypes.Texture>(tex);
                     if ((t?.DefaultPaletteId ?? 0) == 0)
-                        t = _highResDb?.ReadFromDat<ACE.DatLoader.FileTypes.Texture>(tex);
+                        t = DatManager.HighResDat?.ReadFromDat<ACE.DatLoader.FileTypes.Texture>(tex);
 
                     if (t?.DefaultPaletteId is uint pal && pal > 0)
                         return pal;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
@@ -268,7 +268,7 @@ namespace ACE.Server.Command.Handlers
                 var startTime = i * bucketSize;
                 var endTime = (i + 1) * bucketSize;
                 var count = buckets[i];
-                var bar = new string('█', Math.Min(count / 5, 60)); // Scale bar, max 60 chars
+                var bar = new string('#', Math.Min(count / 5, 60)); // Scale bar, max 60 chars
                 
                 sb.Append($"{startTime:F3}s - {endTime:F3}s  {count,-8} {bar}{'\n'}");
             }

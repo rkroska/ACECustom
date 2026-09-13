@@ -4605,10 +4605,13 @@ namespace ACE.Server.Command.Handlers
             target.SetProperty(PropertyInt.VisualOverridePaletteTemplate, (int)chosenPalette.Value);
 
             // Force dynamic client-side redraw by cycling object tracking
-            foreach (var viewer in target.PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
+            if (target.PhysicsObj?.ObjMaint != null)
             {
-                viewer.RemoveTrackedObject(target, false);
-                viewer.AddTrackedObject(target);
+                foreach (var viewer in target.PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
+                {
+                    viewer.RemoveTrackedObject(target, false);
+                    viewer.AddTrackedObject(target);
+                }
             }
 
             ChatPacket.SendServerMessage(session, $"Set summoned {target.Name} primary subpalette to 0x{chosenPalette.Value:X8} ({chosenPalette.Value}).", ChatMessageType.System);

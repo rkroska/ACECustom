@@ -48,7 +48,7 @@ VALUES (98760388, 2, 20578990, 0, 0, 0, 1, 0, 0, 0, 3); -- Type 2 = Destination,
 
 -- 4. Spawn Portal next to Professor Ruggan in Lin
 INSERT INTO `landblock_instance` (
-    `guid`, `weenie_Class_Id`, `landblock`, `obj_Cell_Id`, 
+    `guid`, `weenie_Class_Id`, `obj_Cell_Id`, 
     `origin_X`, `origin_Y`, `origin_Z`, 
     `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, 
     `is_Link_Child`, `last_Modified`, `variation_Id`
@@ -56,7 +56,6 @@ INSERT INTO `landblock_instance` (
 SELECT 
     (SELECT MAX(guid) + 1 FROM `landblock_instance` WHERE guid < 1000000) AS guid_calc,
     98760388, -- Seedy Motel Portal WCID
-    l.`landblock`, 
     l.`obj_Cell_Id`, 
     l.`origin_X` + 2.0, -- Spawn 2 meters away from Ruggan
     l.`origin_Y`, 

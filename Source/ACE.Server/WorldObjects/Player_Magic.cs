@@ -650,7 +650,10 @@ namespace ACE.Server.WorldObjects
                 return true;
 
             if (targetCreature != null && targetCreature != this && spell.NonComponentTargetType == ItemType.Creature && !CanDamage(targetCreature))
-                return true;
+            {
+                if (!(targetCreature is CombatPet pet && pet.P_PetOwner == this && pet.IsInMotelOrEncounter()))
+                    return true;
+            }
 
             return false;
         }

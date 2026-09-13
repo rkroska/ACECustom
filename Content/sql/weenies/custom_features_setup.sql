@@ -119,6 +119,7 @@ DELETE FROM `weenie` WHERE `class_Id` BETWEEN 787800501 AND 787800504;
 -- Clean up any existing records for variations 2 through 10 on landblock 0x00C0 (192) to prevent duplicate key errors
 DELETE FROM `landblock_instance` 
 WHERE `landblock` = 192 
+  AND `weenie_Class_Id` IN (787800500, 787800401)
   AND `variation_Id` BETWEEN 2 AND 10;
 
 -- Duplicate spawners and the exit portal from the base layer to variations 2 through 10.

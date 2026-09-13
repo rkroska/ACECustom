@@ -52,13 +52,29 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        private static string SanitizeAscii(string str)
+        {
+            if (string.IsNullOrEmpty(str)) return "";
+            var sb = new System.Text.StringBuilder(str.Length);
+            foreach (var c in str)
+            {
+                if (c >= 32 && c <= 126)
+                    sb.Append(c);
+            }
+            return sb.ToString().Trim();
+        }
+
         /// <summary>Configured growth stage name for a 1-based stage; "Stage N" when the list is short.</summary>
         public static string GetMaturityStageName(int stage)
         {
             var raw = ServerConfig.pet_maturity_stage_names.Value ?? "";
             var names = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (stage >= 1 && stage <= names.Length && names[stage - 1].Length > 0)
-                return names[stage - 1];
+            if (stage >= 1 && stage <= names.Length)
+            {
+                var clean = SanitizeAscii(names[stage - 1]);
+                if (clean.Length > 0)
+                    return clean;
+            }
             return $"Stage {stage}";
         }
 
@@ -70,7 +86,10 @@ namespace ACE.Server.WorldObjects
         {
             var raw = ServerConfig.pet_maturity_stage_names.Value ?? "";
             foreach (var n in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                if (n.Length > 0) yield return n;
+            {
+                var clean = SanitizeAscii(n);
+                if (clean.Length > 0) yield return clean;
+            }
             for (var i = 1; i <= MaturityStages; i++)
                 yield return $"Stage {i}";
         }

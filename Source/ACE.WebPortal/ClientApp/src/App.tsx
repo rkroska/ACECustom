@@ -118,7 +118,9 @@ function App() {
 
 
 
-  if (!isAuthenticated && (location.pathname === '/map' || location.pathname === '/pet-breeding')) {
+  const normalizedPath = location.pathname.replace(/\/+$/, '') || '/';
+
+  if (!isAuthenticated && (normalizedPath === '/map' || normalizedPath === '/pet-breeding')) {
     return (
       <MainLayout>
         <Routes>

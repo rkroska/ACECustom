@@ -72,12 +72,12 @@ UPDATE `weenie_properties_string` SET `value` = 'Fenwick, Kennel Intern' WHERE `
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780200 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780200 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780200, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780200, 95, 8)  -- RadarBlipColor = NPC,
-  (78780200, 133, 4)  -- ShowableOnRadar,
-  (78780200, 134, 16)  -- PlayerKillerStatus = RubberGlue,
-  (78780200, 290, 1)  -- HearLocalSignals - takes part in the feud,
-  (78780200, 291, 60)  -- HearLocalSignalsRadius, metres;
+  (78780200, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780200, 95, 8), -- RadarBlipColor = NPC
+  (78780200, 133, 4), -- ShowableOnRadar
+  (78780200, 134, 16), -- PlayerKillerStatus = RubberGlue
+  (78780200, 290, 1), -- HearLocalSignals - takes part in the feud
+  (78780200, 291, 60); -- HearLocalSignalsRadius, metres
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780200,  1, True),   -- Stuck: stays where it is placed
   (78780200, 19, False),  -- Attackable: no
@@ -125,10 +125,10 @@ UPDATE `weenie_properties_string` SET `value` = 'Ivo, Ruggan''s Quartermaster' W
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780201 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780201 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780201, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780201, 95, 8)  -- RadarBlipColor = NPC,
-  (78780201, 133, 4)  -- ShowableOnRadar,
-  (78780201, 134, 16)  -- PlayerKillerStatus = RubberGlue;
+  (78780201, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780201, 95, 8), -- RadarBlipColor = NPC
+  (78780201, 133, 4), -- ShowableOnRadar
+  (78780201, 134, 16); -- PlayerKillerStatus = RubberGlue
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780201,  1, True),   -- Stuck: stays where it is placed
   (78780201, 19, False),  -- Attackable: no
@@ -219,10 +219,10 @@ UPDATE `weenie_properties_string` SET `value` = 'DJ Skulk' WHERE `object_Id` = 7
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780202 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780202 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780202, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780202, 95, 8)  -- RadarBlipColor = NPC,
-  (78780202, 133, 4)  -- ShowableOnRadar,
-  (78780202, 134, 16)  -- PlayerKillerStatus = RubberGlue;
+  (78780202, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780202, 95, 8), -- RadarBlipColor = NPC
+  (78780202, 133, 4), -- ShowableOnRadar
+  (78780202, 134, 16); -- PlayerKillerStatus = RubberGlue
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780202,  1, True),   -- Stuck: stays where it is placed
   (78780202, 19, False),  -- Attackable: no
@@ -265,12 +265,12 @@ UPDATE `weenie_properties_string` SET `value` = 'Gary' WHERE `object_Id` = 78780
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780203 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780203 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780203, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780203, 95, 8)  -- RadarBlipColor = NPC,
-  (78780203, 133, 4)  -- ShowableOnRadar,
-  (78780203, 134, 16)  -- PlayerKillerStatus = RubberGlue,
-  (78780203, 290, 1)  -- HearLocalSignals - takes part in the feud,
-  (78780203, 291, 60)  -- HearLocalSignalsRadius, metres;
+  (78780203, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780203, 95, 8), -- RadarBlipColor = NPC
+  (78780203, 133, 4), -- ShowableOnRadar
+  (78780203, 134, 16), -- PlayerKillerStatus = RubberGlue
+  (78780203, 290, 1), -- HearLocalSignals - takes part in the feud
+  (78780203, 291, 60); -- HearLocalSignalsRadius, metres
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780203,  1, True),   -- Stuck: stays where it is placed
   (78780203, 19, False),  -- Attackable: no
@@ -315,10 +315,10 @@ UPDATE `weenie_properties_string` SET `value` = 'Mrs. Ruggan' WHERE `object_Id` 
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780204 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780204 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780204, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780204, 95, 8)  -- RadarBlipColor = NPC,
-  (78780204, 133, 4)  -- ShowableOnRadar,
-  (78780204, 134, 16)  -- PlayerKillerStatus = RubberGlue;
+  (78780204, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780204, 95, 8), -- RadarBlipColor = NPC
+  (78780204, 133, 4), -- ShowableOnRadar
+  (78780204, 134, 16); -- PlayerKillerStatus = RubberGlue
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780204,  1, True),   -- Stuck: stays where it is placed
   (78780204, 19, False),  -- Attackable: no
@@ -369,12 +369,12 @@ UPDATE `weenie_properties_string` SET `value` = 'Bexley, Keeper of the Registry'
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780210 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780210 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780210, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780210, 95, 8)  -- RadarBlipColor = NPC,
-  (78780210, 133, 4)  -- ShowableOnRadar,
-  (78780210, 134, 16)  -- PlayerKillerStatus = RubberGlue,
-  (78780210, 290, 1)  -- HearLocalSignals - takes part in the feud,
-  (78780210, 291, 60)  -- HearLocalSignalsRadius, metres;
+  (78780210, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780210, 95, 8), -- RadarBlipColor = NPC
+  (78780210, 133, 4), -- ShowableOnRadar
+  (78780210, 134, 16), -- PlayerKillerStatus = RubberGlue
+  (78780210, 290, 1), -- HearLocalSignals - takes part in the feud
+  (78780210, 291, 60); -- HearLocalSignalsRadius, metres
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780210,  1, True),   -- Stuck: stays where it is placed
   (78780210, 19, False),  -- Attackable: no
@@ -424,12 +424,12 @@ UPDATE `weenie_properties_string` SET `value` = 'Registered Browerk, Champion Li
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780211 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780211 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780211, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780211, 95, 8)  -- RadarBlipColor = NPC,
-  (78780211, 133, 4)  -- ShowableOnRadar,
-  (78780211, 134, 16)  -- PlayerKillerStatus = RubberGlue,
-  (78780211, 290, 1)  -- HearLocalSignals - takes part in the feud,
-  (78780211, 291, 60)  -- HearLocalSignalsRadius, metres;
+  (78780211, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780211, 95, 8), -- RadarBlipColor = NPC
+  (78780211, 133, 4), -- ShowableOnRadar
+  (78780211, 134, 16), -- PlayerKillerStatus = RubberGlue
+  (78780211, 290, 1), -- HearLocalSignals - takes part in the feud
+  (78780211, 291, 60); -- HearLocalSignalsRadius, metres
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780211,  1, True),   -- Stuck: stays where it is placed
   (78780211, 19, False),  -- Attackable: no
@@ -472,12 +472,12 @@ UPDATE `weenie_properties_string` SET `value` = 'Certified Shreth, Third Generat
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780212 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780212 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780212, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780212, 95, 8)  -- RadarBlipColor = NPC,
-  (78780212, 133, 4)  -- ShowableOnRadar,
-  (78780212, 134, 16)  -- PlayerKillerStatus = RubberGlue,
-  (78780212, 290, 1)  -- HearLocalSignals - takes part in the feud,
-  (78780212, 291, 60)  -- HearLocalSignalsRadius, metres;
+  (78780212, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780212, 95, 8), -- RadarBlipColor = NPC
+  (78780212, 133, 4), -- ShowableOnRadar
+  (78780212, 134, 16), -- PlayerKillerStatus = RubberGlue
+  (78780212, 290, 1), -- HearLocalSignals - takes part in the feud
+  (78780212, 291, 60); -- HearLocalSignalsRadius, metres
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780212,  1, True),   -- Stuck: stays where it is placed
   (78780212, 19, False),  -- Attackable: no
@@ -520,12 +520,12 @@ UPDATE `weenie_properties_string` SET `value` = 'Pedigreed Ursuin (Papers Pendin
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780213 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780213 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780213, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780213, 95, 8)  -- RadarBlipColor = NPC,
-  (78780213, 133, 4)  -- ShowableOnRadar,
-  (78780213, 134, 16)  -- PlayerKillerStatus = RubberGlue,
-  (78780213, 290, 1)  -- HearLocalSignals - takes part in the feud,
-  (78780213, 291, 60)  -- HearLocalSignalsRadius, metres;
+  (78780213, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780213, 95, 8), -- RadarBlipColor = NPC
+  (78780213, 133, 4), -- ShowableOnRadar
+  (78780213, 134, 16), -- PlayerKillerStatus = RubberGlue
+  (78780213, 290, 1), -- HearLocalSignals - takes part in the feud
+  (78780213, 291, 60); -- HearLocalSignalsRadius, metres
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780213,  1, True),   -- Stuck: stays where it is placed
   (78780213, 19, False),  -- Attackable: no
@@ -568,12 +568,12 @@ UPDATE `weenie_properties_string` SET `value` = 'Drudge Skulker of Record' WHERE
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780214 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780214 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780214, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780214, 95, 8)  -- RadarBlipColor = NPC,
-  (78780214, 133, 4)  -- ShowableOnRadar,
-  (78780214, 134, 16)  -- PlayerKillerStatus = RubberGlue,
-  (78780214, 290, 1)  -- HearLocalSignals - takes part in the feud,
-  (78780214, 291, 60)  -- HearLocalSignalsRadius, metres;
+  (78780214, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780214, 95, 8), -- RadarBlipColor = NPC
+  (78780214, 133, 4), -- ShowableOnRadar
+  (78780214, 134, 16), -- PlayerKillerStatus = RubberGlue
+  (78780214, 290, 1), -- HearLocalSignals - takes part in the feud
+  (78780214, 291, 60); -- HearLocalSignalsRadius, metres
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780214,  1, True),   -- Stuck: stays where it is placed
   (78780214, 19, False),  -- Attackable: no
@@ -616,12 +616,12 @@ UPDATE `weenie_properties_string` SET `value` = 'Splotch' WHERE `object_Id` = 78
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780220 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780220 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780220, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780220, 95, 8)  -- RadarBlipColor = NPC,
-  (78780220, 133, 4)  -- ShowableOnRadar,
-  (78780220, 134, 16)  -- PlayerKillerStatus = RubberGlue,
-  (78780220, 290, 1)  -- HearLocalSignals - takes part in the feud,
-  (78780220, 291, 60)  -- HearLocalSignalsRadius, metres;
+  (78780220, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780220, 95, 8), -- RadarBlipColor = NPC
+  (78780220, 133, 4), -- ShowableOnRadar
+  (78780220, 134, 16), -- PlayerKillerStatus = RubberGlue
+  (78780220, 290, 1), -- HearLocalSignals - takes part in the feud
+  (78780220, 291, 60); -- HearLocalSignalsRadius, metres
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780220,  1, True),   -- Stuck: stays where it is placed
   (78780220, 19, False),  -- Attackable: no
@@ -669,12 +669,12 @@ UPDATE `weenie_properties_string` SET `value` = 'The Teal Incident' WHERE `objec
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780221 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780221 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780221, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780221, 95, 8)  -- RadarBlipColor = NPC,
-  (78780221, 133, 4)  -- ShowableOnRadar,
-  (78780221, 134, 16)  -- PlayerKillerStatus = RubberGlue,
-  (78780221, 290, 1)  -- HearLocalSignals - takes part in the feud,
-  (78780221, 291, 60)  -- HearLocalSignalsRadius, metres;
+  (78780221, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780221, 95, 8), -- RadarBlipColor = NPC
+  (78780221, 133, 4), -- ShowableOnRadar
+  (78780221, 134, 16), -- PlayerKillerStatus = RubberGlue
+  (78780221, 290, 1), -- HearLocalSignals - takes part in the feud
+  (78780221, 291, 60); -- HearLocalSignalsRadius, metres
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780221,  1, True),   -- Stuck: stays where it is placed
   (78780221, 19, False),  -- Attackable: no
@@ -722,12 +722,12 @@ UPDATE `weenie_properties_string` SET `value` = 'Ursuin, Unregistered' WHERE `ob
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780222 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780222 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780222, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780222, 95, 8)  -- RadarBlipColor = NPC,
-  (78780222, 133, 4)  -- ShowableOnRadar,
-  (78780222, 134, 16)  -- PlayerKillerStatus = RubberGlue,
-  (78780222, 290, 1)  -- HearLocalSignals - takes part in the feud,
-  (78780222, 291, 60)  -- HearLocalSignalsRadius, metres;
+  (78780222, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780222, 95, 8), -- RadarBlipColor = NPC
+  (78780222, 133, 4), -- ShowableOnRadar
+  (78780222, 134, 16), -- PlayerKillerStatus = RubberGlue
+  (78780222, 290, 1), -- HearLocalSignals - takes part in the feud
+  (78780222, 291, 60); -- HearLocalSignalsRadius, metres
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780222,  1, True),   -- Stuck: stays where it is placed
   (78780222, 19, False),  -- Attackable: no
@@ -775,12 +775,12 @@ UPDATE `weenie_properties_string` SET `value` = 'Nine-Colour Shreth' WHERE `obje
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780223 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780223 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780223, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780223, 95, 8)  -- RadarBlipColor = NPC,
-  (78780223, 133, 4)  -- ShowableOnRadar,
-  (78780223, 134, 16)  -- PlayerKillerStatus = RubberGlue,
-  (78780223, 290, 1)  -- HearLocalSignals - takes part in the feud,
-  (78780223, 291, 60)  -- HearLocalSignalsRadius, metres;
+  (78780223, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780223, 95, 8), -- RadarBlipColor = NPC
+  (78780223, 133, 4), -- ShowableOnRadar
+  (78780223, 134, 16), -- PlayerKillerStatus = RubberGlue
+  (78780223, 290, 1), -- HearLocalSignals - takes part in the feud
+  (78780223, 291, 60); -- HearLocalSignalsRadius, metres
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780223,  1, True),   -- Stuck: stays where it is placed
   (78780223, 19, False),  -- Attackable: no
@@ -828,12 +828,12 @@ UPDATE `weenie_properties_string` SET `value` = 'Subject Twelve' WHERE `object_I
 DELETE FROM `weenie_properties_int`  WHERE `object_Id` = 78780224 AND `type` IN (67, 68, 16, 95, 133, 134, 290, 291);
 DELETE FROM `weenie_properties_bool` WHERE `object_Id` = 78780224 AND `type` IN (1, 19, 98);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
-  (78780224, 16, 32)  -- ItemUseable = Remote (clickable for dialogue),
-  (78780224, 95, 8)  -- RadarBlipColor = NPC,
-  (78780224, 133, 4)  -- ShowableOnRadar,
-  (78780224, 134, 16)  -- PlayerKillerStatus = RubberGlue,
-  (78780224, 290, 1)  -- HearLocalSignals - takes part in the feud,
-  (78780224, 291, 60)  -- HearLocalSignalsRadius, metres;
+  (78780224, 16, 32), -- ItemUseable = Remote (clickable for dialogue)
+  (78780224, 95, 8), -- RadarBlipColor = NPC
+  (78780224, 133, 4), -- ShowableOnRadar
+  (78780224, 134, 16), -- PlayerKillerStatus = RubberGlue
+  (78780224, 290, 1), -- HearLocalSignals - takes part in the feud
+  (78780224, 291, 60); -- HearLocalSignalsRadius, metres
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780224,  1, True),   -- Stuck: stays where it is placed
   (78780224, 19, False),  -- Attackable: no

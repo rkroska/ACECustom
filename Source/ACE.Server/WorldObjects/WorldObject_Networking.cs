@@ -904,7 +904,7 @@ namespace ACE.Server.WorldObjects
             ClothingBaseEffect clothingBaseEffect = null;
             if (!item.ClothingBaseEffects.TryGetValue(SetupTableId, out clothingBaseEffect))
             {
-                if (item.ClothingBaseEffects.Count > 0)
+                if (item.ClothingBaseEffects.Count == 1)
                     clothingBaseEffect = item.ClothingBaseEffects.Values.FirstOrDefault();
             }
 

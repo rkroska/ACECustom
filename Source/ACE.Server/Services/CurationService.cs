@@ -49,7 +49,7 @@ namespace ACE.Server.Services
         private static readonly object FileLock = new object();
         private static readonly ConcurrentDictionary<string, CurationItemDto> CurationCache = new ConcurrentDictionary<string, CurationItemDto>();
 
-        private static bool _isDirty = false;
+        private static volatile bool _isDirty = false;
         private static readonly System.Threading.Timer _saveTimer;
 
         static CurationService()
@@ -61,8 +61,8 @@ namespace ACE.Server.Services
         private static void FlushCurationsIfNeeded()
         {
             if (!_isDirty) return;
-            SaveCurations();
             _isDirty = false;
+            SaveCurations();
         }
 
         private static string GetKey(uint wcid, uint textureId, uint paletteId)
@@ -145,6 +145,9 @@ namespace ACE.Server.Services
         public static CurationItemDto AddOrUpdateCuration(uint wcid, string creatureName, uint textureId, uint paletteId, int rating)
         {
             var key = GetKey(wcid, textureId, paletteId);
+            if (CurationCache.Count >= 50000 && !CurationCache.ContainsKey(key))
+                return null;
+
             var item = new CurationItemDto
             {
                 CreatureWcid = wcid,

@@ -1330,8 +1330,9 @@ namespace ACE.Server.WorldObjects
                             // Add to pet's inventory first
                             if (pet.TryAddToInventory(item))
                             {
-                                // Make item effectively worthless/bonded so it's not exploited
-                                item.Value = 0; 
+                                // Make item effectively worthless/bonded and visual-only so it's not exploited
+                                item.Value = 0;
+                                item.Biota.PropertiesSpellBook?.Clear();
                                 
                                 // Try to wield/equip it
                                 // We use TryWieldObject which handles slot logic

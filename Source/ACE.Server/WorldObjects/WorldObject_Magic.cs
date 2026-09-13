@@ -585,7 +585,7 @@ namespace ACE.Server.WorldObjects
                 tryBoost += (int)player.EffectiveLifeAugCount;
 
                 // Scale heal proportionally to pet max health so player heals remain effective on 3000+ HP pets
-                if (targetCreature is CombatPet targetPet && targetPet.IsInMotelOrEncounter())
+                if (spell.VitalDamageType == DamageType.Health && targetCreature is CombatPet targetPet && targetPet.IsInMotelOrEncounter())
                 {
                     var casterHp = player.Health?.MaxValue ?? 0;
                     var petHp = targetPet.Health?.MaxValue ?? 0;

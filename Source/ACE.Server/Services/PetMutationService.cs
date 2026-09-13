@@ -109,6 +109,10 @@ namespace ACE.Server.Services
                 {
                     log.Info("Initializing PetMutationService and pre-caching palette compatibility profiles...");
 
+                    _masterVerifiedPalettePool.Clear();
+                    _masterPaletteDtos.Clear();
+                    _vibrantPaletteDtos.Clear();
+
                     // Collect master verified palette list (all 0x04... palettes from portal dat)
                     var portalDb = DatManager.PortalDat;
                     if (portalDb != null)

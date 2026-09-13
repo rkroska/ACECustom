@@ -81,8 +81,9 @@ namespace ACE.Server.WorldObjects
             if (device == null || !maturityCaptured)
                 return;
 
-            var strength = device.MaturityStrengthMult;
-            var scaleMult = device.MaturityScaleMult;
+            var maturityEnabled = ServerConfig.pet_maturity_enabled.Value;
+            var strength = maturityEnabled ? device.MaturityStrengthMult : 1.0;
+            var scaleMult = maturityEnabled ? device.MaturityScaleMult : 1.0;
 
             int? Scaled(int? v) => v.HasValue ? (int)Math.Round(v.Value * strength) : null;
             DamageRating = Scaled(matureDamageRating);
@@ -117,7 +118,7 @@ namespace ACE.Server.WorldObjects
             var name = Name ?? "";
             foreach (var stageName in PetDevice.AllMaturityStageNames())
                 name = name.Replace(stageName + " ", "");
-            if (device.IsJuvenile)
+            if (maturityEnabled && device.IsJuvenile)
             {
                 var tag = device.MaturityStageName + " ";
                 var idx = name.IndexOf("'s ", StringComparison.Ordinal);

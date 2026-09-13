@@ -115,9 +115,9 @@ namespace ACE.Server.WorldObjects
         public void Unbind()
         {
             foreach (var petGuid in allowedPetGuids)
-                activeGuardiansByPet.TryRemove(petGuid, out _);
+                activeGuardiansByPet.TryRemove(new KeyValuePair<uint, MatingGuardian>(petGuid, this));
             foreach (var ownerGuid in allowedOwnerGuids)
-                activeGuardiansByOwner.TryRemove(ownerGuid, out _);
+                activeGuardiansByOwner.TryRemove(new KeyValuePair<uint, MatingGuardian>(ownerGuid, this));
         }
 
         /// <summary>True if the object is one of the parent pets, or a pet belonging to one of the two owners.</summary>

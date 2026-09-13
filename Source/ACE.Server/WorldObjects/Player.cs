@@ -989,7 +989,8 @@ namespace ACE.Server.WorldObjects
 
                 OnTalk(message);
 
-                if (!string.IsNullOrEmpty(message) && message.Contains("dance", StringComparison.OrdinalIgnoreCase))
+                var trimmed = message?.Trim().Trim('*').Trim();
+                if (!string.IsNullOrEmpty(trimmed) && trimmed.Equals("dance", StringComparison.OrdinalIgnoreCase))
                 {
                     // BroadcastMovement() already triggers breeding off the DrudgeDance motion. Only fall
                     // back to the chat-emote text when that path did not just fire for this same emote,

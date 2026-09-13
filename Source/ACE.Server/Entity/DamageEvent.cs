@@ -302,13 +302,24 @@ namespace ACE.Server.Entity
 
             // Juvenile combat pets hit for a percentage of their adult damage.
             if (attacker is CombatPet maturingPet && maturingPet.MaturityDamageMult < 0.999f)
+            {
                 BaseDamage *= maturingPet.MaturityDamageMult;
+                if (BaseDamageMod != null)
+                    BaseDamageMod.DamageMod *= maturingPet.MaturityDamageMult;
+            }
 
             // Mating Guardian scales base damage proportional to the defending parent pet's max health (~8%, clamped [20, 500])
             if (attacker is MatingGuardian && defender is CombatPet matingPet)
             {
                 var petMaxHp = matingPet.Health?.MaxValue ?? 500;
                 BaseDamage = Math.Clamp(petMaxHp * 0.08f, 20.0f, 500.0f);
+                if (BaseDamageMod != null)
+                {
+                    BaseDamageMod.BaseDamage.MaxDamage = (int)Math.Round(BaseDamage);
+                    BaseDamageMod.DamageBonus = 0;
+                    BaseDamageMod.ElementalBonus = 0;
+                    BaseDamageMod.DamageMod = 1.0f;
+                }
             }
 
             // NEW: Apply enrage multiplier if the attacker is a mob and enraged

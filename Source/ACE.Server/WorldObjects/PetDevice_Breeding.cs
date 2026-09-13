@@ -117,6 +117,9 @@ namespace ACE.Server.WorldObjects
             // cooldown - or admins can never test those rules, and they silently never apply to admin
             // characters. Use @pet-reset-cooldown to reset charges/cooldown between test breeds.
             var isAdminBypass = player1.IsAdmin;
+            if (player1.Location == null)
+                return;
+
             var currentLandblock = player1.Location.Landblock;
 
             if (!IsInBreedingArea(player1))
@@ -156,9 +159,9 @@ namespace ACE.Server.WorldObjects
                 if (otherPlayer.Guid == player1.Guid)
                     continue;
 
-                if (otherPlayer.IsTrading)
+                if (otherPlayer.IsTrading || otherPlayer.Location == null)
                 {
-                    if (player1.IsAdmin) player1.SendMessage($"[Breeding Debug] Skipping {otherPlayer.Name}: Currently in trade.");
+                    if (player1.IsAdmin && otherPlayer.IsTrading) player1.SendMessage($"[Breeding Debug] Skipping {otherPlayer.Name}: Currently in trade.");
                     continue;
                 }
 
