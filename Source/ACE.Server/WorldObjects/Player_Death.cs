@@ -86,7 +86,7 @@ namespace ACE.Server.WorldObjects
                 // and possibly limit that to some radius around the landblock?
                 // variant review 2026-09-12 (item 11): broadcast in the SANCTUARY's layer - the null here force-loaded the base
                 // twin plus eight adjacents and told base-world players about a v2 death.
-                var lifestoneBlock = LandblockManager.GetLandblock(new LandblockId(Sanctuary.Landblock << 16 | 0xFFFF), true, Sanctuary.Variation);
+                var lifestoneBlock = LandblockManager.GetLandblock(new LandblockId(Sanctuary.Landblock << 16 | 0xFFFF), true, ACE.Server.Managers.Rifts.RiftManager.IsRiftVariation(Sanctuary.Variation) ? null : Sanctuary.Variation);   // review 2026-09-13: a bind made inside a (now dead) rift must not force-create a landblock at that negative variation
 
                 // We enqueue the work onto the target landblock to ensure thread-safety. It's highly likely the lifestoneBlock is far away, and part of a different landblock group (and thus different thread).
                 lifestoneBlock.EnqueueAction(new ActionEventDelegate(ActionType.PlayerDeath_Broadcast, () => lifestoneBlock.EnqueueBroadcast(excludePlayers, true, Sanctuary, LocalBroadcastRangeSq, broadcastMsg)));

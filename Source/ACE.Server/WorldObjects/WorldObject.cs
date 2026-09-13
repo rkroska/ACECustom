@@ -204,6 +204,17 @@ namespace ACE.Server.WorldObjects
             // exclude linkspots from spawning
             if (WeenieClassId == 10762) return true;
 
+            // Review 2026-09-13 (follow-up to variant item 1) + audit C2: the physics goes in the object's OWN layer, and
+            // AddWorldObjectInternal has already re-routed the add to the matching landblock instance, so registration
+            // (the ticking thread) and physics (the scanned cells) are always the same instance. A mismatch here means a
+            // caller bypassed that re-route - refuse rather than split the object across two groups.
+            if (Location.Variation.HasValue && VariationId.HasValue && VariationManager.NormalizeBase(Location.Variation) != VariationManager.NormalizeBase(VariationId))
+            {
+                log.Warn($"[SpawnDiag] AddPhysicsObj: 0x{Guid}:{Name} Location v={Location.Variation} but the caller asked for v={VariationId} - refusing (audit C2: registration and physics must share one instance)");
+                return false;
+            }
+            VariationId = Location.Variation ?? VariationId;
+
             var cell = LScape.get_landcell(Location.Cell, VariationId);
             if (cell == null)
             {

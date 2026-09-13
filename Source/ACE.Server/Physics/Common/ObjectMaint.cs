@@ -7,6 +7,7 @@ using ACE.Entity.Enum;
 using ACE.Server.Managers;
 using ACE.Server.Physics.Managers;
 using ACE.Server.WorldObjects;
+using ACE.Server.Network.GameMessages.Messages;
 using log4net;
 
 namespace ACE.Server.Physics.Common
@@ -44,6 +45,17 @@ namespace ACE.Server.Physics.Common
             return VariationManager.SameVariationForVisibility(
                 GetVariationForVisibility(a, aOverride),
                 GetVariationForVisibility(b, bOverride));
+        }
+
+        /// <summary>The identity test for removals (variant review item 3, tightened by review 2026-09-13): the stored
+        /// instance is the same PhysicsObj, OR an older PhysicsObj of the same WorldObject (a failed AddPhysicsObj re-inits
+        /// a fresh PhysicsObj on the WO and every sweep passes the WO's current one). A recycled guid belongs to a
+        /// different WorldObject and must not match.</summary>
+        private static bool SameInstanceOrSameWorldObject(PhysicsObj stored, PhysicsObj given)
+        {
+            if (ReferenceEquals(stored, given)) return true;
+            var storedWo = stored?.WeenieObj?.WorldObject;
+            return storedWo != null && ReferenceEquals(storedWo, given?.WeenieObj?.WorldObject);
         }
 
         private readonly ReaderWriterLockSlim rwLock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
@@ -302,9 +314,11 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterWriteLock();
             try
             {
-                // Variant review 2026-09-12 (item 3): remove only if the table holds THIS instance. An expired
-                // stale instance under a recycled guid must not evict the live object that replaced it.
-                if (KnownObjects.TryGetValue(obj.ID, out var current) && ReferenceEquals(current, obj))
+                // Variant review 2026-09-12 (item 3): remove only if the table holds THIS instance - or an older
+                // PhysicsObj of the SAME WorldObject (review 2026-09-13: a failed AddPhysicsObj re-inits a fresh
+                // PhysicsObj on the WO, and the sweeps pass the WO's current one; the old ID-keyed remove cleared
+                // that entry, so this must too). A recycled guid belongs to a DIFFERENT WorldObject and stays.
+                if (KnownObjects.TryGetValue(obj.ID, out var current) && SameInstanceOrSameWorldObject(current, obj))
                     removed = KnownObjects.Remove(obj.ID);
             }
             finally
@@ -611,6 +625,15 @@ namespace ACE.Server.Physics.Common
             if (evictedKnown != null && PhysicsObj.IsPlayer)
                 evictedKnown.ObjMaint?.RemoveKnownPlayer(PhysicsObj);
 
+            // Review 2026-09-13: the client may STILL hold the evicted instance (it was in the destruction queue, i.e. not
+            // yet culled), and a CreateObject for a guid the client holds is a no-op - so the old visual would stay until
+            // relog. Send a DeleteObject for the stale guid first; a DeleteObject for an unheld guid is a no-op (the
+            // ghost-mob sweep relies on that already). The caller's CreateObject then lands on a clean slate.
+            var evicted = evictedVisible ?? evictedKnown;
+            if (evicted != null && PhysicsObj.IsPlayer && PhysicsObj.WeenieObj?.WorldObject is Player viewerPlayer
+                && evicted.WeenieObj?.WorldObject is WorldObject staleWo)
+                viewerPlayer.Session?.Network.EnqueueSend(new GameMessageDeleteObject(staleWo));
+
             return added;
         }
 
@@ -668,7 +691,7 @@ namespace ACE.Server.Physics.Common
             try
             {
                 // Variant review 2026-09-12 (item 3): identity-checked, see RemoveKnownObject.
-                if (VisibleObjects.TryGetValue(obj.ID, out var current) && ReferenceEquals(current, obj))
+                if (VisibleObjects.TryGetValue(obj.ID, out var current) && SameInstanceOrSameWorldObject(current, obj))
                     removed = VisibleObjects.Remove(obj.ID);
             }
             finally

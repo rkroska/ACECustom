@@ -2631,7 +2631,7 @@ namespace ACE.Server.Physics
 
                 // "known" must mean THIS instance (reference), not merely this guid - a stale destroyed instance
                 // under the same guid is evicted inside AddVisibleObject and must count as not known.
-                var prevKnown = ObjMaint.KnownObjectsContainsValue(obj);
+                var prevKnown = ReferenceEquals(ObjMaint.GetKnownObject(obj.ID), obj);   // O(1); review 2026-09-13 (ContainsValue was a linear scan on a hot path)
 
                 var newlyVisible = ObjMaint.AddVisibleObject(obj);
 

@@ -3417,6 +3417,17 @@ namespace ACE.Server.Command.Handlers
             LastTestAim = wo;
         }
 
+        /// <summary>Variant review 2026-09-12 (item 6): lists every landblock group with its variation, bounds, count and
+        /// members (XXXX:v) - the check that variant outdoor blocks merge by proximity and no group mixes layers.</summary>
+        [CommandHandler("landblockgroups", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Lists the loaded landblock groups: variation, bounds, count, members (landblock:variation).", "")]
+        public static void HandleLandblockGroups(Session session, params string[] parameters)
+        {
+            var lines = LandblockManager.DumpLandblockGroups();
+            CommandHandlerHelper.WriteOutputInfo(session, $"{LandblockManager.LandblockGroupsCount} landblock group(s):");   // not lines.Count - member lines are extra
+            foreach (var line in lines)
+                CommandHandlerHelper.WriteOutputInfo(session, line);
+        }
+
         [CommandHandler("reload-landblock", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Reloads the current landblock.")]
         public static void HandleReloadLandblocks(Session session, params string[] parameters)
         {

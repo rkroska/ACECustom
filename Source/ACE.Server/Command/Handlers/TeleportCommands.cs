@@ -284,7 +284,7 @@ namespace ACE.Server.Command.Handlers
             return false;
         }
 
-        private static bool ResolveXYZ(Session session, string[] args, out Position pos, out string name)
+        private static bool ResolveXYZ(Session session, WorldObject target, string[] args, out Position pos, out string name)
         {
             pos = null;
             name = "";
@@ -306,7 +306,7 @@ namespace ACE.Server.Command.Handlers
             }
             // variant review 2026-09-12 (item 11): the xyz form had no variation slot, and since #511 a null-variation
             // Teleport means "base" - so a v11 dev was silently moved to the base copy. Keep the player's layer.
-            pos = new Position(cell, positionData[0], positionData[1], positionData[2], positionData[3], positionData[4], positionData[5], positionData[6], false, session.Player?.Location?.Variation);
+            pos = new Position(cell, positionData[0], positionData[1], positionData[2], positionData[3], positionData[4], positionData[5], positionData[6], false, (target ?? session.Player)?.Location?.Variation);   // review 2026-09-13: the TARGET's layer (a dev at v11 teleporting a base player must not pull them into v11)
             name = $"location {pos}";
             return true;
         }
@@ -461,7 +461,7 @@ namespace ACE.Server.Command.Handlers
                     return ResolveVariant(session, target, args, out destPos, out destName);
 
                 case "xyz":
-                    return ResolveXYZ(session, args, out destPos, out destName);
+                    return ResolveXYZ(session, target, args, out destPos, out destName);
 
                 case "type":
                     return ResolveType(session, target, args, out destPos, out destName);

@@ -466,7 +466,7 @@ namespace ACE.Server.Entity
             // drift, after which dormancy judged it as v11, the unload was queued under the wrong key, the registry
             // removal missed, and every base player got a registered, walkable, permanently EMPTY landblock.
             // Spawn for the variation this instance IS; say so if the caller asked for another.
-            if (!VariationManager.SameVariationForVisibility(VariationId, variationId))
+            if (VariationId != variationId)   // exact int? compare - the instance query beneath is exact too (review 2026-09-13)
             {
                 log.Warn($"[Landblock] CreateWorldObjects {Id.Landblock:X4}: asked to spawn v={variationId?.ToString() ?? "null"} on the v={VariationId?.ToString() ?? "null"} instance - spawning for the instance's own variation");
                 variationId = VariationId;
@@ -1729,6 +1729,27 @@ namespace ACE.Server.Entity
             if (alreadyPresent && wo is Player alreadyHerePlayer && ReferenceEquals(alreadyHerePlayer.CurrentLandblock, this) && !IsPendingRemoval(wo.Guid))
                 return true;
 
+            // Audit 2026-09-13 (C2): an object whose own Location.Variation names ANOTHER instance of this landblock must
+            // not be registered here - it would be ticked by this instance's group while its physics (placed in its own
+            // layer by AddPhysicsObj) is scanned by the other instance's group. Re-route the whole add to the instance
+            // the object belongs to; that instance's group thread picks it up through its own queue if needed.
+            var ownVariation = VariationManager.NormalizeBase(wo.Location.Variation);
+            if (wo.Location.Variation.HasValue && ownVariation != VariationManager.NormalizeBase(this.VariationId))
+            {
+                var ownInstance = LandblockManager.GetLandblock(Id, false, wo.Location.Variation);
+                if (ownInstance != null && !ReferenceEquals(ownInstance, this))
+                {
+                    log.Warn($"[SpawnDiag] AddWorldObjectInternal: 0x{wo.Guid}:{wo.Name} Location v={wo.Location.Variation?.ToString() ?? "null"} arrived at instance v={this.VariationId?.ToString() ?? "null"} of 0x{Id.Landblock:X4} - re-routing to its own instance (audit C2)");
+                    if (LandblockManager.CurrentlyTickingLandblockGroupsMultiThreaded && ownInstance.CurrentLandblockGroup != null
+                        && !ReferenceEquals(ownInstance.CurrentLandblockGroup, LandblockManager.CurrentMultiThreadedTickingLandblockGroup.Value))
+                    {
+                        ownInstance.EnqueueAddWorldObjectForPhysics(wo, wo.Location.Variation);
+                        return true;
+                    }
+                    return ownInstance.AddWorldObjectInternal(wo, wo.Location.Variation);
+                }
+            }
+
             wo.CurrentLandblock = this;
             //if (this.Id.ToString().StartsWith("019E"))
             //{
@@ -2127,10 +2148,27 @@ namespace ACE.Server.Entity
             if (isAdjacent || PhysicsLandblock == null || PhysicsLandblock.IsDungeon) return;
 
             // for outdoor landblocks, recursively call 1 iteration to set adjacents to active
+            var groupDiag = ServerConfig.landblock_group_diag_verbose.Value;
             foreach (var landblock in Adjacents)
             {
-                if (landblock != null)
-                    landblock.SetActive(true);
+                if (landblock == null) continue;
+
+                // Variant review 2026-09-12 (item 6) test diag: this is a WRITE into the adjacent (lastActiveTime,
+                // IsDormant). Adjacents are meant to share a group and therefore a thread; after the regrouping a
+                // hit here means the grouping still let two neighbours land in different groups. Rate-limited.
+                // Review 2026-09-13: the key carries the variation (the base pair and the v11 pair of the same two blocks are
+                // different events), and a NULL group on either side is reported as its own case - that is the only
+                // remaining cross-group window (a block loaded and wired into neighbours' Adjacents before its first
+                // grouping pass), and the diag must be able to see it rather than skip it.
+                if (groupDiag && !ReferenceEquals(CurrentLandblockGroup, landblock.CurrentLandblockGroup)
+                    && ACE.Server.Diagnostics.LogRateLimiter.ShouldEmit($"lbgroup_xtouch:{Id.Landblock:X4}:{landblock.Id.Landblock:X4}:{VariationId?.ToString() ?? "null"}", TimeSpan.FromSeconds(30), out var suppressed))
+                {
+                    var mine = CurrentLandblockGroup?.ToString() ?? "NO GROUP YET";
+                    var theirs = landblock.CurrentLandblockGroup?.ToString() ?? "NO GROUP YET";
+                    log.Warn($"[LANDBLOCK GROUP] cross-group adjacency touch: {Id.Landblock:X4} v={VariationId?.ToString() ?? "null"} (group {mine}) -> SetActive on {landblock.Id.Landblock:X4} v={landblock.VariationId?.ToString() ?? "null"} (group {theirs}){(suppressed > 0 ? $" [+{suppressed} suppressed]" : "")}");
+                }
+
+                landblock.SetActive(true);
             }
         }
 

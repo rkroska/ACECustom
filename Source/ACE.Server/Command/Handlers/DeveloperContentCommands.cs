@@ -2235,7 +2235,8 @@ namespace ACE.Server.Command.Handlers.Processors
                         // Variant review 2026-09-12 (item 4): the FK cascade only follows the PARENT, so deleting a
                         // child left its link row pointing at a guid that no longer existed (411 such links on the
                         // test world) and every later /removeinst on that parent reported a phantom child.
-                        DeleteLinkFromWorldDatabase(link);
+                        if (!DeleteLinkFromWorldDatabase(link))
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"DB DELETE FAILED for the link to 0x{link.ChildGuid:X8} - the link row is still there (see the server log)", ChatMessageType.Broadcast));
                         break;
                     }
                 }
@@ -2254,7 +2255,8 @@ namespace ACE.Server.Command.Handlers.Processors
             instances.Remove(instance);
 
             //SyncInstances(session, landblock, instances, variation);
-            DeleteInstanceFromWorldDatabase(instance);
+            if (!DeleteInstanceFromWorldDatabase(instance))
+                session.Network.EnqueueSend(new GameMessageSystemChat($"DB DELETE FAILED for 0x{instance.Guid:X8} - the row is still there and the object comes back on reload (see the server log)", ChatMessageType.Broadcast));
 
             // invalidate the variation cache so a reload re-queries fresh (esp. when the bypass fallback was used,
             // where 'instances' is not the cached list reference)
@@ -2294,7 +2296,9 @@ namespace ACE.Server.Command.Handlers.Processors
         /// WARNING: This is one of the few places where World database writes occur.
         /// World database entities are generally read-only except through admin commands.
         /// </summary>
-        public static void DeleteInstanceFromWorldDatabase(LandblockInstance instance)
+        /// <summary>Review 2026-09-13: a swallowed failure here left the object gone from the world but the row alive - back on
+        /// the next reload, indistinguishable in game from success. Now logged, and the caller can tell the admin.</summary>
+        public static bool DeleteInstanceFromWorldDatabase(LandblockInstance instance)
         {
             try
             {
@@ -2303,16 +2307,18 @@ namespace ACE.Server.Command.Handlers.Processors
                     ctx.LandblockInstance.Remove(instance);
                     ctx.SaveChanges();
                 }
+                return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-
+                log.Error($"[CONTENT] DeleteInstanceFromWorldDatabase 0x{instance.Guid:X8} (wcid {instance.WeenieClassId}, v={instance.VariationId?.ToString() ?? "null"}) FAILED - the row is still in the DB: {ex.Message}");
+                return false;
             }
         }
 
         /// <summary>Deletes one landblock_instance_link row (variant review 2026-09-12, item 4). The FK cascade removes
         /// links only when their PARENT row goes; a deleted CHILD's link has to be removed explicitly.</summary>
-        public static void DeleteLinkFromWorldDatabase(LandblockInstanceLink link)
+        public static bool DeleteLinkFromWorldDatabase(LandblockInstanceLink link)
         {
             try
             {
@@ -2321,10 +2327,12 @@ namespace ACE.Server.Command.Handlers.Processors
                     ctx.LandblockInstanceLink.Remove(link);
                     ctx.SaveChanges();
                 }
+                return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-
+                log.Error($"[CONTENT] DeleteLinkFromWorldDatabase parent 0x{link.ParentGuid:X8} -> child 0x{link.ChildGuid:X8} FAILED - the link row is still in the DB: {ex.Message}");
+                return false;
             }
         }
 
@@ -2397,7 +2405,8 @@ namespace ACE.Server.Command.Handlers.Processors
             // cascade took the link rows with it - so every removed child survived as is_Link_Child = 1 with no
             // link: unspawnable forever and a static guid slot burned (1,971 such rows on the test world). Grand-
             // children are handled by the recursion above before this row goes; its own links cascade with it.
-            DeleteInstanceFromWorldDatabase(child);
+            if (!DeleteInstanceFromWorldDatabase(child))
+                session.Network.EnqueueSend(new GameMessageSystemChat($"DB DELETE FAILED for child 0x{child.Guid:X8} - the row is still there and comes back on reload (see the server log)", ChatMessageType.Broadcast));
         }
 
         public static EncounterSQLWriter LandblockEncounterWriter;

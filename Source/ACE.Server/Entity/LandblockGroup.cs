@@ -87,6 +87,15 @@ namespace ACE.Server.Entity
                     log.Error($"[LANDBLOCK GROUP] You cannot add a dungeon landblock ({landblock.Id}) to an existing LandblockGroup");
                     return false;
                 }
+
+                // Variant review 2026-09-12 (item 6): a group is ONE variation. Groups are the thread boundary; adjacency
+                // is wired by exact (id, variation), so a group must never hold two layers - and until now this field
+                // was declared but never set, so a base block within 5 of a v11 block joined the v11 block's group.
+                if (landblock.VariationId != VariationId)
+                {
+                    log.Error($"[LANDBLOCK GROUP] You cannot add landblock {landblock.Id} v={landblock.VariationId?.ToString() ?? "null"} to a LandblockGroup of v={VariationId?.ToString() ?? "null"}");
+                    return false;
+                }
             }
 
             if (landblocks.Add(landblock))
@@ -94,7 +103,10 @@ namespace ACE.Server.Entity
                 landblock.CurrentLandblockGroup = this;
 
                 if (landblocks.Count == 1)
+                {
                     IsDungeon = landblock.IsDungeon;
+                    VariationId = landblock.VariationId;   // exact int?, same key SetAdjacents uses - never NormalizeBase here
+                }
 
                 if (landblock.Id.LandblockX < xMin) xMin = landblock.Id.LandblockX;
                 if (landblock.Id.LandblockX > xMax) xMax = landblock.Id.LandblockX;
@@ -211,8 +223,10 @@ namespace ACE.Server.Entity
                 // Remove the split landblocks. Do this manually, not through the public Remove() function
                 landblocks.Remove(landblock);
 
-                // Add them through the proper .Add() method to the new LandblockGroup
-                newLandblockGroup.Add(landblock, landblock.VariationId);
+                // Add them through the proper .Add() method to the new LandblockGroup. A refusal (never expected: the
+                // members all share this group's variation) must not be silent - the block would be in no group.
+                if (!newLandblockGroup.Add(landblock, landblock.VariationId))
+                    log.Error($"[LANDBLOCK GROUP] split REFUSED {landblock.Id.Landblock:X4} v={landblock.VariationId?.ToString() ?? "null"} into new group {newLandblockGroup} - block is now in no group (review 2026-09-13)");
             }
 
             RecalculateBoundaries();
@@ -301,7 +315,7 @@ namespace ACE.Server.Entity
 
         public override string ToString()
         {
-            return $"x: 0x{xMin:X2} - 0x{xMax:X2}, y: 0x{yMin:X2} - 0x{yMax:X2}, w: {width.ToString().PadLeft(3)}, h: {height.ToString().PadLeft(3)}, Count: {Count.ToString().PadLeft(4)}";
+            return $"v: {(VariationId?.ToString() ?? "null").PadLeft(4)}, x: 0x{xMin:X2} - 0x{xMax:X2}, y: 0x{yMin:X2} - 0x{yMax:X2}, w: {width.ToString().PadLeft(3)}, h: {height.ToString().PadLeft(3)}, Count: {Count.ToString().PadLeft(4)}{(IsDungeon ? ", dungeon" : "")}";
         }
     }
 }
