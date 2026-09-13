@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 
 using ACE.Common;
@@ -443,8 +443,11 @@ namespace ACE.Server.WorldObjects
 
                     if (soulEmote == MotionCommand.DrudgeDance || soulEmote == MotionCommand.DrudgeDanceState)
                     {
-                        LastDanceTime = DateTime.UtcNow;
-                        PetDevice.CheckMultiplayerBreeding(this, $"MotionCommand: {soulEmote}");
+                        if (DateTime.UtcNow - LastDanceTime >= TimeSpan.FromSeconds(2))
+                        {
+                            LastDanceTime = DateTime.UtcNow;
+                            PetDevice.CheckMultiplayerBreeding(this, $"MotionCommand: {soulEmote}");
+                        }
                     }
                 }
             }

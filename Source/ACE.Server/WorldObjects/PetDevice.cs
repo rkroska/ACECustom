@@ -1333,6 +1333,8 @@ namespace ACE.Server.WorldObjects
                                 // Make item effectively worthless/bonded and visual-only so it's not exploited
                                 item.Value = 0;
                                 item.Biota.PropertiesSpellBook?.Clear();
+                                item.RemoveProperty(PropertyInt.ImbuedEffect);
+                                item.RemoveProperty(PropertyInt.ArmorLevel);
                                 
                                 // Try to wield/equip it
                                 // We use TryWieldObject which handles slot logic

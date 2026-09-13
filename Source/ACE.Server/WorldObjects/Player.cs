@@ -998,7 +998,10 @@ namespace ACE.Server.WorldObjects
                     var motionAlreadyFired = (LastSoulEmote == MotionCommand.DrudgeDance || LastSoulEmote == MotionCommand.DrudgeDanceState)
                         && DateTime.UtcNow < LastSoulEmoteEndTime;
 
-                    if (!motionAlreadyFired)
+                    // Rate limit the partner scan: it walks online players in the dungeon.
+                    var scanReady = DateTime.UtcNow - LastDanceTime >= TimeSpan.FromSeconds(2);
+
+                    if (!motionAlreadyFired && scanReady)
                     {
                         LastDanceTime = DateTime.UtcNow;
                         PetDevice.CheckMultiplayerBreeding(this, $"ChatEmote: {message}");

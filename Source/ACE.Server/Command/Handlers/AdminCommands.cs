@@ -1,4 +1,4 @@
-﻿using ACE.Common;
+using ACE.Common;
 using ACE.Common.Extensions;
 using ACE.Database;
 using ACE.Database.Models.Auth;
@@ -4478,6 +4478,34 @@ namespace ACE.Server.Command.Handlers
             session.Player.QuestManager.ComputeDynamicQuest(parameters[0], session, true);
         }
 
+        private static bool TryParseIntOrHex(string input, out int value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(input))
+                return false;
+
+            if (input.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                if (uint.TryParse(input.Substring(2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out uint uVal))
+                {
+                    value = (int)uVal;
+                    return true;
+                }
+                return false;
+            }
+
+            if (int.TryParse(input, out value))
+                return true;
+
+            if (uint.TryParse(input, out uint uVal2))
+            {
+                value = (int)uVal2;
+                return true;
+            }
+
+            return false;
+        }
+
         /// <summary>
         /// Parses the command-line parameters for /create or /createliveops
         /// The only difference with /createliveops is that it includes a lifespan parameter in the middle
@@ -4626,28 +4654,7 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters.Length > idx)
             {
-                int _palette = 0;
-                bool parsedPal = false;
-                if (parameters[idx].StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-                {
-                    string hexStr = parameters[idx].Substring(2);
-                    if (uint.TryParse(hexStr, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out uint uVal))
-                    {
-                        _palette = (int)uVal;
-                        parsedPal = true;
-                    }
-                }
-                else if (int.TryParse(parameters[idx], out _palette))
-                {
-                    parsedPal = true;
-                }
-                else if (uint.TryParse(parameters[idx], out uint uVal2))
-                {
-                    _palette = (int)uVal2;
-                    parsedPal = true;
-                }
-
-                if (!parsedPal)
+                if (!TryParseIntOrHex(parameters[idx], out int _palette))
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Palette must be a valid integer or hex string (e.g. 100 or 0x040001F4).", ChatMessageType.Broadcast));
                     return false;
@@ -4987,28 +4994,7 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters.Length > 2)
             {
-                int _palette = 0;
-                bool parsedPal = false;
-                if (parameters[2].StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-                {
-                    string hexStr = parameters[2].Substring(2);
-                    if (uint.TryParse(hexStr, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out uint uVal))
-                    {
-                        _palette = (int)uVal;
-                        parsedPal = true;
-                    }
-                }
-                else if (int.TryParse(parameters[2], out _palette))
-                {
-                    parsedPal = true;
-                }
-                else if (uint.TryParse(parameters[2], out uint uVal2))
-                {
-                    _palette = (int)uVal2;
-                    parsedPal = true;
-                }
-
-                if (!parsedPal)
+                if (!TryParseIntOrHex(parameters[2], out int _palette))
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"palette must be a valid number or hex string (e.g. 100 or 0x040001F4)", ChatMessageType.Broadcast));
                     return;
