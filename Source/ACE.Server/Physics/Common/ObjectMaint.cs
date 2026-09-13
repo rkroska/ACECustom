@@ -564,32 +564,18 @@ namespace ACE.Server.Physics.Common
                 // Evict the stale instance from both tables AND the destruction queue (so its later expiry cannot
                 // clobber the new entry) and take the new one. A repeat of the SAME instance still returns false.
                 var wasVisible = false;
-                if (VisibleObjects.TryGetValue(obj.ID, out var staleVisible))
-                {
-                    if (ReferenceEquals(staleVisible, obj))
-                        return false;
-                    VisibleObjects.Remove(obj.ID);
-                    DestructionQueue.Remove(staleVisible);
-                    evictedVisible = staleVisible;
-                }
+                if (VisibleObjects.TryGetValue(obj.ID, out var staleVisible) && ReferenceEquals(staleVisible, obj))
+                    return false;
 
-                var wasKnown = false;
-                if (KnownObjects.TryGetValue(obj.ID, out var staleKnown))
-                {
-                    if (ReferenceEquals(staleKnown, obj))
-                        wasKnown = true;
-                    else
-                    {
-                        KnownObjects.Remove(obj.ID);
-                        DestructionQueue.Remove(staleKnown);
-                        evictedKnown = staleKnown;
-                    }
-                }
+                var wasKnown = KnownObjects.TryGetValue(obj.ID, out var staleKnown) && ReferenceEquals(staleKnown, obj);
                 wasKnownAlready = wasKnown;
                 var dist2DSq = PhysicsObj.Position.Distance2DSquared(obj.Position);
 
                 // Always clamp distance — do not skip when already in KnownObjects (AddTrackedObject used to
                 // call AddKnownObject first, which bypassed clamp and sent CreateObject at 9-LB PVS range).
+                // CodeRabbit #519 round 2: the clamp runs BEFORE any stale-instance eviction. A rejected replacement
+                // must leave the tables untouched - the early return skips the inverse cleanup and the DeleteObject
+                // below, so evicting first would have left the client holding the old guid with nothing to clear it.
                 if (InitialClamp && dist2DSq > InitialClamp_DistSq)
                 {
                     if (PhysicsObj.IsPlayer && PhysicsObj.WeenieObj.WorldObject is Player viewer && ServerConfig.visibility_create_object_diag_verbose.Value)
@@ -599,6 +585,22 @@ namespace ACE.Server.Physics.Common
                     }
 
                     return false;
+                }
+
+                // Evict a DIFFERENT instance under this guid from both tables and the destruction queue (see above);
+                // the inverse links and the client-side delete for it are handled outside the lock below.
+                if (staleVisible != null && !ReferenceEquals(staleVisible, obj))
+                {
+                    VisibleObjects.Remove(obj.ID);
+                    DestructionQueue.Remove(staleVisible);
+                    evictedVisible = staleVisible;
+                }
+
+                if (staleKnown != null && !ReferenceEquals(staleKnown, obj))
+                {
+                    KnownObjects.Remove(obj.ID);
+                    DestructionQueue.Remove(staleKnown);
+                    evictedKnown = staleKnown;
                 }
 
                 //Console.WriteLine($"{PhysicsObj.Name}.AddVisibleObject({obj.Name})");
