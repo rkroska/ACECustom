@@ -2547,6 +2547,13 @@ namespace ACE.Server.Physics
             //foreach (var obj in newlyOccluded)
             //Console.WriteLine(obj.Name);
 
+            // Variant review 2026-09-12 (item 3): queue the occluded objects BEFORE adding the newly visible ones.
+            // The old order let a stale (occluded, same-guid) entry still sit in VisibleObjects while its
+            // replacement was offered, so the replacement was refused on this pass and only the NEXT cell change
+            // could heal it - two crossings to see a reloaded object. (newlyOccluded and visibleObjects are
+            // disjoint by construction, so nothing is queued and re-added in the same pass.)
+            ObjMaint.AddObjectsToBeDestroyed(newlyOccluded);
+
             // add newly visible objects, and get the previously unknowns
             var createObjs = ObjMaint.AddVisibleObjects(visibleObjects);
             //Console.WriteLine("Create objects: " + createObjs.Count);
@@ -2561,8 +2568,7 @@ namespace ACE.Server.Physics
                     Console.WriteLine($"{i} = {newlyVisible[i].Name}");
             }*/
 
-            // add newly occluded objects to the destruction queue
-            ObjMaint.AddObjectsToBeDestroyed(newlyOccluded);
+            // (newly occluded objects were queued above, before the add - item 3)
 
             if (IsPlayer && WeenieObj.WorldObject is Player viewerCells)
                 ACE.Server.Managers.VisibilityCreateObjectDiag.LogHandleVisibleCells(viewerCells, visibleObjects.Count, createObjs.Count, newlyOccluded.Count, maxCandidateDist2D);
@@ -2618,17 +2624,28 @@ namespace ACE.Server.Physics
 
             if (isVisible)
             {
-                var prevKnown = ObjMaint.KnownObjectsContainsKey(obj.ID);
+                // Variant review 2026-09-12 (item 3 / 3-A3): an expired destruction-queue entry means the client
+                // already culled this object; drop it from the tables so the re-entry below sends a fresh
+                // CreateObject instead of being refused as "already known".
+                ObjMaint.PurgeIfExpired(obj);
+
+                // "known" must mean THIS instance (reference), not merely this guid - a stale destroyed instance
+                // under the same guid is evicted inside AddVisibleObject and must count as not known.
+                var prevKnown = ObjMaint.KnownObjectsContainsValue(obj);
 
                 var newlyVisible = ObjMaint.AddVisibleObject(obj);
 
+                var wasQueued = false;
                 if (newlyVisible)
                 {
                     ObjMaint.AddKnownObject(obj);
-                    ObjMaint.RemoveObjectToBeDestroyed(obj);
+                    wasQueued = ObjMaint.RemoveObjectToBeDestroyed(obj);   // true = a live (unexpired) queue entry was rescued: the client still holds it
                 }
 
-                return !prevKnown && newlyVisible;
+                // CreateObject when it was not known, OR when it was known but neither visible nor queued: that is
+                // the "known without CreateObject" state (the client never got it, or no longer has it) - the same
+                // heal AddVisibleObjects applies on a cell change, now on the single-object path too.
+                return newlyVisible && (!prevKnown || !wasQueued);
             }
             else
             {
