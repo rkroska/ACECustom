@@ -2168,8 +2168,15 @@ namespace ACE.Server.Physics
 
             if (!DatObject && newCell != null)
             {
-                CurLandblock = LScape.get_landblock(newCell.ID, newCell.VariationId);
-                if (CurLandblock != null && CurLandblock.VariationId == newCell.VariationId)
+                // Variant review 2026-09-12 (item 1): the cell already knows its landblock (init_landcell / LScape
+                // stamp CurLandblock on every cell), so take it from there. The old lookup by newCell.VariationId
+                // resolved every OUTDOOR cell to the BASE instance (outdoor cells carried no variation) and CREATED
+                // that base twin on a miss - so v2/v11 mobs, NPCs, portals and players were all registered in the
+                // base twin's ServerObjects, visibility worked only because the viewer made the same mistake, and
+                // when the base twin unloaded under a busy v11 block every stationary v11 object vanished from
+                // clients ("Tou Tou empty", 08-23). The fallback lookup keeps the object's own variation.
+                CurLandblock = newCell.CurLandblock ?? LScape.get_landblock(newCell.ID, Position.Variation);
+                if (CurLandblock != null)
                     CurLandblock.add_server_object(this);
             }
         }
