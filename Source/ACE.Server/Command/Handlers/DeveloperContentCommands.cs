@@ -2489,6 +2489,7 @@ namespace ACE.Server.Command.Handlers.Processors
             var newPos = new Physics.Common.Position();
             newPos.ObjCellID = pos.Cell;
             newPos.Frame = new Physics.Animation.AFrame(new Vector3(xPos, yPos, 0), Quaternion.Identity);
+            newPos.Variation = pos.Variation;   // variant review 2026-09-12 (item 11): the encounter spawned in the BASE twin, a dev at v2 saw nothing
             newPos.adjust_to_outside();
 
             newPos.Frame.Origin.Z = session.Player.CurrentLandblock.PhysicsLandblock.GetZ(newPos.Frame.Origin);

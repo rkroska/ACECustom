@@ -1867,6 +1867,7 @@ namespace ACE.Server.Command.Handlers
             newPos.LandblockId = new LandblockId(lastSpawnPos.LandblockId.Raw);
             newPos.Pos = lastSpawnPos.Pos;
             newPos.Rotation = session.Player.Location.Rotation;
+            newPos.Variation = lastSpawnPos.Variation ?? session.Player.Location.Variation;   // variant review 2026-09-12 (item 11): was null = base
 
             var dir = Vector3.Normalize(Vector3.Transform(Vector3.UnitY, newPos.Rotation));
             var offset = dir * distance;

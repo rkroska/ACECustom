@@ -304,7 +304,9 @@ namespace ACE.Server.Command.Handlers
                 }
                 positionData[i] = position;
             }
-            pos = new Position(cell, positionData[0], positionData[1], positionData[2], positionData[3], positionData[4], positionData[5], positionData[6]);
+            // variant review 2026-09-12 (item 11): the xyz form had no variation slot, and since #511 a null-variation
+            // Teleport means "base" - so a v11 dev was silently moved to the base copy. Keep the player's layer.
+            pos = new Position(cell, positionData[0], positionData[1], positionData[2], positionData[3], positionData[4], positionData[5], positionData[6], false, session.Player?.Location?.Variation);
             name = $"location {pos}";
             return true;
         }

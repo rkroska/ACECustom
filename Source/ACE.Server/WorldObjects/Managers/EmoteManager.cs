@@ -1851,7 +1851,8 @@ namespace ACE.Server.WorldObjects.Managers
                 case EmoteType.SetSanctuaryPosition:
 
                     if (player != null)
-                        player.SetPosition(PositionType.Sanctuary, new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value));
+                        // variant review 2026-09-12 (item 11): a bind authored inside a variation must recall to that layer, not the base copy
+                        player.SetPosition(PositionType.Sanctuary, new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value, false, WorldObject?.Location?.Variation));
                     break;
 
                 case EmoteType.Sound:
