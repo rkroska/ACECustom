@@ -1785,11 +1785,11 @@ namespace ACE.Server.Entity
 
             if (wo is Player player)
             {
-                if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                if (ServerConfig.variation_interaction_diag_verbose.Value)
                 {
                     // Helpful when one player can't see another: shows whether physics/ObjMaint is even populated yet.
                     var physVar = player.PhysicsObj?.Position?.Variation;
-                    log.Warn($"[PrestigeInteraction] Landblock.AddWorldObjectInternal(Player): player={player.Name}({player.Guid.Full:X8}) " +
+                    log.Warn($"[VariationInteraction] Landblock.AddWorldObjectInternal(Player): player={player.Name}({player.Guid.Full:X8}) " +
                              $"lb={Id.Raw:X8} lbVar={VariationId?.ToString() ?? "null"} " +
                              $"locCell={player.Location?.Cell:X8} locVar={player.Location?.Variation?.ToString() ?? "null"} physVar={physVar?.ToString() ?? "null"} " +
                              $"knownPlayers={player.ObjMaint?.GetKnownPlayersCount().ToString() ?? "null"} knownObjs={player.ObjMaint?.GetKnownObjectsCount().ToString() ?? "null"}");
@@ -1918,7 +1918,7 @@ namespace ACE.Server.Entity
 
                     SweepLandblock(this);
 
-                    if (missed > 0 && wo is Creature && ServerConfig.prestige_interaction_diag_verbose.Value)
+                    if (missed > 0 && wo is Creature && ServerConfig.variation_interaction_diag_verbose.Value)
                         log.Warn($"[GhostMob] {wo.Name}(0x{wo.Guid.Full:X8}) destroy on lb 0x{Id.Landblock:X4} v={VariationId?.ToString() ?? "null"}: " +
                                  $"delete sent to {missed} nearby same-variation player(s) missing from KnownPlayers (one-way CO healed).");
                     // Adjacent instances tick on their own group threads and mutate their own `players` lists, so each

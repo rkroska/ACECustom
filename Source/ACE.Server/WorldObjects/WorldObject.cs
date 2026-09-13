@@ -234,7 +234,8 @@ namespace ACE.Server.WorldObjects
                     log.Warn($"[SpawnDiag] AddPhysicsObj: enter_world FAILED for 0x{Guid}:{Name} [{WeenieClassId}] " +
                          $"@ cell {cell.ID:X8} pos {Location.Pos} rot {Location.Rotation} v={VariationId?.ToString() ?? "null"} " +
                          $"locV={Location.Variation?.ToString() ?? "null"} cellLbVar={(cell.CurLandblock?.VariationId)?.ToString() ?? "null"} " +
-                         $"success={success} curCellNull={PhysicsObj.CurCell == null} sposErr={PhysicsObj.LastEnterWorldError} SetupID={SetupTableId:X8}");
+                         $"success={success} curCellNull={PhysicsObj.CurCell == null} sposErr={PhysicsObj.LastEnterWorldError} SetupID={SetupTableId:X8}" +
+                         (PhysicsObj.LastScatterDiag != null ? $" scatter[{PhysicsObj.LastScatterDiag}]" : ""));
                 PhysicsObj.DestroyObject();
                 PhysicsObj = null;
                 return false;

@@ -410,11 +410,11 @@ namespace ACE.Server.WorldObjects
             var actorLb = CurrentLandblock != null ? $"{CurrentLandblock.Id.Landblock:X4}" : "null";
             var otherLb = other.CurrentLandblock != null ? $"{other.CurrentLandblock.Id.Landblock:X4}" : "null";
 
-            if (!ServerConfig.prestige_interaction_diag_verbose.Value)
+            if (!ServerConfig.variation_interaction_diag_verbose.Value)
                 return;
 
             log.Warn(
-                $"[PrestigeInteraction] {source}: actor={Name}({Guid.Full:X8}) other={other.Name}({other.Guid.Full:X8}) targetGuid={targetGuidFull:X8} " +
+                $"[VariationInteraction] {source}: actor={Name}({Guid.Full:X8}) other={other.Name}({other.Guid.Full:X8}) targetGuid={targetGuidFull:X8} " +
                 $"distance={(float.IsNaN(dist) ? "n/a" : dist.ToString("N1"))} " +
                 $"actorCell={actorCell} actorLocVar={Location?.Variation?.ToString() ?? "null"} actorLB={actorLb} actorLB.InstanceVar={CurrentLandblock?.VariationId?.ToString() ?? "null"} " +
                 $"otherCell={otherCell} otherLocVar={other.Location?.Variation?.ToString() ?? "null"} otherLB={otherLb} otherLB.InstanceVar={other.CurrentLandblock?.VariationId?.ToString() ?? "null"} " +
