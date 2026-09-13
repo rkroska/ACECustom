@@ -3484,7 +3484,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId, variationId);   // variant review item 2: the layer you stand in, same as the Discord export
             if (instances == null)
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find landblock {landblockId:X4}");
