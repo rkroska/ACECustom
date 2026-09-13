@@ -2885,10 +2885,9 @@ namespace ACE.Server.Command.Handlers
         /// ignores the tag.</summary>
         private static void AppendMissilePower(StringBuilder sb)
         {
-            var fast = ServerConfig.missile_power_fast.Value;
-            var full = ServerConfig.missile_power_full.Value;
-            var midCfg = ServerConfig.missile_power_mid.Value;
-            var mid = midCfg > 0 ? midCfg : (fast + full) / 2.0;
+            // The same clamped, mid-resolved values combat uses (review #517): a raw 500 in the shard row is a 10 in
+            // every shot, so it must read 10 in the tooltip too.
+            ACE.Server.WorldObjects.Player.MissilePowerLadderValues(out var fast, out var mid, out var full);
             sb.Append("|missilepower=")
               .Append(fast.ToString("0.###", CultureInfo.InvariantCulture)).Append(',')
               .Append(full.ToString("0.###", CultureInfo.InvariantCulture)).Append(',')

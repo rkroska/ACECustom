@@ -1436,6 +1436,10 @@ namespace ACE.Server.Physics
                 }
 
                 result = SetPositionInternal(newPos, setPos, transition);
+                // An OK verdict that left the object with no cell is a failed placement to every caller (AddPhysicsObj
+                // checks CurCell == null); report it as NoCell so LastEnterWorldError and the diag line agree (review #517).
+                if (result == SetPositionError.OK && CurCell == null)
+                    result = SetPositionError.NoCell;
                 if (result == SetPositionError.OK) break;
 
                 switch (result)

@@ -714,12 +714,19 @@ namespace ACE.Server.WorldObjects
         private static float ClampMissilePower(double v)
             => double.IsFinite(v) ? Math.Clamp((float)v, MissilePowerMin, MissilePowerMax) : 1.0f;
 
+        /// <summary>The three ladder values exactly as combat uses them (clamped, mid resolved to the average when
+        /// unset). The plugin payload advertises THESE, so the tooltip can never disagree with a shot (review #517).</summary>
+        public static void MissilePowerLadderValues(out float fast, out float mid, out float full)
+        {
+            fast = ClampMissilePower(ServerConfig.missile_power_fast.Value);
+            full = ClampMissilePower(ServerConfig.missile_power_full.Value);
+            var midRaw = ServerConfig.missile_power_mid.Value;
+            mid = midRaw > 0 ? ClampMissilePower(midRaw) : (fast + full) * 0.5f;
+        }
+
         public static float MissilePowerLadder(float bar)
         {
-            var fast = ClampMissilePower(ServerConfig.missile_power_fast.Value);
-            var full = ClampMissilePower(ServerConfig.missile_power_full.Value);
-            var midRaw = ServerConfig.missile_power_mid.Value;
-            var mid = midRaw > 0 ? ClampMissilePower(midRaw) : (fast + full) * 0.5f;
+            MissilePowerLadderValues(out var fast, out var mid, out var full);
             bar = Math.Clamp(bar, 0f, 1f);
             return bar <= 0.5f
                 ? fast + (mid - fast) * (bar / 0.5f)
