@@ -1097,6 +1097,11 @@ namespace ACE.Server.Managers
             if (player == null)
                 return false;
 
+            // The audit line counts characters whose gag was actually cleared, not every character on the
+            // account (CodeRabbit #520).
+            var clearedOthers = 0;
+            var targetWasGagged = false;
+
             var characters = GetAccountCharacters(player);
             foreach (var character in characters)
             {
@@ -1109,12 +1114,28 @@ namespace ACE.Server.Managers
                 character.RemoveProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagDuration);
                 character.SaveBiotaToDatabase();
 
-                if (wasGagged && character is Player online)
+                if (character.Guid.Full == player.Guid.Full)
+                    targetWasGagged = true;
+                else
+                    clearedOthers++;
+
+                if (character is Player online)
                     online.NotifyUngagged();
             }
 
-            var othersText = characters.Count > 1 ? $" and {characters.Count - 1} other character(s) on the account" : "";
-            BroadcastToAuditChannel(issuer, $"{issuer.Name} has ungagged {player.Name}{othersText}.");
+            if (!targetWasGagged && clearedOthers == 0)
+            {
+                BroadcastToAuditChannel(issuer, $"{issuer.Name} ran ungag on {player.Name}, but no character on the account was gagged.");
+                return true;
+            }
+
+            if (targetWasGagged)
+            {
+                var othersText = clearedOthers > 0 ? $" and {clearedOthers} other character(s) on the account" : "";
+                BroadcastToAuditChannel(issuer, $"{issuer.Name} has ungagged {player.Name}{othersText}.");
+            }
+            else
+                BroadcastToAuditChannel(issuer, $"{issuer.Name} has ungagged {clearedOthers} character(s) on {player.Name}'s account.");
 
             return true;
         }

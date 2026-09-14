@@ -928,7 +928,9 @@ namespace ACE.Server.WorldObjects
             GagTimestamp = 0;
             GagDuration = 0;
             SaveBiotaToDatabase();
-            SendUngagNotice();
+            // Only a player who was told they were gagged is told it ended.
+            if (gagNoticeSent)
+                SendUngagNotice();
             gagNoticeSent = false;
         }
 
@@ -943,16 +945,21 @@ namespace ACE.Server.WorldObjects
         {
             if (IsGagged)
             {
+                // check for gag expiration, if expired, remove gag. 2026-09-13: wall clock (GagTimestamp + GagDuration),
+                // not a per-heartbeat countdown that only ran while online - a gag now ends when a ban would.
+                // Checked BEFORE the notice, so a gag that ran out before its first tick (an inherited one near its
+                // end, or the player's own) is not announced and lifted back to back (CodeRabbit #520).
+                if (GagTimestamp + GagDuration <= Time.GetUnixTime())
+                {
+                    ClearExpiredGag();
+                    return;
+                }
+
                 if (!gagNoticeSent)
                 {
                     SendGagNotice();
                     gagNoticeSent = true;
                 }
-
-                // check for gag expiration, if expired, remove gag. 2026-09-13: wall clock (GagTimestamp + GagDuration),
-                // not a per-heartbeat countdown that only ran while online - a gag now ends when a ban would.
-                if (GagTimestamp + GagDuration <= Time.GetUnixTime())
-                    ClearExpiredGag();
             }
         }
 
