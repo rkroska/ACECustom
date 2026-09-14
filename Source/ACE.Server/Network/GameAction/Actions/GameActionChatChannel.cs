@@ -18,7 +18,7 @@ namespace ACE.Server.Network.GameAction.Actions
             // 2026-09-13: the gag used to cover say, emotes, tells and Turbine chat only - fellowship (/f), vassal,
             // patron, monarch, co-vassal and allegiance-broadcast chat all go through this handler and were never
             // checked, so a gagged player kept talking to their fellowship and allegiance for the whole gag.
-            if (session.Player.IsGagged)
+            if (session.Player.IsGaggedNow())
             {
                 session.Player.SendGagError();
                 return;

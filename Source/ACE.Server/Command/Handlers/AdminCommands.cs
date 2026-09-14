@@ -2341,7 +2341,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("gag", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1,
             "Prevents a character from talking: say, emotes, tells, fellowship, allegiance and every chat channel.",
             "< char name > [days hours minutes] [reason]\n"
-            + "Same duration syntax as @ban. Without a duration the gag lasts five minutes. The clock keeps running while the character is offline.\n"
+            + "Same duration syntax as @ban. Without a duration the gag lasts five minutes; a reason needs the duration in front of it. The clock keeps running while the character is offline.\n"
             + "Example: @gag Some Name 0 0 30\n"
             + "Example: @gag Some Name 1 0 0 spamming trade\n"
             + "@ungag < char name > lifts it early.")]
@@ -2360,7 +2360,9 @@ namespace ACE.Server.Command.Handlers
             var hasDuration = false;
             for (var i = 1; i + 2 < parameters.Length; i++)
             {
-                if (double.TryParse(parameters[i], out days) && double.TryParse(parameters[i + 1], out hours) && double.TryParse(parameters[i + 2], out minutes)
+                if (double.TryParse(parameters[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out days)
+                    && double.TryParse(parameters[i + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out hours)
+                    && double.TryParse(parameters[i + 2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out minutes)
                     && double.IsFinite(days) && double.IsFinite(hours) && double.IsFinite(minutes)
                     && days >= 0 && hours >= 0 && minutes >= 0)
                 {

@@ -265,6 +265,11 @@ namespace ACE.Server.Managers
             try
             {
                 var offlinePlayer = new OfflinePlayer(player.Biota);
+
+                // CodeRabbit #520: a replaced entry must not leave its old account mapping behind
+                if (offlinePlayers.TryGetValue(offlinePlayer.Guid.Full, out var previous))
+                    UnindexAccountCharacter(previous);
+
                 offlinePlayers[offlinePlayer.Guid.Full] = offlinePlayer;
                 IndexAccountCharacter(offlinePlayer);
             }
@@ -541,7 +546,7 @@ namespace ACE.Server.Managers
                 player.AllegianceNode = offlinePlayer.AllegianceNode;
 
                 if (!onlinePlayers.TryAdd(player.Guid.Full, player))
-                    return false;
+                    return false;   // the guid is already online: still in a dictionary, the account index stays as it is
             }
             finally
             {
@@ -579,7 +584,7 @@ namespace ACE.Server.Managers
                 offlinePlayer.LastRequestedDatabaseSave = player.LastRequestedDatabaseSave;
 
                 if (!offlinePlayers.TryAdd(offlinePlayer.Guid.Full, offlinePlayer))
-                    return false;
+                    return false;   // the guid is already offline: still in a dictionary, the account index stays as it is
             }
             finally
             {
@@ -1068,7 +1073,7 @@ namespace ACE.Server.Managers
         /// <summary>"1 day 2 hours 5 minutes" - the largest three units that are non-zero, seconds only under a minute.</summary>
         public static string FormatDuration(double seconds)
         {
-            if (seconds < 60)
+            if (Math.Ceiling(seconds) < 60)
                 return $"{(int)Math.Ceiling(seconds)} second{((int)Math.Ceiling(seconds) == 1 ? "" : "s")}";
 
             var total = (long)Math.Round(seconds);
@@ -1096,6 +1101,9 @@ namespace ACE.Server.Managers
             foreach (var character in characters)
             {
                 var wasGagged = character.GetProperty(ACE.Entity.Enum.Properties.PropertyBool.IsGagged) ?? false;
+                if (!wasGagged)
+                    continue;   // nothing to clear, and an offline save would delay that character's next login
+
                 character.RemoveProperty(ACE.Entity.Enum.Properties.PropertyBool.IsGagged);
                 character.RemoveProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagTimestamp);
                 character.RemoveProperty(ACE.Entity.Enum.Properties.PropertyFloat.GagDuration);

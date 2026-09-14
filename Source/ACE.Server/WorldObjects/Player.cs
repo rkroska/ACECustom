@@ -940,7 +940,7 @@ namespace ACE.Server.WorldObjects
 
         public void HandleActionTalk(string message)
         {
-            if (!IsGagged)
+            if (!IsGaggedNow())
             {
                 EnqueueBroadcast(new GameMessageHearSpeech(message, GetNameWithSuffix(), Guid.Full, ChatMessageType.Speech), LocalBroadcastRange, ChatMessageType.Speech);
 
@@ -963,6 +963,22 @@ namespace ACE.Server.WorldObjects
 
         private string GagRemainingText => GagSecondsRemaining > 0 ? $" {PlayerManager.FormatDuration(GagSecondsRemaining)} remaining." : "";
 
+        /// <summary>
+        /// The chat gates ask THIS, not the flag: a gag that ran out by wall clock is cleared on the spot instead of
+        /// refusing chat until the next heartbeat (up to 5 s).
+        /// </summary>
+        public bool IsGaggedNow()
+        {
+            if (!IsGagged)
+                return false;
+
+            if (GagSecondsRemaining > 0)
+                return true;
+
+            ClearExpiredGag();
+            return false;
+        }
+
         public void SendGagError()
         {
             var msg = $"You are unable to talk, emote, send tells or use any chat channel because you have been gagged.{GagRemainingText}";
@@ -983,7 +999,7 @@ namespace ACE.Server.WorldObjects
 
         public void HandleActionEmote(string message)
         {
-            if (!IsGagged)
+            if (!IsGaggedNow())
             {
                 EnqueueBroadcast(new GameMessageEmoteText(Guid.Full, GetNameWithSuffix(), message), LocalBroadcastRange);
 
@@ -995,7 +1011,7 @@ namespace ACE.Server.WorldObjects
 
         public void HandleActionSoulEmote(string message)
         {
-            if (!IsGagged)
+            if (!IsGaggedNow())
             {
                 if (!IsOlthoiPlayer || (IsOlthoiPlayer && NoOlthoiTalk))
                     EnqueueBroadcast(new GameMessageSoulEmote(Guid.Full, Name, message), LocalBroadcastRange);

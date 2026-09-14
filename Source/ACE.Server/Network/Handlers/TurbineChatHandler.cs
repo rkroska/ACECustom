@@ -29,7 +29,7 @@ namespace ACE.Server.Network.Handlers
             clientMessage.Payload.ReadUInt32(); // Always 0
             clientMessage.Payload.ReadUInt32(); // Bytes to follow
 
-            if (session.Player.IsGagged)
+            if (session.Player.IsGaggedNow())
             {
                 session.Player.SendGagError();
                 return;

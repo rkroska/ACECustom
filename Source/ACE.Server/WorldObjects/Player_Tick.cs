@@ -921,6 +921,17 @@ namespace ACE.Server.WorldObjects
             gagNoticeSent = true;
         }
 
+        /// <summary>The gag ran out by wall clock: clear it, persist, tell the player. Shared by the heartbeat and the chat gates.</summary>
+        public void ClearExpiredGag()
+        {
+            IsGagged = false;
+            GagTimestamp = 0;
+            GagDuration = 0;
+            SaveBiotaToDatabase();
+            SendUngagNotice();
+            gagNoticeSent = false;
+        }
+
         /// <summary>Called by the ungag command for an online character: the restore notice goes out now and the next gag re-announces.</summary>
         public void NotifyUngagged()
         {
@@ -941,14 +952,7 @@ namespace ACE.Server.WorldObjects
                 // check for gag expiration, if expired, remove gag. 2026-09-13: wall clock (GagTimestamp + GagDuration),
                 // not a per-heartbeat countdown that only ran while online - a gag now ends when a ban would.
                 if (GagTimestamp + GagDuration <= Time.GetUnixTime())
-                {
-                    IsGagged = false;
-                    GagTimestamp = 0;
-                    GagDuration = 0;
-                    SaveBiotaToDatabase();
-                    SendUngagNotice();
-                    gagNoticeSent = false;
-                }
+                    ClearExpiredGag();
             }
         }
 
