@@ -952,7 +952,7 @@ namespace ACE.Server.Managers
                             {
                                 // Audit 2026-09-13 (C4): this runs on the emitting NPC's landblock thread and the quest NPC's block can be
                                 // any distance away or a dungeon (another group). Destroy + reload on the target block's own queue.
-                                var reloadVariation = Variation;
+                                var reloadVariation = L.VariationId;   // the resolved block's own layer
                                 L.EnqueueAction(new ActionEventDelegate(ActionType.QuestManager_DynamicQuestReload, () =>
                                 {
                                     L.DestroyAllNonPlayerObjects();
@@ -983,7 +983,7 @@ namespace ACE.Server.Managers
                                 {
                                     // Audit 2026-09-13 (C4): this runs on the emitting NPC's landblock thread and the quest NPC's block can be
                                     // any distance away or a dungeon (another group). Destroy + reload on the target block's own queue.
-                                    var reloadVariation2 = Variation;
+                                    var reloadVariation2 = L2.VariationId;   // the resolved block's own layer
                                     L2.EnqueueAction(new ActionEventDelegate(ActionType.QuestManager_DynamicQuestReload, () =>
                                     {
                                         L2.DestroyAllNonPlayerObjects();

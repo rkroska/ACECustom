@@ -277,6 +277,42 @@ namespace ACE.Server.Managers
         public static readonly ThreadLocal<LandblockGroup> CurrentMultiThreadedTickingLandblockGroup = new ThreadLocal<LandblockGroup>();
 
         /// <summary>
+        /// Thread audit: true when work that writes <paramref name="wo"/> may run on the calling thread - landblock groups
+        /// are not ticking in parallel (world thread, or the single-threaded physics phase), or this thread is ticking the
+        /// group that owns wo's landblock. Compares against the EXECUTING group, never against some other object's group,
+        /// because a caller can run on a thread that owns neither. Use <see cref="RunOnThreadFor"/> to act on the answer.
+        /// </summary>
+        public static bool IsOnThreadFor(WorldObject wo)
+        {
+            if (!CurrentlyTickingLandblockGroupsMultiThreaded)
+                return true;
+
+            var current = CurrentMultiThreadedTickingLandblockGroup.Value;
+            return current != null && ReferenceEquals(wo?.CurrentLandblock?.CurrentLandblockGroup, current);
+        }
+
+        /// <summary>
+        /// Thread audit: runs <paramref name="work"/> now when <see cref="IsOnThreadFor"/> says the calling thread owns
+        /// <paramref name="wo"/>, otherwise on wo's own action queue. An object with no landblock goes to the WORLD queue
+        /// instead: a Player's EnqueueAction uses the player's own queue, which only drains while a landblock ticks the
+        /// player, so a player removed during logout (still online until the save callback) would never run it.
+        /// </summary>
+        public static void RunOnThreadFor(WorldObject wo, ACE.Server.Entity.Actions.ActionType type, Action work)
+        {
+            if (IsOnThreadFor(wo))
+            {
+                work();
+                return;
+            }
+
+            var action = new ACE.Server.Entity.Actions.ActionEventDelegate(type, work);
+            if (wo?.CurrentLandblock == null)
+                WorldManager.EnqueueAction(action);
+            else
+                wo.EnqueueAction(action);
+        }
+
+        /// <summary>
         /// Processes physics objects in all active landblocks for updating
         /// </summary>
         private static void TickPhysics(double portalYearTicks)
@@ -394,20 +430,6 @@ namespace ACE.Server.Managers
         public static bool AddObject(WorldObject worldObject, bool loadAdjacents = false)
         {
             var block = GetLandblock(worldObject.Location.LandblockId, loadAdjacents, worldObject.Location.Variation, false);
-
-            // Thread audit 2026-09-13 (C6): a generator's Spawn_Specific to an absolute cell (or any add issued from a
-            // landblock thread) can target a block in ANOTHER group - more than 5 blocks away, or a dungeon. Entering that
-            // block's physics from this thread is the race AddWorldObjectInternal only logs ("PLEASE REPORT"); run the add on
-            // the target block's own queue instead. A later placement failure still reaches the generator (PickUp notify).
-            if (CurrentlyTickingLandblockGroupsMultiThreaded)
-            {
-                var current = CurrentMultiThreadedTickingLandblockGroup.Value;
-                if (current != null && block.CurrentLandblockGroup != null && !ReferenceEquals(block.CurrentLandblockGroup, current))
-                {
-                    block.EnqueueAddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
-                    return true;
-                }
-            }
 
             return block.AddWorldObject(worldObject, worldObject.Location.Variation);
         }
@@ -541,18 +563,6 @@ namespace ACE.Server.Managers
         /// </summary>
         public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, int? variation, bool permaload = false)
         {
-            // Thread audit 2026-09-13 (C3): the landblock cache, the group key and the adjacency wiring are all EXACT on
-            // int?, while visibility/targeting treat 0 and null as one base bucket. A raw 0 arriving here used to build a
-            // separate "v0" instance - its own group, adjacent only to other v0 blocks - whose objects could still see and
-            // hit base objects ticked by another thread. Normalize once here instead of at every producer (teleport and
-            // login already did; nothing else needs to remember).
-            if (variation.HasValue && variation.Value == 0)
-            {
-                if (ACE.Server.Diagnostics.LogRateLimiter.ShouldEmit("landblock_variation_zero", TimeSpan.FromMinutes(5), out var suppressedZero))
-                    log.Warn($"LandblockManager.GetLandblock: explicit variation 0 requested for 0x{landblockId.Landblock:X4} - normalized to base (null); {suppressedZero} similar in the last 5m. Stack: {System.Environment.StackTrace}");
-                variation = null;
-            }
-
             Landblock landblock;
 
             bool setAdjacents = false;

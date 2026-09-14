@@ -63,10 +63,6 @@ namespace ACE.Server.Entity.Actions
         Lock_UseUnlocker,
         MonsterAwareness_CheckTargetsInner,
         MonsterCombat_DeleteObjectAfterDelay,
-        MonsterCombat_EnrageLoop,
-        CreatureDeath_GrantKillXp,
-        Fellowship_GrantShare,
-        QuestManager_DynamicQuestReload,
         MonsterMagic_CastSpell,
         MonsterMelee_DoAttack,
         MonsterMissile_EnqueueBroadcast,
@@ -475,6 +471,13 @@ namespace ACE.Server.Entity.Actions
         Player_ZcCheatDeathExpired,   // Zone Control Cheat Death window closed notice (2026-08-23)
         ZoneControl_LadderReresolve,   // live stat resolution: online worn-gear re-stamp after `ladder apply`
         PlayerInventory_DeepSaveCallback,   // inventory DeepSave flag cleanup on the world action queue
+        MonsterCombat_EnrageLoop,           // thread audit: enrage hotspot / grapple steps on the boss's own queue
+        CreatureDeath_GrantKillXp,          // thread audit: kill XP / luminance on the receiver's own queue
+        Fellowship_GrantShare,              // thread audit: fellowship share on the member's own queue
+        QuestManager_DynamicQuestReload,    // thread audit: dynamic quest landblock reload on the target block's queue
+        CreatureDeath_KillTaskCredit,       // thread audit: kill-task credit on the receiver's own queue
+        CreatureDeath_PetBondAward,         // thread audit: pet bond XP award on the owner's own queue
+        PetPotency_ResidueAward,            // thread audit: pet residue award on the owner's own queue
     }
     public static class ActionTypeConverter
     {

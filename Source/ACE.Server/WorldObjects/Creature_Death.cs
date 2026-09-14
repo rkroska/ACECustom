@@ -293,8 +293,8 @@ namespace ACE.Server.WorldObjects
                     continue;
 
                 // Audit 2026-09-13 (C5): a damager may have portaled or logged to another landblock group by the time the
-                // kill lands. EarnXP writes level/vitae/packets, so it runs on the player's own thread unless that is
-                // already this one (the common case: the killer is standing here).
+                // kill lands. EarnXP writes level/vitae/packets, so it runs on the player's own thread unless the EXECUTING
+                // thread already owns the player's landblock (the common case: the killer is standing here).
                 var xpGrant = baseXp > 0 ? (long)Math.Round(baseXp * damagePercent) : 0L;
                 var lumGrant = luminanceAward != null ? (long)Math.Round(luminanceAward.Value * damagePercent) : 0L;
                 var hasLum = luminanceAward != null;
@@ -307,11 +307,7 @@ namespace ACE.Server.WorldObjects
                         player.EarnLuminance(lumGrant, XpType.Kill, ShareType.All, tierForGrant);
                 };
 
-                var myGroup = CurrentLandblock?.CurrentLandblockGroup;
-                if (myGroup != null && ReferenceEquals(player.CurrentLandblock?.CurrentLandblockGroup, myGroup))
-                    grant();
-                else
-                    player.EnqueueAction(new ActionEventDelegate(ActionType.CreatureDeath_GrantKillXp, grant));
+                LandblockManager.RunOnThreadFor(player, ActionType.CreatureDeath_GrantKillXp, grant);
 
                 // Launch-day diagnostic (2026-08-23): the client filters XP/lum chat, so the log is the readout.
                 // One line per player per governed kill - switchable via zc_killxp_diag (review 2026-09-04).
@@ -319,7 +315,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var (zcRank, rankSrc) = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveRankForCreature(this);
                     var rank = ACE.Server.Managers.ZoneScaling.ZoneRank.Key(zcRank) + "/" + rankSrc;
-                    log.Info($"[KILLXP] {Name} ({WeenieClassId}, {rank}) -> {player.Name}: share {damagePercent:P0}, xp {(long)Math.Round(baseXp * damagePercent):N0} of {baseXp:N0}, lum {(luminanceAward.HasValue ? ((long)Math.Round(luminanceAward.Value * damagePercent)).ToString("N0") : "none")}, zone-authored xp={killProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.XpKill)} lum={killProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.LumAward)}");
+                    log.Info($"[KILLXP] {Name} ({WeenieClassId}, {rank}) -> {player.Name}: share {damagePercent:P0}, xp {xpGrant:N0} of {baseXp:N0}, lum {(hasLum ? lumGrant.ToString("N0") : "none")}, zone-authored xp={killProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.XpKill)} lum={killProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.LumAward)}");
                 }
             }
 
@@ -374,13 +370,20 @@ namespace ACE.Server.WorldObjects
                 foreach (var kv in bondXpByDevice)
                 {
                     var (owner, xp) = kv.Value;
-                    var device = owner.FindObject(kv.Key, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) as PetDevice;
-                    if (device == null)
-                        continue;
+                    var deviceGuid = kv.Key;
 
-                    var awarded = device.TryAwardBondXp(owner, xp, out var leveledUp);
-                    if (awarded && leveledUp)
-                        owner.SendMessage($"Your bond with {device.GetBondMessageDisplayName()} deepens. (Bond Level {device.PetBondLevel:N0})");
+                    // Thread audit: the award saves the device, messages the owner and walks the owner's inventory - the
+                    // owner may be ticked by another group (portaled or logged elsewhere), so it runs on the owner's thread.
+                    LandblockManager.RunOnThreadFor(owner, ActionType.CreatureDeath_PetBondAward, () =>
+                    {
+                        var device = owner.FindObject(deviceGuid, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) as PetDevice;
+                        if (device == null)
+                            return;
+
+                        var awarded = device.TryAwardBondXp(owner, xp, out var leveledUp);
+                        if (awarded && leveledUp)
+                            owner.SendMessage($"Your bond with {device.GetBondMessageDisplayName()} deepens. (Bond Level {device.PetBondLevel:N0})");
+                    });
                 }
             }
 
@@ -494,7 +497,9 @@ namespace ACE.Server.WorldObjects
             else
                 killTaskCredits[player.Guid] = 1;
 
-            player.QuestManager.HandleKillTask(killTask, this);
+            // Thread audit: the credit cap above is counted here (local dictionaries); the quest write itself runs on the
+            // receiver's thread - a damager or fellow in kill-task range may be ticked by another group.
+            LandblockManager.RunOnThreadFor(player, ActionType.CreatureDeath_KillTaskCredit, () => player.QuestManager.HandleKillTask(killTask, this));
 
             return true;
         }

@@ -14,7 +14,6 @@ using ACE.Entity.Models;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
-using System.Threading.Tasks;
 using ACE.Server.Factories;
 using ACE.Server.Entity.Actions;
 using ACE.Entity;
@@ -23,7 +22,6 @@ using ACE.Server.Physics;
 using ACE.Server.Command;
 using ACE.Server.Command.Handlers;
 using ACE.Server.Physics.Combat;
-using System.Threading;
 
 namespace ACE.Server.WorldObjects
 {
@@ -629,7 +627,8 @@ namespace ACE.Server.WorldObjects
 
             chain.AddAction(this, ActionType.MonsterCombat_EnrageLoop, () =>
             {
-                if (!EnrageLoopAlive(gen, grappleLoopGeneration) || targetPlayer == null || targetPlayer.Location == null)
+                // the target can portal, change layer or die during the warning delay - re-check before pulling it
+                if (!EnrageLoopAlive(gen, grappleLoopGeneration) || !IsEnrageTarget(targetPlayer))
                     return;
 
                 BroadcastMessage($"Get Over Here {targetPlayer.Name}!", 250.0f);
@@ -645,7 +644,7 @@ namespace ACE.Server.WorldObjects
             chain.AddDelaySeconds(2.5);
             chain.AddAction(this, ActionType.MonsterCombat_EnrageLoop, () =>
             {
-                if (!EnrageLoopAlive(gen, grappleLoopGeneration) || targetPlayer == null)
+                if (!EnrageLoopAlive(gen, grappleLoopGeneration) || !IsEnrageTarget(targetPlayer))
                     return;
 
                 AttackTarget = targetPlayer;
@@ -668,21 +667,9 @@ namespace ACE.Server.WorldObjects
             var playersInRange = new List<Player>();
             var mobPosition = new Position(Location); // Get mob's position
 
-            // Audit 2026-09-13 (C1): only players on this creature's layer whose landblock ticks on THIS thread (same
-            // LandblockGroup) - the callers write AttackTarget, spawn hotspots at the player and teleport them, all of
-            // which must stay on one thread. A base-twin player at the same coordinates is no longer "in range".
-            var myGroup = CurrentLandblock?.CurrentLandblockGroup;
-            var myVariation = VariationManager.GetEffectiveVariationForVisibility(this);
-
             foreach (var player in PlayerManager.GetAllOnline())
             {
-                if (player == null || !player.IsAlive || player.Location == null)
-                    continue;
-
-                if (!VariationManager.SameVariationForVisibility(myVariation, VariationManager.GetEffectiveVariationForVisibility(player)))
-                    continue;
-
-                if (myGroup != null && !ReferenceEquals(player.CurrentLandblock?.CurrentLandblockGroup, myGroup))
+                if (!IsEnrageTarget(player))
                     continue;
 
                 var playerPosition = new Position(player.Location);
@@ -693,6 +680,25 @@ namespace ACE.Server.WorldObjects
             }
 
             return playersInRange;
+        }
+
+        /// <summary>
+        /// Audit 2026-09-13 (C1): an enrage target must be alive, on this creature's layer, and on a landblock ticked by THIS
+        /// creature's LandblockGroup - the enrage steps write AttackTarget, spawn hotspots at the player and teleport them, all
+        /// of which must stay on one thread. A base-twin player at the same coordinates is not a target. Checked when a target
+        /// is picked AND again after each delay, because the player can portal, change layer or die in between.
+        /// </summary>
+        private bool IsEnrageTarget(Player player)
+        {
+            if (player == null || !player.IsAlive || player.Location == null)
+                return false;
+
+            if (!VariationManager.SameVariationForVisibility(VariationManager.GetEffectiveVariationForVisibility(this), VariationManager.GetEffectiveVariationForVisibility(player)))
+                return false;
+
+            // a boss whose block is not grouped yet targets nobody - "no group" must never mean "every group"
+            var myGroup = CurrentLandblock?.CurrentLandblockGroup;
+            return myGroup != null && ReferenceEquals(player.CurrentLandblock?.CurrentLandblockGroup, myGroup);
         }
 
         private void SpawnObjectAtPlayer(Player targetPlayer)

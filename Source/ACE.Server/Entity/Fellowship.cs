@@ -451,17 +451,13 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Audit 2026-09-13 (C5): a fellowship share is granted from the earner's landblock thread; a member elsewhere
-        /// (quest shares have no distance limit, kill shares reach 600 units) may be ticked by another group. Run the
-        /// grant directly only when the member's landblock ticks on this thread, otherwise on the member's own queue.
+        /// Audit 2026-09-13 (C5): a member elsewhere (quest shares have no distance limit, kill shares reach 600 units) may be
+        /// ticked by another group, and the split itself can run on a thread that owns neither the earner nor the member.
+        /// Grant directly only when the EXECUTING thread owns the member's landblock, otherwise on the member's own queue.
         /// </summary>
-        private static void GrantOnMemberThread(Player origin, Player member, Action grant)
+        private static void GrantOnMemberThread(Player member, Action grant)
         {
-            var originGroup = origin?.CurrentLandblock?.CurrentLandblockGroup;
-            if (ReferenceEquals(member, origin) || (originGroup != null && ReferenceEquals(member.CurrentLandblock?.CurrentLandblockGroup, originGroup)))
-                grant();
-            else
-                member.EnqueueAction(new ActionEventDelegate(ActionType.Fellowship_GrantShare, grant));
+            LandblockManager.RunOnThreadFor(member, ActionType.Fellowship_GrantShare, grant);
         }
 
         /// <summary>
@@ -491,7 +487,7 @@ namespace ACE.Server.Entity
 
                 if (sameLayer.Count == 0)
                 {
-                    player.GrantXP((long)amount, XpType.Quest, shareType);
+                    GrantOnMemberThread(player, () => player.GrantXP((long)amount, XpType.Quest, shareType));
                     return;
                 }
 
@@ -510,7 +506,7 @@ namespace ACE.Server.Entity
                     var fellowXpType = player == member ? XpType.Quest : XpType.Fellowship;
                     var questShare = (member.HasVitae && member.IsVPHardcore) ? 0 : shareAmount;
                     var questMember = member;
-                    GrantOnMemberThread(player, member, () => questMember.GrantXP(questShare, fellowXpType, shareType));
+                    GrantOnMemberThread(member, () => questMember.GrantXP(questShare, fellowXpType, shareType));
                 }
             }
 
@@ -533,7 +529,8 @@ namespace ACE.Server.Entity
                 {
                     if (member == player && ServerConfig.fellowship_additive.Value)
                     {
-                        member.GrantXP((long)amount, xpType, shareType, monsterTier);
+                        var additiveMember = member;
+                        GrantOnMemberThread(member, () => additiveMember.GrantXP((long)amount, xpType, shareType, monsterTier));
                         continue;
                     }
                     var shareAmount = (double)totalAmount * scalar;
@@ -548,7 +545,7 @@ namespace ACE.Server.Entity
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
                     var killShare = (member.HasVitae && member.IsVPHardcore) ? 0 : (long)Math.Round(shareAmount);
                     var killMember = member;
-                    GrantOnMemberThread(player, member, () => killMember.GrantXP(killShare, fellowXpType, shareType));
+                    GrantOnMemberThread(member, () => killMember.GrantXP(killShare, fellowXpType, shareType));
                 }
             }
         }
@@ -568,7 +565,7 @@ namespace ACE.Server.Entity
             if (xpType == XpType.Quest)
             {
                 // quest luminance is not shared
-                player.GrantLuminance((long)amount, XpType.Quest, shareType, monsterTier);
+                GrantOnMemberThread(player, () => player.GrantLuminance((long)amount, XpType.Quest, shareType, monsterTier));
             }
             else
             {
@@ -577,7 +574,7 @@ namespace ACE.Server.Entity
 
                 if (fellowshipMembers.Count == 0)
                 {
-                    player.GrantLuminance((long)amount, xpType, shareType, monsterTier);
+                    GrantOnMemberThread(player, () => player.GrantLuminance((long)amount, xpType, shareType, monsterTier));
                     return;
                 }
 
@@ -598,7 +595,8 @@ namespace ACE.Server.Entity
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
                     if (member == player && ServerConfig.fellowship_additive.Value)
                     {
-                        player.GrantLuminance((long)amount, fellowXpType, shareType, monsterTier);
+                        var additiveLumType = fellowXpType;
+                        GrantOnMemberThread(player, () => player.GrantLuminance((long)amount, additiveLumType, shareType, monsterTier));
                         continue;
                     }
 
@@ -613,7 +611,7 @@ namespace ACE.Server.Entity
 
                     var lumShare = (long)Math.Round(playerTotal);
                     var lumMember = member;
-                    GrantOnMemberThread(player, member, () => lumMember.GrantLuminance(lumShare, fellowXpType, shareType));
+                    GrantOnMemberThread(member, () => lumMember.GrantLuminance(lumShare, fellowXpType, shareType));
                 }
             }
         }

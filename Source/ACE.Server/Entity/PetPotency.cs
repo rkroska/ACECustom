@@ -459,19 +459,26 @@ namespace ACE.Server.Entity
             foreach (var kv in residueByOwner)
             {
                 var (owner, amount, expectedAmount) = kv.Value;
-                if (TryAwardResidueToPlayer(owner, amount, out var awarded) && awarded > 0)
+                var creatureName = creature.Name;
+
+                // Thread audit: the award creates items in the owner's inventory and messages them from the dying creature's
+                // thread - the owner may be ticked by another group (portaled or logged elsewhere), so it runs on theirs.
+                ACE.Server.Managers.LandblockManager.RunOnThreadFor(owner, ACE.Server.Entity.Actions.ActionType.PetPotency_ResidueAward, () =>
                 {
-                    // Per-character opt-in: off by default to avoid spam during long hunts.
-                    // Players toggle via @echo-notify command.
-                    if (owner.GetProperty(PropertyBool.ShowPetEchoDrops) ?? false)
-                        owner.SendMessage($"Your pet earns you {awarded:N0} {CurrencyDisplayName}.");
+                    if (TryAwardResidueToPlayer(owner, amount, out var awarded) && awarded > 0)
+                    {
+                        // Per-character opt-in: off by default to avoid spam during long hunts.
+                        // Players toggle via @echo-notify command.
+                        if (owner.GetProperty(PropertyBool.ShowPetEchoDrops) ?? false)
+                            owner.SendMessage($"Your pet earns you {awarded:N0} {CurrencyDisplayName}.");
 
-                    if (ServerConfig.pet_potency_debug_chat.Value)
-                        owner.SendMessage($"[Potency] You receive {awarded:N0} {CurrencyDisplayName} (expected {expectedAmount:F2}).");
+                        if (ServerConfig.pet_potency_debug_chat.Value)
+                            owner.SendMessage($"[Potency] You receive {awarded:N0} {CurrencyDisplayName} (expected {expectedAmount:F2}).");
 
-                    if (ServerConfig.pet_potency_debug_log.Value)
-                        log.Info($"[Potency] {owner.Name} awarded {awarded} Savage Echo (expected {expectedAmount:F2}) from {creature.Name} kill.");
-                }
+                        if (ServerConfig.pet_potency_debug_log.Value)
+                            log.Info($"[Potency] {owner.Name} awarded {awarded} Savage Echo (expected {expectedAmount:F2}) from {creatureName} kill.");
+                    }
+                });
             }
         }
 
