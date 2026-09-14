@@ -453,7 +453,7 @@ namespace ACE.Server.Entity
         /// <summary>
         /// Audit 2026-09-13 (C5): a member elsewhere (quest shares have no distance limit, kill shares reach 600 units) may be
         /// ticked by another group, and the split itself can run on a thread that owns neither the earner nor the member.
-        /// Grant directly only when the EXECUTING thread owns the member's landblock, otherwise on the member's own queue.
+        /// Grant directly only when the EXECUTING thread owns the member's landblock, otherwise on the world queue (RunOnThreadFor).
         /// </summary>
         private static void GrantOnMemberThread(Player member, Action grant)
         {

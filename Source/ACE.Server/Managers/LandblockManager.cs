@@ -293,9 +293,11 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Thread audit: runs <paramref name="work"/> now when <see cref="IsOnThreadFor"/> says the calling thread owns
-        /// <paramref name="wo"/>, otherwise on wo's own action queue. An object with no landblock goes to the WORLD queue
-        /// instead: a Player's EnqueueAction uses the player's own queue, which only drains while a landblock ticks the
-        /// player, so a player removed during logout (still online until the save callback) would never run it.
+        /// <paramref name="wo"/>, otherwise on the WORLD action queue. The world queue runs on the world loop between
+        /// landblock ticks (WorldManager.UpdateWorld: ActionQueue.RunActions, then LandblockManager.Tick), never beside
+        /// them, so when the work runs no group thread can be touching or removing wo. Never wo's own queue: a Player's
+        /// queue only drains while a landblock ticks the player, and a player removed by logout between a landblock check
+        /// and the enqueue would never run it.
         /// </summary>
         public static void RunOnThreadFor(WorldObject wo, ACE.Server.Entity.Actions.ActionType type, Action work)
         {
@@ -305,11 +307,7 @@ namespace ACE.Server.Managers
                 return;
             }
 
-            var action = new ACE.Server.Entity.Actions.ActionEventDelegate(type, work);
-            if (wo?.CurrentLandblock == null)
-                WorldManager.EnqueueAction(action);
-            else
-                wo.EnqueueAction(action);
+            WorldManager.EnqueueAction(new ACE.Server.Entity.Actions.ActionEventDelegate(type, work));
         }
 
         /// <summary>

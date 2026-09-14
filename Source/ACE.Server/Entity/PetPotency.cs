@@ -462,7 +462,8 @@ namespace ACE.Server.Entity
                 var creatureName = creature.Name;
 
                 // Thread audit: the award creates items in the owner's inventory and messages them from the dying creature's
-                // thread - the owner may be ticked by another group (portaled or logged elsewhere), so it runs on theirs.
+                // thread - the owner may be ticked by another group (portaled or logged elsewhere), so RunOnThreadFor hands it to
+                // the world queue unless this thread owns the owner.
                 ACE.Server.Managers.LandblockManager.RunOnThreadFor(owner, ACE.Server.Entity.Actions.ActionType.PetPotency_ResidueAward, () =>
                 {
                     if (TryAwardResidueToPlayer(owner, amount, out var awarded) && awarded > 0)

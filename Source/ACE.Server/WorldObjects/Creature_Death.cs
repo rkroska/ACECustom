@@ -293,8 +293,8 @@ namespace ACE.Server.WorldObjects
                     continue;
 
                 // Audit 2026-09-13 (C5): a damager may have portaled or logged to another landblock group by the time the
-                // kill lands. EarnXP writes level/vitae/packets, so it runs on the player's own thread unless the EXECUTING
-                // thread already owns the player's landblock (the common case: the killer is standing here).
+                // kill lands. EarnXP writes level/vitae/packets, so unless the EXECUTING thread owns the player's landblock
+                // (the common case: the killer is standing here) it runs on the world queue, between landblock ticks.
                 var xpGrant = baseXp > 0 ? (long)Math.Round(baseXp * damagePercent) : 0L;
                 var lumGrant = luminanceAward != null ? (long)Math.Round(luminanceAward.Value * damagePercent) : 0L;
                 var hasLum = luminanceAward != null;
@@ -373,7 +373,7 @@ namespace ACE.Server.WorldObjects
                     var deviceGuid = kv.Key;
 
                     // Thread audit: the award saves the device, messages the owner and walks the owner's inventory - the
-                    // owner may be ticked by another group (portaled or logged elsewhere), so it runs on the owner's thread.
+                    // owner may be ticked by another group (portaled or logged elsewhere), so it goes through RunOnThreadFor.
                     LandblockManager.RunOnThreadFor(owner, ActionType.CreatureDeath_PetBondAward, () =>
                     {
                         var device = owner.FindObject(deviceGuid, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) as PetDevice;
@@ -497,8 +497,8 @@ namespace ACE.Server.WorldObjects
             else
                 killTaskCredits[player.Guid] = 1;
 
-            // Thread audit: the credit cap above is counted here (local dictionaries); the quest write itself runs on the
-            // receiver's thread - a damager or fellow in kill-task range may be ticked by another group.
+            // Thread audit: the credit cap above is counted here (local dictionaries); the quest write itself goes through
+            // RunOnThreadFor - a damager or fellow in kill-task range may be ticked by another group.
             LandblockManager.RunOnThreadFor(player, ActionType.CreatureDeath_KillTaskCredit, () => player.QuestManager.HandleKillTask(killTask, this));
 
             return true;
