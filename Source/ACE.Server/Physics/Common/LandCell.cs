@@ -36,6 +36,11 @@ namespace ACE.Server.Physics.Common
             if (transitState != TransitionState.OK)
                 return transitState;
 
+            // Ring AOE line-of-sight traces can ignore the ground (ring_aoe_los_ignore_ground) so hills don't
+            // block them. Buildings and objects are still tested afterwards in FindCollisions.
+            if (transition.ObjectInfo.Object.SightIgnoresTerrain)
+                return transitState;
+
             var path = transition.SpherePath;
 
             var blockOffset = LandDefs.GetBlockOffset(path.CheckPos.ObjCellID, ID);

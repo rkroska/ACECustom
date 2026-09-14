@@ -1125,7 +1125,11 @@ namespace ACE.Server.WorldObjects
                     fromProc: fromProc, procBaseDamage: zcRingB, procWeapon: fromProc ? weapon : null,
                     procVariance: fromProc
                         ? (weapon?.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRingVariancePropId) ?? 0)
-                        : 0);
+                        : 0,
+                    // A proc ring always lands on the creature whose hit triggered it (melee can hit
+                    // through doors by design), even when ring line of sight is on. Proc rings are
+                    // untargeted (target is null), so fall back to the trigger TryProcOneSpell recorded.
+                    losExempt: fromProc ? (target ?? ringPlayer.RingProcTrigger) : null);
             }
 
             if (spell.School == MagicSchool.LifeMagic)

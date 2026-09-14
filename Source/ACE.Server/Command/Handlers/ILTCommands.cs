@@ -7,6 +7,7 @@ using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Command;
+using ACE.Server.Managers;
 using ACE.Server.Network;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
@@ -325,17 +326,71 @@ namespace ACE.Server.Command.Handlers
                     .OrderBy(c => player.Location.Distance2D(c.Location))
                     .ToList();
 
+                var losIndoor = ServerConfig.ring_aoe_los_indoor.Value;
+                var losOutdoor = ServerConfig.ring_aoe_los_outdoor.Value;
+                var ignoreGround = ServerConfig.ring_aoe_los_ignore_ground.Value;
+                var playerIndoors = Player.IsInteriorCell(player);
+                var sightObj = (losIndoor || losOutdoor) && player.PhysicsObj?.CurCell != null ? Player.CreateRingSightObject() : null;
+
                 session.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"[RingRange] Radius: {radius:F1}m | Vertical: {maxHeight:F1}m | Creatures in range: {inRange.Count}",
+                    $"[RingRange] Radius: {radius:F1}m | Vertical: {maxHeight:F1}m | Creatures in range: {inRange.Count} | Line of sight indoor: {(losIndoor ? "on" : "off")}, outdoor: {(losOutdoor ? "on" : "off")}, ignore ground: {(ignoreGround ? "on" : "off")} | You are {(playerIndoors ? "indoors" : "outdoors")}",
                     ChatMessageType.System));
 
+                // Summarizes a line-of-sight trace: whether it hit the environment (walls, buildings, static
+                // scenery like trees and rocks, or the ground when not ignored), which dynamic objects it hit
+                // (doors etc.), and how far along the line it got before stopping.
+                static string DescribeRingTrace(ACE.Server.Physics.Animation.Transition trace, Creature target)
+                {
+                    if (trace == null)
+                        return "trace returned nothing";
+
+                    var info = trace.CollisionInfo;
+                    var objects = info.CollideObject
+                        .Where(o => o.ID != target.PhysicsObj.ID)
+                        .Select(o => o.WeenieObj?.WorldObject?.Name ?? $"0x{o.ID:X8}")
+                        .Distinct()
+                        .ToList();
+
+                    var path = trace.SpherePath;
+                    var progress = path.BeginPos != null && path.EndPos != null && path.CurPos != null
+                        ? $", got {path.BeginPos.Distance(path.CurPos):F1}m of {path.BeginPos.Distance(path.EndPos):F1}m"
+                        : "";
+
+                    return $"env hit: {(info.CollidedWithEnvironment ? "yes" : "no")}, objects: {(objects.Count > 0 ? string.Join(", ", objects) : "none")}{progress}";
+                }
+
+                // Tags mirror Player.ApplyRingSpellAreaDamage: [radius] = no line-of-sight check applies,
+                // [ok] / [blocked] = checked (with the reason in brackets), [no-trace] = check applies but you
+                // have no cell to trace from.
                 foreach (var c in inRange)
                 {
                     var dist = player.Location.Distance2D(c.Location);
+                    var targetIndoors = Player.IsInteriorCell(c);
+                    var losApplies = playerIndoors || targetIndoors ? losIndoor : losOutdoor;
+
+                    string tag;
+                    if (!losApplies)
+                        tag = "[radius]";
+                    else if (sightObj == null)
+                        tag = "[no-trace]";
+                    else
+                    {
+                        var skipReason = Player.GetRingSightSkipReason(player, c, sightObj);
+                        if (skipReason != null)
+                            tag = $"[ok] ({skipReason})";
+                        else
+                        {
+                            var reached = player.TraceDirectVisible(c, sightObj, out var trace, Player.RingSightHeightFactor);
+                            tag = $"{(reached ? "[ok]" : "[blocked]")} ({DescribeRingTrace(trace, c)})";
+                        }
+                    }
+
                     session.Network.EnqueueSend(new GameMessageSystemChat(
-                        $"  {c.Name}  ({dist:F1}m)",
+                        $"  {c.Name}  ({dist:F1}m, {(targetIndoors ? "indoors" : "outdoors")}) {tag}",
                         ChatMessageType.System));
                 }
+
+                sightObj?.DestroyObject();
 
                 if (inRange.Count == 0)
                     session.Network.EnqueueSend(new GameMessageSystemChat("  None found.", ChatMessageType.System));

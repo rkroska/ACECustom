@@ -344,6 +344,18 @@ namespace ACE.Server.WorldObjects
         //public static PhysicsObj SightObj = PhysicsObj.makeObject(0x02000124, 0, false, true);     // arrow
 
         /// <summary>
+        /// Creates a sight object for line-of-sight tests. The caller owns it and must call DestroyObject().
+        /// </summary>
+        public static PhysicsObj CreateSightObject()
+        {
+            var sightObj = PhysicsObj.makeObject(0x02000124, 0, false, sightObj: true);
+
+            sightObj.State |= PhysicsState.Missile;
+
+            return sightObj;
+        }
+
+        /// <summary>
         /// Returns TRUE if this object has direct line-of-sight visibility to input object
         /// </summary>
         public bool IsDirectVisible(WorldObject wo)
@@ -351,9 +363,38 @@ namespace ACE.Server.WorldObjects
             if (PhysicsObj == null || wo.PhysicsObj == null)
                 return false;
 
-            var SightObj = PhysicsObj.makeObject(0x02000124, 0, false, sightObj: true);
+            var sightObj = CreateSightObject();
 
-            SightObj.State |= PhysicsState.Missile;
+            try
+            {
+                return IsDirectVisible(wo, sightObj);
+            }
+            finally
+            {
+                sightObj.DestroyObject();
+            }
+        }
+
+        /// <summary>
+        /// Returns TRUE if this object has direct line-of-sight visibility to input object,
+        /// using a caller-owned sight object (see CreateSightObject) so repeated tests don't allocate one each
+        /// </summary>
+        /// <param name="heightFactor">null = trace eye level to eye level; otherwise trace at this fraction of each object's height</param>
+        public bool IsDirectVisible(WorldObject wo, PhysicsObj sightObj, float? heightFactor = null)
+        {
+            return TraceDirectVisible(wo, sightObj, out _, heightFactor);
+        }
+
+        /// <summary>
+        /// IsDirectVisible that also hands back the finished line-of-sight transition
+        /// (null if no trace ran or it failed), for diagnostics
+        /// </summary>
+        public bool TraceDirectVisible(WorldObject wo, PhysicsObj sightObj, out Physics.Animation.Transition transition, float? heightFactor = null)
+        {
+            transition = null;
+
+            if (PhysicsObj == null || wo.PhysicsObj == null)
+                return false;
 
             var startPos = new Physics.Common.Position(PhysicsObj.Position);
             var targetPos = new Physics.Common.Position(wo.PhysicsObj.Position);
@@ -361,21 +402,27 @@ namespace ACE.Server.WorldObjects
             if (PhysicsObj.GetBlockDist(startPos, targetPos) > 1)
                 return false;
 
-            // set to eye level
-            startPos.Frame.Origin.Z += PhysicsObj.GetHeight() - SightObj.GetHeight();
-            targetPos.Frame.Origin.Z += wo.PhysicsObj.GetHeight() - SightObj.GetHeight();
+            if (heightFactor == null)
+            {
+                // set to eye level
+                startPos.Frame.Origin.Z += PhysicsObj.GetHeight() - sightObj.GetHeight();
+                targetPos.Frame.Origin.Z += wo.PhysicsObj.GetHeight() - sightObj.GetHeight();
+            }
+            else
+            {
+                startPos.Frame.Origin.Z += PhysicsObj.GetHeight() * heightFactor.Value;
+                targetPos.Frame.Origin.Z += wo.PhysicsObj.GetHeight() * heightFactor.Value;
+            }
 
             var dir = Vector3.Normalize(targetPos.Frame.Origin - startPos.Frame.Origin);
-            var radsum = PhysicsObj.GetPhysicsRadius() + SightObj.GetPhysicsRadius();
+            var radsum = PhysicsObj.GetPhysicsRadius() + sightObj.GetPhysicsRadius();
             startPos.Frame.Origin += dir * radsum;
 
-            SightObj.CurCell = PhysicsObj.CurCell;
-            SightObj.ProjectileTarget = wo.PhysicsObj;
+            sightObj.CurCell = PhysicsObj.CurCell;
+            sightObj.ProjectileTarget = wo.PhysicsObj;
 
             // perform line of sight test
-            var transition = SightObj.transition(startPos, targetPos, false);
-
-            SightObj.DestroyObject();
+            transition = sightObj.transition(startPos, targetPos, false);
 
             if (transition == null) return false;
 
