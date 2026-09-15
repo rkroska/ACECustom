@@ -1263,7 +1263,8 @@ namespace ACE.Server.WorldObjects
                     heightOverride: ea.Height,
                     flatDamage:     flatDmg,
                     scanOrigin:     this,    // Scan the player's reliable ObjMaint (always populated) instead of target's (empty on static dummies like Winning Idol)
-                    fromProc:       true);   // CR-4: suppress War Magic proficiency tick for procs
+                    fromProc:       true,    // CR-4: suppress War Magic proficiency tick for procs
+                    losOrigin:      target); // line of sight is traced from the blast, not the archer
             });
             actionChain.EnqueueChain();
         }
@@ -1803,7 +1804,74 @@ namespace ACE.Server.WorldObjects
             return "magic";
         }
 
-        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0)
+        /// <summary>
+        /// The creature whose hit triggered the proc spell currently being cast, set by
+        /// WorldObject.TryProcOneSpell for the duration of that synchronous cast. Ring line of sight always
+        /// lets a proc ring hit this creature (proc rings are untargeted, so the cast itself doesn't carry it).
+        /// Transient, never persisted.
+        /// </summary>
+        internal Creature RingProcTrigger;
+
+        /// <summary>TRUE if the object stands in an interior cell (dungeon, building interior, basement).</summary>
+        internal static bool IsInteriorCell(WorldObject wo)
+        {
+            var cell = (wo?.PhysicsObj?.Position?.ObjCellID ?? wo?.Location?.Cell ?? 0u) & 0xFFFF;
+            return cell >= 0x100 && cell < 0xFFFE;
+        }
+
+        /// <summary>
+        /// Sight object for ring line of sight. Ignores the ground (hills never block a ring) only when
+        /// ring_aoe_los_ignore_ground is TRUE. Read when the object is created, i.e. once per cast.
+        /// </summary>
+        internal static PhysicsObj CreateRingSightObject()
+        {
+            var sightObj = CreateSightObject();
+
+            // CreateSightObject leaves ID 0, the same ID every outdoor scenery and static object has (trees, rocks,
+            // fences). ObjCell.FindObjCollisions skips any object that Equals the mover, and PhysicsObj.Equals
+            // compares IDs, so a 0-ID trace skipped all of them and saw straight through outdoor rocks and trees.
+            sightObj.ID = RingSightObjectId;
+
+            sightObj.SightIgnoresTerrain = ServerConfig.ring_aoe_los_ignore_ground.Value;
+            return sightObj;
+        }
+
+        /// <summary>
+        /// Physics ID for the ring sight object. uint.MaxValue is reserved as invalid and never assigned to a world
+        /// object (ObjectGuid.DynamicMax ends at 0xFFFFFFFE), and it's outside the player range.
+        /// </summary>
+        private const uint RingSightObjectId = uint.MaxValue;
+
+        /// <summary>
+        /// Why a ring target counts as visible without tracing, or null if it must be traced. A trace can't
+        /// give a real answer when the target is the blast origin, either side has no collision shape, or it's
+        /// point blank (the trace starts past the origin's radius and could skip over an adjacent target).
+        /// </summary>
+        internal static string GetRingSightSkipReason(WorldObject origin, Creature target, PhysicsObj sightObj)
+        {
+            if (target == origin) return "blast origin";
+            if (origin.PhysicsObj?.PartArray == null || target.PhysicsObj?.PartArray == null) return "no physics";
+            if (target.PhysicsObj.GetPhysicsRadius() <= 0f) return "no collision shape";
+
+            var pointBlank = origin.PhysicsObj.GetPhysicsRadius() + target.PhysicsObj.GetPhysicsRadius() + sightObj.GetPhysicsRadius();
+            if (origin.PhysicsObj.Position.Distance(target.PhysicsObj.Position) <= pointBlank) return "point blank";
+
+            return null;
+        }
+
+        /// <summary>Ring line-of-sight test from the blast origin.</summary>
+        internal static bool IsRingTargetInSight(WorldObject origin, Creature target, PhysicsObj sightObj)
+        {
+            return GetRingSightSkipReason(origin, target, sightObj) != null || origin.IsDirectVisible(target, sightObj, RingSightHeightFactor);
+        }
+
+        /// <summary>
+        /// Ring line of sight is traced at the height streaks fly (ProjHeight, 2/3 of each object's height) rather than eye
+        /// level, so anything that stops a streak also stops a ring. At eye level the trace passed over waist-high rocks.
+        /// </summary>
+        internal static readonly float RingSightHeightFactor = ProjHeight;
+
+        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0, WorldObject losOrigin = null, WorldObject losExempt = null)
         {
             var center = centerOverride ?? Location;
             if (center == null) return;
@@ -1862,6 +1930,13 @@ namespace ACE.Server.WorldObjects
             // same way.
             var weapon        = procWeapon ?? GetEquippedWand();
 
+            // THE canonical endgame gate (owner 2026-09-10). Rings are cast by a PLAYER, so this is the
+            // GEAR half of the split: ZC-stamped caster = T11 rules anywhere, retail caster = retail
+            // math anywhere. A ring's damage is applied by THIS method and never reaches
+            // SpellProjectile.CalculateDamage, so the unified crit had to be gated here separately -
+            // without it, hand-cast rings kept critting for ~2x in the base world.
+            var endgameCrit = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon);
+
             var isLifeProjectile = spell.MetaSpellType == ACE.Entity.Enum.SpellType.LifeProjectile;
 
             // CR-2: use scanOrigin's ObjMaint when the detonation center differs from the caster
@@ -1882,6 +1957,18 @@ namespace ACE.Server.WorldObjects
             var baseDamageRatingMod = Creature.GetPositiveRatingMod(GetDamageRating());
             var critDamageRatingMod = Creature.GetPositiveRatingMod(GetCritDamageRating());
             var pkDamageRatingMod = Creature.GetPositiveRatingMod(GetPKDamageRating());
+
+            // Line of sight (ring_aoe_los_indoor / ring_aoe_los_outdoor), read once per cast so a live toggle
+            // can't split one ring. Traced from the blast origin: the caster, or the arrow's target for
+            // Explosive Arrow. Buildings, doors, walls and solid objects block, and so does the ground unless
+            // ring_aoe_los_ignore_ground is on.
+            // With no cell to trace from, fall back to pure radius for this cast rather than miss everything.
+            var sightOrigin   = losOrigin ?? this;
+            var losIndoor     = ServerConfig.ring_aoe_los_indoor.Value;
+            var losOutdoor    = ServerConfig.ring_aoe_los_outdoor.Value;
+            var losEnabled    = (losIndoor || losOutdoor) && sightOrigin.PhysicsObj?.CurCell != null;
+            var originIndoors = IsInteriorCell(sightOrigin);
+            var sightObj      = losEnabled ? CreateRingSightObject() : null;
 
             foreach (var creature in visibleCreatures)
             {
@@ -1906,6 +1993,14 @@ namespace ACE.Server.WorldObjects
                 // PK status check (mirrors SpellProjectile.OnCollideObject).
                 var pkError = CheckPKStatusVsTarget(creature, spell);
                 if (pkError != null) continue;
+
+                // Line of sight: indoor setting when the blast or the target is indoors, outdoor setting
+                // otherwise. Checked before aggro so a blocked creature isn't pulled either. The creature
+                // whose hit triggered a proc ring (losExempt) always takes it.
+                if (losEnabled && creature != losExempt
+                    && (originIndoors || IsInteriorCell(creature) ? losIndoor : losOutdoor)
+                    && !IsRingTargetInSight(sightOrigin, creature, sightObj))
+                    continue;
 
                 // Notify the creature that it was attacked (triggers aggro) whether or not it resisted.
                 if (creature is not Player)
@@ -1977,8 +2072,14 @@ namespace ACE.Server.WorldObjects
                             var earlyMod = isLifeProjectile || isPvP
                                 ? GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature)
                                 : 0f;
+                            // GATED 2026-09-10: the life branch dropped the retail 0.5f coefficient
+                            // unconditionally, so a RETAIL-geared player critting with a Life ring
+                            // spell got double the baseline crit bonus. Missed on the first pass -
+                            // only the war/void ring branch below was gated.
                             critDamageBonus = isLifeProjectile
-                                ? lifeMagicDamage * earlyMod
+                                ? (endgameCrit
+                                    ? lifeMagicDamage * earlyMod
+                                    : lifeMagicDamage * 0.5f * earlyMod)
                                 : (isPvP ? spell.MinDamage * 0.5f * earlyMod : 0f);
                         }
                     }
@@ -2016,7 +2117,7 @@ namespace ACE.Server.WorldObjects
                         baseDamage = procBaseDamage > 0
                             ? (long)Math.Round(procBaseDamage)
                             // unified crit: a PvE crit uses the MAX roll, matching SpellProjectile
-                            : (criticalHit && !isPvP
+                            : (endgameCrit && criticalHit && !isPvP
                                 ? spell.MaxDamage
                                 : ThreadSafeRandom.Next(spell.MinDamage, spell.MaxDamage));
 
@@ -2102,8 +2203,12 @@ namespace ACE.Server.WorldObjects
                     // one formula for hand-casts and ring procs alike, replacing the 0.5f
                     // proc-only re-derive. mod = CritX - 1 (default 1.0 = retail's 2x).
                     if (criticalHit && !isLifeProjectile && !isPvP)
-                        critDamageBonus = (baseDamage + skillBonus)
-                            * GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
+                        critDamageBonus = endgameCrit
+                            ? (baseDamage + skillBonus)
+                                * GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature)
+                            // retail: half of MAX, and the skill bonus is NOT folded into the crit term
+                            : spell.MaxDamage * 0.5f
+                                * GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
 
                     var preModDamage = isLifeProjectile
                         ? lifeMagicDamage + critDamageBonus
@@ -2213,6 +2318,8 @@ namespace ACE.Server.WorldObjects
                     dbgHit++;
                 }
             }
+
+            sightObj?.DestroyObject();
 
             // Award one proficiency tick for the cast if at least one target was hit.
             if (dbgHit > 0 && !fromProc)

@@ -224,6 +224,31 @@ namespace ACE.Server.WorldObjects
         /// dormant. Null until the first ZC rated item is worn.</summary>
         private Dictionary<PropertyInt, int> equippedItemsZcRatingCache;
 
+        /// <summary>
+        /// How many ZcTier 11+ items this creature currently has equipped. Maintained by the same
+        /// add/remove pair as the caches above, but OUTSIDE their rating-prop early-outs.
+        ///
+        /// Added 2026-09-10 (third review) because equippedItemsZcRatingCache was being used as a
+        /// "wears ZC gear" proxy and was wrong twice: it is never nulled on dequip, so a player who
+        /// removed all ZC gear stayed capped for the session; and it is only populated by items that
+        /// contribute a RatingCacheProps value, so a ZC set rolling only 50200-block lines (attributes,
+        /// skills, slot specials) left it null and bypassed the cap entirely.
+        ///
+        /// Clamped at 0 on decrement so a drifted count cannot go negative.
+        ///
+        /// 🔴 A count that drifts HIGH does NOT fail safe (corrected after review - an earlier version
+        /// of this comment claimed it did). A player sitting at count > 0 with no ZC gear keeps the
+        /// 2500/1500 ladder cap for the rest of the session instead of being uncapped, which is a
+        /// Ruling 1 violation, not a harmless over-application.
+        ///
+        /// Known drift routes: any removal that bypasses TryDequipObject, e.g. PetDevice.cs:1121
+        /// removing straight from EquippedObjects. Benign today only because the count is read inside
+        /// `this is Player` and that path is pet-side. The ZcTier re-stamp concern is NOT a drift
+        /// route - ZoneStatResolver.ApplyIfStale runs before the increment, and ReresolveWornZoneGear
+        /// keeps a balanced remove -> re-stamp -> add pair.
+        /// </summary>
+        private int equippedZcGearCount;
+
         private static readonly PropertyInt[] RatingCacheProps =
         {
             PropertyInt.GearDamage, PropertyInt.GearDamageResist, PropertyInt.GearCritDamage,
@@ -259,6 +284,11 @@ namespace ACE.Server.WorldObjects
 
         private void AddItemToEquippedItemsRatingCache(WorldObject wo)
         {
+            // BEFORE the rating-prop early-out below: a ZC piece can roll only 50200-block lines and
+            // contribute no Gear* rating at all, and it still counts as ZC gear.
+            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo))
+                equippedZcGearCount++;
+
             var any = false;
             foreach (var p in RatingCacheProps)
                 if (RatingOf(wo, p) != 0) { any = true; break; }
@@ -279,6 +309,11 @@ namespace ACE.Server.WorldObjects
 
         private void RemoveItemFromEquippedItemsRatingCache(WorldObject wo)
         {
+            // Mirrors the increment in Add: outside the early-out, so it stays balanced for ZC pieces
+            // that carry no Gear* rating.
+            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo))
+                equippedZcGearCount = Math.Max(0, equippedZcGearCount - 1);
+
             if (equippedItemsRatingCache == null)
                 return;
 
@@ -425,15 +460,61 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public int GetGearCap(string capStat, int ladderCap)
         {
-            // Zone Control off: the T10 fallback cap wins outright - no zone is consulted (owner 2026-08-23).
+            // FULLY INERT WHEN OFF (owner 2026-09-10). This previously returned the ZoneFallback set
+            // (CapDr 92 / CapCdr 73 / CapLine 211) for EVERY wearer shard-wide - the short-circuit sits
+            // ahead of the `is not Player` check, so it reached players and monsters alike.
+            //
+            // 🔴 THE LIVE BUG THAT COST AN EVENING (2026-09-10): GetGearMaxHealth() borrows CapLine.
+            // CapLine 211 is a RATING-LINE ceiling; GearMaxHealth is measured in HIT POINTS (~1,045 on
+            // GOM, ~1,565 on Lyncher). Capping one with the other dropped server max health by over a
+            // thousand, a regen tick then clamped Current down to that lower max, and the server started
+            // reading Current == MaxValue - so /heal returned +0, heal kits said "already at full
+            // health", and regen had no headroom, while the client still drew the uncapped bar. Turning
+            // Zone Control off broke healing for everyone on the shard.
+            //
+            // A kill switch must not impose its own numbers. Off now means NO CAP - the pre-series
+            // behaviour, where GetEquippedItemsRatingSum was never clamped at all. This supersedes the
+            // 2026-08-23 "the T10 fallback cap wins outright" ruling.
             if (!ServerConfig.zonecontrol_enabled.Value)
-                return ACE.Server.Managers.ZoneControl.ZoneFallback.GearCap(capStat);
-            if (this is not Player player)
-                return ladderCap;
-            var zone = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveZoneDefaultForPlayer(player);
-            if (zone == null || !zone.Has(capStat))
-                return ladderCap;
-            return Math.Max(0, (int)Math.Round(zone.Get(capStat, ladderCap)));
+                return int.MaxValue;
+
+            // 100% RESTORE (owner 2026-09-10): "it would be silly to not restore 1 part - the WHOLE of
+            // the restore balances things out". Baseline had NO worn-gear cap anywhere, so UNGOVERNED
+            // content is uncapped in BOTH toggle states. Previously an ungoverned wearer still fell to
+            // ladderCap (2500/1500) whenever the toggle was on, which left T10 technically coupled to a
+            // switch that is supposed to be irrelevant to it. Governed content keeps the ladder and any
+            // zone-authored gear_cap_* override.
+            if (this is Player player)
+            {
+                // GEAR-GATED, NOT LOCATION-GATED (fixed 2026-09-10, second review). Keying this on
+                // ResolveZoneDefaultForPlayer made a maxed T25 set read 2500 INSIDE the governed zone
+                // and go UNCAPPED the moment the player stepped into the base world - ZC gear strictly
+                // stronger outside the content it was built for, and the wearer's own DR/CDR/line
+                // numbers flipping at the border. That is precisely the failure Ruling 2 exists to
+                // prevent, and I had it backwards.
+                //
+                // equippedZcGearCount is maintained by the equip/dequip pair OUTSIDE their rating-prop
+                // early-outs, so it counts ZC pieces that carry no Gear* rating and it drops back to 0
+                // on dequip. A plain int field read - no ZcTier biota lock on a rating path.
+                // (An earlier version tested equippedItemsZcRatingCache != null, which both missed
+                // rating-less ZC pieces and never cleared on dequip.)
+                if (equippedZcGearCount == 0)
+                    return int.MaxValue;                 // purely retail gear = baseline = no cap, anywhere
+
+                var zone = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveZoneDefaultForPlayer(player);
+                if (zone != null && zone.Has(capStat))
+                    return Math.Max(0, (int)Math.Round(zone.Get(capStat, ladderCap)));
+                return ladderCap;                        // ZC-geared: the ladder ceiling applies everywhere
+            }
+
+            // RE-PRICING SITE, so use ResolveForCreature - which honours IsZoneScalingExempt.
+            // EndgameRulesApplyToMonster deliberately BYPASSES that exemption because it answers
+            // "which combat model applies"; using it here re-priced a CombatPet's rating sums inside a
+            // v11 zone, against the standing 2026-08-25 ruling that pet bonuses are the pet system's
+            // own ladder and not Zone Control's to re-price. Pets and exempt wcids stay uncapped.
+            return ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this) != null
+                ? ladderCap
+                : int.MaxValue;
         }
 
         /// <summary>
@@ -442,8 +523,10 @@ namespace ACE.Server.WorldObjects
         /// enchantments / augs / enlightenment stack on top untouched in the rating getters.
         /// The cap arguments are the LADDER ceilings (gear_cap_dr 2500, gear_cap_cdr 1500,
         /// gear_cap_line 2500) - calibrated so a maxed T25 set lands EXACTLY on them. A zone that
-        /// authors gear_cap_* tightens them for its own content; with zonecontrol_enabled OFF the
-        /// T10 fallback set replaces them entirely (ZoneFallback).
+        /// authors gear_cap_* tightens them for its own content; with zonecontrol_enabled OFF there is
+        /// NO cap at all (GetGearCap returns int.MaxValue - owner 2026-09-10, superseding the old
+        /// ZoneFallback 92/73/211 set, which capped GearMaxHealth in HIT POINTS with a RATING-LINE
+        /// ceiling and stopped every player healing).
         /// </summary>
         public int GetEquippedItemsRatingSumCapped(PropertyInt rating, string capStat, int defaultCap)
         {

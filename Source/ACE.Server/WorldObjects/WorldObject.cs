@@ -204,6 +204,17 @@ namespace ACE.Server.WorldObjects
             // exclude linkspots from spawning
             if (WeenieClassId == 10762) return true;
 
+            // Review 2026-09-13 (follow-up to variant item 1) + audit C2: the physics goes in the object's OWN layer, and
+            // AddWorldObjectInternal has already re-routed the add to the matching landblock instance, so registration
+            // (the ticking thread) and physics (the scanned cells) are always the same instance. A mismatch here means a
+            // caller bypassed that re-route - refuse rather than split the object across two groups.
+            if (Location.Variation.HasValue && VariationId.HasValue && VariationManager.NormalizeBase(Location.Variation) != VariationManager.NormalizeBase(VariationId))
+            {
+                log.Warn($"[SpawnDiag] AddPhysicsObj: 0x{Guid}:{Name} Location v={Location.Variation} but the caller asked for v={VariationId} - refusing (audit C2: registration and physics must share one instance)");
+                return false;
+            }
+            VariationId = VariationManager.NormalizeBase(Location.Variation) ?? VariationManager.NormalizeBase(VariationId);   // an explicit 0 on EITHER side must not key a second set of cells (CodeRabbit #519 round 2)
+
             var cell = LScape.get_landcell(Location.Cell, VariationId);
             if (cell == null)
             {
@@ -234,7 +245,8 @@ namespace ACE.Server.WorldObjects
                     log.Warn($"[SpawnDiag] AddPhysicsObj: enter_world FAILED for 0x{Guid}:{Name} [{WeenieClassId}] " +
                          $"@ cell {cell.ID:X8} pos {Location.Pos} rot {Location.Rotation} v={VariationId?.ToString() ?? "null"} " +
                          $"locV={Location.Variation?.ToString() ?? "null"} cellLbVar={(cell.CurLandblock?.VariationId)?.ToString() ?? "null"} " +
-                         $"success={success} curCellNull={PhysicsObj.CurCell == null} sposErr={PhysicsObj.LastEnterWorldError} SetupID={SetupTableId:X8}");
+                         $"success={success} curCellNull={PhysicsObj.CurCell == null} sposErr={PhysicsObj.LastEnterWorldError} SetupID={SetupTableId:X8}" +
+                         (PhysicsObj.LastScatterDiag != null ? $" scatter[{PhysicsObj.LastScatterDiag}]" : ""));
                 PhysicsObj.DestroyObject();
                 PhysicsObj = null;
                 return false;
@@ -290,6 +302,14 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool Teleporting { get; set; } = false;
 
+        /// <summary>Variant review 2026-09-12 (item 9): while a teleport is in flight, the variation the object is GOING
+        /// to. The visibility resolver prefers this over Location.Variation, which still holds the origin until the
+        /// physics placement completes - otherwise the placement's cell-entry passes classified the player as still
+        /// in the origin layer and tracked/sent that layer's objects, only for the post-placement sweep to delete
+        /// them again. Valid only while HasTeleportDestination is true.</summary>
+        public int? TeleportDestinationVariation { get; set; }
+        public bool HasTeleportDestination { get; set; }
+
         public bool HasGiveOrRefuseEmoteForItem(Session session, WorldObject item, out PropertiesEmote emote)
         {
             // NPC refuses this item, with a custom response
@@ -344,6 +364,18 @@ namespace ACE.Server.WorldObjects
         //public static PhysicsObj SightObj = PhysicsObj.makeObject(0x02000124, 0, false, true);     // arrow
 
         /// <summary>
+        /// Creates a sight object for line-of-sight tests. The caller owns it and must call DestroyObject().
+        /// </summary>
+        public static PhysicsObj CreateSightObject()
+        {
+            var sightObj = PhysicsObj.makeObject(0x02000124, 0, false, sightObj: true);
+
+            sightObj.State |= PhysicsState.Missile;
+
+            return sightObj;
+        }
+
+        /// <summary>
         /// Returns TRUE if this object has direct line-of-sight visibility to input object
         /// </summary>
         public bool IsDirectVisible(WorldObject wo)
@@ -351,9 +383,38 @@ namespace ACE.Server.WorldObjects
             if (PhysicsObj == null || wo.PhysicsObj == null)
                 return false;
 
-            var SightObj = PhysicsObj.makeObject(0x02000124, 0, false, sightObj: true);
+            var sightObj = CreateSightObject();
 
-            SightObj.State |= PhysicsState.Missile;
+            try
+            {
+                return IsDirectVisible(wo, sightObj);
+            }
+            finally
+            {
+                sightObj.DestroyObject();
+            }
+        }
+
+        /// <summary>
+        /// Returns TRUE if this object has direct line-of-sight visibility to input object,
+        /// using a caller-owned sight object (see CreateSightObject) so repeated tests don't allocate one each
+        /// </summary>
+        /// <param name="heightFactor">null = trace eye level to eye level; otherwise trace at this fraction of each object's height</param>
+        public bool IsDirectVisible(WorldObject wo, PhysicsObj sightObj, float? heightFactor = null)
+        {
+            return TraceDirectVisible(wo, sightObj, out _, heightFactor);
+        }
+
+        /// <summary>
+        /// IsDirectVisible that also hands back the finished line-of-sight transition
+        /// (null if no trace ran or it failed), for diagnostics
+        /// </summary>
+        public bool TraceDirectVisible(WorldObject wo, PhysicsObj sightObj, out Physics.Animation.Transition transition, float? heightFactor = null)
+        {
+            transition = null;
+
+            if (PhysicsObj == null || wo.PhysicsObj == null)
+                return false;
 
             var startPos = new Physics.Common.Position(PhysicsObj.Position);
             var targetPos = new Physics.Common.Position(wo.PhysicsObj.Position);
@@ -361,21 +422,27 @@ namespace ACE.Server.WorldObjects
             if (PhysicsObj.GetBlockDist(startPos, targetPos) > 1)
                 return false;
 
-            // set to eye level
-            startPos.Frame.Origin.Z += PhysicsObj.GetHeight() - SightObj.GetHeight();
-            targetPos.Frame.Origin.Z += wo.PhysicsObj.GetHeight() - SightObj.GetHeight();
+            if (heightFactor == null)
+            {
+                // set to eye level
+                startPos.Frame.Origin.Z += PhysicsObj.GetHeight() - sightObj.GetHeight();
+                targetPos.Frame.Origin.Z += wo.PhysicsObj.GetHeight() - sightObj.GetHeight();
+            }
+            else
+            {
+                startPos.Frame.Origin.Z += PhysicsObj.GetHeight() * heightFactor.Value;
+                targetPos.Frame.Origin.Z += wo.PhysicsObj.GetHeight() * heightFactor.Value;
+            }
 
             var dir = Vector3.Normalize(targetPos.Frame.Origin - startPos.Frame.Origin);
-            var radsum = PhysicsObj.GetPhysicsRadius() + SightObj.GetPhysicsRadius();
+            var radsum = PhysicsObj.GetPhysicsRadius() + sightObj.GetPhysicsRadius();
             startPos.Frame.Origin += dir * radsum;
 
-            SightObj.CurCell = PhysicsObj.CurCell;
-            SightObj.ProjectileTarget = wo.PhysicsObj;
+            sightObj.CurCell = PhysicsObj.CurCell;
+            sightObj.ProjectileTarget = wo.PhysicsObj;
 
             // perform line of sight test
-            var transition = SightObj.transition(startPos, targetPos, false);
-
-            SightObj.DestroyObject();
+            transition = sightObj.transition(startPos, targetPos, false);
 
             if (transition == null) return false;
 

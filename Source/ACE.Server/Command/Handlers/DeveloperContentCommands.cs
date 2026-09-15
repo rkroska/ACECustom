@@ -2232,6 +2232,11 @@ namespace ACE.Server.Command.Handlers.Processors
                     if (link != null)
                     {
                         parent.LandblockInstanceLink.Remove(link);
+                        // Variant review 2026-09-12 (item 4): the FK cascade only follows the PARENT, so deleting a
+                        // child left its link row pointing at a guid that no longer existed (411 such links on the
+                        // test world) and every later /removeinst on that parent reported a phantom child.
+                        if (!DeleteLinkFromWorldDatabase(link))
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"DB DELETE FAILED for the link to 0x{link.ChildGuid:X8} - the link row is still there (see the server log)", ChatMessageType.Broadcast));
                         break;
                     }
                 }
@@ -2250,7 +2255,8 @@ namespace ACE.Server.Command.Handlers.Processors
             instances.Remove(instance);
 
             //SyncInstances(session, landblock, instances, variation);
-            DeleteInstanceFromWorldDatabase(instance);
+            if (!DeleteInstanceFromWorldDatabase(instance))
+                session.Network.EnqueueSend(new GameMessageSystemChat($"DB DELETE FAILED for 0x{instance.Guid:X8} - the row is still there and the object comes back on reload (see the server log)", ChatMessageType.Broadcast));
 
             // invalidate the variation cache so a reload re-queries fresh (esp. when the bypass fallback was used,
             // where 'instances' is not the cached list reference)
@@ -2290,7 +2296,9 @@ namespace ACE.Server.Command.Handlers.Processors
         /// WARNING: This is one of the few places where World database writes occur.
         /// World database entities are generally read-only except through admin commands.
         /// </summary>
-        public static void DeleteInstanceFromWorldDatabase(LandblockInstance instance)
+        /// <summary>Review 2026-09-13: a swallowed failure here left the object gone from the world but the row alive - back on
+        /// the next reload, indistinguishable in game from success. Now logged, and the caller can tell the admin.</summary>
+        public static bool DeleteInstanceFromWorldDatabase(LandblockInstance instance)
         {
             try
             {
@@ -2299,10 +2307,32 @@ namespace ACE.Server.Command.Handlers.Processors
                     ctx.LandblockInstance.Remove(instance);
                     ctx.SaveChanges();
                 }
+                return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                log.Error($"[CONTENT] DeleteInstanceFromWorldDatabase 0x{instance.Guid:X8} (wcid {instance.WeenieClassId}, v={instance.VariationId?.ToString() ?? "null"}) FAILED - the row is still in the DB: {ex.Message}");
+                return false;
+            }
+        }
 
+        /// <summary>Deletes one landblock_instance_link row (variant review 2026-09-12, item 4). The FK cascade removes
+        /// links only when their PARENT row goes; a deleted CHILD's link has to be removed explicitly.</summary>
+        public static bool DeleteLinkFromWorldDatabase(LandblockInstanceLink link)
+        {
+            try
+            {
+                using (var ctx = new WorldDbContext())
+                {
+                    ctx.LandblockInstanceLink.Remove(link);
+                    ctx.SaveChanges();
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[CONTENT] DeleteLinkFromWorldDatabase parent 0x{link.ParentGuid:X8} -> child 0x{link.ChildGuid:X8} FAILED - the link row is still in the DB: {ex.Message}");
+                return false;
             }
         }
 
@@ -2370,6 +2400,13 @@ namespace ACE.Server.Command.Handlers.Processors
 
             foreach (var subLink in child.LandblockInstanceLink)
                 RemoveChild(session, subLink, instances);
+
+            // Variant review 2026-09-12 (item 4): the child's ROW was never deleted - only the parent's, whose FK
+            // cascade took the link rows with it - so every removed child survived as is_Link_Child = 1 with no
+            // link: unspawnable forever and a static guid slot burned (1,971 such rows on the test world). Grand-
+            // children are handled by the recursion above before this row goes; its own links cascade with it.
+            if (!DeleteInstanceFromWorldDatabase(child))
+                session.Network.EnqueueSend(new GameMessageSystemChat($"DB DELETE FAILED for child 0x{child.Guid:X8} - the row is still there and comes back on reload (see the server log)", ChatMessageType.Broadcast));
         }
 
         public static EncounterSQLWriter LandblockEncounterWriter;
@@ -2461,6 +2498,7 @@ namespace ACE.Server.Command.Handlers.Processors
             var newPos = new Physics.Common.Position();
             newPos.ObjCellID = pos.Cell;
             newPos.Frame = new Physics.Animation.AFrame(new Vector3(xPos, yPos, 0), Quaternion.Identity);
+            newPos.Variation = pos.Variation;   // variant review 2026-09-12 (item 11): the encounter spawned in the BASE twin, a dev at v2 saw nothing
             newPos.adjust_to_outside();
 
             newPos.Frame.Origin.Z = session.Player.CurrentLandblock.PhysicsLandblock.GetZ(newPos.Frame.Origin);
@@ -3484,7 +3522,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId, variationId);   // variant review item 2: the layer you stand in, same as the Discord export
             if (instances == null)
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find landblock {landblockId:X4}");
@@ -4240,7 +4278,12 @@ namespace ACE.Server.Command.Handlers.Processors
                 {
                     //session.Network.EnqueueSend(new GameMessageSystemChat($"Moving {obj.Name} ({obj.Guid}) to home position: {obj.Location} to {instance.ObjCellId:X8} [{instance.OriginX} {instance.OriginY} {instance.OriginZ}]", ChatMessageType.Broadcast));
 
-                    var homePos = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW);
+                    // The home reset must carry the object's own variation (2026-09-12). This overload defaults
+                    // VariationId to null, and since #511 SetPositionInternal(Transition) honours the transition's
+                    // variation, so a null here re-filed the object into the BASE landblock instance and the
+                    // persist below wrote variation_Id NULL. That is how the Quarry plate (v2) lost its variation:
+                    // a gravity object drifts from its row origin, this branch fires, the null wins.
+                    var homePos = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW, false, variation);
 
                     // slide?
                     var setPos = new Physics.Common.SetPosition(homePos.PhysPosition(), Physics.Common.SetPositionFlags.Teleport /* | Physics.Common.SetPositionFlags.Slide*/);
@@ -4280,6 +4323,11 @@ namespace ACE.Server.Command.Handlers.Processors
             // update ace location
             var prevLoc = new Position(obj.Location);
             obj.Location = obj.PhysicsObj.Position.ACEPosition();
+            // Never let the LIVE object sit in its variation's instance with a null Location.Variation: the
+            // visibility filter compares effective variations, so a null here hides it from its own layer's
+            // players until the next reload (review 2026-09-12). The row lookup above used `variation`.
+            if (obj.Location.Variation == null && variation != null)
+                obj.Location.Variation = variation;
 
             if (prevLoc.Landblock != obj.Location.Landblock)
                 LandblockManager.RelocateObjectForPhysics(obj, true);
@@ -4294,7 +4342,9 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.OriginX = obj.Location.PositionX;
             instance.OriginY = obj.Location.PositionY;
             instance.OriginZ = obj.Location.PositionZ;
-            instance.VariationId = obj.Location.Variation;
+            // The row was looked up by (landblock, variation), so it can never legitimately change variation here;
+            // fall back to the lookup variation if the physics round-trip ever drops it again.
+            instance.VariationId = obj.Location.Variation ?? variation;
             UpdateInstanceInWorldDatabase(instance);
             //SyncInstances(session, landblock_id, instances, variation);
         }
@@ -4411,8 +4461,10 @@ namespace ACE.Server.Command.Handlers.Processors
             // get landblock for static guid
             var landblock_id = (ushort)(obj.Guid.Full >> 12);
 
-            // get instances for landblock
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id);
+            // get instances for landblock - in the OBJECT's variation (2026-09-12): the cache filters rows by
+            // variation, so the bare call only ever saw NULL-variation rows and any v2 object answered
+            // "Couldn't find instance". Same lookup nudge already does.
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id, obj.Location.Variation);
 
             // find instance
             var instance = instances.FirstOrDefault(i => i.Guid == obj.Guid.Full);
@@ -4518,8 +4570,8 @@ namespace ACE.Server.Command.Handlers.Processors
             // get landblock for static guid
             var landblock_id = (ushort)(obj.Guid.Full >> 12);
 
-            // get instances for landblock
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id);
+            // get instances for landblock - in the OBJECT's variation (2026-09-12, see /rotate above)
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id, variation);
 
             // find instance
             var instance = instances.FirstOrDefault(i => i.Guid == obj.Guid.Full);

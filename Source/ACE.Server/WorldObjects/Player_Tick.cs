@@ -914,27 +914,51 @@ namespace ACE.Server.WorldObjects
 
         private bool gagNoticeSent = false;
 
+        /// <summary>Called by the gag command for an online target: the notice goes out now and the tick does not repeat it.</summary>
+        public void NotifyGagged()
+        {
+            SendGagNotice();
+            gagNoticeSent = true;
+        }
+
+        /// <summary>The gag ran out by wall clock: clear it, persist, tell the player. Shared by the heartbeat and the chat gates.</summary>
+        public void ClearExpiredGag()
+        {
+            IsGagged = false;
+            GagTimestamp = 0;
+            GagDuration = 0;
+            SaveBiotaToDatabase();
+            // Only a player who was told they were gagged is told it ended.
+            if (gagNoticeSent)
+                SendUngagNotice();
+            gagNoticeSent = false;
+        }
+
+        /// <summary>Called by the ungag command for an online character: the restore notice goes out now and the next gag re-announces.</summary>
+        public void NotifyUngagged()
+        {
+            SendUngagNotice();
+            gagNoticeSent = false;
+        }
+
         public void GagsTick()
         {
             if (IsGagged)
             {
+                // check for gag expiration, if expired, remove gag. 2026-09-13: wall clock (GagTimestamp + GagDuration),
+                // not a per-heartbeat countdown that only ran while online - a gag now ends when a ban would.
+                // Checked BEFORE the notice, so a gag that ran out before its first tick (an inherited one near its
+                // end, or the player's own) is not announced and lifted back to back (CodeRabbit #520).
+                if (GagTimestamp + GagDuration <= Time.GetUnixTime())
+                {
+                    ClearExpiredGag();
+                    return;
+                }
+
                 if (!gagNoticeSent)
                 {
                     SendGagNotice();
                     gagNoticeSent = true;
-                }
-
-                // check for gag expiration, if expired, remove gag.
-                GagDuration -= CachedHeartbeatInterval;
-
-                if (GagDuration <= 0)
-                {
-                    IsGagged = false;
-                    GagTimestamp = 0;
-                    GagDuration = 0;
-                    SaveBiotaToDatabase();
-                    SendUngagNotice();
-                    gagNoticeSent = false;
                 }
             }
         }

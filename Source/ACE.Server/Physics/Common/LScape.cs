@@ -56,18 +56,25 @@ namespace ACE.Server.Physics.Common
 
         public static bool unload_landblock(uint landblockID, int? variationId = null)
         {
-            VariantCacheId cacheKey = new() { Landblock = (ushort)landblockID, Variant = variationId };
+            // Variant review 2026-09-12 (item 12, eviction half): the callers pass the RAW id (block | 0xFFFF), so
+            // (ushort)landblockID was always 0xFFFF, and AdjustCell.Get keys its cache with `variationId ?? 0`, not the raw
+            // null. Both halves of the key missed, so no AdjustCell was ever evicted: every (dungeon, variation) ever
+            // loaded stayed cached, each holding EnvCells that pointed at the released physics landblock. Build the keys
+            // the way the inserts do.
+            var lbid = new LandblockId(landblockID);
+            VariantCacheId landblocksKey = new() { Landblock = lbid.Landblock, Variant = variationId };
+            VariantCacheId adjustCellsKey = new() { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
             if (PhysicsEngine.Instance.Server)
             {
                 // todo: Instead of ACE.Server.Entity.Landblock.Unload() calling this function, it should be calling PhysicsLandblock.Unload()
-                // todo: which would then call AdjustCell.AdjustCells.Remove()                
-                AdjustCell.AdjustCells.TryRemove(cacheKey, out _);
+                // todo: which would then call AdjustCell.AdjustCells.Remove()
+                AdjustCell.AdjustCells.TryRemove(adjustCellsKey, out _);
                 return true;
             }
-            
-            var result = Landblocks.TryRemove(cacheKey, out _);
+
+            var result = Landblocks.TryRemove(landblocksKey, out _);
             // todo: Like mentioned above, the following function should be moved to ACE.Server.Physics.Common.Landblock.Unload()
-            AdjustCell.AdjustCells.TryRemove(cacheKey, out _);
+            AdjustCell.AdjustCells.TryRemove(adjustCellsKey, out _);
             return result;
         }
 

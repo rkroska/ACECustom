@@ -2335,33 +2335,59 @@ namespace ACE.Server.Command.Handlers
         }
 
 
-        // gag < char name >
+        private const double MaxGagSeconds = 365 * 86400;
+
+        // gag < char name > [days hours minutes] [reason]
         [CommandHandler("gag", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1,
-            "Prevents a character from talking.",
-            "< char name >\nThe character will not be able to @tell or use chat normally.")]
+            "Prevents a character from talking: say, emotes, tells, fellowship, allegiance and every chat channel.",
+            "< char name > [days hours minutes] [reason]\n"
+            + "Same duration syntax as @ban. Without a duration the gag lasts five minutes; a reason needs the duration in front of it. The clock keeps running while the character is offline.\n"
+            + "Example: @gag Some Name 0 0 30\n"
+            + "Example: @gag Some Name 1 0 0 spamming trade\n"
+            + "@ungag < char name > lifts it early.")]
         public static void HandleGag(Session session, params string[] parameters)
         {
-            // usage: @gag < char name >
-            // This command gags the specified character for five minutes.  The character will not be able to @tell or use chat normally.
-            // @gag - Prevents a character from talking.
-            // @ungag -Allows a gagged character to talk again.
+            // usage: @gag < char name > [days hours minutes] [reason]
+            // 2026-09-13: the retail five-minute gag gained a ban-style duration (days hours minutes, all three) and an
+            // optional reason. The name may contain spaces, so the duration is the FIRST run of three non-negative
+            // numbers after at least one name word; everything after the triple is the reason.
 
-            if (parameters.Length > 0)
+            if (parameters.Length == 0)
+                return;
+
+            var nameEnd = parameters.Length;   // exclusive
+            double days = 0, hours = 0, minutes = 0;
+            var hasDuration = false;
+            for (var i = 1; i + 2 < parameters.Length; i++)
             {
-                var playerName = string.Join(" ", parameters);
-
-                var msg = "";
-                if (PlayerManager.GagPlayer(session.Player, playerName))
+                if (double.TryParse(parameters[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out days)
+                    && double.TryParse(parameters[i + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out hours)
+                    && double.TryParse(parameters[i + 2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out minutes)
+                    && double.IsFinite(days) && double.IsFinite(hours) && double.IsFinite(minutes)
+                    && days >= 0 && hours >= 0 && minutes >= 0)
                 {
-                    msg = $"{playerName} has been gagged for five minutes.";
+                    nameEnd = i;
+                    hasDuration = true;
+                    break;
                 }
-                else
-                {
-                    msg = $"Unable to gag a character named {playerName}, check the name and re-try the command.";
-                }
-
-                CommandHandlerHelper.WriteOutputInfo(session, msg, ChatMessageType.WorldBroadcast);
             }
+
+            var playerName = string.Join(" ", parameters, 0, nameEnd);
+            var reason = hasDuration && nameEnd + 3 < parameters.Length ? string.Join(" ", parameters, nameEnd + 3, parameters.Length - nameEnd - 3) : null;
+
+            var durationSeconds = hasDuration ? days * 86400 + hours * 3600 + minutes * 60 : PlayerManager.DefaultGagSeconds;
+            if (hasDuration && (!double.IsFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > MaxGagSeconds))
+            {
+                // CodeRabbit #520: finite components can still overflow to infinity; a gag longer than a year is a ban's job
+                CommandHandlerHelper.WriteOutputInfo(session, "The gag duration must be longer than zero and at most 365 days. Example: @gag Some Name 0 0 30", ChatMessageType.WorldBroadcast);
+                return;
+            }
+
+            var msg = PlayerManager.GagPlayer(session.Player, playerName, durationSeconds, reason)
+                ? $"{playerName} has been gagged for {PlayerManager.FormatDuration(durationSeconds)}."
+                : $"Unable to gag a character named {playerName}, check the name and re-try the command.";
+
+            CommandHandlerHelper.WriteOutputInfo(session, msg, ChatMessageType.WorldBroadcast);
         }
 
         // ungag < char name >
@@ -7477,6 +7503,65 @@ namespace ACE.Server.Command.Handlers
         /// A landblock+variation pair can be turned OFF as well as on, including a pair that comes from
         /// the retail seed, which is why removal writes a suppress token rather than just deleting one.
         /// </summary>
+        /// <summary>/missilepower [fast full [mid]] - show or set the missile power ladder (owner 2026-09-12).
+        /// The ladder is the damage multiplier across the missile accuracy bar and is only in force while
+        /// missile_power_bar is TRUE (the GM Tools "Bow Power Bar" toggle). Values persist in the shard config
+        /// like every other server property; no restart, the next shot uses them.</summary>
+        [CommandHandler("missilepower", AccessLevel.Admin, CommandHandlerFlag.None, 0,
+            "Show or set the missile power ladder (damage multiplier at full speed / mid / full draw). Only active while missile_power_bar is TRUE.",
+            "[<fast> <full> [<mid>]]  - no args shows the ladder; mid omitted = the average of fast and full")]
+        public static void HandleMissilePower(Session session, params string[] parameters)
+        {
+            void Msg(string s) => CommandHandlerHelper.WriteOutputInfo(session, s);
+
+            var fast = ServerConfig.missile_power_fast.Value;
+            var full = ServerConfig.missile_power_full.Value;
+            var midCfg = ServerConfig.missile_power_mid.Value;
+            var active = ServerConfig.missile_power_bar.Value;
+
+            string Ladder(double f, double u, double m)
+            {
+                var mid = m > 0 ? m : (f + u) / 2.0;
+                return $"fast {f:0.##} / mid {mid:0.##}{(m > 0 ? "" : " (avg)")} / full {u:0.##}";
+            }
+
+            if (parameters.Length == 0)
+            {
+                Msg($"Missile power ladder: {Ladder(fast, full, midCfg)} - {(active ? "ACTIVE (missile_power_bar is on)" : "INACTIVE - missile_power_bar is off, the bar scales attack skill and damage is flat")}");
+                Msg("Set: /missilepower <fast> <full> [mid]   (0.1 - 10; mid omitted = the average)");
+                return;
+            }
+
+            if (parameters.Length < 2 || parameters.Length > 3
+                || !double.TryParse(parameters[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var nFast)
+                || !double.TryParse(parameters[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var nFull)
+                || (parameters.Length == 3 && !double.TryParse(parameters[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var _)))
+            {
+                Msg("Usage: /missilepower <fast> <full> [mid]  - e.g. /missilepower 1.0 2.5");
+                return;
+            }
+            var nMid = parameters.Length == 3 ? double.Parse(parameters[2], CultureInfo.InvariantCulture) : 0.0;
+
+            double Min = Player.MissilePowerMin, Max = Player.MissilePowerMax;   // one source of truth with the read-side clamp
+            // TryParse accepts "NaN" and "Infinity"; a NaN would pass the range test and reach the damage formula.
+            if (!double.IsFinite(nFast) || !double.IsFinite(nFull) || !double.IsFinite(nMid)
+                || nFast < Min || nFast > Max || nFull < Min || nFull > Max || (nMid != 0 && (nMid < Min || nMid > Max)))
+            {
+                Msg($"Every value must be a number between {Min} and {Max}. Nothing changed.");
+                return;
+            }
+            var effMid = nMid > 0 ? nMid : (nFast + nFull) / 2.0;
+            if (nFast > effMid || effMid > nFull)
+                Msg("Warning: the ladder is not rising (fast <= mid <= full). Applying anyway.");
+
+            ServerConfig.SetValue("missile_power_fast", nFast);
+            ServerConfig.SetValue("missile_power_full", nFull);
+            ServerConfig.SetValue("missile_power_mid", nMid);
+
+            Msg($"Missile power ladder set: {Ladder(nFast, nFull, nMid)} - {(active ? "active now" : "stored; INACTIVE until missile_power_bar is turned on")}");
+            PlayerManager.BroadcastToAuditChannel(session?.Player, $"Missile power ladder set to {Ladder(nFast, nFull, nMid)} (was {Ladder(fast, full, midCfg)})");
+        }
+
         [CommandHandler("nolog", AccessLevel.Developer, CommandHandlerFlag.None, 0,
             "List or edit the no-log areas - log out in one and you log back in at your lifestone.",
             "nolog list | add <where> [scope] | remove <where> [scope] | check [where] | help")]

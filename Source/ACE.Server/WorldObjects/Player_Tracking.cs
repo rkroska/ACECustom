@@ -114,9 +114,9 @@ namespace ACE.Server.WorldObjects
             {
                 if (!VariationManager.SameVariationForVisibility(myVar, objVar))
                 {
-                    if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                    if (ServerConfig.variation_interaction_diag_verbose.Value)
                     {
-                        log.Warn($"[PrestigeInteraction] AddTrackedObject purging stale ObjMaint link: viewer={Name}({Guid.Full:X8}) target={worldObject.Name}({worldObject.Guid.Full:X8}) " +
+                        log.Warn($"[VariationInteraction] AddTrackedObject purging stale ObjMaint link: viewer={Name}({Guid.Full:X8}) target={worldObject.Name}({worldObject.Guid.Full:X8}) " +
                                  $"effVar_viewer={myVar?.ToString() ?? "null"} effVar_target={objVar?.ToString() ?? "null"}");
                     }
 
@@ -137,9 +137,9 @@ namespace ACE.Server.WorldObjects
 
             if (!VariationManager.SameVariationForVisibility(myVar, objVar))
             {
-                if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                if (ServerConfig.variation_interaction_diag_verbose.Value)
                 {
-                    log.Warn($"[PrestigeInteraction] AddTrackedObject skipped: viewer={Name}({Guid.Full:X8}) target={worldObject.Name}({worldObject.Guid.Full:X8}) " +
+                    log.Warn($"[VariationInteraction] AddTrackedObject skipped: viewer={Name}({Guid.Full:X8}) target={worldObject.Name}({worldObject.Guid.Full:X8}) " +
                              $"effVar_viewer={myVar?.ToString() ?? "null"} effVar_target={objVar?.ToString() ?? "null"} " +
                              $"(SameVariationForVisibility=false; client would not receive CreateObject).");
                 }

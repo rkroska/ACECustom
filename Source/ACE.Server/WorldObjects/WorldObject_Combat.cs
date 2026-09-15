@@ -56,7 +56,12 @@ namespace ACE.Server.WorldObjects
                 // weapon (and `this`, e.g. equipped ammo) are IN EquippedObjects - so anything already
                 // rolled above was rolling a SECOND time here. A 5 pct weapon fired at 1-(0.95^2) = 9.75 pct.
                 // TryProcWeaponOnCleaveTarget already excluded the weapon this way; the primary path did not.
-                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => i != weapon && i != this && i.HasProc && i.ProcSpellSelfTargeted == selfTarget);
+                // GATED 2026-09-10 (owner, "full restore to old"): the dedupe above is correct, but it
+                // shipped unconditional and halved MONSTER proc frequency shard-wide (9.75 pct -> 5.00 pct
+                // on a 5 pct weapon). Governed content keeps the fix; below v11 the pre-series double-roll
+                // stands, because that is the retail experience being restored.
+                var dedupeProcs = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(wielder, weapon);
+                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => (!dedupeProcs || (i != weapon && i != this)) && i.HasProc && i.ProcSpellSelfTargeted == selfTarget);
 
                 // aetheria
                 foreach (var aetheria in equippedAetheria)
@@ -94,7 +99,12 @@ namespace ACE.Server.WorldObjects
                 // weapon (and `this`, e.g. equipped ammo) are IN EquippedObjects - so anything already
                 // rolled above was rolling a SECOND time here. A 5 pct weapon fired at 1-(0.95^2) = 9.75 pct.
                 // TryProcWeaponOnCleaveTarget already excluded the weapon this way; the primary path did not.
-                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => i != weapon && i != this && i.HasProc && i.ProcSpellSelfTargeted == selfTarget && i.IsProcSafeForCleave());
+                // GATED 2026-09-10 (owner, "full restore to old"): the dedupe above is correct, but it
+                // shipped unconditional and halved MONSTER proc frequency shard-wide (9.75 pct -> 5.00 pct
+                // on a 5 pct weapon). Governed content keeps the fix; below v11 the pre-series double-roll
+                // stands, because that is the retail experience being restored.
+                var dedupeProcs = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(wielder, weapon);
+                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => (!dedupeProcs || (i != weapon && i != this)) && i.HasProc && i.ProcSpellSelfTargeted == selfTarget && i.IsProcSafeForCleave());
 
                 foreach (var aetheria in equippedAetheria)
                     aetheria.TryProcItem(attacker, target, selfTarget);
@@ -327,7 +337,12 @@ namespace ACE.Server.WorldObjects
                 // weapon (and `this`, e.g. equipped ammo) are IN EquippedObjects - so anything already
                 // rolled above was rolling a SECOND time here. A 5 pct weapon fired at 1-(0.95^2) = 9.75 pct.
                 // TryProcWeaponOnCleaveTarget already excluded the weapon this way; the primary path did not.
-                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => i != weapon && i != this && i.HasProc && i.ProcSpellSelfTargeted == selfTarget);
+                // GATED 2026-09-10 (owner, "full restore to old"): the dedupe above is correct, but it
+                // shipped unconditional and halved MONSTER proc frequency shard-wide (9.75 pct -> 5.00 pct
+                // on a 5 pct weapon). Governed content keeps the fix; below v11 the pre-series double-roll
+                // stands, because that is the retail experience being restored.
+                var dedupeProcs = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(wielder, weapon);
+                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => (!dedupeProcs || (i != weapon && i != this)) && i.HasProc && i.ProcSpellSelfTargeted == selfTarget);
 
                 foreach (var aetheria in equippedAetheria)
                     aetheria.TryProcItemWithChanceMod(attacker, target, selfTarget, chanceMultiplier);

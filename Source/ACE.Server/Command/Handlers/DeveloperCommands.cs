@@ -256,6 +256,36 @@ namespace ACE.Server.Command.Handlers
             Console.WriteLine($"{string.Join("\n", compatibleCBs.ToArray())}");
         }
 
+        [CommandHandler("testcb", AccessLevel.Developer, CommandHandlerFlag.ConsoleInvoke, "Test TryReadClothingTable for a clothing base ID")]
+        public static void HandleTestClothingBase(Session session, params string[] parameters)
+        {
+            if (parameters.Length == 0)
+            {
+                Console.WriteLine("Usage: @testcb <hexClothingBaseId>");
+                return;
+            }
+
+            var arg = parameters[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? parameters[0].Substring(2) : parameters[0];
+            if (!uint.TryParse(arg, System.Globalization.NumberStyles.HexNumber, null, out var cbId))
+            {
+                Console.WriteLine($"Invalid hex ID: {parameters[0]}");
+                return;
+            }
+
+            bool success = DatManager.PortalDat.TryReadClothingTable(cbId, out var ct);
+            Console.WriteLine($"[TESTCB] TryReadClothingTable(0x{cbId:X8}) => {success}");
+            if (success && ct != null)
+            {
+                Console.WriteLine($"  ClothingBaseEffects count: {ct.ClothingBaseEffects.Count}");
+                Console.WriteLine($"  ClothingSubPalEffects count: {ct.ClothingSubPalEffects.Count}");
+                foreach (var kvp in ct.ClothingBaseEffects)
+                {
+                    Console.WriteLine($"    SetupId: 0x{kvp.Key:X8}, CloObjectEffects: {kvp.Value.CloObjectEffects.Count}");
+                }
+            }
+        }
+
+
 
         // ==================================
         // Client Testing
@@ -1837,6 +1867,7 @@ namespace ACE.Server.Command.Handlers
             newPos.LandblockId = new LandblockId(lastSpawnPos.LandblockId.Raw);
             newPos.Pos = lastSpawnPos.Pos;
             newPos.Rotation = session.Player.Location.Rotation;
+            newPos.Variation = lastSpawnPos.Variation ?? session.Player.Location.Variation;   // variant review 2026-09-12 (item 11): was null = base
 
             var dir = Vector3.Normalize(Vector3.Transform(Vector3.UnitY, newPos.Rotation));
             var offset = dir * distance;
@@ -3386,11 +3417,26 @@ namespace ACE.Server.Command.Handlers
             LastTestAim = wo;
         }
 
+        /// <summary>Variant review 2026-09-12 (item 6): lists every landblock group with its variation, bounds, count and
+        /// members (XXXX:v) - the check that variant outdoor blocks merge by proximity and no group mixes layers.</summary>
+        [CommandHandler("landblockgroups", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Lists the loaded landblock groups: variation, bounds, count, members (landblock:variation).", "")]
+        public static void HandleLandblockGroups(Session session, params string[] parameters)
+        {
+            var lines = LandblockManager.DumpLandblockGroups();
+            CommandHandlerHelper.WriteOutputInfo(session, $"{LandblockManager.LandblockGroupsCount} landblock group(s):");   // not lines.Count - member lines are extra
+            foreach (var line in lines)
+                CommandHandlerHelper.WriteOutputInfo(session, line);
+        }
+
         [CommandHandler("reload-landblock", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Reloads the current landblock.")]
         public static void HandleReloadLandblocks(Session session, params string[] parameters)
         {
             var landblock = session.Player.CurrentLandblock;
-            var variation = session.Player.Location.Variation;
+            // Variant review 2026-09-12 (item 5): reload the INSTANCE you stand in, at ITS variation. The player's
+            // Location.Variation can differ from CurrentLandblock's for a tick after a same-spot variation
+            // teleport, and feeding that pair into Init rewrote a base instance's variation (see
+            // Landblock.CreateWorldObjects).
+            var variation = landblock.VariationId;
 
             var landblockId = landblock.Id.Raw | 0xFFFF;
 

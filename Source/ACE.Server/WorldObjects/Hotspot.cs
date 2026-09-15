@@ -199,10 +199,45 @@ namespace ACE.Server.WorldObjects
         private void ActivateCommon(Creature creature, bool isActive, Func<Creature, bool> isDamageable)
         {
             if (!isActive) return;
-            // one gate for every damage type: Invincible, dead, and the Zone Control Cheat Death window
-            if (isDamageable != null && !isDamageable(creature)) return;
 
+            // GATED 2026-09-10 (owner, "full restore to old"). The unified gate below - Invincible,
+            // dead, and the Zone Control Cheat Death window, applied to EVERY damage type - shipped
+            // unconditional. Pre-series the only check was `if (creature.Invincible) return;` INSIDE
+            // the `default:` case, so the Mana / Stamina / Health branches always ran and still fired
+            // their sound, ActivationTalk and emote. That matters for retail HEALING pads, which are
+            // Health-branch hotspots carrying a NEGATIVE DamageNext - the new gate silently stopped
+            // them working on invincible or dead creatures.
+            // Hotspots are PLACED content, so the gate is by where the hotspot sits, not by who
+            // stepped on it.
+            var endgameHotspot = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlacedContent(this);
+
+            // CHEAT DEATH IS PLAYER-CARRIED, SO IT IS TESTED UNCONDITIONALLY (fixed 2026-09-10 after
+            // review). Gating the isDamageable predicate meant ZcDamageImmune - which that predicate
+            // is the ONLY place to test on this path - stopped being checked on base-world hotspots.
+            // The default: case survives because Player.TakeDamage bails on its own, but the
+            // Health / Mana / Stamina branches call UpdateVitalDelta DIRECTLY and bypass TakeDamage,
+            // so a player could be drained to death inside an immunity window they paid for.
+            // This is not a "restore" concern either: ZcDamageImmune did not exist pre-series, so
+            // honouring it here cannot diverge from baseline.
+            // SCOPED TO DAMAGING ACTIVATIONS (fixed 2026-09-10, second review). Returning
+            // unconditionally sat ahead of the Health / Mana / Stamina branches - which are exactly the
+            // negative-DamageNext RESTORE pads the gate below exists to protect - so a player inside a
+            // Cheat Death window got nothing from a retail healing pad. Worse, that is a ZC-only
+            // property changing UNGOVERNED behaviour, which the 100% restore forbids outright.
+            // amount > 0 drains; <= 0 restores (the vital branches pass -iAmount to UpdateVitalDelta).
+            //
+            // 🔴 HOISTED (third review): DamageNext is a PROPERTY, not a field - every read calls
+            // GetBaseDamage() (two biota reads) AND re-rolls ThreadSafeRandom. Testing `DamageNext > 0`
+            // here and then assigning `var amount = DamageNext` below took TWO DIFFERENT ROLLS, so on a
+            // variance band straddling zero a pad could pass this guard as a heal and then apply as
+            // damage. One roll, tested and applied.
             var amount = DamageNext;
+
+            if (amount > 0 && creature is Player immunePlayer && immunePlayer.ZcDamageImmune)
+                return;
+
+            if (endgameHotspot && isDamageable != null && !isDamageable(creature)) return;
+
             var iAmount = (int)Math.Round(amount);
 
             var player = creature as Player;
@@ -210,6 +245,9 @@ namespace ACE.Server.WorldObjects
             switch (DamageType)
             {
                 default:
+
+                    // pre-series check, restored for ungoverned content (see the gate above)
+                    if (!endgameHotspot && creature.Invincible) return;
 
                     amount *= creature.GetResistanceMod(DamageType, this, null);
 

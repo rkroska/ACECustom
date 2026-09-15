@@ -55,10 +55,14 @@ namespace ACE.Server.Managers.ZoneControl
                     System.Math.Max(1, (int)System.Math.Round(max * scale)));
         }
 
-        /// <summary>The fallback worn cap for one of the three gear_cap_* stats.</summary>
-        public static int GearCap(string capStat) =>
-            capStat == ZoneStat.GearCapDr ? CapDr
-          : capStat == ZoneStat.GearCapCdr ? CapCdr
-          : CapLine;
+        // GearCap(string) REMOVED 2026-09-10. It was the "zonecontrol_enabled off => apply the T10
+        // fallback worn caps" lookup, and Creature_Equipment.GetGearCap was its only caller. The owner
+        // ruled that OFF must mean fully inert (no caps at all), because this lookup fed CapLine - a
+        // RATING-LINE ceiling of 211 - to GetGearMaxHealth, which is measured in HIT POINTS. That
+        // dropped server-side max health by over a thousand, clamped Current down to it, and left the
+        // server reading every player as permanently full: no healing, no heal kits, no regen.
+        // CORRECTION (second review): only CapLine is still live - it drives the band shrink factor
+        // above. CapDr and CapCdr now have NO consumers; they are kept as documentation of the T10
+        // worn-set anchors they were calibrated against, not because anything reads them.
     }
 }

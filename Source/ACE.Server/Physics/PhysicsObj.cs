@@ -1289,16 +1289,61 @@ namespace ACE.Server.Physics
         {
             var result = SetPositionError.GeneralFailure;
 
-            for (var i = 0; i < setPos.NumTries; i++)
+            // NumTries random points, then ONE last try at the scatter origin itself (the generator's own spot,
+            // known-valid because the generator stands there). This replaces the GeneratorProfile.Spawn_Scatter
+            // "center fallback" that re-entered the world with the SAME WorldObject after a failed enter_world:
+            // that first failure had already (a) destroyed a PhysicsObj viewers now "knew" under this guid, so the
+            // re-entered object never got a CreateObject and stood invisible until relog, and (b) run the
+            // landblock's failure path, which nulls the generator link, so the re-entered creature never freed
+            // its slot on death and the camp stuck at 4-of-5 then 0. Retrying HERE keeps it one enter_world.
+            // Live case 2026-09-12: Idols 0x2C30 v2, gen 702C305E, ghost idol F000285E on the generator.
+            int diagOutside = 0, diagSlope = 0, diagCollided = 0, diagNoValid = 0, diagNoCell = 0, diagOther = 0;
+            var diagCenter = "not-reached";
+
+            // Outdoor ground snap, option 2 (owner 2026-09-12). #511 made the snap unconditional so camps on hilly
+            // terrain stopped failing, but that also dropped the spawns of every generator that stands on a
+            // STRUCTURE (pillar, platform, bridge - live case: gen 19845029 on a pillar at 8866, z 64, spawning
+            // K'nath Eltrey at the pillar base). Decide once per scatter from the generator's own spot: if the
+            // generator itself is within ScatterThreshold_Z of the terrain it is a ground camp and every try snaps
+            // to terrain (the hilly-camp fix); if it is elevated, keep the stock rule - snap only tries whose
+            // terrain is within the threshold, otherwise keep the generator's Z so the structure's own surface
+            // catches the placement.
+            var scatterOriginOnTerrain = true;
+            if ((setPos.Pos.ObjCellID & 0xFFFF) < 0x100)
+            {
+                var originLb = LScape.get_landblock(setPos.Pos.ObjCellID, setPos.Pos.Variation);
+                if (originLb != null)
+                {
+                    var originGroundZ = originLb.GetZ(setPos.Pos.Frame.Origin);
+                    scatterOriginOnTerrain = Math.Abs(setPos.Pos.Frame.Origin.Z - originGroundZ) <= ScatterThreshold_Z;
+                }
+            }
+
+            // Adaptive radius (owner 2026-09-12, from the Idols breakdowns: 7-10 of 10 tries "outside every cell",
+            // the rest collided). The authored radius is a box the room may not hold, and the same box was thrown
+            // ten times. Now each rejection steers the next try by its reason: a point in rock / on a bad slope
+            // shrinks the radius (the floor is nearer the origin), a collision grows it (the free floor is farther
+            // out, capped so the box never leaves the authored area by much), a no-valid-position leaves it alone.
+            // The final center try is unaffected. Every try still goes through the full placement check.
+            const float ScatterShrink = 0.6f, ScatterGrow = 1.25f, ScatterScaleMin = 0.125f, ScatterScaleMax = 1.5f;
+            var radScale = 1.0f;
+            float diagScaleMin = 1.0f, diagScaleMax = 1.0f;
+
+            for (var i = 0; i <= setPos.NumTries; i++)
             {
                 var newPos = new Position(setPos.Pos);
 
-                newPos.Frame.Origin.X += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadX;
-                newPos.Frame.Origin.Y += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadY;
+                if (i < setPos.NumTries)
+                {
+                    newPos.Frame.Origin.X += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadX * radScale;
+                    newPos.Frame.Origin.Y += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadY * radScale;
+                }
 
                 // customized: clamp scatter to the generator's own landblock, inset by ScatterEdgeMargin
-                // so boundary probes can never reach (and thereby create) a neighboring landblock
-                if ((newPos.ObjCellID & 0xFFFF) < 0x100)
+                // so boundary probes can never reach (and thereby create) a neighboring landblock.
+                // Random tries only: the final try is the generator's own spot, which already exists there
+                // (review #517) - clamping it would slide a generator within 5 m of a block edge off its surface.
+                if (i < setPos.NumTries && (newPos.ObjCellID & 0xFFFF) < 0x100)
                 {
                     newPos.Frame.Origin.X = Math.Clamp(newPos.Frame.Origin.X, ScatterEdgeMargin, 192.0f - ScatterEdgeMargin);
                     newPos.Frame.Origin.Y = Math.Clamp(newPos.Frame.Origin.Y, ScatterEdgeMargin, 192.0f - ScatterEdgeMargin);
@@ -1318,7 +1363,13 @@ namespace ACE.Server.Physics
 
                     Polygon walkable = null;
                     landcell.find_terrain_poly(newPos.Frame.Origin, ref walkable);
-                    if (walkable == null || !is_valid_walkable(walkable.Plane.Normal)) continue;
+                    if (walkable == null || !is_valid_walkable(walkable.Plane.Normal))
+                    {
+                        diagSlope++;
+                        if (i == setPos.NumTries) { diagCenter = "bad-slope"; result = SetPositionError.NoValidPosition; }   // review #517: the error code must match the center verdict
+                        radScale = Math.Max(ScatterScaleMin, radScale * ScatterShrink); diagScaleMin = Math.Min(diagScaleMin, radScale);
+                        continue;
+                    }
 
                     // account for buildings
                     // if original position was outside, and scatter position is in a building, should we even try to spawn?
@@ -1331,16 +1382,20 @@ namespace ACE.Server.Physics
                         var landblock = LScape.get_landblock(newPos.ObjCellID, newPos.Variation);
                         var groundZ = landblock.GetZ(newPos.Frame.Origin) + 0.05f;
 
-                        // The cell is already confirmed walkable (slope check above) and non-building, so the object
-                        // belongs on the terrain here. ALWAYS snap to ground Z. Previously a ground-Z diff beyond
-                        // ScatterThreshold_Z left the object at the generator's Z instead — which floats/sinks it and
-                        // makes SetPositionInternal reject the placement, so scatter spawns over uneven terrain (e.g.
-                        // large-radius camp generators on hilly Tou Tou blocks) silently failed. We keep the large-diff
-                        // case as a debug log for visibility but no longer skip the ground snap.
-                        if (Math.Abs(newPos.Frame.Origin.Z - groundZ) > ScatterThreshold_Z)
-                            log.Debug($"{Name} ({ID:X8}).SetScatterPositionInternal() - large ground-Z snap @ {newPos} ground Z {groundZ} (diff: {newPos.Frame.Origin.Z - groundZ})");
-
-                        newPos.Frame.Origin.Z = groundZ;
+                        // Ground camp (origin on terrain): ALWAYS snap - a diff beyond ScatterThreshold_Z here is just
+                        // a hillside, and leaving the try at the generator's Z made it float/sink and fail (#511).
+                        // Elevated generator: stock rule - snap only when the try's terrain is near the generator's
+                        // Z, else keep that Z so the pillar/platform surface catches the placement (see the block
+                        // above the loop).
+                        var groundDiff = Math.Abs(newPos.Frame.Origin.Z - groundZ);
+                        if (scatterOriginOnTerrain || groundDiff <= ScatterThreshold_Z)
+                        {
+                            if (groundDiff > ScatterThreshold_Z)
+                                log.Debug($"{Name} ({ID:X8}).SetScatterPositionInternal() - large ground-Z snap @ {newPos} ground Z {groundZ} (diff: {newPos.Frame.Origin.Z - groundZ})");
+                            newPos.Frame.Origin.Z = groundZ;
+                        }
+                        else
+                            log.Debug($"{Name} ({ID:X8}).SetScatterPositionInternal() - elevated generator, keeping Z {newPos.Frame.Origin.Z} over terrain {groundZ} @ {newPos}");
                     }
                     //else
                     //indoors = true;
@@ -1371,15 +1426,40 @@ namespace ACE.Server.Physics
                             break;
                         }
                     }
-                    if (!found) continue;
+                    if (!found)
+                    {
+                        diagOutside++;
+                        if (i == setPos.NumTries) { diagCenter = "outside-every-cell"; result = SetPositionError.NoCell; }   // review #517
+                        radScale = Math.Max(ScatterScaleMin, radScale * ScatterShrink); diagScaleMin = Math.Min(diagScaleMin, radScale);
+                        continue;
+                    }
                 }
 
                 result = SetPositionInternal(newPos, setPos, transition);
+                // An OK verdict that left the object with no cell is a failed placement to every caller (AddPhysicsObj
+                // checks CurCell == null); report it as NoCell so LastEnterWorldError and the diag line agree (review #517).
+                if (result == SetPositionError.OK && CurCell == null)
+                    result = SetPositionError.NoCell;
                 if (result == SetPositionError.OK) break;
+
+                switch (result)
+                {
+                    case SetPositionError.Collided:
+                        diagCollided++;
+                        radScale = Math.Min(ScatterScaleMax, radScale * ScatterGrow); diagScaleMax = Math.Max(diagScaleMax, radScale);
+                        break;
+                    case SetPositionError.NoValidPosition: diagNoValid++; break;
+                    case SetPositionError.NoCell: diagNoCell++; break;
+                    default: diagOther++; break;
+                }
+                if (i == setPos.NumTries) diagCenter = result + "@" + newPos.ObjCellID.ToString("X8");
             }
 
-            //if (result != SetPositionError.OK)
-            //Console.WriteLine($"Couldn't spawn {Name} after {setPos.NumTries} retries @ {setPos.Pos}");
+            // Why-it-failed breakdown for the [SpawnDiag] line (2026-09-12, Idols): which gate rejected each try.
+            // "outside" = point in no cell's BSP (indoor) / "slope" = unwalkable terrain (outdoor); the rest are the
+            // physics placement's own verdicts. "center" is the final try at the scatter origin itself.
+            LastScatterDiag = result == SetPositionError.OK ? null
+                : $"tries={setPos.NumTries}+center rad={setPos.RadX:0.#} scale={diagScaleMin:0.##}..{diagScaleMax:0.##} outside={diagOutside} slope={diagSlope} collided={diagCollided} novalid={diagNoValid} nocell={diagNoCell} other={diagOther} center={diagCenter}";
 
             return result;
         }
@@ -2088,8 +2168,15 @@ namespace ACE.Server.Physics
 
             if (!DatObject && newCell != null)
             {
-                CurLandblock = LScape.get_landblock(newCell.ID, newCell.VariationId);
-                if (CurLandblock != null && CurLandblock.VariationId == newCell.VariationId)
+                // Variant review 2026-09-12 (item 1): the cell already knows its landblock (init_landcell / LScape
+                // stamp CurLandblock on every cell), so take it from there. The old lookup by newCell.VariationId
+                // resolved every OUTDOOR cell to the BASE instance (outdoor cells carried no variation) and CREATED
+                // that base twin on a miss - so v2/v11 mobs, NPCs, portals and players were all registered in the
+                // base twin's ServerObjects, visibility worked only because the viewer made the same mistake, and
+                // when the base twin unloaded under a busy v11 block every stationary v11 object vanished from
+                // clients ("Tou Tou empty", 08-23). The fallback lookup keeps the object's own variation.
+                CurLandblock = newCell.CurLandblock ?? LScape.get_landblock(newCell.ID, Position.Variation);
+                if (CurLandblock != null)
                     CurLandblock.add_server_object(this);
             }
         }
@@ -2131,6 +2218,10 @@ namespace ACE.Server.Physics
         // Last SetPosition result from enter_world; surfaced by [SpawnDiag] to name why a placement failed
         // (e.g. NoValidPosition/collision over water vs a cell-resolution miss).
         public SetPositionError LastEnterWorldError;
+
+        /// <summary>Per-try breakdown of the last FAILED scatter placement (null after a success); see
+        /// SetScatterPositionInternal. Surfaced by the [SpawnDiag] enter_world FAILED line.</summary>
+        public string LastScatterDiag;
 
         public bool enter_world(Position pos)
         {
@@ -2456,6 +2547,13 @@ namespace ACE.Server.Physics
             //foreach (var obj in newlyOccluded)
             //Console.WriteLine(obj.Name);
 
+            // Variant review 2026-09-12 (item 3): queue the occluded objects BEFORE adding the newly visible ones.
+            // The old order let a stale (occluded, same-guid) entry still sit in VisibleObjects while its
+            // replacement was offered, so the replacement was refused on this pass and only the NEXT cell change
+            // could heal it - two crossings to see a reloaded object. (newlyOccluded and visibleObjects are
+            // disjoint by construction, so nothing is queued and re-added in the same pass.)
+            ObjMaint.AddObjectsToBeDestroyed(newlyOccluded);
+
             // add newly visible objects, and get the previously unknowns
             var createObjs = ObjMaint.AddVisibleObjects(visibleObjects);
             //Console.WriteLine("Create objects: " + createObjs.Count);
@@ -2470,8 +2568,7 @@ namespace ACE.Server.Physics
                     Console.WriteLine($"{i} = {newlyVisible[i].Name}");
             }*/
 
-            // add newly occluded objects to the destruction queue
-            ObjMaint.AddObjectsToBeDestroyed(newlyOccluded);
+            // (newly occluded objects were queued above, before the add - item 3)
 
             if (IsPlayer && WeenieObj.WorldObject is Player viewerCells)
                 ACE.Server.Managers.VisibilityCreateObjectDiag.LogHandleVisibleCells(viewerCells, visibleObjects.Count, createObjs.Count, newlyOccluded.Count, maxCandidateDist2D);
@@ -2527,17 +2624,28 @@ namespace ACE.Server.Physics
 
             if (isVisible)
             {
-                var prevKnown = ObjMaint.KnownObjectsContainsKey(obj.ID);
+                // Variant review 2026-09-12 (item 3 / 3-A3): an expired destruction-queue entry means the client
+                // already culled this object; drop it from the tables so the re-entry below sends a fresh
+                // CreateObject instead of being refused as "already known".
+                ObjMaint.PurgeIfExpired(obj);
+
+                // "known" must mean THIS instance (reference), not merely this guid - a stale destroyed instance
+                // under the same guid is evicted inside AddVisibleObject and must count as not known.
+                var prevKnown = ReferenceEquals(ObjMaint.GetKnownObject(obj.ID), obj);   // O(1); review 2026-09-13 (ContainsValue was a linear scan on a hot path)
 
                 var newlyVisible = ObjMaint.AddVisibleObject(obj);
 
+                var wasQueued = false;
                 if (newlyVisible)
                 {
                     ObjMaint.AddKnownObject(obj);
-                    ObjMaint.RemoveObjectToBeDestroyed(obj);
+                    wasQueued = ObjMaint.RemoveObjectToBeDestroyed(obj);   // true = a live (unexpired) queue entry was rescued: the client still holds it
                 }
 
-                return !prevKnown && newlyVisible;
+                // CreateObject when it was not known, OR when it was known but neither visible nor queued: that is
+                // the "known without CreateObject" state (the client never got it, or no longer has it) - the same
+                // heal AddVisibleObjects applies on a cell change, now on the single-object path too.
+                return newlyVisible && (!prevKnown || !wasQueued);
             }
             else
             {
@@ -2617,6 +2725,13 @@ namespace ACE.Server.Physics
         }
 
         public bool IsSightObj;
+
+        /// <summary>
+        /// Sight objects only: when TRUE, outdoor terrain is not tested, so a line-of-sight trace passes
+        /// through hills while buildings, doors and objects still block. Set for ring AOE line of sight when
+        /// ring_aoe_los_ignore_ground is on.
+        /// </summary>
+        public bool SightIgnoresTerrain;
 
         public static PhysicsObj makeObject(uint dataDID, uint objectIID, bool dynamic, int? VariationId = null, bool sightObj = false)
         {
