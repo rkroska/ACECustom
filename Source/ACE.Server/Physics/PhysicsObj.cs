@@ -2726,6 +2726,13 @@ namespace ACE.Server.Physics
 
         public bool IsSightObj;
 
+        /// <summary>
+        /// Sight objects only: when TRUE, outdoor terrain is not tested, so a line-of-sight trace passes
+        /// through hills while buildings, doors and objects still block. Set for ring AOE line of sight when
+        /// ring_aoe_los_ignore_ground is on.
+        /// </summary>
+        public bool SightIgnoresTerrain;
+
         public static PhysicsObj makeObject(uint dataDID, uint objectIID, bool dynamic, int? VariationId = null, bool sightObj = false)
         {
             var obj = new PhysicsObj(VariationId);

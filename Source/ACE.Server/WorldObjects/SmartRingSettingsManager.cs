@@ -5,6 +5,7 @@ using System.IO;
 
 using ACE.Database;
 using ACE.Database.Models.World;
+using ACE.Server.Managers;
 
 using Microsoft.EntityFrameworkCore;
 
@@ -174,7 +175,10 @@ CREATE TABLE IF NOT EXISTS `smart_ring_settings` (
                        $"  • Radius: {Radius.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
                        $"  • Height: {Height.ToString("0.0", CultureInfo.InvariantCulture)}\n" +
                        $"  • Double Proc Chance: {P(DoubleChance)}\n" +
-                       $"  • Triple Proc Chance: {P(TripleChance)}\n";
+                       $"  • Triple Proc Chance: {P(TripleChance)}\n" +
+                       $"  • Line of Sight Indoor: {(ServerConfig.ring_aoe_los_indoor.Value ? "ON" : "OFF")} (/modifybool ring_aoe_los_indoor)\n" +
+                       $"  • Line of Sight Outdoor: {(ServerConfig.ring_aoe_los_outdoor.Value ? "ON" : "OFF")} (/modifybool ring_aoe_los_outdoor)\n" +
+                       $"  • Line of Sight Ignores Ground: {(ServerConfig.ring_aoe_los_ignore_ground.Value ? "ON" : "OFF")} (/modifybool ring_aoe_los_ignore_ground)\n";
             }
         }
 

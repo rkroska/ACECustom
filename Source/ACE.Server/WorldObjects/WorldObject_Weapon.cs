@@ -1479,17 +1479,33 @@ namespace ACE.Server.WorldObjects
             // For self-targeted spells, use the attacker as the target
             var spellTarget = selfTarget ? attacker : target;
 
-            if (spell.NonComponentTargetType == ItemType.None)
-                attacker.TryCastSpell(spell, null, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
-            else if (spell.NonComponentTargetType == ItemType.Vestements)
+            // Ring line of sight always lets a proc ring hit the creature whose hit triggered it, but ring
+            // procs are cast untargeted (below), so record the trigger on the player for this synchronous
+            // cast. The previous value is restored in case one proc nests inside another.
+            var procPlayer = attacker as Player;
+            var prevRingProcTrigger = procPlayer?.RingProcTrigger;
+            if (procPlayer != null)
+                procPlayer.RingProcTrigger = selfTarget ? null : target;
+
+            try
             {
-                // TODO: spell.NonComponentTargetType should probably always go through TryCastSpell_WithItemRedirects,
-                // however i don't feel like testing every possible known type of item procspell in the current db to ensure there are no regressions
-                // current test case: 33990 Composite Bow casting Tattercoat
-                attacker.TryCastSpell_WithRedirects(spell, spellTarget, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
+                if (spell.NonComponentTargetType == ItemType.None)
+                    attacker.TryCastSpell(spell, null, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
+                else if (spell.NonComponentTargetType == ItemType.Vestements)
+                {
+                    // TODO: spell.NonComponentTargetType should probably always go through TryCastSpell_WithItemRedirects,
+                    // however i don't feel like testing every possible known type of item procspell in the current db to ensure there are no regressions
+                    // current test case: 33990 Composite Bow casting Tattercoat
+                    attacker.TryCastSpell_WithRedirects(spell, spellTarget, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
+                }
+                else
+                    attacker.TryCastSpell(spell, spellTarget, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
             }
-            else
-                attacker.TryCastSpell(spell, spellTarget, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
+            finally
+            {
+                if (procPlayer != null)
+                    procPlayer.RingProcTrigger = prevRingProcTrigger;
+            }
         }
 
         private bool? isMasterable;
