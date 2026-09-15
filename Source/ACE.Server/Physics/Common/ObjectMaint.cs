@@ -7,6 +7,7 @@ using ACE.Entity.Enum;
 using ACE.Server.Managers;
 using ACE.Server.Physics.Managers;
 using ACE.Server.WorldObjects;
+using ACE.Server.Network.GameMessages.Messages;
 using log4net;
 
 namespace ACE.Server.Physics.Common
@@ -44,6 +45,17 @@ namespace ACE.Server.Physics.Common
             return VariationManager.SameVariationForVisibility(
                 GetVariationForVisibility(a, aOverride),
                 GetVariationForVisibility(b, bOverride));
+        }
+
+        /// <summary>The identity test for removals (variant review item 3, tightened by review 2026-09-13): the stored
+        /// instance is the same PhysicsObj, OR an older PhysicsObj of the same WorldObject (a failed AddPhysicsObj re-inits
+        /// a fresh PhysicsObj on the WO and every sweep passes the WO's current one). A recycled guid belongs to a
+        /// different WorldObject and must not match.</summary>
+        private static bool SameInstanceOrSameWorldObject(PhysicsObj stored, PhysicsObj given)
+        {
+            if (ReferenceEquals(stored, given)) return true;
+            var storedWo = stored?.WeenieObj?.WorldObject;
+            return storedWo != null && ReferenceEquals(storedWo, given?.WeenieObj?.WorldObject);
         }
 
         private readonly ReaderWriterLockSlim rwLock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
@@ -223,22 +235,31 @@ namespace ACE.Server.Physics.Common
             if (!SameVariationForVisibility(PhysicsObj, obj))
                 return false;
 
-            // Check if already known (optimistic read to avoid write lock overhead)
+            // Check if already known (optimistic read to avoid write lock overhead). Variant review 2026-09-12
+            // (item 3): "known" means THIS instance - a stale destroyed instance under the same guid is evicted
+            // below and replaced, never treated as already known.
             bool alreadyKnown = false;
             rwLock.EnterReadLock();
             try {
-                if (KnownObjects.ContainsKey(obj.ID)) alreadyKnown = true;
+                if (KnownObjects.TryGetValue(obj.ID, out var existing) && ReferenceEquals(existing, obj)) alreadyKnown = true;
             } finally { rwLock.ExitReadLock(); }
             if (alreadyKnown) return false;
 
             bool added = false;
             bool shouldAddKnownPlayer = false;
-            
+            PhysicsObj evictedKnown = null;
+
             // Phase 1: Update LOCAL state (Lock This)
             rwLock.EnterWriteLock();
             try
             {
                 // Double-check inside write lock
+                if (KnownObjects.TryGetValue(obj.ID, out var current) && !ReferenceEquals(current, obj))
+                {
+                    KnownObjects.Remove(obj.ID);
+                    DestructionQueue.Remove(current);
+                    evictedKnown = current;
+                }
                 if (!KnownObjects.ContainsKey(obj.ID))
                 {
                     added = KnownObjects.TryAdd(obj.ID, obj);
@@ -256,6 +277,8 @@ namespace ACE.Server.Physics.Common
 
             // Phase 3: Update REMOTE state (Unlock This -> Call Other)
             // Ideally we do this outside the lock to prevent deadlocks (A holds A, calls B. B holds B, calls A)
+            if (evictedKnown != null && PhysicsObj.IsPlayer)
+                evictedKnown.ObjMaint?.RemoveKnownPlayer(PhysicsObj);   // the stale instance no longer counts us as a viewer
             if (added)
             {
                 obj.ObjMaint.AddKnownPlayer(PhysicsObj);
@@ -287,23 +310,31 @@ namespace ACE.Server.Physics.Common
         {
             // Lock Safety: Always update local state first, release lock, THEN update remote state.
             bool removed = false;
-            
+            PhysicsObj current = null;
+
             rwLock.EnterWriteLock();
             try
             {
-                removed = KnownObjects.Remove(obj.ID, out _);
+                // Variant review 2026-09-12 (item 3): remove only if the table holds THIS instance - or an older
+                // PhysicsObj of the SAME WorldObject (review 2026-09-13: a failed AddPhysicsObj re-inits a fresh
+                // PhysicsObj on the WO, and the sweeps pass the WO's current one; the old ID-keyed remove cleared
+                // that entry, so this must too). A recycled guid belongs to a DIFFERENT WorldObject and stays.
+                if (KnownObjects.TryGetValue(obj.ID, out current) && SameInstanceOrSameWorldObject(current, obj))
+                    removed = KnownObjects.Remove(obj.ID);
             }
             finally
             {
                 rwLock.ExitWriteLock();
             }
 
-            // Remote update outside lock to prevent deadlocks
+            // Remote update outside lock to prevent deadlocks. The inverse link lives on the instance the table
+            // HELD (CodeRabbit #519): when that is an older PhysicsObj of the same WorldObject, the caller's fresh
+            // instance has an empty tracker and the stale one would keep pointing at us.
             if (removed && inversePlayer && PhysicsObj.IsPlayer)
             {
                  // We don't need a lock here because we are calling a method on another object
                  // that will handle its own locking.
-                 obj.ObjMaint.RemoveKnownPlayer(PhysicsObj);
+                 (current ?? obj).ObjMaint.RemoveKnownPlayer(PhysicsObj);
             }
 
             return removed;
@@ -518,6 +549,7 @@ namespace ACE.Server.Physics.Common
             bool added = false;
             bool callInverse = false;
             wasKnownAlready = false;
+            PhysicsObj evictedVisible = null, evictedKnown = null;
 
             rwLock.EnterWriteLock();
             try
@@ -525,16 +557,25 @@ namespace ACE.Server.Physics.Common
                 if (!SameVariationForVisibility(PhysicsObj, obj))
                     return false;
 
-                var wasVisible = VisibleObjects.ContainsKey(obj.ID);
-                if (wasVisible)
+                // Variant review 2026-09-12 (item 3): the ID-keyed tables can still hold a DESTROYED instance under
+                // this guid (reload-landblock, quest reload, a recycled dynamic guid, the old scatter re-entry).
+                // A new PhysicsObj with the same guid was then rejected as "already visible" and never got a
+                // CreateObject - real on the server, invisible on the client until relog (ghost idol F000285E).
+                // Evict the stale instance from both tables AND the destruction queue (so its later expiry cannot
+                // clobber the new entry) and take the new one. A repeat of the SAME instance still returns false.
+                var wasVisible = false;
+                if (VisibleObjects.TryGetValue(obj.ID, out var staleVisible) && ReferenceEquals(staleVisible, obj))
                     return false;
 
-                var wasKnown = KnownObjects.ContainsKey(obj.ID);
+                var wasKnown = KnownObjects.TryGetValue(obj.ID, out var staleKnown) && ReferenceEquals(staleKnown, obj);
                 wasKnownAlready = wasKnown;
                 var dist2DSq = PhysicsObj.Position.Distance2DSquared(obj.Position);
 
                 // Always clamp distance — do not skip when already in KnownObjects (AddTrackedObject used to
                 // call AddKnownObject first, which bypassed clamp and sent CreateObject at 9-LB PVS range).
+                // CodeRabbit #519 round 2: the clamp runs BEFORE any stale-instance eviction. A rejected replacement
+                // must leave the tables untouched - the early return skips the inverse cleanup and the DeleteObject
+                // below, so evicting first would have left the client holding the old guid with nothing to clear it.
                 if (InitialClamp && dist2DSq > InitialClamp_DistSq)
                 {
                     if (PhysicsObj.IsPlayer && PhysicsObj.WeenieObj.WorldObject is Player viewer && ServerConfig.visibility_create_object_diag_verbose.Value)
@@ -544,6 +585,22 @@ namespace ACE.Server.Physics.Common
                     }
 
                     return false;
+                }
+
+                // Evict a DIFFERENT instance under this guid from both tables and the destruction queue (see above);
+                // the inverse links and the client-side delete for it are handled outside the lock below.
+                if (staleVisible != null && !ReferenceEquals(staleVisible, obj))
+                {
+                    VisibleObjects.Remove(obj.ID);
+                    DestructionQueue.Remove(staleVisible);
+                    evictedVisible = staleVisible;
+                }
+
+                if (staleKnown != null && !ReferenceEquals(staleKnown, obj))
+                {
+                    KnownObjects.Remove(obj.ID);
+                    DestructionQueue.Remove(staleKnown);
+                    evictedKnown = staleKnown;
                 }
 
                 //Console.WriteLine($"{PhysicsObj.Name}.AddVisibleObject({obj.Name})");
@@ -565,6 +622,22 @@ namespace ACE.Server.Physics.Common
             // Cross-instance call OUTSIDE the lock to prevent A↔B deadlock
             if (callInverse)
                 obj.ObjMaint.AddVisibleTarget(PhysicsObj, false);
+
+            // Undo the stale instances' inverse links outside the lock (same shape as RemoveVisibleObject /
+            // RemoveKnownObject). The stale object may already be torn down, so guard every hop.
+            if (evictedVisible != null)
+                evictedVisible.ObjMaint?.RemoveVisibleTarget(PhysicsObj);
+            if (evictedKnown != null && PhysicsObj.IsPlayer)
+                evictedKnown.ObjMaint?.RemoveKnownPlayer(PhysicsObj);
+
+            // Review 2026-09-13: the client may STILL hold the evicted instance (it was in the destruction queue, i.e. not
+            // yet culled), and a CreateObject for a guid the client holds is a no-op - so the old visual would stay until
+            // relog. Send a DeleteObject for the stale guid first; a DeleteObject for an unheld guid is a no-op (the
+            // ghost-mob sweep relies on that already). The caller's CreateObject then lands on a clean slate.
+            var evicted = evictedVisible ?? evictedKnown;
+            if (evicted != null && PhysicsObj.IsPlayer && PhysicsObj.WeenieObj?.WorldObject is Player viewerPlayer
+                && evicted.WeenieObj?.WorldObject is WorldObject staleWo)
+                viewerPlayer.Session?.Network.EnqueueSend(new GameMessageDeleteObject(staleWo));
 
             return added;
         }
@@ -618,20 +691,23 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public bool RemoveVisibleObject(PhysicsObj obj, bool inverseTarget = true)
         {
-            bool removed;
+            bool removed = false;
+            PhysicsObj current = null;
             rwLock.EnterWriteLock();
             try
             {
-                removed = VisibleObjects.Remove(obj.ID, out _);
+                // Variant review 2026-09-12 (item 3): identity-checked, see RemoveKnownObject.
+                if (VisibleObjects.TryGetValue(obj.ID, out current) && SameInstanceOrSameWorldObject(current, obj))
+                    removed = VisibleObjects.Remove(obj.ID);
             }
             finally
             {
                 rwLock.ExitWriteLock();
             }
 
-            // Cross-instance call OUTSIDE the lock to prevent deadlock
+            // Cross-instance call OUTSIDE the lock to prevent deadlock - on the instance the table held (see RemoveKnownObject)
             if (removed && inverseTarget)
-                obj.ObjMaint.RemoveVisibleTarget(PhysicsObj);
+                (current ?? obj).ObjMaint.RemoveVisibleTarget(PhysicsObj);
 
             return removed;
         }
@@ -748,6 +824,27 @@ namespace ACE.Server.Physics.Common
             {
                 rwLock.ExitWriteLock();
             }
+        }
+
+        /// <summary>Variant review 2026-09-12 (item 3 / 3-A3): if this object's destruction-queue entry has EXPIRED
+        /// but DestroyObjects has not run yet (it runs on the viewer's cell change or the 5 s heartbeat), the client
+        /// has already culled it. Treat it as absent NOW - drop it from the tables - so a re-entry sends a fresh
+        /// CreateObject instead of being refused as "already known". Returns true when it purged.</summary>
+        public bool PurgeIfExpired(PhysicsObj obj)
+        {
+            bool expired;
+            rwLock.EnterReadLock();
+            try
+            {
+                expired = DestructionQueue.TryGetValue(obj, out var time) && time <= PhysicsTimer.CurrentTime;
+            }
+            finally
+            {
+                rwLock.ExitReadLock();
+            }
+            if (!expired) return false;
+            RemoveObject(obj);   // handles its own locking; also drops the queue entry
+            return true;
         }
 
         /// <summary>

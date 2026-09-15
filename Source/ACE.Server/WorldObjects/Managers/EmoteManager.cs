@@ -1851,7 +1851,10 @@ namespace ACE.Server.WorldObjects.Managers
                 case EmoteType.SetSanctuaryPosition:
 
                     if (player != null)
-                        player.SetPosition(PositionType.Sanctuary, new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value));
+                        // variant review 2026-09-12 (item 11): a bind authored inside a variation must recall to that layer, not the base copy
+                        // Review 2026-09-13: the emitter can be an inventory item with no Location - resolve its effective layer
+                        // (wielder / container chain), then fall back to the player's.
+                        player.SetPosition(PositionType.Sanctuary, new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value, false, VariationManager.GetEffectiveVariationForVisibility(WorldObject) ?? player.Location?.Variation));
                     break;
 
                 case EmoteType.Sound:

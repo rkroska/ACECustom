@@ -690,8 +690,11 @@ namespace ACE.Server.WorldObjects
             // use the physics location for accuracy,
             // especially while jumping
             corpse.Location = PhysicsObj.Position.ACEPosition();
-            if (!corpse.Location.Variation.HasValue && Location.Variation.HasValue)
-                corpse.Location.Variation = Location.Variation;
+            // Variant review 2026-09-12 (item 13): the corpse belongs to the creature's OWN layer. The physics position
+            // is right for x/y/z (jumping), but its variation can lag the creature's Location for a tick after a layer
+            // change, and the old fallback only filled a NULL - a stale non-null value was kept and filed the corpse
+            // one layer over. Location wins whenever it has a value; the physics value is the fallback.
+            corpse.Location.Variation = Location.Variation ?? corpse.Location.Variation;
 
             corpse.VictimId = Guid.Full;
             corpse.Name = $"{prefix} of {Name}";
