@@ -487,7 +487,15 @@ namespace ACE.Server.Physics.Common
         {
             // should be length SideCellCount ^ 2
             foreach (var landCell in LandCells.Values)
+            {
                 landCell.CurLandblock = this;
+                // Variant review 2026-09-12 (item 1): outdoor cells were built with VariationId = null while indoor
+                // EnvCells get theirs stamped by LScape - so every reader of cell.VariationId (enter_cell's landblock
+                // lookup, enter_cell_server's SyncLocation, WorldObject_Tick) saw "base" for any outdoor cell of any
+                // variation. Cells are per landblock INSTANCE (LandblockStruct builds a fresh set keyed by this
+                // instance's variation), so stamping here is exact. Base world: null stays null.
+                landCell.VariationId = VariationId;
+            }
         }
 
         public void init_static_objs()

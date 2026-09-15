@@ -55,6 +55,31 @@ namespace ACE.Server.Managers
         private static readonly ConcurrentDictionary<VariantCacheId, Landblock> destructionQueue = new ConcurrentDictionary<VariantCacheId, Landblock>();
 
 
+        /// <summary>One line per landblock group: its bounds/variation/count and its members as XXXX:v (variant review
+        /// 2026-09-12, item 6 - the in-game check that no group ever mixes variations). Read-locked snapshot.</summary>
+        public static List<string> DumpLandblockGroups()
+        {
+            var lines = new List<string>();
+            landblockLock.EnterReadLock();
+            try
+            {
+                for (var i = 0; i < landblockGroups.Count; i++)
+                {
+                    var group = landblockGroups[i];
+                    lines.Add($"[{i}] {group}");
+                    // members in chunks of 20 per line - a 200-block base group would otherwise be one 2 KB chat line
+                    var members = group.Select(lb => $"{lb.Id.Landblock:X4}:{lb.VariationId?.ToString() ?? "null"}").ToList();
+                    for (var m = 0; m < members.Count; m += 20)
+                        lines.Add("    " + string.Join(" ", members.Skip(m).Take(20)));
+                }
+            }
+            finally
+            {
+                landblockLock.ExitReadLock();
+            }
+            return lines;
+        }
+
         public static int LandblockGroupsCount
         {
             get
@@ -187,7 +212,14 @@ namespace ACE.Server.Managers
             {
                 if (!landblockGroupPendingAdditions.TryRemove(pendingKey, out var landlockToAdd))
                     continue;
-                if (landlockToAdd.IsDungeon || landlockToAdd.VariationId.HasValue)
+                // Variant review 2026-09-12 (item 6): variant OUTDOOR blocks group by proximity exactly like base blocks,
+                // one variation per group. They used to go solo like dungeons while SetAdjacents still wired same-variation
+                // neighbours together, so two adjacent v11 blocks ticked on different threads while writing each other's
+                // dormancy state, spawning across the border into the other's group (the "PLEASE REPORT THIS" branch),
+                // trading melee/projectile damage cross-thread, and a v11 caster never cast at a target one block over
+                // (Monster_Magic's cross-group guard threw the cast away). Groups are the thread boundary; adjacency is
+                // per (id, exact variation); so the group key is the exact variation too. Dungeons stay solo.
+                if (landlockToAdd.IsDungeon)
                 {
                     // Each dungeon exists in its own group
                     var landblockGroup = new LandblockGroup(landlockToAdd, landlockToAdd.VariationId);
@@ -200,7 +232,9 @@ namespace ACE.Server.Managers
 
                     for (int j = 0; j < landblockGroups.Count; j++)
                     {
-                        if (landblockGroups[j].IsDungeon)
+                        // never a dungeon group, never another variation's group (this second test also ends the old
+                        // silent bug where a BASE block within 5 of a v11 solo group was merged into it)
+                        if (landblockGroups[j].IsDungeon || landblockGroups[j].VariationId != landlockToAdd.VariationId)
                             continue;
 
                         var distance = landblockGroups[j].BoundaryDistance(landlockToAdd);
@@ -209,19 +243,30 @@ namespace ACE.Server.Managers
                             landblockGroupsIndexMatchesByDistance.Add(j);
                     }
 
+                    var groupDiag = ServerConfig.landblock_group_diag_verbose.Value;
+                    var lbTag = $"{landlockToAdd.Id.Landblock:X4} v={landlockToAdd.VariationId?.ToString() ?? "null"}";
+
                     if (landblockGroupsIndexMatchesByDistance.Count > 0)
                     {
                         // Add the landblock to the first eligible group
                         landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landlockToAdd, landlockToAdd.VariationId);
+                        if (groupDiag)
+                            log.Warn($"[LANDBLOCK GROUP] add {lbTag} -> group[{landblockGroupsIndexMatchesByDistance[0]}] {landblockGroups[landblockGroupsIndexMatchesByDistance[0]]}");
 
                         if (landblockGroupsIndexMatchesByDistance.Count > 1)
                         {
                             // Merge the additional eligible groups into the first one
                             for (int j = landblockGroupsIndexMatchesByDistance.Count - 1; j > 0; j--)
                             {
-                                // Copy the j down into 0
+                                if (groupDiag)
+                                    log.Warn($"[LANDBLOCK GROUP] merge {lbTag} bridges group[{landblockGroupsIndexMatchesByDistance[j]}] {landblockGroups[landblockGroupsIndexMatchesByDistance[j]]} into group[{landblockGroupsIndexMatchesByDistance[0]}]");
+
+                                // Copy the j down into 0. A refused Add would leave that block in NO group (never ticked, still
+                                // walkable) - unreachable while candidates are filtered by exact variation, but never silent
+                                // (review 2026-09-13).
                                 foreach (var landblock in landblockGroups[landblockGroupsIndexMatchesByDistance[j]])
-                                    landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblock, landblock.VariationId);
+                                    if (!landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblock, landblock.VariationId))
+                                        log.Error($"[LANDBLOCK GROUP] merge REFUSED {landblock.Id.Landblock:X4} v={landblock.VariationId?.ToString() ?? "null"} into group {landblockGroups[landblockGroupsIndexMatchesByDistance[0]]} - block is now in no group");
 
                                 landblockGroups.RemoveAt(landblockGroupsIndexMatchesByDistance[j]);
                             }
@@ -232,6 +277,8 @@ namespace ACE.Server.Managers
                         // No close groups were found
                         var landblockGroup = new LandblockGroup(landlockToAdd, landlockToAdd.VariationId);
                         landblockGroups.Add(landblockGroup);
+                        if (groupDiag)
+                            log.Warn($"[LANDBLOCK GROUP] new {lbTag} -> group[{landblockGroups.Count - 1}] {landblockGroup} (no same-variation group within {LandblockGroup.LandblockGroupMinSpacing})");
                     }
                 }
             }
@@ -239,14 +286,81 @@ namespace ACE.Server.Managers
             // Debugging todo: comment this out after enough testing
             var count = 0;
             foreach (var group in landblockGroups)
+            {
                 count += group.Count;
+                // item 6 invariant: one variation per group (a refused Add would also show up as a count mismatch below)
+                foreach (var member in group)
+                    if (member.VariationId != group.VariationId)
+                        log.Error($"[LANDBLOCK GROUP] mixed variations: {member.Id.Landblock:X4} v={member.VariationId?.ToString() ?? "null"} sits in group {group}");
+            }
             if (count != loadedLandblocks.Count)
                 log.Error($"[LANDBLOCK GROUP] ProcessPendingAdditions count ({count}) != loadedLandblocks.Count ({loadedLandblocks.Count})");
             
         }
 
+        private static DateTime _groupSummaryLast = DateTime.MinValue;
+
+        /// <summary>Variant review 2026-09-12 (item 6) test diag, every 60 s while landblock_group_diag_verbose is on:
+        /// groups per variation, the largest group, and any two same-variation non-dungeon groups within
+        /// LandblockGroupMinSpacing of each other - those should have merged, so a hit is a grouping defect.</summary>
+        private static void LogGroupSummaryIfDue()
+        {
+            if (!ServerConfig.landblock_group_diag_verbose.Value) return;
+            if ((DateTime.UtcNow - _groupSummaryLast).TotalSeconds < 60) return;
+            _groupSummaryLast = DateTime.UtcNow;
+
+            landblockLock.EnterReadLock();
+            try
+            {
+                var perVariation = new SortedDictionary<string, (int groups, int blocks, int largest)>();
+                foreach (var group in landblockGroups)
+                {
+                    var key = group.VariationId?.ToString() ?? "null";
+                    perVariation.TryGetValue(key, out var acc);
+                    perVariation[key] = (acc.groups + 1, acc.blocks + group.Count, Math.Max(acc.largest, group.Count));
+                }
+                var parts = perVariation.Select(kv => $"v={kv.Key}: {kv.Value.groups} group(s), {kv.Value.blocks} block(s), largest {kv.Value.largest}");
+                log.Warn($"[LANDBLOCK GROUP] summary: {landblockGroups.Count} groups, {loadedLandblocks.Count} loaded | {string.Join(" | ", parts)}");
+
+                // The thread-safety invariant is "ADJACENT blocks share a group" (review 2026-09-13: a rectangle-distance
+                // test asserted more than the system promises - a split can legitimately leave an island inside another
+                // group's rectangle). Two same-variation outdoor blocks at Chebyshev distance 1 in different groups is the
+                // real defect, so that is what this scans for.
+                for (var i = 0; i < landblockGroups.Count; i++)
+                {
+                    var a = landblockGroups[i];
+                    if (a.IsDungeon) continue;
+                    for (var j = i + 1; j < landblockGroups.Count; j++)
+                    {
+                        var b = landblockGroups[j];
+                        if (b.IsDungeon || a.VariationId != b.VariationId) continue;
+                        var hit = false;
+                        foreach (var la in a)
+                        {
+                            foreach (var lb in b)
+                            {
+                                if (Math.Abs(la.Id.LandblockX - lb.Id.LandblockX) <= 1 && Math.Abs(la.Id.LandblockY - lb.Id.LandblockY) <= 1)
+                                {
+                                    log.Warn($"[LANDBLOCK GROUP] adjacent blocks in different groups: {la.Id.Landblock:X4} (group[{i}] {a}) and {lb.Id.Landblock:X4} (group[{j}] {b}) - same variation, touching, different threads");
+                                    hit = true;
+                                    break;
+                                }
+                            }
+                            if (hit) break;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                landblockLock.ExitReadLock();
+            }
+        }
+
         public static void Tick(double portalYearTicks)
         {
+            LogGroupSummaryIfDue();
+
             // update positions through physics engine
             ServerPerformanceMonitor.RestartEvent(ServerPerformanceMonitor.MonitorType.LandblockManager_TickPhysics);
             TickPhysics(portalYearTicks);
@@ -799,13 +913,13 @@ namespace ACE.Server.Managers
                                             {
                                                 log.Debug(
                                                     $"[LANDBLOCK GROUP] TrySplit resulted in {splits.Count} split(s) and took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
-                                                log.Debug($"[LANDBLOCK GROUP] split for old: {landblockGroups[i]}");
+                                                if (ServerConfig.landblock_group_diag_verbose.Value) log.Warn($"[LANDBLOCK GROUP] split for old: {landblockGroups[i]}"); else log.Debug($"[LANDBLOCK GROUP] split for old: {landblockGroups[i]}");
                                             }
 
                                             foreach (var split in splits)
                                             {
                                                 landblockGroups.Add(split);
-                                                log.Debug($"[LANDBLOCK GROUP] split and new: {split}");
+                                                if (ServerConfig.landblock_group_diag_verbose.Value) log.Warn($"[LANDBLOCK GROUP] split and new: {split}"); else log.Debug($"[LANDBLOCK GROUP] split and new: {split}");
                                             }
                                         }
                                     }

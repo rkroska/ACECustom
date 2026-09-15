@@ -204,6 +204,17 @@ namespace ACE.Server.WorldObjects
             // exclude linkspots from spawning
             if (WeenieClassId == 10762) return true;
 
+            // Review 2026-09-13 (follow-up to variant item 1) + audit C2: the physics goes in the object's OWN layer, and
+            // AddWorldObjectInternal has already re-routed the add to the matching landblock instance, so registration
+            // (the ticking thread) and physics (the scanned cells) are always the same instance. A mismatch here means a
+            // caller bypassed that re-route - refuse rather than split the object across two groups.
+            if (Location.Variation.HasValue && VariationId.HasValue && VariationManager.NormalizeBase(Location.Variation) != VariationManager.NormalizeBase(VariationId))
+            {
+                log.Warn($"[SpawnDiag] AddPhysicsObj: 0x{Guid}:{Name} Location v={Location.Variation} but the caller asked for v={VariationId} - refusing (audit C2: registration and physics must share one instance)");
+                return false;
+            }
+            VariationId = VariationManager.NormalizeBase(Location.Variation) ?? VariationManager.NormalizeBase(VariationId);   // an explicit 0 on EITHER side must not key a second set of cells (CodeRabbit #519 round 2)
+
             var cell = LScape.get_landcell(Location.Cell, VariationId);
             if (cell == null)
             {
@@ -290,6 +301,14 @@ namespace ACE.Server.WorldObjects
         /// This will be true when teleporting
         /// </summary>
         public bool Teleporting { get; set; } = false;
+
+        /// <summary>Variant review 2026-09-12 (item 9): while a teleport is in flight, the variation the object is GOING
+        /// to. The visibility resolver prefers this over Location.Variation, which still holds the origin until the
+        /// physics placement completes - otherwise the placement's cell-entry passes classified the player as still
+        /// in the origin layer and tracked/sent that layer's objects, only for the post-placement sweep to delete
+        /// them again. Valid only while HasTeleportDestination is true.</summary>
+        public int? TeleportDestinationVariation { get; set; }
+        public bool HasTeleportDestination { get; set; }
 
         public bool HasGiveOrRefuseEmoteForItem(Session session, WorldObject item, out PropertiesEmote emote)
         {

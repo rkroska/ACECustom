@@ -79,6 +79,7 @@ namespace ACE.Server.WorldObjects
             IgnoreCollisions = false;
             Hidden = false;
             Teleporting = false;
+            HasTeleportDestination = false;   // review 2026-09-13: the in-flight destination lives and dies with Teleporting
 
             EnqueueBroadcastPhysicsState();
 

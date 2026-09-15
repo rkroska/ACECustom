@@ -28,10 +28,13 @@ namespace ACE.Database.SQLFormatters.World
         public void CreateSQLDELETEStatement(IList<LandblockInstance> input, StreamWriter writer, int? variationId)
         {
             writer.Write($"DELETE FROM `landblock_instance` WHERE `landblock` = 0x{(input[0].ObjCellId >> 16):X4} ");
+            // Variant review 2026-09-12 (item 2): ALWAYS scope the DELETE to one layer. A null variation used to emit
+            // no predicate at all, so a base-layer export applied to a shard with layered rows (220 landblocks on
+            // ILT) deleted every v1/v2/v11 row on that landblock and re-inserted only the base ones.
             if (variationId.HasValue)
-            {
                 writer.Write($"and `variation_Id` = {variationId:N0}");
-            }
+            else
+                writer.Write("and `variation_Id` IS NULL");
             writer.WriteLine(";");
         }
 

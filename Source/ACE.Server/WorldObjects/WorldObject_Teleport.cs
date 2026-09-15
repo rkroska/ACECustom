@@ -38,6 +38,9 @@ namespace ACE.Server.WorldObjects
             player?.CleanupZoneBoundaryEffects();
 
             Teleporting = true;
+            // Item 9: from here until the placement lands, visibility treats us as already in the destination layer.
+            TeleportDestinationVariation = newPosition.Variation;
+            HasTeleportDestination = true;
             var timestamp = Time.GetUnixTime();
             SetProperty(PropertyFloat.LastTeleportStartTimestamp, timestamp);
 
@@ -158,6 +161,7 @@ namespace ACE.Server.WorldObjects
             IgnoreCollisions = false;
             Hidden = false;
             Teleporting = false;
+            HasTeleportDestination = false;   // item 9: Location carries the destination from here on
 
             if (this is Player pl && Player.LogPortalJumpSuppressToConsole && log.IsDebugEnabled)
             {
@@ -193,6 +197,23 @@ namespace ACE.Server.WorldObjects
 
                 if (knownObj is Player knownPlayer) knownPlayer.RemoveTrackedObject(player, false);
                 player.RemoveTrackedObject(knownObj, false);
+            }
+
+            // Variant review 2026-09-12 (item 10): the sweep above walks only what WE know. A peer who knows us
+            // one-way (we never tracked them) kept us in their view after the switch: our movement broadcasts
+            // reached them for up to 25 s, then stopped with no DeleteObject - a frozen ghost of the switching
+            // player until they relogged. Walk the players who know us too, and drop the ones now in another layer.
+            if (PhysicsObj?.ObjMaint == null) return;
+            foreach (var peer in PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
+            {
+                if (peer == null || peer == player || peer.PhysicsObj == null) continue;
+                var peerVar = VariationManager.GetEffectiveVariationForVisibility(peer);
+                if (VariationManager.SameVariationForVisibility(peerVar, destinationVariation)) continue;
+
+                peer.PhysicsObj.ObjMaint?.RemoveObject(PhysicsObj);
+                PhysicsObj.ObjMaint.RemoveObject(peer.PhysicsObj);
+                peer.RemoveTrackedObject(player, false);
+                player.RemoveTrackedObject(peer, false);
             }
         }
 
