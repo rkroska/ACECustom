@@ -15,6 +15,15 @@ namespace ACE.Server.Network.GameAction.Actions
             var groupChatType = (Channel)clientMessage.Payload.ReadUInt32();
             var message = clientMessage.Payload.ReadString16L();
 
+            // 2026-09-13: the gag used to cover say, emotes, tells and Turbine chat only - fellowship (/f), vassal,
+            // patron, monarch, co-vassal and allegiance-broadcast chat all go through this handler and were never
+            // checked, so a gagged player kept talking to their fellowship and allegiance for the whole gag.
+            if (session.Player.IsGaggedNow())
+            {
+                session.Player.SendGagError();
+                return;
+            }
+
             switch (groupChatType)
             {
                 case Channel.Abuse:

@@ -730,7 +730,10 @@ namespace ACE.Server.WorldObjects
                     if (!limitToMainPackOnly)
                     {
                         var containers = Inventory.Values.OfType<Container>().ToList();
-                        containers.Sort((a, b) => (a.Placement ?? 0).CompareTo(b.Placement ?? 0));
+                        // Pack bar order (PlacementPosition), top pack first. This used to sort on
+                        // Placement - the resting pose, which is Resting for every packed item - so
+                        // overflow landed in whatever order the inventory dictionary held the packs.
+                        containers.Sort((a, b) => (a.PlacementPosition ?? 0).CompareTo(b.PlacementPosition ?? 0));
                         
                         // log.Debug($"[SAVE DEBUG] TryAddToInventory main pack full for {itemInfo} in {containerInfo} ({containerItems.Count}/{ItemCapacity ?? 0}), trying {containers.Count} side packs");
 

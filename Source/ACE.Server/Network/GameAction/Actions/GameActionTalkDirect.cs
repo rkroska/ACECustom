@@ -26,16 +26,17 @@ namespace ACE.Server.Network.GameAction.Actions
                 return;
             }
 
+            // gagged: no echo, no tell, no NPC talk (review 2026-09-13: the echo used to go out before the check)
+            if (session.Player.IsGaggedNow())
+            {
+                session.Player.SendGagError();
+                return;
+            }
+
             session.Network.EnqueueSend(new GameMessageSystemChat($"You tell {creature.Name}, \"{message}\"", ChatMessageType.OutgoingTell));
 
             if (creature is Player targetPlayer)
             {
-                if (session.Player.IsGagged)
-                {
-                    session.Player.SendGagError();
-                    return;
-                }
-
                 if (targetPlayer.SquelchManager.Squelches.Contains(session.Player, ChatMessageType.Tell))
                 {
                     session.Network.EnqueueSend(new GameEventWeenieErrorWithString(session, WeenieErrorWithString.MessageBlocked_, $"{targetPlayer.Name} has you squelched."));
