@@ -391,6 +391,40 @@ namespace ACE.Server.Managers
         public static readonly ThreadLocal<LandblockGroup> CurrentMultiThreadedTickingLandblockGroup = new ThreadLocal<LandblockGroup>();
 
         /// <summary>
+        /// Thread audit: true when work that writes <paramref name="wo"/> may run on the calling thread - landblock groups
+        /// are not ticking in parallel (world thread, or the single-threaded physics phase), or this thread is ticking the
+        /// group that owns wo's landblock. Compares against the EXECUTING group, never against some other object's group,
+        /// because a caller can run on a thread that owns neither. Use <see cref="RunOnThreadFor"/> to act on the answer.
+        /// </summary>
+        public static bool IsOnThreadFor(WorldObject wo)
+        {
+            if (!CurrentlyTickingLandblockGroupsMultiThreaded)
+                return true;
+
+            var current = CurrentMultiThreadedTickingLandblockGroup.Value;
+            return current != null && ReferenceEquals(wo?.CurrentLandblock?.CurrentLandblockGroup, current);
+        }
+
+        /// <summary>
+        /// Thread audit: runs <paramref name="work"/> now when <see cref="IsOnThreadFor"/> says the calling thread owns
+        /// <paramref name="wo"/>, otherwise on the WORLD action queue. The world queue runs on the world loop between
+        /// landblock ticks (WorldManager.UpdateWorld: ActionQueue.RunActions, then LandblockManager.Tick), never beside
+        /// them, so when the work runs no group thread can be touching or removing wo. Never wo's own queue: a Player's
+        /// queue only drains while a landblock ticks the player, and a player removed by logout between a landblock check
+        /// and the enqueue would never run it.
+        /// </summary>
+        public static void RunOnThreadFor(WorldObject wo, ACE.Server.Entity.Actions.ActionType type, Action work)
+        {
+            if (IsOnThreadFor(wo))
+            {
+                work();
+                return;
+            }
+
+            WorldManager.EnqueueAction(new ACE.Server.Entity.Actions.ActionEventDelegate(type, work));
+        }
+
+        /// <summary>
         /// Processes physics objects in all active landblocks for updating
         /// </summary>
         private static void TickPhysics(double portalYearTicks)
@@ -739,7 +773,9 @@ namespace ACE.Server.Managers
             foreach (var adjacentID in adjacentIDs)
             {
                 var adjacent = GetLandblock(new VariantCacheId() { Landblock = adjacentID.Landblock, Variant = variationId });
-                if (adjacent != null)
+                // Thread audit 2026-09-13 (C8): dungeon ids occupy grid slots (ocean coordinates); a loaded dungeon is a solo
+                // group and must never receive SetActive/dormancy writes from an outdoor neighbour's thread.
+                if (adjacent != null && !adjacent.IsDungeon)
                     adjacents.Add(adjacent);
             }
 

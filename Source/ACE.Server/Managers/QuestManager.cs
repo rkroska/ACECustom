@@ -950,23 +950,15 @@ namespace ACE.Server.Managers
                             Landblock L = LandblockManager.GetLandblock(p, false, Variation);
                             if (L != null)
                             {
-                                L.DestroyAllNonPlayerObjects();
-
-                                //DatabaseManager.Shard.SaveBiota //try this?
-                                // clear landblock cache
-                              
-                                DatabaseManager.World.ClearCachedInstancesByLandblock(L.Id.Landblock, Variation);   // variant review item 8: (ushort)Raw was the CELL, never the landblock - the clear was a no-op
-
-                                // reload landblock
-                                L.Init(Variation, true);
-                              
-                                //var actionChain = new ActionChain();
-                                //actionChain.AddDelayForOneTick();
-                                //actionChain.AddAction(session.Player, () =>
-                                //{
-                                //    L.Init(true);
-                                //});
-                                //actionChain.EnqueueChain();
+                                // Audit 2026-09-13 (C4): this runs on the emitting NPC's landblock thread and the quest NPC's block can be
+                                // any distance away or a dungeon (another group). Destroy + reload on the target block's own queue.
+                                var reloadVariation = L.VariationId;   // the resolved block's own layer
+                                L.EnqueueAction(new ActionEventDelegate(ActionType.QuestManager_DynamicQuestReload, () =>
+                                {
+                                    L.DestroyAllNonPlayerObjects();
+                                    DatabaseManager.World.ClearCachedInstancesByLandblock(L.Id.Landblock, reloadVariation);   // variant review item 8: the landblock, never the cell
+                                    L.Init(reloadVariation, true);
+                                }));
                             }
                             break;
                         }
@@ -989,9 +981,15 @@ namespace ACE.Server.Managers
                                 Landblock L2 = LandblockManager.GetLandblock(p2, false, Variation);
                                 if (L2 != null)
                                 {
-                                    L2.DestroyAllNonPlayerObjects();
-                                    DatabaseManager.World.ClearCachedInstancesByLandblock(L2.Id.Landblock, Variation);   // variant review item 8
-                                    L2.Init(Variation, true);
+                                    // Audit 2026-09-13 (C4): this runs on the emitting NPC's landblock thread and the quest NPC's block can be
+                                    // any distance away or a dungeon (another group). Destroy + reload on the target block's own queue.
+                                    var reloadVariation2 = L2.VariationId;   // the resolved block's own layer
+                                    L2.EnqueueAction(new ActionEventDelegate(ActionType.QuestManager_DynamicQuestReload, () =>
+                                    {
+                                        L2.DestroyAllNonPlayerObjects();
+                                        DatabaseManager.World.ClearCachedInstancesByLandblock(L2.Id.Landblock, reloadVariation2);   // variant review item 8: the landblock, never the cell
+                                        L2.Init(reloadVariation2, true);
+                                    }));
                                 }
                             }
                             break;
