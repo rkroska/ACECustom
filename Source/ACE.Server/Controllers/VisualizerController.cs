@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using ACE.Server.Managers;
@@ -9,37 +9,54 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ACE.Server.Controllers
 {
-    [AllowAnonymous]
+    /// <summary>
+    /// Read-only rendering and lookup endpoints stay anonymous: the public site and the owner's breeding
+    /// simulator call them without a session. Anything that writes (screenshots on disk, curation data)
+    /// requires a signed-in portal user with the world-viewer page access (admins always pass).
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     public class VisualizerController : BaseController
     {
+        /// <summary>
+        /// Portal access key for the viewer's write endpoints. Not a registered PortalPages entry, so
+        /// PortalAccessManager falls back to DefaultRestrictedPageMinLevel (Developer) until it is added.
+        /// </summary>
+        private const string WorldViewerPageKey = "world-viewer";
+
+        private bool CanWrite() => IsPortalAdmin || HasPortalAccess(WorldViewerPageKey);
+
+        /// <summary>Parses a decimal or 0x-prefixed hex id. Returns false for garbage; an empty value parses as 0.</summary>
+        private static bool TryParseId(string value, out uint id)
+        {
+            id = 0;
+            if (string.IsNullOrEmpty(value))
+                return true;
+
+            if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                return uint.TryParse(value.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out id);
+
+            return uint.TryParse(value, out id);
+        }
+
         [HttpGet("mesh/{wcid}.gltf")]
+        [AllowAnonymous]
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public async Task<IActionResult> GetMesh(uint wcid, [FromQuery] string paletteId = null, [FromQuery] int hue = 0)
         {
             if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
 
-            uint parsedPaletteId = 0;
-            if (!string.IsNullOrEmpty(paletteId))
-            {
-                if (paletteId.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-                {
-                    uint.TryParse(paletteId.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out parsedPaletteId);
-                }
-                else
-                {
-                    uint.TryParse(paletteId, out parsedPaletteId);
-                }
-            }
+            if (!TryParseId(paletteId, out var parsedPaletteId) || !VisualizerService.IsAcceptedPaletteOverride(parsedPaletteId))
+                return BadRequest("Invalid Palette ID.");
 
-            var gltfBytes = await VisualizerService.GetMeshGltfBytesAsync(wcid, parsedPaletteId, hue);
+            var gltfBytes = await VisualizerService.GetMeshGltfBytesAsync(wcid, parsedPaletteId, VisualizerService.NormalizeHue(hue));
             if (gltfBytes == null) return NotFound($"Mesh for Weenie {wcid} not found.");
 
             return File(gltfBytes, "model/gltf+json", $"{wcid}.gltf");
         }
 
         [HttpGet("species-palettes/{wcid}")]
+        [AllowAnonymous]
         public IActionResult GetSpeciesPalettes(uint wcid)
         {
             if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
@@ -49,6 +66,7 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("compatibility/{wcid}")]
+        [AllowAnonymous]
         public IActionResult GetSpeciesCompatibility(uint wcid)
         {
             if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
@@ -58,6 +76,7 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("master-mutation-pool")]
+        [AllowAnonymous]
         public IActionResult GetMasterMutationPool()
         {
             var pool = PetMutationService.GetMasterPalettePool();
@@ -65,6 +84,7 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("breeding-config")]
+        [AllowAnonymous]
         public IActionResult GetBreedingConfig()
         {
             var config = new
@@ -80,13 +100,16 @@ namespace ACE.Server.Controllers
                 potencyMutationStep = ServerConfig.pet_breeding_potency_mutation_step.Value,
                 potencySoftCap = ServerConfig.pet_breeding_potency_soft_cap.Value,
                 potencyHardCap = ServerConfig.pet_breeding_potency_hard_cap.Value,
+                potencyMaxStored = ServerConfig.pet_potency_max_stored.Value,
                 maxStatMutations = ServerConfig.pet_breeding_max_stat_mutations.Value,
-                forceMutation = ServerConfig.pet_breeding_force_mutation.Value
+                forceMutation = ServerConfig.pet_breeding_force_mutation.Value,
+                guardianEnabled = ServerConfig.pet_breeding_guardian_enabled.Value
             };
             return Ok(config);
         }
 
         [HttpGet("surfaces/{wcid}")]
+        [AllowAnonymous]
         public IActionResult GetCreatureSurfaces(uint wcid)
         {
             if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
@@ -96,6 +119,7 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("texture-library")]
+        [AllowAnonymous]
         public IActionResult GetTextureLibrary([FromQuery] string category = "all")
         {
             var result = VisualizerService.GetTextureLibrary(category);
@@ -103,6 +127,7 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("similar-textures/{textureId}")]
+        [AllowAnonymous]
         public IActionResult GetSimilarTextures(uint textureId)
         {
             var result = VisualizerService.GetSimilarTextures(textureId);
@@ -110,16 +135,23 @@ namespace ACE.Server.Controllers
         }
 
         [HttpPost("curation")]
+        [Authorize]
         public IActionResult SubmitCuration([FromBody] CurationItemDto item)
         {
+            if (!CanWrite())
+                return Forbid();
+
             if (item == null || item.CreatureWcid == 0) return BadRequest("Invalid Curation Data.");
 
             // Bound everything a client can put in the curation file.
             if (item.Rating < -1 || item.Rating > 1) return BadRequest("Rating must be -1, 0 or 1.");
+            if (!VisualizerService.IsAcceptedPaletteOverride(item.PaletteId)) return BadRequest("Invalid Palette ID.");
             var name = (item.CreatureName ?? "").Trim();
             if (name.Length > 64) name = name.Substring(0, 64);
 
             var result = CurationService.AddOrUpdateCuration(item.CreatureWcid, name, item.TextureId, item.PaletteId, item.Rating);
+            if (result == null) return StatusCode(507, "Curation storage is full.");
+
             return Ok(result);
         }
 
@@ -127,6 +159,7 @@ namespace ACE.Server.Controllers
         // regenerate. The eviction service manages the cache; an admin can delete the folder.
 
         [HttpGet("curation/{wcid}")]
+        [AllowAnonymous]
         public IActionResult GetCurations(uint wcid)
         {
             if (wcid == 0)
@@ -137,32 +170,26 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("palette/similar/{paletteId}")]
+        [AllowAnonymous]
         public IActionResult GetSimilarPalettes(string paletteId, [FromQuery] int count = 6)
         {
             if (string.IsNullOrEmpty(paletteId)) return BadRequest("Invalid Palette ID.");
 
-            uint palId = 0;
-            if (paletteId.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-            {
-                uint.TryParse(paletteId.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out palId);
-            }
-            else
-            {
-                uint.TryParse(paletteId, out palId);
-            }
+            if (!TryParseId(paletteId, out var palId) || !VisualizerService.IsKnownDatPaletteId(palId))
+                return BadRequest("Invalid Palette ID.");
 
-            if (palId == 0) return BadRequest("Invalid Palette ID.");
-
-            return Ok(VisualizerService.GetSimilarPalettes(palId, count));
+            return Ok(VisualizerService.GetSimilarPalettes(palId, Math.Clamp(count, 1, 50)));
         }
 
         [HttpGet("curated-pool/{wcid}")]
+        [AllowAnonymous]
         public IActionResult GetCuratedPool(uint wcid, [FromQuery] string family = "all")
         {
             return Ok(VisualizerService.GetCuratedMutationPool(wcid, family));
         }
 
         [HttpGet("particle-emitter/{id}")]
+        [AllowAnonymous]
         public IActionResult GetParticleEmitter(string id)
         {
             if (string.IsNullOrEmpty(id)) return BadRequest("Invalid Emitter ID.");
@@ -186,6 +213,7 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("creature-particles/{wcid}")]
+        [AllowAnonymous]
         public IActionResult GetCreatureParticles(uint wcid)
         {
             if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
@@ -195,6 +223,7 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("texture/{id}.png")]
+        [AllowAnonymous]
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public async Task<IActionResult> GetTexture(string id, [FromQuery] uint wcid = 0, [FromQuery] string paletteId = null, [FromQuery] float shade = 0.5f, [FromQuery] int hue = 0, [FromQuery] int slot = -1)
         {
@@ -217,26 +246,21 @@ namespace ACE.Server.Controllers
 
             if (textureId == 0) return BadRequest("Invalid Texture ID.");
 
-            uint parsedPaletteId = 0;
-            if (!string.IsNullOrEmpty(paletteId))
-            {
-                if (paletteId.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-                {
-                    uint.TryParse(paletteId.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out parsedPaletteId);
-                }
-                else
-                {
-                    uint.TryParse(paletteId, out parsedPaletteId);
-                }
-            }
+            if (!TryParseId(paletteId, out var parsedPaletteId) || !VisualizerService.IsAcceptedPaletteOverride(parsedPaletteId))
+                return BadRequest("Invalid Palette ID.");
 
-            var pngBytes = await VisualizerService.GetTexturePngBytesAsync(textureId, wcid, parsedPaletteId, shade, hue, slot);
+            var pngBytes = await VisualizerService.GetTexturePngBytesAsync(
+                textureId, wcid, parsedPaletteId,
+                VisualizerService.ClampShade(shade),
+                VisualizerService.NormalizeHue(hue),
+                VisualizerService.ClampPaletteSlot(slot));
             if (pngBytes == null) return NotFound($"Texture {textureId} not found.");
 
             return File(pngBytes, "image/png");
         }
 
         [HttpGet("palette/{id}.png")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetPalette(string id)
         {
             if (string.IsNullOrEmpty(id)) return BadRequest("Invalid Palette ID.");
@@ -256,7 +280,7 @@ namespace ACE.Server.Controllers
                 }
             }
 
-            if (paletteId == 0) return BadRequest("Invalid Palette ID.");
+            if (!VisualizerService.IsKnownDatPaletteId(paletteId)) return BadRequest("Invalid Palette ID.");
 
             var pngBytes = await VisualizerService.GetPalettePngBytesAsync(paletteId);
             if (pngBytes == null) return NotFound($"Palette {paletteId} not found.");
@@ -265,6 +289,7 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("palette/smart-pool/{wcid}")]
+        [AllowAnonymous]
         public IActionResult GetSmartPalettePool(uint wcid, [FromQuery] string family = "all")
         {
             if (wcid == 0) return BadRequest("Invalid Weenie Class ID.");
@@ -274,8 +299,12 @@ namespace ACE.Server.Controllers
         }
 
         [HttpPost("save-screenshot")]
+        [Authorize]
         public async Task<IActionResult> SaveScreenshot([FromBody] ScreenshotRequest request)
         {
+            if (!CanWrite())
+                return Forbid();
+
             if (request == null || string.IsNullOrEmpty(request.DataUrl) || string.IsNullOrEmpty(request.Filename))
                 return BadRequest("Invalid request data.");
 
@@ -284,8 +313,11 @@ namespace ACE.Server.Controllers
             const int maxBytes = 5 * 1024 * 1024;
             const int maxFiles = 500;
 
+            if (request.Filename.Length > 256)
+                return BadRequest("Invalid filename.");
+
             var safeFilename = System.IO.Path.GetFileNameWithoutExtension(System.IO.Path.GetFileName(request.Filename));
-            safeFilename = new string(safeFilename.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-').ToArray());
+            safeFilename = new string(safeFilename.Where(c => char.IsAsciiLetterOrDigit(c) || c == '_' || c == '-').ToArray());
             if (string.IsNullOrEmpty(safeFilename) || safeFilename.Length > 80)
                 return BadRequest("Invalid filename.");
             safeFilename += ".png";
@@ -314,20 +346,24 @@ namespace ACE.Server.Controllers
                 || bytes[4] != 0x0D || bytes[5] != 0x0A || bytes[6] != 0x1A || bytes[7] != 0x0A)
                 return BadRequest("Only PNG screenshots are accepted.");
 
-            var dir = System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot", "screenshots");
+            var dir = System.IO.Path.GetFullPath(System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot", "screenshots"));
             if (!System.IO.Directory.Exists(dir))
                 System.IO.Directory.CreateDirectory(dir);
 
             if (System.IO.Directory.GetFiles(dir).Length >= maxFiles)
                 return StatusCode(507, "Screenshot storage is full.");
 
-            var path = System.IO.Path.Combine(dir, safeFilename);
+            var path = System.IO.Path.GetFullPath(System.IO.Path.Combine(dir, safeFilename));
+            if (!path.StartsWith(dir + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                return BadRequest("Invalid filename.");
+
             await System.IO.File.WriteAllBytesAsync(path, bytes);
 
             return Ok(new { path = $"/screenshots/{safeFilename}" });
         }
 
         [HttpGet("search-creatures")]
+        [AllowAnonymous]
         public IActionResult SearchCreatures([FromQuery] string query)
         {
             var results = VisualizerService.SearchCreatures(query);
@@ -335,6 +371,7 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("species-presets")]
+        [AllowAnonymous]
         public IActionResult GetSpeciesPresets()
         {
             var results = VisualizerService.GetSpeciesList();

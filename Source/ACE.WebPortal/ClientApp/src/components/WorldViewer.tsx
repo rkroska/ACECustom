@@ -31,6 +31,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { copyToClipboard } from '../utils/clipboard';
+import { api } from '../services/api';
 
 
 // --- Error Boundary for handling missing / invalid models inside Canvas context ---
@@ -1181,20 +1182,16 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
       const cName = PRESET_CREATURES.find(c => c.wcid === wcid)?.name.replace(/[^a-zA-Z0-9]/g, '_') || `WCID_${wcid}`;
       const filename = `snapshot_${cName}_${Date.now()}.png`;
 
-      const response = await fetch('/api/visualizer/save-screenshot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl, filename })
-      });
+      // Write endpoints need the portal session: the shared api client sends the auth cookie
+      // and turns 401/403 into a thrown error.
+      const saved = await api.post<{ path: string }>('/api/visualizer/save-screenshot', { dataUrl, filename });
 
-      if (response.ok) {
-        const imageUrl = `/screenshots/${filename}`;
-        appendLog('screenshot', `📸 Captured Screenshot:\n![Snapshot](${imageUrl})`);
-      } else {
-        appendLog('auto', `⚠️ Failed to save screenshot to server.`);
-      }
+      const imageUrl = saved?.path || `/screenshots/${filename}`;
+      appendLog('screenshot', `📸 Captured Screenshot:\n![Snapshot](${imageUrl})`);
     } catch (err) {
       console.error("Screenshot capture failed: ", err);
+      const reason = err instanceof Error ? err.message : 'unknown error';
+      appendLog('auto', `⚠️ Failed to save screenshot to server (${reason}). Sign in with world-viewer access to save screenshots.`);
     }
   };
 
@@ -1379,12 +1376,8 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
       rating: rating
     };
 
-    fetch('/api/visualizer/curation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-      .then(r => r.json())
+    // Curation is a write: the shared api client sends the portal auth cookie.
+    api.post('/api/visualizer/curation', payload)
       .then(() => {
         const key = `${wcid}_${payload.textureId}_${payload.paletteId}`;
         setCurations(prev => ({ ...prev, [key]: rating }));
@@ -1402,7 +1395,11 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
           setPaletteId(speciesPalettes[nextIdx].templateId);
         }
       })
-      .catch(e => console.error("Failed to submit curation: ", e));
+      .catch(e => {
+        console.error("Failed to submit curation: ", e);
+        const reason = e instanceof Error ? e.message : 'unknown error';
+        appendLog('auto', `⚠️ Curation not saved (${reason}). Sign in with world-viewer access to curate.`);
+      });
   };
 
   useEffect(() => {
@@ -1515,11 +1512,7 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
           const dataUrl = glRef.current.domElement.toDataURL("image/png");
           const filename = `${item.wcid}_${item.name}_${item.paletteId}.png`;
 
-          await fetch('/api/visualizer/save-screenshot', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ dataUrl, filename })
-          });
+          await api.post('/api/visualizer/save-screenshot', { dataUrl, filename });
         } catch (err) {
           console.error("Screenshot export failed: ", err);
         }
