@@ -190,6 +190,7 @@ namespace ACE.Server.Entity.Actions
         Vendor_Approach,
         Vendor_CheckClose,
         Vendor_LoadInventory,
+        Vendor_RetrySoldItemRemove,
         Vendor_SetNotBusy,
         WorldManager_DisconnectAllSessions,
         WorldManager_DoPlayerEnterWorld,

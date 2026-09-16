@@ -678,7 +678,7 @@ namespace ACE.Server.WorldObjects
             }
 
             if (batched)
-                RemoveSoldItemsFromDatabase(Name, player.Name, removeIds, retry: true, timingStart);
+                RemoveSoldItemsFromDatabase(player.Name, items, removeIds, retry: true, timingStart);
             else
                 RemoveSoldItemsIndividually(Name, player.Name, removeIds, timingStart);
 
@@ -690,13 +690,17 @@ namespace ACE.Server.WorldObjects
         /// The player saved these items without itself as their container first, so a row that survives both attempts
         /// is orphaned rather than restored to the player on login.
         /// </summary>
-        private static void RemoveSoldItemsFromDatabase(string vendorName, string playerName, List<uint> ids, bool retry, long timingStart = 0)
+        private void RemoveSoldItemsFromDatabase(string playerName, List<WorldObject> soldItems, List<uint> ids, bool retry, long timingStart = 0)
         {
             if (ids.Count == 0)
                 return;
 
+            var vendorName = Name;
+
             DatabaseManager.Shard.RemoveBiotasInParallel(ids, result =>
             {
+                // This runs on the database thread: log, and hand anything touching world objects back to the vendor.
+
                 // the remove is queued after the sale's saves (FIFO), so both are done at this point
                 if (timingStart != 0)
                     log.Info($"[VENDOR TIMING] {playerName} sale to {vendorName}: database save + remove of {ids.Count} item(s) finished {System.Diagnostics.Stopwatch.GetElapsedTime(timingStart).TotalMilliseconds:F0} ms after the sale started (result {result}), shard queue now {DatabaseManager.Shard.QueueCount}");
@@ -706,9 +710,35 @@ namespace ACE.Server.WorldObjects
 
                 log.Error($"[VENDOR] {vendorName}: database remove of {ids.Count} item(s) sold by {playerName} failed{(retry ? ", retrying once" : "")}: {string.Join(", ", ids.Select(id => $"0x{id:X8}"))}");
 
-                if (retry)
-                    RemoveSoldItemsFromDatabase(vendorName, playerName, ids, retry: false, timingStart);
+                if (!retry)
+                    return;
+
+                var retryChain = new ActionChain();
+                retryChain.AddAction(this, ActionType.Vendor_RetrySoldItemRemove, () => RetrySoldItemRemove(playerName, soldItems, timingStart));
+                retryChain.EnqueueChain();
             }, null);
+        }
+
+        /// <summary>
+        /// The retry lands at the back of the save queue, so by then a resold item may have been bought back and saved into
+        /// the buyer's inventory. Deleting that row would lose the item on their next login, so only rows that are still meant
+        /// to be gone are retried: items that were destroyed, or that are still up for resale on this vendor.
+        /// </summary>
+        private void RetrySoldItemRemove(string playerName, List<WorldObject> soldItems, long timingStart)
+        {
+            var retryIds = new List<uint>(soldItems.Count);
+
+            foreach (var item in soldItems)
+            {
+                if (item.IsDestroyed || UniqueItemsForSale.ContainsKey(item.Guid))
+                    retryIds.Add(item.Biota.Id);
+            }
+
+            var skipped = soldItems.Count - retryIds.Count;
+            if (skipped > 0)
+                log.Warn($"[VENDOR] {Name}: not retrying the database remove for {skipped} item(s) sold by {playerName} that have since left this vendor (bought back).");
+
+            RemoveSoldItemsFromDatabase(playerName, soldItems, retryIds, retry: false, timingStart);
         }
 
         /// <summary>
