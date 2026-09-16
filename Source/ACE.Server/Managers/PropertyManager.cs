@@ -672,6 +672,8 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> use_wield_requirements { get; private set; } = new(true, "disable this to bypass wield requirements. mostly for dev debugging");
         public static ConfigProperty<bool> version_info_enabled { get; private set; } = new(false, "toggles the /aceversion player command");
         public static ConfigProperty<bool> vendor_shop_uses_generator { get; private set; } = new(false, "enables or disables vendors using generator system in addition to createlist to create artificial scarcity");
+        public static ConfigProperty<bool> vendor_sell_batched_saves { get; private set; } = new(true, "if TRUE, selling to a vendor saves and removes the sold items from the database in batches. FALSE uses the old one save + one remove per item path (for A/B testing).");
+        public static ConfigProperty<bool> vendor_sell_timing_log { get; private set; } = new(false, "if TRUE, logs timing for every sale to a vendor: world thread time per step, vendor list size sent to the client, shard save queue depth, and when the database save + remove finished. Diagnostic only.");
         public static ConfigProperty<bool> world_closed { get; private set; } = new(false, "enable this to startup world as a closed to players world");
         public static ConfigProperty<bool> enl_removes_society { get; private set; } = new(true, "if true, enlightenment will remove society flags");
         public static ConfigProperty<bool> action_queue_tracking_enabled { get; private set; } = new(false, "if TRUE, enables runtime performance tracking for ActionQueue to identify slow actions. Zero overhead when disabled.");

@@ -1182,7 +1182,9 @@ namespace ACE.Server.WorldObjects
                     // A proc ring always lands on the creature whose hit triggered it (melee can hit
                     // through doors by design), even when ring line of sight is on. Proc rings are
                     // untargeted (target is null), so fall back to the trigger TryProcOneSpell recorded.
-                    losExempt: fromProc ? (target ?? ringPlayer.RingProcTrigger) : null);
+                    // No exemption when the proc came off a non-projectile cast, which never had to reach
+                    // its target (a vuln through a wall), see RingProcTriggerUnreached.
+                    losExempt: fromProc && !ringPlayer.RingProcTriggerUnreached ? (target ?? ringPlayer.RingProcTrigger) : null);
             }
 
             if (spell.School == MagicSchool.LifeMagic)

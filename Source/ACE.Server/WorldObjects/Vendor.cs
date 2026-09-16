@@ -268,11 +268,27 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         /// <param name="action">The action performed by the player</param>
         /// <param name="justSpentAmount">The amount of currency that was just spent (if this is being done as part of a vendor update)</param>
+        // Filled in by ApproachVendor while vendor_sell_timing_log is enabled
+        public int LastApproachVendorItemCount { get; private set; }
+        public long LastApproachVendorBytes { get; private set; }
+        public double LastApproachVendorBuildMs { get; private set; }
+
         public void ApproachVendor(Player player, VendorType action = VendorType.Undef, long justSpentAmount = 0)
         {
             RotUniques();
 
-            player.Session.Network.EnqueueSend(new GameEventApproachVendor(player.Session, this, justSpentAmount));
+            if (ServerConfig.vendor_sell_timing_log.Value)
+            {
+                var buildStart = System.Diagnostics.Stopwatch.GetTimestamp();
+                var approachVendor = new GameEventApproachVendor(player.Session, this, justSpentAmount);
+                LastApproachVendorBuildMs = System.Diagnostics.Stopwatch.GetElapsedTime(buildStart).TotalMilliseconds;
+                LastApproachVendorItemCount = DefaultItemsForSale.Count + UniqueItemsForSale.Count;
+                LastApproachVendorBytes = approachVendor.Data.Length;
+
+                player.Session.Network.EnqueueSend(approachVendor);
+            }
+            else
+                player.Session.Network.EnqueueSend(new GameEventApproachVendor(player.Session, this, justSpentAmount));
 
             var rotateTime = Rotate(player); // vendor rotates to player
 
@@ -585,11 +601,11 @@ namespace ACE.Server.WorldObjects
             return cost;
         }
 
-        public int CalculatePayoutCoinAmount(Dictionary<uint, WorldObject> items)
+        public long CalculatePayoutCoinAmount(IReadOnlyCollection<WorldObject> items)
         {
-            var payout = 0;
+            long payout = 0;
 
-            foreach (WorldObject item in items.Values)
+            foreach (var item in items)
                 payout += GetBuyCost(item);
 
             return payout;
@@ -598,12 +614,20 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// This will either add the item to the vendors temporary sellables, or destroy it.<para />
         /// In both cases, the item will be removed from the database.<para />
-        /// The item should already have been removed from the players inventory
+        /// The items should already have been removed from the players inventory, and the player should have already
+        /// queued their save (Player.DeepSaveSoldItems), so the database removal queued here runs after it.
         /// </summary>
-        public void ProcessItemsForPurchase(Player player, Dictionary<uint, WorldObject> items)
+        /// <param name="batched">false uses the old path (vendor_sell_batched_saves): one queued remove per item, only for objects that look saved</param>
+        /// <param name="timingStart">Stopwatch timestamp of the sale start when vendor_sell_timing_log is enabled, otherwise 0</param>
+        public void ProcessItemsForPurchase(Player player, List<WorldObject> items, bool batched = true, long timingStart = 0)
         {
-            foreach (var item in items.Values)
+            var removeIds = new List<uint>(items.Count);
+
+            foreach (var item in items)
             {
+                // the old path's RemoveBiotaFromDatabase check; must be read before the calls below reset LastRequestedDatabaseSave
+                var legacyRemove = !batched && item.BiotaOriginatedFromOrHasBeenSavedToDatabase();
+
                 var resellItem = true;
 
                 // don't resell DestroyOnSell
@@ -624,7 +648,7 @@ namespace ACE.Server.WorldObjects
 
                     if (!UniqueItemsForSale.TryAdd(item.Guid, item))
                     {
-                        var sellItems = string.Join(", ", items.Values.Select(i => $"{i.Name} ({i.Guid})"));
+                        var sellItems = string.Join(", ", items.Select(i => $"{i.Name} ({i.Guid})"));
                         log.Error($"[VENDOR] {Name}.ProcessItemsForPurchase({player.Name}): duplicate item found, sell list: {sellItems}");
                     }
 
@@ -637,15 +661,104 @@ namespace ACE.Server.WorldObjects
                     // remove object from shard db, but keep a reference to it in memory
                     // for DestroyOnSell items, these will effectively be destroyed immediately
                     // for other items, if a player re-purchases, it will be added to the shard db again
-                    item.RemoveBiotaFromDatabase();
+                    // (the player's pre-delete save may write ContainerId = this vendor; harmless, the row is deleted right after
+                    // and player inventory loads filter on the player's guid)
+                    item.RemoveBiotaFromDatabase(enqueueRemove: false);
                 }
                 else
-                    item.Destroy();
+                    item.Destroy(enqueueDatabaseRemove: false);
+
+                // Batched: removed unconditionally. RemoveBiotaFromDatabase skips objects that look like they were never saved,
+                // but the player's DeepSaveSoldItems may have just inserted one (e.g. corpse loot sold before the next player save).
+                // Removing a row that doesn't exist is a no-op.
+                if (batched || legacyRemove)
+                    removeIds.Add(item.Biota.Id);
 
                 NumItemsBought++;
             }
 
+            if (batched)
+                RemoveSoldItemsFromDatabase(player.Name, items, removeIds, retry: true, timingStart);
+            else
+                RemoveSoldItemsIndividually(Name, player.Name, removeIds, timingStart);
+
             ApproachVendor(player, VendorType.Sell);
+        }
+
+        /// <summary>
+        /// Queues one database removal for every item in a sale, retrying once on failure.<para />
+        /// The player saved these items without itself as their container first, so a row that survives both attempts
+        /// is orphaned rather than restored to the player on login.
+        /// </summary>
+        private void RemoveSoldItemsFromDatabase(string playerName, List<WorldObject> soldItems, List<uint> ids, bool retry, long timingStart = 0)
+        {
+            if (ids.Count == 0)
+                return;
+
+            var vendorName = Name;
+
+            DatabaseManager.Shard.RemoveBiotasInParallel(ids, result =>
+            {
+                // This runs on the database thread: log, and hand anything touching world objects back to the vendor.
+
+                // the remove is queued after the sale's saves (FIFO), so both are done at this point
+                if (timingStart != 0)
+                    log.Info($"[VENDOR TIMING] {playerName} sale to {vendorName}: database save + remove of {ids.Count} item(s) finished {System.Diagnostics.Stopwatch.GetElapsedTime(timingStart).TotalMilliseconds:F0} ms after the sale started (result {result}), shard queue now {DatabaseManager.Shard.QueueCount}");
+
+                if (result)
+                    return;
+
+                log.Error($"[VENDOR] {vendorName}: database remove of {ids.Count} item(s) sold by {playerName} failed{(retry ? ", retrying once" : "")}: {string.Join(", ", ids.Select(id => $"0x{id:X8}"))}");
+
+                if (!retry)
+                    return;
+
+                var retryChain = new ActionChain();
+                retryChain.AddAction(this, ActionType.Vendor_RetrySoldItemRemove, () => RetrySoldItemRemove(playerName, soldItems, timingStart));
+                retryChain.EnqueueChain();
+            }, null);
+        }
+
+        /// <summary>
+        /// The retry lands at the back of the save queue, so by then a resold item may have been bought back and saved into
+        /// the buyer's inventory. Deleting that row would lose the item on their next login, so only rows that are still meant
+        /// to be gone are retried: items that were destroyed, or that are still up for resale on this vendor.
+        /// </summary>
+        private void RetrySoldItemRemove(string playerName, List<WorldObject> soldItems, long timingStart)
+        {
+            var retryIds = new List<uint>(soldItems.Count);
+
+            foreach (var item in soldItems)
+            {
+                if (item.IsDestroyed || UniqueItemsForSale.ContainsKey(item.Guid))
+                    retryIds.Add(item.Biota.Id);
+            }
+
+            var skipped = soldItems.Count - retryIds.Count;
+            if (skipped > 0)
+                log.Warn($"[VENDOR] {Name}: not retrying the database remove for {skipped} item(s) sold by {playerName} that have since left this vendor (bought back).");
+
+            RemoveSoldItemsFromDatabase(playerName, soldItems, retryIds, retry: false, timingStart);
+        }
+
+        /// <summary>
+        /// The pre-batching behavior (vendor_sell_batched_saves = false): one queued remove per item, no retry. Kept for A/B timing.
+        /// </summary>
+        private static void RemoveSoldItemsIndividually(string vendorName, string playerName, List<uint> ids, long timingStart)
+        {
+            for (var i = 0; i < ids.Count; i++)
+            {
+                Action<bool> callback = null;
+
+                // the last remove is queued after every per-item save and remove from this sale (FIFO)
+                if (timingStart != 0 && i == ids.Count - 1)
+                {
+                    var count = ids.Count;
+                    callback = result => log.Info($"[VENDOR TIMING] (legacy) {playerName} sale to {vendorName}: database saves + {count} individual remove(s) finished {System.Diagnostics.Stopwatch.GetElapsedTime(timingStart).TotalMilliseconds:F0} ms after the sale started (last remove result {result}), shard queue now {DatabaseManager.Shard.QueueCount}");
+                }
+
+                DatabaseManager.Shard.RemoveBiota(ids[i], callback);
+            }
         }
 
         public void ApplyService(WorldObject item, Player target)

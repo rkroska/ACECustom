@@ -1432,7 +1432,18 @@ namespace ACE.Server.WorldObjects
 
                             // handle target procs
                             if (targetCreature != null && targetCreature != this)
-                                TryProcEquippedItems(this, targetCreature, false, caster);
+                            {
+                                // this cast needed no line of sight, so a ring it procs gets no exemption for the target
+                                RingProcTriggerUnreached = true;
+                                try
+                                {
+                                    TryProcEquippedItems(this, targetCreature, false, caster);
+                                }
+                                finally
+                                {
+                                    RingProcTriggerUnreached = false;
+                                }
+                            }
 
                             if (targetPlayer != null)
                                 UpdatePKTimers(this, targetPlayer);
@@ -1811,6 +1822,14 @@ namespace ACE.Server.WorldObjects
         /// Transient, never persisted.
         /// </summary>
         internal Creature RingProcTrigger;
+
+        /// <summary>
+        /// TRUE while equipped items proc off a harmful non-projectile cast (vulns, imperils, etc.). Those casts
+        /// need no line of sight, so their target was never reached and must not be exempt from ring line of
+        /// sight: a necklace ring procced by a vuln through a wall was hitting the vulned creature through the
+        /// wall. Transient, never persisted.
+        /// </summary>
+        internal bool RingProcTriggerUnreached;
 
         /// <summary>TRUE if the object stands in an interior cell (dungeon, building interior, basement).</summary>
         internal static bool IsInteriorCell(WorldObject wo)
