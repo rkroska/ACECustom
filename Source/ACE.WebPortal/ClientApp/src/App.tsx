@@ -37,6 +37,7 @@ import PortalSecurity from './components/PortalSecurity'
 
 import AuditLog from './components/AuditLog'
 import CorpseFinder from './components/CorpseFinder'
+import PetNameApprovals from './components/admin/PetNameApprovals'
 
 import MainLayout from './layouts/MainLayout'
 
@@ -233,6 +234,16 @@ function App() {
           <ProtectedRoute pageKey="corpse-finder">
 
             <CorpseFinder />
+
+          </ProtectedRoute>
+
+        } />
+
+        <Route path="/pet-names" element={
+
+          <ProtectedRoute pageKey="pet-naming">
+
+            <PetNameApprovals />
 
           </ProtectedRoute>
 

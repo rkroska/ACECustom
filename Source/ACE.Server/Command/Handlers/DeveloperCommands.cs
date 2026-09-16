@@ -5121,9 +5121,8 @@ namespace ACE.Server.Command.Handlers
             log.Info($"[PetDesc] {player.Name}:\n{sb}");
         }
 
-        [CommandHandler("breed-debug", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows live breeding diagnostics for current location, pets, and nearby players.", "@breed-debug")]
         [CommandHandler("pet-debug", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows live breeding diagnostics for current location, pets, and nearby players.", "@pet-debug")]
-        public static void HandleBreedDebug(Session session, params string[] parameters)
+        public static void HandlePetDebug(Session session, params string[] parameters)
         {
             var player = session.Player;
             if (player == null) return;

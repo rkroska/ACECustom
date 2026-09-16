@@ -57,10 +57,13 @@ namespace ACE.Server.WorldObjects
             public int BabyPotency, BabyDmg, BabyDR, BabyCrit, BabyCritDmg, BabyCritResist, BabyCritDmgResist, BabyVitality;
             public int BabyDmgMuts, BabyDrMuts, BabyCritMuts, BabyVitMuts, BabyPotMuts;
             public int DmgStep, DrStep, CritStep, VitStep, PotStepConfig;
+            public int MaxStatMutations, PotencySoftCap, PotencyHardCap;
 
             // Phase 2 (mating guardian) bookkeeping.
             public uint GuardianGuid;
             public Position FallbackDropLocation;
+            public bool GuardianWeakened;
+            public int LastMutatedStat;
         }
 
         /// <summary>
@@ -428,22 +431,29 @@ namespace ACE.Server.WorldObjects
                 var potStepConfig = (int)ServerConfig.pet_breeding_potency_mutation_step.Value;
 
                 // Stat Inheritance Package Deal (55/45 Rule: Couples Stat Value & Mutation Count together)
-                (int val, int count) InheritStat(PropertyInt propVal, PropertyInt propCount, PropertyInt propLegacyRating, int step, int defaultVal)
+                (int val, int count) InheritStat(PropertyInt propVal, PropertyInt propCount, PropertyInt propLegacyRating,
+                    int step, int defaultVal, bool mutationsStoredInValue = false)
                 {
                     var val1 = device1.GetProperty(propVal) ?? defaultVal;
                     var val2 = device2.GetProperty(propVal) ?? defaultVal;
                     var count1 = device1.GetProperty(propCount) ?? ((device1.GetProperty(propLegacyRating) ?? 0) / Math.Max(1, step));
                     var count2 = device2.GetProperty(propCount) ?? ((device2.GetProperty(propLegacyRating) ?? 0) / Math.Max(1, step));
 
-                    var isHigh1 = val1 >= val2;
+                    // Rating and vitality properties store the clean base; their mutation counts are
+                    // evaluated at summon time. Potency is different: PetPotencyStored is the complete
+                    // effective value, so its count must not be added again for this comparison.
+                    var effective1 = mutationsStoredInValue ? val1 : val1 + count1 * step;
+                    var effective2 = mutationsStoredInValue ? val2 : val2 + count2 * step;
+                    var isHigh1 = effective1 >= effective2;
                     var chosenIs1 = ThreadSafeRandom.Next(0.0f, 1.0f) < 0.55f ? isHigh1 : !isHigh1;
 
-                    var chosenVal = chosenIs1 ? val1 : val2;
+                    var chosenValue = chosenIs1 ? val1 : val2;
                     var chosenCount = chosenIs1 ? count1 : count2;
-                    return (chosenVal, chosenCount);
+                    return (chosenValue, chosenCount);
                 }
 
-                var potRes = InheritStat(PropertyInt.PetPotencyStored, PropertyInt.PetMutPotencyCount, PropertyInt.PetMutPotency, potStepConfig, 150);
+                var potRes = InheritStat(PropertyInt.PetPotencyStored, PropertyInt.PetMutPotencyCount, PropertyInt.PetMutPotency,
+                    potStepConfig, 150, mutationsStoredInValue: true);
                 var dmgRes = InheritStat(PropertyInt.DamageRating, PropertyInt.PetMutDamageCount, PropertyInt.PetMutDamageRating, dmgStep, 0);
                 var drRes = InheritStat(PropertyInt.DamageResistRating, PropertyInt.PetMutDamageResistCount, PropertyInt.PetMutDamageResistRating, drStep, 0);
                 var critRes = InheritStat(PropertyInt.CritRating, PropertyInt.PetMutCritCount, PropertyInt.PetMutCritRating, critStep, 0);
@@ -489,6 +499,12 @@ namespace ACE.Server.WorldObjects
                 device1.RemoveProperty(PropertyBool.PetChromaticCatalystActive);
                 device2.RemoveProperty(PropertyBool.PetChromaticCatalystActive);
 
+                // Offering of Subjugation: check device1 and device2, then consume from both.
+                var guardianWeakened = (device1.GetProperty(PropertyBool.PetGuardianWeakened) ?? false) ||
+                                       (device2.GetProperty(PropertyBool.PetGuardianWeakened) ?? false);
+                device1.RemoveProperty(PropertyBool.PetGuardianWeakened);
+                device2.RemoveProperty(PropertyBool.PetGuardianWeakened);
+
                 // Roll 1: Normal Stat Mutation (decaying odds per stat line, max stat mutations per line)
                 var mutChance = Math.Clamp(Math.Max(minFloor, baseMutChance / (1.0 + decayRate * totalParentStatMuts)) + incenseBonus, 0.0, 1.0);
                 var isMutated = ServerConfig.pet_breeding_force_mutation.Value || ThreadSafeRandom.Next(0.0f, 1.0f) < mutChance;
@@ -498,13 +514,14 @@ namespace ACE.Server.WorldObjects
                 var isPotencyMutated = ThreadSafeRandom.Next(0.0f, 1.0f) < potChanceClamped;
 
                 var mutationSummary = new System.Collections.Generic.List<string>();
+                var lastMutatedStat = 0;
 
                 if (isPotencyMutated)
                 {
                     int potStep = potStepConfig;
                     if (potSoftCap > 0 && babyPotency >= potSoftCap)
                         potStep = Math.Max(1, potStepConfig / 4);
-                    
+
                     // Clamp the step so the hard cap is never overshot
                     if (potHardCap > 0)
                         potStep = Math.Min(potStep, Math.Max(0, potHardCap - babyPotency));
@@ -514,6 +531,7 @@ namespace ACE.Server.WorldObjects
                         babyPotency += potStep;
                         babyPotMuts += 1;
                         mutationSummary.Add($"+{potStep} Potency");
+                        lastMutatedStat = 5;
                     }
                 }
 
@@ -533,26 +551,26 @@ namespace ACE.Server.WorldObjects
                         if (chosenStat == "DamageRating")
                         {
                             mutationSummary.Add($"+{dmgStep} Damage Rating");
-                            babyDmg += dmgStep;
                             babyDmgMuts += 1;
+                            lastMutatedStat = 1;
                         }
                         else if (chosenStat == "DamageResistRating")
                         {
                             mutationSummary.Add($"+{drStep} Damage Resist Rating");
-                            babyDR += drStep;
                             babyDrMuts += 1;
+                            lastMutatedStat = 2;
                         }
                         else if (chosenStat == "CritRating")
                         {
                             mutationSummary.Add($"+{critStep} Crit Rating");
-                            babyCrit += critStep;
                             babyCritMuts += 1;
+                            lastMutatedStat = 3;
                         }
                         else if (chosenStat == "Vitality")
                         {
                             mutationSummary.Add($"+{vitStep} Vitality");
-                            babyVitality += vitStep;
                             babyVitMuts += 1;
+                            lastMutatedStat = 4;
                         }
                     }
                 }
@@ -620,6 +638,8 @@ namespace ACE.Server.WorldObjects
                     BabyDmgMuts = babyDmgMuts, BabyDrMuts = babyDrMuts, BabyCritMuts = babyCritMuts,
                     BabyVitMuts = babyVitMuts, BabyPotMuts = babyPotMuts,
                     DmgStep = dmgStep, DrStep = drStep, CritStep = critStep, VitStep = vitStep, PotStepConfig = potStepConfig,
+                    MaxStatMutations = maxStatMuts, PotencySoftCap = potSoftCap, PotencyHardCap = potHardCap,
+                    GuardianWeakened = guardianWeakened, LastMutatedStat = lastMutatedStat,
                 };
 
                 // Mutation breeds can be gated behind a mating guardian: a monster wearing the
@@ -709,7 +729,7 @@ namespace ACE.Server.WorldObjects
                 guardian.Home = new Position(spawnPos);
                 p.FallbackDropLocation = new Position(spawnPos);
 
-                guardian.Bind(pet1, pet2, p.Player1, p.Partner, OnGuardianSlain, OnGuardianLost);
+                guardian.Bind(pet1, pet2, p.Player1, p.Partner, OnGuardianSlain, OnGuardianLost, p.GuardianWeakened);
 
                 if (!guardian.EnterWorld())
                 {
@@ -823,7 +843,10 @@ namespace ACE.Server.WorldObjects
             return chosen ?? candidates[candidates.Count - 1];
         }
 
-        /// <summary>The parent pets killed the guardian: the birth completes.</summary>
+        /// <summary>
+        /// The parent pets killed the guardian: the birth completes with a bonus Awakened Blessing
+        /// mutation on top of whatever the breed had already rolled.
+        /// </summary>
         private static void OnGuardianSlain(MatingGuardian guardian)
         {
             if (!pendingGuardianBreeds.TryRemove(guardian.Guid.Full, out var p))
@@ -833,26 +856,79 @@ namespace ACE.Server.WorldObjects
             p.Player1.SendMessage(yieldMsg);
             p.Partner.SendMessage(yieldMsg);
 
+            // Awakened Blessing: use the same caps as the original breed roll. Base combat ratings
+            // remain clean because their mutation counts are evaluated dynamically when summoned;
+            // potency is the one stat whose effective value is stored directly on the device.
+            var eligibleStats = new System.Collections.Generic.List<(int Id, string Name, int Step)>();
+            if (p.MaxStatMutations <= 0 || p.BabyDmgMuts < p.MaxStatMutations)
+                eligibleStats.Add((1, "Damage Rating", p.DmgStep));
+            if (p.MaxStatMutations <= 0 || p.BabyDrMuts < p.MaxStatMutations)
+                eligibleStats.Add((2, "Damage Resist Rating", p.DrStep));
+            if (p.MaxStatMutations <= 0 || p.BabyCritMuts < p.MaxStatMutations)
+                eligibleStats.Add((3, "Crit Rating", p.CritStep));
+            if (p.MaxStatMutations <= 0 || p.BabyVitMuts < p.MaxStatMutations)
+                eligibleStats.Add((4, "Vitality", p.VitStep));
+
+            var potencyStep = p.PotStepConfig;
+            if (p.PotencySoftCap > 0 && p.BabyPotency >= p.PotencySoftCap)
+                potencyStep = Math.Max(1, potencyStep / 4);
+            if (p.PotencyHardCap > 0)
+                potencyStep = Math.Min(potencyStep, Math.Max(0, p.PotencyHardCap - p.BabyPotency));
+            if (potencyStep > 0)
+                eligibleStats.Add((5, "Potency", potencyStep));
+
+            if (eligibleStats.Count == 0)
+            {
+                var cappedMsg = "[Breeding] The Awakened Blessing flares, but every mutation line has reached its limit.";
+                p.Player1.SendMessage(cappedMsg);
+                p.Partner.SendMessage(cappedMsg);
+                CompleteBirth(p);
+                return;
+            }
+
+            var (statId, statName, mutationStep) = eligibleStats[ThreadSafeRandom.Next(0, eligibleStats.Count - 1)];
+            switch (statId)
+            {
+                case 1: p.BabyDmgMuts += 1; break;
+                case 2: p.BabyDrMuts += 1; break;
+                case 3: p.BabyCritMuts += 1; break;
+                case 4: p.BabyVitMuts += 1; break;
+                case 5: p.BabyPotency += mutationStep; p.BabyPotMuts += 1; break;
+            }
+            p.LastMutatedStat = statId;
+            p.MutationSummary.Add($"Awakened Blessing: +{mutationStep} {statName}");
+
+            p.Player1.PlayParticleEffect(PlayScript.LevelUp, p.Player1.Guid);
+            p.Partner.PlayParticleEffect(PlayScript.LevelUp, p.Partner.Guid);
+
+            var blessingMsg = $"[Breeding] The Awakened Blessing stirs within the newborn: bonus {statName} mutation!";
+            p.Player1.SendMessage(blessingMsg);
+            p.Partner.SendMessage(blessingMsg);
+
             CompleteBirth(p);
         }
 
         /// <summary>
-        /// The guardian was lost (a parent pet died, or guardian was removed without dying).
-        /// Breed fails, no baby awarded.
+        /// The guardian was lost (a parent pet died, or guardian was removed without dying). The
+        /// parents already paid for this breed, so the birth completes anyway: under no
+        /// circumstances is the baby lost or the breed wasted.
         /// </summary>
         private static void OnGuardianLost(MatingGuardian guardian)
         {
             if (!pendingGuardianBreeds.TryRemove(guardian.Guid.Full, out var p))
                 return;
 
-            var lostMsg = $"[Breeding] The mating ritual failed! {guardian.Name} could not be overcome.";
+            var lostMsg = "[Breeding] The spectral guardian dissolves back into the ether...";
             p.Player1.SendMessage(lostMsg);
             p.Partner.SendMessage(lostMsg);
-            log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) lost; breeding failed for {p.Player1.Name} and {p.Partner.Name}.");
+            log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) lost; completing birth for {p.Player1.Name} and {p.Partner.Name} regardless.");
+
+            CompleteBirth(p);
         }
 
         /// <summary>
-        /// The guardian outlived its window without being slain: it fades and the breeding ritual fails.
+        /// The guardian outlived its window without being slain: it fades peacefully and the birth
+        /// still completes, since the parents already paid for the breed.
         /// </summary>
         private static void OnGuardianTimeout(MatingGuardian guardian)
         {
@@ -866,13 +942,15 @@ namespace ACE.Server.WorldObjects
             }
 
             var fightSeconds = ACE.Server.Entity.Timers.RunningTime - guardian.SpawnTime;
-            log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) timed out after {fightSeconds:F0}s with {guardian.Health.Current}/{guardian.Health.MaxValue} health left; breeding failed.");
+            log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) timed out after {fightSeconds:F0}s with {guardian.Health.Current}/{guardian.Health.MaxValue} health left; completing birth regardless.");
 
             guardian.Fade();
 
-            var fadeMsg = $"[Breeding] Time has expired! {guardian.Name} roars and dissolves into the ether. The mating ritual was not completed in time.";
+            var fadeMsg = "[Breeding] The spectral guardian dissolves back into the ether...";
             p.Player1.SendMessage(fadeMsg);
             p.Partner.SendMessage(fadeMsg);
+
+            CompleteBirth(p);
         }
 
         /// <summary>
@@ -978,6 +1056,9 @@ namespace ACE.Server.WorldObjects
             var totalMutations = babyDmgMuts + babyDrMuts + babyCritMuts + babyVitMuts + babyPotMuts;
             if (totalMutations > 0)
                 baby.SetProperty(PropertyInt.PetMutationCount, totalMutations);
+
+            if (p.LastMutatedStat > 0)
+                baby.SetProperty(PropertyInt.PetLastMutatedStat, p.LastMutatedStat);
 
             // Creature recolour goes through PaletteTemplate, not PaletteBase. Creature.CalculateObjDesc
             // reads the creature's PaletteTemplate (line ~252) and expands a full 0x04 palette DID into
@@ -1275,19 +1356,34 @@ namespace ACE.Server.WorldObjects
             }
 
             var online = PlayerManager.GetAllOnline();
-            sb.AppendLine($"--- Other Online Players ({online.Count} total) ---");
             int candidateCount = 0;
+
+            if (player.IsAdmin)
+                sb.AppendLine($"--- Other Online Players ({online.Count} total) ---");
+
             foreach (var p in online)
             {
                 if (p.Guid == player.Guid) continue;
                 var dist = player.GetDistance(p);
                 var sameLb = p.Location.Landblock == curLb;
-                var hasPet = p.CurrentActivePet is CombatPet otherPet;
-                sb.AppendLine($"* {p.Name}: Dist={dist:F1}m, LB=0x{p.Location.Landblock:X4}, Pet={(hasPet ? ((CombatPet)p.CurrentActivePet).Name : "None")}, Trade={p.IsTrading}");
+                var otherPet = p.CurrentActivePet as CombatPet;
+                var hasPet = otherPet != null;
+
+                if (player.IsAdmin)
+                    sb.AppendLine($"* {p.Name}: Dist={dist:F1}m, LB=0x{p.Location.Landblock:X4}, Pet={(hasPet ? otherPet.Name : "None")}, Trade={p.IsTrading}");
+
                 if (hasPet && (dist <= 30.0f || sameLb)) candidateCount++;
             }
 
-            sb.AppendLine($"Valid Partner Candidates within 30m: {candidateCount}");
+            if (player.IsAdmin)
+                sb.AppendLine($"Valid Partner Candidates within 30m: {candidateCount}");
+            else
+            {
+                sb.AppendLine($"Eligible breeding partners nearby: {candidateCount}");
+                if (candidateCount == 0)
+                    sb.AppendLine("  (Ensure your partner has their pet summoned in this room and is ready to breed)");
+            }
+
             sb.AppendLine("================================");
 
             player.SendMessage(sb.ToString().Replace("\r\n", "\n"));

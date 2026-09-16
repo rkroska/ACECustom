@@ -386,6 +386,10 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         PetChromaticCatalystActive = 50055,
 
+        /// <summary>The mating guardian bound to this pet device has been weakened by an Offering of Subjugation (server/custom).</summary>
+        [AssessmentProperty]
+        PetGuardianWeakened = 50056,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }

@@ -802,6 +802,10 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         PetMaturityKills                        = 9077,
 
+        /// <summary>Which stat was mutated on this pet's most recent breed (server/custom). 1=DamageRating, 2=DamageResistRating, 3=CritRating, 4=Vitality, 5=Potency.</summary>
+        [AssessmentProperty]
+        PetLastMutatedStat                      = 9078,
+
         // -- Weapon aug-scaling (T11 weapon relevance; server/custom) ----------------
         /// <summary>On a T11+ weapon: the quality percentile roll (0-1000). The server-wide
         /// weaponscaling_data config maps quality -> the k coefficient at swing time, so config

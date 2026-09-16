@@ -140,7 +140,7 @@ namespace ACE.Server.WorldObjects
 
             // re-verify client checks
             // Potency tools have non-standard source/target ItemType combinations, so we skip the
-            // generic type check only for confirmed valid pairings — not for any potency tool on any target.
+            // generic type check only for confirmed valid pairings -- not for any potency tool on any target.
             var skipTargetTypeCheck = false;
             if (sourceItem.WeenieClassId == PetPotency.EssenceResidueWcid && target is PetDevice)
                 skipTargetTypeCheck = true;
@@ -152,9 +152,7 @@ namespace ACE.Server.WorldObjects
                 skipTargetTypeCheck = true;
             else if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.FilledTailoringKitWcid && target is PetDevice)
                 skipTargetTypeCheck = true;
-            else if ((sourceItem.WeenieClassId >= 98760410 && sourceItem.WeenieClassId <= 98760412 ||
-                      sourceItem.WeenieClassId == 98760415 ||
-                      sourceItem.WeenieClassId == 98760418) && target is PetDevice)
+            else if ((sourceItem.WeenieClassId >= 78780250 && sourceItem.WeenieClassId <= 78780256) && target is PetDevice)
                 skipTargetTypeCheck = true;
 
             var sourceTargetType = sourceItem.TargetType ?? ItemType.None;
@@ -223,8 +221,8 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            // Courtship Incense (98760410 - 98760412)
-            if (sourceItem.WeenieClassId >= 98760410 && sourceItem.WeenieClassId <= 98760412)
+            // Courtship Incense (78780250 - 78780252)
+            if (sourceItem.WeenieClassId >= 78780250 && sourceItem.WeenieClassId <= 78780252)
             {
                 if (target is not PetDevice petDevice)
                 {
@@ -242,9 +240,9 @@ namespace ACE.Server.WorldObjects
 
                 var bonus = sourceItem.WeenieClassId switch
                 {
-                    98760410 => 0.025f, // Lesser: +2.5%
-                    98760411 => 0.050f, // Refined: +5.0%
-                    98760412 => 0.100f, // Exquisite: +10.0%
+                    78780250 => 0.025f, // Lesser: +2.5%
+                    78780251 => 0.050f, // Refined: +5.0%
+                    78780252 => 0.100f, // Exquisite: +10.0%
                     _ => 0.025f
                 };
 
@@ -273,8 +271,8 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            // Chromatic Catalyst (98760418)
-            if (sourceItem.WeenieClassId == 98760418)
+            // Chromatic Catalyst (78780254)
+            if (sourceItem.WeenieClassId == 78780254)
             {
                 if (target is not PetDevice petDevice)
                 {
@@ -307,8 +305,8 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            // Nurturing Draught (98760415)
-            if (sourceItem.WeenieClassId == 98760415)
+            // Nurturing Draught (78780253)
+            if (sourceItem.WeenieClassId == 78780253)
             {
                 if (target is not PetDevice petDevice)
                 {
@@ -344,6 +342,40 @@ namespace ACE.Server.WorldObjects
 
                 PlayParticleEffect(PlayScript.HealthUpYellow, target.Guid);
                 SendMessage($"You administer the Nurturing Draught to {petDevice.Name}. It now earns 2x maturity kill credit until adulthood!");
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Offering of Subjugation (78780255)
+            if (sourceItem.WeenieClassId == 78780255)
+            {
+                if (target is not PetDevice petDevice)
+                {
+                    SendTransientError("The Offering of Subjugation can only be used on combat pet devices.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (petDevice.GetProperty(PropertyBool.PetGuardianWeakened) == true)
+                {
+                    SendTransientError($"{petDevice.Name} is already under the effects of an Offering of Subjugation.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    SendTransientError("Failed to consume Offering of Subjugation.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                petDevice.SetProperty(PropertyBool.PetGuardianWeakened, true);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+
+                PlayParticleEffect(PlayScript.EnchantUpRed, target.Guid);
+                SendMessage($"You consecrate {petDevice.Name} with the Offering of Subjugation. Its next mating guardian will be swiftly overcome!");
                 SendUseDoneEvent();
                 return;
             }

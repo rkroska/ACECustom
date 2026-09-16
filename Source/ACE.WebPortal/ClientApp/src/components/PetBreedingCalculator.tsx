@@ -842,7 +842,7 @@ export default function PetBreedingCalculator() {
             <div className="text-xs">
               <span className="font-extrabold text-white uppercase tracking-wider mr-2">Breeding Quick Guide:</span>
               <span className="text-neutral-300">
-                1. Designate <strong>Alpha Stud</strong> (10 daily charges) • 2. Bring <strong>Non-Alpha Donor</strong> (4h cooldown) • 3. Stand within 5m in <strong>Seedy Motel</strong> & perform <code>*dance*</code> (or <code>@dance</code>)!
+                1. Bring a <strong>Male Stud</strong> (10 daily charges; refills after 24h) • 2. Bring a <strong>Female Dam</strong> (4h recovery after giving birth) • 3. Stand within 5m in <strong>Seedy Motel</strong> & perform <code>*dance*</code> (or <code>@dance</code>)! Boost results with <strong>Courtship Incense</strong> (+2.5%, +5%, or +10% mutation chance) and a <strong>Chromatic Catalyst</strong> (vibrant rare palettes); use <strong>Pet Tailoring Kits</strong> for cosmetic appearances and <strong>Pet Neutering Kits</strong> to prevent breeding.
               </span>
             </div>
           </div>
@@ -1449,17 +1449,17 @@ export default function PetBreedingCalculator() {
               <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
                 <HelpCircle className="w-5 h-5 text-rose-400" /> Complete Guide to Pet Breeding in Asheron's Call
               </h2>
-              <p className="text-xs text-neutral-400">Everything you need to know about Alpha Studs, Non-Alpha Donors, Mutations, and Savage Echoes.</p>
+              <p className="text-xs text-neutral-400">Everything you need to know about Male Studs, Female Dams, mutations, and breeding supplies.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-neutral-950 border border-neutral-800 p-5 rounded-xl space-y-2">
                 <h3 className="font-extrabold text-white text-base flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-rose-500 text-white text-xs flex items-center justify-center font-black">1</span>
-                  Alpha Studs & Non-Alpha Donors
+                  Male Studs & Female Dams
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  Breeding requires one <strong>Alpha Stud</strong> (promoted using an <em>Alpha Serum Catalyst</em>; has 10 daily charges) and one <strong>Non-Alpha Donor</strong> (incurs a 4-hour cooldown). An Alpha cannot breed with another Alpha!
+                  Breeding requires one <strong>Male Stud</strong>, with 10 daily breeding charges that refill after 24 hours, and one <strong>Female Dam</strong>, who enters a 4-hour recovery cooldown after giving birth.
                 </p>
               </div>
 
@@ -1476,20 +1476,20 @@ export default function PetBreedingCalculator() {
               <div className="bg-neutral-950 border border-neutral-800 p-5 rounded-xl space-y-2">
                 <h3 className="font-extrabold text-white text-base flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-rose-500 text-white text-xs flex items-center justify-center font-black">3</span>
-                  Positive Mutations & Rare Color Palettes
+                  Mutation Aids & Rare Color Palettes
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  Mutations are <strong>100% POSITIVE</strong>! Every mutation roll grants a stat boost (+2 to +5 Potency, +3 to +5 Damage Rating, +200 HP, etc.) and unlocks a rare visual essence palette (Gold, Silver, Ebon, Rose Red).
+                  <strong>Courtship Incense</strong> adds +2.5%, +5%, or +10% mutation chance. A <strong>Chromatic Catalyst</strong> makes rare mutation palettes more vibrant when a mutation occurs.
                 </p>
               </div>
 
               <div className="bg-neutral-950 border border-neutral-800 p-5 rounded-xl space-y-2">
                 <h3 className="font-extrabold text-white text-base flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-rose-500 text-white text-xs flex items-center justify-center font-black">4</span>
-                  Salvaging & Palette Cleansing
+                  Cosmetic Tailoring & Neutering
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  Unwanted baby pets can be salvaged using an <strong>Essence Resonator</strong> into <strong>Savage Echoes</strong>. Use a <strong>Palette Cleansing Wash</strong> to strip visual overrides back to base appearance.
+                  <strong>Pet Tailoring Kits</strong> extract and apply a pet's cosmetic appearance. <strong>Pet Neutering Kits</strong> permanently prevent a pet from breeding.
                 </p>
               </div>
             </div>

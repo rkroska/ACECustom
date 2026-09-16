@@ -49,6 +49,9 @@ namespace ACE.Server.WorldObjects
 
         public bool IsResolved => resolved;
 
+        /// <summary>True if an Offering of Subjugation was consumed before this encounter, making the guardian fall in ~10-15s.</summary>
+        public bool IsWeakened { get; set; }
+
         public static bool IsActiveParentPet(CombatPet pet)
         {
             if (pet == null) return false;
@@ -96,7 +99,7 @@ namespace ACE.Server.WorldObjects
         /// Binds the guardian to its two parent pets and the callback to run when they kill it.
         /// Must be called before the guardian enters the world.
         /// </summary>
-        public void Bind(CombatPet pet1, CombatPet pet2, Player owner1, Player owner2, Action<MatingGuardian> onSlainCallback, Action<MatingGuardian> onLostCallback)
+        public void Bind(CombatPet pet1, CombatPet pet2, Player owner1, Player owner2, Action<MatingGuardian> onSlainCallback, Action<MatingGuardian> onLostCallback, bool isWeakened = false)
         {
             allowedPetGuids.Add(pet1.Guid.Full);
             allowedPetGuids.Add(pet2.Guid.Full);
@@ -108,6 +111,7 @@ namespace ACE.Server.WorldObjects
             activeGuardiansByOwner[owner2.Guid.Full] = this;
             onSlain = onSlainCallback;
             onLost = onLostCallback;
+            IsWeakened = isWeakened;
             SpawnTime = Timers.RunningTime;
         }
 
@@ -188,8 +192,13 @@ namespace ACE.Server.WorldObjects
             var mod = (float)Math.Clamp(Math.Pow(nRaw / 30.0, 0.81), 0.01, 1.0);
             var appliedDamage = amount * mod;
 
-            // Hard anti-one-shot guarantee: no single hit exceeds 10% of max HP
-            var maxAllowedHit = bossHp / 10.0f;
+            // An Offering of Subjugation was consumed before this encounter: the guardian takes far
+            // more damage and its per-hit cap is relaxed so the fight ends in ~10-15s.
+            if (IsWeakened)
+                appliedDamage *= 2.5f;
+
+            // Hard anti-one-shot guarantee: no single hit exceeds 10% of max HP (25% if weakened)
+            var maxAllowedHit = bossHp * (IsWeakened ? 0.25f : 0.10f);
             if (appliedDamage > maxAllowedHit)
                 appliedDamage = maxAllowedHit;
 
