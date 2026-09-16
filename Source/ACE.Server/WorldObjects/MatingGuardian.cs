@@ -291,7 +291,7 @@ namespace ACE.Server.WorldObjects
         /// Removal without a death (landblock unload, admin delete, anything else) still resolves the
         /// breed, otherwise the parents stay locked out and their paid breed is lost.
         /// </summary>
-        public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
+        public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false, bool enqueueDatabaseRemove = true)
         {
             Unbind();
 
@@ -309,7 +309,7 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            base.Destroy(raiseNotifyOfDestructionEvent, fromLandblockUnload);
+            base.Destroy(raiseNotifyOfDestructionEvent, fromLandblockUnload, enqueueDatabaseRemove);
         }
 
         /// <summary>
