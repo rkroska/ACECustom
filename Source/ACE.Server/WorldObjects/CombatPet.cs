@@ -1818,11 +1818,13 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// True if this pet is inside the Seedy Motel dungeon cell or actively registered in a mating guardian encounter.
+        /// True if this pet is inside the configured breeding area (pet_breeding_allowed_landblock /
+        /// pet_breeding_allowed_variant, the same check breeding itself uses) or actively registered in a
+        /// mating guardian encounter.
         /// </summary>
         public bool IsInMotelOrEncounter()
         {
-            if (Location?.LandblockId.Landblock == 0x013A)
+            if (Location != null && PetDevice.IsInBreedingArea(Location, CurrentLandblock?.VariationId))
                 return true;
 
             if (MatingGuardian.IsActiveParentPet(this))

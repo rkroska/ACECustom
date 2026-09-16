@@ -308,11 +308,17 @@ namespace ACE.Server.Entity
                     BaseDamageMod.DamageMod *= maturingPet.MaturityDamageMult;
             }
 
-            // Mating Guardian scales base damage proportional to the defending parent pet's max health (~8%, clamped [20, 500])
+            // Mating Guardian scales base damage proportional to the defending parent pet's max health (~8%, clamped [20, 500]),
+            // then by pet_breeding_guardian_damage_mult (a true multiplier: 0.5 = half).
             if (attacker is MatingGuardian guardian && defender is CombatPet matingPet)
             {
                 var petMaxHp = matingPet.Health?.MaxValue ?? 500;
                 BaseDamage = Math.Clamp(petMaxHp * 0.08f, 20.0f, 500.0f);
+
+                var guardianDamageMult = ServerConfig.pet_breeding_guardian_damage_mult.Value;
+                if (double.IsNaN(guardianDamageMult) || double.IsInfinity(guardianDamageMult) || guardianDamageMult < 0.0)
+                    guardianDamageMult = 1.0;
+                BaseDamage *= (float)guardianDamageMult;
 
                 // A weakened guardian (Offering of Subjugation consumed) hits its own parent pets for half.
                 if (guardian.IsWeakened)

@@ -651,7 +651,9 @@ namespace ACE.Server.WorldObjects
 
             if (targetCreature != null && targetCreature != this && spell.NonComponentTargetType == ItemType.Creature && !CanDamage(targetCreature))
             {
-                if (!(targetCreature is CombatPet pet && pet.P_PetOwner == this && pet.IsInMotelOrEncounter()))
+                // Only BENEFICIAL spells may bypass the CanDamage guard for your own pet in the motel or a
+                // guardian encounter; harmful spells on your own pet stay blocked.
+                if (!(spell.IsBeneficial && targetCreature is CombatPet pet && pet.P_PetOwner == this && pet.IsInMotelOrEncounter()))
                     return true;
             }
 
