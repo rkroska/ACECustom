@@ -478,6 +478,7 @@ namespace ACE.Server.Entity.Actions
         CreatureDeath_KillTaskCredit,       // thread audit: kill-task credit handed to the world queue
         CreatureDeath_PetBondAward,         // thread audit: pet bond XP award handed to the world queue
         PetPotency_ResidueAward,            // thread audit: pet residue award handed to the world queue
+        Vendor_RetrySoldItemRemove,         // vendor sell: failed batched remove retried on the vendor's queue
     }
     public static class ActionTypeConverter
     {

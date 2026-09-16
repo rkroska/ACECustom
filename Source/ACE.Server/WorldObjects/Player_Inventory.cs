@@ -193,6 +193,31 @@ namespace ACE.Server.WorldObjects
 
         private void DeepSave(WorldObject item)
         {
+            DeepSave([item], this.Guid.ToString() + " : DeepSave : " + item.Guid.ToString(), soldItems: false);
+        }
+
+        private static long deepSaveSellSequence;
+
+        /// <summary>
+        /// Saves items that were just sold to a vendor, one queue task per chunk instead of one per item.<para />
+        /// Must be called before the vendor queues the database removal for these items, so this save runs first.
+        /// </summary>
+        private void DeepSaveSoldItems(List<WorldObject> items)
+        {
+            // SaveBiotasInParallel has no parallelism cap, so bound how many connections one task can open
+            const int chunkSize = 32;
+
+            for (var i = 0; i < items.Count; i += chunkSize)
+            {
+                var chunk = items.GetRange(i, Math.Min(chunkSize, items.Count - i));
+
+                // Unique per call, since UniqueQueue replaces a pending task that shares a key (see DeepSave below)
+                DeepSave(chunk, $"{Guid} : DeepSaveSell : {Interlocked.Increment(ref deepSaveSellSequence)}", soldItems: true);
+            }
+        }
+
+        private void DeepSave(IReadOnlyList<WorldObject> items, string sourceTrace, bool soldItems)
+        {
             var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
 
             // Every object whose flags this save is responsible for, captured NOW. The callback
@@ -201,7 +226,7 @@ namespace ACE.Server.WorldObjects
             // in flight is only in the captured set, and a sub-item with no changes to write (so not
             // in biotas) that a player batch save left SaveInProgress is only found by walking the
             // container.
-            var savedObjects = new List<WorldObject> { item };
+            var savedObjects = new List<WorldObject>(items.Count);
 
             // Ownership: DeepSave never SETS SaveInProgress, so every flag it clears was set by some
             // other save. A flag set BEFORE this enqueue belongs to a save that is already ahead of us
@@ -212,19 +237,24 @@ namespace ACE.Server.WorldObjects
             // WorldObject_Database.cs for why a token and not a timestamp).
             var enqueuedToken = CurrentSaveToken;
 
-            if (item.ChangesDetected)
-                biotas.Add((item.Biota, item.BiotaDatabaseLock));
-
-            // if the player is dropping a container to the landblock,
-            // we must ensure any items within the container also have the correct properties
-            if (item is Container container)
+            foreach (var item in items)
             {
-                foreach (var subItem in container.Inventory.Values)
-                {
-                    savedObjects.Add(subItem);
+                savedObjects.Add(item);
 
-                    if (subItem.ChangesDetected)
-                        biotas.Add((subItem.Biota, subItem.BiotaDatabaseLock));
+                if (item.ChangesDetected)
+                    biotas.Add((item.Biota, item.BiotaDatabaseLock));
+
+                // if the player is dropping a container to the landblock,
+                // we must ensure any items within the container also have the correct properties
+                if (item is Container container)
+                {
+                    foreach (var subItem in container.Inventory.Values)
+                    {
+                        savedObjects.Add(subItem);
+
+                        if (subItem.ChangesDetected)
+                            biotas.Add((subItem.Biota, subItem.BiotaDatabaseLock));
+                    }
                 }
             }
 
@@ -262,19 +292,33 @@ namespace ACE.Server.WorldObjects
                     foreach (var wo in savedObjects)
                         ClearIfOurs(wo);
 
-                    if (item is Container savedContainer)
+                    foreach (var item in items)
                     {
-                        foreach (var subItem in savedContainer.Inventory.Values)
-                            ClearIfOurs(subItem);
+                        if (item is Container savedContainer)
+                        {
+                            foreach (var subItem in savedContainer.Inventory.Values)
+                                ClearIfOurs(subItem);
+                        }
                     }
 
-                    // ChangesDetected is deliberately left alone here, so a failed write is picked up
-                    // by the next landblock or player batch save rather than lost.
                     if (!result)
-                        log.Warn($"[SAVE] DeepSave failed for {Name} - {item.Name} (0x{item.Guid}), {biotas.Count} biota(s) will be retried by the next batch save");
+                    {
+                        if (soldItems)
+                        {
+                            // Sold items have no next batch save. The vendor's queued remove still deletes these rows,
+                            // but if that fails too, a row may still name this player as its container.
+                            log.Error($"[SAVE] DeepSave failed for {Name} - {items.Count} sold item(s) ({string.Join(", ", items.Select(i => $"{i.Name} (0x{i.Guid})"))}), {biotas.Count} biota(s) may not have been written before the vendor remove");
+                        }
+                        else
+                        {
+                            // ChangesDetected is deliberately left alone here, so a failed write is picked up
+                            // by the next landblock or player batch save rather than lost.
+                            log.Warn($"[SAVE] DeepSave failed for {Name} - {items[0].Name} (0x{items[0].Guid}), {biotas.Count} biota(s) will be retried by the next batch save");
+                        }
+                    }
                 });
                 clearFlagsAction.EnqueueChain();
-            }, this.Guid.ToString() + " : DeepSave : " + item.Guid.ToString());
+            }, sourceTrace);
         }
 
         public enum RemoveFromInventoryAction
@@ -306,8 +350,9 @@ namespace ACE.Server.WorldObjects
         /// <param name="item"></param>
         /// <param name="removeFromInventoryAction"></param>
         /// <param name="deferSave">Set to true if the removal should not be saved in this function call. Mainly for use when the item is about to be saved elsewhere.</param>
+        /// <param name="sendEncumbranceUpdate">Set to false when removing many items, and send the final EncumbranceVal once afterwards.</param>
         /// <returns></returns>
-        public bool TryRemoveFromInventoryWithNetworking(ObjectGuid objectGuid, out WorldObject item, RemoveFromInventoryAction removeFromInventoryAction, bool deferSave = false)
+        public bool TryRemoveFromInventoryWithNetworking(ObjectGuid objectGuid, out WorldObject item, RemoveFromInventoryAction removeFromInventoryAction, bool deferSave = false, bool sendEncumbranceUpdate = true)
         {
             if (!TryRemoveFromInventory(objectGuid, out item))
                 return false;
@@ -328,7 +373,8 @@ namespace ACE.Server.WorldObjects
             {
                 // The item has gone off-player, so we must do some additional work
 
-                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
+                if (sendEncumbranceUpdate)
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
 
                 if (item.WeenieType == WeenieType.Coin || item.WeenieType == WeenieType.Container)
                     UpdateCoinValue();
@@ -478,7 +524,7 @@ namespace ACE.Server.WorldObjects
         /// It does not add it to inventory as you could be unwielding to the ground or a chest.<para />
         /// It will also decrease the EncumbranceVal and Value.
         /// </summary>
-        public bool TryDequipObjectWithNetworking(ObjectGuid objectGuid, out WorldObject item, DequipObjectAction dequipObjectAction)
+        public bool TryDequipObjectWithNetworking(ObjectGuid objectGuid, out WorldObject item, DequipObjectAction dequipObjectAction, bool deferSave = false, bool sendEncumbranceUpdate = true)
         {
             if (!TryDequipObjectWithBroadcasting(objectGuid, out item, out var wieldedLocation, (dequipObjectAction == DequipObjectAction.DropItem)))
                 return false;
@@ -513,13 +559,15 @@ namespace ACE.Server.WorldObjects
             {
                 // The item has gone off-player, so we must do some additional work
 
-                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
+                if (sendEncumbranceUpdate)
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
 
                 // We must update the database with the latest ContainerId and WielderId properties.
                 // If we don't, the player can drop the item, log out, and log back in. If the landblock hasn't queued a database save in that time,
                 // the player will end up loading with this object in their inventory even though the landblock is the true owner. This is because
                 // when we load player inventory, the database still has the record that shows this player as the ContainerId for the item.
-                DeepSave(item);
+                if (!deferSave)
+                    DeepSave(item);
             }
 
             if (dequipObjectAction != DequipObjectAction.ToCorpseOnDeath)

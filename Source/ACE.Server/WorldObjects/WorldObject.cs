@@ -870,9 +870,10 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// If this is a container or a creature, all of the inventory and/or equipped objects will also be destroyed.<para />
-        /// An object should only be destroyed once.
+        /// An object should only be destroyed once.<para />
+        /// Set enqueueDatabaseRemove to false when the caller batches the database removal itself.
         /// </summary>
-        public virtual void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
+        public virtual void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false, bool enqueueDatabaseRemove = true)
         {
             if (IsDestroyed)
             {
@@ -929,7 +930,7 @@ namespace ACE.Server.WorldObjects
 
             CurrentLandblock?.RemoveWorldObject(Guid);
 
-            RemoveBiotaFromDatabase();
+            RemoveBiotaFromDatabase(enqueueDatabaseRemove);
 
             if (Guid.IsDynamic())
                 GuidManager.RecycleDynamicGuid(Guid);

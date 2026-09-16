@@ -132,6 +132,13 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // diagnostic timing, toggled with /modifybool vendor_sell_timing_log
+            var timingStart = ServerConfig.vendor_sell_timing_log.Value ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+            var timingQueueStart = timingStart != 0 ? ACE.Database.DatabaseManager.Shard.QueueCount : 0;
+
+            // false = the old per-item database save and remove, toggled with /modifybool vendor_sell_batched_saves
+            var batched = ServerConfig.vendor_sell_batched_saves.Value;
+
             // perform validations on requested sell items,
             // and filter to list of validated items
 
@@ -143,6 +150,8 @@ namespace ACE.Server.WorldObjects
 
             var sellList = VerifySellItems(itemProfiles, vendor);
 
+            var verifiedMs = timingStart != 0 ? System.Diagnostics.Stopwatch.GetElapsedTime(timingStart).TotalMilliseconds : 0;
+
             if (sellList.Count == 0)
             {
                 Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, Guid.Full));
@@ -150,43 +159,72 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            // calculate pyreals to receive
-            var payoutCoinAmount = vendor.CalculatePayoutCoinAmount(sellList);
-
-            if (payoutCoinAmount < 0)
-            {
-                log.Warn($"[VENDOR] {Name} (0x({Guid}) tried to sell something to {vendor.Name} (0x{vendor.Guid}) resulting in a payout of {payoutCoinAmount} pyreals.");
-
-                SendTransientError("Transaction failed.");
-                Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, Guid.Full));
-
-                SendUseDoneEvent();
-
-                return;
-            }
-
-            vendor.MoneyOutflow += payoutCoinAmount;
-
             // remove sell items from player inventory
+            // when batched, the database save and the encumbrance update are done once for the whole sale, below
+            var soldItems = new List<WorldObject>(sellList.Count);
+
             foreach (var item in sellList.Values)
             {
-                if (TryRemoveFromInventoryWithNetworking(item.Guid, out _, RemoveFromInventoryAction.SellItem) || TryDequipObjectWithNetworking(item.Guid, out _, DequipObjectAction.SellItem))
+                if (TryRemoveFromInventoryWithNetworking(item.Guid, out _, RemoveFromInventoryAction.SellItem, deferSave: batched, sendEncumbranceUpdate: !batched)
+                    || TryDequipObjectWithNetworking(item.Guid, out _, DequipObjectAction.SellItem, deferSave: batched, sendEncumbranceUpdate: !batched))
+                {
                     Session.Network.EnqueueSend(new GameEventItemServerSaysContainId(Session, item, vendor));
+                    soldItems.Add(item);
+                }
                 else
                     log.WarnFormat("[VENDOR] Item 0x{0:X8}:{1} for player {2} not found in HandleActionSellItem.", item.Guid.Full, item.Name, Name); // This shouldn't happen
             }
 
+            if (soldItems.Count == 0)
+            {
+                Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, Guid.Full));
+                SendUseDoneEvent();
+                return;
+            }
+
+            var removedMs = timingStart != 0 ? System.Diagnostics.Stopwatch.GetElapsedTime(timingStart).TotalMilliseconds : 0;
+
+            if (batched)
+            {
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
+
+                // Persist the removal before the vendor queues the database delete (the shard save queue is FIFO).
+                // If that delete fails, the rows no longer point at this player, so the items can't come back on login.
+                DeepSaveSoldItems(soldItems);
+            }
+
+            var savedMs = timingStart != 0 ? System.Diagnostics.Stopwatch.GetElapsedTime(timingStart).TotalMilliseconds : 0;
+
+            // calculate pyreals to receive, only for items that actually left the player
+            var payoutCoinAmount = vendor.CalculatePayoutCoinAmount(soldItems);
+
+            vendor.MoneyOutflow = (int)Math.Min(int.MaxValue, (long)vendor.MoneyOutflow + payoutCoinAmount);
+
             // send the list of items to the vendor
             // for the vendor to determine what to do with each item (resell, destroy)
-            vendor.ProcessItemsForPurchase(this, sellList);
+            vendor.ProcessItemsForPurchase(this, soldItems, batched, timingStart);
+
+            var processedMs = timingStart != 0 ? System.Diagnostics.Stopwatch.GetElapsedTime(timingStart).TotalMilliseconds : 0;
 
             // Deposit to bank.
-            BankedPyreals ??= 0;
-            BankedPyreals += payoutCoinAmount;
+            BankedPyreals = (BankedPyreals ?? 0) + payoutCoinAmount;
             Session.Network.EnqueueSend(new GameMessageSystemChat($"Sold items for {payoutCoinAmount:N0} pyreals (deposited to bank).", ChatMessageType.System));
             UpdateCoinValue();
 
             Session.Network.EnqueueSend(new GameMessageSound(Guid, Sound.PickUpItem));
+
+            // the sold items' rows are about to be deleted, so don't leave the payout waiting on the periodic save
+            if (ServerConfig.player_receive_immediate_save.Value)
+                RushNextPlayerSave(5);
+
+            if (timingStart != 0)
+            {
+                var totalMs = System.Diagnostics.Stopwatch.GetElapsedTime(timingStart).TotalMilliseconds;
+
+                log.Info($"[VENDOR TIMING] ({(batched ? "batched" : "legacy")}) {Name} sold {soldItems.Count} of {itemProfiles.Count} item(s) to {vendor.Name} (0x{vendor.Guid}): {totalMs:F1} ms on the world thread " +
+                    $"(verify {verifiedMs:F1}, remove {removedMs - verifiedMs:F1}, save enqueue {savedMs - removedMs:F1}, vendor process {processedMs - savedMs:F1} incl. list build {vendor.LastApproachVendorBuildMs:F1}) | " +
+                    $"vendor list sent: {vendor.LastApproachVendorItemCount} item(s), {vendor.LastApproachVendorBytes:N0} bytes | shard queue {timingQueueStart} -> {ACE.Database.DatabaseManager.Shard.QueueCount}");
+            }
 
             SendUseDoneEvent();
         }

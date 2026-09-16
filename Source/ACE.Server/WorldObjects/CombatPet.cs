@@ -225,7 +225,7 @@ namespace ACE.Server.WorldObjects
 
         internal float MeleeMotionDpsFactor => _meleeMotionDpsFactor;
 
-        public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
+        public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false, bool enqueueDatabaseRemove = true)
         {
             RemoveAiDebugThrottleKeysForCombatPet(Guid.Full);
 
@@ -238,7 +238,7 @@ namespace ACE.Server.WorldObjects
                 _previousImbuedEffects = ImbuedEffectType.Undef;
             }
 
-            base.Destroy(raiseNotifyOfDestructionEvent, fromLandblockUnload);
+            base.Destroy(raiseNotifyOfDestructionEvent, fromLandblockUnload, enqueueDatabaseRemove);
         }
 
         /// <summary>
