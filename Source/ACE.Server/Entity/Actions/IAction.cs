@@ -481,6 +481,8 @@ namespace ACE.Server.Entity.Actions
         Vendor_RetrySoldItemRemove,         // vendor sell: failed batched remove retried on the vendor's queue
         PetDevice_DismissAfterBreed,        // pet breeding: parent pets dismissed after the ritual completes
         PetDevice_GuardianTimeout,          // pet breeding: mating guardian encounter timed out
+        PetNaming_ApproveRename,            // thread audit: portal approve renames the device on the world queue, never the HTTP thread
+        PetNaming_RequestResult,            // thread audit: @pet-name background DB/Discord result delivered on the world queue
     }
     public static class ActionTypeConverter
     {

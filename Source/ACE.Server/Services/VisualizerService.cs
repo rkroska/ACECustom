@@ -130,9 +130,65 @@ namespace ACE.Server.Services
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(VisualizerService));
 
-        // Concurrency locks per asset ID
-        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
+        // Concurrency locks per asset ID, reference counted so an entry lives only while a request holds or
+        // waits on it (the previous one-SemaphoreSlim-per-key-forever dictionary grew with every distinct key).
+        private sealed class KeyedLock
+        {
+            public readonly SemaphoreSlim Semaphore = new SemaphoreSlim(1, 1);
+            public int Waiters;
+        }
+
+        private static readonly Dictionary<string, KeyedLock> _locks = new();
         private static readonly ReaderWriterLockSlim _cacheLock = new ReaderWriterLockSlim();
+
+        // Size-triggered eviction: the hourly worker is the backstop; a burst of writes past this many bytes
+        // kicks one eviction pass early (guarded so only one runs at a time).
+        private const long EvictionCheckAfterBytesWritten = 256L * 1024L * 1024L;
+        private static long _bytesWrittenSinceEvictionCheck;
+        private static int _evictionRunning;
+
+        // Bounds on the request inputs that form cache file names. Anything outside is normalized (hue, shade,
+        // slot) or rejected by the controller (palette id), so the number of distinct cache files is bounded.
+        public const int MaxPaletteSlot = 63;
+
+        /// <summary>Hue is a rotation in degrees: any int collapses to 0..359.</summary>
+        public static int NormalizeHue(int hue) => ((hue % 360) + 360) % 360;
+
+        /// <summary>Shade is a 0..1 palette-set position; NaN and out-of-range fall back to the middle.</summary>
+        public static float ClampShade(float shade) => float.IsNaN(shade) ? 0.5f : Math.Clamp(shade, 0f, 1f);
+
+        /// <summary>Palette slot: -1 (none) or a small clothing sub-palette index.</summary>
+        public static int ClampPaletteSlot(int slot) => Math.Clamp(slot, -1, MaxPaletteSlot);
+
+        /// <summary>
+        /// Largest value accepted as a clothing-table template index when it is passed in a paletteId slot
+        /// (ExportTexturePng treats any id outside the 0x04/0x0F dat ranges as a template index).
+        /// </summary>
+        public const uint MaxPaletteTemplateId = 4096;
+
+        /// <summary>True when the id names a Palette (0x04......) or PaletteSet (0x0F......) that exists in the portal dat.</summary>
+        public static bool IsKnownDatPaletteId(uint paletteId)
+        {
+            var type = paletteId >> 24;
+            if (type != 0x04 && type != 0x0F)
+                return false;
+
+            var portal = DatManager.PortalDat;
+            return portal != null && portal.AllFiles.ContainsKey(paletteId);
+        }
+
+        /// <summary>
+        /// True for every paletteId the mesh/texture renderers accept: 0 (no override), a bounded clothing-table
+        /// template index, or a Palette/PaletteSet that exists in the portal dat. Anything else would only mint
+        /// a new cache file name.
+        /// </summary>
+        public static bool IsAcceptedPaletteOverride(uint paletteId)
+        {
+            if (paletteId <= MaxPaletteTemplateId)
+                return true;
+
+            return IsKnownDatPaletteId(paletteId);
+        }
 
         private static string CacheDir => Path.Combine(AppContext.BaseDirectory, "wwwroot", "visualizer_cache");
 
@@ -264,9 +320,69 @@ namespace ACE.Server.Services
             return results;
         }
 
-        private static SemaphoreSlim GetLock(string key)
+        /// <summary>Takes the per-key lock; pair with <see cref="ReleaseLock"/> in a finally.</summary>
+        private static async Task<KeyedLock> AcquireLockAsync(string key)
         {
-            return _locks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+            KeyedLock keyedLock;
+            lock (_locks)
+            {
+                if (!_locks.TryGetValue(key, out keyedLock))
+                {
+                    keyedLock = new KeyedLock();
+                    _locks[key] = keyedLock;
+                }
+                keyedLock.Waiters++;
+            }
+
+            try
+            {
+                await keyedLock.Semaphore.WaitAsync();
+            }
+            catch
+            {
+                ReleaseLock(key, keyedLock, held: false);
+                throw;
+            }
+
+            return keyedLock;
+        }
+
+        private static void ReleaseLock(string key, KeyedLock keyedLock, bool held = true)
+        {
+            lock (_locks)
+            {
+                if (held)
+                    keyedLock.Semaphore.Release();
+
+                if (--keyedLock.Waiters == 0)
+                {
+                    _locks.Remove(key);
+                    keyedLock.Semaphore.Dispose();
+                }
+            }
+        }
+
+        /// <summary>Counts bytes landed in the cache and starts an early eviction pass when a burst exceeds the threshold.</summary>
+        private static void NoteCacheWrite(long bytes)
+        {
+            if (Interlocked.Add(ref _bytesWrittenSinceEvictionCheck, bytes) < EvictionCheckAfterBytesWritten)
+                return;
+
+            if (Interlocked.CompareExchange(ref _evictionRunning, 1, 0) != 0)
+                return;
+
+            Interlocked.Exchange(ref _bytesWrittenSinceEvictionCheck, 0);
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    PerformEvictionIfNeeded();
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _evictionRunning, 0);
+                }
+            });
         }
 
         /// <summary>
@@ -274,6 +390,9 @@ namespace ACE.Server.Services
         /// </summary>
         public static async Task<byte[]> GetMeshGltfBytesAsync(uint wcid, uint paletteId = 0, int hue = 0)
         {
+            hue = NormalizeHue(hue);
+            if (!IsAcceptedPaletteOverride(paletteId)) return null;
+
             var cacheKey = $"{wcid}_{paletteId}_{hue}";
             var cachePath = Path.Combine(ModelsCacheDir, $"{cacheKey}.gltf");
             if (File.Exists(cachePath))
@@ -281,28 +400,29 @@ namespace ACE.Server.Services
                 return await File.ReadAllBytesAsync(cachePath);
             }
 
-                var wcidLock = GetLock($"mesh_{cacheKey}");
-                await wcidLock.WaitAsync();
-                try
+            var lockKey = $"mesh_{cacheKey}";
+            var wcidLock = await AcquireLockAsync(lockKey);
+            try
+            {
+                if (File.Exists(cachePath))
                 {
-                    if (File.Exists(cachePath))
-                    {
-                        return await File.ReadAllBytesAsync(cachePath);
-                    }
+                    return await File.ReadAllBytesAsync(cachePath);
+                }
 
-                    var bytes = ExportMeshGltf(wcid, paletteId, hue);
-                    if (bytes == null) return null;
+                var bytes = ExportMeshGltf(wcid, paletteId, hue);
+                if (bytes == null) return null;
 
                 // Write atomically
                 var tempPath = Path.Combine(ModelsCacheDir, $"temp_{Guid.NewGuid()}.gltf");
                 await File.WriteAllBytesAsync(tempPath, bytes);
                 File.Move(tempPath, cachePath, overwrite: true);
+                NoteCacheWrite(bytes.Length);
 
                 return bytes;
             }
             finally
             {
-                wcidLock.Release();
+                ReleaseLock(lockKey, wcidLock);
             }
         }
 
@@ -936,14 +1056,16 @@ namespace ACE.Server.Services
         /// </summary>
         public static async Task<byte[]> GetPalettePngBytesAsync(uint paletteId)
         {
+            if (!IsKnownDatPaletteId(paletteId)) return null;
+
             var cachePath = Path.Combine(PalettesCacheDir, $"{paletteId}.png");
             if (File.Exists(cachePath))
             {
                 return await File.ReadAllBytesAsync(cachePath);
             }
 
-            var palLock = GetLock($"pal_{paletteId}");
-            await palLock.WaitAsync();
+            var lockKey = $"pal_{paletteId}";
+            var palLock = await AcquireLockAsync(lockKey);
             try
             {
                 if (File.Exists(cachePath))
@@ -958,12 +1080,13 @@ namespace ACE.Server.Services
                 var tempPath = Path.Combine(PalettesCacheDir, $"temp_{Guid.NewGuid()}.png");
                 await File.WriteAllBytesAsync(tempPath, bytes);
                 File.Move(tempPath, cachePath, overwrite: true);
+                NoteCacheWrite(bytes.Length);
 
                 return bytes;
             }
             finally
             {
-                palLock.Release();
+                ReleaseLock(lockKey, palLock);
             }
         }
 
@@ -1423,6 +1546,11 @@ namespace ACE.Server.Services
 
         public static async Task<byte[]> GetTexturePngBytesAsync(uint textureId, uint wcid = 0, uint paletteId = 0, float shade = 0.5f, int hueShift = 0, int paletteSlot = -1)
         {
+            hueShift = NormalizeHue(hueShift);
+            shade = ClampShade(shade);
+            paletteSlot = ClampPaletteSlot(paletteSlot);
+            if (!IsAcceptedPaletteOverride(paletteId)) return null;
+
             string cacheKey = $"v4.0_{textureId}_wcid_{wcid}_pal_0x{paletteId:X8}_slot_{paletteSlot}_hue_{hueShift}";
             var cachePath = Path.Combine(TexturesCacheDir, $"{cacheKey}.png");
             if (File.Exists(cachePath))
@@ -1430,8 +1558,8 @@ namespace ACE.Server.Services
                 return await File.ReadAllBytesAsync(cachePath);
             }
 
-            var texLock = GetLock($"tex_{cacheKey}");
-            await texLock.WaitAsync();
+            var lockKey = $"tex_{cacheKey}";
+            var texLock = await AcquireLockAsync(lockKey);
             try
             {
                 if (File.Exists(cachePath))
@@ -1446,12 +1574,13 @@ namespace ACE.Server.Services
                 var tempPath = Path.Combine(TexturesCacheDir, $"temp_{Guid.NewGuid()}.png");
                 await File.WriteAllBytesAsync(tempPath, bytes);
                 File.Move(tempPath, cachePath, overwrite: true);
+                NoteCacheWrite(bytes.Length);
 
                 return bytes;
             }
             finally
             {
-                texLock.Release();
+                ReleaseLock(lockKey, texLock);
             }
         }
 

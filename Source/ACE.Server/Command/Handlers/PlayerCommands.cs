@@ -1808,50 +1808,135 @@ namespace ACE.Server.Command.Handlers
 
             var oldName = petDevice.Name;
 
-            try
+            if (string.Equals(oldName, requestedName, StringComparison.Ordinal))
             {
-                using var ctx = new ACE.Database.Models.Shard.ShardDbContext();
-                var con = ctx.Database.GetDbConnection();
-                if (con.State != System.Data.ConnectionState.Open) con.Open();
-                using var cmd = con.CreateCommand();
-                cmd.CommandText = "INSERT INTO `pet_name_requests` (`character_id`, `character_name`, `pet_guid`, `old_name`, `requested_name`) " +
-                                   "VALUES (@characterId, @characterName, @petGuid, @oldName, @requestedName)";
-
-                void AddParam(string name, object value)
-                {
-                    var p = cmd.CreateParameter();
-                    p.ParameterName = name;
-                    p.Value = value;
-                    cmd.Parameters.Add(p);
-                }
-
-                AddParam("@characterId", (long)player.Character.Id);
-                AddParam("@characterName", player.Name);
-                AddParam("@petGuid", petDevice.Guid.Full);
-                AddParam("@oldName", oldName);
-                AddParam("@requestedName", requestedName);
-
-                cmd.ExecuteNonQuery();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"[PetNaming] Failed to save pet name request for {player.Name}: {ex.Message}", ex);
-                session.Network.EnqueueSend(new GameMessageSystemChat("Failed to submit your pet name request. Please try again later.", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{oldName} already has that name.", ChatMessageType.Broadcast));
                 return;
             }
 
-            var channelId = ConfigManager.Config?.Chat?.AdminChannelId ?? ConfigManager.Config?.Chat?.AdminAuditId ?? 0;
-            if (channelId > 0)
+            // Cooldown per character: the cooldown is taken the moment the request is accepted (before the
+            // background work runs) so a burst of commands cannot queue a burst of DB writes and Discord posts.
+            var characterId = player.Character.Id;
+            var now = DateTime.UtcNow;
+            if (PetNameRequestCooldowns.TryGetValue(characterId, out var last) && now - last < PetNameRequestCooldown)
             {
-                _ = DiscordChatManager.SendDiscordChannelEmbedAsync(
-                    "Pet Rename Request",
-                    $"**Player:** {player.Name}\n**Pet:** {oldName}\n**Requested name:** {requestedName}\n**GUID:** 0x{petDevice.Guid.Full:X8}",
-                    null,
-                    channelId);
+                var wait = (int)Math.Ceiling((PetNameRequestCooldown - (now - last)).TotalSeconds);
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"You may submit another pet name request in {wait} second{(wait == 1 ? "" : "s")}.", ChatMessageType.Broadcast));
+                return;
             }
+            PetNameRequestCooldowns[characterId] = now;
+            PrunePetNameRequestCooldowns(now);
+
+            // Everything the background task needs is captured here as plain values: it must not touch the
+            // player, the device or the session, which belong to this landblock thread.
+            var characterName = player.Name;
+            var petGuid = petDevice.Guid.Full;
+            var channelId = ConfigManager.Config?.Chat?.AdminChannelId ?? ConfigManager.Config?.Chat?.AdminAuditId ?? 0;
 
             session.Network.EnqueueSend(new GameMessageSystemChat(
-                $"Your request to rename {oldName} to \"{requestedName}\" has been submitted for staff review.", ChatMessageType.Broadcast));
+                $"Submitting your request to rename {oldName} to \"{requestedName}\"...", ChatMessageType.Broadcast));
+
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                string reply;
+                try
+                {
+                    var replaced = SubmitPetNameRequest(characterId, characterName, petGuid, oldName, requestedName);
+
+                    if (channelId > 0)
+                    {
+                        _ = DiscordChatManager.SendDiscordChannelEmbedAsync(
+                            replaced ? "Pet Rename Request (updated)" : "Pet Rename Request",
+                            $"**Player:** {characterName}\n**Pet:** {oldName}\n**Requested name:** {requestedName}\n**GUID:** 0x{petGuid:X8}",
+                            null,
+                            channelId);
+                    }
+
+                    reply = replaced
+                        ? $"Your pending pet name request has been replaced: {oldName} to \"{requestedName}\" is now waiting for staff review."
+                        : $"Your request to rename {oldName} to \"{requestedName}\" has been submitted for staff review.";
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[PetNaming] Failed to save pet name request for {characterName}: {ex.Message}", ex);
+                    PetNameRequestCooldowns.TryRemove(characterId, out _);
+                    reply = "Failed to submit your pet name request. Please try again later.";
+                }
+
+                // Thread audit: the reply reaches the player through the world queue, which drains between landblock
+                // ticks; the player is re-resolved there because they may have logged out while the DB call ran.
+                WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.PetNaming_RequestResult, () =>
+                {
+                    var online = PlayerManager.GetOnlinePlayer(characterId);
+                    online?.Session?.Network.EnqueueSend(new GameMessageSystemChat(reply, ChatMessageType.Broadcast));
+                }));
+            });
+        }
+
+        private static readonly TimeSpan PetNameRequestCooldown = TimeSpan.FromSeconds(60);
+        private static readonly ConcurrentDictionary<uint, DateTime> PetNameRequestCooldowns = new();
+
+        private static void PrunePetNameRequestCooldowns(DateTime now)
+        {
+            if (PetNameRequestCooldowns.Count < 1000)
+                return;
+
+            foreach (var entry in PetNameRequestCooldowns)
+            {
+                if (now - entry.Value >= PetNameRequestCooldown)
+                    PetNameRequestCooldowns.TryRemove(entry.Key, out _);
+            }
+        }
+
+        /// <summary>
+        /// Background thread only (no world objects). A character has at most one pending request: an existing
+        /// pending row is rewritten in place (returns true), otherwise a new row is inserted (returns false).
+        /// </summary>
+        private static bool SubmitPetNameRequest(uint characterId, string characterName, uint petGuid, string oldName, string requestedName)
+        {
+            using var ctx = new ACE.Database.Models.Shard.ShardDbContext();
+            var con = ctx.Database.GetDbConnection();
+            if (con.State != System.Data.ConnectionState.Open) con.Open();
+
+            static void AddParam(System.Data.IDbCommand cmd, string name, object value)
+            {
+                var p = cmd.CreateParameter();
+                p.ParameterName = name;
+                p.Value = value;
+                cmd.Parameters.Add(p);
+            }
+
+            using (var updateCmd = con.CreateCommand())
+            {
+                updateCmd.CommandText =
+                    "UPDATE `pet_name_requests` SET `character_name` = @characterName, `pet_guid` = @petGuid, `old_name` = @oldName, " +
+                    "`requested_name` = @requestedName, `created_at` = UTC_TIMESTAMP() " +
+                    "WHERE `character_id` = @characterId AND `status` = 0";
+                AddParam(updateCmd, "@characterName", characterName);
+                AddParam(updateCmd, "@petGuid", petGuid);
+                AddParam(updateCmd, "@oldName", oldName);
+                AddParam(updateCmd, "@requestedName", requestedName);
+                AddParam(updateCmd, "@characterId", (long)characterId);
+
+                if (updateCmd.ExecuteNonQuery() > 0)
+                    return true;
+            }
+
+            using (var insertCmd = con.CreateCommand())
+            {
+                insertCmd.CommandText =
+                    "INSERT INTO `pet_name_requests` (`character_id`, `character_name`, `pet_guid`, `old_name`, `requested_name`) " +
+                    "VALUES (@characterId, @characterName, @petGuid, @oldName, @requestedName)";
+                AddParam(insertCmd, "@characterId", (long)characterId);
+                AddParam(insertCmd, "@characterName", characterName);
+                AddParam(insertCmd, "@petGuid", petGuid);
+                AddParam(insertCmd, "@oldName", oldName);
+                AddParam(insertCmd, "@requestedName", requestedName);
+                insertCmd.ExecuteNonQuery();
+            }
+
+            return false;
         }
 
         private static readonly TimeSpan MyQuests = TimeSpan.FromSeconds(60);
