@@ -53,7 +53,7 @@ Follow these rules on every change to prevent regressions and review defects:
 - Never use loose `.Contains("phrase")` on chat/soul emote text for gameplay triggers. Always use trimmed exact equality (`trimmed.Equals("dance", StringComparison.OrdinalIgnoreCase)`) to avoid false triggers from everyday conversational words (e.g., "attendance", "guidance").
 
 ### 5. SQL Patches & Client Compatibility
-- Never include virtual/generated columns (`landblock` on `position` table) in SQL `INSERT` statements; MariaDB/MySQL auto-derives them from `obj_Cell_Id`.
+- Never include virtual/generated columns (`landblock` on the `landblock_instance` table) in SQL `INSERT` statements; MariaDB/MySQL auto-derives them from `obj_Cell_Id`.
 - Never use broad range `DELETE` statements (e.g. `variation_Id BETWEEN 2 AND 10`) on shared landblocks. Always restrict `DELETE` queries strictly to the exact `weenie_Class_Id`s being recreated.
 - Strictly 7-bit ASCII and LF line endings on all SQL patches and server code.
 - Never use Unicode block characters (such as full block U+2588) in chat strings or command outputs (they render as corrupted glyphs in the 1999 AC client font); use plain ASCII equivalents (e.g. `#`).

@@ -152,7 +152,7 @@ namespace ACE.Server.WorldObjects
                 skipTargetTypeCheck = true;
             else if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.FilledTailoringKitWcid && target is PetDevice)
                 skipTargetTypeCheck = true;
-            else if ((sourceItem.WeenieClassId >= 78780250 && sourceItem.WeenieClassId <= 78780256) && target is PetDevice)
+            else if ((sourceItem.WeenieClassId >= 78780250 && sourceItem.WeenieClassId <= 78780255) && target is PetDevice)
                 skipTargetTypeCheck = true;
 
             var sourceTargetType = sourceItem.TargetType ?? ItemType.None;

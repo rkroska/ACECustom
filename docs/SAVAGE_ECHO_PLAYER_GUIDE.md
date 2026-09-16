@@ -1,4 +1,4 @@
-﻿# Savage Echo & Pet Potency — Player Guide
+# Savage Echo & Pet Potency — Player Guide
 
 **What this is:** A long-term upgrade path for **bonded combat pets**. You earn **Savage Echo** crystals while your pet helps you fight, then spend them on **your** attuned combat essence to raise **Potency** — extra damage from body training.
 

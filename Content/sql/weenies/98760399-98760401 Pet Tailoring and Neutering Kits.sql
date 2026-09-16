@@ -33,7 +33,7 @@ VALUES (98760399,     1,  33558818) /* Setup (same as Essence Resonator) */
      , (98760399,     6,  67115262) /* PaletteBase */
      , (98760399,     7, 268436836) /* ClothingBase */
      , (98760399,     8, 100670879) /* Icon */
-     , (98760399,    22, 872415275) /* IconOverlay */
+     , (98760399,    22, 872415275) /* PhysicsEffectTable (0x3400002B) - NOT an icon overlay; IconOverlay is DID type 50 and none is assigned to the kits */
      , (98760399,    52, 100667855) /* IconUnderlay */;
 
 DELETE FROM `weenie_properties_string` WHERE `object_Id` = 98760399;
@@ -76,7 +76,7 @@ VALUES (98760400,     1,  33558818) /* Setup (same as Essence Resonator) */
      , (98760400,     6,  67115262) /* PaletteBase */
      , (98760400,     7, 268436836) /* ClothingBase */
      , (98760400,     8, 100670879) /* Icon */
-     , (98760400,    22, 872415275) /* IconOverlay */
+     , (98760400,    22, 872415275) /* PhysicsEffectTable (0x3400002B) - NOT an icon overlay; IconOverlay is DID type 50 and none is assigned to the kits */
      , (98760400,    52, 100667855) /* IconUnderlay */;
 
 DELETE FROM `weenie_properties_string` WHERE `object_Id` = 98760400;
@@ -119,7 +119,7 @@ VALUES (98760401,     1,  33558818) /* Setup (same as Essence Resonator) */
      , (98760401,     6,  67115262) /* PaletteBase */
      , (98760401,     7, 268436836) /* ClothingBase */
      , (98760401,     8, 100670879) /* Icon */
-     , (98760401,    22, 872415275) /* IconOverlay */
+     , (98760401,    22, 872415275) /* PhysicsEffectTable (0x3400002B) - NOT an icon overlay; IconOverlay is DID type 50 and none is assigned to the kits */
      , (98760401,    52, 100667855) /* IconUnderlay */;
 
 DELETE FROM `weenie_properties_string` WHERE `object_Id` = 98760401;

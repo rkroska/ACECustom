@@ -2,6 +2,18 @@
    Run against ace_world. Safe to re-run (deletes then inserts). */
 
 /* ========================================================================= */
+/* 0. Retire the pre-7878 WCIDs an earlier revision of this patch created.   */
+/*    98760410-98760412 (incense), 98760415 (draught) and 98760418 (catalyst) */
+/*    moved to 78780250-78780254. Databases that ran the old revision still  */
+/*    carry the orphans, so drop them and their vendor stock rows here.       */
+/*    weenie_properties_* rows cascade from weenie via the wcid_* FKs in      */
+/*    Database/Base/WorldBase.sql; the create_list rows on Ivo are deleted    */
+/*    explicitly because they hang off the vendor, not the retired weenie.    */
+/* ========================================================================= */
+DELETE FROM `weenie_properties_create_list` WHERE `weenie_Class_Id` IN (98760410, 98760411, 98760412, 98760415, 98760418);
+DELETE FROM `weenie` WHERE `class_Id` IN (98760410, 98760411, 98760412, 98760415, 98760418);
+
+/* ========================================================================= */
 /* 1. Lesser Courtship Incense (78780250) - +2.5% mutation chance            */
 /* ========================================================================= */
 DELETE FROM weenie WHERE class_Id = 78780250;
@@ -73,7 +85,7 @@ DELETE FROM weenie_properties_d_i_d WHERE object_Id = 78780251;
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value)
 VALUES (78780251,  1,  33558818)
      , (78780251,  8, 100670879)
-     , (78780251, 22, 872415275); /* IconOverlay */
+     , (78780251, 22, 872415275); /* PhysicsEffectTable (0x3400002B); NOT an icon overlay - IconOverlay is DID type 50 */
 
 DELETE FROM weenie_properties_string WHERE object_Id = 78780251;
 INSERT INTO weenie_properties_string (object_Id, type, value)
@@ -114,7 +126,7 @@ DELETE FROM weenie_properties_d_i_d WHERE object_Id = 78780252;
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value)
 VALUES (78780252,  1,  33558818)
      , (78780252,  8, 100670879)
-     , (78780252, 22, 100671392); /* IconOverlay */
+     , (78780252, 50, 100671392); /* IconOverlay (0x06001FA0) - was mis-typed as 22 (PhysicsEffectTable) */
 
 DELETE FROM weenie_properties_string WHERE object_Id = 78780252;
 INSERT INTO weenie_properties_string (object_Id, type, value)

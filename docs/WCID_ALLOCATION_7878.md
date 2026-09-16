@@ -18,10 +18,27 @@ Do **not** use bare `7878` (legacy stub).
 | `78780015`–`78780019` | **Spare** | Reserved |
 | `78780020`–`78780029` | World / NPC / generators | Echo Weaver, Lens Collector, Crystal Gen, etc. |
 | **`78780030`–`78780089`** | **Ability charms (ILT)** | **Allocate new toggle charms here only** |
-| `78780090`–`78780098` | **Spare buffer** | Emergency items; stay below debug |
-| `78780099` | Debug siphon lens | Keep fixed |
-| `78780200`–`78780249` | **Ruggan's Annex** (pet breeding area) | NPCs and props. See `PET_BREEDING_ANNEX_DESIGN.md`; SQL in `Database/Updates/World/2026-09-09-00-Ruggans-Annex-NPCs.sql` |
-| `78780250`–`78780259` | **Pet Breeding Consumables & Sinks** | Courtship Incense (250-252), Nurturing Draught (253), Chromatic Catalyst (254), Offering of Subjugation (255), Ancestral Gene Re-roller (256) |
+| `78780090`–`78780098` | **Spare buffer** | Emergency items; stay below debug. **Overlaps QuestBuilder** (see below) |
+| `78780099` | Debug siphon lens | Keep fixed. **Inside the QuestBuilder auto-allocation range** (see below) |
+| `78780090`–`78780199` | **QuestBuilder auto-allocation** | `QuestBuilderCompiler.FindNextWcid` (`Source/ACE.Server/Managers/QuestBuilder/QuestBuilderCompiler.cs` ~739) and `QuestBuilderController.GetNextWcid` (`Source/ACE.Server/Controllers/QuestBuilderController.cs` ~35) hand out the first WCID in this range with no `weenie` row. It skips ids that already exist, so it will not clobber the spare buffer / debug lens / loot items once they are in the DB, but it **overlaps** all three. Documented here so the overlap is visible; nothing is renumbered. `78780092` is also the QuestBuilder template WCID (`QuestBuilderTemplates.cs`) |
+| `78780101`–`78780103` | Loot: Flawed / Pristine / Perfect essence drops | Created in code by `LootGenerationFactory` (~261-289). Inside the QuestBuilder range above |
+| `78780200`–`78780249` | **Ruggan's Annex** (pet breeding area) | NPCs and props. See `PET_BREEDING_ANNEX_DESIGN.md`; SQL in `Database/Updates/World/2026-09-09-00-Ruggans-Annex-NPCs.sql` (NPCs 200-204, 210-214, 220-224) |
+| `78780250`–`78780259` | **Pet Breeding Consumables & Sinks** | Courtship Incense (250-252), Nurturing Draught (253), Chromatic Catalyst (254), Offering of Subjugation (255). `78780256` Ancestral Gene Re-roller is **reserved / unbuilt**: no weenie, no handler, and `Player_Use.cs` only accepts 250-255. SQL in `Database/Updates/World/2026-09-12-00-Pet-Breeding-Sinks.sql` |
+
+## Legacy block (pre-7878 ids still in use)
+
+These predate the 7878 scheme and are **not** being renumbered; the code references them by
+number, so leave them where they are.
+
+| WCID | Purpose | Defined in |
+|------|---------|------------|
+| `98760388` | Portal to Seedy Motel (destination cell `0x013A02AE`, variation 3) | `Database/Updates/World/2026-07-26-00-Seedy-Motel-Portal.sql` |
+| `98760399` | Pet Neutering Kit | `Database/Updates/World/2026-09-09-01-Pet-Tailoring-and-Neutering-Kits.sql` (mirrored in `Content/sql/weenies/`); constants in `Source/ACE.Server/Entity/PetTailoring.cs` |
+| `98760400` | Pet Tailoring Kit | same |
+| `98760401` | Pet Tailoring Kit (Filled) | same |
+
+The breeding sinks briefly lived at `98760410`-`98760412`, `98760415` and `98760418` before
+moving to `78780250`-`78780254`; the sinks patch deletes those old rows on every run.
 | `787801001`–`787801072` | Pet device essences (250/300) | Do not use for charms |
 | `787802001`–`787802072` | Combat pet summon weenies | Do not use for charms |
 | `787802073`+ | Future combat pets / extensions | Append only |

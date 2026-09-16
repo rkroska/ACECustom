@@ -1,4 +1,4 @@
-﻿# Savage Echo & Pet Potency — Developer & Content Guide
+# Savage Echo & Pet Potency — Developer & Content Guide
 
 **Audience:** Engineers, GMs, content designers, and anyone tuning the feature — **no programming required** for the first half; code map at the end for implementers.
 

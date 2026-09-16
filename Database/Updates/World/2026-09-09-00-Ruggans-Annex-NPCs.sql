@@ -23,9 +23,16 @@
 
 -- =====================================================================================
 -- PART 1  Clean slate (FKs are ON DELETE CASCADE, so this clears every property table)
+--         Only the 15 WCIDs this file defines are removed. The rest of the reserved
+--         78780200-78780249 block belongs to other annex patches (props, later NPCs) and
+--         must survive a re-run of this one.
 -- =====================================================================================
 
-DELETE FROM `weenie` WHERE `class_Id` BETWEEN 78780200 AND 78780249;
+DELETE FROM `weenie` WHERE `class_Id` IN (
+  78780200, 78780201, 78780202, 78780203, 78780204,
+  78780210, 78780211, 78780212, 78780213, 78780214,
+  78780220, 78780221, 78780222, 78780223, 78780224
+);
 
 -- =====================================================================================
 -- PART 2  Create each NPC by cloning a known-good template, then override what differs.
@@ -1137,14 +1144,19 @@ INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,
 -- =====================================================================================
 -- PART 5  Placing them
 --
--- These are NOT spawned by this file, on purpose. Landblock 0x016C is a large indoor
--- hub and this script has no way to know which of its cells are walkable rooms, so any
--- coordinates written here would be a guess. Place them in-game instead, which writes
--- the landblock_instance rows for you:
+-- These are NOT spawned by this file, on purpose. The Seedy Motel is landblock 0x013A
+-- (314 decimal), used through variation 3 - that is where the portal in
+-- 2026-07-26-00-Seedy-Motel-Portal.sql drops players (cell 0x013A02AE, variation_Id 3),
+-- and breeding now defaults to landblock 0x013A variant 3 (pet_breeding_allowed_landblock /
+-- pet_breeding_allowed_variant). 0x016C is the Marketplace, not the motel. The motel is a
+-- large indoor block and this script has no way to know which of its cells are walkable
+-- rooms, so any coordinates written here would be a guess. Place them in-game instead,
+-- which writes the landblock_instance rows for you:
 --
---   1. @showprops                  confirm pet_breeding_allowed_landblock. It is 364
---                                  (0x016C) today, while the stored description claims
---                                  0x013A02AE. One of the two is wrong.
+--   1. @showprops                  confirm pet_breeding_allowed_landblock is 314 (0x013A)
+--                                  and pet_breeding_allowed_variant is 3. If a stored shard
+--                                  value still says 364 (0x016C), fix it with @modifylong;
+--                                  stored values override the code default.
 --   2. Stand in the intended ritual room and run @breed-debug. Note the Cell=0x........
 --      value and walk the whole room checking it does not change. If it changes, the
 --      room is more than one landcell and two players on opposite sides of it will fail
@@ -1177,15 +1189,19 @@ INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,
 --     on all of them together if the wings end up further apart than that.
 --
 -- If you would rather script the placement, the shape is below. guid must be unique and
--- inside this landblock's static range: 0x016C currently uses 0x7016C000-0x7016C246, so
--- 0x7016C300 upward is free. Do not write the `landblock` column - it is a generated
--- column derived from obj_Cell_Id.
+-- inside this landblock's static range, 0x7013A000-0x7013AFFF. No SQL in this repository
+-- places anything in that range today, but the live shard may (check
+-- SELECT MAX(guid) FROM landblock_instance WHERE guid BETWEEN 0x7013A000 AND 0x7013AFFF
+-- before picking), so start at 0x7013A300 and go up. Coordinates are placeholders; the cell
+-- is the portal's arrival cell. variation_Id must be 3 so the NPCs exist in the same
+-- instanced copy of the motel the portal delivers players to. Do not write the `landblock`
+-- column - it is a generated column derived from obj_Cell_Id.
 --
 --   INSERT INTO `landblock_instance`
 --     (`guid`,`weenie_Class_Id`,`obj_Cell_Id`,`origin_X`,`origin_Y`,`origin_Z`,
 --      `angles_W`,`angles_X`,`angles_Y`,`angles_Z`,`is_Link_Child`,`last_Modified`,`variation_Id`)
 --   VALUES
---     (0x7016C300, 78780200, 0x016C0154, 9.5, -49.8, 0.0, 1, 0, 0, 0, False, NOW(), NULL);
+--     (0x7013A300, 78780200, 0x013A02AE, 9.5, -49.8, 0.0, 1, 0, 0, 0, False, NOW(), 3);
 -- =====================================================================================
 
 -- Ruggan's Annex: 15 NPCs created.

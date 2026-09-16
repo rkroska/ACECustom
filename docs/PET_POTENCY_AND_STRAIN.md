@@ -1,4 +1,4 @@
-﻿# Pet Potency, Essence Residue, and Bond Strain
+# Pet Potency, Essence Residue, and Bond Strain
 
 Design spec for **offensive pet progression** on bonded combat essences: currency farming, potency investment, bond-gated activation, body-part damage scaling, and optional player damage tradeoff (Bond Strain).
 

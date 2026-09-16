@@ -9,18 +9,30 @@ namespace ACE.Server.Tests
     [TestClass]
     public class SqlPatchSanityTests
     {
+        // Patches older than this predate the ASCII/LF rule and are not re-validated.
+        private const string EncodingRuleCutoff = "2026-07-01";
+
+        private static string[] GetUpdatePatchFiles(string root, string subDir, bool applyCutoff)
+        {
+            var updatesDir = Path.Combine(root, "Database", "Updates", subDir);
+            if (!Directory.Exists(updatesDir))
+                return Array.Empty<string>();
+
+            var files = Directory.GetFiles(updatesDir, "*.sql", SearchOption.AllDirectories);
+            if (applyCutoff)
+                files = files.Where(f => string.Compare(Path.GetFileName(f), EncodingRuleCutoff, StringComparison.Ordinal) >= 0).ToArray();
+            return files;
+        }
+
         [TestMethod]
-        public void WorldUpdates_AreStrictAsciiAndPureLf()
+        public void WorldAndShardUpdates_AreStrictAsciiAndPureLf()
         {
             var root = FindRepoRoot();
             Assert.IsNotNull(root, "Could not locate repository root directory.");
 
-            var updatesDir = Path.Combine(root, "Database", "Updates", "World");
-            if (!Directory.Exists(updatesDir))
-                return;
-
-            var allFiles = Directory.GetFiles(updatesDir, "*.sql", SearchOption.AllDirectories);
-            var files = allFiles.Where(f => string.Compare(Path.GetFileName(f), "2026-07-01", StringComparison.Ordinal) >= 0).ToArray();
+            var files = GetUpdatePatchFiles(root, "World", applyCutoff: true)
+                .Concat(GetUpdatePatchFiles(root, "Shard", applyCutoff: true))
+                .ToArray();
             Assert.IsTrue(files.Length > 0, "No SQL patch files found to validate.");
 
             foreach (var file in files)
@@ -36,25 +48,46 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void PositionInserts_DoNotIncludeGeneratedLandblockColumn()
+        public void LandblockInstanceInserts_DoNotIncludeGeneratedLandblockColumn()
         {
             var root = FindRepoRoot();
             Assert.IsNotNull(root, "Could not locate repository root directory.");
 
-            var updatesDir = Path.Combine(root, "Database", "Updates", "World");
-            if (!Directory.Exists(updatesDir))
-                return;
+            // `landblock` is a GENERATED column on landblock_instance (Database/Base/WorldBase.sql);
+            // listing it in an INSERT column list fails on MySQL/MariaDB. The column list is the
+            // first parenthesised group after the table name; `landblock` must not appear in it
+            // as a bare column (`landblock_instance` itself and `obj_Cell_Id` are fine).
+            var pattern = new Regex(@"INSERT\s+INTO\s+`?landblock_instance`?\s*\(([^)]*)\)", RegexOptions.IgnoreCase);
+            var columnPattern = new Regex(@"(?<![\w_])`?landblock`?(?![\w_])", RegexOptions.IgnoreCase);
 
-            var pattern = new Regex(@"INSERT\s+INTO\s+`?position`?\s*\([^)]*\blandblock\b", RegexOptions.IgnoreCase);
-
-            var files = Directory.GetFiles(updatesDir, "*.sql", SearchOption.AllDirectories);
+            var files = GetUpdatePatchFiles(root, "World", applyCutoff: false);
             foreach (var file in files)
             {
                 var text = File.ReadAllText(file);
-                var match = pattern.Match(text);
-                Assert.IsFalse(match.Success,
-                    $"File {Path.GetFileName(file)} attempts to INSERT into generated column 'landblock'. MySQL derives this automatically from obj_Cell_Id.");
+                foreach (Match match in pattern.Matches(text))
+                {
+                    var columnList = match.Groups[1].Value;
+                    Assert.IsFalse(columnPattern.IsMatch(columnList),
+                        $"File {Path.GetFileName(file)} attempts to INSERT into generated column 'landblock' of landblock_instance. MySQL derives this automatically from obj_Cell_Id.");
+                }
             }
+        }
+
+        [TestMethod]
+        public void LandblockColumnCheck_MatchesOffendingInsert()
+        {
+            // Guard against the regex silently matching nothing (the previous version targeted a
+            // `position` table that has no generated column, so it never fired).
+            var pattern = new Regex(@"INSERT\s+INTO\s+`?landblock_instance`?\s*\(([^)]*)\)", RegexOptions.IgnoreCase);
+            var columnPattern = new Regex(@"(?<![\w_])`?landblock`?(?![\w_])", RegexOptions.IgnoreCase);
+
+            var bad = "INSERT INTO `landblock_instance` (`guid`, `landblock`, `weenie_Class_Id`, `obj_Cell_Id`) VALUES (1, 2, 3, 4);";
+            var badMatch = pattern.Match(bad);
+            Assert.IsTrue(badMatch.Success && columnPattern.IsMatch(badMatch.Groups[1].Value), "Offending INSERT was not detected.");
+
+            var good = "INSERT INTO `landblock_instance` (`guid`, `weenie_Class_Id`, `obj_Cell_Id`) VALUES (1, 2, 3);";
+            var goodMatch = pattern.Match(good);
+            Assert.IsTrue(goodMatch.Success && !columnPattern.IsMatch(goodMatch.Groups[1].Value), "Valid INSERT was flagged.");
         }
 
         private static string FindRepoRoot()

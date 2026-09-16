@@ -4484,7 +4484,7 @@ namespace ACE.Server.Command.Handlers
                 0x0400033F  // Deep Crimson
             };
 
-            var chosen = curated[ThreadSafeRandom.Next(0, curated.Length)];
+            var chosen = curated[ThreadSafeRandom.Next(0, curated.Length - 1)]; // Next(min, max) is inclusive of max
 
             var palsStr = target.GetProperty(PropertyString.CapturedObjDescPalettes);
             if (string.IsNullOrEmpty(palsStr))
@@ -4531,7 +4531,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var chosen = paletteIds[ThreadSafeRandom.Next(0, paletteIds.Count)];
+            var chosen = paletteIds[ThreadSafeRandom.Next(0, paletteIds.Count - 1)]; // Next(min, max) is inclusive of max
 
             var palsStr = target.GetProperty(PropertyString.CapturedObjDescPalettes);
             if (string.IsNullOrEmpty(palsStr))
@@ -4578,7 +4578,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var chosen = paletteIds[ThreadSafeRandom.Next(0, paletteIds.Count)];
+            var chosen = paletteIds[ThreadSafeRandom.Next(0, paletteIds.Count - 1)]; // Next(min, max) is inclusive of max
 
             target.SetProperty(PropertyInt.PaletteTemplate, (int)chosen);
             target.SetProperty(PropertyInt.VisualOverridePaletteTemplate, (int)chosen);
@@ -4621,7 +4621,7 @@ namespace ACE.Server.Command.Handlers
                         paletteIds.Add(entry.Key);
                 }
                 if (paletteIds.Count > 0)
-                    chosenPalette = paletteIds[ThreadSafeRandom.Next(0, paletteIds.Count)];
+                    chosenPalette = paletteIds[ThreadSafeRandom.Next(0, paletteIds.Count - 1)]; // Next(min, max) is inclusive of max
             }
 
             if (!chosenPalette.HasValue)
@@ -4717,7 +4717,7 @@ namespace ACE.Server.Command.Handlers
                     ChatPacket.SendServerMessage(session, "Mutation palette pool is empty; cannot roll a palette.", ChatMessageType.System);
                     return;
                 }
-                paletteId = pool[ACE.Common.ThreadSafeRandom.Next(0, pool.Count)].PaletteId;
+                paletteId = pool[ACE.Common.ThreadSafeRandom.Next(0, pool.Count - 1)].PaletteId; // Next(min, max) is inclusive of max
                 rolled = true;
             }
 
@@ -4881,7 +4881,7 @@ namespace ACE.Server.Command.Handlers
             ChatPacket.SendServerMessage(session, $"[Admin] {target.Name} sex override set to {(becomesMale ? "Male" : "Female")} ({maxMaleCharges} charges restored).", ChatMessageType.System);
         }
 
-        [CommandHandler("pet-cleanse-palette", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Strips visual override palette on targeted/appraised pet device.", "@pet-cleanse-palette")]
+        [CommandHandler("pet-cleanse-palette", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Strips every palette override breeding or @mutate_pet wrote on the targeted/appraised pet device (template, base, shade, captured palettes).", "@pet-cleanse-palette")]
         public static void HandlePetCleansePalette(Session session, params string[] args)
         {
             var player = session.Player;
@@ -4897,24 +4897,49 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            target.VisualOverridePaletteTemplate = 0;
-            target.VisualOverrideShade = 0.0;
+            // Mirror everything PetDevice_Breeding.CompleteBirth (and @mutate_pet) writes for a
+            // palette mutation: VisualOverridePaletteTemplate carries the mutation colour,
+            // VisualOverridePaletteBase is re-pointed at the setup's native base, and
+            // CapturedObjDescPalettes is removed. Clearing only the template leaves the pet
+            // rendering with the rewritten base and no captured subpalettes, which is not the
+            // natural look. Removing all of them lets the next summon fall back to the weenie's
+            // own palette data.
+            target.RemoveProperty(PropertyInt.VisualOverridePaletteTemplate);
+            target.RemoveProperty(PropertyDataId.VisualOverridePaletteBase);
+            target.RemoveProperty(PropertyFloat.VisualOverrideShade);
+            target.RemoveProperty(PropertyString.CapturedObjDescPalettes);
             target.ChangesDetected = true;
             target.SaveBiotaToDatabase();
 
-            ChatPacket.SendServerMessage(session, $"[Admin] Palette override cleansed on {target.Name}. Re-summon pet to view natural base appearance.", ChatMessageType.System);
+            ChatPacket.SendServerMessage(session, $"[Admin] Palette overrides (template, base, shade, captured palettes) cleansed on {target.Name}. Re-summon pet to view natural base appearance.", ChatMessageType.System);
         }
 
-        [CommandHandler("pet-set-mutations", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Sets mutation count on targeted/appraised pet device.", "@pet-set-mutations <count>")]
+        [CommandHandler("pet-set-mutations", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld,
+            "Sets the per-stat genetic mutation counts on the targeted/appraised pet device. PetMutationCount is stored as their sum; the ID panel shows the per-stat counts.",
+            "@pet-set-mutations <dmg> <dr> <crit> <vit> [pot]\n" +
+            "Each value is a whole number of mutations (0 clears that stat). Omitted trailing values are treated as 0.\n" +
+            "Example: @pet-set-mutations 2 0 1 0 1  -> 2 damage, 1 crit, 1 potency mutations (total 4).")]
         public static void HandlePetSetMutations(Session session, params string[] args)
         {
             var player = session.Player;
             if (player == null) return;
 
-            if (args.Length < 1 || !int.TryParse(args[0], out int count))
+            const string usage = "Usage: @pet-set-mutations <dmg> <dr> <crit> <vit> [pot]  (whole numbers; 0 clears a stat)";
+            if (args.Length < 1)
             {
-                ChatPacket.SendServerMessage(session, "Usage: @pet-set-mutations <count>", ChatMessageType.System);
+                ChatPacket.SendServerMessage(session, usage, ChatMessageType.System);
                 return;
+            }
+
+            var counts = new int[5];
+            for (int i = 0; i < counts.Length && i < args.Length; i++)
+            {
+                if (!int.TryParse(args[i], out var parsed) || parsed < 0)
+                {
+                    ChatPacket.SendServerMessage(session, usage, ChatMessageType.System);
+                    return;
+                }
+                counts[i] = parsed;
             }
 
             var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
@@ -4927,11 +4952,34 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            target.SetProperty(PropertyInt.PetMutationCount, Math.Max(0, count));
+            // Same per-stat count properties PetDevice_Breeding.CompleteBirth writes. Zero is
+            // written explicitly (not removed): a missing count makes the readers in
+            // PetDevice_Breeding / CombatPet fall back to deriving it from the PetMut*Rating
+            // value, which this command deliberately leaves alone.
+            var perStat = new (PropertyInt prop, int count)[]
+            {
+                (PropertyInt.PetMutDamageCount,       counts[0]),
+                (PropertyInt.PetMutDamageResistCount, counts[1]),
+                (PropertyInt.PetMutCritCount,         counts[2]),
+                (PropertyInt.PetMutVitalityCount,     counts[3]),
+                (PropertyInt.PetMutPotencyCount,      counts[4]),
+            };
+
+            var total = 0;
+            foreach (var (prop, count) in perStat)
+            {
+                target.SetProperty(prop, count);
+                total += count;
+            }
+
+            target.SetProperty(PropertyInt.PetMutationCount, total);
+
             target.ChangesDetected = true;
             target.SaveBiotaToDatabase();
 
-            ChatPacket.SendServerMessage(session, $"[Admin] Mutation count on {target.Name} set to {count}.", ChatMessageType.System);
+            ChatPacket.SendServerMessage(session,
+                $"[Admin] Mutation counts on {target.Name} set: dmg={counts[0]} dr={counts[1]} crit={counts[2]} vit={counts[3]} pot={counts[4]} (total {total}). Evaluated PetMut*Rating values are unchanged.",
+                ChatMessageType.System);
         }
 
         [CommandHandler("pet-set-maturity", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Sets a pet device's maturity: 'juvenile' (reset to a newborn), 'adult', or a kill count.", "@pet-set-maturity <juvenile|adult|kills>")]

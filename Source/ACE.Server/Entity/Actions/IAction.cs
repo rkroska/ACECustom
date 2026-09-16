@@ -210,8 +210,6 @@ namespace ACE.Server.Entity.Actions
         WorldObjectNetworking_EnqueueMotionMissile,
         WorldObjectNetworking_EnqueueMotionMissilePersist,
         MonsterCapture_DespawnCreature,
-        PetDevice_DismissAfterBreed,
-        PetDevice_GuardianTimeout,
 
         // GameMessage values map 1:1 with networking OpTypes.
         GameMessage_Unknown,
@@ -481,6 +479,8 @@ namespace ACE.Server.Entity.Actions
         CreatureDeath_PetBondAward,         // thread audit: pet bond XP award handed to the world queue
         PetPotency_ResidueAward,            // thread audit: pet residue award handed to the world queue
         Vendor_RetrySoldItemRemove,         // vendor sell: failed batched remove retried on the vendor's queue
+        PetDevice_DismissAfterBreed,        // pet breeding: parent pets dismissed after the ritual completes
+        PetDevice_GuardianTimeout,          // pet breeding: mating guardian encounter timed out
     }
     public static class ActionTypeConverter
     {
