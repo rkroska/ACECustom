@@ -16,28 +16,136 @@ namespace ACE.Server.WorldObjects
     public partial class PetDevice : WorldObject
     {
         /// <summary>
-        /// True when the player stands inside the configured breeding area. Accepts pet_breeding_allowed_landblock
-        /// as either a 16-bit landblock (0x016C) or a full raw cell (0x016C0102), and honours the variant filter.
-        /// A configured landblock of 0 means "anywhere".
+        /// Pure breeding-area rule shared by breeding, @breed-debug and CombatPet.IsInMotelOrEncounter.
+        /// A configured value of 0 means "anywhere"; a 16-bit value (0x013A) matches the whole landblock;
+        /// a value above 0xFFFF is a full raw cell (0x013A02AE) and matches that exact cell only.
+        /// A configured variant of -1 ignores the variation; otherwise it must match exactly.
+        /// </summary>
+        public static bool MatchesBreedingArea(uint currentCell, int currentVariant, uint allowedLandblock, int allowedVariant)
+        {
+            bool locValid;
+            if (allowedLandblock == 0)
+                locValid = true;
+            else if (allowedLandblock > 0xFFFF)
+                locValid = currentCell == allowedLandblock;
+            else
+                locValid = (currentCell >> 16) == allowedLandblock;
+
+            var varValid = allowedVariant == -1 || currentVariant == allowedVariant;
+
+            return locValid && varValid;
+        }
+
+        /// <summary>
+        /// True when the position is inside the configured breeding area (pet_breeding_allowed_landblock /
+        /// pet_breeding_allowed_variant). See MatchesBreedingArea for the matching rules.
+        /// </summary>
+        public static bool IsInBreedingArea(Position location, int? currentVariant)
+        {
+            if (location == null)
+                return false;
+
+            var allowedLandblock = (uint)ServerConfig.pet_breeding_allowed_landblock.Value;
+            var allowedVariant = (int)ServerConfig.pet_breeding_allowed_variant.Value;
+
+            return MatchesBreedingArea(location.Cell, currentVariant ?? -1, allowedLandblock, allowedVariant);
+        }
+
+        /// <summary>
+        /// True when the player stands inside the configured breeding area.
         /// </summary>
         private static bool IsInBreedingArea(Player player)
         {
             if (player?.Location == null)
                 return false;
 
-            var allowedLandblock = (uint)ServerConfig.pet_breeding_allowed_landblock.Value;
-            var allowedVariant = (int)ServerConfig.pet_breeding_allowed_variant.Value;
+            return IsInBreedingArea(player.Location, player.CurrentLandblock?.VariationId);
+        }
 
-            var targetLb = allowedLandblock > 0xFFFF ? (allowedLandblock >> 16) : allowedLandblock;
-            var currentVariant = player.CurrentLandblock?.VariationId ?? -1;
+        /// <summary>
+        /// Pure inheritance / cap arithmetic for breeding, kept free of world state so the website
+        /// simulator and the unit tests can mirror it exactly.
+        /// </summary>
+        public static class BreedingMath
+        {
+            /// <summary>Chance that a line is inherited from the parent with the higher effective value.</summary>
+            public const double HigherParentChance = 0.55;
 
-            var locValid = allowedLandblock == 0
-                || player.Location.Landblock == targetLb
-                || player.Location.Cell == allowedLandblock;
+            /// <summary>Effective value of a line: gear base plus mutation count times step.</summary>
+            public static int Effective(int gear, int count, int step) => gear + count * step;
 
-            var varValid = allowedVariant == -1 || currentVariant == allowedVariant;
+            /// <summary>
+            /// The 55/45 rule. Returns true when parent 1 is chosen. Ties count parent 1 as the higher
+            /// parent. <paramref name="roll"/> is uniform in [0, 1).
+            /// </summary>
+            public static bool PicksParent1(int effective1, int effective2, double roll)
+            {
+                var isHigh1 = effective1 >= effective2;
+                return roll < HigherParentChance ? isHigh1 : !isHigh1;
+            }
 
-            return locValid && varValid;
+            /// <summary>
+            /// Package-deal inheritance of one line: the chosen parent's gear value AND mutation count
+            /// travel together. Compared on gear + count * step.
+            /// </summary>
+            public static (int Gear, int Count) InheritLine(int gear1, int count1, int gear2, int count2, int step, double roll)
+            {
+                var pick1 = PicksParent1(Effective(gear1, count1, step), Effective(gear2, count2, step), roll);
+                return pick1 ? (gear1, count1) : (gear2, count2);
+            }
+
+            /// <summary>
+            /// Gear-only line (crit damage, crit resist, crit damage resist): 55/45 on the gear value.
+            /// </summary>
+            public static int InheritGearOnly(int gear1, int gear2, double roll)
+                => PicksParent1(gear1, gear2, roll) ? gear1 : gear2;
+
+            /// <summary>
+            /// Potency: the stored value is already the complete effective value (missing = 0), so the
+            /// comparison is on the stored value alone; the chosen parent's stored value and potency
+            /// mutation count travel together.
+            /// </summary>
+            public static (int Stored, int Count) InheritPotency(int stored1, int count1, int stored2, int count2, double roll)
+                => PicksParent1(stored1, stored2, roll) ? (stored1, count1) : (stored2, count2);
+
+            /// <summary>
+            /// Effective potency hard cap: the smallest POSITIVE of pet_breeding_potency_hard_cap and
+            /// pet_potency_max_stored. 0 = uncapped.
+            /// </summary>
+            public static int ResolvePotencyHardCap(long breedingHardCap, long maxStored)
+            {
+                var caps = new[] { breedingHardCap, maxStored }.Where(c => c > 0).ToList();
+                if (caps.Count == 0)
+                    return 0;
+                var min = caps.Min();
+                return min > int.MaxValue ? int.MaxValue : (int)min;
+            }
+
+            /// <summary>
+            /// Potency gained by one potency mutation from <paramref name="currentStored"/>: the configured
+            /// step, quartered (min 1) at or above the soft cap, and clamped so the hard cap is never
+            /// overshot. 0 means the line is capped and no mutation can be applied.
+            /// </summary>
+            public static int PotencyMutationStep(int stepConfig, int currentStored, int softCap, int hardCap)
+            {
+                var step = stepConfig;
+                if (softCap > 0 && currentStored >= softCap)
+                    step = Math.Max(1, stepConfig / 4);
+
+                if (hardCap > 0)
+                    step = Math.Min(step, Math.Max(0, hardCap - currentStored));
+
+                return Math.Max(0, step);
+            }
+
+            /// <summary>Crit damage bonus derived from damage mutations (same rule as the summon path).</summary>
+            public static int MutCritDamage(int mutDamage) => (int)Math.Round(mutDamage * 0.8);
+
+            /// <summary>Crit resist bonus derived from damage resist mutations (same rule as the summon path).</summary>
+            public static int MutCritResist(int mutDamageResist) => (int)Math.Round(mutDamageResist * 0.8);
+
+            /// <summary>Crit damage resist bonus derived from damage resist mutations (same rule as the summon path).</summary>
+            public static int MutCritDamageResist(int mutDamageResist) => (int)Math.Round(mutDamageResist * 0.6);
         }
 
         /// <summary>
@@ -49,19 +157,30 @@ namespace ACE.Server.WorldObjects
         private sealed class PendingBreed
         {
             public Player Player1, Partner, Winner;
-            public PetDevice Donor;
+            public PetDevice Donor, Device1, Device2;
             public CombatPet Pet1, Pet2;
             public uint BabyWcid;
             public uint? BabyPaletteBase;
             public System.Collections.Generic.List<string> MutationSummary;
-            public int BabyPotency, BabyDmg, BabyDR, BabyCrit, BabyCritDmg, BabyCritResist, BabyCritDmgResist, BabyVitality;
+            // Inherited gear base ratings (the Gear* values the baby device is born with) and the
+            // stored potency. Mutations live in the counts below and are evaluated at summon time.
+            public int BabyPotency, BabyGearDmg, BabyGearDR, BabyGearCrit, BabyGearCritDmg, BabyGearCritResist, BabyGearCritDmgResist;
             public int BabyDmgMuts, BabyDrMuts, BabyCritMuts, BabyVitMuts, BabyPotMuts;
             public int DmgStep, DrStep, CritStep, VitStep, PotStepConfig;
+            /// <summary>PotencyHardCap is already resolved (smallest positive of the two configured caps).</summary>
             public int MaxStatMutations, PotencySoftCap, PotencyHardCap;
+
+            // Effective (summon-time) ratings: gear + count * step, with the crit lines derived the same
+            // way CombatPet.Init derives them. Used to stat the mating guardian.
+            public int EffectiveDamage => BreedingMath.Effective(BabyGearDmg, BabyDmgMuts, DmgStep);
+            public int EffectiveDamageResist => BreedingMath.Effective(BabyGearDR, BabyDrMuts, DrStep);
+            public int EffectiveCrit => BreedingMath.Effective(BabyGearCrit, BabyCritMuts, CritStep);
+            public int EffectiveCritDamage => BabyGearCritDmg + BreedingMath.MutCritDamage(BabyDmgMuts * DmgStep);
+            public int EffectiveCritResist => BabyGearCritResist + BreedingMath.MutCritResist(BabyDrMuts * DrStep);
+            public int EffectiveCritDamageResist => BabyGearCritDmgResist + BreedingMath.MutCritDamageResist(BabyDrMuts * DrStep);
 
             // Phase 2 (mating guardian) bookkeeping.
             public uint GuardianGuid;
-            public Position FallbackDropLocation;
             public bool GuardianWeakened;
             public int LastMutatedStat;
         }
@@ -71,6 +190,18 @@ namespace ACE.Server.WorldObjects
         /// restart drops them (the parents already paid; the guardian cannot survive a restart).
         /// </summary>
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, PendingBreed> pendingGuardianBreeds = new();
+
+        /// <summary>
+        /// The live Player object for a player captured earlier, or the captured object itself if that
+        /// character is no longer online. Player.Session is never nulled on logout, so a captured
+        /// reference alone cannot tell the two apart.
+        /// </summary>
+        private static Player ResolveLivePlayer(Player captured)
+        {
+            if (captured == null)
+                return null;
+            return PlayerManager.GetOnlinePlayer(captured.Guid.Full) ?? captured;
+        }
 
         private static PendingBreed FindPendingGuardianBreed(Player player)
         {
@@ -409,6 +540,29 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
+                // The baby always goes to the female's owner. A coin flip meant the player who ate the
+                // recovery cooldown could walk away with nothing, which reads as being robbed.
+                var winner = femaleDevice == device1 ? player1 : partner;
+                var loser = winner == player1 ? partner : player1;
+
+                // The winner must be able to receive the baby in their MAIN pack right now, before any
+                // charge, cooldown or consumable is spent. Anything that slips past this (pack filled
+                // during a guardian fight, owner logged out) is handled by the deferred delivery in
+                // CompleteBirth, which never puts the baby on the ground.
+                var babyBurden = Math.Max(device1.EncumbranceVal ?? 0, device2.EncumbranceVal ?? 0);
+                if (winner.GetFreeInventorySlots(false) <= 0)
+                {
+                    winner.SendTransientError($"Breeding cancelled: your main pack has no free slot for the baby. Free a slot and dance again.");
+                    loser.SendTransientError($"Breeding cancelled: {winner.Name}'s main pack has no free slot for the baby.");
+                    return;
+                }
+                if (!winner.HasEnoughBurdenToAddToInventory(babyBurden))
+                {
+                    winner.SendTransientError($"Breeding cancelled: you are too encumbered to carry the baby. Lighten your load and dance again.");
+                    loser.SendTransientError($"Breeding cancelled: {winner.Name} is too encumbered to carry the baby.");
+                    return;
+                }
+
                 // Every gate has passed - the breed will now go through.
                 if (forced)
                 {
@@ -430,50 +584,50 @@ namespace ACE.Server.WorldObjects
                 var vitStep = (int)ServerConfig.pet_breeding_vitality_mutation_step.Value;
                 var potStepConfig = (int)ServerConfig.pet_breeding_potency_mutation_step.Value;
 
-                // Stat Inheritance Package Deal (55/45 Rule: Couples Stat Value & Mutation Count together)
-                (int val, int count) InheritStat(PropertyInt propVal, PropertyInt propCount, PropertyInt propLegacyRating,
-                    int step, int defaultVal, bool mutationsStoredInValue = false)
-                {
-                    var val1 = device1.GetProperty(propVal) ?? defaultVal;
-                    var val2 = device2.GetProperty(propVal) ?? defaultVal;
-                    var count1 = device1.GetProperty(propCount) ?? ((device1.GetProperty(propLegacyRating) ?? 0) / Math.Max(1, step));
-                    var count2 = device2.GetProperty(propCount) ?? ((device2.GetProperty(propLegacyRating) ?? 0) / Math.Max(1, step));
+                // Stat inheritance, independent per line (55/45 rule, see BreedingMath). Damage, damage
+                // resist and crit are package deals: the chosen parent's Gear* base AND mutation count
+                // travel together. The crit damage / crit resist / crit damage resist lines are gear-only.
+                // Vitality is count-only. Potency compares the stored value (missing = 0).
+                static int MutCount(PetDevice dev, PropertyInt propCount, PropertyInt propLegacyRating, int step)
+                    => dev.GetProperty(propCount) ?? ((dev.GetProperty(propLegacyRating) ?? 0) / Math.Max(1, step));
 
-                    // Rating and vitality properties store the clean base; their mutation counts are
-                    // evaluated at summon time. Potency is different: PetPotencyStored is the complete
-                    // effective value, so its count must not be added again for this comparison.
-                    var effective1 = mutationsStoredInValue ? val1 : val1 + count1 * step;
-                    var effective2 = mutationsStoredInValue ? val2 : val2 + count2 * step;
-                    var isHigh1 = effective1 >= effective2;
-                    var chosenIs1 = ThreadSafeRandom.Next(0.0f, 1.0f) < 0.55f ? isHigh1 : !isHigh1;
+                static double Roll() => ThreadSafeRandom.Next(0.0f, 1.0f);
 
-                    var chosenValue = chosenIs1 ? val1 : val2;
-                    var chosenCount = chosenIs1 ? count1 : count2;
-                    return (chosenValue, chosenCount);
-                }
+                var dmgRes = BreedingMath.InheritLine(
+                    device1.GearDamage ?? 0, MutCount(device1, PropertyInt.PetMutDamageCount, PropertyInt.PetMutDamageRating, dmgStep),
+                    device2.GearDamage ?? 0, MutCount(device2, PropertyInt.PetMutDamageCount, PropertyInt.PetMutDamageRating, dmgStep),
+                    dmgStep, Roll());
+                var drRes = BreedingMath.InheritLine(
+                    device1.GearDamageResist ?? 0, MutCount(device1, PropertyInt.PetMutDamageResistCount, PropertyInt.PetMutDamageResistRating, drStep),
+                    device2.GearDamageResist ?? 0, MutCount(device2, PropertyInt.PetMutDamageResistCount, PropertyInt.PetMutDamageResistRating, drStep),
+                    drStep, Roll());
+                var critRes = BreedingMath.InheritLine(
+                    device1.GearCrit ?? 0, MutCount(device1, PropertyInt.PetMutCritCount, PropertyInt.PetMutCritRating, critStep),
+                    device2.GearCrit ?? 0, MutCount(device2, PropertyInt.PetMutCritCount, PropertyInt.PetMutCritRating, critStep),
+                    critStep, Roll());
+                var vitRes = BreedingMath.InheritLine(
+                    0, MutCount(device1, PropertyInt.PetMutVitalityCount, PropertyInt.PetMutVitality, vitStep),
+                    0, MutCount(device2, PropertyInt.PetMutVitalityCount, PropertyInt.PetMutVitality, vitStep),
+                    vitStep, Roll());
+                var potRes = BreedingMath.InheritPotency(
+                    device1.PetPotencyStored ?? 0, MutCount(device1, PropertyInt.PetMutPotencyCount, PropertyInt.PetMutPotency, potStepConfig),
+                    device2.PetPotencyStored ?? 0, MutCount(device2, PropertyInt.PetMutPotencyCount, PropertyInt.PetMutPotency, potStepConfig),
+                    Roll());
 
-                var potRes = InheritStat(PropertyInt.PetPotencyStored, PropertyInt.PetMutPotencyCount, PropertyInt.PetMutPotency,
-                    potStepConfig, 150, mutationsStoredInValue: true);
-                var dmgRes = InheritStat(PropertyInt.DamageRating, PropertyInt.PetMutDamageCount, PropertyInt.PetMutDamageRating, dmgStep, 0);
-                var drRes = InheritStat(PropertyInt.DamageResistRating, PropertyInt.PetMutDamageResistCount, PropertyInt.PetMutDamageResistRating, drStep, 0);
-                var critRes = InheritStat(PropertyInt.CritRating, PropertyInt.PetMutCritCount, PropertyInt.PetMutCritRating, critStep, 0);
-                var vitRes = InheritStat(PropertyInt.Vitality, PropertyInt.PetMutVitalityCount, PropertyInt.PetMutVitality, vitStep, 0);
+                var babyGearCritDmg = BreedingMath.InheritGearOnly(device1.GearCritDamage ?? 0, device2.GearCritDamage ?? 0, Roll());
+                var babyGearCritResist = BreedingMath.InheritGearOnly(device1.GearCritResist ?? 0, device2.GearCritResist ?? 0, Roll());
+                var babyGearCritDmgResist = BreedingMath.InheritGearOnly(device1.GearCritDamageResist ?? 0, device2.GearCritDamageResist ?? 0, Roll());
 
-                var babyPotency = potRes.val;
-                var babyDmg = dmgRes.val;
-                var babyDR = drRes.val;
-                var babyCrit = critRes.val;
-                var babyVitality = vitRes.val;
+                var babyPotency = potRes.Stored;
+                var babyGearDmg = dmgRes.Gear;
+                var babyGearDR = drRes.Gear;
+                var babyGearCrit = critRes.Gear;
 
-                var babyDmgMuts = dmgRes.count;
-                var babyDrMuts = drRes.count;
-                var babyCritMuts = critRes.count;
-                var babyVitMuts = vitRes.count;
-                var babyPotMuts = potRes.count;
-
-                var babyCritDmg = (int)Math.Round(babyDmg * 0.8);
-                var babyCritResist = (int)Math.Round(babyDR * 0.8);
-                var babyCritDmgResist = (int)Math.Round(babyDR * 0.6);
+                var babyDmgMuts = dmgRes.Count;
+                var babyDrMuts = drRes.Count;
+                var babyCritMuts = critRes.Count;
+                var babyVitMuts = vitRes.Count;
+                var babyPotMuts = potRes.Count;
 
                 var totalParentStatMuts = babyDmgMuts + babyDrMuts + babyCritMuts + babyVitMuts;
 
@@ -482,28 +636,25 @@ namespace ACE.Server.WorldObjects
                 var minFloor = ServerConfig.pet_breeding_mutation_min_floor.Value;
                 var potChance = ServerConfig.pet_breeding_potency_mutation_chance.Value;
                 var potSoftCap = (int)ServerConfig.pet_breeding_potency_soft_cap.Value;
-                var potHardCap = (int)ServerConfig.pet_breeding_potency_hard_cap.Value;
+                // The hard cap is the smallest positive of the breeding cap and the global stored-potency cap.
+                var potHardCap = BreedingMath.ResolvePotencyHardCap(ServerConfig.pet_breeding_potency_hard_cap.Value, ServerConfig.pet_potency_max_stored.Value);
                 var maxStatMuts = (int)ServerConfig.pet_breeding_max_stat_mutations.Value;
 
-                // Courtship Incense bonus: check device1 and device2 (clamped to max +50% bonus)
+                // Courtship Incense bonus: check device1 and device2 (clamped to max +50% bonus). It
+                // affects this roll, so it is consumed on every successful breed.
                 var incenseBonus = Math.Clamp((device1.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0) +
                                               (device2.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0), 0.0, 0.50);
+                device1.RemoveProperty(PropertyFloat.PetIncenseBonus);
+                device2.RemoveProperty(PropertyFloat.PetIncenseBonus);
 
-                // Chromatic Catalyst: check device1 and device2
+                // Chromatic Catalyst: read now, consumed only if a mutation palette is actually rolled.
                 var chromaticCatalystActive = (device1.GetProperty(PropertyBool.PetChromaticCatalystActive) ?? false) ||
                                               (device2.GetProperty(PropertyBool.PetChromaticCatalystActive) ?? false);
 
-                // Consume incense and catalyst from both devices
-                device1.RemoveProperty(PropertyFloat.PetIncenseBonus);
-                device2.RemoveProperty(PropertyFloat.PetIncenseBonus);
-                device1.RemoveProperty(PropertyBool.PetChromaticCatalystActive);
-                device2.RemoveProperty(PropertyBool.PetChromaticCatalystActive);
-
-                // Offering of Subjugation: check device1 and device2, then consume from both.
+                // Offering of Subjugation: read now, consumed only when a mating guardian actually spawns
+                // (TrySpawnMatingGuardian).
                 var guardianWeakened = (device1.GetProperty(PropertyBool.PetGuardianWeakened) ?? false) ||
                                        (device2.GetProperty(PropertyBool.PetGuardianWeakened) ?? false);
-                device1.RemoveProperty(PropertyBool.PetGuardianWeakened);
-                device2.RemoveProperty(PropertyBool.PetGuardianWeakened);
 
                 // Roll 1: Normal Stat Mutation (decaying odds per stat line, max stat mutations per line)
                 var mutChance = Math.Clamp(Math.Max(minFloor, baseMutChance / (1.0 + decayRate * totalParentStatMuts)) + incenseBonus, 0.0, 1.0);
@@ -518,13 +669,7 @@ namespace ACE.Server.WorldObjects
 
                 if (isPotencyMutated)
                 {
-                    int potStep = potStepConfig;
-                    if (potSoftCap > 0 && babyPotency >= potSoftCap)
-                        potStep = Math.Max(1, potStepConfig / 4);
-
-                    // Clamp the step so the hard cap is never overshot
-                    if (potHardCap > 0)
-                        potStep = Math.Min(potStep, Math.Max(0, potHardCap - babyPotency));
+                    var potStep = BreedingMath.PotencyMutationStep(potStepConfig, babyPotency, potSoftCap, potHardCap);
 
                     if (potStep > 0)
                     {
@@ -595,17 +740,8 @@ namespace ACE.Server.WorldObjects
                         donorDevice.SetProperty(PropertyFloat.PetNextBreedingTime, nowUnix + donorCooldown);
                 }
 
-                foreach (var parentDevice in new[] { device1, device2 })
-                {
-                    parentDevice.ChangesDetected = true;
-                    parentDevice.SaveBiotaToDatabase();
-                }
-
-                // Roll 50/50 for species donor parent and winner
+                // Roll 50/50 for species donor parent
                 var donor = ThreadSafeRandom.Next(0, 1) == 0 ? device1 : device2;
-                // The baby always goes to the female's owner. A coin flip meant the player who ate the
-                // recovery cooldown could walk away with nothing, which reads as being robbed.
-                var winner = femaleDevice == device1 ? player1 : partner;
                 var babyWcid = donor.WeenieClassId;
 
                 if (mutationSummary.Count > 0)
@@ -627,14 +763,26 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
+                // The Chromatic Catalyst only does anything when a palette is actually rolled.
+                if (babyPaletteBase.HasValue)
+                {
+                    device1.RemoveProperty(PropertyBool.PetChromaticCatalystActive);
+                    device2.RemoveProperty(PropertyBool.PetChromaticCatalystActive);
+                }
+
+                foreach (var parentDevice in new[] { device1, device2 })
+                {
+                    parentDevice.ChangesDetected = true;
+                    parentDevice.SaveBiotaToDatabase();
+                }
+
                 var pending = new PendingBreed
                 {
                     Player1 = player1, Partner = partner, Winner = winner,
-                    Donor = donor, Pet1 = pet1, Pet2 = pet2,
+                    Donor = donor, Device1 = device1, Device2 = device2, Pet1 = pet1, Pet2 = pet2,
                     BabyWcid = babyWcid, BabyPaletteBase = babyPaletteBase, MutationSummary = mutationSummary,
-                    BabyPotency = babyPotency, BabyDmg = babyDmg, BabyDR = babyDR, BabyCrit = babyCrit,
-                    BabyCritDmg = babyCritDmg, BabyCritResist = babyCritResist, BabyCritDmgResist = babyCritDmgResist,
-                    BabyVitality = babyVitality,
+                    BabyPotency = babyPotency, BabyGearDmg = babyGearDmg, BabyGearDR = babyGearDR, BabyGearCrit = babyGearCrit,
+                    BabyGearCritDmg = babyGearCritDmg, BabyGearCritResist = babyGearCritResist, BabyGearCritDmgResist = babyGearCritDmgResist,
                     BabyDmgMuts = babyDmgMuts, BabyDrMuts = babyDrMuts, BabyCritMuts = babyCritMuts,
                     BabyVitMuts = babyVitMuts, BabyPotMuts = babyPotMuts,
                     DmgStep = dmgStep, DrStep = drStep, CritStep = critStep, VitStep = vitStep, PotStepConfig = potStepConfig,
@@ -705,18 +853,18 @@ namespace ACE.Server.WorldObjects
                 if (translucency > 0.001f)
                     guardian.Translucency = translucency;
 
-                // Stats: the offspring's ratings, health from both parents, damage scaled down.
+                // Stats: the offspring's EFFECTIVE ratings (gear + mutations, as a summon would evaluate
+                // them) and health from both parents. Outgoing damage is overridden in DamageEvent
+                // (8% of the defending pet's max health, clamped, x pet_breeding_guardian_damage_mult).
                 var hpMult = Math.Max(0.01, ServerConfig.pet_breeding_guardian_health_mult.Value);
-                var dmgMult = Math.Max(0.0, ServerConfig.pet_breeding_guardian_damage_mult.Value);
-                var dmgOffset = (int)Math.Round((dmgMult - 1.0) * 100.0);
 
                 guardian.Level = Math.Max(pet1.Level ?? 1, pet2.Level ?? 1);
-                guardian.SetProperty(PropertyInt.DamageRating, p.BabyDmg + dmgOffset);
-                guardian.SetProperty(PropertyInt.DamageResistRating, p.BabyDR);
-                guardian.SetProperty(PropertyInt.CritRating, p.BabyCrit);
-                guardian.SetProperty(PropertyInt.CritDamageRating, p.BabyCritDmg);
-                guardian.SetProperty(PropertyInt.CritResistRating, p.BabyCritResist);
-                guardian.SetProperty(PropertyInt.CritDamageResistRating, p.BabyCritDmgResist);
+                guardian.SetProperty(PropertyInt.DamageRating, p.EffectiveDamage);
+                guardian.SetProperty(PropertyInt.DamageResistRating, p.EffectiveDamageResist);
+                guardian.SetProperty(PropertyInt.CritRating, p.EffectiveCrit);
+                guardian.SetProperty(PropertyInt.CritDamageRating, p.EffectiveCritDamage);
+                guardian.SetProperty(PropertyInt.CritResistRating, p.EffectiveCritResist);
+                guardian.SetProperty(PropertyInt.CritDamageResistRating, p.EffectiveCritDamageResist);
 
                 var combinedHealth = (double)pet1.Health.MaxValue + pet2.Health.MaxValue;
                 guardian.Health.StartingValue = (uint)Math.Max(1, Math.Round(combinedHealth * hpMult));
@@ -727,7 +875,6 @@ namespace ACE.Server.WorldObjects
                 var spawnPos = FindGuardianSpawnPosition(pet1, pet2, guardian);
                 guardian.Location = spawnPos;
                 guardian.Home = new Position(spawnPos);
-                p.FallbackDropLocation = new Position(spawnPos);
 
                 guardian.Bind(pet1, pet2, p.Player1, p.Partner, OnGuardianSlain, OnGuardianLost, p.GuardianWeakened);
 
@@ -737,9 +884,6 @@ namespace ACE.Server.WorldObjects
                     guardian.Unbind();
                     return false;
                 }
-
-                p.GuardianGuid = guardian.Guid.Full;
-                pendingGuardianBreeds[guardian.Guid.Full] = p;
 
                 // Physics placement may have nudged it; home must be where it actually stands or the
                 // monster loop keeps walking it "home" every idle cycle.
@@ -755,8 +899,8 @@ namespace ACE.Server.WorldObjects
                 p.Partner.SendMessage(stirMsg);
 
                 log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) spawned for {p.Player1.Name} + {p.Partner.Name}: " +
-                         $"template={templateWcid}, level={guardian.Level}, hp={guardian.Health.MaxValue}, dmgRating={p.BabyDmg + dmgOffset}, " +
-                         $"drRating={p.BabyDR}, palette=0x{(p.BabyPaletteBase ?? 0):X8}, timeout={timeout:0}s");
+                         $"template={templateWcid}, level={guardian.Level}, hp={guardian.Health.MaxValue}, dmgRating={p.EffectiveDamage}, " +
+                         $"drRating={p.EffectiveDamageResist}, weakened={p.GuardianWeakened}, palette=0x{(p.BabyPaletteBase ?? 0):X8}, timeout={timeout:0}s");
 
                 // On the world queue, not the guardian: an action queued on a creature is silently
                 // dropped once that creature has no landblock, which is exactly the case we must handle.
@@ -765,12 +909,48 @@ namespace ACE.Server.WorldObjects
                 timeoutChain.AddAction(WorldManager.ActionQueue, ACE.Server.Entity.Actions.ActionType.PetDevice_GuardianTimeout, () => OnGuardianTimeout(guardian));
                 timeoutChain.EnqueueChain();
 
+                // Register LAST. Anything above that throws must leave no registry entry behind, or
+                // the catch below falls back to an immediate birth AND the guardian's death would
+                // deliver a second baby.
+                p.GuardianGuid = guardian.Guid.Full;
+                pendingGuardianBreeds[guardian.Guid.Full] = p;
+
+                // The Offering of Subjugation has now had its effect: consume it from both parents.
+                if (p.GuardianWeakened)
+                {
+                    foreach (var dev in new[] { p.Device1, p.Device2 })
+                    {
+                        if (dev == null || dev.GetProperty(PropertyBool.PetGuardianWeakened) != true)
+                            continue;
+                        dev.RemoveProperty(PropertyBool.PetGuardianWeakened);
+                        dev.ChangesDetected = true;
+                        dev.SaveBiotaToDatabase();
+                    }
+                }
+
                 return true;
             }
             catch (Exception ex)
             {
                 log.Error($"[PetBreeding] Guardian spawn threw; completing birth immediately. {ex}");
-                guardian?.Unbind();
+                if (guardian != null)
+                {
+                    // Make sure the fallback birth is the only birth: drop the registry entry (if we got
+                    // that far) and remove the guardian without running its lost/slain callbacks.
+                    pendingGuardianBreeds.TryRemove(guardian.Guid.Full, out _);
+                    p.GuardianGuid = 0;
+                    try
+                    {
+                        if (guardian.CurrentLandblock != null)
+                            guardian.Fade();
+                        else
+                            guardian.Unbind();
+                    }
+                    catch (Exception cleanupEx)
+                    {
+                        log.Error($"[PetBreeding] Guardian cleanup after failed spawn threw: {cleanupEx}");
+                    }
+                }
                 return false;
             }
         }
@@ -869,11 +1049,9 @@ namespace ACE.Server.WorldObjects
             if (p.MaxStatMutations <= 0 || p.BabyVitMuts < p.MaxStatMutations)
                 eligibleStats.Add((4, "Vitality", p.VitStep));
 
-            var potencyStep = p.PotStepConfig;
-            if (p.PotencySoftCap > 0 && p.BabyPotency >= p.PotencySoftCap)
-                potencyStep = Math.Max(1, potencyStep / 4);
-            if (p.PotencyHardCap > 0)
-                potencyStep = Math.Min(potencyStep, Math.Max(0, p.PotencyHardCap - p.BabyPotency));
+            // Same soft cap / hard cap rule as the breed roll (p.PotencyHardCap is already the smallest
+            // positive of pet_breeding_potency_hard_cap and pet_potency_max_stored).
+            var potencyStep = BreedingMath.PotencyMutationStep(p.PotStepConfig, p.BabyPotency, p.PotencySoftCap, p.PotencyHardCap);
             if (potencyStep > 0)
                 eligibleStats.Add((5, "Potency", potencyStep));
 
@@ -960,16 +1138,15 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private static void CompleteBirth(PendingBreed p)
         {
-            // Local aliases keep the birth body identical to its pre-refactor form.
-            var player1 = p.Player1; var partner = p.Partner; var winner = p.Winner;
+            // A birth can be deferred (guardian fight), and Player.Session is never nulled on logout, so
+            // the Player objects captured at breed time may be stale. Resolve the live objects now.
+            var player1 = ResolveLivePlayer(p.Player1); var partner = ResolveLivePlayer(p.Partner);
+            var winner = p.Winner;
             var donor = p.Donor; var pet1 = p.Pet1; var pet2 = p.Pet2;
             var babyWcid = p.BabyWcid; var babyPaletteBase = p.BabyPaletteBase; var mutationSummary = p.MutationSummary;
-            var babyPotency = p.BabyPotency; var babyDmg = p.BabyDmg; var babyDR = p.BabyDR; var babyCrit = p.BabyCrit;
-            var babyCritDmg = p.BabyCritDmg; var babyCritResist = p.BabyCritResist; var babyCritDmgResist = p.BabyCritDmgResist;
-            var babyVitality = p.BabyVitality;
+            var babyPotency = p.BabyPotency;
             var babyDmgMuts = p.BabyDmgMuts; var babyDrMuts = p.BabyDrMuts; var babyCritMuts = p.BabyCritMuts;
             var babyVitMuts = p.BabyVitMuts; var babyPotMuts = p.BabyPotMuts;
-            var dmgStep = p.DmgStep; var drStep = p.DrStep; var critStep = p.CritStep; var vitStep = p.VitStep; var potStepConfig = p.PotStepConfig;
 
             var baby = WorldObjectFactory.CreateNewWorldObject(babyWcid) as PetDevice;
             if (baby == null)
@@ -1018,40 +1195,27 @@ namespace ACE.Server.WorldObjects
             baby.PetBondAttunedCharacterId = 0;
             baby.PetBondLevel = 1;
             baby.PetPotencyStored = babyPotency;
-            baby.SetProperty(PropertyInt.DamageRating, babyDmg);
-            baby.SetProperty(PropertyInt.DamageResistRating, babyDR);
-            baby.SetProperty(PropertyInt.CritRating, babyCrit);
-            baby.SetProperty(PropertyInt.CritDamageRating, babyCritDmg);
-            baby.SetProperty(PropertyInt.CritResistRating, babyCritResist);
-            baby.SetProperty(PropertyInt.CritDamageResistRating, babyCritDmgResist);
-            baby.SetProperty(PropertyInt.Vitality, babyVitality);
 
-            // Write persistent Genetic Mutation Counts & Evaluated Ratings
-            if (babyDmgMuts > 0)
-            {
-                baby.SetProperty(PropertyInt.PetMutDamageCount, babyDmgMuts);
-                baby.SetProperty(PropertyInt.PetMutDamageRating, babyDmgMuts * dmgStep);
-            }
-            if (babyDrMuts > 0)
-            {
-                baby.SetProperty(PropertyInt.PetMutDamageResistCount, babyDrMuts);
-                baby.SetProperty(PropertyInt.PetMutDamageResistRating, babyDrMuts * drStep);
-            }
-            if (babyCritMuts > 0)
-            {
-                baby.SetProperty(PropertyInt.PetMutCritCount, babyCritMuts);
-                baby.SetProperty(PropertyInt.PetMutCritRating, babyCritMuts * critStep);
-            }
-            if (babyVitMuts > 0)
-            {
-                baby.SetProperty(PropertyInt.PetMutVitalityCount, babyVitMuts);
-                baby.SetProperty(PropertyInt.PetMutVitality, babyVitMuts * vitStep);
-            }
-            if (babyPotMuts > 0)
-            {
-                baby.SetProperty(PropertyInt.PetMutPotencyCount, babyPotMuts);
-                baby.SetProperty(PropertyInt.PetMutPotency, babyPotMuts * potStepConfig);
-            }
+            // Inherited gear base ratings: these are what CombatPet reads at summon and what the ID
+            // panel shows as "Base". Only written when present, exactly like loot generation.
+            // The creature-side DamageRating/CritRating/Vitality properties are NOT written to the
+            // device: summon never reads them, and a stray Vitality value would be mistaken for
+            // phantom vitality mutations by the legacy fallback.
+            if (p.BabyGearDmg > 0) baby.GearDamage = p.BabyGearDmg;
+            if (p.BabyGearDR > 0) baby.GearDamageResist = p.BabyGearDR;
+            if (p.BabyGearCrit > 0) baby.GearCrit = p.BabyGearCrit;
+            if (p.BabyGearCritDmg > 0) baby.GearCritDamage = p.BabyGearCritDmg;
+            if (p.BabyGearCritResist > 0) baby.GearCritResist = p.BabyGearCritResist;
+            if (p.BabyGearCritDmgResist > 0) baby.GearCritDamageResist = p.BabyGearCritDmgResist;
+
+            // Persistent genetic mutation counts. Always written (including 0) on a bred baby so the
+            // legacy PetMut*Rating / Vitality fallbacks can never trigger on it. The counts are
+            // evaluated against the live *_mutation_step config at summon time.
+            baby.SetProperty(PropertyInt.PetMutDamageCount, babyDmgMuts);
+            baby.SetProperty(PropertyInt.PetMutDamageResistCount, babyDrMuts);
+            baby.SetProperty(PropertyInt.PetMutCritCount, babyCritMuts);
+            baby.SetProperty(PropertyInt.PetMutVitalityCount, babyVitMuts);
+            baby.SetProperty(PropertyInt.PetMutPotencyCount, babyPotMuts);
 
             var totalMutations = babyDmgMuts + babyDrMuts + babyCritMuts + babyVitMuts + babyPotMuts;
             if (totalMutations > 0)
@@ -1096,11 +1260,16 @@ namespace ACE.Server.WorldObjects
             var successMsg = $"Congratulations! A baby pet has been born: {baby.Name}! Placed in {winner.Name}'s inventory.";
             successMsg += mutationSuffix;
 
-            // A winner who logged out during a guardian fight cannot receive to inventory; the baby
-            // drops attuned where the ritual happened instead of vanishing.
-            var winnerOnline = winner.Session != null && !winner.IsDestroyed && winner.Location != null;
+            // Bred babies start life as juveniles: small, weak, and unable to breed until raised.
+            // Set before delivery so the client's first look at the item already carries the flag.
+            baby.MarkBornJuvenile();
 
-            if (winnerOnline && winner.TryCreateInInventoryWithNetworking(baby))
+            // Player.Session is never nulled on logout, so the captured Player object cannot tell us
+            // whether the winner is still online. Ask the PlayerManager for the live object instead.
+            var liveWinner = PlayerManager.GetOnlinePlayer(winner.Guid.Full);
+            var winnerOnline = liveWinner != null && !liveWinner.IsLoggingOut && !liveWinner.IsDestroyed;
+
+            if (winnerOnline && liveWinner.TryCreateInInventoryWithNetworking(baby))
             {
                 player1.SendMessage(successMsg);
                 partner.SendMessage(successMsg);
@@ -1111,24 +1280,30 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                baby.PetBondAttuned = true;
-                baby.PetBondAttunedCharacterId = winner.Guid.Full;
-                baby.Attuned = AttunedStatus.Attuned;
+                // Residual case (pre-breed gate already required a free main-pack slot): the winner
+                // logged out or filled every pack during the guardian fight. The baby is never dropped
+                // on the ground, where it would rot in 5 minutes or be taken by anyone. It is written
+                // straight into the winner's persisted inventory (ContainerId = winner), exactly the
+                // way the login inventory load (GetInventoryInParallel by Container IID) expects, so it
+                // is in their pack the next time they log in. No attunement: newborns stay tradeable
+                // until first summoned, like any other baby.
+                var deferredMsg = winnerOnline
+                    ? $"A baby pet has been born: {baby.Name}! {winner.Name}'s packs are full, so the baby has been tucked away and will be in {winner.Name}'s pack at their next login."
+                    : $"A baby pet has been born: {baby.Name}! {winner.Name} is not online, so the baby has been tucked away and will be in their pack at their next login.";
+                deferredMsg += mutationSuffix;
 
-                var fullMsg = winnerOnline
-                    ? $"A baby pet has been born: {baby.Name}! {winner.Name}'s inventory was full, so the baby fell on the ground (attuned to {winner.Name})."
-                    : $"A baby pet has been born: {baby.Name}! {winner.Name} is not online, so the baby was left where the ritual took place (attuned to {winner.Name}).";
-                fullMsg += mutationSuffix;
+                player1.SendMessage(deferredMsg);
+                partner.SendMessage(deferredMsg);
 
-                player1.SendMessage(fullMsg);
-                partner.SendMessage(fullMsg);
-                var dropAt = winnerOnline ? winner.Location : (p.FallbackDropLocation ?? winner.Location);
-                baby.Location = new Position(dropAt);
-                baby.EnterWorld();
+                baby.Location = null;
+                baby.Placement = ACE.Entity.Enum.Placement.Resting;
+                baby.OwnerId = winner.Guid.Full;
+                baby.ContainerId = winner.Guid.Full;
+                baby.PlacementPosition = 0;
+
+                log.Info($"[PetBreeding] Baby {baby.Name} (0x{baby.Guid.Full:X8}) for {winner.Name} (0x{winner.Guid.Full:X8}) delivered to persisted inventory " +
+                         $"(winnerOnline={winnerOnline}); it will load into their pack at next login.");
             }
-
-            // Bred babies start life as juveniles: small, weak, and unable to breed until raised.
-            baby.MarkBornJuvenile();
 
             baby.SaveBiotaToDatabase();
 
@@ -1332,12 +1507,12 @@ namespace ACE.Server.WorldObjects
             var curLb = player.Location.Landblock;
             var curCell = player.Location.LandblockId.Raw;
             var curVar = player.CurrentLandblock?.VariationId ?? -1;
-            var targetLb = allowedLb > 0xFFFF ? (allowedLb >> 16) : allowedLb;
-            bool locMatch = (allowedLb == 0) || (curLb == targetLb) || (curCell == allowedLb);
+            bool locMatch = MatchesBreedingArea(curCell, curVar, allowedLb, -1);
             bool varMatch = (allowedVar == -1) || (curVar == allowedVar);
+            var allowedKind = allowedLb == 0 ? "anywhere" : (allowedLb > 0xFFFF ? "exact cell" : "whole landblock");
 
             sb.AppendLine($"Your Location: Landblock=0x{curLb:X4}, Cell=0x{curCell:X8}, Variant={curVar}");
-            sb.AppendLine($"Allowed Target: Landblock=0x{allowedLb:X}, Variant={allowedVar} => Location Match: {(locMatch && varMatch ? "VALID (Room OK)" : "INVALID (Wrong Location)")}");
+            sb.AppendLine($"Allowed Target: {allowedKind} 0x{allowedLb:X}, Variant={allowedVar} => Location Match: {(locMatch && varMatch ? "VALID (Room OK)" : "INVALID (Wrong Location)")}");
 
             if (player.CurrentActivePet is CombatPet myPet)
             {

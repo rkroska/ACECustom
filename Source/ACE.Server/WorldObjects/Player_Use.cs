@@ -356,6 +356,13 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
+                if (!ServerConfig.pet_breeding_guardian_enabled.Value)
+                {
+                    SendTransientError("Mating guardians are not enabled on this server, so the Offering of Subjugation would have no effect. It was not consumed.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
                 if (petDevice.GetProperty(PropertyBool.PetGuardianWeakened) == true)
                 {
                     SendTransientError($"{petDevice.Name} is already under the effects of an Offering of Subjugation.");
