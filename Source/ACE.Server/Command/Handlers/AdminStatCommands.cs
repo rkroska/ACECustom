@@ -268,7 +268,7 @@ namespace ACE.Server.Command.Handlers
                 var startTime = i * bucketSize;
                 var endTime = (i + 1) * bucketSize;
                 var count = buckets[i];
-                var bar = new string('█', Math.Min(count / 5, 60)); // Scale bar, max 60 chars
+                var bar = new string('#', Math.Min(count / 5, 60)); // Scale bar, max 60 chars
                 
                 sb.Append($"{startTime:F3}s - {endTime:F3}s  {count,-8} {bar}{'\n'}");
             }
@@ -283,12 +283,12 @@ namespace ACE.Server.Command.Handlers
             var spread = tickDelays.Max() - tickDelays.Min();
             if (spread < 0.1)
             {
-                sb.Append($"{'\n'}⚠️ WARNING: Ticks are SYNCHRONIZED (spread < 0.1s){'\n'}");
+                sb.Append($"{'\n'}[WARNING] Ticks are SYNCHRONIZED (spread < 0.1s){'\n'}");
                 sb.Append($"   Desynchronization may not be working!{'\n'}");
             }
             else
             {
-                sb.Append($"{'\n'}✅ Ticks are DESYNCHRONIZED (spread = {spread:F3}s){'\n'}");
+                sb.Append($"{'\n'}[OK] Ticks are DESYNCHRONIZED (spread = {spread:F3}s){'\n'}");
                 sb.Append($"   Load should be well-distributed across server ticks.{'\n'}");
             }
             

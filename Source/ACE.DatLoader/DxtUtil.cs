@@ -45,13 +45,13 @@ namespace ACE.DatLoader
 
     public static class DxtUtil
     {
-        internal static byte[] DecompressDxt1(byte[] imageData, int width, int height)
+        public static byte[] DecompressDxt1(byte[] imageData, int width, int height)
         {
             using (MemoryStream imageStream = new MemoryStream(imageData))
                 return DecompressDxt1(imageStream, width, height);
         }
 
-        internal static byte[] DecompressDxt1(Stream imageStream, int width, int height)
+        public static byte[] DecompressDxt1(Stream imageStream, int width, int height)
         {
             byte[] imageData = new byte[width * height * 4];
 
@@ -159,13 +159,13 @@ namespace ACE.DatLoader
             }
         }
 
-        internal static byte[] DecompressDxt3(byte[] imageData, int width, int height)
+        public static byte[] DecompressDxt3(byte[] imageData, int width, int height)
         {
             using (MemoryStream imageStream = new MemoryStream(imageData))
                 return DecompressDxt3(imageStream, width, height);
         }
 
-        internal static byte[] DecompressDxt3(Stream imageStream, int width, int height)
+        public static byte[] DecompressDxt3(Stream imageStream, int width, int height)
         {
             byte[] imageData = new byte[width * height * 4];
 
@@ -307,13 +307,13 @@ namespace ACE.DatLoader
             }
         }
 
-        internal static byte[] DecompressDxt5(byte[] imageData, int width, int height)
+        public static byte[] DecompressDxt5(byte[] imageData, int width, int height)
         {
             using (MemoryStream imageStream = new MemoryStream(imageData))
                 return DecompressDxt5(imageStream, width, height);
         }
 
-        internal static byte[] DecompressDxt5(Stream imageStream, int width, int height)
+        public static byte[] DecompressDxt5(Stream imageStream, int width, int height)
         {
             byte[] imageData = new byte[width * height * 4];
 

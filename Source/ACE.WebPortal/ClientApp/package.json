@@ -12,7 +12,10 @@
   "dependencies": {
     "@headlessui/react": "^2.2.9",
     "@microsoft/signalr": "^8.0.0",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
     "@tailwindcss/typography": "^0.5.19",
+    "@types/three": "^0.185.1",
     "@xyflow/react": "^12.10.2",
     "clsx": "^2.1.1",
     "lucide-react": "^0.469.0",
@@ -22,6 +25,7 @@
     "react-router-dom": "^7.14.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.5.0",
+    "three": "^0.185.1",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

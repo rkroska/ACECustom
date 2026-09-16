@@ -20,6 +20,8 @@ Do **not** use bare `7878` (legacy stub).
 | **`78780030`–`78780089`** | **Ability charms (ILT)** | **Allocate new toggle charms here only** |
 | `78780090`–`78780098` | **Spare buffer** | Emergency items; stay below debug |
 | `78780099` | Debug siphon lens | Keep fixed |
+| `78780200`–`78780249` | **Ruggan's Annex** (pet breeding area) | NPCs and props. See `PET_BREEDING_ANNEX_DESIGN.md`; SQL in `Database/Updates/World/2026-09-09-00-Ruggans-Annex-NPCs.sql` |
+| `78780250`–`78780259` | **Pet Breeding Consumables & Sinks** | Courtship Incense (250-252), Nurturing Draught (253), Chromatic Catalyst (254), Offering of Subjugation (255), Ancestral Gene Re-roller (256) |
 | `787801001`–`787801072` | Pet device essences (250/300) | Do not use for charms |
 | `787802001`–`787802072` | Combat pet summon weenies | Do not use for charms |
 | `787802073`+ | Future combat pets / extensions | Append only |

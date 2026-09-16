@@ -133,6 +133,9 @@
       </PackagePath>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="curated_textures.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Entity\Mutations\ArmorLevel\armor_level_extremity.txt" />
@@ -313,8 +316,9 @@
     <ItemGroup>
       <WebPortalDistFiles Include="$(ClientAppDir)dist\**\*.*" />
     </ItemGroup>
-    <Message Importance="normal" Text="Copying Web Portal assets to $(TargetDir)wwwroot" Condition="Exists('$(WebPortalDistIndex)')" />
-    <Copy SourceFiles="@(WebPortalDistFiles)" DestinationFolder="$(TargetDir)wwwroot\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="Exists('$(WebPortalDistIndex)')" />
+    <Message Importance="normal" Text="Copying Web Portal assets to $(TargetDir)wwwroot and $(ProjectDir)wwwroot" Condition="Exists('$(WebPortalDistIndex)')" />
+    <Copy SourceFiles="@(WebPortalDistFiles)" DestinationFolder="$(TargetDir)wwwroot\%(RecursiveDir)" SkipUnchangedFiles="false" Condition="Exists('$(WebPortalDistIndex)')" />
+    <Copy SourceFiles="@(WebPortalDistFiles)" DestinationFolder="$(ProjectDir)wwwroot\%(RecursiveDir)" SkipUnchangedFiles="false" Condition="Exists('$(WebPortalDistIndex)')" />
   </Target>
 
   <Target Name="PrepareWebPortalPublishOutput" BeforeTargets="Publish" Condition="Exists('$(ClientAppDir)')"

@@ -315,5 +315,30 @@ namespace ACE.Entity.Enum.Properties
         /// the elemental_weakness_default_factor server knob. Applied after mitigation, so it's a relative reward for
         /// using the right element even against heavily-mitigated endgame mobs.</summary>
         ElementalWeaknessFactor = 9055,
+
+        /// <summary>
+        /// Next allowed breeding/mating timestamp (Unix time) for a pet device.
+        /// </summary>
+        [AssessmentProperty]
+        PetNextBreedingTime = 9056,
+
+        /// <summary>
+        /// Unix timestamp of the last Stud breeding-charge refill. Charges are topped back up to
+        /// pet_breeding_male_max_charges once pet_breeding_male_charge_reset_hours has elapsed.
+        /// </summary>
+        [AssessmentProperty]
+        PetMaleChargesRefreshTime = 9057,
+
+        /// <summary>
+        /// Mutation chance bonus granted by Courtship Incense applied to a pet device for its next breed.
+        /// </summary>
+        [AssessmentProperty]
+        PetIncenseBonus = 9058,
+
+        /// <summary>
+        /// Maturity kill credit multiplier granted by Nurturing Draughts (e.g. 2.0 = double XP per kill).
+        /// </summary>
+        [AssessmentProperty]
+        PetMaturityXpMultiplier = 9059,
     }
 }

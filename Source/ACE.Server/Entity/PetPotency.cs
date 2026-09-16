@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 
 using ACE.Database;
@@ -534,13 +534,13 @@ namespace ACE.Server.Entity
 
             var stored = device.PetPotencyStored ?? 0;
             if (stored <= 0)
-                return "Potency: 0 (use Savage Echo on this essence to train body damage).";
+                return "Potency: 0 (use Savage Echo on this essence to raise its damage).";
 
             var active = GetActivePotency(device);
             var dormant = GetDormantPotency(device);
             var pct = (int)Math.Round((GetBodyPartDamageMult(active) - 1.0f) * 100.0);
 
-            var msg = $"Potency: {stored:N0} stored ({active:N0} active, {dormant:N0} dormant)\nBody Training: +{pct}% damage from potency (active)";
+            var msg = $"Potency: {stored:N0} stored ({active:N0} active, {dormant:N0} dormant)\nPotency Bonus: +{pct}% damage (from active potency)";
 
             if (ServerConfig.pet_strain_enabled.Value && active > ServerConfig.pet_strain_potency_threshold.Value)
             {
@@ -551,7 +551,7 @@ namespace ACE.Server.Entity
                     strainPerPotencyLevel: ServerConfig.pet_strain_per_potency_level.Value,
                     strainMaxRating: (int)ServerConfig.pet_strain_max_rating.Value);
                 if (strain > 0)
-                    msg += $"\nBond Strain: −{strain:N0} damage rating while combat pet summoned";
+                    msg += $"\nBond Strain: -{strain:N0} damage rating while combat pet summoned";
             }
 
             return msg;

@@ -12,6 +12,7 @@ using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 using log4net;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -494,7 +495,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b w n mmd - Withdraw 250k trade note", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b w n c 5 - Withdraw 5 trade notes of 10k each", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b t p 1m \"Player Name\" - Transfer 1M pyreals to Player Name", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/b t n mmd 50 PlayerName - Transfer 50× 250k notes worth (12.5M pyreals)", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b t n mmd 50 PlayerName - Transfer 50x 250k notes worth (12.5M pyreals)", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.System));
 
                 return;
@@ -809,7 +810,7 @@ namespace ACE.Server.Command.Handlers
                     {
                         // Transfer succeeded - the method already sent base message
                         // Just note it was a trade note equivalent transfer
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"(Equivalent to {noteCount}× {denomination.ToUpper()} notes)", ChatMessageType.System));
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"(Equivalent to {noteCount}x {denomination.ToUpper()} notes)", ChatMessageType.System));
                     }
                     
                     return;
@@ -1751,6 +1752,107 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
         }
 
+        private static readonly System.Text.RegularExpressions.Regex PetNameRequestPattern = new(@"^[a-zA-Z0-9' -]+$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>
+        /// Requests a name change for the player's active or selected inventory combat pet device.
+        /// The request is queued for staff review in the web portal rather than applied immediately,
+        /// so players cannot self-approve inappropriate names.
+        /// </summary>
+        [CommandHandler("pet-name", AccessLevel.Player, CommandHandlerFlag.RequiresWorld,
+            "Request a name change for your combat pet (subject to staff approval)",
+            "Usage: @pet-name <name>")]
+        public static void HandlePetName(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+
+            if (parameters == null || parameters.Length == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: @pet-name <name>", ChatMessageType.Broadcast);
+                return;
+            }
+
+            var requestedName = string.Join(" ", parameters).Trim();
+
+            if (requestedName.Length < 3 || requestedName.Length > 32)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Pet names must be between 3 and 32 characters.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            if (!PetNameRequestPattern.IsMatch(requestedName))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Pet names may only contain letters, numbers, spaces, apostrophes and hyphens.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            PetDevice petDevice = null;
+            if (player.CurrentActivePet is CombatPet activePet)
+            {
+                petDevice = activePet.TryGetSummoningDevice()
+                    ?? player.FindObject(activePet.SummoningDeviceGuid.Full, Player.SearchLocations.Everywhere) as PetDevice;
+            }
+            else if (CommandHandlerHelper.GetSelected(session) is PetDevice selectedDevice &&
+                     selectedDevice.IsCombatPetDevice() &&
+                     player.GetAllPossessions().Any(item => item.Guid.Full == selectedDevice.Guid.Full))
+            {
+                petDevice = selectedDevice;
+            }
+
+            if (petDevice == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    "Summon the combat pet you want to rename, or select its device in your inventory.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var oldName = petDevice.Name;
+
+            try
+            {
+                using var ctx = new ACE.Database.Models.Shard.ShardDbContext();
+                var con = ctx.Database.GetDbConnection();
+                if (con.State != System.Data.ConnectionState.Open) con.Open();
+                using var cmd = con.CreateCommand();
+                cmd.CommandText = "INSERT INTO `pet_name_requests` (`character_id`, `character_name`, `pet_guid`, `old_name`, `requested_name`) " +
+                                   "VALUES (@characterId, @characterName, @petGuid, @oldName, @requestedName)";
+
+                void AddParam(string name, object value)
+                {
+                    var p = cmd.CreateParameter();
+                    p.ParameterName = name;
+                    p.Value = value;
+                    cmd.Parameters.Add(p);
+                }
+
+                AddParam("@characterId", (long)player.Character.Id);
+                AddParam("@characterName", player.Name);
+                AddParam("@petGuid", petDevice.Guid.Full);
+                AddParam("@oldName", oldName);
+                AddParam("@requestedName", requestedName);
+
+                cmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[PetNaming] Failed to save pet name request for {player.Name}: {ex.Message}", ex);
+                session.Network.EnqueueSend(new GameMessageSystemChat("Failed to submit your pet name request. Please try again later.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var channelId = ConfigManager.Config?.Chat?.AdminChannelId ?? ConfigManager.Config?.Chat?.AdminAuditId ?? 0;
+            if (channelId > 0)
+            {
+                _ = DiscordChatManager.SendDiscordChannelEmbedAsync(
+                    "Pet Rename Request",
+                    $"**Player:** {player.Name}\n**Pet:** {oldName}\n**Requested name:** {requestedName}\n**GUID:** 0x{petDevice.Guid.Full:X8}",
+                    null,
+                    channelId);
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                $"Your request to rename {oldName} to \"{requestedName}\" has been submitted for staff review.", ChatMessageType.Broadcast));
+        }
 
         private static readonly TimeSpan MyQuests = TimeSpan.FromSeconds(60);
 
@@ -4111,6 +4213,21 @@ namespace ACE.Server.Command.Handlers
 
                 session.Network.EnqueueSend(new GameMessageSystemChat($"- {corpse.name} (Rot: {timeStr}){loadStatus} @ {locStr}", ChatMessageType.Broadcast));
             }
+        }
+
+        [CommandHandler("dance", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Performs the courtship dance.", "")]
+        public static void HandleDance(Session session, string[] parameters)
+        {
+            session.Player.HandleActionSoulEmote("*dance*");
+        }
+
+        [CommandHandler("breed-debug", AccessLevel.User, CommandHandlerFlag.RequiresWorld, "Shows breeding diagnostics for your current location, pet, and nearby partner availability.", "@breed-debug")]
+        public static void HandleBreedDebug(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            PetDevice.RunBreedingDiagnostics(player);
         }
     }
 }

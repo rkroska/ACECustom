@@ -210,6 +210,8 @@ namespace ACE.Server.Entity.Actions
         WorldObjectNetworking_EnqueueMotionMissile,
         WorldObjectNetworking_EnqueueMotionMissilePersist,
         MonsterCapture_DespawnCreature,
+        PetDevice_DismissAfterBreed,
+        PetDevice_GuardianTimeout,
 
         // GameMessage values map 1:1 with networking OpTypes.
         GameMessage_Unknown,

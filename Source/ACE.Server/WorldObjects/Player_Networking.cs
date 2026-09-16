@@ -391,6 +391,12 @@ namespace ACE.Server.WorldObjects
         public MotionCommand LastSoulEmote;
         public DateTime LastSoulEmoteEndTime;
 
+        /// <summary>
+        /// UTC time of this player's most recent dance emote. Breeding requires both partners to have
+        /// danced within pet_breeding_dance_sync_seconds of each other.
+        /// </summary>
+        public DateTime LastDanceTime;
+
         public void BroadcastMovement(MoveToState moveToState)
         {
             var state = moveToState.RawMotionState;
@@ -417,21 +423,32 @@ namespace ACE.Server.WorldObjects
                     CurrentMotionState.SetForwardCommand(state.Commands[0].MotionCommand);
             }
 
-            if (state.HasSoulEmote(false))
+            if (state.HasSoulEmote(true))
             {
                 // prevent soul emote spam / bug where client sends multiples
-                var soulEmote = state.Commands[0].MotionCommand;
+                var soulEmote = state.Commands?.Count > 0 ? state.Commands[0].MotionCommand : state.ForwardCommand;
                 if (soulEmote == LastSoulEmote && DateTime.UtcNow < LastSoulEmoteEndTime)
                 {
-                    state.Commands.Clear();
+                    // DrudgeDanceState can arrive as the ForwardCommand with no Commands list at all;
+                    // this used to throw a NullReferenceException on every repeated dance.
+                    state.Commands?.Clear();
                     state.CommandListLength = 0;
                 }
                 else
                 {
-                    var animLength = Physics.Animation.MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, soulEmote, state.Commands[0].Speed);
+                    var animLength = Physics.Animation.MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, soulEmote, state.Commands?.Count > 0 ? state.Commands[0].Speed : 1.0f);
 
                     LastSoulEmote = soulEmote;
                     LastSoulEmoteEndTime = DateTime.UtcNow + TimeSpan.FromSeconds(animLength);
+
+                    if (soulEmote == MotionCommand.DrudgeDance || soulEmote == MotionCommand.DrudgeDanceState)
+                    {
+                        if (DateTime.UtcNow - LastDanceTime >= TimeSpan.FromSeconds(2))
+                        {
+                            LastDanceTime = DateTime.UtcNow;
+                            PetDevice.CheckMultiplayerBreeding(this, $"MotionCommand: {soulEmote}");
+                        }
+                    }
                 }
             }
 

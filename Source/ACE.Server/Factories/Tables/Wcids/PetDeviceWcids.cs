@@ -594,5 +594,41 @@ namespace ACE.Server.Factories.Tables.Wcids
         {
             return _combined.Contains(wcid);
         }
+
+        public static int? GetPetLevel(uint wcid)
+        {
+            var weenieClass = (WeenieClassName)wcid;
+            foreach (var table in petDevices)
+            {
+                var idx = table.IndexOf(weenieClass);
+                if (idx >= 0)
+                {
+                    foreach (var kv in petLevelIndexes)
+                    {
+                        if (kv.Value == idx)
+                            return kv.Key;
+                    }
+                }
+            }
+            return null;
+        }
+
+        public static WeenieClassName RollBaby(global::ACE.Entity.Enum.SummoningMastery mastery, int level)
+        {
+            List<List<WeenieClassName>> masteriesList;
+            if (mastery == global::ACE.Entity.Enum.SummoningMastery.Necromancer)
+                masteriesList = Necromancer_PetDevices;
+            else if (mastery == global::ACE.Entity.Enum.SummoningMastery.Primalist)
+                masteriesList = Primalist_PetDevices;
+            else
+                masteriesList = Naturalist_PetDevices;
+
+            // Pick a random family
+            var rng = ThreadSafeRandom.Next(0, masteriesList.Count - 1);
+            var familyList = masteriesList[rng];
+
+            var petLevelIdx = petLevelIndexes.ContainsKey(level) ? petLevelIndexes[level] : 0;
+            return familyList[petLevelIdx];
+        }
     }
 }

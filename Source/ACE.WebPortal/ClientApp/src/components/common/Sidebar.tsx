@@ -82,28 +82,50 @@ const Sidebar: React.FC = () => {
       </nav>
       
       <div className="p-4 border-t border-neutral-800 space-y-5">
-        <div className="flex items-center gap-3 px-2 py-1">
-          <div className="w-10 h-10 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-sm tracking-tighter">
-            {user?.substring(0, 2).toUpperCase() || 'U'}
+        {user ? (
+          <div className="flex items-center gap-3 px-2 py-1">
+            <div className="w-10 h-10 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-sm tracking-tighter">
+              {user.substring(0, 2).toUpperCase()}
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-semibold text-white truncate leading-tight">{user}</span>
+              {isStaff && (
+                <span className="text-[10px] text-blue-400/80 font-bold uppercase tracking-wider">
+                  {getRoleName(accessLevel!)}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex flex-col min-w-0">
-            <span className="text-sm font-semibold text-white truncate leading-tight">{user}</span>
-            {isStaff && (
-              <span className="text-[10px] text-blue-400/80 font-bold uppercase tracking-wider">
-                {getRoleName(accessLevel!)}
-              </span>
-            )}
+        ) : (
+          <div className="flex items-center gap-3 px-2 py-1">
+            <div className="w-10 h-10 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center text-neutral-400 font-bold text-sm">
+              <User className="w-4 h-4" />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-semibold text-neutral-300 truncate leading-tight">Guest</span>
+              <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Public Access</span>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="space-y-3">
-          <button 
-            onClick={() => logout()}
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-neutral-500 hover:bg-red-500/10 hover:text-red-500 transition-all duration-200 group"
-          >
-            <LogOut className="w-4 h-4 group-hover:scale-110 transition-transform" />
-            <span className="text-sm font-medium">Log out</span>
-          </button>
+          {user ? (
+            <button 
+              onClick={() => logout()}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-neutral-500 hover:bg-red-500/10 hover:text-red-500 transition-all duration-200 group"
+            >
+              <LogOut className="w-4 h-4 group-hover:scale-110 transition-transform" />
+              <span className="text-sm font-medium">Log out</span>
+            </button>
+          ) : (
+            <NavLink 
+              to="/characters"
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-neutral-400 hover:bg-blue-600/20 hover:text-blue-400 transition-all duration-200 group"
+            >
+              <User className="w-4 h-4 group-hover:scale-110 transition-transform" />
+              <span className="text-sm font-medium">Sign in</span>
+            </NavLink>
+          )}
           
           <div className="flex items-center gap-2 text-[10px] text-neutral-600 px-4 uppercase tracking-[0.2em] font-bold">
             <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"></div>

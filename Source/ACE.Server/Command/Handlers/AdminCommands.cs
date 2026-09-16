@@ -1587,11 +1587,11 @@ namespace ACE.Server.Command.Handlers
                             CREATE UNIQUE INDEX `idx_transfer_summary_unique`
                             ON `transfer_summaries` (`FromPlayerName`,`ToPlayerName`,`TransferType`)");
 
-                    session.Network.EnqueueSend(new GameMessageSystemChat("✓ Unique index created successfully", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Unique index created successfully", ChatMessageType.System));
                 }
                 else
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat("✓ Unique index already exists", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Unique index already exists", ChatMessageType.System));
                 }
 
                 session.Network.EnqueueSend(new GameMessageSystemChat("Transfer summaries fix completed successfully!", ChatMessageType.System));
@@ -1685,7 +1685,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
                 
-                    session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs updated with missing columns, Quantity bigint migration, and indexes", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("transfer_logs updated with missing columns, Quantity bigint migration, and indexes", ChatMessageType.System));
                 }
                 finally
                 {
@@ -1727,7 +1727,7 @@ namespace ACE.Server.Command.Handlers
                         KEY `IX_transfer_logs_ToCharacterCreatedDate` (`ToCharacterCreatedDate`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
                 
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs table created", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("transfer_logs table created", ChatMessageType.System));
             }
         }
 
@@ -1736,7 +1736,7 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_summaries LIMIT 1");
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_summaries table exists", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("transfer_summaries table exists", ChatMessageType.System));
             }
             catch
             {
@@ -1766,7 +1766,7 @@ namespace ACE.Server.Command.Handlers
                         KEY `IX_transfer_summaries_IsSuspicious` (`IsSuspicious`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
                 
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_summaries table created", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("transfer_summaries table created", ChatMessageType.System));
             }
         }
 
@@ -1777,7 +1777,7 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 context.Database.ExecuteSqlRaw("SELECT 1 FROM tracked_items LIMIT 1");
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ tracked_items table exists", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("tracked_items table exists", ChatMessageType.System));
             }
             catch
             {
@@ -1794,7 +1794,7 @@ namespace ACE.Server.Command.Handlers
                         KEY `IX_tracked_items_IsActive` (`IsActive`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
                 
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ tracked_items table created", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("tracked_items table created", ChatMessageType.System));
             }
         }
 
@@ -1803,7 +1803,7 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_monitoring_configs LIMIT 1");
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_monitoring_configs table exists", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("transfer_monitoring_configs table exists", ChatMessageType.System));
             }
             catch
             {
@@ -1826,7 +1826,7 @@ namespace ACE.Server.Command.Handlers
                         PRIMARY KEY (`Id`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
                 
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_monitoring_configs table created", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("transfer_monitoring_configs table created", ChatMessageType.System));
                 
                 // Insert default configuration
                 context.Database.ExecuteSqlRaw(@"
@@ -1839,7 +1839,7 @@ namespace ACE.Server.Command.Handlers
                         100000, 24, 10, 1, 1, 1, 1, 1, 1, 0, NOW(), NOW()
                     )");
                 
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ Default configuration inserted", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Default configuration inserted", ChatMessageType.System));
             }
         }
 
@@ -1848,7 +1848,7 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_blacklist LIMIT 1");
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_blacklist table exists", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("transfer_blacklist table exists", ChatMessageType.System));
             }
             catch
             {
@@ -1870,7 +1870,7 @@ namespace ACE.Server.Command.Handlers
                         KEY `IX_transfer_blacklist_ExpiryDate` (`ExpiryDate`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
                 
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_blacklist table created", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("transfer_blacklist table created", ChatMessageType.System));
             }
         }
 
@@ -4504,6 +4504,34 @@ namespace ACE.Server.Command.Handlers
             session.Player.QuestManager.ComputeDynamicQuest(parameters[0], session, true);
         }
 
+        private static bool TryParseIntOrHex(string input, out int value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(input))
+                return false;
+
+            if (input.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                if (uint.TryParse(input.Substring(2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out uint uVal))
+                {
+                    value = (int)uVal;
+                    return true;
+                }
+                return false;
+            }
+
+            if (int.TryParse(input, out value))
+                return true;
+
+            if (uint.TryParse(input, out uint uVal2))
+            {
+                value = (int)uVal2;
+                return true;
+            }
+
+            return false;
+        }
+
         /// <summary>
         /// Parses the command-line parameters for /create or /createliveops
         /// The only difference with /createliveops is that it includes a lifespan parameter in the middle
@@ -4652,9 +4680,9 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters.Length > idx)
             {
-                if (!int.TryParse(parameters[idx], out int _palette))
+                if (!TryParseIntOrHex(parameters[idx], out int _palette))
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Palette must be number between {int.MinValue} - {int.MaxValue}.", ChatMessageType.Broadcast));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Palette must be a valid integer or hex string (e.g. 100 or 0x040001F4).", ChatMessageType.Broadcast));
                     return false;
                 }
                 else
@@ -4992,9 +5020,9 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters.Length > 2)
             {
-                if (!int.TryParse(parameters[2], out int _palette))
+                if (!TryParseIntOrHex(parameters[2], out int _palette))
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"palette must be number between {int.MinValue} - {int.MaxValue}", ChatMessageType.Broadcast));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"palette must be a valid number or hex string (e.g. 100 or 0x040001F4)", ChatMessageType.Broadcast));
                     return;
                 }
                 else
@@ -7388,18 +7416,22 @@ namespace ACE.Server.Command.Handlers
         {
             try
             {
-                var longVal = long.Parse(paramters[1]);
+                var input = paramters[1].Trim();
+                long longVal = input.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                    ? Convert.ToInt64(input, 16)
+                    : long.Parse(input);
+
                 if (ServerConfig.SetValue(paramters[0], longVal))
                 {
                     CommandHandlerHelper.WriteOutputInfo(session, "Long property successfully updated!");
-                    PlayerManager.BroadcastToAuditChannel(session?.Player, $"Successfully changed server long property {paramters[0]} to {longVal}");
+                    PlayerManager.BroadcastToAuditChannel(session?.Player, $"Successfully changed server long property {paramters[0]} to {longVal} (0x{longVal:X})");
                 }
                 else
                     CommandHandlerHelper.WriteOutputInfo(session, "Unknown long property was not updated. Type showprops for a list of properties.");
             }
             catch (Exception)
             {
-                CommandHandlerHelper.WriteOutputInfo(session, "Please input a valid long", ChatMessageType.Help);
+                CommandHandlerHelper.WriteOutputInfo(session, "Please input a valid long (e.g. 364 or 0x016C)", ChatMessageType.Help);
             }
         }
 

@@ -763,13 +763,48 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         PetPotencyStored                        = 9056,
 
+        /// <summary>Daily breeding charges remaining on Stud pet device (default 10).</summary>
+        [AssessmentProperty]
+        PetMaleBreedingCharges                         = 9057,
+
+        /// <summary>Bonus health vitality rating on combat pet device (server/custom).</summary>
+        [AssessmentProperty]
+        Vitality                                = 9058,
+
         /// <summary>
         /// Optional per-creature override for Essence Resonator salvage yield.
         /// Set this on a creature weenie to make salvaging essences from that creature
         /// award a fixed amount of Savage Echo (before shiny multiplier) instead of the
         /// default formula. 0 or absent = use formula.
         /// </summary>
-        EssenceSalvageYield                     = 9057,
+        EssenceSalvageYield                     = 9076, // was 9057, which collided with PetMaleBreedingCharges
+
+        /// <summary>Number of genetic mutations this combat pet has accumulated via breeding (server/custom).</summary>
+        [AssessmentProperty]
+        PetMutationCount                        = 9075, // was 9058, which collided with Vitality
+
+        PetMutDamageRating                      = 9068, // was 9060, which collided with WeaponAugScaleQuality
+        PetMutDamageResistRating                = 9069, // was 9061, which collided with WeaponAugScaleTier
+        PetMutCritRating                        = 9062,
+        PetMutCritDamageRating                  = 9063,
+        PetMutCritResistRating                  = 9064,
+        PetMutCritDamageResistRating            = 9065,
+        PetMutVitality                          = 9066,
+        PetMutPotency                           = 9067,
+
+        PetMutDamageCount                       = 9070,
+        PetMutDamageResistCount                 = 9071,
+        PetMutCritCount                         = 9072,
+        PetMutVitalityCount                     = 9073,
+        PetMutPotencyCount                      = 9074,
+
+        /// <summary>Kills credited toward a bred pet's maturity (server/custom). Present only on essences born from a breed.</summary>
+        [AssessmentProperty]
+        PetMaturityKills                        = 9077,
+
+        /// <summary>Which stat was mutated on this pet's most recent breed (server/custom). 1=DamageRating, 2=DamageResistRating, 3=CritRating, 4=Vitality, 5=Potency.</summary>
+        [AssessmentProperty]
+        PetLastMutatedStat                      = 9078,
 
         // -- Weapon aug-scaling (T11 weapon relevance; server/custom) ----------------
         /// <summary>On a T11+ weapon: the quality percentile roll (0-1000). The server-wide

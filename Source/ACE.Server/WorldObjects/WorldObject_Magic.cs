@@ -583,6 +583,18 @@ namespace ACE.Server.WorldObjects
             if (!useHarmCap && player != null && tryBoost > 0)
             {
                 tryBoost += (int)player.EffectiveLifeAugCount;
+
+                // Scale heal proportionally to pet max health so player heals remain effective on 3000+ HP pets
+                if (spell.VitalDamageType == DamageType.Health && targetCreature is CombatPet targetPet && targetPet.IsInMotelOrEncounter())
+                {
+                    var casterHp = player.Health?.MaxValue ?? 0;
+                    var petHp = targetPet.Health?.MaxValue ?? 0;
+                    if (casterHp > 0 && petHp > casterHp)
+                    {
+                        var scale = Math.Clamp((float)petHp / casterHp, 1.0f, 8.0f);
+                        tryBoost = (int)Math.Round(tryBoost * scale);
+                    }
+                }
             }
             if (!useHarmCap && player != null && tryBoost < 0)
             {
@@ -606,6 +618,10 @@ namespace ACE.Server.WorldObjects
                 tryBoost = -(int)Math.Round(fDamage);
             }
             // ─────────────────────────────────────────────────────────────────────
+
+            // A creature that refuses damage from this caster takes no harm/drain (heals still apply).
+            if (tryBoost < 0 && !targetCreature.CanBeDamagedBy(this))
+                tryBoost = 0;
 
             switch (spell.VitalDamageType)
             {

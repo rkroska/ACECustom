@@ -398,6 +398,9 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            if (!creatureTarget.CanBeDamagedBy(ProjectileSource))
+                return;
+
             var critical = false;
             var critDefended = false;
             var overpower = false;
@@ -1212,6 +1215,9 @@ namespace ACE.Server.WorldObjects
             if (targetPlayer != null && targetPlayer.ZcDamageImmune && !targetPlayer.Invincible && !target.IsDead)
                 targetPlayer.ZcAnnounceAbsorb(ProjectileSource, $"{Math.Round(damage):N0} {Spell.DamageType.ToString().ToLowerInvariant()} damage ({Spell.Name})");
             if (targetPlayer != null && (targetPlayer.Invincible || targetPlayer.ZcDamageImmune) || target.IsDead)
+                return;
+
+            if (!target.CanBeDamagedBy(ProjectileSource))
                 return;
 
             var sourceCreature = ProjectileSource as Creature;

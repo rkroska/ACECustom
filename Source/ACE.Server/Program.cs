@@ -401,6 +401,11 @@ namespace ACE.Server
             log.Info("Initializing EventManager...");
             EventManager.Initialize();
 
+            // Breeding picks a mutation palette from this pool on the world thread. Building it scans
+            // several thousand DAT records, so warm it here rather than stalling the first breed.
+            log.Info("Initializing PetMutationService...");
+            ACE.Server.Services.PetMutationService.Initialize();
+
             if (ConfigManager.Config.Server.Network.ContentPort.HasValue)
             {
                 log.Info("Initializing Content Service Manager...");
@@ -422,7 +427,7 @@ namespace ACE.Server
                 if (Interlocked.CompareExchange(ref ctrlCShutdownStarted, 1, 0) != 0)
                     return;
 
-                log.Info("Ctrl+C received — initiating cooperative shutdown...");
+                log.Info("Ctrl+C received -- initiating cooperative shutdown...");
                 try
                 {
                     ServerManager.DoShutdownNow();
@@ -453,7 +458,7 @@ namespace ACE.Server
             }
             else
             {
-                log.Info("[WEB PORTAL] enable_web_portal is false — skipping web portal host startup.");
+                log.Info("[WEB PORTAL] enable_web_portal is false -- skipping web portal host startup.");
             }
 
             // Keep the server alive (ACE uses a manual loop or waits for shutdown elsewhere)

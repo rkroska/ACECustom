@@ -210,19 +210,35 @@ namespace ACE.Server.WorldObjects
                                 itemSubPal = item.ClothingSubPalEffects[item.ClothingSubPalEffects.Keys.ElementAt(0)];
                             }
 
-                            float shade = 0;
+                            float shade = 0.0f;
                             if (w.Shade.HasValue)
-                                shade = (float)w.Shade;
+                                shade = (float)w.Shade.Value;
                             for (int i = 0; i < itemSubPal.CloSubPalettes.Count; i++)
                             {
-                                var itemPalSet = DatManager.PortalDat.ReadFromDat<PaletteSet>(itemSubPal.CloSubPalettes[i].PaletteSet);
-                                ushort itemPal = (ushort)itemPalSet.GetPaletteID(shade);
-
-                                for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
+                                ushort itemPal = 0;
+                                if ((palOption & 0xFF000000) == 0x04000000)
                                 {
-                                    ushort palOffset = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].Offset / 8);
-                                    ushort numColors = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].NumColors / 8);
-                                    objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = palOffset, Length = numColors });
+                                    itemPal = (ushort)(palOption & 0xFFFF);
+                                }
+                                else if (palOption > 0 && !item.ClothingSubPalEffects.ContainsKey((uint)palOption))
+                                {
+                                    itemPal = (ushort)(palOption & 0xFFFF);
+                                }
+                                else
+                                {
+                                    var itemPalSet = DatManager.PortalDat.ReadFromDat<PaletteSet>(itemSubPal.CloSubPalettes[i].PaletteSet);
+                                    if (itemPalSet != null)
+                                        itemPal = (ushort)itemPalSet.GetPaletteID(shade);
+                                }
+
+                                if (itemPal != 0)
+                                {
+                                    for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
+                                    {
+                                        ushort palOffset = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].Offset / 8);
+                                        ushort numColors = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].NumColors / 8);
+                                        objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = palOffset, Length = numColors });
+                                    }
                                 }
                             }
                         }
@@ -232,15 +248,110 @@ namespace ACE.Server.WorldObjects
 
             if (coverage.Count == 0 && ClothingBase.HasValue)
             {
-                // Even with no armor coverage, apply shiny variant textures before falling back
-                if (CreatureVariant.HasValue)
+                if (DatManager.PortalDat.TryReadClothingTable((uint)ClothingBase.Value, out var creatureCloTable))
                 {
-                    var baseObjDesc = base.CalculateObjDesc();
-                    baseObjDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
-                    return ApplyBiotaPartOverrides(baseObjDesc);
+                    if (creatureCloTable.ClothingBaseEffects.TryGetValue(thisSetupId, out var cloEffect))
+                    {
+                        foreach (CloObjectEffect t in cloEffect.CloObjectEffects)
+                        {
+                            byte partNum = (byte)t.Index;
+                            coverage.Add(partNum);
+                            objDesc.AddAnimPartChange(new PropertiesAnimPart { Index = (byte)t.Index, AnimationId = t.ModelId });
+                            foreach (CloTextureEffect t1 in t.CloTextureEffects)
+                                objDesc.AddTextureChange(new PropertiesTextureMap { PartIndex = (byte)t.Index, OldTexture = t1.OldTexture, NewTexture = t1.NewTexture });
+                        }
+                    }
+
+                    int palOption = PaletteTemplate.HasValue ? (int)PaletteTemplate.Value : 0;
+                    uint setupTexPal = GetSetupDefaultPaletteId(thisSetupId);
+                    if (setupTexPal > 0 && (objDesc.PaletteID == 0 || objDesc.PaletteID == 0x040002AB || objDesc.PaletteID == 0x0400007E || ClothingBase.Value == 0x100000AF))
+                    {
+                        objDesc.PaletteID = setupTexPal;
+                    }
+
+                    if ((palOption & 0xFF000000) == 0x04000000)
+                    {
+                        ushort itemPal = (ushort)(palOption & 0xFFFF);
+
+                        // Subpalettes overlay the base PaletteID. If the base is unset the client has nothing
+                        // to overlay onto and discards the whole palette block, rendering the model default.
+                        // The ClothingSubPalEffects branch below already guards this; mirror it here.
+                        if (objDesc.PaletteID == 0)
+                            objDesc.PaletteID = (uint)(0x04000000 | itemPal);
+
+                        objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 0, Length = 255 });
+                        objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 255, Length = 1 });
+                    }
+                    else if (creatureCloTable != null && creatureCloTable.ClothingSubPalEffects != null && creatureCloTable.ClothingSubPalEffects.Count > 0)
+                    {
+                        CloSubPalEffect itemSubPal = null;
+                        if (creatureCloTable.ClothingSubPalEffects.ContainsKey((uint)palOption))
+                        {
+                            itemSubPal = creatureCloTable.ClothingSubPalEffects[(uint)palOption];
+                        }
+                        else if (creatureCloTable.ClothingSubPalEffects.Count > 0)
+                        {
+                            itemSubPal = creatureCloTable.ClothingSubPalEffects[creatureCloTable.ClothingSubPalEffects.Keys.ElementAt(0)];
+                        }
+
+                        if (itemSubPal != null)
+                        {
+                            float shade = Shade.HasValue ? (float)Shade.Value : 0.5f;
+                            for (int i = 0; i < itemSubPal.CloSubPalettes.Count; i++)
+                            {
+                                ushort itemPal = 0;
+                                if (palOption > 0 && !creatureCloTable.ClothingSubPalEffects.ContainsKey((uint)palOption))
+                                {
+                                    itemPal = (ushort)(palOption & 0xFFFF);
+                                }
+                                else
+                                {
+                                    var itemPalSet = DatManager.PortalDat.ReadFromDat<PaletteSet>(itemSubPal.CloSubPalettes[i].PaletteSet);
+                                    if (itemPalSet != null)
+                                        itemPal = (ushort)itemPalSet.GetPaletteID(shade);
+                                }
+
+                                if (itemPal != 0)
+                                {
+                                    if (objDesc.PaletteID == 0)
+                                    {
+                                        objDesc.PaletteID = (uint)(0x04000000 | itemPal);
+                                    }
+
+                                    for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
+                                    {
+                                        ushort rawOffset = (ushort)itemSubPal.CloSubPalettes[i].Ranges[j].Offset;
+                                        if (rawOffset == 320 && j == 0 && i == 0)
+                                        {
+                                            // Map chunk 40 (Offset 320 body colors) into low-index body parts (like Olthoi legs [0..319]) in-game!
+                                            objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 40, Length = 40 });
+                                        }
+
+                                        ushort palOffset = (ushort)(rawOffset / 8);
+                                        ushort numColors = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].NumColors / 8);
+                                        while (numColors > 0)
+                                        {
+                                            ushort chunkLength = numColors > 255 ? (ushort)255 : numColors;
+                                            objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = palOffset, Length = chunkLength });
+                                            palOffset += chunkLength;
+                                            numColors -= chunkLength;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                // base.CalculateObjDesc only copies biota parts for players: overlay ours here too
-                return ApplyBiotaPartOverrides(base.CalculateObjDesc());
+                else
+                {
+                    if (CreatureVariant.HasValue)
+                    {
+                        var baseObjDesc = base.CalculateObjDesc();
+                        baseObjDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
+                        return ApplyBiotaPartOverrides(baseObjDesc);
+                    }
+                    return ApplyBiotaPartOverrides(base.CalculateObjDesc());
+                }
             }
 
             // Add the "naked" body parts. These are the ones not already covered.
@@ -258,6 +369,37 @@ namespace ACE.Server.WorldObjects
             if (CreatureVariant.HasValue)
             {
                 objDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
+            }
+
+            int directPalOption = PaletteTemplate.HasValue ? (int)PaletteTemplate.Value : 0;
+            if ((directPalOption & 0xFF000000) == 0x04000000)
+            {
+                uint setupTexPal = GetSetupDefaultPaletteId(thisSetupId);
+                if (setupTexPal > 0 && (objDesc.PaletteID == 0 || objDesc.PaletteID == 0x040002AB || objDesc.PaletteID == 0x0400007E || (ClothingBase.HasValue && ClothingBase.Value == 0x100000AF)))
+                    objDesc.PaletteID = setupTexPal;
+                else if (objDesc.PaletteID == 0)
+                    objDesc.PaletteID = setupTexPal > 0 ? setupTexPal : (uint)directPalOption;
+
+                ushort itemPal = (ushort)(directPalOption & 0xFFFF);
+                bool exists = false;
+                foreach (var sp in objDesc.SubPalettes)
+                {
+                    if (sp.SubPaletteId == itemPal) { exists = true; break; }
+                }
+                if (!exists)
+                {
+                    objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 0, Length = 255 });
+                    objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 255, Length = 1 });
+                }
+            }
+
+            if (ServerConfig.pet_visual_packet_debug.Value)
+            {
+                log.Info($"[CREATURE PACKET DEBUG] {Name} (WCID {WeenieClassId}): Setup=0x{SetupTableId:X8}, ClothingBase=0x{(ClothingBase ?? 0):X8}, PaletteID=0x{objDesc.PaletteID:X8}, PaletteTemplate=0x{(PaletteTemplate ?? 0):X8}, Shade={(Shade?.ToString("F2") ?? "null")}, SubPalettes={objDesc.SubPalettes.Count}, AnimParts={objDesc.AnimPartChanges.Count}, Textures={objDesc.TextureChanges.Count}");
+                foreach (var sp in objDesc.SubPalettes)
+                {
+                    log.Info($"   -> SubPalette: Id=0x{sp.SubPaletteId:X4}, Offset={sp.Offset}, Length={sp.Length}");
+                }
             }
 
             return ApplyBiotaPartOverrides(objDesc);
@@ -291,6 +433,57 @@ namespace ACE.Server.WorldObjects
                 }
 
             return objDesc;
+        }
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, uint> _setupDefaultPaletteCache = new();
+
+        /// <summary>
+        /// The native base palette of a creature model: the DefaultPaletteId baked into its textures.
+        /// Creature texture data lives in client_highres.dat; the portal copies are stubs whose
+        /// DefaultPaletteId is 0, so reading only the portal DAT (as this used to) returned 0 for
+        /// every creature and silently disabled the native-base fallback in CalculateObjDesc.
+        /// Cached per setup: this runs on every creature ObjDesc build.
+        /// </summary>
+        internal static uint GetSetupDefaultPaletteId(uint setupId)
+        {
+            if (setupId == 0) return 0;
+            return _setupDefaultPaletteCache.GetOrAdd(setupId, ResolveSetupDefaultPaletteId);
+        }
+
+        private static uint ResolveSetupDefaultPaletteId(uint setupId)
+        {
+            var setupModel = DatManager.PortalDat.ReadFromDat<SetupModel>(setupId);
+            if (setupModel?.Parts == null) return 0;
+
+            foreach (var partId in setupModel.Parts)
+            {
+                var gfx = DatManager.PortalDat.ReadFromDat<GfxObj>(partId);
+                if (gfx?.Surfaces == null) continue;
+
+                foreach (var sId in gfx.Surfaces)
+                {
+                    var surf = DatManager.PortalDat.ReadFromDat<Surface>(sId);
+                    uint tex = surf?.OrigTextureId ?? 0;
+                    if (tex == 0) continue;
+
+                    // 0x05 SurfaceTexture -> its first 0x06 Texture; 0x06 is usable directly.
+                    if ((tex & 0xFF000000) == 0x05000000)
+                    {
+                        var st = DatManager.PortalDat.ReadFromDat<SurfaceTexture>(tex)
+                                 ?? DatManager.HighResDat?.ReadFromDat<SurfaceTexture>(tex);
+                        if (st?.Textures == null || st.Textures.Count == 0) continue;
+                        tex = st.Textures[0];
+                    }
+
+                    var t = DatManager.PortalDat.ReadFromDat<ACE.DatLoader.FileTypes.Texture>(tex);
+                    if ((t?.DefaultPaletteId ?? 0) == 0)
+                        t = DatManager.HighResDat?.ReadFromDat<ACE.DatLoader.FileTypes.Texture>(tex);
+
+                    if (t?.DefaultPaletteId is uint pal && pal > 0)
+                        return pal;
+                }
+            }
+            return 0;
         }
 
         /// <summary>

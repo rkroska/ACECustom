@@ -42,6 +42,97 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// The PetDevice that summoned this CombatPet (best-effort, in-memory).
         /// </summary>
+        // Adult values captured at summon; ApplyMaturity derives the current juvenile values from these.
+        private int? matureDamageRating, matureDamageResistRating, matureCritRating, matureCritDamageRating, matureCritResistRating, matureCritDamageResistRating;
+        private uint matureHealthBase;
+        private int matureMutHp;
+
+        /// <summary>Outgoing damage multiplier from maturity (1.0 for an adult). Read by DamageEvent.</summary>
+        public float MaturityDamageMult { get; private set; } = 1.0f;
+        private float? matureScale;
+        private bool maturityCaptured;
+
+        /// <summary>
+        /// Must run before Init (which enters the world): records the adult scale, then shrinks and
+        /// renames a juvenile so the create packet and physics object already carry the small size.
+        /// </summary>
+        public void PrepareMaturityForSummon(PetDevice device)
+        {
+            if (device == null || !ServerConfig.pet_maturity_enabled.Value)
+                return;
+
+            // Capture the adult scale before shrinking. A null ObjScale means "1.0", and must be stored
+            // as such: leaving it null let Init capture the already-shrunk value as the adult size.
+            matureScale = ObjScale ?? 1.0f;
+            if (!device.IsJuvenile)
+                return;
+
+            ObjScale = (float)((matureScale ?? 1.0f) * device.MaturityScaleMult);
+            Name = device.MaturityStageName + " " + (Name ?? "");
+        }
+
+        /// <summary>
+        /// Sets this pet's ratings, vitality bonus, size and name from its essence's current maturity.
+        /// Called once at summon and again on every growth stage while summoned. A grown pet is
+        /// healed to full and re-sent to nearby clients so the new size shows immediately.
+        /// </summary>
+        public void ApplyMaturity(PetDevice device, bool grew)
+        {
+            if (device == null || !maturityCaptured)
+                return;
+
+            var maturityEnabled = ServerConfig.pet_maturity_enabled.Value;
+            var strength = maturityEnabled ? device.MaturityStrengthMult : 1.0;
+            var scaleMult = maturityEnabled ? device.MaturityScaleMult : 1.0;
+
+            int? Scaled(int? v) => v.HasValue ? (int)Math.Round(v.Value * strength) : null;
+            DamageRating = Scaled(matureDamageRating);
+            DamageResistRating = Scaled(matureDamageResistRating);
+            CritRating = Scaled(matureCritRating);
+            CritDamageRating = Scaled(matureCritDamageRating);
+            CritResistRating = Scaled(matureCritResistRating);
+            CritDamageResistRating = Scaled(matureCritDamageResistRating);
+
+            // Everything is a flat percentage of the adult: max health (base included), outgoing
+            // damage, and the ratings above.
+            var adultHealth = (double)matureHealthBase + matureMutHp;
+            Health.StartingValue = (uint)Math.Max(1, Math.Min(uint.MaxValue, Math.Round(adultHealth * strength)));
+            if (grew)
+                Health.Current = Health.MaxValue;
+            else if (Health.Current > Health.MaxValue)
+                Health.Current = Health.MaxValue;
+
+            MaturityDamageMult = (float)strength;
+
+            var newScale = (float)((matureScale ?? 1.0f) * scaleMult);
+            if (Math.Abs((ObjScale ?? 1.0f) - newScale) > 0.001f)
+            {
+                ObjScale = newScale;
+                // Keep the server-side physics body in step with the visual, or reach, collision and
+                // cylinder distances stay at the old size until the next summon.
+                PhysicsObj?.SetScaleStatic(newScale);
+            }
+
+            // Name: "<Owner>'s <Stage> <Creature>" while growing, plain once adult. Strip any previous
+            // stage tag first so a grown pet does not stack "Adolescent Whelp".
+            var name = Name ?? "";
+            foreach (var stageName in PetDevice.AllMaturityStageNames())
+                name = name.Replace(stageName + " ", "");
+            if (maturityEnabled && device.IsJuvenile)
+            {
+                var tag = device.MaturityStageName + " ";
+                var idx = name.IndexOf("'s ", StringComparison.Ordinal);
+                name = idx >= 0 ? name.Insert(idx + 3, tag) : tag + name;
+            }
+            Name = name;
+
+            if (grew && CurrentLandblock != null)
+            {
+                EnqueueBroadcast(new GameMessageUpdateObject(this));
+                PlayParticleEffect(PlayScript.LevelUp, Guid);
+            }
+        }
+
         public PetDevice TryGetSummoningDevice()
         {
             if (_summoningDevice == null)
@@ -321,6 +412,30 @@ namespace ACE.Server.WorldObjects
                 if (petDevice.GearCritResist.HasValue)
                     CritResistRating = petDevice.GearCritResist;
 
+                // Dynamically evaluate mutated ratings from breeding properties on spawn
+                var dmgStep = (int)ServerConfig.pet_breeding_damage_mutation_step.Value;
+                var drStep = (int)ServerConfig.pet_breeding_dr_mutation_step.Value;
+                var critStep = (int)ServerConfig.pet_breeding_crit_mutation_step.Value;
+
+                var dmgMuts = petDevice.GetProperty(PropertyInt.PetMutDamageCount) ?? ((petDevice.GetProperty(PropertyInt.PetMutDamageRating) ?? 0) / Math.Max(1, dmgStep));
+                var drMuts = petDevice.GetProperty(PropertyInt.PetMutDamageResistCount) ?? ((petDevice.GetProperty(PropertyInt.PetMutDamageResistRating) ?? 0) / Math.Max(1, drStep));
+                var critMuts = petDevice.GetProperty(PropertyInt.PetMutCritCount) ?? ((petDevice.GetProperty(PropertyInt.PetMutCritRating) ?? 0) / Math.Max(1, critStep));
+
+                var mutDmg = dmgMuts * dmgStep;
+                var mutDr = drMuts * drStep;
+                var mutCrit = critMuts * critStep;
+                var mutCritDmg = (int)Math.Round(mutDmg * 0.8);
+                var mutCritResist = (int)Math.Round(mutDr * 0.8);
+                var mutCritDmgResist = (int)Math.Round(mutDr * 0.6);
+
+                if (mutDmg > 0) DamageRating = (DamageRating ?? 0) + mutDmg;
+                if (mutDr > 0) DamageResistRating = (DamageResistRating ?? 0) + mutDr;
+                if (mutCrit > 0) CritRating = (CritRating ?? 0) + mutCrit;
+                if (mutCritDmg > 0) CritDamageRating = (CritDamageRating ?? 0) + mutCritDmg;
+                if (mutCritResist > 0) CritResistRating = (CritResistRating ?? 0) + mutCritResist;
+                if (mutCritDmgResist > 0) CritDamageResistRating = (CritDamageResistRating ?? 0) + mutCritDmgResist;
+
+
                 if (ServerConfig.pet_bond_enabled.Value && petDevice.IsCombatPetDevice() && petDevice.IsPetBondAttuned)
                 {
                     var capRaw = (int)ServerConfig.pet_bond_level_cap.Value;
@@ -354,6 +469,14 @@ namespace ACE.Server.WorldObjects
                 if (CritResistRating.HasValue)
                     CritResistRating = ScaleRating(CritResistRating.Value, ServerConfig.pet_combat_rating_mult_crit_resist.Value);
             }
+
+            // Adult (fully grown) ratings, captured so maturity can rescale them live as the pet grows.
+            matureDamageRating = DamageRating;
+            matureDamageResistRating = DamageResistRating;
+            matureCritRating = CritRating;
+            matureCritDamageRating = CritDamageRating;
+            matureCritResistRating = CritResistRating;
+            matureCritDamageResistRating = CritDamageResistRating;
 
             // copy augmentation counts from player (for damage scaling)
             // Each non-summon track is capped by summoning aug count: effective = min(summon, owner track).
@@ -507,6 +630,26 @@ namespace ACE.Server.WorldObjects
             if (bondMaxHealthBonus > 0)
                 Health.StartingValue = (uint)Math.Min(uint.MaxValue, (ulong)Health.StartingValue + (uint)bondMaxHealthBonus);
 
+            // Vitality follows the same count x step evaluation as the combat ratings, so retuning
+            // pet_breeding_vitality_mutation_step rescales existing pets. Legacy devices fall back to the
+            // stored bonus, then to a raw Vitality value set before mutation counts existed.
+            var vitStep = (int)ServerConfig.pet_breeding_vitality_mutation_step.Value;
+            var vitMuts = petDevice.GetProperty(PropertyInt.PetMutVitalityCount)
+                ?? ((petDevice.GetProperty(PropertyInt.PetMutVitality)
+                     ?? petDevice.GetProperty(PropertyInt.Vitality)
+                     ?? 0) / Math.Max(1, vitStep));
+
+            var mutHP = vitMuts * vitStep;
+            matureHealthBase = Health.StartingValue;
+            matureMutHp = Math.Max(0, mutHP);
+            if (!matureScale.HasValue)
+                matureScale = ObjScale;
+            maturityCaptured = true;
+
+            // Applies the vitality bonus (scaled down for a juvenile), the juvenile size and name.
+            ApplyMaturity(petDevice, grew: false);
+
+
             // Lifespan vs TimeToRot (stock ACE): WorldObject.IsDecayable() returns false when Lifespan is set, so landblock
             // TimeToRot decay does not run — heartbeat Lifespan drives despawn in that case. Pet templates often duplicate both;
             // extending both keeps TimeToRot meaningful if Lifespan is ever omitted and avoids mismatched DB tuning surprises.
@@ -640,7 +783,7 @@ namespace ACE.Server.WorldObjects
             player.Session.Network.EnqueueSend(new GameMessageSystemChat(
                 $"Your pet was in combat recently; you cannot recall it for about {secShow} more second(s).",
                 ChatMessageType.System));
-            TraceRecallBlockStatic(pet, debugTag, $"essence_stow_denied remaining≈{rem:F1}s");
+            TraceRecallBlockStatic(pet, debugTag, $"essence_stow_denied remaining~{rem:F1}s");
             return true;
         }
 
@@ -1674,8 +1817,27 @@ namespace ACE.Server.WorldObjects
             return bonus;
         }
 
+        /// <summary>
+        /// True if this pet is inside the Seedy Motel dungeon cell or actively registered in a mating guardian encounter.
+        /// </summary>
+        public bool IsInMotelOrEncounter()
+        {
+            if (Location?.LandblockId.Landblock == 0x013A)
+                return true;
+
+            if (MatingGuardian.IsActiveParentPet(this))
+                return true;
+
+            return false;
+        }
+
         protected override void Die(DamageHistoryInfo lastDamager, DamageHistoryInfo topDamager)
         {
+            if (MatingGuardian.IsActiveParentPet(this))
+            {
+                MatingGuardian.NotifyParentPetDied(this);
+            }
+
             if (P_PetOwner?.Session != null)
             {
                 P_PetOwner.Session.Network.EnqueueSend(new GameMessageSystemChat(

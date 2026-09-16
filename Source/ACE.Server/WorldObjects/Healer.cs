@@ -60,7 +60,18 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (!(target is Player targetPlayer) || targetPlayer.Teleporting)
+            var targetPlayer = target as Player;
+            var targetPet = target as CombatPet;
+
+            if (targetPlayer == null)
+            {
+                if (targetPet == null || targetPet.P_PetOwner != healer || !targetPet.IsInMotelOrEncounter())
+                {
+                    healer.SendUseDoneEvent(WeenieError.YouCantHealThat);
+                    return;
+                }
+            }
+            else if (targetPlayer.Teleporting)
             {
                 healer.SendUseDoneEvent(WeenieError.YouCantHealThat);
                 return;
@@ -76,15 +87,17 @@ namespace ACE.Server.WorldObjects
             // https://asheron.fandom.com/wiki/Player_Killer
             // https://asheron.fandom.com/wiki/Player_Killer_Lite
 
-            if (targetPlayer.PlayerKillerStatus != healer.PlayerKillerStatus && targetPlayer.PlayerKillerStatus != PlayerKillerStatus.NPK)
+            if (targetPlayer != null && targetPlayer.PlayerKillerStatus != healer.PlayerKillerStatus && targetPlayer.PlayerKillerStatus != PlayerKillerStatus.NPK)
             {
                 healer.SendWeenieErrorWithString(WeenieErrorWithString.YouFailToAffect_NotSamePKType, targetPlayer.Name);
                 healer.SendUseDoneEvent();
                 return;
             }
 
-            // ensure target player vital < MaxValue
-            var vital = targetPlayer.GetCreatureVital(BoosterEnum);
+            var targetCreature = targetPlayer != null ? (Creature)targetPlayer : targetPet;
+
+            // ensure target creature vital < MaxValue
+            var vital = targetCreature.GetCreatureVital(BoosterEnum);
 
             if (vital.Current == vital.MaxValue)
             {
@@ -107,20 +120,21 @@ namespace ACE.Server.WorldObjects
             /*if (!healer.Equals(targetPlayer))
             {
                 // perform moveto
-                healer.CreateMoveToChain(target, (success) => DoHealMotion(healer, targetPlayer, success));
+                healer.CreateMoveToChain(target, (success) => DoHealMotion(healer, targetCreature, success));
             }
             else
-                DoHealMotion(healer, targetPlayer, true);*/
+                DoHealMotion(healer, targetCreature, true);*/
 
             // MoveTo is now handled in base Player_Use
-            DoHealMotion(healer, targetPlayer, true);
+            DoHealMotion(healer, targetCreature, true);
         }
 
         public static readonly float Healing_MaxMove = 5.0f;
 
-        public void DoHealMotion(Player healer, Player target, bool success)
+        public void DoHealMotion(Player healer, Creature target, bool success)
         {
-            if (!success || target.IsDead || target.Teleporting || target.suicideInProgress)
+            var targetPlayer = target as Player;
+            if (!success || target.IsDead || (targetPlayer != null && (targetPlayer.Teleporting || targetPlayer.suicideInProgress)))
             {
                 healer.SendUseDoneEvent();
                 return;
@@ -166,9 +180,10 @@ namespace ACE.Server.WorldObjects
             healer.NextUseTime = DateTime.UtcNow.AddSeconds(animLength);
         }
 
-        public void DoHealing(Player healer, Player target)
+        public void DoHealing(Player healer, Creature target)
         {
-            if (target.IsDead || target.Teleporting) return;
+            var targetPlayer = target as Player;
+            if (target.IsDead || (targetPlayer != null && targetPlayer.Teleporting)) return;
 
             var remainingMsg = "";
 
@@ -196,8 +211,8 @@ namespace ACE.Server.WorldObjects
             {
                 var failMsg = new GameMessageSystemChat($"You fail to heal {targetName}.{remainingMsg}", ChatMessageType.Broadcast);
                 healer.Session.Network.EnqueueSend(failMsg, stackSize);
-                if (healer != target)
-                    target.Session.Network.EnqueueSend(new GameMessageSystemChat($"{healer.Name} fails to heal you.", ChatMessageType.Broadcast));
+                if (healer != target && targetPlayer?.Session != null)
+                    targetPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"{healer.Name} fails to heal you.", ChatMessageType.Broadcast));
                 if (UsesLeft <= 0 && !UnlimitedUse)
                     healer.TryConsumeFromInventoryWithNetworking(this, 1);
                 return;
@@ -222,8 +237,8 @@ namespace ACE.Server.WorldObjects
 
             healer.Session.Network.EnqueueSend(message, stackSize);
 
-            if (healer != target)
-                target.Session.Network.EnqueueSend(new GameMessageSystemChat($"{healer.Name} heals you for {healAmount} {BoosterEnum.ToString()} points.", ChatMessageType.Broadcast));
+            if (healer != target && targetPlayer?.Session != null)
+                targetPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"{healer.Name} heals you for {healAmount} {BoosterEnum.ToString()} points.", ChatMessageType.Broadcast));
 
             if (UsesLeft <= 0 && !UnlimitedUse)
                 healer.TryConsumeFromInventoryWithNetworking(this, 1);
@@ -232,7 +247,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Determines if healer successfully heals target for attempt
         /// </summary>
-        public bool DoSkillCheck(Player healer, Player target, CreatureVital vital, ref int difficulty)
+        public bool DoSkillCheck(Player healer, Creature target, CreatureVital vital, ref int difficulty)
         {
             // skill check:
             // (healing skill + healing kit boost) * trainedMod
@@ -252,7 +267,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Returns the healing amount for this attempt
         /// </summary>
-        public uint GetHealAmount(Player healer, Player target, CreatureVital vital, out bool criticalHeal, out uint staminaCost)
+        public uint GetHealAmount(Player healer, Creature target, CreatureVital vital, out bool criticalHeal, out uint staminaCost)
         {
             // factors: healing skill, healing kit bonus, stamina, critical chance
             var healingSkill = healer.GetCreatureSkill(Skill.Healing).Current;
@@ -269,6 +284,20 @@ namespace ACE.Server.WorldObjects
 
             healAmount *= ratingMod;
 
+            // If target is a combat pet in the motel/encounter, scale heal amount proportionally to pet health so kits remain effective
+            float petHealScale = 1.0f;
+            if (target is CombatPet pet && pet.IsInMotelOrEncounter())
+            {
+                var healerHp = healer.Health?.MaxValue ?? 0;
+                var petHp = pet.Health?.MaxValue ?? 0;
+                if (healerHp > 0 && petHp > 0)
+                {
+                    petHealScale = Math.Clamp((float)petHp / healerHp, 1.0f, 8.0f);
+                    if (petHealScale > 1.0f)
+                        healAmount *= petHealScale;
+                }
+            }
+
             // chance for critical healing
             criticalHeal = ThreadSafeRandom.Next(0.0f, 1.0f) < 0.1f;
             if (criticalHeal) healAmount *= 2;
@@ -281,12 +310,13 @@ namespace ACE.Server.WorldObjects
             // stamina check? On the Q&A board a dev posted that stamina directly effects the amount of damage you can heal
             // low stam = less vital healed. I don't have exact numbers for it. Working through forum archive.
 
-            // stamina cost: 1 stamina per 5 vital healed 
-            staminaCost = (uint)Math.Round(healAmount / 5.0f);
+            // stamina cost: 1 stamina per 5 vital healed (based on unscaled heal so pets don't drain 250+ stamina)
+            var staminaHealAmount = petHealScale > 1.0f ? (healAmount / petHealScale) : healAmount;
+            staminaCost = (uint)Math.Round(staminaHealAmount / 5.0f);
             if (staminaCost > healer.Stamina.Current)
             {
                 staminaCost = healer.Stamina.Current;
-                healAmount = staminaCost * 5;
+                healAmount = staminaCost * 5 * (petHealScale > 1.0f ? petHealScale : 1.0f);
             }
             return (uint)Math.Round(healAmount);
         }

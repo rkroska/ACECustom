@@ -4459,5 +4459,678 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("testpal_curated", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Test subpalette mutation Option 1 (Curated list of cool palettes) on selected pet device.")]
+        public static void TestPalCurated(Session session, params string[] parameters)
+        {
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "You must appraise (examine/identify) the pet device in your inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            var curated = new uint[] {
+                0x0400001D, // Bright Red
+                0x04000021, // Bright Blue
+                0x04000025, // Green
+                0x04000029, // Yellow
+                0x0400002D, // Purple
+                0x0400005C, // Obsidian Black
+                0x04000097, // Gold/Bronze
+                0x04000104, // Copper
+                0x0400018E, // Metallic Silver
+                0x0400033E, // Pure Snowy White
+                0x0400033F  // Deep Crimson
+            };
+
+            var chosen = curated[ThreadSafeRandom.Next(0, curated.Length)];
+
+            var palsStr = target.GetProperty(PropertyString.CapturedObjDescPalettes);
+            if (string.IsNullOrEmpty(palsStr))
+            {
+                palsStr = $"{chosen}:0:256";
+            }
+            else
+            {
+                var entries = palsStr.Split(',');
+                var parts = entries[0].Split(':');
+                parts[0] = chosen.ToString();
+                entries[0] = string.Join(":", parts);
+                palsStr = string.Join(",", entries);
+            }
+
+            target.SetProperty(PropertyString.CapturedObjDescPalettes, palsStr);
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"[Option 1] Set primary subpalette to 0x{chosen:X8} ({chosen}) on {target.Name}. Dismiss and re-summon to see changes.", ChatMessageType.System);
+        }
+
+        [CommandHandler("testpal_random", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Test subpalette mutation Option 2 (Query all palettes in Portal DAT) on selected pet device.")]
+        public static void TestPalRandom(Session session, params string[] parameters)
+        {
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "You must appraise (examine/identify) the pet device in your inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            var paletteIds = new System.Collections.Generic.List<uint>();
+            foreach (var entry in DatManager.PortalDat.AllFiles)
+            {
+                if ((entry.Key >> 24) == 0x04)
+                    paletteIds.Add(entry.Key);
+            }
+
+            if (paletteIds.Count == 0)
+            {
+                ChatPacket.SendServerMessage(session, "No palettes found in portal.dat.", ChatMessageType.System);
+                return;
+            }
+
+            var chosen = paletteIds[ThreadSafeRandom.Next(0, paletteIds.Count)];
+
+            var palsStr = target.GetProperty(PropertyString.CapturedObjDescPalettes);
+            if (string.IsNullOrEmpty(palsStr))
+            {
+                palsStr = $"{chosen}:0:256";
+            }
+            else
+            {
+                var entries = palsStr.Split(',');
+                var parts = entries[0].Split(':');
+                parts[0] = chosen.ToString();
+                entries[0] = string.Join(":", parts);
+                palsStr = string.Join(",", entries);
+            }
+
+            target.SetProperty(PropertyString.CapturedObjDescPalettes, palsStr);
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"[Option 2] Set primary subpalette to random 0x{chosen:X8} ({chosen}) on {target.Name}. Dismiss and re-summon to see changes.", ChatMessageType.System);
+        }
+
+        [CommandHandler("testpal_item", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Test item palette recolor on last appraised weapon/armor.")]
+        public static void TestPalItem(Session session, params string[] parameters)
+        {
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session);
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "You must appraise (examine/identify) the item first.", ChatMessageType.System);
+                return;
+            }
+
+            var paletteIds = new System.Collections.Generic.List<uint>();
+            foreach (var entry in DatManager.PortalDat.AllFiles)
+            {
+                if ((entry.Key >> 24) == 0x04)
+                    paletteIds.Add(entry.Key);
+            }
+
+            if (paletteIds.Count == 0)
+            {
+                ChatPacket.SendServerMessage(session, "No palettes found in portal.dat.", ChatMessageType.System);
+                return;
+            }
+
+            var chosen = paletteIds[ThreadSafeRandom.Next(0, paletteIds.Count)];
+
+            target.SetProperty(PropertyInt.PaletteTemplate, (int)chosen);
+            target.SetProperty(PropertyInt.VisualOverridePaletteTemplate, (int)chosen);
+            
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"Set item palette to 0x{chosen:X8} ({chosen}) on {target.Name}.", ChatMessageType.System);
+        }
+
+        [CommandHandler("testpal_summoned", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Test subpalette mutation on the currently targeted summoned creature in real-time.")]
+        public static void TestPalSummoned(Session session, params string[] parameters)
+        {
+            var target = session.Player.SelectedTarget;
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "You must select a summoned creature in the world first.", ChatMessageType.System);
+                return;
+            }
+
+            uint? chosenPalette = null;
+            if (parameters.Length > 0 && parameters[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                if (uint.TryParse(parameters[0].Substring(2), System.Globalization.NumberStyles.HexNumber, null, out var hex))
+                    chosenPalette = hex;
+            }
+            else if (parameters.Length > 0 && uint.TryParse(parameters[0], out var val))
+            {
+                chosenPalette = val;
+            }
+
+            if (!chosenPalette.HasValue)
+            {
+                // Query all palettes in portal dat
+                var paletteIds = new System.Collections.Generic.List<uint>();
+                foreach (var entry in DatManager.PortalDat.AllFiles)
+                {
+                    if ((entry.Key >> 24) == 0x04)
+                        paletteIds.Add(entry.Key);
+                }
+                if (paletteIds.Count > 0)
+                    chosenPalette = paletteIds[ThreadSafeRandom.Next(0, paletteIds.Count)];
+            }
+
+            if (!chosenPalette.HasValue)
+            {
+                ChatPacket.SendServerMessage(session, "No palette found.", ChatMessageType.System);
+                return;
+            }
+
+            var palsStr = target.GetProperty(PropertyString.CapturedObjDescPalettes);
+            if (string.IsNullOrEmpty(palsStr))
+            {
+                palsStr = $"{chosenPalette.Value}:0:256";
+            }
+            else
+            {
+                var entries = palsStr.Split(',');
+                var parts = entries[0].Split(':');
+                parts[0] = chosenPalette.Value.ToString();
+                entries[0] = string.Join(":", parts);
+                palsStr = string.Join(",", entries);
+            }
+
+            target.SetProperty(PropertyString.CapturedObjDescPalettes, palsStr);
+
+            // Also update the palette template property just in case
+            target.SetProperty(PropertyInt.PaletteTemplate, (int)chosenPalette.Value);
+            target.SetProperty(PropertyInt.VisualOverridePaletteTemplate, (int)chosenPalette.Value);
+
+            // Force dynamic client-side redraw by cycling object tracking
+            if (target.PhysicsObj?.ObjMaint != null)
+            {
+                foreach (var viewer in target.PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
+                {
+                    viewer.RemoveTrackedObject(target, false);
+                    viewer.AddTrackedObject(target);
+                }
+            }
+
+            ChatPacket.SendServerMessage(session, $"Set summoned {target.Name} primary subpalette to 0x{chosenPalette.Value:X8} ({chosenPalette.Value}).", ChatMessageType.System);
+        }
+
+        [CommandHandler("mutate_pet", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Mutate targeted pet or last appraised pet device with visual override properties.",
+            "[setupId] [paletteId|random] [scale] [shade]\n" +
+            "Example: @mutate_pet 0x02000001 0x0400001D 1.2 0.5\n" +
+            "Omit the palette (or pass 'random') to roll one from the filtered mutation pool.\n" +
+            "With no arguments at all, keeps the target's current setup and just re-rolls its palette.\n" +
+            "If targeting a summoned pet, this updates it in real-time. If appraising a device, this updates the item.")]
+        public static void MutatePet(Session session, params string[] parameters)
+        {
+            // Resolve the target first so a no-argument call can re-roll it in place.
+            var pet = session.Player.SelectedTarget as Pet;
+            var device = pet == null ? CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice : null;
+            if (pet == null && device == null)
+            {
+                ChatPacket.SendServerMessage(session, "Error: You must select a summoned pet in the world or appraise a pet device in your inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            // setupId: explicit, or the target's current one.
+            uint setupId;
+            if (parameters.Length > 0)
+            {
+                if (!TryParseUInt(parameters[0], out setupId))
+                {
+                    ChatPacket.SendServerMessage(session, "Invalid setupId format (use decimal or 0x hex).", ChatMessageType.System);
+                    return;
+                }
+            }
+            else
+            {
+                setupId = pet != null ? pet.SetupTableId : (device.VisualOverrideSetup ?? 0);
+                if (setupId == 0)
+                {
+                    ChatPacket.SendServerMessage(session, "Target has no setup to keep; pass a setupId.", ChatMessageType.System);
+                    return;
+                }
+            }
+
+            // palette: explicit, or rolled from the same filtered pool breeding uses.
+            uint? paletteId = null;
+            var rolled = false;
+            if (parameters.Length > 1 && !parameters[1].Equals("random", StringComparison.OrdinalIgnoreCase))
+            {
+                if (TryParseUInt(parameters[1], out var pal))
+                    paletteId = pal;
+            }
+            if (!paletteId.HasValue)
+            {
+                var pool = ACE.Server.Services.PetMutationService.GetMasterPalettePool();
+                if (pool == null || pool.Count == 0)
+                {
+                    ChatPacket.SendServerMessage(session, "Mutation palette pool is empty; cannot roll a palette.", ChatMessageType.System);
+                    return;
+                }
+                paletteId = pool[ACE.Common.ThreadSafeRandom.Next(0, pool.Count)].PaletteId;
+                rolled = true;
+            }
+
+            float? scale = null;
+            if (parameters.Length > 2 && float.TryParse(parameters[2], out var sc))
+                scale = sc;
+
+            float? shade = null;
+            if (parameters.Length > 3 && float.TryParse(parameters[3], out var sh))
+                shade = sh;
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append("=== @mutate_pet ===\n");
+            sb.Append($"Palette 0x{paletteId.Value:X8}{(rolled ? " (rolled from filtered pool)" : " (explicit)")}\n");
+
+            if (pet != null)
+            {
+                var before = SnapshotPetVisuals(pet);
+
+                // Mutation goes in the TEMPLATE; the BASE stays a palette the model renders with
+                // (native if the DAT has one, else whatever it already carries). Writing the mutation
+                // into the base renders nothing. CapturedObjDescPalettes is cleared because it forces
+                // CalculateObjDesc to early-return before the PaletteTemplate recolour branch.
+                pet.SetupTableId = setupId;
+                var petNativeBase = Creature.GetSetupDefaultPaletteId(setupId);
+                if (petNativeBase != 0)
+                    pet.PaletteBaseId = petNativeBase;
+                pet.PaletteTemplate = (int)paletteId.Value;
+                pet.RemoveProperty(PropertyString.CapturedObjDescPalettes);
+                if (scale.HasValue) pet.ObjScale = scale.Value;
+                if (shade.HasValue) pet.Shade = shade.Value;
+
+                AppendVisualDiff(sb, before, SnapshotPetVisuals(pet));
+
+                // Force a client-side redraw by cycling object tracking.
+                foreach (var viewer in pet.PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
+                {
+                    viewer.RemoveTrackedObject(pet, false);
+                    viewer.AddTrackedObject(pet);
+                }
+                sb.Append("Applied to LIVE pet; client redraw forced.");
+            }
+            else
+            {
+                var before = SnapshotDeviceVisuals(device);
+
+                device.VisualOverrideSetup = setupId;
+                var deviceNativeBase = Creature.GetSetupDefaultPaletteId(setupId);
+                if (deviceNativeBase != 0)
+                    device.VisualOverridePaletteBase = deviceNativeBase;
+                device.VisualOverridePaletteTemplate = (int)paletteId.Value;
+                device.RemoveProperty(PropertyString.CapturedObjDescPalettes);
+                if (scale.HasValue) device.VisualOverrideScale = scale.Value;
+                if (shade.HasValue) device.VisualOverrideShade = shade.Value;
+
+                device.ChangesDetected = true;
+                device.SaveBiotaToDatabase();
+
+                AppendVisualDiff(sb, before, SnapshotDeviceVisuals(device));
+                sb.Append("Applied to DEVICE and saved; re-summon to see changes.");
+            }
+
+            var msg = sb.ToString();
+            ChatPacket.SendServerMessage(session, msg, ChatMessageType.System);
+            log.Info($"[MutatePet] {session.Player.Name}:\n{msg}");
+        }
+
+        private static bool TryParseUInt(string s, out uint value)
+        {
+            if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                return uint.TryParse(s.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out value);
+            return uint.TryParse(s, out value);
+        }
+
+        private static (string key, string val)[] SnapshotPetVisuals(Pet pet) => new (string key, string val)[]
+        {
+            ("Setup",            $"0x{pet.SetupTableId:X8}"),
+            ("PaletteBase",      $"0x{pet.PaletteBaseId ?? 0:X8}"),
+            ("PaletteTemplate",  pet.PaletteTemplate.HasValue ? $"0x{pet.PaletteTemplate.Value:X8}" : "null"),
+            ("Shade",            pet.Shade?.ToString("F2") ?? "null"),
+            ("Scale",            pet.ObjScale?.ToString("F3") ?? "null"),
+            ("CapturedPalettes", pet.GetProperty(PropertyString.CapturedObjDescPalettes) ?? "(none)"),
+        };
+
+        private static (string key, string val)[] SnapshotDeviceVisuals(PetDevice d) => new (string key, string val)[]
+        {
+            ("VisualOverrideSetup",           $"0x{d.VisualOverrideSetup ?? 0:X8}"),
+            ("VisualOverridePaletteBase",     $"0x{d.VisualOverridePaletteBase ?? 0:X8}"),
+            ("VisualOverridePaletteTemplate", d.VisualOverridePaletteTemplate.HasValue ? $"0x{d.VisualOverridePaletteTemplate.Value:X8}" : "null"),
+            ("VisualOverrideShade",           d.VisualOverrideShade?.ToString("F2") ?? "null"),
+            ("VisualOverrideScale",           d.VisualOverrideScale?.ToString("F3") ?? "null"),
+            ("CapturedPalettes",              d.GetProperty(PropertyString.CapturedObjDescPalettes) ?? "(none)"),
+        };
+
+        /// <summary>Appends one line per field; changed fields are marked with * and show before -> after.</summary>
+        private static void AppendVisualDiff(System.Text.StringBuilder sb, (string key, string val)[] before, (string key, string val)[] after)
+        {
+            for (int i = 0; i < before.Length; i++)
+            {
+                var changed = before[i].val != after[i].val;
+                sb.Append(changed
+                    ? $"* {before[i].key}: {before[i].val} -> {after[i].val}\n"
+                    : $"  {before[i].key}: {before[i].val}\n");
+            }
+        }
+
+        [CommandHandler("pet-reset-cooldown", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Resets breeding cooldowns and restores male breeding charges on targeted/appraised pet device.", "@pet-reset-cooldown")]
+        public static void HandlePetResetCooldown(Session session, params string[] args)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (target == null && player.CurrentActivePet is CombatPet pet)
+                target = pet.TryGetSummoningDevice() as PetDevice;
+
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "Target a summoned pet or appraise a pet device in inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            var maxMaleCharges = (int)ServerConfig.pet_breeding_male_max_charges.Value;
+
+            target.RemoveProperty(PropertyFloat.PetNextBreedingTime);
+            target.SetProperty(PropertyInt.PetMaleBreedingCharges, maxMaleCharges);
+            target.SetProperty(PropertyFloat.PetMaleChargesRefreshTime, Time.GetUnixTime());
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"[Admin] Cooldown reset & {maxMaleCharges} breeding charges restored on {target.Name}.", ChatMessageType.System);
+        }
+
+        [CommandHandler("pet-make-alpha", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Toggles the sex override on targeted/appraised pet device.", "@pet-make-alpha")]
+        public static void HandlePetMakeAlpha(Session session, params string[] args)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (target == null && player.CurrentActivePet is CombatPet pet)
+                target = pet.TryGetSummoningDevice() as PetDevice;
+
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "Target a summoned pet or appraise a pet device in inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            var maxMaleCharges = (int)ServerConfig.pet_breeding_male_max_charges.Value;
+
+            // Toggle relative to the effective sex so an unset (GUID-derived) device flips to the
+            // opposite of what it currently reads as, rather than always jumping to male.
+            var becomesMale = !target.IsMale;
+            target.SetProperty(PropertyBool.PetIsMaleOverride, becomesMale);
+            target.SetProperty(PropertyInt.PetMaleBreedingCharges, maxMaleCharges);
+            target.SetProperty(PropertyFloat.PetMaleChargesRefreshTime, Time.GetUnixTime());
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"[Admin] {target.Name} sex override set to {(becomesMale ? "Male" : "Female")} ({maxMaleCharges} charges restored).", ChatMessageType.System);
+        }
+
+        [CommandHandler("pet-cleanse-palette", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Strips visual override palette on targeted/appraised pet device.", "@pet-cleanse-palette")]
+        public static void HandlePetCleansePalette(Session session, params string[] args)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (target == null && player.CurrentActivePet is CombatPet pet)
+                target = pet.TryGetSummoningDevice() as PetDevice;
+
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "Target a summoned pet or appraise a pet device in inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            target.VisualOverridePaletteTemplate = 0;
+            target.VisualOverrideShade = 0.0;
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"[Admin] Palette override cleansed on {target.Name}. Re-summon pet to view natural base appearance.", ChatMessageType.System);
+        }
+
+        [CommandHandler("pet-set-mutations", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Sets mutation count on targeted/appraised pet device.", "@pet-set-mutations <count>")]
+        public static void HandlePetSetMutations(Session session, params string[] args)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            if (args.Length < 1 || !int.TryParse(args[0], out int count))
+            {
+                ChatPacket.SendServerMessage(session, "Usage: @pet-set-mutations <count>", ChatMessageType.System);
+                return;
+            }
+
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (target == null && player.CurrentActivePet is CombatPet pet)
+                target = pet.TryGetSummoningDevice() as PetDevice;
+
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "Target a summoned pet or appraise a pet device in inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            target.SetProperty(PropertyInt.PetMutationCount, Math.Max(0, count));
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            ChatPacket.SendServerMessage(session, $"[Admin] Mutation count on {target.Name} set to {count}.", ChatMessageType.System);
+        }
+
+        [CommandHandler("pet-set-maturity", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Sets a pet device's maturity: 'juvenile' (reset to a newborn), 'adult', or a kill count.", "@pet-set-maturity <juvenile|adult|kills>")]
+        public static void HandlePetSetMaturity(Session session, params string[] args)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            CombatPet summoned = player.CurrentActivePet as CombatPet;
+            if (target == null && summoned != null)
+                target = summoned.TryGetSummoningDevice();
+
+            if (target == null)
+            {
+                ChatPacket.SendServerMessage(session, "Target a summoned pet or appraise a pet device in inventory first.", ChatMessageType.System);
+                return;
+            }
+
+            var arg = args.Length > 0 ? args[0].ToLowerInvariant() : "";
+            if (arg == "juvenile" || arg == "baby")
+            {
+                target.SetProperty(PropertyBool.PetIsJuvenile, true);
+                target.SetProperty(PropertyInt.PetMaturityKills, 0);
+            }
+            else if (arg == "adult")
+            {
+                target.RemoveProperty(PropertyBool.PetIsJuvenile);
+                target.SetProperty(PropertyInt.PetMaturityKills, Math.Max(target.MaturityKills, PetDevice.MaturityKillsRequired));
+            }
+            else if (int.TryParse(arg, out var kills) && kills >= 0)
+            {
+                target.SetProperty(PropertyInt.PetMaturityKills, kills);
+                if (kills >= PetDevice.MaturityKillsRequired)
+                    target.RemoveProperty(PropertyBool.PetIsJuvenile);
+                else
+                    target.SetProperty(PropertyBool.PetIsJuvenile, true);
+            }
+            else
+            {
+                ChatPacket.SendServerMessage(session, "Usage: @pet-set-maturity <juvenile|adult|kills>", ChatMessageType.System);
+                return;
+            }
+
+            target.ChangesDetected = true;
+            target.SaveBiotaToDatabase();
+
+            // If that device's pet is out, grow or shrink it in place.
+            if (summoned != null && summoned.TryGetSummoningDevice() == target)
+                summoned.ApplyMaturity(target, grew: true);
+
+            var state = target.IsJuvenile ? $"{target.MaturityStageName}, stage {target.MaturityStage}/{PetDevice.MaturityStages}" : "adult";
+            ChatPacket.SendServerMessage(session, $"[Admin] {target.Name}: {target.MaturityKills}/{PetDevice.MaturityKillsRequired} kills, {state}. Scale x{target.MaturityScaleMult:0.00}, strength x{target.MaturityStrengthMult:0.00}.", ChatMessageType.System);
+        }
+
+        [CommandHandler("pet-breed-test", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Forces an immediate breeding test with partner player.", "@pet-breed-test")]
+        [CommandHandler("breed", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Forces an immediate breeding test with partner player.", "@breed")]
+        public static void HandlePetBreedTest(Session session, params string[] args)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            PetDevice.CheckMultiplayerBreeding(player, "Admin @breed", forced: true);
+        }
+
+        [CommandHandler("setsex", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Overrides the breeding sex of the last appraised pet device.", "@setsex [male/female/derive]")]
+        [CommandHandler("setalpha", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Overrides the breeding sex of the last appraised pet device.", "@setalpha [male/female/derive]")]
+        [CommandHandler("makealpha", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Overrides the breeding sex of the last appraised pet device.", "@makealpha [male/female/derive]")]
+        public static void HandleSetAlpha(Session session, params string[] parameters)
+        {
+            var obj = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (obj == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Please select and appraise (F7) a pet device in your inventory first.");
+                return;
+            }
+
+            var maxCharges = (int)ServerConfig.pet_breeding_male_max_charges.Value;
+            var arg = (parameters != null && parameters.Length > 0) ? parameters[0].Trim().ToLowerInvariant() : "male";
+
+            // Clearing the override hands the device back to its GUID-derived sex.
+            if (arg == "derive" || arg == "clear" || arg == "none")
+            {
+                obj.RemoveProperty(PropertyBool.PetIsMaleOverride);
+                obj.ChangesDetected = true;
+                obj.SaveBiotaToDatabase();
+                CommandHandlerHelper.WriteOutputInfo(session, $"{obj.Name} sex override cleared; it now derives from its GUID: [{obj.SexName}].");
+                return;
+            }
+
+            bool isMale;
+            if (arg == "male" || arg == "m") isMale = true;
+            else if (arg == "female" || arg == "f") isMale = false;
+            else if (!bool.TryParse(arg, out isMale))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: @setsex [male/female/derive]");
+                return;
+            }
+
+            obj.SetProperty(PropertyBool.PetIsMaleOverride, isMale);
+            if (isMale)
+            {
+                obj.SetProperty(PropertyInt.PetMaleBreedingCharges, maxCharges);
+                obj.SetProperty(PropertyFloat.PetMaleChargesRefreshTime, Time.GetUnixTime());
+            }
+
+            obj.ChangesDetected = true;
+            obj.SaveBiotaToDatabase();
+            CommandHandlerHelper.WriteOutputInfo(session, $"{obj.Name} is now [{(isMale ? $"Male] - Stud ({maxCharges}/{maxCharges} Charges)" : "Female] - Dam")}.");
+        }
+
+        [CommandHandler("petdesc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Dumps the ObjDesc actually sent to the client for your summoned pet, and which CalculateObjDesc path produced it.",
+            "@petdesc")]
+        [CommandHandler("pet-desc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+            "Dumps the ObjDesc actually sent to the client for your summoned pet.", "@pet-desc")]
+        public static void HandlePetDesc(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            if (player.CurrentActivePet is not Creature pet)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "No active pet summoned.");
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append("=== PET OBJDESC DUMP ===\n");
+            sb.Append($"Pet: {pet.Name} (WCID {pet.WeenieClassId}, guid 0x{pet.Guid.Full:X8})\n");
+            sb.Append($"Setup=0x{pet.SetupTableId:X8} ClothingBase=0x{pet.ClothingBase ?? 0:X8}\n");
+            sb.Append($"PaletteBaseId=0x{pet.PaletteBaseId ?? 0:X8} PaletteTemplate={pet.PaletteTemplate?.ToString() ?? "null"} Shade={pet.Shade?.ToString("F2") ?? "null"}\n");
+
+            // Which branch of Creature.CalculateObjDesc will run
+            var animParts = pet.Biota.PropertiesAnimPart.GetCount(pet.BiotaDatabaseLock);
+            var palettes = pet.Biota.PropertiesPalette.GetCount(pet.BiotaDatabaseLock);
+            var texMaps = pet.Biota.PropertiesTextureMap.GetCount(pet.BiotaDatabaseLock);
+            var equipped = pet.EquippedObjects.Values.Count(x => x.ItemType == ItemType.Armor || x.ItemType == ItemType.Clothing);
+
+            sb.Append($"Biota rows: AnimPart={animParts} Palette={palettes} TextureMap={texMaps} | equipped clothing/armor={equipped}\n");
+
+            var earlyReturn = equipped == 0 && (animParts > 0 || palettes > 0 || texMaps > 0);
+            if (earlyReturn)
+                sb.Append("PATH: BIOTA EARLY-RETURN -- the PaletteTemplate recolour branch is SKIPPED.\n");
+            else if (equipped == 0)
+                sb.Append("PATH: ClothingBase branch -- PaletteTemplate recolour WILL be applied.\n");
+            else
+                sb.Append("PATH: equipped-items branch.\n");
+
+            var objDesc = pet.CalculateObjDesc();
+            sb.Append($"--- Resulting ObjDesc ---\n");
+            sb.Append($"PaletteID=0x{objDesc.PaletteID:X8}  SubPalettes={objDesc.SubPalettes.Count}  Textures={objDesc.TextureChanges.Count}  AnimParts={objDesc.AnimPartChanges.Count}\n");
+
+            foreach (var sp in objDesc.SubPalettes)
+            {
+                // Offset and Length go on the wire as single bytes; anything over 255 wraps.
+                var wireLen = (byte)sp.Length;
+                var warn = sp.Length > 255 ? $"  <-- WARNING length {sp.Length} truncates to {wireLen}" : "";
+                sb.Append($"  SubPal 0x{sp.SubPaletteId:X8} offset={sp.Offset} length={sp.Length} (wire {(byte)sp.Offset}/{wireLen}){warn}\n");
+            }
+
+            if (objDesc.SubPalettes.Count == 0)
+                sb.Append("  (none -- PaletteID is not even written to the client unless SubPalettes.Count > 0)\n");
+
+            var device = pet is CombatPet cp
+                ? (cp.TryGetSummoningDevice() ?? player.FindObject(cp.SummoningDeviceGuid.Full, Player.SearchLocations.Everywhere) as PetDevice)
+                : null;
+
+            if (device != null)
+            {
+                sb.Append("--- Source Device ---\n");
+                sb.Append($"{device.Name} (guid 0x{device.Guid.Full:X8})\n");
+                sb.Append($"VisualOverrideSetup=0x{device.VisualOverrideSetup ?? 0:X8} VisualOverrideClothingBase=0x{device.VisualOverrideClothingBase ?? 0:X8}\n");
+                sb.Append($"VisualOverridePaletteBase=0x{device.VisualOverridePaletteBase ?? 0:X8} VisualOverridePaletteTemplate={device.VisualOverridePaletteTemplate?.ToString() ?? "null"} VisualOverrideShade={device.VisualOverrideShade?.ToString("F2") ?? "null"}\n");
+                sb.Append($"HasCapturedObjDesc={device.HasCapturedObjDesc}\n");
+                sb.Append($"  CapturedObjDescPalettes={device.GetProperty(PropertyString.CapturedObjDescPalettes) ?? "(none)"}\n");
+                sb.Append($"  CapturedObjDescAnimParts={device.GetProperty(PropertyString.CapturedObjDescAnimParts) ?? "(none)"}\n");
+                sb.Append($"  CapturedObjDescTextures={device.GetProperty(PropertyString.CapturedObjDescTextures) ?? "(none)"}\n");
+            }
+            else
+            {
+                sb.Append("--- Source Device: NOT FOUND ---\n");
+            }
+
+            sb.Append("========================");
+            player.SendMessage(sb.ToString().Replace("\r\n", "\n"));
+            log.Info($"[PetDesc] {player.Name}:\n{sb}");
+        }
+
+        [CommandHandler("pet-debug", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows live breeding diagnostics for current location, pets, and nearby players.", "@pet-debug")]
+        public static void HandlePetDebug(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            PetDevice.RunBreedingDiagnostics(player);
+        }
+
     }
 }
+
+

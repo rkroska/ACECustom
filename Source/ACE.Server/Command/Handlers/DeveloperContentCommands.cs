@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Globalization;
@@ -2938,7 +2938,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 if (uint.TryParse(identifier, out var importWcid))
                     DatabaseManager.World.ClearCachedWeenie(importWcid);
 
-                CommandHandlerHelper.WriteOutputInfo(session, $"Applying SQL for {identifier} ({sql.Length:N0} chars)…");
+                CommandHandlerHelper.WriteOutputInfo(session, $"Applying SQL for {identifier} ({sql.Length:N0} chars)...");
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 ExecuteWorldSqlRaw(sql);
                 sw.Stop();
