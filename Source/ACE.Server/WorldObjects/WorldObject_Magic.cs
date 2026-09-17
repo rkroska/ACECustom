@@ -1459,15 +1459,29 @@ namespace ACE.Server.WorldObjects
                         return;
                     }
 
+                    // Room Assign portal (2026-09-16): refuse the recall before its 2 s delay when every room is taken.
+                    if (!ACE.Server.Managers.RoomAssignManager.CheckPortalHasRoom(targetPlayer, portal.WeenieClassId, portal.Destination))
+                        return;
+
                     ActionChain portalRecall = new ActionChain();
                     portalRecall.AddAction(targetPlayer, ActionType.PlayerLocation_DoPreTeleportHide, () => targetPlayer.DoPreTeleportHide());
                     portalRecall.AddDelaySeconds(2.0f);  // 2 second delay
                     portalRecall.AddAction(targetPlayer, ActionType.WorldObjectMagic_AdjustDungeonAndTeleportPlayer, () =>
                     {
                         var teleportDest = new Position(portal.Destination);
+
+                        // Room Assign portal (2026-09-16): Portal Recall and Primary/Secondary Portal Recall land straight
+                        // in the first free room too. The room is picked here, after the 2 s delay, not at the check.
+                        var roomDest = ACE.Server.Managers.RoomAssignManager.AssignPortalRoom(targetPlayer, portal.WeenieClassId, teleportDest, out var roomNumber);
+                        if (roomDest != null)
+                            teleportDest = roomDest;
+
                         AdjustDungeon(teleportDest);
 
                         targetPlayer.Teleport(teleportDest);
+
+                        if (roomNumber > 0)
+                            targetPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"You are sent to chamber {roomNumber}.", ChatMessageType.Broadcast));
                     });
                     portalRecall.EnqueueChain();
                 }

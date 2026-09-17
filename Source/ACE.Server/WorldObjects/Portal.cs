@@ -277,6 +277,9 @@ namespace ACE.Server.WorldObjects
                 return new ActivationResult(false);
             }
 
+            // Room Assign: the every-room-taken refusal is NOT here - Portal Tie and Summon also call this, and a full
+            // dungeon must not stop a player tying to or summoning the portal. It sits in ActOnUse and the recall.
+
             return new ActivationResult(true);
         }
 
@@ -348,6 +351,11 @@ namespace ACE.Server.WorldObjects
             var player = activator as Player;
             if (player == null) return;
 
+            // Room Assign portal (2026-09-16): refuse when every room is taken, before a use is spent. A summoned
+            // gateway resolves to its original portal.
+            if (!ACE.Server.Managers.RoomAssignManager.CheckPortalHasRoom(player, OriginalPortal ?? WeenieClassId, Destination))
+                return;
+
             lock (this)
             {
                 var useCount = PortalUseCount;
@@ -364,6 +372,13 @@ namespace ACE.Server.WorldObjects
             }
 
             var portalDest = new Position(Destination);
+
+            // Room Assign portal (2026-09-16): straight into the first free room, reserved. A summoned gateway resolves
+            // to its original portal.
+            var roomDest = ACE.Server.Managers.RoomAssignManager.AssignPortalRoom(player, OriginalPortal ?? WeenieClassId, portalDest, out var roomNumber);
+            if (roomDest != null)
+                portalDest = roomDest;
+
             AdjustDungeon(portalDest);
 
             // Do NOT pre-set player.Location.Variation to the destination here. Teleport() decides
@@ -384,6 +399,9 @@ namespace ACE.Server.WorldObjects
                 EmoteManager.OnPortal(player);
 
                 player.SendWeenieError(WeenieError.ITeleported);
+
+                if (roomNumber > 0)
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You are sent to chamber {roomNumber}.", ChatMessageType.Broadcast));
 
             }), true);
         }

@@ -1,4 +1,4 @@
-namespace ACE.Entity.Enum.Properties
+﻿namespace ACE.Entity.Enum.Properties
 {
     // No properties are sent to the client unless they featured an attribute.
     // SendOnLogin gets sent to players in the PlayerDescription event
@@ -127,5 +127,11 @@ namespace ACE.Entity.Enum.Properties
         // (AppraiseInfo.ModifierSectionHeader), so "lines" was internal vocabulary. The ID is what
         // persists - 50100 is unchanged, so the 19 already-stamped items are untouched.
         ZcModifiers = 50100,
+
+        /// <summary>Room Assign (RoomAssignManager): every one-player room, on one line -
+        /// "room|0xCELL [x y z] qw qx qy qz|0xCELL,0xCELL;room|...". On a Portal or PressurePlate WEENIE it makes that
+        /// weenie a room source. Server-only - not an assessment property, so it is never sent to a player.
+        /// Owner range 50000+ (moved off 9018 - upstream took that id for PetCustomName).</summary>
+        RoomAssignRooms = 50500,
     }
 }

@@ -166,6 +166,10 @@ namespace ACE.Server.Managers
 
             Rifts.RiftManager.HandleLoginInRiftInstance(playerBiota);
 
+            // Room Assign (2026-09-16): logging in to a one-player room someone else now has moves you to a free room, or to
+            // the room plate when all are taken - before the client ever loads the room.
+            var roomAssignLoginMessage = RoomAssignManager.HandleLogin(playerBiota, session.AccessLevel);
+
             var stripAdminProperties = false;
             var addAdminProperties = false;
             var addSentinelProperties = false;
@@ -345,6 +349,8 @@ namespace ACE.Server.Managers
 
             if (olthoiPlayerReturnedToLifestone)
                 session.Network.EnqueueSend(new GameMessageSystemChat("You have returned to the Olthoi Queen to serve the hive.", ChatMessageType.Broadcast));
+            else if (roomAssignLoginMessage != null)
+                session.Network.EnqueueSend(new GameMessageSystemChat(roomAssignLoginMessage, ChatMessageType.Broadcast));
             else if (playerLoggedInOnNoLogLandblock) // see http://acpedia.org/wiki/Mount_Elyrii_Hive
                 session.Network.EnqueueSend(new GameMessageSystemChat("The currents of portal space cannot return you from whence you came. Your previous location forbids login.", ChatMessageType.Broadcast));            
         }

@@ -2107,6 +2107,26 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Per-weenie cooldown in seconds between activations of a PressurePlate. The gate is per OBJECT,
+        /// not per player, so a shared plate catches only the first person through in each window.
+        /// Unset falls back to PressurePlate.DefaultPressurePlateCooldown (2 s, retail behaviour);
+        /// an explicit 0 disables the gate entirely. Note that 0 only has the intended effect if every
+        /// action in the plate's Activation emote set is also at delay 0 - see PressurePlate.OnActivate.
+        /// </summary>
+        public double? PressurePlateCooldown
+        {
+            get => GetProperty(PropertyFloat.PressurePlateCooldown);
+            set
+            {
+                // Deliberately keeps 0: unlike most of these, zero is a meaningful value here.
+                if (!value.HasValue || value.Value < 0 || double.IsNaN(value.Value) || double.IsInfinity(value.Value))
+                    RemoveProperty(PropertyFloat.PressurePlateCooldown);
+                else
+                    SetProperty(PropertyFloat.PressurePlateCooldown, value.Value);
+            }
+        }
+
+        /// <summary>
         /// Optional suppression radius for this source. For creatures, unset or non-positive falls back to VisualAwarenessRange.
         /// </summary>
         public double? SpellSuppressionRadius
