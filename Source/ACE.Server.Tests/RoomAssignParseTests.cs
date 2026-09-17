@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace ACE.Server.Tests
 {
     /// <summary>
-    /// The Room Assign room list (PropertyString 9018) - RoomAssignManager.TryParseRooms. The list is authored by hand and
+    /// The Room Assign room list (PropertyString 50500) - RoomAssignManager.TryParseRooms. The list is authored by hand and
     /// shipped to live as SQL, so every mistake must be refused with the room it is in, never half-accepted.
     /// </summary>
     [TestClass]
@@ -83,6 +83,46 @@ namespace ACE.Server.Tests
         {
             Assert.IsTrue(RoomAssignManager.TryParseRooms(Room1, out var rooms, out _));
             Assert.AreNotEqual(rooms[0].Key(2), rooms[0].Key(null), "base and v2 share every cell id - only the variation separates them");
+            Assert.AreEqual(rooms[0].Key(0), rooms[0].Key(null), "variation 0 is base");
+        }
+
+        [TestMethod]
+        public void RoomKey_IsTheLowestCell_SoMovingTheLandingKeepsIt()
+        {
+            Assert.IsTrue(RoomAssignManager.TryParseRooms("1|0x01F701D4 [1 1 1] 1 0 0 0|0x01F701D4,0x01F701D3", out var a, out _));
+            Assert.IsTrue(RoomAssignManager.TryParseRooms("1|0x01F701D3 [2 2 2] 1 0 0 0|0x01F701D3,0x01F701D4", out var b, out _));
+            Assert.AreEqual(a[0].Key(2), b[0].Key(2));
+        }
+
+        [TestMethod]
+        public void NotANumber_OrZeroRotation_IsRefused()
+        {
+            Assert.IsFalse(RoomAssignManager.TryParseRooms("1|0x01F701D3 [NaN 1 1] 1 0 0 0|0x01F701D3", out _, out var e1), "NaN");
+            StringAssert.Contains(e1, "room 1");
+            Assert.IsFalse(RoomAssignManager.TryParseRooms("1|0x01F701D3 [1 Infinity 1] 1 0 0 0|0x01F701D3", out _, out _), "Infinity");
+            Assert.IsFalse(RoomAssignManager.TryParseRooms("1|0x01F701D3 [1 1 1] 0 0 0 0|0x01F701D3", out _, out var e2), "zero rotation");
+            StringAssert.Contains(e2, "rotation");
+        }
+
+        [TestMethod]
+        public void CellsOnAnotherLandblock_AreRefused()
+        {
+            Assert.IsFalse(RoomAssignManager.TryParseRooms(Room1 + ";2|0x01F801C4 [1 1 1] 1 0 0 0|0x01F801C4", out _, out var error));
+            StringAssert.Contains(error, "0x01F801C4");
+        }
+
+        [TestMethod]
+        public void RotationNotUnitLength_IsNormalized()
+        {
+            Assert.IsTrue(RoomAssignManager.TryParseRooms("1|0x01F701D3 [1 1 1] 2 0 0 0|0x01F701D3", out var rooms, out var error), error);
+            Assert.AreEqual(1f, rooms[0].QW, 0.00001f);
+        }
+
+        [TestMethod]
+        public void ExtraSpacesInTheLanding_AreFine()
+        {
+            Assert.IsTrue(RoomAssignManager.TryParseRooms("1|0x01F701D3  [ 1  1 1 ]  1 0  0 0|0x01F701D3", out var rooms, out var error), error);
+            Assert.AreEqual(1f, rooms[0].X);
         }
     }
 }

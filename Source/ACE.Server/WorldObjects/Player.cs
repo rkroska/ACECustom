@@ -743,7 +743,7 @@ namespace ACE.Server.WorldObjects
         private void FinalizeLogout()
         {
             // Before leaving the landblock, while Location is still where the character is saved: a player logging out
-            // inside a Room Assign room keeps it for 15 minutes (2026-09-16).
+            // inside a Room Assign room keeps it for the logout hold (server setting room_assign_logout_hold_minutes).
             RoomAssignManager.OnLogout(this);
 
             CurrentLandblock?.RemoveWorldObject(Guid, false);

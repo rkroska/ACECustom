@@ -166,9 +166,9 @@ namespace ACE.Server.Managers
 
             Rifts.RiftManager.HandleLoginInRiftInstance(playerBiota);
 
-            // Room Assign (2026-09-16): logging in to a one-player room someone else now has moves you to a free room, or to
-            // the room plate when all are taken - before the client ever loads the room.
-            var roomAssignLoginMessage = RoomAssignManager.HandleLogin(playerBiota, session.AccessLevel);
+            // Room Assign (2026-09-16): logging in inside a one-player room keeps it only with a claim on it; otherwise the
+            // character goes to a free room or its lifestone - before the client ever loads the room.
+            var roomAssignLoginMessage = RoomAssignManager.HandleLogin(playerBiota, session.AccessLevel, session.AccountId);
 
             var stripAdminProperties = false;
             var addAdminProperties = false;

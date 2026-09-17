@@ -1450,18 +1450,22 @@ namespace ACE.Server.WorldObjects
                         return;
                     }
 
+                    // Room Assign portal (2026-09-16): refuse the recall before its 2 s delay when every room is taken, and
+                    // RESERVE the room now (pending), so no one can take the last room during the delay. Before the use
+                    // requirements, which stamp the portal's quest - a full dungeon must not spend it.
+                    if (!RoomAssignManager.CheckPortalHasRoom(targetPlayer, portal.WeenieClassId, portal.Destination, throttle: false, reserve: true))
+                        return;
+
                     var result = portal.CheckUseRequirements(targetPlayer);
                     if (!result.Success)
                     {
+                        RoomAssignManager.CancelPendingReservation(targetPlayer);
+
                         if (result.Message != null)
                             targetPlayer.Session.Network.EnqueueSend(result.Message);
 
                         return;
                     }
-
-                    // Room Assign portal (2026-09-16): refuse the recall before its 2 s delay when every room is taken.
-                    if (!ACE.Server.Managers.RoomAssignManager.CheckPortalHasRoom(targetPlayer, portal.WeenieClassId, portal.Destination))
-                        return;
 
                     ActionChain portalRecall = new ActionChain();
                     portalRecall.AddAction(targetPlayer, ActionType.PlayerLocation_DoPreTeleportHide, () => targetPlayer.DoPreTeleportHide());
@@ -1471,17 +1475,25 @@ namespace ACE.Server.WorldObjects
                         var teleportDest = new Position(portal.Destination);
 
                         // Room Assign portal (2026-09-16): Portal Recall and Primary/Secondary Portal Recall land straight
-                        // in the first free room too. The room is picked here, after the 2 s delay, not at the check.
-                        var roomDest = ACE.Server.Managers.RoomAssignManager.AssignPortalRoom(targetPlayer, portal.WeenieClassId, teleportDest, out var roomNumber);
-                        if (roomDest != null)
-                            teleportDest = roomDest;
+                        // in a room too - the one reserved at cast, confirmed here - or are REFUSED: no teleport, the player
+                        // stays where they cast it.
+                        var assign = RoomAssignManager.AssignPortalRoom(targetPlayer, portal.WeenieClassId, teleportDest, out var roomDest, out var roomNumber);
+                        if (assign == RoomAssignManager.PortalAssign.Refused)
+                        {
+                            // The pre-teleport hide already played: show them again where they stand.
+                            targetPlayer.PlayParticleEffect(PlayScript.UnHide, targetPlayer.Guid);
+                            return;
+                        }
 
-                        AdjustDungeon(teleportDest);
+                        if (assign == RoomAssignManager.PortalAssign.Assigned)
+                            teleportDest = roomDest;   // already corrected by AdjustDungeon
+                        else
+                            AdjustDungeon(teleportDest);
 
                         targetPlayer.Teleport(teleportDest);
 
                         if (roomNumber > 0)
-                            targetPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"You are sent to chamber {roomNumber}.", ChatMessageType.Broadcast));
+                            targetPlayer.Session?.Network.EnqueueSend(new GameMessageSystemChat(RoomAssignManager.MessageSentToRoom(roomNumber), ChatMessageType.Broadcast));
                     });
                     portalRecall.EnqueueChain();
                 }

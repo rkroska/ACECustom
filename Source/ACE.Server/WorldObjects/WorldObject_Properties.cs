@@ -2118,11 +2118,12 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyFloat.PressurePlateCooldown);
             set
             {
-                // Deliberately keeps 0: unlike most of these, zero is a meaningful value here.
-                if (!value.HasValue || value.Value < 0 || double.IsNaN(value.Value) || double.IsInfinity(value.Value))
+                // Deliberately keeps 0: unlike most of these, zero is a meaningful value here. A negative is
+                // stored as 0, not removed - removing it would silently restore the 2 s retail gate.
+                if (!value.HasValue || double.IsNaN(value.Value) || double.IsInfinity(value.Value))
                     RemoveProperty(PropertyFloat.PressurePlateCooldown);
                 else
-                    SetProperty(PropertyFloat.PressurePlateCooldown, value.Value);
+                    SetProperty(PropertyFloat.PressurePlateCooldown, Math.Max(0, value.Value));
             }
         }
 

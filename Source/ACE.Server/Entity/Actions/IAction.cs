@@ -181,7 +181,6 @@ namespace ACE.Server.Entity.Actions
         RecipeManager_FinishRecipe,
         RecipeManager_HandleRecipe,
         RecipeManager_ShowDialogue,
-        RoomAssign_AfterTeleport,
         Scroll_Read,
         SpellProjectile_Destroy,
         SpellProjectile_RingVisualLifetimeCap,

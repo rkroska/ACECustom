@@ -115,10 +115,8 @@
         CapturedCombatTable              = 9039,
         VisualOverrideCombatTable        = 9040,
 
-        /// <summary>Room Assign portal (2026-09-16, plan C:\AI\ZoneControl\RoomAssign_Plan_2026-09-16.md): the WCID of the
-        /// room plate whose rooms this portal hands out. On a Portal's WEENIE it sends every way in - using the portal, a
-        /// summoned gateway of it, Portal Recall, Primary/Secondary Portal Recall - straight into the first free room, and
-        /// refuses when all are taken. The room list stays on the plate (logout holds and login moves find it there).</summary>
+        /// <summary>Room Assign, plate mode (RoomAssignManager): on a Portal WEENIE, the WCID of the room plate whose rooms it
+        /// hands out. Optional - a portal that carries PropertyString.RoomAssignRooms itself ignores it.</summary>
         RoomAssignPlate                  = 50501
 
         //[ServerOnly]

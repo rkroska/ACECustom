@@ -32,6 +32,11 @@ namespace ACE.Server.WorldObjects
             if (player != null && player.HandleFogBeforeTeleport(_newPosition))
                 return;
 
+            // Room Assign (2026-09-16): a player teleporting OUT of a room keeps it for the leave hold. Here - after the fog
+            // deferral, so only the real teleport counts, and before UpdatePosition moves Location to the destination.
+            if (player != null)
+                RoomAssignManager.OnPlayerTeleportStart(player, newPosition);
+
             // After fog deferral path returns false: cleanup runs with the real teleport (not ~1s early on a no-op).
             player?.CleanupPrestigeEffects();
             player?.CleanupZoneBoundaryEffects();

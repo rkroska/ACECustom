@@ -65,6 +65,10 @@ namespace ACE.Server.WorldObjects
                 UpdatePortalDestination(relativeDestination);
             }
 
+            // Room Assign: a room portal's rooms exist in its destination's variation from the moment it is placed.
+            if (Destination != null)
+                RoomAssignManager.OnSourceEnteredWorld(OriginalPortal ?? WeenieClassId, Destination.Variation);
+
             return true;
         }
 
@@ -88,7 +92,12 @@ namespace ACE.Server.WorldObjects
         public override void SetLinkProperties(WorldObject wo)
         {
             if (wo.IsLinkSpot)
+            {
                 SetPosition(PositionType.Destination, new Position(wo.Location));
+
+                // Room Assign: a link-spot room portal's rooms exist in the link's variation.
+                RoomAssignManager.OnSourceEnteredWorld(OriginalPortal ?? WeenieClassId, wo.Location?.Variation);
+            }
         }
 
         public bool IsGateway { get => WeenieClassId == 1955; }
@@ -266,6 +275,16 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            // Room Assign portal (2026-09-16): refuse when every room is taken - before the quest stamp here, and before
+            // OnActivate's cooldown and emotes, which run after this check. The room is RESERVED here (pending), so it cannot
+            // be taken between this check and ActOnUse after the stamp and cooldown are spent. Only for a PLACED portal (use,
+            // walk-in, summoned gateway): Portal Tie, Summon and recall call this on an unplaced copy with no landblock, and a
+            // full dungeon must not stop a tie or summon. Recall does its own check before its delay.
+            // A portal with no uses left says so below instead ("The portal's energy has faded").
+            if (CurrentLandblock != null && !(PortalUseCount.HasValue && PortalUseCount.Value <= 0)
+                && !RoomAssignManager.CheckPortalHasRoom(player, OriginalPortal ?? WeenieClassId, Destination, throttle: true, reserve: true))
+                return new ActivationResult(false);
+
             if (Quest != null)
             {
                 EmoteManager.OnQuest(player);
@@ -276,9 +295,6 @@ namespace ACE.Server.WorldObjects
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat("The portal's energy has faded.", ChatMessageType.System));
                 return new ActivationResult(false);
             }
-
-            // Room Assign: the every-room-taken refusal is NOT here - Portal Tie and Summon also call this, and a full
-            // dungeon must not stop a player tying to or summoning the portal. It sits in ActOnUse and the recall.
 
             return new ActivationResult(true);
         }
@@ -351,10 +367,7 @@ namespace ACE.Server.WorldObjects
             var player = activator as Player;
             if (player == null) return;
 
-            // Room Assign portal (2026-09-16): refuse when every room is taken, before a use is spent. A summoned
-            // gateway resolves to its original portal.
-            if (!ACE.Server.Managers.RoomAssignManager.CheckPortalHasRoom(player, OriginalPortal ?? WeenieClassId, Destination))
-                return;
+            var usedCount = false;
 
             lock (this)
             {
@@ -363,23 +376,34 @@ namespace ACE.Server.WorldObjects
                 {
                     if (useCount.Value <= 0)
                     {
+                        RoomAssignManager.CancelPendingReservation(player);
                         player.Session.Network.EnqueueSend(new GameMessageSystemChat("The portal's energy has faded.", ChatMessageType.System));
                         return;
                     }
 
                     PortalUseCount = useCount.Value - 1;
+                    usedCount = true;
                 }
             }
 
             var portalDest = new Position(Destination);
 
-            // Room Assign portal (2026-09-16): straight into the first free room, reserved. A summoned gateway resolves
-            // to its original portal.
-            var roomDest = ACE.Server.Managers.RoomAssignManager.AssignPortalRoom(player, OriginalPortal ?? WeenieClassId, portalDest, out var roomNumber);
-            if (roomDest != null)
-                portalDest = roomDest;
+            // Room Assign portal (2026-09-16): straight into a room (their own first), reserved, or REFUSED - the player
+            // stays where they are and the use is given back. A summoned gateway resolves to its original portal. The room
+            // landing is already corrected by AdjustDungeon.
+            var assign = RoomAssignManager.AssignPortalRoom(player, OriginalPortal ?? WeenieClassId, portalDest, out var roomDest, out var roomNumber);
+            if (assign == RoomAssignManager.PortalAssign.Refused)
+            {
+                if (usedCount)
+                    lock (this)
+                        PortalUseCount = (PortalUseCount ?? 0) + 1;
+                return;
+            }
 
-            AdjustDungeon(portalDest);
+            if (assign == RoomAssignManager.PortalAssign.Assigned)
+                portalDest = roomDest;
+            else
+                AdjustDungeon(portalDest);
 
             // Do NOT pre-set player.Location.Variation to the destination here. Teleport() decides
             // variation-change handling (ghost-object sweep + landblock instance relocation) by
@@ -401,7 +425,7 @@ namespace ACE.Server.WorldObjects
                 player.SendWeenieError(WeenieError.ITeleported);
 
                 if (roomNumber > 0)
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You are sent to chamber {roomNumber}.", ChatMessageType.Broadcast));
+                    player.Session?.Network.EnqueueSend(new GameMessageSystemChat(RoomAssignManager.MessageSentToRoom(roomNumber), ChatMessageType.Broadcast));
 
             }), true);
         }

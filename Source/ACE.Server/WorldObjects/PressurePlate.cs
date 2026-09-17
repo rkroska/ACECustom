@@ -3,6 +3,7 @@ using System;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Models;
+using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
 
 namespace ACE.Server.WorldObjects
@@ -19,6 +20,8 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>Retail behaviour, used whenever PropertyFloat.PressurePlateCooldown is unset.</summary>
         public const double DefaultPressurePlateCooldown = 2.0;
+
+        private const double MaxPressurePlateCooldown = 365 * 24 * 60 * 60;
 
         /// <summary>
         /// A new biota be created taking all of its values from weenie.
@@ -40,10 +43,32 @@ namespace ACE.Server.WorldObjects
         {
             if (UseSound == 0)
                 UseSound = Sound.TriggerActivated;
+        }
 
-            // Room Assign (2026-09-16): reading the room list when a room plate loads marks its rooms' landblock, so
-            // logout holds and login moves work straight after a restart, before anyone has been sent to a room.
-            ACE.Server.Managers.RoomAssignManager.GetRooms(WeenieClassId);
+        public override bool EnterWorld()
+        {
+            if (!base.EnterWorld())
+                return false;
+
+            // Room Assign: a room plate's rooms exist where it is placed, including a plate that is not a database placement.
+            RoomAssignManager.OnSourceEnteredWorld(WeenieClassId, Location?.Variation);
+            return true;
+        }
+
+        /// <summary>
+        /// The arming window in seconds as it is used: unset or not a finite number = the 2 s retail default, negative = 0,
+        /// capped at one year. A value authored in SQL never goes through the setter, and TimeSpan.FromSeconds or the
+        /// DateTime add would throw on a huge one - on every collision (review 2026-09-16).
+        /// </summary>
+        public double EffectivePressurePlateCooldown
+        {
+            get
+            {
+                var cooldown = PressurePlateCooldown ?? DefaultPressurePlateCooldown;
+                if (double.IsNaN(cooldown) || double.IsInfinity(cooldown))
+                    return DefaultPressurePlateCooldown;
+                return Math.Clamp(cooldown, 0, MaxPressurePlateCooldown);
+            }
         }
 
         public override void SetLinkProperties(WorldObject wo)
@@ -68,12 +93,17 @@ namespace ACE.Server.WorldObjects
             if (!(activator is Player player))
                 return;
 
-            // Room Assign plate (2026-09-16): the WEENIE carries a room list (string 9018), re-read from the cache on
+            // Room Assign plate (2026-09-16): the WEENIE carries a room list (string 50500), re-read from the cache on
             // every step so an /id upload applies live. It replaces the stock activation entirely - see RoomAssignManager.
-            var rooms = ACE.Server.Managers.RoomAssignManager.GetRooms(WeenieClassId);
+            // Rooms never exist in the base world: a plate placed there acts as a normal plate.
+            var rooms = RoomAssignManager.IsRoomVariation(Location?.Variation) ? RoomAssignManager.GetRooms(WeenieClassId) : null;
             if (rooms != null)
             {
-                ACE.Server.Managers.RoomAssignManager.OnPlateStep(this, player, rooms);
+                // The stock Active gate lives in base.OnActivate, which a room plate never reaches.
+                if (!Active)
+                    return;
+
+                RoomAssignManager.OnPlateStep(this, player, rooms);
                 return;
             }
 
@@ -81,12 +111,11 @@ namespace ACE.Server.WorldObjects
             // TODO: should this go in base.OnActivate()?
             //
             // The cooldown is per OBJECT, not per player, so a busy plate catches only the first
-            // person through it in each window. PropertyFloat.PressurePlateCooldown (9056) makes it
-            // tunable per weenie; UNSET keeps the 2 s retail default, so no existing plate changes
-            // behaviour.
-            // UNSET means retail default; an explicit 0 means genuinely no cooldown, so a plate can
-            // catch several players in the same instant. Negatives are clamped rather than treated
-            // as "unset" so a typo cannot silently restore the 2 s gate.
+            // person through it in each window. PropertyFloat.PressurePlateCooldown (50502) makes it
+            // tunable per weenie. UNSET keeps the 2 s retail default, so no existing plate changes
+            // behaviour; an explicit 0 means genuinely no cooldown, so a plate can catch several
+            // players in the same instant. Negatives are clamped to 0 when read (and the setter stores
+            // 0) rather than treated as "unset", so a typo cannot silently restore the 2 s gate.
             //
             // A COOLDOWN OF 0 IS NOT SUFFICIENT ON ITS OWN. Every action in the plate's Activation
             // emote set must also be at delay 0. EmoteManager.Enqueue runs a zero-delay set
@@ -95,9 +124,7 @@ namespace ACE.Server.WorldObjects
             // ExecuteEmoteSet drops a second player's activation while busy. So adding one delayed
             // action to the emote set silently reinstates the gate no matter what this property says.
             var currentTime = DateTime.UtcNow;
-            var cooldown = PressurePlateCooldown ?? DefaultPressurePlateCooldown;
-            if (cooldown < 0)
-                cooldown = 0;
+            var cooldown = EffectivePressurePlateCooldown;
 
             if (cooldown > 0 && currentTime < LastUseTime + TimeSpan.FromSeconds(cooldown))
                 return;
