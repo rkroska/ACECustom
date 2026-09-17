@@ -560,8 +560,8 @@ namespace ACE.Server.Managers
         // Pet breeding (custom)
         public static ConfigProperty<bool> pet_breeding_enabled { get; private set; } = new(true, "If TRUE, enables pet breeding by using one combat pet device on another in the Seedy Motel.");
         public static ConfigProperty<double> pet_breeding_cooldown_hours { get; private set; } = new(4.0, "Recovery cooldown in hours before a female combat pet device can be bred again. The baby is delivered at the breed itself, so this is rest, not gestation.");
-        public static ConfigProperty<long> pet_breeding_min_bond { get; private set; } = new(1, "Minimum bond level required on parent devices to breed.");
-        public static ConfigProperty<long> pet_breeding_min_parent_level { get; private set; } = new(1, "Minimum level/tier of parent combat pet devices required to breed.");
+        public static ConfigProperty<long> pet_breeding_min_bond { get; private set; } = new(100, "Minimum bond level required on parent devices to breed. Bond only grows while pet_bond_enabled is TRUE; a device with no bond counts as 1.");
+        public static ConfigProperty<long> pet_breeding_min_parent_level { get; private set; } = new(100, "Minimum tier of parent combat pet devices required to breed (tiers 50, 80, 100, 125, 150, 180, 200, 250, 300).");
         public static ConfigProperty<long> pet_breeding_allowed_landblock { get; private set; } = new(0x013AL, "Where breeding is allowed. A 16-bit landblock (0x013A = Seedy Motel) matches the whole landblock; a full 32-bit cell (0x013A02AE) matches only that exact cell. 0 = allowed anywhere.");
         public static ConfigProperty<long> pet_breeding_allowed_variant { get; private set; } = new(3, "Landblock variation ID where breeding is allowed (3 = Seedy Motel instance). -1 = ignore variation.");
         public static ConfigProperty<bool> pet_breeding_force_mutation { get; private set; } = new(false, "If TRUE, forces a mutation and color mutation to occur on every breed roll.");
