@@ -5045,6 +5045,54 @@ namespace ACE.Server.Command.Handlers
             PetDevice.CheckMultiplayerBreeding(player, "Admin @breed", forced: true);
         }
 
+        /// <summary>
+        /// Breeding parity harness: runs a [REPLAY] blob (from the website simulator's verbose log, or
+        /// from the server's own pet_breeding_verbose_logging output) through PetDevice.BreedingMath and
+        /// reports PASS/FAIL against the blob's baby. The chat parser strips double quotes, so a blob
+        /// pasted straight into the game client still parses (keys are re-quoted server side).
+        /// "file <path>" runs every [REPLAY] line found in a text file on the server instead.
+        /// </summary>
+        [CommandHandler("breed-replay", AccessLevel.Developer, CommandHandlerFlag.None, 1,
+            "Replays a breeding simulator [REPLAY] blob through the server's BreedingMath and reports PASS/FAIL.",
+            "@breed-replay <replay json>  |  @breed-replay file <path-to-text-file>")]
+        public static void HandleBreedReplay(Session session, params string[] parameters)
+        {
+            if (parameters.Length >= 2 && parameters[0].Equals("file", StringComparison.OrdinalIgnoreCase))
+            {
+                var path = string.Join(" ", parameters, 1, parameters.Length - 1);
+                string[] lines;
+                try
+                {
+                    lines = System.IO.File.ReadAllLines(path);
+                }
+                catch (Exception ex)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[BreedReplay] Could not read {path}: {ex.Message}");
+                    return;
+                }
+
+                var ran = 0; var passed = 0;
+                foreach (var line in lines)
+                {
+                    if (!line.Contains("[REPLAY]") && !line.TrimStart().StartsWith("{"))
+                        continue;
+                    ran++;
+                    if (PetDevice.BreedingReplay.TryRunText(line, out var lineReport))
+                        passed++;
+                    CommandHandlerHelper.WriteOutputInfo(session, lineReport);
+                }
+                CommandHandlerHelper.WriteOutputInfo(session, ran == 0
+                    ? $"[BreedReplay] No [REPLAY] lines found in {path}."
+                    : $"[BreedReplay] {passed}/{ran} blobs passed.");
+                return;
+            }
+
+            // The blob is emitted without spaces, but a hand-edited one may have been split on them.
+            var text = string.Join(" ", parameters);
+            PetDevice.BreedingReplay.TryRunText(text, out var report);
+            CommandHandlerHelper.WriteOutputInfo(session, report);
+        }
+
         [CommandHandler("setsex", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Overrides the breeding sex of the last appraised pet device.", "@setsex [male/female/derive]")]
         [CommandHandler("setalpha", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Overrides the breeding sex of the last appraised pet device.", "@setalpha [male/female/derive]")]
         [CommandHandler("makealpha", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Overrides the breeding sex of the last appraised pet device.", "@makealpha [male/female/derive]")]

@@ -63,13 +63,377 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Pure inheritance / cap arithmetic for breeding, kept free of world state so the website
-        /// simulator and the unit tests can mirror it exactly.
+        /// Pure inheritance / mutation / cap arithmetic for breeding, kept free of world state so the
+        /// website simulator (ClientApp/src/utils/breedingModel.ts) and the unit tests can mirror it
+        /// exactly. The live breed path calls <see cref="Simulate"/> for every decision it makes and
+        /// <see cref="RollAwakenedBlessing"/> when a mating guardian dies; nothing in here reads a
+        /// device, a player, ServerConfig or the global RNG.
+        ///
+        /// Random draw order (the contract with breedingModel.ts and the [REPLAY] blobs):
+        ///   1-8  inheritance, one uniform draw per line: damage, damageResist, crit, critDamage,
+        ///        critResist, critDamageResist, vitality, potency. roll &lt; 0.55 takes the parent with
+        ///        the HIGHER effective value (ties favour parent A), otherwise the lower one.
+        ///   9    stat mutation roll (always drawn; ignored when ForceMutation is on).
+        ///   10   stat line pick, ONLY when a stat mutation happens and a line is eligible:
+        ///        index = min(n - 1, floor(roll * n)) over [dmg, dr, crit, vit] minus capped lines.
+        ///   11   potency mutation roll.
+        ///   12   Awakened Blessing pick, ONLY when the guardian spawned (GuardianEnabled and the breed
+        ///        mutated) and was killed: eligible stat lines, then potency when its capped step &gt; 0.
+        /// breedingModel.ts and this class must change together.
         /// </summary>
         public static class BreedingMath
         {
             /// <summary>Chance that a line is inherited from the parent with the higher effective value.</summary>
             public const double HigherParentChance = 0.55;
+
+            /// <summary>Mutation line ids. The numeric values are what PetLastMutatedStat stores.</summary>
+            public enum MutationLine
+            {
+                None = 0,
+                Damage = 1,
+                DamageResist = 2,
+                Crit = 3,
+                Vitality = 4,
+                Potency = 5,
+            }
+
+            /// <summary>Client-safe display name of a mutation line.</summary>
+            public static string LineName(MutationLine line) => line switch
+            {
+                MutationLine.Damage => "Damage Rating",
+                MutationLine.DamageResist => "Damage Resist Rating",
+                MutationLine.Crit => "Crit Rating",
+                MutationLine.Vitality => "Vitality",
+                MutationLine.Potency => "Potency",
+                _ => "None",
+            };
+
+            /// <summary>The heritable state of one pet, exactly as the server stores it on its device.</summary>
+            public struct BreedingGenetics
+            {
+                /// <summary>Clean base ratings rolled by loot; mutations are NOT folded into these.</summary>
+                public int GearDamage, GearDamageResist, GearCrit, GearCritDamage, GearCritResist, GearCritDamageResist;
+                /// <summary>Mutation counts per line.</summary>
+                public int Dmg, Dr, Crit, Vit, Pot;
+                /// <summary>Complete effective stored potency (mutations already included).</summary>
+                public int PotencyStored;
+
+                /// <summary>Sum of the four stat-line counts: the number that drives mutation decay.</summary>
+                public int StatMutations => Dmg + Dr + Crit + Vit;
+                public int TotalMutations => StatMutations + Pot;
+
+                public int GetCount(MutationLine line) => line switch
+                {
+                    MutationLine.Damage => Dmg,
+                    MutationLine.DamageResist => Dr,
+                    MutationLine.Crit => Crit,
+                    MutationLine.Vitality => Vit,
+                    MutationLine.Potency => Pot,
+                    _ => 0,
+                };
+
+                public bool SameAs(in BreedingGenetics other)
+                    => GearDamage == other.GearDamage && GearDamageResist == other.GearDamageResist && GearCrit == other.GearCrit
+                    && GearCritDamage == other.GearCritDamage && GearCritResist == other.GearCritResist && GearCritDamageResist == other.GearCritDamageResist
+                    && Dmg == other.Dmg && Dr == other.Dr && Crit == other.Crit && Vit == other.Vit && Pot == other.Pot
+                    && PotencyStored == other.PotencyStored;
+
+                /// <summary>One-line ASCII dump in the same shape the website logs (describeGenetics).</summary>
+                public override string ToString()
+                    => $"gear[dmg {GearDamage}, dr {GearDamageResist}, crit {GearCrit}, critDmg {GearCritDamage}, critRes {GearCritResist}, critDmgRes {GearCritDamageResist}] " +
+                       $"counts[dmg {Dmg}, dr {Dr}, crit {Crit}, vit {Vit}, pot {Pot}] potencyStored {PotencyStored}";
+            }
+
+            /// <summary>
+            /// The breeding config, field for field what /api/visualizer/breeding-config exposes to the
+            /// website. Built from ServerConfig by <see cref="FromServerConfig"/> on the live path and from
+            /// a [REPLAY] blob by the harness.
+            /// </summary>
+            public struct BreedingConfig
+            {
+                public double BaseMutationChance, PotencyMutationChance, MutationDecayRate, MutationMinFloor;
+                public int DamageMutationStep, DrMutationStep, CritMutationStep, VitalityMutationStep, PotencyMutationStep;
+                /// <summary>0 = no soft cap.</summary>
+                public int PotencySoftCap;
+                /// <summary>0 = no cap. The effective hard cap is the smallest positive of the two.</summary>
+                public long PotencyHardCap, PotencyMaxStored;
+                /// <summary>0 = uncapped per-line mutation count.</summary>
+                public int MaxStatMutations;
+                public bool ForceMutation, GuardianEnabled;
+
+                public int ResolvedPotencyHardCap => ResolvePotencyHardCap(PotencyHardCap, PotencyMaxStored);
+
+                public int StepFor(MutationLine line) => line switch
+                {
+                    MutationLine.Damage => DamageMutationStep,
+                    MutationLine.DamageResist => DrMutationStep,
+                    MutationLine.Crit => CritMutationStep,
+                    MutationLine.Vitality => VitalityMutationStep,
+                    MutationLine.Potency => PotencyMutationStep,
+                    _ => 0,
+                };
+
+                public static BreedingConfig FromServerConfig() => new()
+                {
+                    BaseMutationChance = ServerConfig.pet_breeding_base_mutation_chance.Value,
+                    PotencyMutationChance = ServerConfig.pet_breeding_potency_mutation_chance.Value,
+                    MutationDecayRate = ServerConfig.pet_breeding_mutation_decay_rate.Value,
+                    MutationMinFloor = ServerConfig.pet_breeding_mutation_min_floor.Value,
+                    DamageMutationStep = (int)ServerConfig.pet_breeding_damage_mutation_step.Value,
+                    DrMutationStep = (int)ServerConfig.pet_breeding_dr_mutation_step.Value,
+                    CritMutationStep = (int)ServerConfig.pet_breeding_crit_mutation_step.Value,
+                    VitalityMutationStep = (int)ServerConfig.pet_breeding_vitality_mutation_step.Value,
+                    PotencyMutationStep = (int)ServerConfig.pet_breeding_potency_mutation_step.Value,
+                    PotencySoftCap = (int)ServerConfig.pet_breeding_potency_soft_cap.Value,
+                    PotencyHardCap = ServerConfig.pet_breeding_potency_hard_cap.Value,
+                    PotencyMaxStored = ServerConfig.pet_potency_max_stored.Value,
+                    MaxStatMutations = (int)ServerConfig.pet_breeding_max_stat_mutations.Value,
+                    ForceMutation = ServerConfig.pet_breeding_force_mutation.Value,
+                    GuardianEnabled = ServerConfig.pet_breeding_guardian_enabled.Value,
+                };
+            }
+
+            /// <summary>Per-breed consumables and the simulator's guardian assumption.</summary>
+            public struct BreedingOptions
+            {
+                /// <summary>Courtship Incense bonus stored on each parent's device (0, 0.025, 0.05, 0.10).</summary>
+                public double IncenseA, IncenseB;
+                /// <summary>Chromatic Catalyst active on a device: a rolled palette comes from the vibrant pool.</summary>
+                public bool CatalystA, CatalystB;
+                /// <summary>
+                /// True when the parents kill the guardian, which adds the Awakened Blessing draw. The live
+                /// breed passes false (the guardian's fate is unknown when the breed is decided) and rolls the
+                /// blessing later through <see cref="RollAwakenedBlessing"/>, the same helper Simulate uses.
+                /// </summary>
+                public bool GuardianKilled;
+            }
+
+            public struct BreedingInputs
+            {
+                public BreedingGenetics ParentA, ParentB;
+                public BreedingConfig Config;
+                public BreedingOptions Options;
+            }
+
+            /// <summary>Result of one Awakened Blessing roll.</summary>
+            public struct BlessingResult
+            {
+                /// <summary>Line that received the bonus, or None when every line was capped.</summary>
+                public MutationLine Line;
+                public int Step;
+                public bool AllLinesCapped;
+                /// <summary>The draw consumed (only meaningful when <see cref="Drew"/>).</summary>
+                public double Roll;
+                public bool Drew;
+            }
+
+            /// <summary>Everything <see cref="Simulate"/> decided, mirroring breedingModel.ts's BreedResult.</summary>
+            public sealed class BreedingOutcome
+            {
+                public BreedingGenetics Baby;
+                /// <summary>Baby stat-mutation count right after inheritance (what the decay curve used).</summary>
+                public int InheritedStatMutations;
+                public double IncenseBonus;
+
+                public double StatChance, StatRoll;
+                public bool StatMutated;
+                /// <summary>Line that received the +1, or None (no mutation / every line capped).</summary>
+                public MutationLine StatLine;
+                public int StatStep;
+                public bool StatAllLinesCapped;
+
+                public double PotencyChance, PotencyRoll;
+                public bool PotencyMutated, PotencyApplied, PotencySoftCapped;
+                /// <summary>Capped step actually applied (0 when capped out).</summary>
+                public int PotencyStep;
+
+                /// <summary>Guardian gating applied: GuardianEnabled and the breed mutated.</summary>
+                public bool GuardianSpawned, GuardianKilled;
+                public MutationLine BlessingLine;
+                public int BlessingStep;
+                public bool BlessingAllLinesCapped;
+
+                /// <summary>Every random draw consumed, in order. Replaying them reproduces this outcome exactly.</summary>
+                public System.Collections.Generic.List<double> RngDraws = new();
+
+                /// <summary>True when at least one mutation line changed (stat, potency or blessing).</summary>
+                public bool HasMutation => StatLine != MutationLine.None || PotencyApplied || BlessingLine != MutationLine.None;
+
+                /// <summary>The server rolls a new colour palette only for a mutated breed.</summary>
+                public bool PaletteRolled => HasMutation;
+
+                /// <summary>What PetLastMutatedStat records: the blessing, else the stat line, else potency.</summary>
+                public MutationLine LastMutatedStat
+                    => BlessingLine != MutationLine.None ? BlessingLine
+                     : StatLine != MutationLine.None ? StatLine
+                     : PotencyApplied ? MutationLine.Potency
+                     : MutationLine.None;
+            }
+
+            /// <summary>
+            /// The whole breed as one pure function of its inputs and a draw source. Deterministic and
+            /// side-effect free: the same inputs and the same draws always give the same baby.
+            /// <paramref name="nextDouble"/> must return a uniform double in [0, 1); production passes
+            /// ThreadSafeRandom.Next(0.0f, 1.0f), tests pass a scripted list.
+            /// </summary>
+            public static BreedingOutcome Simulate(in BreedingInputs inputs, Func<double> nextDouble)
+            {
+                if (nextDouble == null)
+                    throw new ArgumentNullException(nameof(nextDouble));
+
+                var o = new BreedingOutcome();
+                var config = inputs.Config;
+                var options = inputs.Options;
+                var parentA = inputs.ParentA;
+                var parentB = inputs.ParentB;
+
+                double Draw()
+                {
+                    var v = nextDouble();
+                    o.RngDraws.Add(v);
+                    return v;
+                }
+
+                // 1-8. Inheritance: independent 55/45 roll per line, higher effective value favoured.
+                // Damage / damage resist / crit are package deals (gear AND count travel together); the
+                // three derived crit lines are gear-only; vitality is count-only; potency compares the
+                // stored value (missing = 0) and carries stored AND count.
+                var baby = new BreedingGenetics();
+
+                var dmgRes = InheritLine(parentA.GearDamage, parentA.Dmg, parentB.GearDamage, parentB.Dmg, config.DamageMutationStep, Draw());
+                baby.GearDamage = dmgRes.Gear; baby.Dmg = dmgRes.Count;
+
+                var drRes = InheritLine(parentA.GearDamageResist, parentA.Dr, parentB.GearDamageResist, parentB.Dr, config.DrMutationStep, Draw());
+                baby.GearDamageResist = drRes.Gear; baby.Dr = drRes.Count;
+
+                var critRes = InheritLine(parentA.GearCrit, parentA.Crit, parentB.GearCrit, parentB.Crit, config.CritMutationStep, Draw());
+                baby.GearCrit = critRes.Gear; baby.Crit = critRes.Count;
+
+                baby.GearCritDamage = InheritGearOnly(parentA.GearCritDamage, parentB.GearCritDamage, Draw());
+                baby.GearCritResist = InheritGearOnly(parentA.GearCritResist, parentB.GearCritResist, Draw());
+                baby.GearCritDamageResist = InheritGearOnly(parentA.GearCritDamageResist, parentB.GearCritDamageResist, Draw());
+
+                var vitRes = InheritLine(0, parentA.Vit, 0, parentB.Vit, config.VitalityMutationStep, Draw());
+                baby.Vit = vitRes.Count;
+
+                var potRes = InheritPotency(parentA.PotencyStored, parentA.Pot, parentB.PotencyStored, parentB.Pot, Draw());
+                baby.PotencyStored = potRes.Stored; baby.Pot = potRes.Count;
+
+                o.InheritedStatMutations = baby.StatMutations;
+                o.IncenseBonus = CombinedIncenseBonus(options.IncenseA, options.IncenseB);
+
+                // 9. Stat mutation roll. Decay is driven by the BABY's inherited counts. The draw is always
+                // consumed, even when force_mutation makes the result moot, so replays line up.
+                o.StatChance = StatMutationChance(o.InheritedStatMutations, config, o.IncenseBonus);
+                o.StatRoll = Draw();
+                o.StatMutated = config.ForceMutation || o.StatRoll < o.StatChance;
+
+                // 10. Stat line pick, only when a mutation happened and a line is still under its cap.
+                if (o.StatMutated)
+                {
+                    var eligible = EligibleStatLines(baby, config.MaxStatMutations);
+                    if (eligible.Count > 0)
+                    {
+                        var line = eligible[PickIndex(Draw(), eligible.Count)];
+                        o.StatLine = line;
+                        o.StatStep = config.StepFor(line);
+                        AddMutation(ref baby, line, 0);
+                    }
+                    else
+                        o.StatAllLinesCapped = true;
+                }
+
+                // 11. Potency roll: independent, incense does not apply.
+                o.PotencyChance = Math.Clamp(config.PotencyMutationChance, 0.0, 1.0);
+                o.PotencyRoll = Draw();
+                o.PotencyMutated = o.PotencyRoll < o.PotencyChance;
+                o.PotencySoftCapped = config.PotencySoftCap > 0 && baby.PotencyStored >= config.PotencySoftCap;
+                if (o.PotencyMutated)
+                {
+                    o.PotencyStep = PotencyMutationStep(config.PotencyMutationStep, baby.PotencyStored, config.PotencySoftCap, config.ResolvedPotencyHardCap);
+                    if (o.PotencyStep > 0)
+                    {
+                        AddMutation(ref baby, MutationLine.Potency, o.PotencyStep);
+                        o.PotencyApplied = true;
+                    }
+                }
+
+                // 12. Guardian and Awakened Blessing.
+                o.GuardianSpawned = config.GuardianEnabled && (o.StatLine != MutationLine.None || o.PotencyApplied);
+                if (o.GuardianSpawned && options.GuardianKilled)
+                {
+                    o.GuardianKilled = true;
+                    var blessing = RollAwakenedBlessing(ref baby, config, Draw);
+                    o.BlessingLine = blessing.Line;
+                    o.BlessingStep = blessing.Step;
+                    o.BlessingAllLinesCapped = blessing.AllLinesCapped;
+                }
+
+                o.Baby = baby;
+                return o;
+            }
+
+            /// <summary>
+            /// The Awakened Blessing (draw 12): one bonus mutation over the eligible stat lines plus
+            /// potency when its capped step is positive. Consumes exactly one draw when any line is
+            /// eligible and none otherwise. Called by <see cref="Simulate"/> and by the live guardian
+            /// death handler, so both sides run the identical code.
+            /// </summary>
+            public static BlessingResult RollAwakenedBlessing(ref BreedingGenetics baby, in BreedingConfig config, Func<double> nextDouble)
+            {
+                var eligible = EligibleStatLines(baby, config.MaxStatMutations);
+                var potStep = PotencyMutationStep(config.PotencyMutationStep, baby.PotencyStored, config.PotencySoftCap, config.ResolvedPotencyHardCap);
+                if (potStep > 0)
+                    eligible.Add(MutationLine.Potency);
+
+                if (eligible.Count == 0)
+                    return new BlessingResult { Line = MutationLine.None, AllLinesCapped = true };
+
+                var roll = nextDouble();
+                var line = eligible[PickIndex(roll, eligible.Count)];
+                var step = line == MutationLine.Potency ? potStep : config.StepFor(line);
+                AddMutation(ref baby, line, step);
+                return new BlessingResult { Line = line, Step = step, Roll = roll, Drew = true };
+            }
+
+            /// <summary>Adds one mutation to a line. <paramref name="potencyStep"/> is only used for the potency line.</summary>
+            public static void AddMutation(ref BreedingGenetics baby, MutationLine line, int potencyStep)
+            {
+                switch (line)
+                {
+                    case MutationLine.Damage: baby.Dmg += 1; break;
+                    case MutationLine.DamageResist: baby.Dr += 1; break;
+                    case MutationLine.Crit: baby.Crit += 1; break;
+                    case MutationLine.Vitality: baby.Vit += 1; break;
+                    case MutationLine.Potency: baby.PotencyStored += potencyStep; baby.Pot += 1; break;
+                }
+            }
+
+            /// <summary>Stat lines still under the per-line cap, in pick order [dmg, dr, crit, vit]. 0 = uncapped.</summary>
+            public static System.Collections.Generic.List<MutationLine> EligibleStatLines(in BreedingGenetics baby, int maxStatMutations)
+            {
+                var eligible = new System.Collections.Generic.List<MutationLine>(4);
+                if (maxStatMutations <= 0 || baby.Dmg < maxStatMutations) eligible.Add(MutationLine.Damage);
+                if (maxStatMutations <= 0 || baby.Dr < maxStatMutations) eligible.Add(MutationLine.DamageResist);
+                if (maxStatMutations <= 0 || baby.Crit < maxStatMutations) eligible.Add(MutationLine.Crit);
+                if (maxStatMutations <= 0 || baby.Vit < maxStatMutations) eligible.Add(MutationLine.Vitality);
+                return eligible;
+            }
+
+            /// <summary>Uniform pick of one of <paramref name="count"/> entries from a [0, 1) draw: min(n - 1, floor(roll * n)).</summary>
+            public static int PickIndex(double roll, int count)
+                => Math.Max(0, Math.Min(count - 1, (int)Math.Floor(roll * count)));
+
+            /// <summary>Both parents' incense bonuses summed and clamped to +50%.</summary>
+            public static double CombinedIncenseBonus(double incenseA, double incenseB)
+                => Math.Clamp(incenseA + incenseB, 0.0, 0.50);
+
+            /// <summary>clamp(max(floor, base / (1 + decay * babyStatMutations)) + incense, 0, 1)</summary>
+            public static double StatMutationChance(int babyStatMutations, in BreedingConfig config, double incenseBonus)
+            {
+                var decayed = config.BaseMutationChance / (1.0 + config.MutationDecayRate * babyStatMutations);
+                return Math.Clamp(Math.Max(config.MutationMinFloor, decayed) + incenseBonus, 0.0, 1.0);
+            }
 
             /// <summary>Effective value of a line: gear base plus mutation count times step.</summary>
             public static int Effective(int gear, int count, int step) => gear + count * step;
@@ -138,14 +502,100 @@ namespace ACE.Server.WorldObjects
                 return Math.Max(0, step);
             }
 
+            /// <summary>
+            /// Half-up rounding, the same rule as JavaScript's Math.round for non-negative values.
+            /// C#'s default Math.Round is banker's rounding (2.5 -&gt; 2, 4.5 -&gt; 4) and disagrees with
+            /// the website on every exact .5; never use bare Math.Round on a value that can land on .5.
+            /// </summary>
+            public static int RoundHalfUp(double value) => (int)Math.Round(value, MidpointRounding.AwayFromZero);
+
             /// <summary>Crit damage bonus derived from damage mutations (same rule as the summon path).</summary>
-            public static int MutCritDamage(int mutDamage) => (int)Math.Round(mutDamage * 0.8);
+            public static int MutCritDamage(int mutDamage) => RoundHalfUp(mutDamage * 0.8);
 
             /// <summary>Crit resist bonus derived from damage resist mutations (same rule as the summon path).</summary>
-            public static int MutCritResist(int mutDamageResist) => (int)Math.Round(mutDamageResist * 0.8);
+            public static int MutCritResist(int mutDamageResist) => RoundHalfUp(mutDamageResist * 0.8);
 
             /// <summary>Crit damage resist bonus derived from damage resist mutations (same rule as the summon path).</summary>
-            public static int MutCritDamageResist(int mutDamageResist) => (int)Math.Round(mutDamageResist * 0.6);
+            public static int MutCritDamageResist(int mutDamageResist) => RoundHalfUp(mutDamageResist * 0.6);
+
+            /// <summary>Ratings a pet shows when summoned, evaluated from its stored genetics.</summary>
+            public struct SummonedRatings
+            {
+                public int DamageRating, DamageResistRating, CritRating, CritDamageRating, CritResistRating, CritDamageResistRating;
+                /// <summary>Bonus HP from vitality mutations (added on top of the species base).</summary>
+                public int BonusHp;
+                public int PotencyStored;
+
+                public override string ToString()
+                    => $"DR {DamageRating} / DRR {DamageResistRating} / Crit {CritRating} / CD {CritDamageRating} / CR {CritResistRating} / CDR {CritDamageResistRating} / HP +{BonusHp}";
+            }
+
+            /// <summary>Default juvenile growth multipliers by stage 1..5 (pet_maturity_stages 5, pet_maturity_juvenile_strength 0.5).</summary>
+            public static readonly double[] DefaultMaturityMultipliers = { 0.5, 0.6, 0.7, 0.8, 0.9 };
+
+            /// <summary>
+            /// Strength multiplier of a juvenile at <paramref name="stage"/> (1..stages); anything else is
+            /// adult (1.0). Same lerp as PetDevice.MaturityStrengthMult. With the default 5 stages and
+            /// 0.5 strength this is exactly 0.5 / 0.6 / 0.7 / 0.8 / 0.9 (bit-identical to the literals).
+            /// </summary>
+            public static double MaturityMultiplier(int stage, int stages = 5, double juvenileStrength = 0.5)
+            {
+                if (stage < 1 || stages < 1 || stage > stages)
+                    return 1.0;
+                var from = Math.Clamp(juvenileStrength, 0.05, 1.0);
+                var t = Math.Clamp((stage - 1) / (double)stages, 0.0, 1.0);
+                return from + (1.0 - from) * t;
+            }
+
+            /// <summary>
+            /// The summon-time arithmetic (CombatPet.Init + ApplyMaturity): gear + count x step per line,
+            /// the derived crit lines, vitality HP, and the juvenile multiplier with half-up rounding.
+            /// <paramref name="stage"/> 1..5 is a juvenile; 0 (or above 5) is an adult.
+            /// </summary>
+            public static SummonedRatings SummonedStats(in BreedingGenetics pet, in BreedingConfig config, int stage = 0)
+            {
+                var m = MaturityMultiplier(stage);
+                var dmgBonus = pet.Dmg * config.DamageMutationStep;
+                var drBonus = pet.Dr * config.DrMutationStep;
+                int Scale(int v) => RoundHalfUp(v * m);
+                return new SummonedRatings
+                {
+                    DamageRating = Scale(pet.GearDamage + dmgBonus),
+                    DamageResistRating = Scale(pet.GearDamageResist + drBonus),
+                    CritRating = Scale(pet.GearCrit + pet.Crit * config.CritMutationStep),
+                    CritDamageRating = Scale(pet.GearCritDamage + MutCritDamage(dmgBonus)),
+                    CritResistRating = Scale(pet.GearCritResist + MutCritResist(drBonus)),
+                    CritDamageResistRating = Scale(pet.GearCritDamageResist + MutCritDamageResist(drBonus)),
+                    BonusHp = Scale(pet.Vit * config.VitalityMutationStep),
+                    PotencyStored = pet.PotencyStored,
+                };
+            }
+        }
+
+        /// <summary>
+        /// This device's heritable state as <see cref="BreedingMath"/> sees it. Legacy devices without
+        /// mutation counts fall back to the stored rating divided by the step.
+        /// </summary>
+        public BreedingMath.BreedingGenetics ReadBreedingGenetics(in BreedingMath.BreedingConfig config)
+        {
+            int MutCount(PropertyInt propCount, PropertyInt propLegacyRating, int step)
+                => GetProperty(propCount) ?? ((GetProperty(propLegacyRating) ?? 0) / Math.Max(1, step));
+
+            return new BreedingMath.BreedingGenetics
+            {
+                GearDamage = GearDamage ?? 0,
+                GearDamageResist = GearDamageResist ?? 0,
+                GearCrit = GearCrit ?? 0,
+                GearCritDamage = GearCritDamage ?? 0,
+                GearCritResist = GearCritResist ?? 0,
+                GearCritDamageResist = GearCritDamageResist ?? 0,
+                Dmg = MutCount(PropertyInt.PetMutDamageCount, PropertyInt.PetMutDamageRating, config.DamageMutationStep),
+                Dr = MutCount(PropertyInt.PetMutDamageResistCount, PropertyInt.PetMutDamageResistRating, config.DrMutationStep),
+                Crit = MutCount(PropertyInt.PetMutCritCount, PropertyInt.PetMutCritRating, config.CritMutationStep),
+                Vit = MutCount(PropertyInt.PetMutVitalityCount, PropertyInt.PetMutVitality, config.VitalityMutationStep),
+                Pot = MutCount(PropertyInt.PetMutPotencyCount, PropertyInt.PetMutPotency, config.PotencyMutationStep),
+                PotencyStored = PetPotencyStored ?? 0,
+            };
         }
 
         /// <summary>
@@ -162,22 +612,21 @@ namespace ACE.Server.WorldObjects
             public uint BabyWcid;
             public uint? BabyPaletteBase;
             public System.Collections.Generic.List<string> MutationSummary;
-            // Inherited gear base ratings (the Gear* values the baby device is born with) and the
-            // stored potency. Mutations live in the counts below and are evaluated at summon time.
-            public int BabyPotency, BabyGearDmg, BabyGearDR, BabyGearCrit, BabyGearCritDmg, BabyGearCritResist, BabyGearCritDmgResist;
-            public int BabyDmgMuts, BabyDrMuts, BabyCritMuts, BabyVitMuts, BabyPotMuts;
-            public int DmgStep, DrStep, CritStep, VitStep, PotStepConfig;
-            /// <summary>PotencyHardCap is already resolved (smallest positive of the two configured caps).</summary>
-            public int MaxStatMutations, PotencySoftCap, PotencyHardCap;
+            /// <summary>
+            /// The baby as BreedingMath.Simulate decided it: inherited Gear* base ratings, mutation counts
+            /// (evaluated against the live step config at summon time) and stored potency. The Awakened
+            /// Blessing adds to it in OnGuardianSlain.
+            /// </summary>
+            public BreedingMath.BreedingGenetics Baby;
+            /// <summary>The config the breed was rolled with; the blessing uses the same caps and steps.</summary>
+            public BreedingMath.BreedingConfig Config;
+            /// <summary>The full simulator inputs and every draw consumed so far, for the [REPLAY] log line.</summary>
+            public BreedingMath.BreedingInputs Inputs;
+            public System.Collections.Generic.List<double> RngDraws;
 
             // Effective (summon-time) ratings: gear + count * step, with the crit lines derived the same
             // way CombatPet.Init derives them. Used to stat the mating guardian.
-            public int EffectiveDamage => BreedingMath.Effective(BabyGearDmg, BabyDmgMuts, DmgStep);
-            public int EffectiveDamageResist => BreedingMath.Effective(BabyGearDR, BabyDrMuts, DrStep);
-            public int EffectiveCrit => BreedingMath.Effective(BabyGearCrit, BabyCritMuts, CritStep);
-            public int EffectiveCritDamage => BabyGearCritDmg + BreedingMath.MutCritDamage(BabyDmgMuts * DmgStep);
-            public int EffectiveCritResist => BabyGearCritResist + BreedingMath.MutCritResist(BabyDrMuts * DrStep);
-            public int EffectiveCritDamageResist => BabyGearCritDmgResist + BreedingMath.MutCritDamageResist(BabyDrMuts * DrStep);
+            public BreedingMath.SummonedRatings EffectiveRatings => BreedingMath.SummonedStats(Baby, Config);
 
             // Phase 2 (mating guardian) bookkeeping.
             public uint GuardianGuid;
@@ -577,148 +1026,67 @@ namespace ACE.Server.WorldObjects
                 player1.SendMessage(ritualMsg);
                 partner.SendMessage(ritualMsg);
 
-                // Stat Mutation Steps
-                var dmgStep = (int)ServerConfig.pet_breeding_damage_mutation_step.Value;
-                var drStep = (int)ServerConfig.pet_breeding_dr_mutation_step.Value;
-                var critStep = (int)ServerConfig.pet_breeding_crit_mutation_step.Value;
-                var vitStep = (int)ServerConfig.pet_breeding_vitality_mutation_step.Value;
-                var potStepConfig = (int)ServerConfig.pet_breeding_potency_mutation_step.Value;
+                // Everything about the offspring's stats is decided by BreedingMath.Simulate, the same
+                // pure function the parity tests and @breed-replay run. This method only gathers its
+                // inputs from the devices and config, and applies the side effects afterwards.
+                var config = BreedingMath.BreedingConfig.FromServerConfig();
+                var genetics1 = device1.ReadBreedingGenetics(config);
+                var genetics2 = device2.ReadBreedingGenetics(config);
 
-                // Stat inheritance, independent per line (55/45 rule, see BreedingMath). Damage, damage
-                // resist and crit are package deals: the chosen parent's Gear* base AND mutation count
-                // travel together. The crit damage / crit resist / crit damage resist lines are gear-only.
-                // Vitality is count-only. Potency compares the stored value (missing = 0).
-                static int MutCount(PetDevice dev, PropertyInt propCount, PropertyInt propLegacyRating, int step)
-                    => dev.GetProperty(propCount) ?? ((dev.GetProperty(propLegacyRating) ?? 0) / Math.Max(1, step));
-
-                static double Roll() => ThreadSafeRandom.Next(0.0f, 1.0f);
-
-                var dmgRes = BreedingMath.InheritLine(
-                    device1.GearDamage ?? 0, MutCount(device1, PropertyInt.PetMutDamageCount, PropertyInt.PetMutDamageRating, dmgStep),
-                    device2.GearDamage ?? 0, MutCount(device2, PropertyInt.PetMutDamageCount, PropertyInt.PetMutDamageRating, dmgStep),
-                    dmgStep, Roll());
-                var drRes = BreedingMath.InheritLine(
-                    device1.GearDamageResist ?? 0, MutCount(device1, PropertyInt.PetMutDamageResistCount, PropertyInt.PetMutDamageResistRating, drStep),
-                    device2.GearDamageResist ?? 0, MutCount(device2, PropertyInt.PetMutDamageResistCount, PropertyInt.PetMutDamageResistRating, drStep),
-                    drStep, Roll());
-                var critRes = BreedingMath.InheritLine(
-                    device1.GearCrit ?? 0, MutCount(device1, PropertyInt.PetMutCritCount, PropertyInt.PetMutCritRating, critStep),
-                    device2.GearCrit ?? 0, MutCount(device2, PropertyInt.PetMutCritCount, PropertyInt.PetMutCritRating, critStep),
-                    critStep, Roll());
-                var vitRes = BreedingMath.InheritLine(
-                    0, MutCount(device1, PropertyInt.PetMutVitalityCount, PropertyInt.PetMutVitality, vitStep),
-                    0, MutCount(device2, PropertyInt.PetMutVitalityCount, PropertyInt.PetMutVitality, vitStep),
-                    vitStep, Roll());
-                var potRes = BreedingMath.InheritPotency(
-                    device1.PetPotencyStored ?? 0, MutCount(device1, PropertyInt.PetMutPotencyCount, PropertyInt.PetMutPotency, potStepConfig),
-                    device2.PetPotencyStored ?? 0, MutCount(device2, PropertyInt.PetMutPotencyCount, PropertyInt.PetMutPotency, potStepConfig),
-                    Roll());
-
-                var babyGearCritDmg = BreedingMath.InheritGearOnly(device1.GearCritDamage ?? 0, device2.GearCritDamage ?? 0, Roll());
-                var babyGearCritResist = BreedingMath.InheritGearOnly(device1.GearCritResist ?? 0, device2.GearCritResist ?? 0, Roll());
-                var babyGearCritDmgResist = BreedingMath.InheritGearOnly(device1.GearCritDamageResist ?? 0, device2.GearCritDamageResist ?? 0, Roll());
-
-                var babyPotency = potRes.Stored;
-                var babyGearDmg = dmgRes.Gear;
-                var babyGearDR = drRes.Gear;
-                var babyGearCrit = critRes.Gear;
-
-                var babyDmgMuts = dmgRes.Count;
-                var babyDrMuts = drRes.Count;
-                var babyCritMuts = critRes.Count;
-                var babyVitMuts = vitRes.Count;
-                var babyPotMuts = potRes.Count;
-
-                var totalParentStatMuts = babyDmgMuts + babyDrMuts + babyCritMuts + babyVitMuts;
-
-                var baseMutChance = ServerConfig.pet_breeding_base_mutation_chance.Value;
-                var decayRate = ServerConfig.pet_breeding_mutation_decay_rate.Value;
-                var minFloor = ServerConfig.pet_breeding_mutation_min_floor.Value;
-                var potChance = ServerConfig.pet_breeding_potency_mutation_chance.Value;
-                var potSoftCap = (int)ServerConfig.pet_breeding_potency_soft_cap.Value;
-                // The hard cap is the smallest positive of the breeding cap and the global stored-potency cap.
-                var potHardCap = BreedingMath.ResolvePotencyHardCap(ServerConfig.pet_breeding_potency_hard_cap.Value, ServerConfig.pet_potency_max_stored.Value);
-                var maxStatMuts = (int)ServerConfig.pet_breeding_max_stat_mutations.Value;
-
-                // Courtship Incense bonus: check device1 and device2 (clamped to max +50% bonus). It
+                // Courtship Incense bonus on each device (Simulate sums and clamps them to +50%). It
                 // affects this roll, so it is consumed on every successful breed.
-                var incenseBonus = Math.Clamp((device1.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0) +
-                                              (device2.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0), 0.0, 0.50);
+                var incense1 = device1.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0;
+                var incense2 = device2.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0;
                 device1.RemoveProperty(PropertyFloat.PetIncenseBonus);
                 device2.RemoveProperty(PropertyFloat.PetIncenseBonus);
 
                 // Chromatic Catalyst: read now, consumed only if a mutation palette is actually rolled.
-                var chromaticCatalystActive = (device1.GetProperty(PropertyBool.PetChromaticCatalystActive) ?? false) ||
-                                              (device2.GetProperty(PropertyBool.PetChromaticCatalystActive) ?? false);
+                var catalyst1 = device1.GetProperty(PropertyBool.PetChromaticCatalystActive) ?? false;
+                var catalyst2 = device2.GetProperty(PropertyBool.PetChromaticCatalystActive) ?? false;
+                var chromaticCatalystActive = catalyst1 || catalyst2;
 
                 // Offering of Subjugation: read now, consumed only when a mating guardian actually spawns
                 // (TrySpawnMatingGuardian).
                 var guardianWeakened = (device1.GetProperty(PropertyBool.PetGuardianWeakened) ?? false) ||
                                        (device2.GetProperty(PropertyBool.PetGuardianWeakened) ?? false);
 
-                // Roll 1: Normal Stat Mutation (decaying odds per stat line, max stat mutations per line)
-                var mutChance = Math.Clamp(Math.Max(minFloor, baseMutChance / (1.0 + decayRate * totalParentStatMuts)) + incenseBonus, 0.0, 1.0);
-                var isMutated = ServerConfig.pet_breeding_force_mutation.Value || ThreadSafeRandom.Next(0.0f, 1.0f) < mutChance;
+                var inputs = new BreedingMath.BreedingInputs
+                {
+                    ParentA = genetics1,
+                    ParentB = genetics2,
+                    Config = config,
+                    Options = new BreedingMath.BreedingOptions
+                    {
+                        IncenseA = incense1, IncenseB = incense2,
+                        CatalystA = catalyst1, CatalystB = catalyst2,
+                        // The guardian's fate is not known yet. OnGuardianSlain rolls the Awakened
+                        // Blessing (draw 12) later through BreedingMath.RollAwakenedBlessing, the very
+                        // helper Simulate uses when GuardianKilled is true.
+                        GuardianKilled = false,
+                    },
+                };
 
-                // Roll 2: Independent Potency Mutation Roll
-                var potChanceClamped = Math.Clamp(potChance, 0.0, 1.0);
-                var isPotencyMutated = ThreadSafeRandom.Next(0.0f, 1.0f) < potChanceClamped;
+                // Draws 1-11: inheritance per line, stat mutation roll, stat line pick, potency roll.
+                var outcome = BreedingMath.Simulate(inputs, static () => ThreadSafeRandom.Next(0.0f, 1.0f));
+                var baby = outcome.Baby;
 
                 var mutationSummary = new System.Collections.Generic.List<string>();
-                var lastMutatedStat = 0;
+                if (outcome.PotencyApplied)
+                    mutationSummary.Add($"+{outcome.PotencyStep} Potency");
+                if (outcome.StatLine != BreedingMath.MutationLine.None)
+                    mutationSummary.Add($"+{outcome.StatStep} {BreedingMath.LineName(outcome.StatLine)}");
 
-                if (isPotencyMutated)
+                if (ServerConfig.pet_breeding_verbose_logging.Value)
                 {
-                    var potStep = BreedingMath.PotencyMutationStep(potStepConfig, babyPotency, potSoftCap, potHardCap);
-
-                    if (potStep > 0)
-                    {
-                        babyPotency += potStep;
-                        babyPotMuts += 1;
-                        mutationSummary.Add($"+{potStep} Potency");
-                        lastMutatedStat = 5;
-                    }
+                    log.Info($"[PetBreeding] Decision for {pet1.Name} x {pet2.Name}: inherited stat mutations {outcome.InheritedStatMutations}, " +
+                             $"stat chance {outcome.StatChance:0.0000} roll {outcome.StatRoll:0.0000} -> {(outcome.StatMutated ? (config.ForceMutation ? "FORCED" : "MUTATED") : "no mutation")}" +
+                             $"{(outcome.StatLine != BreedingMath.MutationLine.None ? $" ({BreedingMath.LineName(outcome.StatLine)})" : outcome.StatAllLinesCapped ? " (every line capped)" : "")}; " +
+                             $"potency chance {outcome.PotencyChance:0.0000} roll {outcome.PotencyRoll:0.0000} -> {(outcome.PotencyApplied ? $"+{outcome.PotencyStep}" : outcome.PotencyMutated ? "capped" : "no mutation")}; " +
+                             $"baby {baby}");
+                    log.Info($"[PetBreeding] [REPLAY] {BreedingReplay.ToJson(inputs, outcome.RngDraws, baby)}");
                 }
 
                 uint? babyPaletteBase = null;
-
-                if (isMutated)
-                {
-                    var eligibleStats = new System.Collections.Generic.List<string>();
-                    if (maxStatMuts <= 0 || babyDmgMuts < maxStatMuts) eligibleStats.Add("DamageRating");
-                    if (maxStatMuts <= 0 || babyDrMuts < maxStatMuts) eligibleStats.Add("DamageResistRating");
-                    if (maxStatMuts <= 0 || babyCritMuts < maxStatMuts) eligibleStats.Add("CritRating");
-                    if (maxStatMuts <= 0 || babyVitMuts < maxStatMuts) eligibleStats.Add("Vitality");
-
-                    if (eligibleStats.Count > 0)
-                    {
-                        var chosenStat = eligibleStats[ThreadSafeRandom.Next(0, eligibleStats.Count - 1)];
-                        if (chosenStat == "DamageRating")
-                        {
-                            mutationSummary.Add($"+{dmgStep} Damage Rating");
-                            babyDmgMuts += 1;
-                            lastMutatedStat = 1;
-                        }
-                        else if (chosenStat == "DamageResistRating")
-                        {
-                            mutationSummary.Add($"+{drStep} Damage Resist Rating");
-                            babyDrMuts += 1;
-                            lastMutatedStat = 2;
-                        }
-                        else if (chosenStat == "CritRating")
-                        {
-                            mutationSummary.Add($"+{critStep} Crit Rating");
-                            babyCritMuts += 1;
-                            lastMutatedStat = 3;
-                        }
-                        else if (chosenStat == "Vitality")
-                        {
-                            mutationSummary.Add($"+{vitStep} Vitality");
-                            babyVitMuts += 1;
-                            lastMutatedStat = 4;
-                        }
-                    }
-                }
 
                 // Update charges & cooldowns - for everyone, admins included. This used to be skipped for
                 // admins, which meant charges never decremented and the recovery cooldown was never
@@ -781,20 +1149,16 @@ namespace ACE.Server.WorldObjects
                     Player1 = player1, Partner = partner, Winner = winner,
                     Donor = donor, Device1 = device1, Device2 = device2, Pet1 = pet1, Pet2 = pet2,
                     BabyWcid = babyWcid, BabyPaletteBase = babyPaletteBase, MutationSummary = mutationSummary,
-                    BabyPotency = babyPotency, BabyGearDmg = babyGearDmg, BabyGearDR = babyGearDR, BabyGearCrit = babyGearCrit,
-                    BabyGearCritDmg = babyGearCritDmg, BabyGearCritResist = babyGearCritResist, BabyGearCritDmgResist = babyGearCritDmgResist,
-                    BabyDmgMuts = babyDmgMuts, BabyDrMuts = babyDrMuts, BabyCritMuts = babyCritMuts,
-                    BabyVitMuts = babyVitMuts, BabyPotMuts = babyPotMuts,
-                    DmgStep = dmgStep, DrStep = drStep, CritStep = critStep, VitStep = vitStep, PotStepConfig = potStepConfig,
-                    MaxStatMutations = maxStatMuts, PotencySoftCap = potSoftCap, PotencyHardCap = potHardCap,
-                    GuardianWeakened = guardianWeakened, LastMutatedStat = lastMutatedStat,
+                    Baby = baby, Config = config, Inputs = inputs, RngDraws = outcome.RngDraws,
+                    GuardianWeakened = guardianWeakened, LastMutatedStat = (int)outcome.LastMutatedStat,
                 };
 
                 // Mutation breeds can be gated behind a mating guardian: a monster wearing the
                 // offspring's exact look that the two parent pets must kill together. If the guardian
                 // cannot be spawned for any reason, the birth completes immediately instead - the
                 // parents have already paid, so the breed must never be lost.
-                if (ServerConfig.pet_breeding_guardian_enabled.Value && mutationSummary.Count > 0)
+                // outcome.GuardianSpawned == GuardianEnabled && the breed mutated (== mutationSummary.Count > 0).
+                if (outcome.GuardianSpawned)
                 {
                     if (TrySpawnMatingGuardian(pending))
                         return;
@@ -858,13 +1222,14 @@ namespace ACE.Server.WorldObjects
                 // (8% of the defending pet's max health, clamped, x pet_breeding_guardian_damage_mult).
                 var hpMult = Math.Max(0.01, ServerConfig.pet_breeding_guardian_health_mult.Value);
 
+                var effective = p.EffectiveRatings;
                 guardian.Level = Math.Max(pet1.Level ?? 1, pet2.Level ?? 1);
-                guardian.SetProperty(PropertyInt.DamageRating, p.EffectiveDamage);
-                guardian.SetProperty(PropertyInt.DamageResistRating, p.EffectiveDamageResist);
-                guardian.SetProperty(PropertyInt.CritRating, p.EffectiveCrit);
-                guardian.SetProperty(PropertyInt.CritDamageRating, p.EffectiveCritDamage);
-                guardian.SetProperty(PropertyInt.CritResistRating, p.EffectiveCritResist);
-                guardian.SetProperty(PropertyInt.CritDamageResistRating, p.EffectiveCritDamageResist);
+                guardian.SetProperty(PropertyInt.DamageRating, effective.DamageRating);
+                guardian.SetProperty(PropertyInt.DamageResistRating, effective.DamageResistRating);
+                guardian.SetProperty(PropertyInt.CritRating, effective.CritRating);
+                guardian.SetProperty(PropertyInt.CritDamageRating, effective.CritDamageRating);
+                guardian.SetProperty(PropertyInt.CritResistRating, effective.CritResistRating);
+                guardian.SetProperty(PropertyInt.CritDamageResistRating, effective.CritDamageResistRating);
 
                 var combinedHealth = (double)pet1.Health.MaxValue + pet2.Health.MaxValue;
                 guardian.Health.StartingValue = (uint)Math.Max(1, Math.Round(combinedHealth * hpMult));
@@ -899,8 +1264,8 @@ namespace ACE.Server.WorldObjects
                 p.Partner.SendMessage(stirMsg);
 
                 log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) spawned for {p.Player1.Name} + {p.Partner.Name}: " +
-                         $"template={templateWcid}, level={guardian.Level}, hp={guardian.Health.MaxValue}, dmgRating={p.EffectiveDamage}, " +
-                         $"drRating={p.EffectiveDamageResist}, weakened={p.GuardianWeakened}, palette=0x{(p.BabyPaletteBase ?? 0):X8}, timeout={timeout:0}s");
+                         $"template={templateWcid}, level={guardian.Level}, hp={guardian.Health.MaxValue}, dmgRating={effective.DamageRating}, " +
+                         $"drRating={effective.DamageResistRating}, weakened={p.GuardianWeakened}, palette=0x{(p.BabyPaletteBase ?? 0):X8}, timeout={timeout:0}s");
 
                 // On the world queue, not the guardian: an action queued on a creature is silently
                 // dropped once that creature has no landblock, which is exactly the case we must handle.
@@ -1036,26 +1401,15 @@ namespace ACE.Server.WorldObjects
             p.Player1.SendMessage(yieldMsg);
             p.Partner.SendMessage(yieldMsg);
 
-            // Awakened Blessing: use the same caps as the original breed roll. Base combat ratings
-            // remain clean because their mutation counts are evaluated dynamically when summoned;
-            // potency is the one stat whose effective value is stored directly on the device.
-            var eligibleStats = new System.Collections.Generic.List<(int Id, string Name, int Step)>();
-            if (p.MaxStatMutations <= 0 || p.BabyDmgMuts < p.MaxStatMutations)
-                eligibleStats.Add((1, "Damage Rating", p.DmgStep));
-            if (p.MaxStatMutations <= 0 || p.BabyDrMuts < p.MaxStatMutations)
-                eligibleStats.Add((2, "Damage Resist Rating", p.DrStep));
-            if (p.MaxStatMutations <= 0 || p.BabyCritMuts < p.MaxStatMutations)
-                eligibleStats.Add((3, "Crit Rating", p.CritStep));
-            if (p.MaxStatMutations <= 0 || p.BabyVitMuts < p.MaxStatMutations)
-                eligibleStats.Add((4, "Vitality", p.VitStep));
+            // Awakened Blessing (draw 12): the same caps and steps as the original breed roll, through
+            // the same BreedingMath helper Simulate uses. Base combat ratings remain clean because their
+            // mutation counts are evaluated dynamically when summoned; potency is the one stat whose
+            // effective value is stored directly on the device.
+            var blessing = BreedingMath.RollAwakenedBlessing(ref p.Baby, p.Config, static () => ThreadSafeRandom.Next(0.0f, 1.0f));
+            if (blessing.Drew)
+                p.RngDraws?.Add(blessing.Roll);
 
-            // Same soft cap / hard cap rule as the breed roll (p.PotencyHardCap is already the smallest
-            // positive of pet_breeding_potency_hard_cap and pet_potency_max_stored).
-            var potencyStep = BreedingMath.PotencyMutationStep(p.PotStepConfig, p.BabyPotency, p.PotencySoftCap, p.PotencyHardCap);
-            if (potencyStep > 0)
-                eligibleStats.Add((5, "Potency", potencyStep));
-
-            if (eligibleStats.Count == 0)
+            if (blessing.Line == BreedingMath.MutationLine.None)
             {
                 var cappedMsg = "[Breeding] The Awakened Blessing flares, but every mutation line has reached its limit.";
                 p.Player1.SendMessage(cappedMsg);
@@ -1064,17 +1418,18 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var (statId, statName, mutationStep) = eligibleStats[ThreadSafeRandom.Next(0, eligibleStats.Count - 1)];
-            switch (statId)
-            {
-                case 1: p.BabyDmgMuts += 1; break;
-                case 2: p.BabyDrMuts += 1; break;
-                case 3: p.BabyCritMuts += 1; break;
-                case 4: p.BabyVitMuts += 1; break;
-                case 5: p.BabyPotency += mutationStep; p.BabyPotMuts += 1; break;
-            }
-            p.LastMutatedStat = statId;
+            var statName = BreedingMath.LineName(blessing.Line);
+            var mutationStep = blessing.Step;
+            p.LastMutatedStat = (int)blessing.Line;
             p.MutationSummary.Add($"Awakened Blessing: +{mutationStep} {statName}");
+
+            if (ServerConfig.pet_breeding_verbose_logging.Value && p.RngDraws != null)
+            {
+                var killedInputs = p.Inputs;
+                killedInputs.Options.GuardianKilled = true;
+                log.Info($"[PetBreeding] Awakened Blessing roll {blessing.Roll:0.0000} -> {statName} +{mutationStep}; baby {p.Baby}");
+                log.Info($"[PetBreeding] [REPLAY] {BreedingReplay.ToJson(killedInputs, p.RngDraws, p.Baby)}");
+            }
 
             p.Player1.PlayParticleEffect(PlayScript.LevelUp, p.Player1.Guid);
             p.Partner.PlayParticleEffect(PlayScript.LevelUp, p.Partner.Guid);
@@ -1144,9 +1499,10 @@ namespace ACE.Server.WorldObjects
             var winner = p.Winner;
             var donor = p.Donor; var pet1 = p.Pet1; var pet2 = p.Pet2;
             var babyWcid = p.BabyWcid; var babyPaletteBase = p.BabyPaletteBase; var mutationSummary = p.MutationSummary;
-            var babyPotency = p.BabyPotency;
-            var babyDmgMuts = p.BabyDmgMuts; var babyDrMuts = p.BabyDrMuts; var babyCritMuts = p.BabyCritMuts;
-            var babyVitMuts = p.BabyVitMuts; var babyPotMuts = p.BabyPotMuts;
+            var genetics = p.Baby;
+            var babyPotency = genetics.PotencyStored;
+            var babyDmgMuts = genetics.Dmg; var babyDrMuts = genetics.Dr; var babyCritMuts = genetics.Crit;
+            var babyVitMuts = genetics.Vit; var babyPotMuts = genetics.Pot;
 
             var baby = WorldObjectFactory.CreateNewWorldObject(babyWcid) as PetDevice;
             if (baby == null)
@@ -1201,12 +1557,12 @@ namespace ACE.Server.WorldObjects
             // The creature-side DamageRating/CritRating/Vitality properties are NOT written to the
             // device: summon never reads them, and a stray Vitality value would be mistaken for
             // phantom vitality mutations by the legacy fallback.
-            if (p.BabyGearDmg > 0) baby.GearDamage = p.BabyGearDmg;
-            if (p.BabyGearDR > 0) baby.GearDamageResist = p.BabyGearDR;
-            if (p.BabyGearCrit > 0) baby.GearCrit = p.BabyGearCrit;
-            if (p.BabyGearCritDmg > 0) baby.GearCritDamage = p.BabyGearCritDmg;
-            if (p.BabyGearCritResist > 0) baby.GearCritResist = p.BabyGearCritResist;
-            if (p.BabyGearCritDmgResist > 0) baby.GearCritDamageResist = p.BabyGearCritDmgResist;
+            if (genetics.GearDamage > 0) baby.GearDamage = genetics.GearDamage;
+            if (genetics.GearDamageResist > 0) baby.GearDamageResist = genetics.GearDamageResist;
+            if (genetics.GearCrit > 0) baby.GearCrit = genetics.GearCrit;
+            if (genetics.GearCritDamage > 0) baby.GearCritDamage = genetics.GearCritDamage;
+            if (genetics.GearCritResist > 0) baby.GearCritResist = genetics.GearCritResist;
+            if (genetics.GearCritDamageResist > 0) baby.GearCritDamageResist = genetics.GearCritDamageResist;
 
             // Persistent genetic mutation counts. Always written (including 0) on a bred baby so the
             // legacy PetMut*Rating / Vitality fallbacks can never trigger on it. The counts are
