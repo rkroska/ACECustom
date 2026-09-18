@@ -1781,8 +1781,11 @@ namespace ACE.Server.Command.Handlers.Processors
                 }
                 else
                 {
+                    // Scope the base-layer DELETE to IS NULL (variant review 2026-09-17): without the predicate, removing the
+                    // last base-layer instance on a layered landblock deleted every v1/v2/v11 row on it as well. Mirrors
+                    // LandblockInstanceWriter.CreateSQLDELETEStatement, which the non-empty branch above goes through.
                     using (var ctx = new WorldDbContext())
-                        ctx.Database.ExecuteSqlRaw($"DELETE FROM landblock_instance WHERE landblock={landblock};");
+                        ctx.Database.ExecuteSqlRaw($"DELETE FROM landblock_instance WHERE landblock={landblock} and variation_Id IS NULL;");
                 }
             }
 
