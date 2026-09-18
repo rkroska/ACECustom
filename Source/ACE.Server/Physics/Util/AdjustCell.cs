@@ -38,8 +38,13 @@ namespace ACE.Server.Physics.Util
         }
 
         public static AdjustCell Get(uint dungeonID, int? variationId)
-        {            
-            VariantCacheId cacheKey = new() { Landblock = (ushort)dungeonID, Variant = variationId ?? 0};
+        {
+            // Variation 0 is always base (2026-09-14 ruling). This used to key base as `?? 0` while building the cells with
+            // the RAW value: a null request and a raw-0 request shared ONE key but built from different landblock instances
+            // (base vs a phantom (dungeon, 0) copy), so whichever arrived first won for both. Key and build now use the same
+            // normalized value, and LScape.unload_landblock evicts with it.
+            variationId = ACE.Server.Managers.VariationManager.NormalizeBase(variationId);
+            VariantCacheId cacheKey = new() { Landblock = (ushort)dungeonID, Variant = variationId };
             AdjustCells.TryGetValue(cacheKey, out AdjustCell adjustCell);
             if (adjustCell == null)
             {

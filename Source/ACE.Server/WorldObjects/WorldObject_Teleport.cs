@@ -22,11 +22,10 @@ namespace ACE.Server.WorldObjects
             var newPosition = new ACE.Entity.Position(_newPosition);
             newPosition.PositionZ += 0.005f * (ObjScale ?? 1.0f);
 
-            // Variation 0 == retail base. The landblock/physics caches key variation 0 and null as
-            // SEPARATE instances, but visibility and ZoneControl treat 0 as the base world — teleporting
-            // to an explicit 0 lands in an empty parallel landblock copy (invisible/unattackable mobs).
-            // Normalize at this single choke point so no teleport path (@tv, /tele, portals, recalls)
-            // can ever place an object in the explicit layer-0 instance.
+            // Variation 0 == retail base. Since 2026-09-17 the landblock/physics caches normalize 0 to null themselves
+            // (LandblockManager.GetLandblock), so an explicit 0 can no longer build an empty parallel landblock copy;
+            // this earlier choke point stays so TeleportDestinationVariation and the destination Position carry null,
+            // the one value the base layer is stored and compared as.
             if (newPosition.Variation == 0)
                 newPosition.Variation = null;
 
@@ -90,11 +89,18 @@ namespace ACE.Server.WorldObjects
 
             UpdatePosition(new ACE.Entity.Position(newPosition), true);
 
+            // Variant review 2026-09-17: the physics-failure branch of UpdatePosition ("placement FAILED during teleport",
+            // which also drops the destination-layer pin) returns before Location is replaced, so Location still being the
+            // origin object means we never reached the destination. The two destination-layer steps below must not run
+            // then, or the physics variation is pinned to a layer the object never reached and the origin layer is swept out
+            // of view. UpdatePosition's return value is "landblock or layer changed", not this, hence the reference check.
+            var locationAdvanced = !ReferenceEquals(Location, prevLoc);
+
             // The physics placement above runs cell-entry enumerations (handle_visible_cells etc.)
             // while the player still carries the ORIGIN variation, which can re-track origin-variation
             // objects right after the cleanup at the top of this method (ghost mobs after /tv).
             // Sweep again now that Location holds the destination variation.
-            if (prevLoc.Variation != newPosition.Variation)
+            if (locationAdvanced && prevLoc.Variation != newPosition.Variation)
             {
                 try
                 {
@@ -129,7 +135,7 @@ namespace ACE.Server.WorldObjects
             // is null/base, the player stays mis-classified and re-tracks origin-variation objects every
             // tick, defeating the earlier sweeps. Pin the physics variation to the destination and do a
             // last cleanup so no origin-variation object survives the transition.
-            if (player != null && prevLoc.Variation != newPosition.Variation)
+            if (locationAdvanced && player != null && prevLoc.Variation != newPosition.Variation)
             {
                 if (PhysicsObj?.Position != null)
                     PhysicsObj.Position.Variation = newPosition.Variation;
@@ -335,9 +341,16 @@ namespace ACE.Server.WorldObjects
                 // During a forced teleport this leaves Location and CurrentLandblock at the ORIGIN while
                 // the client is already mid-teleport — log loudly so a variation/instance desync is traceable.
                 if (Teleporting && forceUpdate)
+                {
                     log.Warn($"{Name}.UpdatePosition() - physics placement FAILED during teleport to {newPosition} " +
                              $"(v={newPosition.Variation?.ToString() ?? "null"}); Location/CurrentLandblock left at origin " +
                              $"(loc v={Location.Variation?.ToString() ?? "null"}, lb v={CurrentLandblock?.VariationId?.ToString() ?? "null"})");
+
+                    // Variant review 2026-09-17: we are still physically at the origin, so the item-9 pin (visibility judges a
+                    // teleport in flight as already in its destination layer) comes off here and Teleport() skips its
+                    // destination-layer sweep and physics-variation pin; the object is judged by its origin Location again.
+                    HasTeleportDestination = false;
+                }
                 return false;
             }
 
