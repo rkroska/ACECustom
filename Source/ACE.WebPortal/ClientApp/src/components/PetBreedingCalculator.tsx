@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Heart, Dna, Info, Sparkles, RefreshCw, ChevronRight, Award, Copy, BarChart3, HelpCircle, RotateCcw, Terminal, Check } from 'lucide-react'
+import { Heart, Dna, Dices, Info, Sparkles, RefreshCw, ChevronRight, Award, Copy, BarChart3, HelpCircle, RotateCcw, Terminal, Check } from 'lucide-react'
 import WorldViewer from './WorldViewer'
 import { copyToClipboard } from '../utils/clipboard'
 import {
@@ -210,6 +210,21 @@ function resolvePaletteForSpecies(
   }
 }
 
+/** A lineage palette drawn from one of the colour families, resolved for a species when it has an entry. */
+function randomPaletteForSpecies(species: string, label: string): PetPalette {
+  const familyKey = randomPick(Object.keys(COLOR_FAMILIES))
+  const fam = COLOR_FAMILIES[familyKey]
+  const speciesTemplate = fam.templates[species]
+  return {
+    name: `${label} (${fam.name})`,
+    hex: fam.hex,
+    templateId: speciesTemplate ? speciesTemplate.templateId : 1,
+    paletteId: speciesTemplate ? speciesTemplate.paletteId : 0,
+    hueShift: 0,
+    swatches: fam.swatches,
+  }
+}
+
 interface GeneticsFieldProps {
   label: string
   value: number
@@ -312,6 +327,71 @@ const PROJECTION_TRIALS = 100
 const PROJECTION_MAX_BREEDS = 4000
 const PROJECTION_DAYS = 90
 
+/** Randomizer presets: how far along a lineage the generated parents are. */
+type RandomProfile = 'fresh' | 'bred' | 'veteran'
+
+const RANDOM_PROFILE_OPTIONS: { key: RandomProfile, label: string, hint: string }[] = [
+  { key: 'fresh', label: 'Fresh loot', hint: 'Straight off a drop: each gear rating has a 50% chance to roll (1-20), no mutations, no potency.' },
+  { key: 'bred', label: 'Bred line', hint: 'A few generations in: 0-4 mutations per stat line, 0-2 potency mutations.' },
+  { key: 'veteran', label: 'Veteran line', hint: 'Long lineage: 3-15 mutations per stat line, deep stored potency.' },
+]
+
+/** Inclusive on both ends, like the server's ThreadSafeRandom.Next(int, int). */
+function randInt(min: number, max: number): number {
+  return min + Math.floor(Math.random() * (max - min + 1))
+}
+
+function randomPick<T>(list: T[]): T {
+  return list[Math.floor(Math.random() * list.length)]
+}
+
+/**
+ * One gear base rating the way loot rolls it (LootGenerationFactory_PetDevice): 50% chance the line
+ * rolls at all, then 1-10 plus a likely second 1-10 at high tier.
+ */
+function rollGearRating(): number {
+  if (Math.random() < 0.5) return 0
+  let rating = randInt(1, 10)
+  if (Math.random() < 0.62) rating += randInt(1, 10)
+  return rating
+}
+
+/** A plausible pet device for testing: gear ratings, mutation counts and stored potency that agree. */
+function randomGenetics(profile: RandomProfile, config: BreedingConfig): PetGenetics {
+  const gear = {
+    gearDamage: rollGearRating(),
+    gearDamageResist: rollGearRating(),
+    gearCrit: rollGearRating(),
+    gearCritDamage: rollGearRating(),
+    gearCritResist: rollGearRating(),
+    gearCritDamageResist: rollGearRating(),
+  }
+
+  if (profile === 'fresh')
+    return { ...EMPTY_GENETICS, ...gear }
+
+  const statRange: [number, number] = profile === 'veteran' ? [3, 15] : [0, 4]
+  const potRange: [number, number] = profile === 'veteran' ? [2, 8] : [0, 2]
+  const cap = config.maxStatMutations > 0 ? config.maxStatMutations : Number.MAX_SAFE_INTEGER
+  const statMut = () => Math.min(cap, randInt(statRange[0], statRange[1]))
+
+  const pot = randInt(potRange[0], potRange[1])
+  // Stored potency already contains its mutations, the way the server keeps it.
+  const potencyBase = profile === 'veteran' ? randInt(200, 1200) : randInt(0, 200)
+  const potencyStored = pot * config.potencyMutationStep + potencyBase
+  const hardCap = potencyCap(config)
+
+  return {
+    ...gear,
+    dmg: statMut(),
+    dr: statMut(),
+    crit: statMut(),
+    vit: statMut(),
+    pot,
+    potencyStored: hardCap > 0 ? Math.min(hardCap, potencyStored) : potencyStored,
+  }
+}
+
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * p)))
@@ -410,6 +490,9 @@ export default function PetBreedingCalculator() {
     swatches: ['#3B82F6', '#2563EB', '#1D4ED8', '#1E40AF', '#1E3A8A', '#172554', '#0F172A', '#020617']
   })
 
+  // Randomizer (testing aid: fills parents with plausible devices instead of typing every field)
+  const [randomProfile, setRandomProfile] = useState<RandomProfile>('bred')
+
   // Guardian assumptions (simulator toggles)
   const [guardianKilled, setGuardianKilled] = useState<boolean>(true)
   const [guardianOverride, setGuardianOverride] = useState<boolean | null>(null)
@@ -471,6 +554,38 @@ export default function PetBreedingCalculator() {
     incenseA: alphaIncense, incenseB: betaIncense,
     catalystA: alphaCatalyst, catalystB: betaCatalyst,
     guardianKilled,
+  }
+
+  /**
+   * Fill one parent with a random plausible device. Consumables are left alone: incense and the
+   * catalyst are deliberate test switches, not part of the pet.
+   */
+  const randomizeParent = (slot: 'alpha' | 'beta', profile: RandomProfile = randomProfile) => {
+    const species = randomPick(speciesList).name
+    // Tier gate: only tier 100+ devices can breed, so do not generate parents that cannot.
+    const level = randomPick(validLevels.filter(l => l >= 100))
+    const genetics = randomGenetics(profile, config)
+    const label = slot === 'alpha' ? 'Alpha Lineage' : 'Beta Lineage'
+    const palette = randomPaletteForSpecies(species, label)
+
+    if (slot === 'alpha') {
+      setAlphaSpecies(species); setAlphaLvl(level); setAlphaGenetics(genetics); setAlphaPalette(palette)
+    } else {
+      setBetaSpecies(species); setBetaLvl(level); setBetaGenetics(genetics); setBetaPalette(palette)
+    }
+
+    const adult = summonedStats(genetics, config)
+    addDebugLog(
+      `[RANDOMIZE] Parent ${slot === 'alpha' ? 'Alpha' : 'Beta'} (${RANDOM_PROFILE_OPTIONS.find(p => p.key === profile)?.label}): ` +
+      `${species} lvl ${level}, palette "${palette.name}". Gear dmg/dr/crit ${genetics.gearDamage}/${genetics.gearDamageResist}/${genetics.gearCrit}, ` +
+      `muts ${genetics.dmg}/${genetics.dr}/${genetics.crit}/${genetics.vit} (+${genetics.pot} pot, stored ${genetics.potencyStored}). ` +
+      `Summoned adult: DR ${adult.damageRating}, DRR ${adult.damageResistRating}, Crit ${adult.critRating}, HP +${adult.bonusHp}.`
+    )
+  }
+
+  const randomizeBothParents = () => {
+    randomizeParent('alpha')
+    randomizeParent('beta')
   }
 
   // Stat mutation odds depend on the BABY's inherited counts, so show the reachable range.
@@ -934,9 +1049,18 @@ export default function PetBreedingCalculator() {
                   <span className="text-sm font-black uppercase tracking-wider text-blue-400 flex items-center gap-2">
                     <Dna className="w-4 h-4" /> Parent Alpha (Stud)
                   </span>
-                  <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/40 px-2 py-0.5 rounded font-black">
-                    {alphaCharges}/{BREEDING_CADENCE.maleChargesPerRefill} Charges
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => randomizeParent('alpha')}
+                      title="Randomize this parent"
+                      className="text-neutral-400 hover:text-blue-300 border border-neutral-800 hover:border-blue-500/40 rounded-lg p-1 transition-all active:scale-95 cursor-pointer"
+                    >
+                      <Dices className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/40 px-2 py-0.5 rounded font-black">
+                      {alphaCharges}/{BREEDING_CADENCE.maleChargesPerRefill} Charges
+                    </span>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -1007,9 +1131,18 @@ export default function PetBreedingCalculator() {
                   <span className="text-sm font-black uppercase tracking-wider text-violet-400 flex items-center gap-2">
                     <Dna className="w-4 h-4" /> Parent Beta (Donor)
                   </span>
-                  <span className="text-[10px] bg-violet-500/20 text-violet-300 border border-violet-500/40 px-2 py-0.5 rounded font-black">
-                    Female ({BREEDING_CADENCE.femaleRecoveryHours}h Recovery)
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => randomizeParent('beta')}
+                      title="Randomize this parent"
+                      className="text-neutral-400 hover:text-violet-300 border border-neutral-800 hover:border-violet-500/40 rounded-lg p-1 transition-all active:scale-95 cursor-pointer"
+                    >
+                      <Dices className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="text-[10px] bg-violet-500/20 text-violet-300 border border-violet-500/40 px-2 py-0.5 rounded font-black">
+                      Female ({BREEDING_CADENCE.femaleRecoveryHours}h Recovery)
+                    </span>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -1165,6 +1298,24 @@ export default function PetBreedingCalculator() {
                 </div>
 
                 <div className="space-y-2 pt-3 border-t border-neutral-800/80">
+                  <div className="flex gap-2">
+                    <select
+                      value={randomProfile}
+                      onChange={(e) => setRandomProfile(e.target.value as RandomProfile)}
+                      title={RANDOM_PROFILE_OPTIONS.find(p => p.key === randomProfile)?.hint}
+                      className="bg-neutral-950 border border-neutral-800 rounded-xl px-2.5 py-2 text-xs font-bold text-neutral-300 focus:outline-none focus:border-amber-500 cursor-pointer"
+                    >
+                      {RANDOM_PROFILE_OPTIONS.map(p => <option key={p.key} value={p.key} title={p.hint}>{p.label}</option>)}
+                    </select>
+                    <button
+                      onClick={randomizeBothParents}
+                      title="Fill both parents with random plausible devices. Incense and catalyst are left as set."
+                      className="flex-1 bg-neutral-950 border border-neutral-800 hover:border-amber-500/40 text-neutral-300 hover:text-amber-300 text-xs font-bold py-2 rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Dices className="w-3.5 h-3.5" /> Randomize Both Parents
+                    </button>
+                  </div>
+
                   <button
                     onClick={handleBreedSimulation}
                     disabled={alphaCharges <= 0}
