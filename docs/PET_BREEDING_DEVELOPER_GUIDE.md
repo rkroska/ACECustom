@@ -12,7 +12,8 @@ Related: `PET_BREEDING_CONTENT_GUIDE.md` (content team), `PET_BREEDING_PLAYER_GU
 
 | File | Responsibility |
 |---|---|
-| `Source/ACE.Server/WorldObjects/PetDevice_Breeding.cs` | The breed itself: gates, partner search, inheritance, mutation roll, guardian spawn, birth, ID panel block, admin diagnostics. |
+| `Source/ACE.Server/WorldObjects/PetDevice_Breeding.cs` | The breed itself: gates, partner search, guardian spawn, birth, ID panel block, admin diagnostics. `BreedingMath` (nested): the pure inheritance / mutation / cap maths, `Simulate`, `RollAwakenedBlessing`, `SummonedStats`. |
+| `Source/ACE.Server/WorldObjects/PetDevice_BreedingReplay.cs` | `BreedingReplay`: parses, runs and reports a `[REPLAY]` blob (see section 11). |
 | `Source/ACE.Server/WorldObjects/MatingGuardian.cs` | The ritual monster. `Creature` subclass with source-gated damage, pet-only targeting, no loot/XP/corpse, lost/slain callbacks. |
 | `Source/ACE.Server/WorldObjects/PetDevice_Maturity.cs` | Juvenile growth (kill counter, stages, names), imprinting, kill credit from creature deaths. |
 | `Source/ACE.Server/WorldObjects/PetDevice.cs` | Device properties (`VisualOverride*`, `IsMale`, `IsShiny`), `SummonCreature`, `ApplyVisualOverridesTo`, bond attunement in `ActOnUse`. |
@@ -25,7 +26,7 @@ Related: `PET_BREEDING_CONTENT_GUIDE.md` (content team), `PET_BREEDING_PLAYER_GU
 | `Source/ACE.Server/WorldObjects/Creature_Death.cs` | `OnDeath` calls `PetDevice.CreditMaturityKills(this)`. |
 | `Source/ACE.Server/WorldObjects/Player_Networking.cs` | Dance emote stamps `LastDanceTime` and calls `CheckMultiplayerBreeding`. |
 | `Source/ACE.Server/Managers/PropertyManager.cs` | All `pet_breeding_*`, `pet_maturity_*` config. |
-| `Source/ACE.Server/Command/Handlers/DeveloperCommands.cs` | `@breed`, `@breed-debug`, `@setsex`, `@pet-reset-cooldown`, `@pet-set-maturity`, `@pet-set-mutations`, `@pet-cleanse-palette`, `@mutate_pet`, `@petdesc`. |
+| `Source/ACE.Server/Command/Handlers/DeveloperCommands.cs` | `@breed`, `@breed-replay`, `@breed-debug`, `@setsex`, `@pet-reset-cooldown`, `@pet-set-maturity`, `@pet-set-mutations`, `@pet-cleanse-palette`, `@mutate_pet`, `@petdesc`. |
 | `Source/ACE.Entity/Enum/Properties/*.cs` | Custom property ids (see section 9). |
 
 Build and run notes are in `CLAUDE.md` at the repo root (Release x64 path, config-override rule, the
@@ -237,3 +238,80 @@ were caught.
   `Attackable` or faction on a live creature.
 - Logging: `pet_breeding_verbose_logging` and `pet_visual_packet_debug` gate the noisy lines. Keep new
   per-packet or per-death logs behind a switch.
+
+---
+
+## 11. Simulator parity harness
+
+The website's breeding simulator (`Source/ACE.WebPortal/ClientApp/src/utils/breedingModel.ts`) and
+the server's `PetDevice.BreedingMath` (`PetDevice_Breeding.cs`) implement the same maths. The harness
+proves it and keeps it that way.
+
+### How it works
+
+- `BreedingMath.Simulate(in BreedingInputs, Func<double> nextDouble)` is the whole breed as one pure,
+  deterministic function: parent genetics + config + options + a draw source in, `BreedingOutcome`
+  (the baby and every intermediate decision) out. It never reads a device, a player, `ServerConfig`
+  or the global RNG.
+- The live breed (`CheckMultiplayerBreeding`) builds the inputs (`BreedingConfig.FromServerConfig`,
+  `device.ReadBreedingGenetics`, incense/catalyst flags), calls `Simulate` with
+  `ThreadSafeRandom.Next(0.0f, 1.0f)` as the draw source, and only then applies side effects
+  (charges, cooldown, consumables, palette, guardian, `CompleteBirth`). It passes
+  `GuardianKilled = false` because the guardian's fate is unknown; `OnGuardianSlain` later calls
+  `BreedingMath.RollAwakenedBlessing`, the same helper `Simulate` runs for draw 12. The species donor
+  coin flip and the palette pick stay in the live path and are not part of the model.
+- `PetDevice.BreedingReplay` parses a `[REPLAY]` blob, feeds its inputs and draws through `Simulate`
+  with a scripted draw source, and compares the result with the blob's `baby`. Every draw must be
+  consumed and every gear value, count and stored potency must match.
+- `Source/ACE.Server.Tests/PetBreedingParityTests.cs` runs three blobs captured from the live site and
+  eight generated from `breedingModel.ts` with scripted draws (no mutation, soft cap, max-stored cap,
+  per-line cap, incense, guardian disabled, guardian not killed, everything capped), plus the summon
+  maths (`BreedingMath.SummonedStats`) including the juvenile multipliers at exact `.5` values.
+
+### Draw order (the contract)
+
+All draws are uniform doubles in `[0, 1)`. The `rngDraws` array in a blob is exactly this list.
+
+1-8. Inheritance, one draw per line: damage, damageResist, crit, critDamage, critResist,
+     critDamageResist, vitality, potency. `roll < 0.55` takes the parent with the higher effective
+     value (ties favour parent A), else the lower.
+9.   Stat mutation roll (always drawn; ignored when `pet_breeding_force_mutation` is on).
+10.  Stat line pick, ONLY when a stat mutation happened and a line is under the per-line cap:
+     `index = min(n - 1, floor(roll * n))` over `[dmg, dr, crit, vit]` minus capped lines.
+11.  Potency mutation roll.
+12.  Awakened Blessing pick, ONLY when the guardian spawned (enabled and the breed mutated) and was
+     killed: eligible stat lines, then potency when its capped step is above 0.
+
+Where one side skips a draw the other must skip it too; a leftover or missing draw is a FAIL.
+
+### Rounding
+
+JavaScript `Math.round` rounds `.5` up; C# `Math.Round` defaults to banker's rounding (`4.5 -> 4`).
+Everything in `BreedingMath` that can land on `.5` (the juvenile multipliers `0.5 .. 0.9`, the derived
+crit lines) goes through `BreedingMath.RoundHalfUp` (`MidpointRounding.AwayFromZero`).
+`CombatPet.ApplyMaturity` must use the same mode. Never add a bare `Math.Round` on a rating.
+
+### Capturing a REPLAY line from the site
+
+1. Open the breeding simulator, tick the verbose log option, and run one breed.
+2. The log ends with a line starting `[REPLAY] {"model":...}`. Copy everything from the `{` to the
+   final `}` (one line, no spaces).
+
+The server writes the same blob when `pet_breeding_verbose_logging` is on:
+`[PetBreeding] [REPLAY] {...}` after the decision (`guardianKilled:false`, draws 1-11) and again
+after a slain guardian (`guardianKilled:true`, draw 12 appended). Those lines replay too.
+
+### Running @breed-replay
+
+`@breed-replay <blob>` (developer access, works from the game client or the server console) runs
+the blob through `BreedingMath.Simulate` and prints the baby, its adult and stage-1 summon ratings,
+and `RESULT: PASS` or `RESULT: FAIL` with one line per differing field. The chat parser strips double
+quotes from a command line; the handler re-quotes the blob, so pasting it as-is works. If the client
+truncates a long paste, save the line(s) to a text file on the server and run
+`@breed-replay file <path>`: every `[REPLAY]` line in the file is checked and a pass count printed.
+
+### The rule
+
+`breedingModel.ts` and `BreedingMath` change together, in the same PR, with `BREEDING_MODEL_VERSION`
+bumped and the blobs in `PetBreedingParityTests.cs` regenerated. A parity test failure after a change
+to one side means the other side was not updated; do not "fix" the test.
