@@ -85,7 +85,9 @@ namespace ACE.Server.WorldObjects
             var strength = maturityEnabled ? device.MaturityStrengthMult : 1.0;
             var scaleMult = maturityEnabled ? device.MaturityScaleMult : 1.0;
 
-            int? Scaled(int? v) => v.HasValue ? (int)Math.Round(v.Value * strength) : null;
+            // Half-up, like ScaleRating below: bare Math.Round is banker's rounding, which turns a
+            // x0.5 juvenile step on an odd rating into a silent 1-point loss (29 -> 14, not 15).
+            int? Scaled(int? v) => v.HasValue ? (int)Math.Round(v.Value * strength, MidpointRounding.AwayFromZero) : null;
             DamageRating = Scaled(matureDamageRating);
             DamageResistRating = Scaled(matureDamageResistRating);
             CritRating = Scaled(matureCritRating);
@@ -96,7 +98,7 @@ namespace ACE.Server.WorldObjects
             // Everything is a flat percentage of the adult: max health (base included), outgoing
             // damage, and the ratings above.
             var adultHealth = (double)matureHealthBase + matureMutHp;
-            Health.StartingValue = (uint)Math.Max(1, Math.Min(uint.MaxValue, Math.Round(adultHealth * strength)));
+            Health.StartingValue = (uint)Math.Max(1, Math.Min(uint.MaxValue, Math.Round(adultHealth * strength, MidpointRounding.AwayFromZero)));
             if (grew)
                 Health.Current = Health.MaxValue;
             else if (Health.Current > Health.MaxValue)
