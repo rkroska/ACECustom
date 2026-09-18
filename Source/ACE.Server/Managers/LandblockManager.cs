@@ -94,10 +94,11 @@ namespace ACE.Server.Managers
         private static int unloadGatesActive;
 
         /// <summary>
-        /// Longest a lookup waits for a teardown. An unload is an in-memory walk (SaveDB queues its writes rather than
-        /// blocking), so this is generous; it is kept short because a waiter can be a group tick thread and
-        /// <see cref="Tick"/> joins its Parallel.ForEach - a long wait here stalls the whole world tick. On timeout the
-        /// caller proceeds exactly as it did before this gate existed.
+        /// Longest ONE lookup waits for a teardown, in total across all of its retries (the deadline is created once per
+        /// lookup and shared). An unload is an in-memory walk (SaveDB queues its writes rather than blocking), so this is
+        /// generous; it is kept short because a waiter can be a group tick thread and <see cref="Tick"/> joins its
+        /// Parallel.ForEach - a long wait here stalls the whole world tick. On timeout the caller proceeds exactly as it
+        /// did before this gate existed.
         /// </summary>
         private static readonly TimeSpan unloadGateTimeout = TimeSpan.FromMilliseconds(250);
 
@@ -140,22 +141,30 @@ namespace ACE.Server.Managers
         /// itself); every other caller has waited for the teardown to finish, so by the time this returns null the key is
         /// free and a fresh instance can be built. Loops because a fresh gate could in principle open for the same key
         /// between the wait and the lookup.
+        /// <para/>
+        /// <paramref name="deadline"/> and <paramref name="timedOut"/> belong to the calling lookup and are shared across
+        /// its retries, so one lookup never waits longer than <see cref="unloadGateTimeout"/> in total. The deadline is
+        /// only created when a wait is actually needed, keeping the no-unload fast path at one volatile read.
         /// </summary>
-        private static LandblockUnloadGate WaitForUnloadGate(VariantCacheId cacheKey)
+        private static LandblockUnloadGate WaitForUnloadGate(VariantCacheId cacheKey, ref DateTime? deadline, ref bool timedOut)
         {
             if (Volatile.Read(ref unloadGatesActive) == 0)
                 return null;
-
-            var deadline = DateTime.UtcNow + unloadGateTimeout;
 
             while (unloadGates.TryGetValue(cacheKey, out var gate))
             {
                 if (gate.OwnerThreadId == Environment.CurrentManagedThreadId)
                     return gate;
 
-                var remaining = deadline - DateTime.UtcNow;
+                if (timedOut)
+                    return null;   // this lookup already gave up once: do not wait or log again
+
+                deadline ??= DateTime.UtcNow + unloadGateTimeout;
+
+                var remaining = deadline.Value - DateTime.UtcNow;
                 if (remaining <= TimeSpan.Zero || !gate.Done.Wait(remaining))
                 {
+                    timedOut = true;
                     log.Error($"LandblockManager: waited {unloadGateTimeout.TotalMilliseconds:N0}ms for 0x{cacheKey.Landblock:X4}, v:{cacheKey.Variant?.ToString() ?? "null"} to finish unloading on thread {gate.OwnerThreadId} - proceeding anyway.");
                     return null;
                 }
@@ -791,13 +800,16 @@ namespace ACE.Server.Managers
             var cacheKey = new VariantCacheId() { Landblock = landblockId.Landblock, Variant = variation };
 
             var created = false;
-            var unloadWaits = 0;
+
+            // One wait budget for this whole lookup, however many times the loop below comes back round.
+            DateTime? unloadDeadline = null;
+            var unloadWaitTimedOut = false;
 
             while (true)
             {
                 // If this key is being torn down, wait for that to finish so the instance built below replaces it cleanly
                 // rather than racing its release of shared state (see LandblockUnloadGate).
-                var unloadGate = WaitForUnloadGate(cacheKey);
+                var unloadGate = WaitForUnloadGate(cacheKey, ref unloadDeadline, ref unloadWaitTimedOut);
                 landblock = GetLandblock(cacheKey);
 
                 if (landblock == null && unloadGate != null)
@@ -821,18 +833,17 @@ namespace ACE.Server.Managers
                 // registers an instance for this key; every other thread that missed gets that instance back. The unloader
                 // deregisters under this same lock (with its gate already open), so a miss WITH a gate present here means
                 // a teardown is in flight - never build over it; release the lock, wait for the gate, and come back.
+                // Once this lookup's wait budget is spent (already logged by WaitForUnloadGate) it builds anyway, which
+                // is what every lookup did before the gate existed.
                 lock (landblockCreateLock)
                 {
                     landblock = GetLandblock(cacheKey);
                     if (landblock == null)
                     {
-                        if (unloadGates.ContainsKey(cacheKey) && unloadWaits < 4)
+                        if (!unloadWaitTimedOut && unloadGates.ContainsKey(cacheKey))
                             unloadInProgress = true;
                         else
                         {
-                            if (unloadWaits >= 4)
-                                log.Error($"LandblockManager: 0x{cacheKey.Landblock:X4}, v:{variation?.ToString() ?? "null"} still unloading after {unloadWaits} waits - building the replacement anyway.");
-
                             // load up this landblock
                             landblock = new Landblock(landblockId, variation);
 
@@ -858,10 +869,7 @@ namespace ACE.Server.Managers
                 }
 
                 if (unloadInProgress)
-                {
-                    unloadWaits++;
-                    continue;   // back to WaitForUnloadGate, which blocks until the teardown closes its gate
-                }
+                    continue;   // back to WaitForUnloadGate, which blocks until the teardown closes its gate or the budget runs out
 
                 break;
             }
