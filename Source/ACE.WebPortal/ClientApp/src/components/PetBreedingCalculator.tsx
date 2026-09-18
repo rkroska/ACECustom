@@ -323,6 +323,9 @@ type ActivityProfile = 'casual' | 'dedicated' | 'hardcore'
 /** Stud sessions per day: each male stud supplies 10 charges per 24h refill. */
 const PROFILE_STUDS: Record<ActivityProfile, number> = { casual: 1, dedicated: 2, hardcore: 4 }
 
+/** Verbose mode writes ~40 lines per breed, so keep enough history for a dozen of them. */
+const DEBUG_LOG_LIMIT = 2000
+
 const PROJECTION_TRIALS = 100
 const PROJECTION_MAX_BREEDS = 4000
 const PROJECTION_DAYS = 90
@@ -511,16 +514,18 @@ export default function PetBreedingCalculator() {
   ])
   const [copiedDebug, setCopiedDebug] = useState<boolean>(false)
   const [isConsoleOpen, setIsConsoleOpen] = useState<boolean>(true)
+  /** Verbose: log every input, intermediate value and rng draw, so a pasted log can be checked. */
+  const [verboseLog, setVerboseLog] = useState<boolean>(true)
 
   const addDebugLog = (msg: string) => {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     const formatted = `[${time}] ${msg}`
-    setDebugLogs(prev => [formatted, ...prev].slice(0, 200))
+    setDebugLogs(prev => [formatted, ...prev].slice(0, DEBUG_LOG_LIMIT))
   }
   const addDebugLogs = (msgs: string[]) => {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     const formatted = msgs.map(m => `[${time}] ${m}`).reverse()
-    setDebugLogs(prev => [...formatted, ...prev].slice(0, 200))
+    setDebugLogs(prev => [...formatted, ...prev].slice(0, DEBUG_LOG_LIMIT))
   }
 
   // Time-to-Target Estimator Inputs
@@ -681,7 +686,7 @@ export default function PetBreedingCalculator() {
 
     addDebugLog(`[SPECIES ROLL] 50/50 -> species donor Parent ${donorParent}: ${babySpecies}`)
 
-    const result = breed(alphaGenetics, betaGenetics, config, breedOptions, Math.random)
+    const result = breed(alphaGenetics, betaGenetics, config, { ...breedOptions, verbose: verboseLog }, Math.random)
     addDebugLogs(result.log)
 
     const mutationSummary = describeMutations(result)
@@ -1796,6 +1801,14 @@ export default function PetBreedingCalculator() {
             </div>
 
             <div className="flex items-center gap-2">
+              <label
+                className="flex items-center gap-1.5 text-xs font-bold text-neutral-300 bg-neutral-800/60 border border-neutral-700 px-3 py-1.5 rounded-lg cursor-pointer"
+                title="Log every input, intermediate value and random draw, plus a [REPLAY] line that reproduces the breed exactly"
+              >
+                <input type="checkbox" checked={verboseLog} onChange={(e) => setVerboseLog(e.target.checked)} className="accent-emerald-500" />
+                Verbose
+              </label>
+
               <button
                 onClick={runModelSelfCheck}
                 className="bg-violet-600/30 hover:bg-violet-600/50 text-violet-300 font-bold text-xs px-3 py-1.5 rounded-lg border border-violet-500/40 transition-all flex items-center gap-1.5 cursor-pointer"

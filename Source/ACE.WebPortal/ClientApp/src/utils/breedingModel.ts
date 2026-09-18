@@ -274,6 +274,34 @@ function copyLine(target: PetGenetics, source: PetGenetics, line: InheritLine): 
 /** Pick higher parent if r < 0.55 else lower; ties count parent A as higher. */
 export const HIGHER_PARENT_CHANCE = 0.55
 
+/** "gear 20 + count 2 x step 10 = 40": the effective value with its arithmetic shown. */
+function describeLineMath(pet: PetGenetics, line: InheritLine, config: BreedingConfig): string {
+  switch (line) {
+    case 'damage': return `gear ${pet.gearDamage} + count ${pet.dmg} x ${config.damageMutationStep} = ${effectiveLineValue(pet, line, config)}`
+    case 'damageResist': return `gear ${pet.gearDamageResist} + count ${pet.dr} x ${config.drMutationStep} = ${effectiveLineValue(pet, line, config)}`
+    case 'crit': return `gear ${pet.gearCrit} + count ${pet.crit} x ${config.critMutationStep} = ${effectiveLineValue(pet, line, config)}`
+    case 'critDamage': return `gear ${pet.gearCritDamage} (gear only)`
+    case 'critResist': return `gear ${pet.gearCritResist} (gear only)`
+    case 'critDamageResist': return `gear ${pet.gearCritDamageResist} (gear only)`
+    case 'vitality': return `count ${pet.vit} x ${config.vitalityMutationStep} = ${effectiveLineValue(pet, line, config)} HP (count only)`
+    case 'potency': return `stored ${pet.potencyStored} with ${pet.pot} potency mutations`
+  }
+}
+
+/** What the baby actually took for a line: the package-deal check. */
+function describeLineCarry(baby: PetGenetics, line: InheritLine): string {
+  switch (line) {
+    case 'damage': return `gear ${baby.gearDamage} + count ${baby.dmg}`
+    case 'damageResist': return `gear ${baby.gearDamageResist} + count ${baby.dr}`
+    case 'crit': return `gear ${baby.gearCrit} + count ${baby.crit}`
+    case 'critDamage': return `gear ${baby.gearCritDamage}`
+    case 'critResist': return `gear ${baby.gearCritResist}`
+    case 'critDamageResist': return `gear ${baby.gearCritDamageResist}`
+    case 'vitality': return `count ${baby.vit}`
+    case 'potency': return `stored ${baby.potencyStored} + count ${baby.pot}`
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Breeding
 // ---------------------------------------------------------------------------
@@ -287,6 +315,11 @@ export interface BreedOptions {
   catalystB?: boolean
   /** Simulator assumption: the parents kill the mating guardian (Awakened Blessing). Default true. */
   guardianKilled?: boolean
+  /**
+   * Log every input, intermediate value and arithmetic step, so a log can be checked by hand or
+   * replayed against the server's C#. Costs nothing but log lines.
+   */
+  verbose?: boolean
 }
 
 export interface StatRoll {
@@ -339,10 +372,40 @@ export interface BreedResult {
   catalystConsumed: boolean
   /** Human-readable roll log in server order. */
   log: string[]
+  /** Every random draw this breed consumed, in order: replay it with scriptedRng. */
+  rngDraws: number[]
 }
 
 const fmt = (n: number) => n.toFixed(4)
 const pct = (n: number) => (n * 100).toFixed(2) + '%'
+
+/** Bumped whenever the model's arithmetic changes, so a pasted log says what produced it. */
+export const BREEDING_MODEL_VERSION = '2026-09-18.1'
+
+/** Every stored field of a device, the way the server keeps it, on one line. */
+export function describeGenetics(pet: PetGenetics): string {
+  return `gear[dmg ${pet.gearDamage}, dr ${pet.gearDamageResist}, crit ${pet.gearCrit}, ` +
+    `critDmg ${pet.gearCritDamage}, critRes ${pet.gearCritResist}, critDmgRes ${pet.gearCritDamageResist}] ` +
+    `counts[dmg ${pet.dmg}, dr ${pet.dr}, crit ${pet.crit}, vit ${pet.vit}, pot ${pet.pot}] ` +
+    `potencyStored ${pet.potencyStored}`
+}
+
+/** The summon-time arithmetic spelled out, so each rating can be checked against the ID panel. */
+export function describeSummonMath(pet: PetGenetics, config: BreedingConfig): string[] {
+  const s = summonedStats(pet, config)
+  const mutDmg = pet.dmg * config.damageMutationStep
+  const mutDr = pet.dr * config.drMutationStep
+  return [
+    `damageRating    = gear ${pet.gearDamage} + ${pet.dmg} x ${config.damageMutationStep} = ${s.damageRating}`,
+    `damageResist    = gear ${pet.gearDamageResist} + ${pet.dr} x ${config.drMutationStep} = ${s.damageResistRating}`,
+    `critRating      = gear ${pet.gearCrit} + ${pet.crit} x ${config.critMutationStep} = ${s.critRating}`,
+    `critDamage      = gear ${pet.gearCritDamage} + round(0.8 x ${mutDmg}) = ${s.critDamageRating}`,
+    `critResist      = gear ${pet.gearCritResist} + round(0.8 x ${mutDr}) = ${s.critResistRating}`,
+    `critDamageResist= gear ${pet.gearCritDamageResist} + round(0.6 x ${mutDr}) = ${s.critDamageResistRating}`,
+    `bonusHp         = ${pet.vit} x ${config.vitalityMutationStep} = ${s.bonusHp}`,
+    `potency stored  = ${pet.potencyStored} (active potency is capped by bond in game)`,
+  ]
+}
 
 export function breed(
   parentA: PetGenetics,
@@ -353,6 +416,27 @@ export function breed(
 ): BreedResult {
   const log: string[] = []
   const baby: PetGenetics = { ...EMPTY_GENETICS }
+  const verbose = options.verbose ?? false
+
+  // Every draw is recorded so a log can be replayed exactly (scriptedRng) on either side.
+  const rngDraws: number[] = []
+  const roll = (): number => {
+    const v = rng()
+    rngDraws.push(v)
+    return v
+  }
+  const v = (line: string) => { if (verbose) log.push(line) }
+
+  if (verbose) {
+    v(`[MODEL] breedingModel ${BREEDING_MODEL_VERSION} (mirrors PetDevice_Breeding.BreedingMath)`)
+    v(`[PARENT A] ${describeGenetics(parentA)}`)
+    v(`[PARENT B] ${describeGenetics(parentB)}`)
+    v(`[OPTIONS] incenseA ${options.incenseA ?? 0}, incenseB ${options.incenseB ?? 0}, ` +
+      `catalystA ${!!options.catalystA}, catalystB ${!!options.catalystB}, guardianKilled ${options.guardianKilled ?? true}`)
+    v(`[RULES] per line: roll < 0.55 takes the HIGHER effective parent, else the LOWER; ties favour A. ` +
+      `Damage/DmgResist/Crit carry gear AND count together; CritDmg/CritRes/CritDmgRes are gear only; ` +
+      `Vitality is count only; Potency carries stored AND count.`)
+  }
 
   // 1. Inheritance: independent 55/45 roll per line, higher effective value favoured.
   const inheritance: InheritanceRoll[] = []
@@ -361,11 +445,13 @@ export function breed(
     const effectiveB = effectiveLineValue(parentB, line, config)
     const higher: ParentSlot = effectiveA >= effectiveB ? 'A' : 'B'
     const lower: ParentSlot = higher === 'A' ? 'B' : 'A'
-    const roll = rng()
-    const chosen: ParentSlot = roll < HIGHER_PARENT_CHANCE ? higher : lower
+    const lineRoll = roll()
+    const chosen: ParentSlot = lineRoll < HIGHER_PARENT_CHANCE ? higher : lower
     copyLine(baby, chosen === 'A' ? parentA : parentB, line)
-    inheritance.push({ line, roll, higher, chosen, effectiveA, effectiveB })
-    log.push(`[INHERIT ${INHERIT_LINE_LABELS[line]}] A=${effectiveA} B=${effectiveB} higher=${higher} roll ${fmt(roll)} ${roll < HIGHER_PARENT_CHANCE ? '<' : '>='} 0.55 -> took parent ${chosen}`)
+    inheritance.push({ line, roll: lineRoll, higher, chosen, effectiveA, effectiveB })
+    log.push(`[INHERIT ${INHERIT_LINE_LABELS[line]}] A=${effectiveA} B=${effectiveB} higher=${higher} roll ${fmt(lineRoll)} ${lineRoll < HIGHER_PARENT_CHANCE ? '<' : '>='} 0.55 -> took parent ${chosen}`)
+    v(`    effective: ${describeLineMath(parentA, line, config)} (A) vs ${describeLineMath(parentB, line, config)} (B)` +
+      ` -> baby now carries ${describeLineCarry(baby, line)}`)
   }
 
   const inheritedStatMutations = totalStatMutations(baby)
@@ -373,7 +459,14 @@ export function breed(
 
   // 2. Stat mutation roll (decay is driven by the BABY's inherited counts).
   const statChance = statMutationChance(inheritedStatMutations, config, incenseBonus)
-  const statRollValue = rng()
+  const statRollValue = roll()
+  if (verbose) {
+    const decayed = config.baseMutationChance / (1 + config.mutationDecayRate * inheritedStatMutations)
+    v(`[STAT CHANCE MATH] base ${config.baseMutationChance} / (1 + decay ${config.mutationDecayRate} x ${inheritedStatMutations} inherited) = ${fmt(decayed)}` +
+      `; max(floor ${config.mutationMinFloor}, ${fmt(decayed)}) = ${fmt(Math.max(config.mutationMinFloor, decayed))}` +
+      `; + incense ${fmt(incenseBonus)} -> clamped ${fmt(statChance)}` +
+      (config.forceMutation ? ' (force_mutation is ON: the roll is ignored)' : ''))
+  }
   const statMutated = config.forceMutation || statRollValue < statChance
   log.push(`[STAT ROLL] baby stat mutations after inheritance = ${inheritedStatMutations}; chance = ${pct(statChance)}` +
     (incenseBonus > 0 ? ` (incl. incense +${pct(incenseBonus)})` : '') +
@@ -388,12 +481,16 @@ export function breed(
   if (statMutated) {
     const eligible = eligibleStatLines(baby, config)
     if (eligible.length > 0) {
-      const pickRoll = rng()
-      const line = eligible[Math.min(eligible.length - 1, Math.floor(pickRoll * eligible.length))]
+      const pickRoll = roll()
+      const idx = Math.min(eligible.length - 1, Math.floor(pickRoll * eligible.length))
+      const line = eligible[idx]
+      const before = baby[line]
       baby[line] += 1
       statRoll.line = line
       statRoll.step = lineStep(line, config)
       log.push(`[STAT LINE] eligible [${eligible.join(', ')}] pick roll ${fmt(pickRoll)} -> ${STAT_LINE_LABELS[line]} +1 mutation (+${statRoll.step})`)
+      v(`    pick math: floor(${fmt(pickRoll)} x ${eligible.length} eligible) = index ${idx} -> ${line}` +
+        `; count ${before} -> ${baby[line]} (per-line cap ${config.maxStatMutations || 'uncapped'})`)
     } else {
       statRoll.allLinesCapped = true
       log.push(`[STAT LINE] every stat line is at the per-line cap (${config.maxStatMutations}); nothing applied`)
@@ -402,7 +499,7 @@ export function breed(
 
   // 4. Potency roll: independent, incense does not apply.
   const potChance = potencyMutationChance(config)
-  const potRollValue = rng()
+  const potRollValue = roll()
   const potMutated = potRollValue < potChance
   const softCapped = config.potencySoftCap > 0 && baby.potencyStored >= config.potencySoftCap
   const potencyRoll: PotencyRoll = {
@@ -412,11 +509,20 @@ export function breed(
   if (potMutated) {
     const step = cappedPotencyStep(baby.potencyStored, config)
     potencyRoll.step = step
+    if (verbose) {
+      const cap = potencyCap(config)
+      v(`    potency step math: config step ${config.potencyMutationStep}` +
+        `; soft cap ${config.potencySoftCap || 'none'} and stored ${baby.potencyStored} -> ${softCapped ? `quarter step ${Math.max(1, Math.floor(config.potencyMutationStep / 4))}` : 'full step'}` +
+        `; hard cap ${cap > 0 ? `${cap} (smallest positive of potency_hard_cap and pet_potency_max_stored)` : 'none'}` +
+        ` -> applied step ${step}`)
+    }
     if (step > 0) {
+      const beforePot = baby.potencyStored
       baby.potencyStored += step
       baby.pot += 1
       potencyRoll.applied = true
       log.push(`[POTENCY] +${step} stored potency${softCapped ? ' (soft cap: quarter step)' : ''} -> ${baby.potencyStored}, pot mutations ${baby.pot}`)
+      v(`    stored ${beforePot} + ${step} = ${baby.potencyStored}`)
     } else {
       log.push(`[POTENCY] stored potency ${baby.potencyStored} is at the cap (${potencyCap(config)}); nothing applied`)
     }
@@ -436,8 +542,11 @@ export function breed(
       const potStep = cappedPotencyStep(baby.potencyStored, config)
       if (potStep > 0) eligible.push('pot')
       if (eligible.length > 0) {
-        const pickRoll = rng()
-        const line = eligible[Math.min(eligible.length - 1, Math.floor(pickRoll * eligible.length))]
+        const pickRoll = roll()
+        const idx = Math.min(eligible.length - 1, Math.floor(pickRoll * eligible.length))
+        const line = eligible[idx]
+        v(`    blessing pick math: floor(${fmt(pickRoll)} x ${eligible.length} eligible) = index ${idx} -> ${line}` +
+          `; potency eligible: ${potStep > 0 ? `yes (step ${potStep})` : 'no (capped)'}`)
         if (line === 'pot') {
           baby.potencyStored += potStep
           baby.pot += 1
@@ -466,6 +575,31 @@ export function breed(
     ? `[PALETTE] mutation present -> new palette rolled from the ${catalyst ? 'VIBRANT (Chromatic Catalyst)' : 'master'} pool`
     : `[PALETTE] no mutation -> no palette roll${catalyst ? ' (catalyst kept)' : ''}`)
 
+  if (verbose) {
+    v(`[BABY STORED] ${describeGenetics(baby)}`)
+    for (const line of describeSummonMath(baby, config)) v(`    ${line}`)
+    const newborn = summonedStats(baby, config, 1)
+    const adult = summonedStats(baby, config)
+    v(`[BABY SUMMONED] adult: DR ${adult.damageRating} / DRR ${adult.damageResistRating} / Crit ${adult.critRating} / ` +
+      `CD ${adult.critDamageRating} / CR ${adult.critResistRating} / CDR ${adult.critDamageResistRating} / HP +${adult.bonusHp}`)
+    v(`[BABY SUMMONED] newborn (stage 1, x${MATURITY_MULTIPLIERS[0]}): DR ${newborn.damageRating} / DRR ${newborn.damageResistRating} / ` +
+      `Crit ${newborn.critRating} / CD ${newborn.critDamageRating} / CR ${newborn.critResistRating} / CDR ${newborn.critDamageResistRating} / HP +${newborn.bonusHp}`)
+    v(`[TOTALS] stat mutations ${totalStatMutations(baby)} (inherited ${inheritedStatMutations}), potency mutations ${baby.pot}, ` +
+      `all mutations ${totalMutations(baby)}`)
+    // Everything needed to reproduce this exact breed on either side.
+    v(`[REPLAY] ${JSON.stringify({
+      model: BREEDING_MODEL_VERSION,
+      parentA, parentB, config,
+      options: {
+        incenseA: options.incenseA ?? 0, incenseB: options.incenseB ?? 0,
+        catalystA: !!options.catalystA, catalystB: !!options.catalystB,
+        guardianKilled: options.guardianKilled ?? true,
+      },
+      rngDraws: rngDraws.map(d => Number(d.toFixed(6))),
+      baby,
+    })}`)
+  }
+
   return {
     baby,
     inheritance,
@@ -479,6 +613,7 @@ export function breed(
     paletteUsesVibrantPool: paletteRolled && catalyst,
     catalystConsumed: paletteRolled && catalyst,
     log,
+    rngDraws,
   }
 }
 
@@ -577,7 +712,8 @@ export function runCampaign(
   let blessings = 0
 
   while (breeds < options.maxBreeds && !(target > 0 && totalStatMutations(best) >= target)) {
-    const result = breed(best, parentB, config, options, rng)
+    // Projections run thousands of breeds: never build verbose logs here.
+    const result = breed(best, parentB, config, { ...options, verbose: false }, rng)
     breeds++
     if (result.hasMutation) mutatedBreeds++
     if (result.potencyRoll.applied) potencyMutations++
