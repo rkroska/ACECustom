@@ -923,7 +923,7 @@ namespace ACE.Server.Entity
         private void SpawnEncounters()
         {
             // World DB encounter table has no per-variation rows; by default these generators spawn on every landblock load.
-            // Optional: align with the base landblock (VariationId null; 0 is always base and never reaches here) — skips layers 1-10 and prestige.
+            // Optional: align with the base landblock (VariationId null; 0 is always base and never reaches here) — skips every explicit layer.
             if (ServerConfig.encounter_spawn_base_layer_only.Value && VariationId.HasValue)
                 return;
 
