@@ -37,14 +37,15 @@ namespace ACE.Server.Physics.Common
                 var lbmLandblock = LandblockManager.GetLandblock(lbid, false, variationId, false);
                 return lbmLandblock?.PhysicsLandblock;
             }
-            VariantCacheId cacheKey = new() { Landblock = lbid.Landblock, Variant = variationId };
+            // Non-server (client/tool) mode: same 0-is-base key rule as the server path, so unload_landblock's key matches.
+            VariantCacheId cacheKey = new() { Landblock = lbid.Landblock, Variant = VariationManager.NormalizeBase(variationId) };
 
             // check if landblock is already cached
             if (Landblocks.TryGetValue(cacheKey, out var landblock))
                 return landblock;
             
             // if not, load into cache
-            landblock = new Landblock(DBObj.GetCellLandblock(landblockID), variationId);
+            landblock = new Landblock(DBObj.GetCellLandblock(landblockID), cacheKey.Variant);
             if (Landblocks.TryAdd(cacheKey, landblock))
                 landblock.PostInit();
             else
@@ -57,24 +58,23 @@ namespace ACE.Server.Physics.Common
         public static bool unload_landblock(uint landblockID, int? variationId = null)
         {
             // Variant review 2026-09-12 (item 12, eviction half): the callers pass the RAW id (block | 0xFFFF), so
-            // (ushort)landblockID was always 0xFFFF, and AdjustCell.Get keys its cache with `variationId ?? 0`, not the raw
-            // null. Both halves of the key missed, so no AdjustCell was ever evicted: every (dungeon, variation) ever
-            // loaded stayed cached, each holding EnvCells that pointed at the released physics landblock. Build the keys
-            // the way the inserts do.
+            // (ushort)landblockID was always 0xFFFF and no AdjustCell was ever evicted: every (dungeon, variation) ever
+            // loaded stayed cached, each holding EnvCells that pointed at the released physics landblock. Build the key
+            // the way the inserts do - since 2026-09-17 that is the normalized variation (0 is always base), the same key
+            // for the physics landblock cache and for AdjustCell.
             var lbid = new LandblockId(landblockID);
-            VariantCacheId landblocksKey = new() { Landblock = lbid.Landblock, Variant = variationId };
-            VariantCacheId adjustCellsKey = new() { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
+            VariantCacheId cacheKey = new() { Landblock = lbid.Landblock, Variant = VariationManager.NormalizeBase(variationId) };
             if (PhysicsEngine.Instance.Server)
             {
                 // todo: Instead of ACE.Server.Entity.Landblock.Unload() calling this function, it should be calling PhysicsLandblock.Unload()
                 // todo: which would then call AdjustCell.AdjustCells.Remove()
-                AdjustCell.AdjustCells.TryRemove(adjustCellsKey, out _);
+                AdjustCell.AdjustCells.TryRemove(cacheKey, out _);
                 return true;
             }
 
-            var result = Landblocks.TryRemove(landblocksKey, out _);
+            var result = Landblocks.TryRemove(cacheKey, out _);
             // todo: Like mentioned above, the following function should be moved to ACE.Server.Physics.Common.Landblock.Unload()
-            AdjustCell.AdjustCells.TryRemove(adjustCellsKey, out _);
+            AdjustCell.AdjustCells.TryRemove(cacheKey, out _);
             return result;
         }
 
@@ -84,6 +84,11 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public static ObjCell get_landcell(uint blockCellID, int? variationId)
         {
+            // Variation 0 is always base (2026-09-14 ruling). The landblock lookup normalizes on its own, but the cell
+            // cache keys below use THIS value: a raw 0 against a base landblock (VariationId null) keyed a second EnvCell
+            // under (cell, 0) in the same landblock and loaded it from the DB as layer 0.
+            variationId = VariationManager.NormalizeBase(variationId);
+
             var landblock = get_landblock(blockCellID, variationId);
             if (landblock == null)
                 return null;

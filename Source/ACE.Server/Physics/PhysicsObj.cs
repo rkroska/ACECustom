@@ -3107,7 +3107,8 @@ namespace ACE.Server.Physics
             Position.Variation = newPos.Variation;
             Position.Frame = new AFrame(newPos.Frame);
 
-            if (CurCell == null || CurCell.ID != Position.ObjCellID || prevVariation != newPos.Variation)
+            // 0 is always base (2026-09-14 ruling): a raw compare treated a null <-> 0 flip as a layer change and refetched the cell.
+            if (CurCell == null || CurCell.ID != Position.ObjCellID || !VariationManager.SameVariationForVisibility(prevVariation, newPos.Variation))
             {
                 var newCell = LScape.get_landcell(newPos.ObjCellID, newPos.Variation);
 
