@@ -50,6 +50,130 @@ namespace ACE.Server.Managers
         public static readonly List<LandblockGroup> landblockGroups = new List<LandblockGroup>();
 
         /// <summary>
+        /// Variant review 2026-09-17: serializes "not loaded -> construct -> register" in <see cref="GetLandblock(LandblockId, bool, int?, bool)"/>.
+        /// Two group threads first-loading the same (landblock, variation) used to both construct; the loser's
+        /// registration then REPLACED the winner in <see cref="landblocks"/> while <see cref="loadedLandblocks"/> kept
+        /// the winner, and both ran Init - two live instances of one layer. One lock for all keys: it is held only for
+        /// construction (dat reads, no DB) and the three table adds, so first-loads of different blocks on different group
+        /// threads serialize briefly; Init runs outside it as before.
+        /// </summary>
+        private static readonly object landblockCreateLock = new object();
+
+        /// <summary>
+        /// Unload gate (2026-09-18): open for one key from the moment <see cref="UnloadLandblocks"/> starts tearing that
+        /// instance down until the teardown is finished. It exists because the teardown now DEREGISTERS the key first: a
+        /// lookup during the window therefore misses and would build a replacement while the old instance is still
+        /// releasing shared state - and <c>LScape.unload_landblock</c> would then evict the REPLACEMENT's
+        /// <c>AdjustCell</c> entry, which is keyed by (landblock, variation) and shared between them. A foreign lookup
+        /// waits here instead, so the replacement is built after the old instance is completely gone.
+        /// <para/>
+        /// Only <see cref="UnloadLandblocks"/> opens one, only on the world thread, and only one at a time, so a waiter
+        /// can never be another unloader and there is no gate-versus-gate wait to deadlock. The owner's own re-entrant
+        /// lookups are handed the dying instance rather than waiting on themselves (see the caller).
+        /// <para/>
+        /// NOT covered: an instance that is registered but whose <see cref="Landblock.Init"/> has not finished. Closing
+        /// that needs the tick path too - <c>landblockGroupPendingAdditions</c> is populated at registration and
+        /// <c>ProcessPendingLandblockGroupAdditions</c> groups and ticks a block without ever calling GetLandblock - so
+        /// it is a separate change, not something a lookup gate can do. See the research record.
+        /// </summary>
+        private sealed class LandblockUnloadGate
+        {
+            public readonly ManualResetEventSlim Done = new ManualResetEventSlim(false);
+            public readonly int OwnerThreadId = Environment.CurrentManagedThreadId;
+            public readonly Landblock Instance;
+
+            public LandblockUnloadGate(Landblock instance)
+            {
+                Instance = instance;
+            }
+        }
+
+        private static readonly ConcurrentDictionary<VariantCacheId, LandblockUnloadGate> unloadGates = new ConcurrentDictionary<VariantCacheId, LandblockUnloadGate>();
+
+        /// <summary>Fast-path counter so a lookup costs one volatile read while nothing is unloading.</summary>
+        private static int unloadGatesActive;
+
+        /// <summary>
+        /// Longest ONE lookup waits for a teardown, in total across all of its retries (the deadline is created once per
+        /// lookup and shared). An unload is an in-memory walk (SaveDB queues its writes rather than blocking), so this is
+        /// generous; it is kept short because a waiter can be a group tick thread and <see cref="Tick"/> joins its
+        /// Parallel.ForEach - a long wait here stalls the whole world tick. On timeout the caller proceeds exactly as it
+        /// did before this gate existed.
+        /// </summary>
+        private static readonly TimeSpan unloadGateTimeout = TimeSpan.FromMilliseconds(250);
+
+        private static LandblockUnloadGate OpenUnloadGate(VariantCacheId cacheKey, Landblock instance)
+        {
+            var gate = new LandblockUnloadGate(instance);
+
+            // Counter BEFORE the dictionary: WaitForUnloadGate reads the counter first, so a gate must never be findable
+            // in the dictionary while the counter still reads zero (a lookup would take the fast path and not wait).
+            Interlocked.Increment(ref unloadGatesActive);
+
+            if (!unloadGates.TryAdd(cacheKey, gate))
+            {
+                // Only the world thread opens these, one at a time, so a key cannot already be unloading.
+                Interlocked.Decrement(ref unloadGatesActive);
+                log.Error($"LandblockManager: 0x{cacheKey.Landblock:X4}, v:{cacheKey.Variant?.ToString() ?? "null"} is already being unloaded by another thread - proceeding without a gate.");
+                return null;
+            }
+
+            return gate;
+        }
+
+        private static void CloseUnloadGate(VariantCacheId cacheKey, LandblockUnloadGate gate)
+        {
+            if (gate == null)
+                return;
+
+            if (unloadGates.TryRemove(new KeyValuePair<VariantCacheId, LandblockUnloadGate>(cacheKey, gate)))
+                Interlocked.Decrement(ref unloadGatesActive);
+
+            // Set AFTER the removal and unconditionally: a waiter that read the gate just before the removal is about to
+            // call Wait and must not miss the signal. Done is deliberately not disposed - Wait on a set event returns at
+            // once, Wait on a disposed one throws, and one idle event per unload is cheap.
+            gate.Done.Set();
+        }
+
+        /// <summary>
+        /// Called before the registry lookup in <see cref="GetLandblock(LandblockId, bool, int?, bool)"/>. Returns non-null
+        /// ONLY when the caller is the thread performing the unload (its own re-entrant lookup, which must not wait on
+        /// itself); every other caller has waited for the teardown to finish, so by the time this returns null the key is
+        /// free and a fresh instance can be built. Loops because a fresh gate could in principle open for the same key
+        /// between the wait and the lookup.
+        /// <para/>
+        /// <paramref name="deadline"/> and <paramref name="timedOut"/> belong to the calling lookup and are shared across
+        /// its retries, so one lookup never waits longer than <see cref="unloadGateTimeout"/> in total. The deadline is
+        /// only created when a wait is actually needed, keeping the no-unload fast path at one volatile read.
+        /// </summary>
+        private static LandblockUnloadGate WaitForUnloadGate(VariantCacheId cacheKey, ref DateTime? deadline, ref bool timedOut)
+        {
+            if (Volatile.Read(ref unloadGatesActive) == 0)
+                return null;
+
+            while (unloadGates.TryGetValue(cacheKey, out var gate))
+            {
+                if (gate.OwnerThreadId == Environment.CurrentManagedThreadId)
+                    return gate;
+
+                if (timedOut)
+                    return null;   // this lookup already gave up once: do not wait or log again
+
+                deadline ??= DateTime.UtcNow + unloadGateTimeout;
+
+                var remaining = deadline.Value - DateTime.UtcNow;
+                if (remaining <= TimeSpan.Zero || !gate.Done.Wait(remaining))
+                {
+                    timedOut = true;
+                    log.Error($"LandblockManager: waited {unloadGateTimeout.TotalMilliseconds:N0}ms for 0x{cacheKey.Landblock:X4}, v:{cacheKey.Variant?.ToString() ?? "null"} to finish unloading on thread {gate.OwnerThreadId} - proceeding anyway.");
+                    return null;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// DestructionQueue is concurrent because it can be added to by multiple threads at once, publicly via AddToDestructionQueue()
         /// </summary>
         private static readonly ConcurrentDictionary<VariantCacheId, Landblock> destructionQueue = new ConcurrentDictionary<VariantCacheId, Landblock>();
@@ -97,33 +221,15 @@ namespace ACE.Server.Managers
             }
         }
 
-        private static bool AddUpdateLandblock(VariantCacheId landblockKey, Landblock landblock)
+        /// <summary>
+        /// Drops THIS instance from <see cref="landblocks"/> - a same-key replacement is left alone. Variant review
+        /// 2026-09-17: this replaced AddUpdateLandblock, whose add branch moved under <see cref="landblockCreateLock"/> in
+        /// GetLandblock and whose TryUpdate branch was how the loser of a first-load race evicted the winner. Registration
+        /// happens in exactly one place now; an existing registration is never replaced.
+        /// </summary>
+        private static bool RemoveLandblock(VariantCacheId landblockKey, Landblock instance)
         {
-            bool result = false;
-            var lb = GetLandblock(landblockKey);
-            if (lb == null && landblock == null)            
-                return result;
-            if (lb == null && landblock != null)
-            {
-                result = landblocks.TryAdd(landblockKey, landblock);
-                    //landblocks.Add(landblockKey, landblock);
-                //Console.WriteLine("Added AddUpdateLandblock Landblock: " + landblock.Id.Raw + " v: " + landblock.VariationId);
-                //if (landblock.Id.Raw == 27197439)
-                //{
-                //    Console.WriteLine(new StackTrace());
-                //}
-            }
-            else if (lb != null && landblock == null)
-            {
-                result = landblocks.TryRemove(landblockKey, out Landblock removedLandblock);
-            }
-            else if (lb != null && landblock != null)
-            {
-                result = landblocks.TryUpdate(landblockKey, landblock, lb);
-                //Console.WriteLine("Updated AddUpdateLandblock landblock: " + lb.Id.Raw + " : " + landblock.Id.Raw + " v: " + landblock.VariationId);
-            }
-
-            return result;
+            return landblocks.TryRemove(new KeyValuePair<VariantCacheId, Landblock>(landblockKey, instance));
         }
 
         private static Landblock GetLandblock(VariantCacheId landblockKey)
@@ -609,7 +715,7 @@ namespace ACE.Server.Managers
 
         public static bool IsLoaded(LandblockId landblockId, int? variationId = null)
         {
-            return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId }) != null;
+            return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = VariationManager.NormalizeBase(variationId) }) != null;
         }
 
         /// <summary>No-create lookup of the LOADED landblock instance for (landblock, variation) -
@@ -617,7 +723,7 @@ namespace ACE.Server.Managers
         /// one (see Player.ValidateCurrentLandblockTick's stale-instance void heal, 2026-08-10).</summary>
         public static Landblock GetLoadedLandblock(LandblockId landblockId, int? variationId)
         {
-            return GetLandblock(new VariantCacheId() { Landblock = landblockId.Landblock, Variant = variationId });
+            return GetLandblock(new VariantCacheId() { Landblock = landblockId.Landblock, Variant = VariationManager.NormalizeBase(variationId) });
         }
 
         /// <summary>
@@ -675,61 +781,108 @@ namespace ACE.Server.Managers
         /// </summary>
         public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, int? variation, bool permaload = false)
         {
+            // Variation 0 is always base (owner ruling 2026-09-14): the cache, the group key and the adjacency wiring are
+            // EXACT on int?, while visibility treats 0 and null as one bucket. A raw 0 arriving here used to build a
+            // separate "(id, 0)" instance - its own group, its own empty cells - whose objects could still see and hit base
+            // objects ticked by another thread. Normalize once at this choke point; the log finds the producers.
+            if (variation.HasValue && variation.Value == 0)
+            {
+                if (ACE.Server.Diagnostics.LogRateLimiter.ShouldEmit("landblock_variation_zero", TimeSpan.FromMinutes(5), out var suppressedZero))
+                    log.Warn($"LandblockManager: explicit variation 0 requested for 0x{landblockId.Landblock:X4} - treated as base (null)." +
+                             (suppressedZero > 0 ? $" {suppressedZero} similar suppressed since the last report." : string.Empty) +
+                             $" Stack: {Environment.StackTrace}");
+                variation = null;
+            }
+
             Landblock landblock;
 
             bool setAdjacents = false;
             var cacheKey = new VariantCacheId() { Landblock = landblockId.Landblock, Variant = variation };
-            landblock = GetLandblock(cacheKey);
 
-            if (landblock == null)
+            var created = false;
+
+            // One wait budget for this whole lookup, however many times the loop below comes back round.
+            DateTime? unloadDeadline = null;
+            var unloadWaitTimedOut = false;
+
+            while (true)
             {
-                // load up this landblock                    
-                landblock = new Landblock(landblockId, variation);
+                // If this key is being torn down, wait for that to finish so the instance built below replaces it cleanly
+                // rather than racing its release of shared state (see LandblockUnloadGate).
+                var unloadGate = WaitForUnloadGate(cacheKey, ref unloadDeadline, ref unloadWaitTimedOut);
+                landblock = GetLandblock(cacheKey);
 
-                // Both adds below used to `return landblock` on failure - handing back an instance whose
-                // physics was built in the ctor (so it is walkable) but whose Init() had NOT run, i.e. a
-                // permanent void. Losing an add almost always means another thread won the race, so the
-                // right answer is the WINNER's already-initialized landblock, not our orphan.
-                if (!AddUpdateLandblock(cacheKey, landblock))
+                if (landblock == null && unloadGate != null)
                 {
-                    log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks! Falling back to the cached instance.");
-                    var existing = GetLandblock(cacheKey);
-                    if (existing != null)
-                        return existing;
-
-                    // No winner to fall back on - initialize ours rather than return a void.
-                    log.Error($"LandblockManager: no cached instance for {landblock.Id.Raw:X8}, v:{variation} after a failed add - initializing the new one to avoid a void landblock.");
-                    // fall through: register it in the group list below so it is ticked, watched and unloaded like any other
+                    // The unloading thread looked up the block it is tearing down. Nothing does this today (Unload's re-home
+                    // targets the SIBLING layer's key), and creating a second instance mid-teardown would double the block's
+                    // spawns, so hand back the dying instance - what this lookup returned before the deregistration moved first.
+                    if (ACE.Server.Diagnostics.LogRateLimiter.ShouldEmit($"lb_selflookup_unload:{cacheKey.Landblock:X4}:{cacheKey.Variant?.ToString() ?? "null"}", TimeSpan.FromMinutes(5), out var suppressedSelf))
+                        log.Error($"LandblockManager: 0x{cacheKey.Landblock:X4}, v:{variation?.ToString() ?? "null"} was looked up from inside its own unload - returning the unloading instance." +
+                                  (suppressedSelf > 0 ? $" {suppressedSelf} similar suppressed since the last report." : string.Empty) +
+                                  $" Stack: {Environment.StackTrace}");
+                    return unloadGate.Instance;
                 }
 
-                if (!loadedLandblocks.TryAdd(cacheKey, landblock))
-                {
-                    log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks! Falling back to the cached instance.");
-                    var existing = GetLandblock(cacheKey);
-                    if (existing != null && !ReferenceEquals(existing, landblock))
-                        return existing;
+                if (landblock != null)
+                    break;
 
-                    log.Error($"LandblockManager: no distinct cached instance for {landblock.Id.Raw:X8}, v:{variation} after a failed add - initializing to avoid a void landblock.");
-                    // fall through: register it in the group list below so it is ticked, watched and unloaded like any other
+                var unloadInProgress = false;
+
+                // See landblockCreateLock: the miss is re-checked under the lock so exactly one thread constructs and
+                // registers an instance for this key; every other thread that missed gets that instance back. The unloader
+                // deregisters under this same lock (with its gate already open), so a miss WITH a gate present here means
+                // a teardown is in flight - never build over it; release the lock, wait for the gate, and come back.
+                // Once this lookup's wait budget is spent (already logged by WaitForUnloadGate) it builds anyway, which
+                // is what every lookup did before the gate existed.
+                lock (landblockCreateLock)
+                {
+                    landblock = GetLandblock(cacheKey);
+                    if (landblock == null)
+                    {
+                        if (!unloadWaitTimedOut && unloadGates.ContainsKey(cacheKey))
+                            unloadInProgress = true;
+                        else
+                        {
+                            // load up this landblock
+                            landblock = new Landblock(landblockId, variation);
+
+                            // The key was just seen absent from `landblocks`, and the only remover (UnloadLandblocks) clears
+                            // `loadedLandblocks` before `landblocks`, so all three adds succeed. If one ever does not, the tables
+                            // disagree about this key: log it and make them agree on this instance rather than tick an instance
+                            // that some lookups cannot reach.
+                            var addedActive = landblocks.TryAdd(cacheKey, landblock);
+                            var addedLoaded = loadedLandblocks.TryAdd(cacheKey, landblock);
+                            var addedPending = landblockGroupPendingAdditions.TryAdd(cacheKey, landblock);
+                            if (!addedActive || !addedLoaded || !addedPending)
+                            {
+                                log.Error($"LandblockManager: registration of {landblock.Id.Raw:X8}, v:{variation?.ToString() ?? "null"} found a stale entry under the create lock " +
+                                          $"(landblocks={addedActive}, loadedLandblocks={addedLoaded}, pendingGroupAdditions={addedPending}) - overwriting so the three tables agree.");
+                                landblocks[cacheKey] = landblock;
+                                loadedLandblocks[cacheKey] = landblock;
+                                landblockGroupPendingAdditions[cacheKey] = landblock;
+                            }
+
+                            created = true;
+                        }
+                    }
                 }
 
-                bool res = landblockGroupPendingAdditions.TryAdd(cacheKey, landblock);
-                if (!res)
-                {
-                    log.Error($"LandblockManager: failed to add {landblock.Id} to landblockGroupPendingAdditions");
-                }
-                //if (landblock.Id.ToString().StartsWith("019E"))
-                //{                        
-                //    Console.WriteLine($"Landblock loading {landblock.Id} v:{landblock.VariationId}, group: {landblock.CurrentLandblockGroup}\n" +
-                //        $"From: {new System.Diagnostics.StackTrace()}");
-                //}
+                if (unloadInProgress)
+                    continue;   // back to WaitForUnloadGate, which blocks until the teardown closes its gate or the budget runs out
+
+                break;
+            }
+
+            if (created)
+            {
+                // Registration precedes Init, as it always has: PostInit places the dat's statics through
+                // LScape.get_landcell, which comes back here for this very key, so the instance must be findable
+                // while it initializes. A concurrent lookup can still see it mid-PostInit - unchanged by this branch,
+                // and not closable from here (the tick path reaches a block without a lookup at all).
                 landblock.Init(variation);
 
                 setAdjacents = true;
-            }
-            else
-            {
-                //Console.WriteLine($"Landblock found from GetLandblock: {landblockId.Raw} v: {variation}");
             }
 
             if (permaload)
@@ -907,88 +1060,108 @@ namespace ACE.Server.Managers
                 if (destructionQueue.TryGetValue(cacheKey, out Landblock landblock))
                 {
                     //Console.WriteLine($"UnloadLandblock: {landblock.Id}, v: {cacheKey.Variant}, d-queue: {destructionQueue.Count}");
-                    landblock.Unload(cacheKey.Variant);
 
+                    // Lifecycle (2026-09-18): the key comes OUT of the registry and its group before Unload() tears the instance
+                    // down, and only the queued instance is removed (never a same-key replacement). A lookup during the
+                    // teardown waits on the gate and then builds a fresh instance; it no longer receives an emptied one.
+                    // Everything from opening the gate to closing it sits inside one try/finally: an escape in between would
+                    // leave the gate open forever, and every later lookup of this key would then block for the full timeout
+                    // for the rest of the session.
                     bool unloadFailed = false;
-                    
-                    destructionQueue.TryRemove(cacheKey, out _);
-                    landblockLock.EnterWriteLock();
+                    LandblockUnloadGate unloadGate = null;
+
                     try
                     {
-                        // remove from list of managed landblocks
-                        if (loadedLandblocks.Remove(cacheKey, out landblock))
+                        // Plain key removal on purpose: `landblock` IS the queued value (read above) and the queue is TryAdd-only,
+                        // so an instance-checked remove could only ever fail by leaving the key queued - and the enclosing
+                        // `while (!IsEmpty) Keys.First()` would then re-pick it forever on the world thread.
+                        destructionQueue.TryRemove(cacheKey, out _);
+
+                        // Gate open and deregistration are atomic with respect to GetLandblock's check-and-register, which
+                        // runs under this same lock: a creator that misses the registry while a gate is present knows a
+                        // teardown is in flight and waits; one that misses with no gate present knows the key is truly free.
+                        // Unload() itself runs OUTSIDE the create lock - it may create the sibling layer while re-homing.
+                        lock (landblockCreateLock)
                         {
-                            AddUpdateLandblock(cacheKey, null);
+                            unloadGate = OpenUnloadGate(cacheKey, landblock);
 
-                            // remove from landblock group
-                            for (int i = landblockGroups.Count - 1; i >= 0; i--)
+                            landblockLock.EnterWriteLock();
+                            try
                             {
-                                if (landblockGroups[i].Remove(landblock, landblock.VariationId))
+                                // remove from list of managed landblocks - this instance only
+                                if (loadedLandblocks.TryRemove(new KeyValuePair<VariantCacheId, Landblock>(cacheKey, landblock)))
                                 {
-                                    if (landblockGroups[i].Count == 0)
-                                        landblockGroups.RemoveAt(i);
-                                    else if (ConfigManager.Config.Server.Threading
-                                                 .MultiThreadedLandblockGroupPhysicsTicking ||
-                                             ConfigManager.Config.Server.Threading
-                                                 .MultiThreadedLandblockGroupTicking) // Only try to split if multi-threading is enabled
+                                    RemoveLandblock(cacheKey, landblock);
+
+                                    // remove from landblock group
+                                    for (int i = landblockGroups.Count - 1; i >= 0; i--)
                                     {
-                                        swTrySplitEach.Restart();
-                                        var splits = landblockGroups[i].TryThrottledSplit();
-                                        swTrySplitEach.Stop();
-
-                                        if (swTrySplitEach.Elapsed.TotalMilliseconds > 3)
-                                            log.Warn(
-                                                $"[LANDBLOCK GROUP] TrySplit for {landblockGroups[i]} took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
-                                        else if (swTrySplitEach.Elapsed.TotalMilliseconds > 1)
-                                            log.Debug(
-                                                $"[LANDBLOCK GROUP] TrySplit for {landblockGroups[i]} took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
-
-                                        if (splits != null)
+                                        if (landblockGroups[i].Remove(landblock, landblock.VariationId))
                                         {
-                                            if (splits.Count > 0)
+                                            if (landblockGroups[i].Count == 0)
+                                                landblockGroups.RemoveAt(i);
+                                            else if (ConfigManager.Config.Server.Threading
+                                                         .MultiThreadedLandblockGroupPhysicsTicking ||
+                                                     ConfigManager.Config.Server.Threading
+                                                         .MultiThreadedLandblockGroupTicking) // Only try to split if multi-threading is enabled
                                             {
-                                                log.Debug(
-                                                    $"[LANDBLOCK GROUP] TrySplit resulted in {splits.Count} split(s) and took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
-                                                if (ServerConfig.landblock_group_diag_verbose.Value) log.Warn($"[LANDBLOCK GROUP] split for old: {landblockGroups[i]}"); else log.Debug($"[LANDBLOCK GROUP] split for old: {landblockGroups[i]}");
+                                                swTrySplitEach.Restart();
+                                                var splits = landblockGroups[i].TryThrottledSplit();
+                                                swTrySplitEach.Stop();
+
+                                                if (swTrySplitEach.Elapsed.TotalMilliseconds > 3)
+                                                    log.Warn(
+                                                        $"[LANDBLOCK GROUP] TrySplit for {landblockGroups[i]} took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
+                                                else if (swTrySplitEach.Elapsed.TotalMilliseconds > 1)
+                                                    log.Debug(
+                                                        $"[LANDBLOCK GROUP] TrySplit for {landblockGroups[i]} took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
+
+                                                if (splits != null)
+                                                {
+                                                    if (splits.Count > 0)
+                                                    {
+                                                        log.Debug(
+                                                            $"[LANDBLOCK GROUP] TrySplit resulted in {splits.Count} split(s) and took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
+                                                        if (ServerConfig.landblock_group_diag_verbose.Value) log.Warn($"[LANDBLOCK GROUP] split for old: {landblockGroups[i]}"); else log.Debug($"[LANDBLOCK GROUP] split for old: {landblockGroups[i]}");
+                                                    }
+
+                                                    foreach (var split in splits)
+                                                    {
+                                                        landblockGroups.Add(split);
+                                                        if (ServerConfig.landblock_group_diag_verbose.Value) log.Warn($"[LANDBLOCK GROUP] split and new: {split}"); else log.Debug($"[LANDBLOCK GROUP] split and new: {split}");
+                                                    }
+                                                }
                                             }
 
-                                            foreach (var split in splits)
-                                            {
-                                                landblockGroups.Add(split);
-                                                if (ServerConfig.landblock_group_diag_verbose.Value) log.Warn($"[LANDBLOCK GROUP] split and new: {split}"); else log.Debug($"[LANDBLOCK GROUP] split and new: {split}");
-                                            }
+                                            break;
                                         }
                                     }
 
-                                    break;
+                                    NotifyAdjacents(landblock);
                                 }
+                                else
+                                    unloadFailed = true;
                             }
-
-                            NotifyAdjacents(landblock);
+                            finally
+                            {
+                                landblockLock.ExitWriteLock();
+                            }
                         }
+
+                        // The instance is unreachable by key now (or never was, if unloadFailed): release its objects and physics.
+                        landblock.Unload(cacheKey.Variant);
+
+                        if (unloadFailed)
+                            log.Error($"LandblockManager: 0x{cacheKey.Landblock:X4}, v:{cacheKey.Variant?.ToString() ?? "null"} was queued for destruction but is not the registered instance in loadedLandblocks - unloaded the queued instance, registry untouched");
                         else
-                            unloadFailed = true;
+                        {
+                            var clearedCount = DatabaseManager.World.ClearLandblockCache(landblock.Id.Landblock, cacheKey.Variant);
+                            log.Debug($"[Cache Cleanup] Unloaded Landblock {landblock.Id.Raw:X8}. Cleared {clearedCount} cached entities.");
+                        }
                     }
                     finally
                     {
-                        landblockLock.ExitWriteLock();
-                    }
-                if (unloadFailed)
-                        log.Error($"LandblockManager: failed to unload {landblock.Id.Raw:X8}");
-                    else
-                    {
-                        var clearedCount = DatabaseManager.World.ClearLandblockCache(landblock.Id.Landblock, cacheKey.Variant);
-                        log.Debug($"[Cache Cleanup] Unloaded Landblock {landblock.Id.Raw:X8}. Cleared {clearedCount} cached entities.");
-
-                        // Validation Check
-                        if (DatabaseManager.World.GetLandblockInstancesCacheCount() > 0)
-                        {
-                            // Optional: Deep check if the specific key still exists ( requires exposing ContainsKey or similar, 
-                            // but since we just removed it, this global count isn't specific enough.
-                            // The real check is implicitly done by TryRemove returning true/false which populates 'count'.
-                            // If count > 0, we know we removed something.
-                            // We rely on TryRemove's contract.
-                        }
+                        CloseUnloadGate(cacheKey, unloadGate);
                     }
                 }
             }

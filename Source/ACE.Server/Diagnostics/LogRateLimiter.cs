@@ -69,7 +69,9 @@ namespace ACE.Server.Diagnostics
         {
             suppressedThisWindow = 0;
             var now = DateTime.UtcNow.Ticks;
-            var e = Entries.GetOrAdd(key, _ => new Entry { WindowStartTicks = now, LastActivityTicks = now });
+            // A fresh entry starts with an already-elapsed window so the FIRST hit of a key emits (2026-09-17): seeded at
+            // `now`, the first call failed the `>= window` test below and a one-shot producer was never logged at all.
+            var e = Entries.GetOrAdd(key, _ => new Entry { WindowStartTicks = now - window.Ticks, LastActivityTicks = now });
 
             lock (e)
             {

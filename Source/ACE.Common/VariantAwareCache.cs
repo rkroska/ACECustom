@@ -5,8 +5,19 @@ namespace ACE.Common
     public struct VariantCacheId : IEquatable<VariantCacheId>
     {
         public ushort Landblock;
-        /// <summary>Unlayered base uses null; retail layer 0 is the value 0 — they are not interchangeable.</summary>
+        /// <summary>The base layer is null. 0 is always base (owner ruling 2026-09-14): every server-side key builder
+        /// (LandblockManager.GetLandblock, LScape, AdjustCell, the DB instance cache) converts it with
+        /// <see cref="NormalizeBase"/> before building a key, so no live key holds a 0.</summary>
         public int? Variant;
+
+        /// <summary>Collapse the base bucket: null and 0 both become null; every other value is preserved. The one
+        /// definition shared by ACE.Server (VariationManager.NormalizeBase) and ACE.Database.</summary>
+        public static int? NormalizeBase(int? variation)
+        {
+            if (!variation.HasValue || variation.Value == 0)
+                return null;
+            return variation;
+        }
 
         public VariantCacheId(ushort landblock, int variant)
         {
