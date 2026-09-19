@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 
 using log4net;
@@ -291,10 +292,38 @@ namespace ACE.Server.Managers
         private static PlayerGuidAllocator playerAlloc;
         private static DynamicGuidAllocator dynamicAlloc;
 
+        /// <summary>Server uptime, for <see cref="DynamicObjectInstance"/>.</summary>
+        private static readonly Stopwatch instanceClock = Stopwatch.StartNew();
+
+        /// <summary>
+        /// Must stay shorter than DynamicGuidAllocator.recycleTime (360 min): that guarantees two owners of one recycled GUID
+        /// get different values, the later one higher. 60 min leaves a 6x margin under the hold and pushes the 0x7FFF cap out
+        /// to ~3.7 years of uptime; a smaller unit only reaches the cap sooner.
+        /// </summary>
+        private static readonly TimeSpan instanceClockUnit = TimeSpan.FromMinutes(60);
+
+        /// <summary>
+        /// The ObjectInstance value for a dynamic object built now: 60-minute units of server uptime, saturating at 0x7FFF
+        /// (about 3.7 years of uptime). It only ever rises during a session, and clients cannot outlive a restart, so any
+        /// record a client holds under a GUID is at or below this value. Kept inside the lower half of the 16-bit range so
+        /// a wrap-aware comparison can never read it as older than 0.
+        /// </summary>
+        public static ushort DynamicObjectInstance => (ushort)Math.Min(instanceClock.Elapsed.Ticks / instanceClockUnit.Ticks, 0x7FFF);
+
+        /// <summary>
+        /// guid_reuse_advance_instance, read ONCE at startup. A live flip must not apply: the client rejects an object whose
+        /// instance is LOWER than one it saw earlier on the same GUID - even after that earlier object was removed normally
+        /// (proven 2026-09-18) - so switching to 0 mid-session would hide new objects until the next restart.
+        /// </summary>
+        public static bool AdvanceDynamicInstance { get; private set; }
+
         public static void Initialize()
         {
             playerAlloc = new PlayerGuidAllocator(ObjectGuid.PlayerMin, ObjectGuid.PlayerMax, "player");
             dynamicAlloc = new DynamicGuidAllocator(ObjectGuid.DynamicMin, ObjectGuid.DynamicMax, "dynamic");
+
+            AdvanceDynamicInstance = ServerConfig.guid_reuse_advance_instance.Value;
+            log.Info($"[GUID] guid_reuse_advance_instance = {AdvanceDynamicInstance} for this session (changes apply on restart)");
         }
 
         /// <summary>

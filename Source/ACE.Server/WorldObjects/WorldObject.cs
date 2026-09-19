@@ -102,6 +102,7 @@ namespace ACE.Server.WorldObjects
         public WorldObject(ObjectGuid guid)
         {
             Guid = guid;
+            ApplyDynamicObjectInstance();
         }
 
         /// <summary>
@@ -112,6 +113,7 @@ namespace ACE.Server.WorldObjects
             Weenie = weenie;
             Biota = ACE.Entity.Adapter.WeenieConverter.ConvertToBiota(weenie, guid.Full, false, false);
             Guid = guid;
+            ApplyDynamicObjectInstance();
 
             InitializePropertyDictionaries();
             SetEphemeralValues();
@@ -122,6 +124,23 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// A dynamic GUID is recycled 6 hours after its owner is destroyed. The client tells two objects that shared a GUID
+        /// apart by the ObjectInstance sequence, and it remembers the last value it saw on a GUID even after that object was
+        /// removed normally (an ordinary stack merge is enough). It will not draw a new object on that GUID at an equal or
+        /// lower value. With every non-player object on the same constant value, a creature spawned on a reused GUID was
+        /// never drawn: an invisible mob that still attacks (reproduced on demand 2026-09-18/19). Every dynamic object - new
+        /// or restored from the database - starts at the server-uptime value instead, which is higher than anything a client
+        /// could hold for an earlier owner of the GUID (while uptime is under the cap - see GuidManager.DynamicObjectInstance).
+        /// The switch is latched at startup (GuidManager.AdvanceDynamicInstance). Every message that carries the instance
+        /// stamp reads this same sequence, so nothing else needs to change.
+        /// </summary>
+        private void ApplyDynamicObjectInstance()
+        {
+            if (Guid.IsDynamic() && GuidManager.AdvanceDynamicInstance)
+                Sequences.SetSequence(SequenceType.ObjectInstance, new UShortSequence(GuidManager.DynamicObjectInstance));
+        }
+
+        /// <summary>
         /// Restore a WorldObject from the database.
         /// Any properties tagged as Ephemeral will be removed from the biota.
         /// </summary>
@@ -129,6 +148,7 @@ namespace ACE.Server.WorldObjects
         {
             Biota = biota;
             Guid = new ObjectGuid(Biota.Id);
+            ApplyDynamicObjectInstance();
 
             biotaOriginatedFromDatabase = true;
 
