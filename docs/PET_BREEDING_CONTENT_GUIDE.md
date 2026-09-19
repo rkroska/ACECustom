@@ -244,6 +244,11 @@ if he exists. Rules that matter for pricing:
 - The pet's name changes with its stage: "Schneebly's Whelp Browerk".
 - ID panel lines on every combat essence: sex and status, growth, bond, total mutations, per-stat mutation
   list, combat ratings (base plus mutation bonus).
+- A coloured square behind every combat essence icon: male and female at a glance, no appraisal needed.
+  Sex comes from the essence's GUID, so essences that already existed pick their colour up the next
+  time they load. The art is set by `pet_sex_icon_underlay_male` (default 100670255 / 0x06001B2F) and
+  `pet_sex_icon_underlay_female` (default 100670253 / 0x06001B2D); both icons must exist in the client
+  patch or the square simply will not draw. `pet_sex_icon_underlay_enabled false` turns it off.
 - `@pet-name <name>` requests land on the web portal's **Pet Name Approvals** page (Monitoring
   section, portal admins or users granted that page) and, if configured, in the admin Discord
   channel. Approving renames the essence in place; a request whose essence has moved, been renamed or

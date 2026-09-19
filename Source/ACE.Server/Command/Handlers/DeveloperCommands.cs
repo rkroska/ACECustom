@@ -4875,6 +4875,10 @@ namespace ACE.Server.Command.Handlers
             target.SetProperty(PropertyBool.PetIsMaleOverride, becomesMale);
             target.SetProperty(PropertyInt.PetMaleBreedingCharges, maxMaleCharges);
             target.SetProperty(PropertyFloat.PetMaleChargesRefreshTime, Time.GetUnixTime());
+            // Repaint the sex square and push it, or the icon keeps the old colour until relog.
+            target.ApplySexIconUnderlay();
+            if (target.IconUnderlayId.HasValue)
+                session.Network.EnqueueSend(new GameMessagePrivateUpdateDataID(target, PropertyDataId.IconUnderlay, target.IconUnderlayId.Value));
             target.ChangesDetected = true;
             target.SaveBiotaToDatabase();
 

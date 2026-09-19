@@ -441,6 +441,45 @@ namespace ACE.Server.WorldObjects
 
         private void SetEphemeralValues()
         {
+            ApplySexIconUnderlay();
+        }
+
+        /// <summary>
+        /// Paints the sex-coloured square behind the inventory icon. Sex is derived from the GUID, so
+        /// this needs nothing stored and works on essences that already exist: it runs on every load.
+        /// The value is not flagged as a change, so it costs no database write of its own - it is
+        /// recomputed each time the device is instantiated, and follows the config if the art changes.
+        /// Call it again after anything that flips the sex.
+        /// </summary>
+        public void ApplySexIconUnderlay()
+        {
+            if (!ServerConfig.pet_sex_icon_underlay_enabled.Value)
+                return;
+
+            try
+            {
+                // Only combat pet essences breed, so only they carry a sex. IsCombatPetDevice reads the
+                // cached summon weenie; this runs from the constructor, so a world database that is not
+                // up yet must not take the device down with it.
+                if (!IsCombatPetDevice())
+                    return;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"{nameof(ApplySexIconUnderlay)}: skipped for {Name} ({Guid}): {ex.Message}");
+                return;
+            }
+
+            var configured = IsMale
+                ? ServerConfig.pet_sex_icon_underlay_male.Value
+                : ServerConfig.pet_sex_icon_underlay_female.Value;
+
+            if (configured <= 0 || configured > uint.MaxValue)
+                return;
+
+            var underlay = (uint)configured;
+            if (IconUnderlayId != underlay)
+                IconUnderlayId = underlay;
         }
 
         /// <summary>
