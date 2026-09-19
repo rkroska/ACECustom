@@ -144,11 +144,14 @@ namespace ACE.Server.WorldObjects
                 r.Add("partDVal", de.AttackPart.Value.DVal).Add("partDVar", de.AttackPart.Value.DVar);
             if (bdm != null)
             {
-                r.Add("baseRule", "baseMax=(partOrWeaponMax+damageBonus+elemental)*damageMod; baseMin=baseMax*(1-variance*varianceMod); baseRoll uniform in [baseMin,baseMax)")
+                r.Add("baseRule", "baseRoll uniform in [rollMin,rollMax), the range at roll time; baseMin/baseMax are that range recomputed with the CURRENT damageMod, which maturity scaling rewrites after the roll (base = baseRoll x maturityMult)")
                  .Add("baseMaxRaw", bdm.BaseDamage.MaxDamage).Add("baseVariance", bdm.BaseDamage.Variance)
                  .Add("baseDamageBonus", bdm.DamageBonus).Add("baseElemental", bdm.ElementalBonus).Add("baseDamageMod", bdm.DamageMod).Add("baseVarianceMod", bdm.VarianceMod)
                  .Add("baseMin", bdm.MinDamage).Add("baseMax", bdm.MaxDamage);
             }
+            // The range the roll actually came from: without it a juvenile's roll sits outside baseMin/baseMax.
+            if (de.BaseDamageRollMin >= 0.0f)
+                r.Add("rollMin", de.BaseDamageRollMin).Add("rollMax", de.BaseDamageRollMax);
             r.Add("baseRoll", de.BaseDamageRoll);
             if (atk is CombatPet mp)
                 r.Add("maturityMult", mp.MaturityDamageMult);

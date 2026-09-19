@@ -174,6 +174,14 @@ namespace ACE.Server.Entity
         public double CritRoll = -1.0;
         public double CritDefenseRoll = -1.0;
         public float BaseDamageRoll;
+
+    /// <summary>
+    /// [PetTrace] the range BaseDamageRoll was actually drawn from. BaseDamageMod.MinDamage/MaxDamage
+    /// are recomputed from DamageMod, which maturity scaling rewrites after the roll, so reading them
+    /// back at trace time prints a range the roll sits outside of.
+    /// </summary>
+    public float BaseDamageRollMin = -1.0f;
+    public float BaseDamageRollMax = -1.0f;
         public float SchemeCRoll = -1.0f;
 
         /// <summary>[PetTrace] session id shared by the attack and damage records of this one swing.</summary>
@@ -302,6 +310,8 @@ namespace ACE.Server.Entity
                     // Use float overload to match standard non-crit damage roll behavior (exclusive upper bound)
                     Damage = (float)ThreadSafeRandom.Next(baseMinDamageFloat, baseMaxDamageFloat);
                     BaseDamageRoll = Damage;
+                    BaseDamageRollMin = baseMinDamageFloat;
+                    BaseDamageRollMax = baseMaxDamageFloat;
 
                     // Apply optional multiplier — read from weapon, default 1.0 if missing/invalid.
                     // Applied before BaseDamage is set so ShowInfo() reflects the true final value.
@@ -897,6 +907,8 @@ namespace ACE.Server.Entity
 
             BaseDamage = (float)ThreadSafeRandom.Next(BaseDamageMod.MinDamage, BaseDamageMod.MaxDamage);
             BaseDamageRoll = BaseDamage;
+            BaseDamageRollMin = BaseDamageMod.MinDamage;
+            BaseDamageRollMax = BaseDamageMod.MaxDamage;
         }
 
         /// <summary>
@@ -914,6 +926,8 @@ namespace ACE.Server.Entity
             BaseDamageMod = attacker.GetBaseDamage(AttackPart.Value);
             BaseDamage = (float)ThreadSafeRandom.Next(BaseDamageMod.MinDamage, BaseDamageMod.MaxDamage);
             BaseDamageRoll = BaseDamage;
+            BaseDamageRollMin = BaseDamageMod.MinDamage;
+            BaseDamageRollMax = BaseDamageMod.MaxDamage;
 
             DamageType = attacker.GetDamageType(AttackPart.Value, CombatType);
         }

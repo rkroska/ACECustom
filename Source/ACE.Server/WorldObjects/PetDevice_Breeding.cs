@@ -1340,6 +1340,18 @@ namespace ACE.Server.WorldObjects
                 guardian.Health.StartingValue = (uint)Math.Max(1, Math.Round(combinedHealth * hpMult));
                 guardian.Health.Current = guardian.Health.MaxValue;
 
+                // Level alone does not make a template dangerous: it keeps the combat skills of whatever
+                // weenie it was cloned from. Template 7 attacks at skill 58, so against pets defending at
+                // 700+ every swing was evaded and the ritual could not scratch them. Match the better
+                // parent's melee defence so the guardian lands roughly half its attacks, and rise with the
+                // pets instead of needing a config knob.
+                var petDefense = Math.Max(
+                    pet1.GetCreatureSkill(Skill.MeleeDefense).Current,
+                    pet2.GetCreatureSkill(Skill.MeleeDefense).Current);
+                var guardianAttack = (ushort)Math.Clamp(petDefense, 0u, ushort.MaxValue);
+                foreach (var atkSkill in new[] { Skill.UnarmedCombat, Skill.LightWeapons, Skill.HeavyWeapons, Skill.FinesseWeapons })
+                    guardian.GetCreatureSkill(atkSkill).InitLevel = guardianAttack;
+
                 guardian.NeutraliseTemplate();
 
                 var spawnPos = FindGuardianSpawnPosition(pet1, pet2, guardian);
