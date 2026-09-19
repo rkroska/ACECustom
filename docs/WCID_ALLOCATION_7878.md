@@ -36,12 +36,12 @@ number, so leave them where they are.
 | `98760399` | Pet Neutering Kit | `Database/Updates/World/2026-09-09-01-Pet-Tailoring-and-Neutering-Kits.sql` (mirrored in `Content/sql/weenies/`); constants in `Source/ACE.Server/Entity/PetTailoring.cs` |
 | `98760400` | Pet Tailoring Kit | same |
 | `98760401` | Pet Tailoring Kit (Filled) | same |
+| `787801001`-`787801072` | Pet device essences (250/300) | Do not use for charms |
+| `787802001`-`787802072` | Combat pet summon weenies | Do not use for charms |
+| `787802073`+ | Future combat pets / extensions | Append only |
 
 The breeding sinks briefly lived at `98760410`-`98760412`, `98760415` and `98760418` before
 moving to `78780250`-`78780254`; the sinks patch deletes those old rows on every run.
-| `787801001`–`787801072` | Pet device essences (250/300) | Do not use for charms |
-| `787802001`–`787802072` | Combat pet summon weenies | Do not use for charms |
-| `787802073`+ | Future combat pets / extensions | Append only |
 
 ## Ability charms (`78780030`–`78780089`)
 

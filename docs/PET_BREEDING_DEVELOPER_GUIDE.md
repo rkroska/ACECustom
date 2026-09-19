@@ -1,7 +1,8 @@
 # Pet Breeding - Developer Guide
 
 Audience: server developers. Covers breeding, mutation, the mating guardian, maturity, imprinting,
-tailoring and neutering. Everything here is on branch `feature/pet-breeding-motel`.
+consumables, tailoring and neutering, pet naming and the web tooling. Everything here is on branch
+`feature/pet-breeding-motel`.
 
 Related: `PET_BREEDING_CONTENT_GUIDE.md` (content team), `PET_BREEDING_PLAYER_GUIDE.md` (players),
 `PET_BREEDING_TEST_PLAN.md` (test steps), `PET_POTENCY_AND_STRAIN.md` (potency, a separate system).
@@ -12,22 +13,30 @@ Related: `PET_BREEDING_CONTENT_GUIDE.md` (content team), `PET_BREEDING_PLAYER_GU
 
 | File | Responsibility |
 |---|---|
-| `Source/ACE.Server/WorldObjects/PetDevice_Breeding.cs` | The breed itself: gates, partner search, guardian spawn, birth, ID panel block, admin diagnostics. `BreedingMath` (nested): the pure inheritance / mutation / cap maths, `Simulate`, `RollAwakenedBlessing`, `SummonedStats`. |
-| `Source/ACE.Server/WorldObjects/PetDevice_BreedingReplay.cs` | `BreedingReplay`: parses, runs and reports a `[REPLAY]` blob (see section 11). |
-| `Source/ACE.Server/WorldObjects/MatingGuardian.cs` | The ritual monster. `Creature` subclass with source-gated damage, pet-only targeting, no loot/XP/corpse, lost/slain callbacks. |
-| `Source/ACE.Server/WorldObjects/PetDevice_Maturity.cs` | Juvenile growth (kill counter, stages, names), imprinting, kill credit from creature deaths. |
+| `Source/ACE.Server/WorldObjects/PetDevice_Breeding.cs` | The breed itself: area rule (`MatchesBreedingArea`), gates, partner search, guardian spawn and callbacks, birth and delivery, ID panel block, diagnostics. `BreedingMath` (nested): the pure inheritance / mutation / cap maths as `Simulate`, `RollAwakenedBlessing` and `SummonedStats` (section 12). |
+| `Source/ACE.Server/WorldObjects/PetDevice_BreedingReplay.cs` | `BreedingReplay`: parses, runs and reports a `[REPLAY]` blob from the website simulator (section 12). |
+| `Source/ACE.Server/WorldObjects/MatingGuardian.cs` | The ritual monster. `Creature` subclass with source-gated and scaled damage, pet-only targeting, no loot/XP/corpse, slain/lost callbacks, parent-death notification. |
+| `Source/ACE.Server/Entity/DamageEvent.cs` | Guardian outgoing damage override (`attacker is MatingGuardian`). |
+| `Source/ACE.Server/WorldObjects/PetDevice_Maturity.cs` | Juvenile growth (kill counter, stages, names, XP multiplier), imprinting, kill credit from creature deaths. |
 | `Source/ACE.Server/WorldObjects/PetDevice.cs` | Device properties (`VisualOverride*`, `IsMale`, `IsShiny`), `SummonCreature`, `ApplyVisualOverridesTo`, bond attunement in `ActOnUse`. |
-| `Source/ACE.Server/WorldObjects/CombatPet.cs` | `Init` rating pipeline, `PrepareMaturityForSummon`, `ApplyMaturity`, `MaturityDamageMult`. |
-| `Source/ACE.Server/Entity/PetTailoring.cs` | Tailoring kit extract/apply. Neutering kit is inline in `Player_Use.cs`. |
+| `Source/ACE.Server/WorldObjects/CombatPet.cs` | `Init` rating pipeline, `PrepareMaturityForSummon`, `ApplyMaturity`, `MaturityDamageMult`, `IsInMotelOrEncounter`, parent-death hook in `Die`. |
+| `Source/ACE.Server/WorldObjects/Player_Use.cs` | Neutering kit inline; dispatch to `PetTailoring`; the six consumables (78780250-78780255). |
+| `Source/ACE.Server/Entity/PetTailoring.cs` | Tailoring kit extract/apply and the three kit WCID constants. |
+| `Source/ACE.Server/WorldObjects/Healer.cs`, `Player_Magic.cs`, `WorldObject_Magic.cs` | Own-pet healing in the motel / encounter (kits, beneficial spells, heal scaling). |
 | `Source/ACE.Server/Entity/MonsterCapture.cs` | Capture (siphon). Defines the "visual model" property set tailoring mirrors. |
-| `Source/ACE.Server/Services/PetMutationService.cs` | Master palette pool (DAT-derived, filtered), prewarmed at startup. |
+| `Source/ACE.Server/Services/PetMutationService.cs` | Master and vibrant palette pools (DAT-derived, filtered), prewarmed at startup. |
 | `Source/ACE.Server/WorldObjects/Creature_Networking.cs` | `CalculateObjDesc`: how a palette override reaches the client. `GetSetupDefaultPaletteId`. |
 | `Source/ACE.Server/WorldObjects/Creature.cs` | `CanBeDamagedBy(WorldObject)` virtual, honoured by melee, missile, spell projectiles and life magic. |
 | `Source/ACE.Server/WorldObjects/Creature_Death.cs` | `OnDeath` calls `PetDevice.CreditMaturityKills(this)`. |
-| `Source/ACE.Server/WorldObjects/Player_Networking.cs` | Dance emote stamps `LastDanceTime` and calls `CheckMultiplayerBreeding`. |
+| `Source/ACE.Server/WorldObjects/Player_Networking.cs`, `Player.cs` | Dance emote (`BroadcastMovement`) and typed-emote fallback (`HandleActionTalk`) stamp `LastDanceTime` and call `CheckMultiplayerBreeding`. |
 | `Source/ACE.Server/Managers/PropertyManager.cs` | All `pet_breeding_*`, `pet_maturity_*` config. |
-| `Source/ACE.Server/Command/Handlers/DeveloperCommands.cs` | `@breed`, `@breed-replay`, `@breed-debug`, `@setsex`, `@pet-reset-cooldown`, `@pet-set-maturity`, `@pet-set-mutations`, `@pet-cleanse-palette`, `@mutate_pet`, `@petdesc`. |
-| `Source/ACE.Entity/Enum/Properties/*.cs` | Custom property ids (see section 9). |
+| `Source/ACE.Server/Command/Handlers/DeveloperCommands.cs` | `@breed`, `@breed-replay`, `@setsex`, `@pet-reset-cooldown`, `@pet-set-maturity`, `@pet-set-mutations`, `@pet-cleanse-palette`, `@pet-make-alpha`, `@mutate_pet`, `@petdesc`, `@pet-debug`. |
+| `Source/ACE.Server/Command/Handlers/PlayerCommands.cs` | `@dance`, `@breed-debug`, `@pet-name`. |
+| `Source/ACE.Server/Controllers/PetNamingController.cs` | Portal approve/deny for name requests. |
+| `Source/ACE.Server/Controllers/VisualizerController.cs`, `Services/VisualizerService.cs`, `Services/CurationService.cs` | 3D showroom data, `breeding-config`, curation and screenshots. |
+| `Source/ACE.WebPortal/ClientApp/src/utils/breedingModel.ts`, `components/PetBreedingCalculator.tsx` | Website simulator: a TypeScript mirror of `BreedingMath` and the roll logic. |
+| `Source/ACE.Entity/Enum/Properties/*.cs` | Custom property ids (section 9). |
+| `Source/ACE.Server.Tests/PetBreedingInheritanceTests.cs`, `PetBreedingParityTests.cs`, `EnumCollisionTests.cs`, `SqlPatchSanityTests.cs` | Unit tests (section 13) and the web/server parity harness (section 12). |
 
 Build and run notes are in `CLAUDE.md` at the repo root (Release x64 path, config-override rule, the
 ASCII-only rule for anything the client renders).
@@ -36,47 +45,130 @@ ASCII-only rule for anything the client renders).
 
 ## 2. The breed, end to end
 
-Entry: a player performs the dance emote. `Player_Networking.BroadcastMovement` stamps
-`Player.LastDanceTime` and calls `PetDevice.CheckMultiplayerBreeding(player, source)`. The chat-emote
-fallback in `Player.cs` does the same for a typed emote containing "dance".
+### Entry
 
-`CheckMultiplayerBreeding` is a single static method with gates in this order. Every gate returns
-before anything is written:
+Two paths call `PetDevice.CheckMultiplayerBreeding(player, source)`:
 
-1. `pet_breeding_enabled`; player not trading; player has a `CombatPet` summoned.
-2. Location: `IsInBreedingArea` (landblock `pet_breeding_allowed_landblock`, optional variant). Admins bypass location only.
-3. Partner search: iterate online players; same landblock, in the breeding area, `LastDanceTime` within `pet_breeding_dance_sync_seconds`, has a `CombatPet` out, and the two pets share a landcell. First match wins.
-4. Pending guardian: refuse if either player already has a breed waiting on a guardian.
-5. Both players marked `IsBusy` (cleared in `finally`).
-6. Devices resolved from the pets (`TryGetSummoningDevice`, weak reference, with an inventory lookup fallback) and re-verified to be in the owner's inventory.
-7. Neutered, tier (`PetDeviceWcids.GetPetLevel` must resolve for both), min level, min bond, shiny (`pet_breeding_allow_shiny`), juvenile (`IsJuvenile`), sex (exactly one male and one female).
-8. Male charges (`GetAvailableMaleCharges`) and female recovery cooldown (`PetNextBreedingTime`), each with a test bypass property.
+- `Player_Networking.BroadcastMovement`: the `DrudgeDance` / `DrudgeDanceState` soul emote. The
+  motion is the primary trigger.
+- `Player.HandleActionTalk`: the typed-emote fallback. It fires only when the whole message, trimmed
+  of whitespace and `*`, equals "dance" (case-insensitive), and only if the motion path did not just
+  fire for the same emote (`LastSoulEmote` still within its animation length). Never loosen this to
+  `Contains`; see AGENTS.md.
 
-After the last gate the breed is committed: the male's charge is spent, the female's cooldown is
-written, both devices are saved, and the stud's owner is told the remaining charge count.
+Both paths stamp `Player.LastDanceTime` and rate-limit the partner scan to one per 2 seconds per
+player, because the scan walks every online player.
 
-Then the decision phase computes everything about the offspring into a `PendingBreed` record:
-species donor (random parent), winner (always the female's owner), inherited stats (55/45 per stat
-between parents, mutation counts carried as counts), the mutation roll, and the rolled palette.
-`PendingBreed` exists so the birth can be deferred without recomputing anything.
+`@dance` (player command) simply performs `*dance*`. `@breed` (admin) calls the same method with
+`forced: true`, which skips the partner's dance-window check and tells both owners the ritual was forced.
 
-Finally either `TrySpawnMatingGuardian(pending)` (mutation breeds with the guardian enabled) or
-`CompleteBirth(pending)` runs. `CompleteBirth` creates the baby device from the donor's weenie, writes
-inheritance, mutation counts, the palette (see section 4), marks it juvenile, delivers it, announces,
-and dismisses both parents two seconds later via the world action queue.
+### Gates, in order
 
-### Stat model
+Everything before "Every gate has passed" returns without writing anything.
 
-Every mutable stat is stored as a **count** (`PetMutDamageCount`, `PetMutDamageResistCount`,
-`PetMutCritCount`, `PetMutVitalityCount`, `PetMutPotencyCount`). The applied bonus is always
-`count x step` where the step is a live property. This means retuning a step rescales every existing
-pet on its next summon. Legacy devices without counts fall back to the stored rating divided by the
-step. `CombatPet.Init` and `BuildBreedingAppraisalBlock` both use this rule; keep them in sync.
+1. `pet_breeding_enabled`; player not trading; player has a `CombatPet` summoned; player has a location.
+2. Location: `IsInBreedingArea(player)`. Admins bypass location checks only (area, partner landblock,
+   pet landcell); they do not bypass sex, charges or cooldowns.
+3. Device 1 resolved from the pet (`TryGetSummoningDevice`, then an inventory lookup by GUID).
+4. Partner scan over all online players: not self, not trading, same landblock, inside the area,
+   `LastDanceTime` within `pet_breeding_dance_sync_seconds` (skipped when forced), has a `CombatPet`,
+   both pets have locations, both pets share a landcell. Every survivor is a room candidate.
+5. Partner choice: candidates whose pairing looks compatible (opposite sex, neither neutered, neither
+   juvenile, shiny rule, male has a charge, female off cooldown, not busy) are preferred; among them
+   the nearest wins. If none is compatible the nearest room candidate is taken anyway so the player
+   gets a proper refusal message rather than silence.
+6. Neither player `IsBusy`; neither has a pending guardian breed.
+7. Both players marked `IsBusy` (cleared in `finally`). Device 2 resolved.
+8. Neutered (either); both devices still in their owner's inventory; tier resolves for both
+   (`PetDeviceWcids.GetPetLevel`); `pet_breeding_min_parent_level` (default 100; tiers are
+   50/80/100/125/150/180/200/250/300); `pet_breeding_min_bond` (default 100, `PetBondLevel ?? 1`; bond
+   XP is only awarded with `pet_bond_enabled` on an attuned device, and `CompleteBirth` writes babies at
+   bond 1); shiny (`pet_breeding_allow_shiny`); juvenile; exactly one male and one female.
+9. Male charges (`GetAvailableMaleCharges`) and female cooldown (`PetNextBreedingTime`), each with a
+   test bypass property.
+10. Delivery precheck: the female's owner must have a free slot in the main pack
+    (`GetFreeInventorySlots(false)`) and enough burden headroom for the heavier parent device.
 
-Mutation: one global roll at `pet_breeding_base_mutation_chance` (flat when decay is 0); on success
-one eligible stat gains a step. Potency mutates on its own independent roll
-(`pet_breeding_potency_mutation_chance`), with a soft cap that quarters the step above
-`pet_breeding_potency_soft_cap`. Caps default to 0 = unlimited; this server does not cap progression.
+### Commit and decision
+
+After the last gate: the ritual message goes to both players, steps are read, and the inheritance
+and rolls below produce a `PendingBreed` record. Then the male's charge is spent (owner told the
+remainder), the female's cooldown written, the species donor rolled 50/50, the palette rolled if any
+mutation landed, and both parent devices saved. `PendingBreed` exists so the birth can be deferred
+(guardian) without recomputing or re-rolling anything.
+
+Finally either `TrySpawnMatingGuardian(pending)` (any mutation, guardian enabled) or
+`CompleteBirth(pending)` runs.
+
+### Inheritance model (`PetDevice.BreedingMath`)
+
+`BreedingMath` is a nested static class with no world state so the website and the unit tests can
+mirror it exactly. Every line is decided independently with one uniform roll: the parent with the
+higher effective value is taken when `roll < 0.55`, otherwise the lower; ties count device 1 as the
+higher parent.
+
+| Line | Compared on | Baby receives |
+|---|---|---|
+| Damage, damage resist, crit | `Gear* + count * step` | that parent's `Gear*` and count (package deal) |
+| Crit damage, crit resist, crit damage resist | `Gear*` only | that parent's `Gear*` |
+| Vitality | count only | that parent's count |
+| Potency | `PetPotencyStored` (missing = 0) | that parent's stored value and potency count |
+
+Counts fall back to `PetMut*Rating / step` (or `Vitality / step`) on legacy devices that predate the
+count properties. `CompleteBirth` writes the inherited `Gear*` values (only when > 0, like loot) and
+always writes all five counts, including zeros, so the fallback can never fire on a bred device. It
+never writes `DamageRating`, `CritRating` or `Vitality` on the device.
+
+### Mutation rolls
+
+```
+statChance = clamp(max(min_floor, base / (1 + decay * babyInheritedStatCounts)) + incense, 0, 1)
+```
+
+where `babyInheritedStatCounts` is the sum of the four stat counts the baby inherited (potency
+excluded) and `incense` is the two parents' `PetIncenseBonus` summed and clamped to 0.5. One roll
+against that; on success one line is chosen uniformly among the eligible stat lines (damage, DR,
+crit, vitality; a line is eligible unless `pet_breeding_max_stat_mutations` caps it) and its count
+goes up by one. `pet_breeding_force_mutation` forces this roll only.
+
+Potency rolls separately against `pet_breeding_potency_mutation_chance` (no incense, not forced).
+`BreedingMath.PotencyMutationStep`: the configured step, quartered (min 1) at or above the soft cap,
+clamped so the hard cap is never overshot; 0 means capped, no mutation. The hard cap is
+`ResolvePotencyHardCap`: the smallest positive of `pet_breeding_potency_hard_cap` and
+`pet_potency_max_stored`.
+
+A palette is rolled when either roll landed (a potency-only mutation recolours too). The pool is the
+master pool, or the vibrant pool if either parent carries `PetChromaticCatalystActive`; the catalyst is
+removed only when a palette was actually rolled. `PetIncenseBonus` is removed from both devices on
+every committed breed. `PetGuardianWeakened` is read here but consumed in `TrySpawnMatingGuardian`.
+`PetLastMutatedStat` records the last line changed (1 damage, 2 DR, 3 crit, 4 vitality, 5 potency).
+
+### Birth and delivery
+
+`CompleteBirth` creates the baby from the donor's weenie, copies the donor's visual overrides and
+captured ObjDesc strings, writes gear, counts, potency, `PetMutationCount` (sum, only when > 0),
+`PetLastMutatedStat`, the palette (section 4), and `MarkBornJuvenile`.
+
+Delivery resolves the winner through `PlayerManager.GetOnlinePlayer` because a captured `Player`
+reference cannot tell you it logged out (`Session` is never nulled). Online and
+`TryCreateInInventoryWithNetworking` succeeds: normal birth message and particles. Otherwise (logged
+out or every pack filled during a guardian fight) the baby is written straight into the winner's
+persisted inventory (`ContainerId` = winner, `Location` null) and loads on next login; both players
+get the "tucked away" message. The baby is never dropped on the ground and is not attuned; it imprints
+on first summon like any newborn.
+
+Both parents are dismissed two seconds later via `WorldManager.ActionQueue` (not the pets' own queues,
+which are dropped if a pet died in the fight).
+
+### Summon-time evaluation
+
+`CombatPet.Init`: `Gear*` from the device, then `+ count * step` for damage, DR and crit, plus derived
+crit lines from the mutation bonuses only (`0.8 * mutDmg` crit damage, `0.8 * mutDr` crit resist,
+`0.6 * mutDr` crit damage resist), then bond bonuses, then `pet_combat_rating_mult_*`. Max health gets
+`vitCount * vitality_step` (via `ApplyMaturity`). Maturity then scales ratings, health and outgoing
+damage by the stage strength. Retuning a damage/DR/crit/vitality step rescales existing pets on the
+next summon; the potency step does not, because potency is stored as a finished value.
+`BuildBreedingAppraisalBlock` uses the same count-times-step rule; keep them in sync.
 
 ---
 
@@ -87,8 +179,8 @@ is set. It is therefore stable, needs no data migration, and is a coin flip per 
 
 Male: `PetMaleBreedingCharges` (int) and `PetMaleChargesRefreshTime` (float, unix). `GetAvailableMaleCharges`
 refills to `pet_breeding_male_max_charges` once `pet_breeding_male_charge_reset_hours` have passed
-since the stamp. A never-stamped device is stamped on first read rather than refilled. The appraisal
-reads this with `persist=true`, so an ID can stamp or refill.
+since the stamp, and re-stamps. A never-stamped device is stamped on first read rather than refilled.
+The appraisal reads with `persist=true`, so an ID can stamp or refill. Reset hours 0 = never refill.
 
 Female: `PetNextBreedingTime` (float, unix). Written as now + `pet_breeding_cooldown_hours`.
 
@@ -112,10 +204,13 @@ This cost a long investigation; the rules are:
   mutated baby. Donors that also carry captured anim parts or textures (humanoids) will still early-return;
   that is a known limitation.
 - `@create <wcid> 1 <palette> <shade>` works the same way and is the reference behaviour.
+- `@pet-cleanse-palette` removes template, base, shade and captured palettes together; clearing only
+  the template leaves the rewritten base with no subpalettes, which is not the natural look.
 
 The palette pool is `PetMutationService.GetMasterPalettePool()`: every 0x04 palette in the DAT that
-passes `IsUsableCreaturePalette` (2048 entries, under 40% black, mean luminance above 0.15). It is
-deliberately not species-filtered; the roll is a lottery. The web showroom draws from the same pool.
+passes `IsUsableCreaturePalette` (2048 entries, under 40% black, mean luminance above 0.15).
+`GetVibrantPalettePool()` is the catalyst's subset. Neither is species-filtered; the roll is a lottery.
+The web showroom draws from the same pools.
 
 `PetDevice.ApplyVisualOverridesTo(Creature)` dresses any creature in a device's look. It is used for
 the summoned pet and for the guardian.
@@ -124,29 +219,52 @@ the summoned pet and for the guardian.
 
 ## 5. The mating guardian
 
-Spawned by `TrySpawnMatingGuardian` on a mutation breed when `pet_breeding_guardian_enabled`.
+Spawned by `TrySpawnMatingGuardian` when the breed rolled any mutation and `pet_breeding_guardian_enabled`.
 
 - Built from the template weenie `pet_breeding_guardian_template_wcid` (default 7, drudgeskulker),
   dressed with `donor.ApplyVisualOverridesTo`, then given the rolled palette under the base/template rule.
   `Biota.PropertiesPalette` is cleared so the colour renders. Named "Spirit of <creature>", translucency
   from `pet_breeding_guardian_translucency`.
-- Stats: level = max parent level; ratings = the offspring's; `DamageRating` offset by
-  `(damage_mult - 1) x 100`; health = (pet1 max + pet2 max) x `health_mult`.
+- Stats: level = max parent level; the six ratings are the offspring's effective values
+  (`PendingBreed.Effective*`, gear + mutations as a summon would evaluate them); health =
+  (pet1 max + pet2 max) x `health_mult`.
+- Outgoing damage is overridden in `DamageEvent`: base hit = 8% of the defending pet's max health,
+  clamped 20-500, x `pet_breeding_guardian_damage_mult`, x 0.5 if `IsWeakened`. `BaseDamageMod` is
+  rewritten to match so crits scale with it (AGENTS.md rule 3).
+- Incoming damage (`MatingGuardian.TakeDamage`): 0 unless `CanBeDamagedBy`; otherwise scaled by
+  `clamp((maxHp / rawHit / 30) ^ 0.81, 0.01, 1)` so hard hitters do not one-shot it, x 2.5 when
+  weakened, then capped per hit at 10% of max health (25% weakened), minimum 1.
 - `NeutraliseTemplate` strips loot, XP, luminance, corpse, faction, generator ties, kill quests, and
   destroys any items the template instantiated; then `SetMonsterState()` recomputes the cached monster flags.
 - Placement: `FindGuardianSpawnPosition` tries in front of / behind each pet at radius + radius + 1.5 m.
   Creatures do not push each other apart at placement, so this must be computed. `Home` is set after
   `EnterWorld` because placement can nudge the position.
-- Damage: `CanBeDamagedBy` returns true only for the two parent pets (or any pet of the two owners, so a
-  resummon mid-fight still counts). Projectile sources are resolved through `ProjectileSource`.
-  `TakeDamage`, `SpellProjectile.DamageTarget` and life-magic harm all consult it.
+- Registration order: `Bind`, `EnterWorld`, timeout chain on `WorldManager.ActionQueue` (minimum 5 s),
+  and only then `pendingGuardianBreeds[guid] = pending`. Anything that throws before registration
+  falls back to an immediate birth with no second baby possible. The Offering is consumed from both
+  devices after registration.
+- Damage gate: `CanBeDamagedBy` returns true only for the two parent pets, or any `CombatPet` owned by
+  one of the two owners (a resummon mid-fight is adopted into the allowed set). Projectile sources are
+  resolved through `ProjectileSource`. `TakeDamage`, `SpellProjectile.DamageTarget` and life-magic harm
+  all consult it.
 - Targeting: `FindNextTarget` picks the nearest parent pet; `HandleFindTarget` nulls any non-pet target
   every tick (players set as target by proximity wake-ups); `Sleep` is a no-op so it never idles.
-- Resolution: exactly one of `OnGuardianSlain` (from `OnDeath`), `OnGuardianTimeout` (world queue,
-  `pet_breeding_guardian_timeout_seconds`) or `OnGuardianLost` (from `Destroy` without a death) runs.
+- Resolution, exactly one of:
+  - `OnGuardianSlain` (from `OnDeath`): "yields to its parents" message, then the **Awakened Blessing**:
+    one extra mutation on a random eligible line among damage, DR, crit, vitality and potency (potency
+    only if `PotencyMutationStep` > 0 under the same caps as the breed roll). If nothing is eligible a
+    capped message is sent instead. Then `CompleteBirth`.
+  - `OnGuardianTimeout` (world queue): guardian fades, "dissolves back into the ether", `CompleteBirth`
+    without the blessing.
+  - `OnGuardianLost` (from `Destroy` without a death, or `OnParentDied` when `CombatPet.Die` notifies
+    the guardian that a parent pet died): same message, `CompleteBirth` without the blessing.
   All three remove the entry from `pendingGuardianBreeds` (a `ConcurrentDictionary` keyed by guardian
-  GUID) and call `CompleteBirth`. The ritual can never lose a paid breed.
+  GUID). The ritual can never lose a paid breed.
 - `Die` is overridden to a minimal animation + destroy; no Siphon Lens, no emotes, no treasure.
+- `CombatPet.IsInMotelOrEncounter()` is true inside the breeding area or while registered as a parent
+  pet of a live guardian. `Healer`, `Player_Magic` (beneficial spells only; harmful spells on your own
+  pet stay blocked by `CanDamage`) and `WorldObject_Magic` (health boosts scaled up to 8x by pet/caster
+  max health) use it.
 - A server restart drops in-memory pending breeds. The parents have paid at that point. Documented,
   not handled.
 
@@ -155,12 +273,13 @@ Spawned by `TrySpawnMatingGuardian` on a mutation breed when `pet_breeding_guard
 ## 6. Maturity and imprinting
 
 Properties on the device: `PetMaturityKills` (int, presence = "born from a breed"),
-`PetIsJuvenile` (bool). Config: `pet_maturity_*`.
+`PetIsJuvenile` (bool), `PetMaturityXpMultiplier` (float, Nurturing Draught). Config: `pet_maturity_*`.
 
 - `MarkBornJuvenile` runs in `CompleteBirth`. The counter is always written; the juvenile flag only
   when `pet_maturity_enabled`. Captured essences never get either.
-- Stage = `kills / (required / stages) + 1`, clamped. `MaturityFraction` = `(stage - 1) / stages`.
-  Scale and strength multipliers lerp from the juvenile values to 1.0 by that fraction. Adult = 1.0.
+- Stage = `kills / ceil(required / stages) + 1`, clamped. `MaturityFraction` = `(stage - 1) / stages`.
+  Scale and strength multipliers lerp from the juvenile values to 1.0 by that fraction: with defaults
+  0.5, 0.6, 0.7, 0.8, 0.9 by stage and 1.0 for an adult.
 - Summon: `PetDevice.SummonCreature` calls `CombatPet.PrepareMaturityForSummon` BEFORE `Init`, because
   `Pet.Init` enters the world (create packet, physics scale). It records the adult scale, shrinks
   `ObjScale`, and prefixes the stage name. `CombatPet.Init` then captures the adult ratings and health
@@ -174,6 +293,8 @@ Properties on the device: `PetMaturityKills` (int, presence = "born from a breed
   death. It walks `DamageHistory`, credits each juvenile combat pet whose share is at least
   `pet_maturity_min_damage_share` and whose essence tier is at or below the victim's level. One credit
   per device per death. Players, combat pets and mating guardians never count as victims.
+  `AddMaturityKill` adds `round(PetMaturityXpMultiplier)` kills (default 1, Draught 2) and removes the
+  multiplier at adulthood.
 - Imprint: `TryImprintOnSummon` runs after a successful summon. First summoner of a bred essence gets
   `PetBondAttuned`, `PetBondAttunedCharacterId`, `Attuned`, `Bonded`. `ActOnUse` refuses other characters
   for bred essences regardless of `pet_bond_enabled`.
@@ -182,9 +303,22 @@ Properties on the device: `PetMaturityKills` (int, presence = "born from a breed
 
 ---
 
-## 7. Tailoring and neutering
+## 7. Consumables, tailoring and neutering
 
-`PetTailoring.HandleExtract` / `HandleApply`, dispatched from `Player_Use.cs` by WCID.
+All are `Player_Use` source-on-target uses with the generic target-type check skipped for these
+WCIDs; the target must be a `PetDevice` in the pack (not in the world). Each consumes the item with
+`TryConsumeFromInventoryWithNetworking` before writing the property (AGENTS.md rule 1).
+
+| WCID | Property written | Refusals | Consumed by |
+|---|---|---|---|
+| 78780250-52 Courtship Incense | `PetIncenseBonus` 0.025 / 0.05 / 0.10 | not a combat essence; neutered; existing bonus >= new | every committed breed |
+| 78780253 Nurturing Draught | `PetMaturityXpMultiplier` 2.0 | not a combat essence; not juvenile; already >= 2.0 | adulthood |
+| 78780254 Chromatic Catalyst | `PetChromaticCatalystActive` | not a combat essence; already active | a palette roll |
+| 78780255 Offering of Subjugation | `PetGuardianWeakened` | not a combat essence; guardian disabled; already active | a guardian spawn |
+
+`78780256` is reserved and has no handler; the range check in `Player_Use` stops at 78780255.
+
+Tailoring (`PetTailoring.HandleExtract` / `HandleApply`):
 
 - Extract creates the filled kit, copies the visual set, places it in the pack, and only then consumes
   the source essence and tool. A failed pack placement leaves everything untouched.
@@ -194,7 +328,10 @@ Properties on the device: `PetMaturityKills` (int, presence = "born from a breed
 - `CopyVisuals` is one list used in both directions. Extend it there if capture gains a property.
 - Both ends must be combat essences (passive crates normalise scale differently). Both refuse while the
   device's pet is summoned or the item is in the trade window.
-- Neutering sets `PropertyBool.PetNeutered`; breeding gate 7 refuses it; the ID panel shows it.
+
+Neutering (inline in `Player_Use`) sets `PropertyBool.PetNeutered` on any `PetDevice`; it only refuses
+one that is already neutered. Breeding gate 8 and the incense refuse a neutered device; the ID panel
+shows it.
 
 ---
 
@@ -204,44 +341,84 @@ Everything that reaches the AC client must be 7-bit ASCII with `\n` line endings
 `\r\n` and the client draws the CR as a music note; `BuildBreedingAppraisalBlock` and
 `RunBreedingDiagnostics` strip it. Emoji render as boxes. See `CLAUDE.md`.
 
+`RunBreedingDiagnostics` (`@breed-debug`, player; `@pet-debug`, developer) prints the enable switch,
+the player's cell/variant against the configured area, the player's own pet (sex, charges or
+recovery) and a count of other players with pets within 30 m or in the landblock. Per-player names,
+distances and landblocks are printed only for admins.
+
 ---
 
 ## 9. Custom property ids
 
 | Property | Id | Notes |
 |---|---|---|
+| PropertyInt.PetPotencyStored | 9056 | potency, a finished value |
 | PropertyInt.PetMaleBreedingCharges | 9057 | |
-| PropertyInt.PetMutDamageCount .. PetMutPotencyCount | 9070-9074 | counts |
-| PropertyInt.PetMutDamageRating .. | 9060-9067 | legacy stored bonuses, fallback only |
-| PropertyInt.PetMutationCount | 9075 | written, never read (was 9058, collided with Vitality) |
+| PropertyInt.PetMutCritRating .. PetMutPotency | 9062-9067 | legacy stored bonuses, fallback only |
+| PropertyInt.PetMutDamageRating / PetMutDamageResistRating | 9068 / 9069 | legacy (were 9060/9061, collided with WeaponAug*) |
+| PropertyInt.PetMutDamageCount .. PetMutPotencyCount | 9070-9074 | counts, the live model |
+| PropertyInt.PetMutationCount | 9075 | sum, written for display (was 9058, collided with Vitality) |
 | PropertyInt.EssenceSalvageYield | 9076 | (was 9057, collided with charges) |
 | PropertyInt.PetMaturityKills | 9077 | presence = bred |
+| PropertyInt.PetLastMutatedStat | 9078 | 1 dmg, 2 DR, 3 crit, 4 vit, 5 potency |
+| PropertyInt.VisualOverridePaletteTemplate | 9035 | mutation colour |
+| PropertyDataId.VisualOverridePaletteBase | 9036 | |
 | PropertyFloat.PetNextBreedingTime | 9056 | |
 | PropertyFloat.PetMaleChargesRefreshTime | 9057 | |
+| PropertyFloat.PetIncenseBonus | 9058 | |
+| PropertyFloat.PetMaturityXpMultiplier | 9059 | |
+| PropertyBool.PetBondAttuned | 9047 | |
+| PropertyBool.PetNeutered | 9051 | |
 | PropertyBool.PetIsMaleOverride | 50053 | |
 | PropertyBool.PetIsJuvenile | 50054 | |
+| PropertyBool.PetChromaticCatalystActive | 50055 | |
+| PropertyBool.PetGuardianWeakened | 50056 | |
+| PropertyString.CapturedObjDescAnimParts / Palettes / Textures | 9011 / 9012 / 9013 | |
 
-Before adding an id, grep the enum for the number. Two collisions shipped on this branch before they
-were caught.
-
----
-
-## 10. Extension points and gotchas
-
-- Add a breeding gate: insert it in `CheckMultiplayerBreeding` before the charge/cooldown writes.
-  Nothing after "Every gate has passed" may return without completing the breed.
-- Add a visual property: add it to capture, to `ApplyVisualOverridesTo`, and to `PetTailoring.CopyVisuals`.
-- Add a stat: add a count property, a step property, inheritance in the decision phase, application in
-  `CombatPet.Init`, capture in `matureXxx`, scaling in `ApplyMaturity`, display in the appraisal block.
-- Never enqueue a must-run action on a creature that may be gone; use `WorldManager.ActionQueue`.
-- `IsMonster` / `IsFactionMob` are cached at construction. Call `SetMonsterState()` after changing
-  `Attackable` or faction on a live creature.
-- Logging: `pet_breeding_verbose_logging` and `pet_visual_packet_debug` gate the noisy lines. Keep new
-  per-packet or per-death logs behind a switch.
+Before adding an id, grep the enum for the number; `EnumCollisionTests` fails the build on a
+duplicate in the custom range. Three collisions shipped on this branch before that test existed.
 
 ---
 
-## 11. Simulator parity harness
+## 10. Pet naming
+
+`@pet-name <name>` (`PlayerCommands.HandlePetName`): 3-32 characters matching `^[a-zA-Z0-9' -]+$`,
+targets the summoned pet's device or a selected combat essence the player possesses, refuses the
+current name, and enforces a 60 s per-character cooldown taken before the background work starts.
+The DB write (`pet_name_requests`, one pending row per character, rewritten in place) and the optional
+Discord embed run on a `Task`; the reply is delivered through `WorldManager.EnqueueAction` with the
+player re-resolved, because the world objects belong to the landblock thread.
+
+`PetNamingController` (`/api/PetNaming`, `[Authorize]`, portal admin or `pet-naming` page access):
+`GET requests`, `POST approve/{id}`, `POST deny/{id}`. Approve claims the row atomically
+(`UPDATE ... WHERE status = pending`). If the owner is online the rename is enqueued on the world action
+queue and awaited with a 10 s timeout; offline, the shard biota is edited directly. Both paths verify
+the GUID is still a `PetDevice`, still possessed by the requesting character, and still carries the old
+name; a mismatch auto-denies with a reason (HTTP 409), a transient failure returns the row to pending.
+The portal page is **Pet Name Approvals** (`/pet-names`, `PetNameApprovals.tsx`).
+
+---
+
+## 11. Visualizer, curation and the simulator
+
+`VisualizerController` (`/api/visualizer`): every `GET` (mesh, palettes, pools, `breeding-config`,
+textures, curation reads, species presets, search) is `[AllowAnonymous]`. The two `POST`s, `curation`
+and `save-screenshot`, are `[Authorize]` and additionally require `IsPortalAdmin` or the `world-viewer`
+page access (`CanWrite()`), returning 403 otherwise. `GET breeding-config` returns the live chance,
+floor, decay, steps, caps, `pet_potency_max_stored`, `force_mutation` and `guardian_enabled` values.
+
+The **Pet Breeding Calculator** (`PetBreedingCalculator.tsx`) fetches `breeding-config` on load and
+shows `LIVE SERVER` or `FALLBACK DEFAULTS` next to its config panel. `breedingModel.ts` is a line-for-line
+mirror of `BreedingMath` and the roll logic (55/45 with ties to A, package-deal lines, gear-only crit
+lines, potency missing = 0, floor/decay/incense formula, potency step and cap resolution, palette on any
+mutation, `0.8/0.8/0.6` derived crit lines, maturity multipliers `0.5..0.9`) plus a campaign
+simulator. **Any change to `BreedingMath`, the roll formula or `CombatPet.Init` must be mirrored
+there.** `runSelfCheck()` (the "Run Model Self-Check" button) breeds a scripted pair with a fixed RNG
+and prints PASS/FAIL lines against known outcomes; extend its expectations when the model changes.
+
+---
+
+## 12. Simulator parity harness
 
 The website's breeding simulator (`Source/ACE.WebPortal/ClientApp/src/utils/breedingModel.ts`) and
 the server's `PetDevice.BreedingMath` (`PetDevice_Breeding.cs`) implement the same maths. The harness
@@ -315,3 +492,36 @@ truncates a long paste, save the line(s) to a text file on the server and run
 `breedingModel.ts` and `BreedingMath` change together, in the same PR, with `BREEDING_MODEL_VERSION`
 bumped and the blobs in `PetBreedingParityTests.cs` regenerated. A parity test failure after a change
 to one side means the other side was not updated; do not "fix" the test.
+
+---
+
+## 13. Tests
+
+- `PetBreedingInheritanceTests`: `BreedingMath` (pick rule and 0.55 boundary, tie to device 1,
+  effective value, package deal, gear-only lines, potency missing = 0 and count travels with stored,
+  hard cap resolution, potency step below/at soft cap and clamped to the hard cap, derived crit lines)
+  and `MatchesBreedingArea` (0 = anywhere, 16-bit = landblock, 32-bit = exact cell, variant filter).
+- `EnumCollisionTests`: no duplicate ids in the custom property ranges.
+- `SqlPatchSanityTests`: `Database/Updates/World` and `Shard` are 7-bit ASCII with LF line endings,
+  and no `landblock_instance` INSERT names the generated `landblock` column.
+
+Run from `Source`: `dotnet test ACE.Server.Tests\ACE.Server.Tests.csproj --filter "FullyQualifiedName~PetBreeding"`.
+
+---
+
+## 14. Extension points and gotchas
+
+- Add a breeding gate: insert it in `CheckMultiplayerBreeding` before the ritual message. Nothing after
+  "Every gate has passed" may return without completing the breed.
+- Add a visual property: add it to capture, to `ApplyVisualOverridesTo`, and to `PetTailoring.CopyVisuals`.
+- Add a stat: add a count property, a step property, an `InheritLine` call in the decision phase,
+  application in `CombatPet.Init`, capture in `matureXxx`, scaling in `ApplyMaturity`, display in the
+  appraisal block, the `@pet-set-mutations` table, and the mirror in `breedingModel.ts`.
+- Add a consumable: a WCID in the sinks patch, a branch in `Player_Use` (extend the range check), a
+  property id, and a consumption point that runs only when the effect actually applied.
+- Never enqueue a must-run action on a creature that may be gone; use `WorldManager.ActionQueue`.
+- `IsMonster` / `IsFactionMob` are cached at construction. Call `SetMonsterState()` after changing
+  `Attackable` or faction on a live creature.
+- `ThreadSafeRandom.Next(min, max)` is inclusive of `max`; index pools with `Count - 1`.
+- Logging: `pet_breeding_verbose_logging` and `pet_visual_packet_debug` gate the noisy lines. Keep new
+  per-packet or per-death logs behind a switch.

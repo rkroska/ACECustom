@@ -26,48 +26,43 @@ involved thinks this is a good facility, including the person who built it.
 
 ---
 
-## 2. Two decisions to make before anyone places an object
+## 2. Where it goes
 
-### 2.1 Which landblock and variant
+### 2.1 Landblock and variant: settled
 
-Right now these disagree and one of them is wrong:
+The Seedy Motel is landblock `0x013A` (314 decimal), used through variation `3`. The portal
+(98760388, `Database/Updates/World/2026-07-26-00-Seedy-Motel-Portal.sql`) drops players at cell
+`0x013A02AE` in that variation, and the code defaults (`PropertyManager.cs`) are now
+`pet_breeding_allowed_landblock` = `0x013A`, `pet_breeding_allowed_variant` = `3`. `0x016C`, which
+older notes named, is the Marketplace.
 
-| Source | Says |
-|---|---|
-| `PropertyManager.cs:528` default | landblock `0x016C` (364 decimal) |
-| `Database/Updates/World/2026-07-26-00-Seedy-Motel-Portal.sql` | portal destination cell `0x013A02AE`, `variation_Id` 3 |
+One thing can still be wrong: a shard that stored 364 (`0x016C`) earlier keeps it, because stored
+config overrides the code default. **Run `@showprops` before building** and `@modifylong` it if it
+still says 364.
 
-`0x013A02AE` is landblock `0x013A`, not `0x016C`. Either the live shard has
-`pet_breeding_allowed_landblock` modified away from the code default, or the portal drops players
-somewhere breeding does not work. **Confirm with `@showprops` before building anything.** The
-answer decides where the annex goes.
-
-Recommendation: build the annex inside the **variation instance** the portal already uses
-(`variation_Id` 3). Variations are instanced copies of a landblock, so the annex can be furnished
-without touching the retail dungeon, and `pet_breeding_allowed_variant` can pin breeding to that
-instance alone.
+Build the annex inside the variation-3 instance. Variations are instanced copies of a landblock, so
+the annex can be furnished without touching the retail dungeon, and the variant property already
+pins breeding to that instance alone.
 
 ### 2.2 Which single landcell is the ritual floor
 
-This is the one that will bite you. `PetDevice_Breeding.cs:193` requires **both summoned pets to
-share a landcell**, and `IsInBreedingArea` accepts a full raw cell as well as a 16-bit landblock:
+`CheckMultiplayerBreeding` (in `PetDevice_Breeding.cs`) requires **both summoned pets to share a
+landcell**, and `MatchesBreedingArea` accepts a full raw cell as well as a 16-bit landblock:
+a value above `0xFFFF` matches that exact cell only, a 16-bit value matches the whole landblock, and
+0 means anywhere. This is covered by unit tests and works.
 
-```csharp
-var targetLb = allowedLandblock > 0xFFFF ? (allowedLandblock >> 16) : allowedLandblock;
-var locValid = allowedLandblock == 0
-    || player.Location.Landblock == targetLb
-    || player.Location.Cell == allowedLandblock;
-```
-
-So you can gate breeding to exactly one room by setting the property to that room's raw cell id.
-That is the right call here: it makes the Ritual Floor a real destination instead of "anywhere in
-the dungeon", and it stops two strangers in a corridor accidentally pairing off.
+So you can gate breeding to exactly one room by setting `pet_breeding_allowed_landblock` to that
+room's raw cell id (`0x013A02AE` is 20578990 decimal). That is the right call here: it makes the
+Ritual Floor a real destination instead of "anywhere in the dungeon", and it stops two strangers in
+a corridor accidentally pairing off. The same setting decides where players may heal their own pet,
+so the exact-cell choice also means kits and heals only work on the floor.
 
 **Build instruction:** stand in the candidate room and run `@breed-debug`. It prints
-`Cell=0x........`. Walk the whole room - every corner, both sides of any pillar. If the cell id
-changes anywhere inside it, the room is more than one landcell and two players standing on
-opposite sides of it will silently fail to breed. Either pick a smaller room, or physically block
-players out of the second cell. Do not skip this check; the failure mode is invisible.
+`Cell=0x........` and whether the current setting matches. Walk the whole room - every corner, both
+sides of any pillar. If the cell id changes anywhere inside it, the room is more than one landcell and
+two players standing on opposite sides of it will silently fail to breed. Either pick a smaller room,
+or physically block players out of the second cell. Do not skip this check; the failure mode is
+invisible.
 
 ---
 
@@ -95,13 +90,14 @@ of a dungeon landblock, so geometry is not a constraint - sightlines are what ma
 sees is a tired man in front of a mess. One sign, knocked over. A garbage barrel. The motel's
 existing holiday lights start here and get worse as you go in.
 
-**2. Quartermaster's nook.** A side alcove off the spine, not a blocker. Sells the three kits.
+**2. Quartermaster's nook.** A side alcove off the spine, not a blocker. Ivo sells the kits and
+the breeding consumables.
 
 **3. The Ritual Floor.** The breeding cell. This is the only room where the system works. Put the
 holiday lights here at full density - it reads as a dance floor, which is exactly right, because
-the ritual motion is literally `MotionCommand.DrudgeDance` (`Player.cs:990`). DJ Skulk, a drudge,
-stands on it. He is not a joke bolted on; he is the mechanic wearing a costume. Keep this room
-open floor - the mating guardian spawns here and the two parent pets need room to fight it.
+the ritual motion is literally `MotionCommand.DrudgeDance`. DJ Skulk, a drudge, stands on it. He is
+not a joke bolted on; he is the mechanic wearing a costume. Keep this room open floor - the mating
+guardian spawns just clear of one of the parent pets (their radii plus a 1.5 m gap) and the two pets need room to fight it.
 
 **4. The Registry (left wing).** Clean, symmetrical, a velvet-rope line of plainly-coloured
 creature NPCs standing at attention. Bexley the Registrar behind a desk stacked with paper.
@@ -166,7 +162,11 @@ A drudge. Three lines, forever, and that is the bit.
 
 ### Ivo, Ruggan's Quartermaster - alcove
 
-Vendor for WCIDs 98760399 / 98760400 / 98760401. Deadpan.
+Vendor (78780201). Stock: the Pet Neutering Kit (98760399) and the empty Pet Tailoring Kit
+(98760400), plus the six breeding consumables (78780250-78780255: three Courtship Incense tiers,
+Nurturing Draught, Chromatic Catalyst, Offering of Subjugation) once the sinks patch has run after
+his weenie exists. The filled tailoring kit (98760401) is never sold; it only comes from extraction.
+Deadpan.
 
 - On the Tailoring Kit: "It takes the look off one and puts it on another. The first one does not
   survive that. The price reflects it."
@@ -190,11 +190,8 @@ generator with a long respawn so she shows up rarely.
 
 ### The wing creatures
 
-The faction members are ordinary creature weenies made non-combatant. `Creature.cs:153`:
-
-```csharp
-public bool IsNPC => !(this is Player) && !Attackable && TargetingTactic == TargetingTactic.None;
-```
+The faction members are ordinary creature weenies made non-combatant. `Creature.IsNPC` is
+`!(this is Player) && !Attackable && TargetingTactic == TargetingTactic.None`.
 
 So each wing creature needs `weenie_properties_bool` type 19 (`Attackable`) = False and
 `weenie_properties_int` type 68 (`TargetingTactic`) = 0. Set type 67 (`Tolerance`) = 0 as well.
@@ -213,96 +210,106 @@ and costs nothing to build.
 
 ## 5. The feud engine
 
-The two wings should not be two independent timers talking past each other. The server already
-supports a real call-and-response chain, and it is worth using.
+The two wings are not two independent timers talking past each other. The server supports a real
+call-and-response chain, and the NPC patch uses it.
 
 `EmoteType.LocalSignal` (88) calls `Landblock.EmitSignal`, which walks every object in the
 landblock, and for each one with `HearLocalSignals` set and within `HearLocalSignalsRadius`,
-fires `EmoteCategory.ReceiveLocalSignal` (37) with the signal name in the `Quest` column
-(`Landblock.cs:1487-1502`, `EmoteManager.cs:4248`).
-
-So: Bexley opens on his heartbeat, signals; Splotch hears the signal and answers three seconds
-later; Splotch signals again and Fenwick closes it out. One joke, three NPCs, no code.
+fires `EmoteCategory.ReceiveLocalSignal` (37) with the signal name matched against the `quest`
+column (`EmoteManager`).
 
 **Property setup on every NPC that must hear:** `weenie_properties_int` type 290
-(`HearLocalSignals`) = 1, type 291 (`HearLocalSignalsRadius`) = 60.
+(`HearLocalSignals`) = 1, type 291 (`HearLocalSignalsRadius`) = 60. Every annex NPC has both.
 
-**Opener - Bexley** (`category` 5 = HeartBeat, `probability` 0.04; at the default 5s heartbeat that
-is roughly one exchange every two minutes, which is about right for a room people stand in):
+### What is wired (`2026-09-09-00-Ruggans-Annex-NPCs.sql`, part 4)
+
+**Openers** (`category` 5 = HeartBeat, `probability` 0.03 each; on a 5 s heartbeat that is roughly
+one opener every three minutes per speaker). Each says its line, then signals:
+
+| Signal | Speaker | Line |
+|---|---|---|
+| annex_feud_a1 | Bexley | "A Browerk is brown. That is what the word means. That is the entire word." |
+| annex_feud_a2 | Bexley | "Every creature in this lounge has papers..." |
+| annex_feud_a3 | Splotch | "They call it purebred. I call it beige with a certificate." |
+| annex_feud_a4 | Bexley | "Bloodline. Conformation. Restraint..." |
+| annex_feud_a5 | Splotch | "The Professor called me an accident. Then he hung my portrait in his office." |
+| annex_feud_a6 | Bexley | "I have been asked to stop using the phrase 'genetic vandalism.'..." |
+
+**Answers** (`category` 37, `probability` 1, `quest` = the opener's signal; the `delay` on the Say
+action is the comic beat, 3 s unless noted). Each answer signals a second-round name:
+
+| Hears | Speaker | Line | Then signals |
+|---|---|---|---|
+| a1 | Splotch | "It means BORING. Say the quiet part, Bexley." | annex_feud_b1 |
+| a2 | Splotch | "Papers? I have PALETTES." | annex_feud_b2 |
+| a4 | Splotch | "We don't have a bloodline. We have a RANGE." | annex_feud_b2 |
+| a6 | Splotch | "Ask them what colour they'll be next year. Go on. Ask them." | annex_feud_b1 |
+| a3 | Bexley | "We do not acknowledge the ward." | annex_feud_b3 |
+| b3 | Splotch | "He acknowledged us. Write that down." | annex_feud_b1 |
+| a5 | Bexley (3.5 s) | "That is not a portrait. That is a case file." | annex_feud_b5 |
+
+**Closers and choruses** on the second-round signals:
+
+| Hears | Speaker | Probability | Delay | Line |
+|---|---|---|---|---|
+| b1 | Fenwick | 0.5 | 4.5 s | "Please. Both of you. There are customers." |
+| b5 | Fenwick | 0.6 | 4.5 s | "It's a portrait. I framed it. I was told to frame it." |
+| b1 | Gary | 0.25 | 5 s | "...I'm just here for the music." |
+| b1 | each Ward creature (221-224) | 0.3 | 4 s | "HA." / "Say it louder, Splotch." / "That's the one..." / "Nobody over there has a nickname. Nobody." |
+| b2 | each Registry creature (211-214) | 0.3 | 4 s | "Must he shout." / "One does not respond. One simply files." / "My papers are pending..." / "I have a lineage chart. It is very long." |
+
+So `b1` means "the Ward won this round" and `b2` means "the Registry is being shouted at";
+there is no `b4`. Six openers, two of them three-beat, is enough that a player standing through one
+breeding session rarely hears a repeat.
+
+The SQL shape, for adding a chain:
 
 ```sql
--- emote header
-INSERT INTO `weenie_properties_emote`
-  (`object_Id`, `category`, `probability`, `quest`)
-VALUES
-  (78780210, 5, 0.04, NULL);
+-- opener (HeartBeat): say, then signal
+INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`quest`)
+VALUES (78780210, 5, 0.03, NULL);
+SET @e = LAST_INSERT_ID();
+INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`message`) VALUES
+  (@e, 0, 8, 0, 0, 'A Browerk is brown. That is what the word means.'),
+  (@e, 1, 88, 0, 0, 'annex_feud_a1');
 
--- actions: say the line, then signal the other wing
-INSERT INTO `weenie_properties_emote_action`
-  (`emote_Id`, `order`, `type`, `delay`, `extent`, `message`)
-VALUES
-  (@bexley_emote, 0, 8,  0.0, 0.0, 'A Browerk is brown. That is what the word means.'),
-  (@bexley_emote, 1, 88, 0.0, 0.0, 'annex_feud_a1');
+-- answer (ReceiveLocalSignal): quest = the signal name, delay = the beat
+INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`quest`)
+VALUES (78780220, 37, 1, 'annex_feud_a1');
+SET @e = LAST_INSERT_ID();
+INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`message`) VALUES
+  (@e, 0, 8, 3, 0, 'It means BORING. Say the quiet part, Bexley.'),
+  (@e, 1, 88, 0, 0, 'annex_feud_b1');
 ```
-
-**Answer - Splotch** (`category` 37 = ReceiveLocalSignal, `quest` matches the signal name,
-`probability` 1.0; the `delay` on the first action is the comic beat):
-
-```sql
-INSERT INTO `weenie_properties_emote`
-  (`object_Id`, `category`, `probability`, `quest`)
-VALUES
-  (78780220, 37, 1.0, 'annex_feud_a1');
-
-INSERT INTO `weenie_properties_emote_action`
-  (`emote_Id`, `order`, `type`, `delay`, `extent`, `message`)
-VALUES
-  (@splotch_emote, 0, 8,  3.0, 0.0, 'It means BORING. Say the quiet part, Bexley.'),
-  (@splotch_emote, 1, 88, 0.0, 0.0, 'annex_feud_c1');
-```
-
-**Closer - Fenwick** (`probability` 0.5, so he only sometimes bothers):
-
-```sql
-INSERT INTO `weenie_properties_emote`
-  (`object_Id`, `category`, `probability`, `quest`)
-VALUES
-  (78780200, 37, 0.5, 'annex_feud_c1');
-
-INSERT INTO `weenie_properties_emote_action`
-  (`emote_Id`, `order`, `type`, `delay`, `extent`, `message`)
-VALUES
-  (@fenwick_emote, 0, 8, 3.5, 0.0, 'Please. Both of you. There are customers.');
-```
-
-Write five or six of these chains (`annex_feud_a1` through `a6`) and let the heartbeat pick one at
-random. Six three-beat exchanges is enough that a player standing through one breeding session
-never hears a repeat.
 
 Useful emote action types for dressing these up: 8 Say, 88 LocalSignal, 5 Motion, 11 Turn,
 9 Sound, 7 PhysScript, 13 TextDirect. `delay` is seconds before the action runs, `extent` widens
 Say range when > 0.
 
-**Two gating rules to design around**, both in `EmoteManager.cs`:
+**Idle lines** that belong to nobody's argument are also in the patch: three for Fenwick (0.02),
+three for DJ Skulk (0.04), one for Gary (0.02) and one for Mrs. Ruggan (0.03).
 
-- HeartBeat emotes are filtered by the object's current stance and motion (line 3438-3444). If you
-  give an NPC a `style`/`substyle`, it only speaks while in that pose. Leave both NULL unless you
-  want that.
-- `HeartBeat()` returns early for any creature where `IsAwake` is true (line 3888). Non-combatant
-  NPCs stay asleep, so this is fine - but it is another reason the wing creatures must be built as
-  proper NPCs and not as pacified monsters.
+**Two gating rules to design around**, both in `EmoteManager`:
+
+- HeartBeat emotes are filtered by the object's current stance and motion. If you give an NPC a
+  `style`/`substyle`, it only speaks while in that pose. Leave both NULL unless you want that.
+- `HeartBeat()` returns early for any creature that is awake. Non-combatant NPCs stay asleep, so
+  this is fine - but it is another reason the wing creatures must be built as proper NPCs and not
+  as pacified monsters.
 
 ### Reacting to players
 
-`Player.cs:1019` fires `OnHearChat` on every creature within 96m when a player speaks. The match on
-`weenie_properties_emote.quest` is an exact, whole-message comparison, with `quest` = NULL matching
-anything (`EmoteManager.cs:3429`).
+`Player.HandleActionTalk` fires `OnHearChat` on every creature within 96m when a player speaks. The
+match on `weenie_properties_emote.quest` is an exact, whole-message, case-insensitive comparison,
+with `quest` = NULL matching anything.
 
 - `quest` NULL, low probability: Fenwick occasionally mutters "I heard that" at whatever a player
   says. Cheap, works forever.
 - `quest` set to an exact phrase: a password gag. Put "say 'the teal incident' to Splotch" on a
   wall and let him have a whole monologue ready. Exact-match means it has to be posted somewhere
   the player can read it.
+
+Neither of these is in the patch yet.
 
 ---
 
@@ -315,9 +322,11 @@ anything (`EmoteManager.cs:3429`).
    overhearing has faces. Gary is in the middle of the floor.
 4. DJ Skulk tells them to dance. They dance. Their partner dances. It works, and it works *because*
    of the thing the drudge told them, which retroactively makes the drudge correct.
-5. On a mutation, the spirit rises and the parents fight it on the dance floor, in front of both
-   factions. This is the money shot of the whole area and it is why the Ritual Floor is central and
-   open rather than tucked in a back room.
+5. On a mutation (with the guardian enabled), the spirit rises and the parents fight it on the dance
+   floor, in front of both factions, for the Awakened Blessing. This is the money shot of the whole
+   area and it is why the Ritual Floor is central and open rather than tucked in a back room. A
+   player who bought an Offering of Subjugation from Ivo gets a short, weak spirit; everyone else
+   gets the real fight.
 6. Baby in hand, they look through the office doorway on the way out and see Splotch's portrait
    hanging on Ruggan's wall.
 
@@ -325,25 +334,29 @@ anything (`EmoteManager.cs:3429`).
 
 ## 7. Build order
 
-1. Run `@showprops` and settle section 2.1. Nothing else is worth doing until the landblock and
-   variant are known to be correct.
+1. Run `@showprops` and confirm `pet_breeding_allowed_landblock` is 314 (0x013A) and
+   `pet_breeding_allowed_variant` is 3. Fix a stale stored 364 with `@modifylong`.
 2. Pick the Ritual Floor room and verify with `@breed-debug` that it is a single landcell
    (section 2.2). Record the raw cell id.
-3. Set `pet_breeding_allowed_landblock` to that raw cell and `pet_breeding_allowed_variant` to the
-   annex variant. Test a breed with two accounts before any decoration exists.
-4. Place Fenwick, Bexley, Splotch. Wire one feud chain. Stand in the room and confirm the three-beat
-   exchange fires and the timing reads as a joke rather than three unrelated sentences.
-5. Add the remaining five chains, then the wing creatures, then Skulk, Ivo and Gary.
+3. Set `pet_breeding_allowed_landblock` to that raw cell (decimal). Test a breed with two accounts
+   before any decoration exists.
+4. Load `2026-09-09-00-Ruggans-Annex-NPCs.sql`, then place Fenwick, Bexley, Splotch (part 5 of the
+   patch: `@createinst <wcid>`, `@nudge`, `@rotate`, `@export-sql`). Stand in the room and confirm a
+   three-beat exchange fires and the timing reads as a joke rather than three unrelated sentences.
+5. Place the wing creatures, then Skulk, Ivo and Gary. Keep Bexley and Splotch within 60 m of each
+   other and of Fenwick or the chains stop resolving.
 6. Dress it: sign, barrels, lights, the office, the notes item, the portrait.
-7. Turn on `pet_breeding_guardian_enabled` and watch one mutation fight on the floor. Tune
-   `pet_breeding_guardian_health_mult` from the `slain after Ns` log line. Default 1.0 dies in
-   seconds; the Content Guide suggests ~10 for a real fight.
+7. Turn on `pet_breeding_guardian_enabled` and watch one mutation fight on the floor. The guardian's
+   incoming damage is self-normalising (about 15-30 pet hits, 10% per-hit cap) and its outgoing hit
+   is 8% of the defending pet's health x `pet_breeding_guardian_damage_mult`, so
+   `pet_breeding_guardian_health_mult` stretches the fight less than it looks. Tune from the
+   `slain after Ns` log line; the Content Guide has the arithmetic.
 
 ### WCID block
 
 `78780200`-`78780249` is reserved for the annex in `WCID_ALLOCATION_7878.md`. The fifteen
-NPCs below are built and ready to load:
-`Database/Updates/World/2026-09-09-00-Ruggans-Annex-NPCs.sql`.
+NPCs below are built in `Database/Updates/World/2026-09-09-00-Ruggans-Annex-NPCs.sql`; the patch
+creates the weenies and does not place them.
 
 | WCID | Object | Built from |
 |---|---|---|
@@ -363,8 +376,8 @@ NPCs below are built and ready to load:
 | 78780223 | Nine-Colour Shreth | 4110 Blood Shreth + mutation palette |
 | 78780224 | Subject Twelve | 7 Drudge Skulker + mutation palette |
 
-Still to build: `78780205` Ruggan's Notes and `78780206` the knocked-over sign, both readable
-book items rather than NPCs.
+Not built: `78780205` Ruggan's Notes and `78780206` the knocked-over sign (readable book items),
+Gary's partial palette, the password gag, Fenwick's tutorial branch, and the placement rows.
 
 The Ward's five mutation palettes are palette ids this server's breeding code has already
 rolled (they are sitting in `ace_shard.biota_properties_int` type 9035), so they are known to
@@ -374,15 +387,17 @@ Gary is built plain. The joke is that he has one mutated limb, which needs a par
 `weenie_properties_palette` rows take `offset` and `length`, so a range covering one body part
 does it, but the offsets are model-specific and want eyeballing in the visualizer.
 
-Existing items are placed, not created: 98760399 Neutering Kit, 98760400 Tailoring Kit,
-98760401 Tailoring Kit (Primed), from
-`Content/sql/weenies/98760399-98760401 Pet Tailoring and Neutering Kits.sql`.
+Existing items are placed or stocked, not created: 98760399 Neutering Kit, 98760400 Tailoring Kit,
+98760401 Tailoring Kit (Filled), from
+`Database/Updates/World/2026-09-09-01-Pet-Tailoring-and-Neutering-Kits.sql`, and the consumables
+from `2026-09-12-00-Pet-Breeding-Sinks.sql`.
 
 ---
 
 ## 8. Traps
 
 - **The multi-cell ritual room.** Covered in 2.2. This is the one that wastes a day.
+- **A stale stored landblock.** The code default is right now, but `@showprops` wins. Check it.
 - **Do not make the wing creatures attackable.** The mating guardian is the only fight in the
   annex, it only fights pets, and a player who kills a Registry Browerk breaks the joke and the
   respawn. `Attackable` = False, `TargetingTactic` = 0.
@@ -393,5 +408,5 @@ Existing items are placed, not created: 98760399 Neutering Kit, 98760400 Tailori
   them before you commit a weenie.
 - **ASCII only in every emote message.** Apostrophes are fine; curly quotes, em dashes and ellipsis
   characters are not. The client draws them as garbage.
-- **`@breed-debug` is a player-level command that currently prints every online player's location.**
-  If the annex is going live to players, restrict its player list to the breeding landblock first.
+- **`@breed-debug` is safe for players now.** It prints only the caller's own location and pet and a
+  count of nearby candidates; the per-player list is admin-only. No need to restrict it.

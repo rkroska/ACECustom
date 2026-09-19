@@ -858,12 +858,22 @@ namespace ACE.Server.WorldObjects
             player1.IsBusy = true;
             partner.IsBusy = true;
 
+            // Every refusal below is a transient error, which the client flashes centre-screen and
+            // never writes to chat, so a failed breed looks like nothing happened. Echo the reason
+            // into an admin's chat window so a test tells you which gate stopped it.
+            void DebugGate(string reason)
+            {
+                if (player1.IsAdmin) player1.SendMessage($"[Breeding Debug] Gate failed: {reason}");
+                if (partner.IsAdmin && partner != player1) partner.SendMessage($"[Breeding Debug] Gate failed: {reason}");
+            }
+
             try
             {
                 var device2 = pet2.TryGetSummoningDevice() ?? partner.FindObject(pet2.SummoningDeviceGuid.Full, Player.SearchLocations.Everywhere) as PetDevice;
 
                 if (device2 == null)
                 {
+                    DebugGate($"partner {partner.Name}'s summoning device could not be found (pet {pet2.Name}, device guid 0x{pet2.SummoningDeviceGuid.Full:X8}).");
                     player1.SendTransientError("Failed to locate parent summoning devices.");
                     partner.SendTransientError("Failed to locate parent summoning devices.");
                     return;
@@ -871,12 +881,14 @@ namespace ACE.Server.WorldObjects
 
                 if (device1.GetProperty(PropertyBool.PetNeutered) == true)
                 {
+                    DebugGate($"{device1.Name} (yours) is neutered.");
                     player1.SendTransientError("Your pet is spayed/neutered and cannot breed.");
                     return;
                 }
 
                 if (device2.GetProperty(PropertyBool.PetNeutered) == true)
                 {
+                    DebugGate($"{device2.Name} ({partner.Name}'s) is neutered.");
                     player1.SendTransientError($"{partner.Name}'s pet is spayed/neutered and cannot breed.");
                     partner.SendTransientError("Your pet is spayed/neutered and cannot breed.");
                     return;
@@ -886,6 +898,7 @@ namespace ACE.Server.WorldObjects
                 var inInv2 = partner.FindObject(device2.Guid.Full, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) != null;
                 if (!inInv1 || !inInv2)
                 {
+                    DebugGate($"a device left its owner's inventory (yours in inventory: {inInv1}, {partner.Name}'s: {inInv2}).");
                     player1.SendTransientError("Summoning devices must remain in inventory to breed.");
                     partner.SendTransientError("Summoning devices must remain in inventory to breed.");
                     return;
@@ -895,6 +908,8 @@ namespace ACE.Server.WorldObjects
                 var lvl2 = global::ACE.Server.Factories.Tables.Wcids.PetDeviceWcids.GetPetLevel(device2.WeenieClassId);
                 if (!lvl1.HasValue || !lvl2.HasValue)
                 {
+                    DebugGate($"tier lookup failed (wcid {device1.WeenieClassId} -> {(lvl1.HasValue ? lvl1.Value.ToString() : "none")}, " +
+                              $"wcid {device2.WeenieClassId} -> {(lvl2.HasValue ? lvl2.Value.ToString() : "none")}). Only devices listed in PetDeviceWcids have a tier.");
                     player1.SendTransientError("Failed to determine parent pet tiers.");
                     partner.SendTransientError("Failed to determine parent pet tiers.");
                     return;
@@ -904,6 +919,7 @@ namespace ACE.Server.WorldObjects
                 if (lvl1.Value < minParentLevel || lvl2.Value < minParentLevel)
                 {
                     var msg = $"Parent pets must be at least tier {minParentLevel} to breed.";
+                    DebugGate($"tier below pet_breeding_min_parent_level {minParentLevel} (yours {lvl1.Value}, {partner.Name}'s {lvl2.Value}).");
                     player1.SendTransientError(msg);
                     partner.SendTransientError(msg);
                     return;
@@ -915,6 +931,8 @@ namespace ACE.Server.WorldObjects
                 if (bond1 < minBond || bond2 < minBond)
                 {
                     var msg = $"Parent pets must have a bond level of at least {minBond} to breed.";
+                    DebugGate($"bond below pet_breeding_min_bond {minBond} (yours {bond1}, {partner.Name}'s {bond2}). " +
+                              $"pet_bond_enabled is {ServerConfig.pet_bond_enabled.Value}; bond only grows while it is TRUE.");
                     player1.SendTransientError(msg);
                     partner.SendTransientError(msg);
                     return;
@@ -928,6 +946,7 @@ namespace ACE.Server.WorldObjects
                         if (!dev.IsShiny)
                             continue;
                         var other = owner == player1 ? partner : player1;
+                        DebugGate($"{dev.Name} ({owner.Name}'s) is shiny and pet_breeding_allow_shiny is false.");
                         owner.SendTransientError($"{dev.Name} is shiny and cannot breed. Shiny is a capture-only trait.");
                         other.SendTransientError($"Breeding cancelled: {owner.Name}'s pet is shiny and cannot breed.");
                         return;
@@ -940,6 +959,7 @@ namespace ACE.Server.WorldObjects
                     if (!dev.IsJuvenile)
                         continue;
                     var other = owner == player1 ? partner : player1;
+                    DebugGate($"{dev.Name} ({owner.Name}'s) is juvenile: {dev.MaturityStageName}, {dev.MaturityKills}/{MaturityKillsRequired} kills.");
                     owner.SendTransientError($"{dev.Name} is still a {dev.MaturityStageName.ToLowerInvariant()} and cannot breed until it is an adult ({dev.MaturityKills}/{MaturityKillsRequired} kills).");
                     other.SendTransientError($"Breeding cancelled: {owner.Name}'s pet is not an adult yet.");
                     return;
@@ -953,6 +973,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var sex = isMale1 ? "males" : "females";
                     var msgSex = $"Breeding cancelled: two {sex} cannot breed. You need one male and one female.";
+                    DebugGate($"both devices are {sex} ({device1.Name} and {device2.Name}). Use @setsex on an appraised device.");
                     player1.SendTransientError(msgSex);
                     partner.SendTransientError(msgSex);
                     return;
@@ -972,6 +993,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var restHours = ServerConfig.pet_breeding_male_charge_reset_hours.Value;
                     var maleOwner = maleDevice == device1 ? player1 : partner;
+                    DebugGate($"{maleDevice.Name} ({maleOwner.Name}'s) has 0 of {maleMaxCharges} breeding charges left; refill {restHours:0.#}h after the last one. @pet-reset-cooldown clears it.");
                     maleOwner.SendTransientError($"{maleDevice.Name} has exhausted its {maleMaxCharges} daily breeding charges. Rest for {restHours:0.#}h.");
                     return;
                 }
@@ -983,6 +1005,7 @@ namespace ACE.Server.WorldObjects
                     if (nowUnix < nextDonor && !ServerConfig.pet_breeding_bypass_female_cooldown.Value)
                     {
                         var remaining = TimeSpan.FromSeconds(nextDonor - nowUnix);
+                        DebugGate($"{donorDevice.Name} is on the female recovery cooldown for another {remaining.Hours}h {remaining.Minutes}m. @pet-reset-cooldown clears it.");
                         player1.SendTransientError($"{donorDevice.Name} is still recovering from her last litter. Ready in {remaining.Hours}h {remaining.Minutes}m.");
                         partner.SendTransientError("Breeding cancelled: the female is still recovering from her last litter.");
                         return;
@@ -1001,12 +1024,14 @@ namespace ACE.Server.WorldObjects
                 var babyBurden = Math.Max(device1.EncumbranceVal ?? 0, device2.EncumbranceVal ?? 0);
                 if (winner.GetFreeInventorySlots(false) <= 0)
                 {
+                    DebugGate($"{winner.Name} (the female's owner) has no free main-pack slot for the baby.");
                     winner.SendTransientError($"Breeding cancelled: your main pack has no free slot for the baby. Free a slot and dance again.");
                     loser.SendTransientError($"Breeding cancelled: {winner.Name}'s main pack has no free slot for the baby.");
                     return;
                 }
                 if (!winner.HasEnoughBurdenToAddToInventory(babyBurden))
                 {
+                    DebugGate($"{winner.Name} (the female's owner) cannot carry another {babyBurden} burden.");
                     winner.SendTransientError($"Breeding cancelled: you are too encumbered to carry the baby. Lighten your load and dance again.");
                     loser.SendTransientError($"Breeding cancelled: {winner.Name} is too encumbered to carry the baby.");
                     return;
