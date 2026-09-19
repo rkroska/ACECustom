@@ -5175,7 +5175,7 @@ namespace ACE.Server.Command.Handlers
 
             var earlyReturn = equipped == 0 && (animParts > 0 || palettes > 0 || texMaps > 0);
             if (earlyReturn)
-                sb.Append("PATH: BIOTA EARLY-RETURN -- the PaletteTemplate recolour branch is SKIPPED.\n");
+                sb.Append("PATH: BIOTA EARLY-RETURN -- the recolour runs inside it; judge by SubPalettes below (2 = applied, 0 = not).\n");
             else if (equipped == 0)
                 sb.Append("PATH: ClothingBase branch -- PaletteTemplate recolour WILL be applied.\n");
             else
