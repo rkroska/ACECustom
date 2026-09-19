@@ -4733,6 +4733,11 @@ namespace ACE.Server.Command.Handlers
             sb.Append("=== @mutate_pet ===\n");
             sb.Append($"Palette 0x{paletteId.Value:X8}{(rolled ? " (rolled from filtered pool)" : " (explicit)")}\n");
 
+            // Admin tool: warn but still apply, so a texture-covered pet can still be poked at.
+            var hiddenCheckDevice = device ?? (pet as CombatPet)?.TryGetSummoningDevice();
+            if (hiddenCheckDevice != null && ACE.Server.Services.PetMutationService.ColourChangeIsHidden(hiddenCheckDevice, out var hiddenTextures))
+                sb.Append($"[WARNING] This essence's captured look replaces {hiddenTextures} textures, which cover any palette underneath. The colour will not be visible.\n");
+
             if (pet != null)
             {
                 var before = SnapshotPetVisuals(pet);

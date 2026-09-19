@@ -1966,6 +1966,10 @@ namespace ACE.Server.WorldObjects
             if (imprintLine != null)
                 sb.AppendLine(imprintLine);
 
+            // Say it up front rather than letting a mutation or a serum quietly do nothing.
+            if (ACE.Server.Services.PetMutationService.ColourChangeIsHidden(this, out _))
+                sb.AppendLine("Colour: fixed by this pet's captured textures (mutations and serums cannot change it)");
+
             var dmgStep = (int)ServerConfig.pet_breeding_damage_mutation_step.Value;
             var drStep = (int)ServerConfig.pet_breeding_dr_mutation_step.Value;
             var critStep = (int)ServerConfig.pet_breeding_crit_mutation_step.Value;

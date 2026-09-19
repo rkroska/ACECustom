@@ -430,6 +430,16 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
+                // A capture that replaced the body's surfaces hides any palette underneath it, so the
+                // serum would roll a colour nobody can see. Refuse before consuming it.
+                if (ACE.Server.Services.PetMutationService.ColourChangeIsHidden(petDevice, out var hiddenTextureCount))
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, null, null, false, $"colour hidden by {hiddenTextureCount} captured textures");
+                    SendTransientError($"{petDevice.Name} cannot have its colour changed: its captured appearance replaces the creature's textures, which cover any colour underneath. The serum was not used.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
                 var paletteBefore = petDevice.VisualOverridePaletteTemplate.HasValue
                     ? PetTrace.Hex((uint)petDevice.VisualOverridePaletteTemplate.Value)
                     : "none";

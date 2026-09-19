@@ -458,6 +458,33 @@ namespace ACE.Server.Services
         }
 
         /// <summary>
+        /// True when a colour change on this essence would not be visible: its captured look replaces
+        /// the body's surfaces with textures of their own, and a palette only tints the surfaces
+        /// underneath them. Two pets of the same species can differ here - it depends on what the
+        /// capture stored, not on the creature - so this is read from the device, not from a profile.
+        /// <paramref name="textureCount"/> is how many surface replacements the capture holds.
+        /// </summary>
+        public static bool ColourChangeIsHidden(PetDevice device, out int textureCount)
+        {
+            textureCount = 0;
+            if (device == null)
+                return false;
+
+            var captured = device.CapturedObjDescTextures;
+            if (string.IsNullOrEmpty(captured))
+                return false;
+
+            // Stored as "part:oldTexture:newTexture" entries separated by commas.
+            foreach (var entry in captured.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!string.IsNullOrWhiteSpace(entry))
+                    textureCount++;
+            }
+
+            return textureCount > 0;
+        }
+
+        /// <summary>
         /// Draws one palette from the master pool: the same fully random, unfiltered draw a bred
         /// mutation makes (not the vibrant Chromatic Catalyst pool). False when the pool is empty.
         /// </summary>
