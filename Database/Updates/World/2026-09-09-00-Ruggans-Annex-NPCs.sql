@@ -140,6 +140,9 @@ INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780201,  1, True),   -- Stuck: stays where it is placed
   (78780201, 19, False),  -- Attackable: no
   (78780201, 98, True);   -- Invincible: belt and braces
+-- Template 46425 trades in Stipends: it carries AlternateCurrency (DataId 57), which makes
+-- the client price everything in that currency. Ivo deals in pyreals, so drop it.
+DELETE FROM `weenie_properties_d_i_d` WHERE `object_Id` = 78780201 AND `type` = 57;
 -- Vendor stock (destination_Type 4). The primed kit 98760401 is deliberately not
 -- sold: it only exists as the result of using 98760400 on a pet.
 DELETE FROM `weenie_properties_create_list` WHERE `object_Id` = 78780201 AND `destination_Type` = 4;
