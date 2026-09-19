@@ -260,7 +260,7 @@ VALUES (78780255,  1, 'Offering of Subjugation')
 /* ========================================================================= */
 DELETE FROM `weenie_properties_create_list` WHERE `object_Id` = 78780201 AND `weenie_Class_Id` IN (78780250, 78780251, 78780252, 78780253, 78780254, 78780255);
 INSERT INTO `weenie_properties_create_list` (`object_Id`, `destination_Type`, `weenie_Class_Id`, `stack_Size`, `palette`, `shade`, `try_To_Bond`)
-SELECT 78780201, 4, items.weenie_id, 1, 0, 0, 0
+SELECT 78780201, 4, items.weenie_id, -1, 0, 0, 0
 FROM (
     SELECT 78780250 AS weenie_id UNION ALL
     SELECT 78780251 UNION ALL

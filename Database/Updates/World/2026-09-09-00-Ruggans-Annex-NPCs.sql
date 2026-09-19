@@ -144,8 +144,8 @@ INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
 -- sold: it only exists as the result of using 98760400 on a pet.
 DELETE FROM `weenie_properties_create_list` WHERE `object_Id` = 78780201 AND `destination_Type` = 4;
 INSERT INTO `weenie_properties_create_list` (`object_Id`,`destination_Type`,`weenie_Class_Id`,`stack_Size`,`palette`,`shade`,`try_To_Bond`) VALUES
-  (78780201, 4, 98760399, NULL, 0, 0, False),   -- Neutering Kit
-  (78780201, 4, 98760400, NULL, 0, 0, False);   -- Pet Tailoring Kit
+  (78780201, 4, 98760399, -1, 0, 0, False),   -- Neutering Kit
+  (78780201, 4, 98760400, -1, 0, 0, False);   -- Pet Tailoring Kit
 DELETE FROM `weenie_properties_int` WHERE `object_Id` = 78780201 AND `type` IN (74,75,76);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
   (78780201, 74, 0),         -- MerchandiseItemTypes: buys nothing back
