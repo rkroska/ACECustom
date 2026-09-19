@@ -1241,7 +1241,19 @@ namespace ACE.Server.WorldObjects
                 pet.IconId = VisualOverrideIcon.Value;
 
             if (VisualOverridePaletteTemplate.HasValue)
+            {
+                // A full 0x04 palette override only reaches the client through the PaletteTemplate
+                // branch of Creature.CalculateObjDesc, and that branch is unreachable while the pet's
+                // biota still holds palette rows: with no equipped items, CalculateObjDesc copies
+                // those rows out and returns early. Species whose weenie ships palette rows (Niffis,
+                // for one) therefore rendered in their weenie colours and every mutation looked like
+                // it had failed. The rows are cleared above only when captured ObjDesc replaces them,
+                // so clear them here too when a palette override is what we are applying.
+                if ((VisualOverridePaletteTemplate.Value & unchecked((int)0xFF000000)) == 0x04000000)
+                    pet.Biota.PropertiesPalette?.Clear();
+
                 pet.PaletteTemplate = VisualOverridePaletteTemplate.Value;
+            }
 
             if (VisualOverrideShade.HasValue)
                 pet.Shade = (float)VisualOverrideShade.Value;
