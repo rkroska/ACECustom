@@ -245,6 +245,17 @@ Sex is computed from the device GUID, not stored, so every essence already in th
 - [ ] Breed with `pet_breeding_force_mutation` false until a non-mutation breed happens. **Verify** the catalyst is still on the device (appraise or a second use still says "already infused").
 - [ ] Breed with `pet_breeding_force_mutation` true. **Verify** the baby's palette is a saturated one from the vibrant pool and the catalyst is now gone from the device.
 
+**Mutagenic Serum (78780257, colour-only re-roll)**
+Load `Database/Updates/World/2026-09-19-00-Pet-Mutagenic-Serum.sql` first; `@ci 78780257 5`. Appraise the target before and after each use and compare `VisualOverridePaletteTemplate` / `CapturedPalettes` with `@petdesc` or the ID panel.
+- [ ] **Captured essence**: use a serum on a captured combat essence (pet NOT summoned). **Verify** "You inject <name> with the Mutagenic Serum. Its colour has changed; summon it to see the new look.", one serum is consumed, `VisualOverridePaletteTemplate` is a new value and `CapturedPalettes` is `(none)`. Summon it: it is a different colour from before.
+- [ ] **Bred essence**: repeat on a baby that already carries a mutation colour. **Verify** the template changes again and the pet is a new colour on summon.
+- [ ] **Juvenile**: repeat on a juvenile essence. **Verify** it is accepted, the colour changes, and the growth stage, scale and mutation counts on the ID panel are unchanged.
+- [ ] **Colour only**: on each of the above, **verify** damage / DR / crit / vitality ratings, per-stat mutation counts, potency, bond, sex, name and lineage are identical before and after.
+- [ ] **Summoned pet**: use a serum on an essence whose pet is out beside you. **Verify** "...Its colour has changed and your summoned pet has been recoloured." and the pet repaints in place without a re-summon.
+- [ ] **Refusal, non-essence**: use a serum on a passive pet crate and on an ordinary item. **Verify** "The Mutagenic Serum can only be used on combat pet essences." and the stack count is unchanged.
+- [ ] **Refusal does not consume**: after every refusal above, **verify** the serum stack is the same size as before.
+- [ ] With `pet_trace` true, **verify** a `consumable.use` line with `property=VisualOverridePaletteTemplate`, `before=` the old palette (or `none`), `after=` the new palette and `consumed=true`; the refusal writes `consumed=false reason=target is not a combat pet essence`.
+
 ---
 
 ### Test 1.13: Delivery, Full Pack and Offline Owner
@@ -377,7 +388,7 @@ Config: `pet_maturity_enabled` (default **true**), `pet_maturity_kills_required`
 ---
 
 ### Test 1.18: Pet Tailoring, Neutering and Courtship Incense
-Items: 98760399 Pet Neutering Kit, 98760400 Pet Tailoring Kit, 98760401 Pet Tailoring Kit (Filled). Load `Database/Updates/World/2026-09-09-01-Pet-Tailoring-and-Neutering-Kits.sql` into ace_world first. `@ci 98760400` etc. Ivo (78780201) sells the two empty kits and all six consumables.
+Items: 98760399 Pet Neutering Kit, 98760400 Pet Tailoring Kit, 98760401 Pet Tailoring Kit (Filled). Load `Database/Updates/World/2026-09-09-01-Pet-Tailoring-and-Neutering-Kits.sql` into ace_world first. `@ci 98760400` etc. Ivo (78780201) sells the two empty kits, all six breeding consumables and the Mutagenic Serum.
 
 - [ ] **Extract**: use a Tailoring Kit on a captured combat essence (pet NOT summoned). **Verify** "You extract the appearance of <Creature> into the kit. The source essence is consumed." and a `Pet Tailoring Kit (<Creature>)` appears; the source essence and the tool are gone.
 - [ ] **Extract, pack full**: **Verify** "Your pack is full. Make room for the filled kit before extracting." and nothing consumed.

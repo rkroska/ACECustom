@@ -21,7 +21,7 @@ Related: `PET_BREEDING_CONTENT_GUIDE.md` (content team), `PET_BREEDING_PLAYER_GU
 | `Source/ACE.Server/WorldObjects/PetDevice_Maturity.cs` | Juvenile growth (kill counter, stages, names, XP multiplier), imprinting, kill credit from creature deaths. |
 | `Source/ACE.Server/WorldObjects/PetDevice.cs` | Device properties (`VisualOverride*`, `IsMale`, `IsShiny`), `SummonCreature`, `ApplyVisualOverridesTo`, bond attunement in `ActOnUse`. |
 | `Source/ACE.Server/WorldObjects/CombatPet.cs` | `Init` rating pipeline, `PrepareMaturityForSummon`, `ApplyMaturity`, `MaturityDamageMult`, `IsInMotelOrEncounter`, parent-death hook in `Die`. |
-| `Source/ACE.Server/WorldObjects/Player_Use.cs` | Neutering kit inline; dispatch to `PetTailoring`; the six consumables (78780250-78780255). |
+| `Source/ACE.Server/WorldObjects/Player_Use.cs` | Neutering kit inline; dispatch to `PetTailoring`; the six consumables (78780250-78780255) and the Mutagenic Serum (78780257). |
 | `Source/ACE.Server/Entity/PetTailoring.cs` | Tailoring kit extract/apply and the three kit WCID constants. |
 | `Source/ACE.Server/WorldObjects/Healer.cs`, `Player_Magic.cs`, `WorldObject_Magic.cs` | Own-pet healing in the motel / encounter (kits, beneficial spells, heal scaling). |
 | `Source/ACE.Server/Entity/MonsterCapture.cs` | Capture (siphon). Defines the "visual model" property set tailoring mirrors. |
@@ -323,8 +323,14 @@ WCIDs; the target must be a `PetDevice` in the pack (not in the world). Each con
 | 78780253 Nurturing Draught | `PetMaturityXpMultiplier` 2.0 | not a combat essence; not juvenile; already >= 2.0 | adulthood |
 | 78780254 Chromatic Catalyst | `PetChromaticCatalystActive` | not a combat essence; already active | a palette roll |
 | 78780255 Offering of Subjugation | `PetGuardianWeakened` | not a combat essence; guardian disabled; already active | a guardian spawn |
+| 78780257 Mutagenic Serum | `VisualOverridePaletteTemplate` (+ native `VisualOverridePaletteBase`, `CapturedObjDescPalettes` removed) via `PetMutationService.ApplyMutationPalette` | not a combat essence; master palette pool empty | immediately |
 
-`78780256` is reserved and has no handler; the range check in `Player_Use` stops at 78780255.
+`78780256` is reserved and has no handler; `Player_Use` accepts 78780250-78780255 and
+`PetMutationService.MutagenicSerumWcid` (78780257) only. The serum rolls with
+`PetMutationService.TryRollMasterPalette` before consuming, writes the device with the same
+`ApplyMutationPalette` that `@mutate_pet` uses (so the two cannot drift from the `CompleteBirth`
+rule), and repaints the live pet with the `Pet` overload plus `ForceClientRedraw` only when the pet's
+landblock group is the player's own.
 
 Tailoring (`PetTailoring.HandleExtract` / `HandleApply`):
 

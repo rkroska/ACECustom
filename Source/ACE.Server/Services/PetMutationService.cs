@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using ACE.Common;
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
 using ACE.Database;
@@ -432,5 +433,145 @@ namespace ACE.Server.Services
             };
         }
 
+        // =====================================================================================
+        // Mutation palette write. Shared by PetDevice_Breeding.CompleteBirth's rule (the reference),
+        // @mutate_pet and the Mutagenic Serum so the three cannot drift.
+        // =====================================================================================
+
+        /// <summary>WCID of the Mutagenic Serum: a colour-only re-roll from the master palette pool.</summary>
+        public const uint MutagenicSerumWcid = 78780257;
+
+        /// <summary>What a mutation-palette write changed, so a caller can print or log it.</summary>
+        public sealed class PaletteRecolour
+        {
+            /// <summary>Setup the native base was resolved for (0 when the target carries none).</summary>
+            public uint SetupId;
+            public uint PaletteId;
+            public uint OldPaletteBase;
+            public uint NewPaletteBase;
+            public int? OldPaletteTemplate;
+            public int NewPaletteTemplate;
+            /// <summary>The setup has a native DefaultPaletteId and the base was re-pointed at it.</summary>
+            public bool NativeBaseApplied;
+            /// <summary>CapturedObjDescPalettes was present and has been removed.</summary>
+            public bool CapturedPalettesCleared;
+        }
+
+        /// <summary>
+        /// Draws one palette from the master pool: the same fully random, unfiltered draw a bred
+        /// mutation makes (not the vibrant Chromatic Catalyst pool). False when the pool is empty.
+        /// </summary>
+        public static bool TryRollMasterPalette(out uint paletteId, out int poolIndex, out int poolCount)
+        {
+            paletteId = 0;
+            poolIndex = -1;
+            poolCount = 0;
+
+            var pool = GetMasterPalettePool();
+            if (pool == null || pool.Count == 0)
+                return false;
+
+            poolCount = pool.Count;
+            poolIndex = ThreadSafeRandom.Next(0, pool.Count - 1); // Next(min, max) is inclusive of max
+            paletteId = pool[poolIndex].PaletteId;
+            return paletteId != 0;
+        }
+
+        /// <summary>
+        /// Writes a mutation palette onto a pet device exactly the way PetDevice_Breeding.CompleteBirth
+        /// does. The mutation goes in the TEMPLATE (overlay); the BASE is re-pointed at the setup's
+        /// native DefaultPaletteId when it has one, otherwise left alone (a mutation written into the
+        /// base renders nothing). CapturedObjDescPalettes is removed because it forces
+        /// Creature.CalculateObjDesc to early-return before the PaletteTemplate recolour branch.
+        /// Anim-part and texture rows are untouched. Nothing else on the device changes.
+        /// </summary>
+        /// <param name="setupId">Explicit setup to write into VisualOverrideSetup, or null to keep the device's own.</param>
+        public static PaletteRecolour ApplyMutationPalette(PetDevice device, uint? setupId, uint paletteId)
+        {
+            if (device == null) throw new ArgumentNullException(nameof(device));
+            if (paletteId == 0) throw new ArgumentOutOfRangeException(nameof(paletteId), "A mutation palette must be non-zero.");
+
+            var r = new PaletteRecolour
+            {
+                PaletteId = paletteId,
+                OldPaletteBase = device.VisualOverridePaletteBase ?? 0,
+                OldPaletteTemplate = device.VisualOverridePaletteTemplate,
+            };
+
+            if (setupId.HasValue)
+                device.VisualOverrideSetup = setupId.Value;
+            r.SetupId = device.VisualOverrideSetup ?? 0;
+
+            var nativeBase = Creature.GetSetupDefaultPaletteId(r.SetupId);
+            if (nativeBase != 0)
+            {
+                device.VisualOverridePaletteBase = nativeBase;
+                r.NativeBaseApplied = true;
+            }
+
+            device.VisualOverridePaletteTemplate = (int)paletteId;
+
+            r.CapturedPalettesCleared = !string.IsNullOrEmpty(device.GetProperty(PropertyString.CapturedObjDescPalettes));
+            device.RemoveProperty(PropertyString.CapturedObjDescPalettes);
+
+            r.NewPaletteBase = device.VisualOverridePaletteBase ?? 0;
+            r.NewPaletteTemplate = (int)paletteId;
+            return r;
+        }
+
+        /// <summary>
+        /// The live-pet twin of <see cref="ApplyMutationPalette(PetDevice, uint?, uint)"/>: writes the
+        /// same base/template/captured-palette rule onto a summoned pet. Does not push the change to
+        /// clients; call <see cref="ForceClientRedraw"/> afterwards.
+        /// </summary>
+        public static PaletteRecolour ApplyMutationPalette(Pet pet, uint setupId, uint paletteId)
+        {
+            if (pet == null) throw new ArgumentNullException(nameof(pet));
+            if (paletteId == 0) throw new ArgumentOutOfRangeException(nameof(paletteId), "A mutation palette must be non-zero.");
+
+            var r = new PaletteRecolour
+            {
+                SetupId = setupId,
+                PaletteId = paletteId,
+                OldPaletteBase = pet.PaletteBaseId ?? 0,
+                OldPaletteTemplate = pet.PaletteTemplate,
+            };
+
+            pet.SetupTableId = setupId;
+
+            var nativeBase = Creature.GetSetupDefaultPaletteId(setupId);
+            if (nativeBase != 0)
+            {
+                pet.PaletteBaseId = nativeBase;
+                r.NativeBaseApplied = true;
+            }
+
+            pet.PaletteTemplate = (int)paletteId;
+
+            r.CapturedPalettesCleared = !string.IsNullOrEmpty(pet.GetProperty(PropertyString.CapturedObjDescPalettes));
+            pet.RemoveProperty(PropertyString.CapturedObjDescPalettes);
+
+            r.NewPaletteBase = pet.PaletteBaseId ?? 0;
+            r.NewPaletteTemplate = (int)paletteId;
+            return r;
+        }
+
+        /// <summary>
+        /// Forces every client that knows the creature to redraw it by cycling object tracking. This is
+        /// the redraw @mutate_pet has always used for a live pet. Safe only from the thread that owns
+        /// the creature's landblock group; callers on another thread must not use it.
+        /// </summary>
+        public static void ForceClientRedraw(Creature creature)
+        {
+            var objMaint = creature?.PhysicsObj?.ObjMaint;
+            if (objMaint == null)
+                return;
+
+            foreach (var viewer in objMaint.GetKnownPlayersValuesAsPlayer())
+            {
+                viewer.RemoveTrackedObject(creature, false);
+                viewer.AddTrackedObject(creature);
+            }
+        }
     }
 }

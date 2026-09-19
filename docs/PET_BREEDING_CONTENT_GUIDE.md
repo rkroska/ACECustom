@@ -216,9 +216,11 @@ is already neutered; it works on any pet device in the pack, summoned or not.
 | 78780253 | Nurturing Draught | 500,000 | Juvenile earns 2 maturity kills per qualifying kill until adult. |
 | 78780254 | Chromatic Catalyst | 1,000,000 | Next palette mutation rolls from the vibrant pool. |
 | 78780255 | Offering of Subjugation | 500,000 | Next mating guardian is weakened. |
+| 78780257 | Mutagenic Serum | 250,000 | Re-rolls the essence's colour from the master palette pool, right now. Appearance only. |
 
-SQL: `Database/Updates/World/2026-09-12-00-Pet-Breeding-Sinks.sql`, which also stocks all six on Ivo
-if he exists. Rules that matter for pricing:
+SQL: `Database/Updates/World/2026-09-12-00-Pet-Breeding-Sinks.sql`, which also stocks the first six
+on Ivo if he exists, and `Database/Updates/World/2026-09-19-00-Pet-Mutagenic-Serum.sql` for the
+serum, stocked on Ivo the same way. Rules that matter for pricing:
 
 - Incense is applied to one parent's essence; both parents' bonuses add, capped at +50%. A stronger
   tier replaces a weaker one; equal or weaker is refused. Neutered essences cannot be anointed. It
@@ -229,6 +231,13 @@ if he exists. Rules that matter for pricing:
 - The Draught is refused on adults and on an essence already dosed; the effect ends at adulthood.
 - The Offering is refused, and not consumed, while `pet_breeding_guardian_enabled` is false. It is
   spent only when a guardian actually spawns.
+- The Serum works on any combat pet essence (captured, looted or bred, juvenile or adult) and is
+  spent immediately. It draws from the same master pool a bred mutation uses, not the Catalyst's
+  vibrant pool, and touches nothing but the colour: no stats, mutation counts or potency. The new
+  colour shows on the next summon; if the pet is already out it is repainted in place. It is refused,
+  and not consumed, on anything that is not a combat pet essence. Priced below the Catalyst because
+  it is a plain lottery from the whole pool and is meant to be bought repeatedly while hunting a
+  colour.
 
 `78780256` (Ancestral Gene Re-roller) is reserved and unbuilt.
 

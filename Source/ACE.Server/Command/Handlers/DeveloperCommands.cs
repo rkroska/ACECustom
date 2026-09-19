@@ -4711,13 +4711,13 @@ namespace ACE.Server.Command.Handlers
             }
             if (!paletteId.HasValue)
             {
-                var pool = ACE.Server.Services.PetMutationService.GetMasterPalettePool();
-                if (pool == null || pool.Count == 0)
+                // Same draw the Mutagenic Serum and a bred mutation make.
+                if (!ACE.Server.Services.PetMutationService.TryRollMasterPalette(out var rolledPalette, out _, out _))
                 {
                     ChatPacket.SendServerMessage(session, "Mutation palette pool is empty; cannot roll a palette.", ChatMessageType.System);
                     return;
                 }
-                paletteId = pool[ACE.Common.ThreadSafeRandom.Next(0, pool.Count - 1)].PaletteId; // Next(min, max) is inclusive of max
+                paletteId = rolledPalette;
                 rolled = true;
             }
 
@@ -4737,39 +4737,23 @@ namespace ACE.Server.Command.Handlers
             {
                 var before = SnapshotPetVisuals(pet);
 
-                // Mutation goes in the TEMPLATE; the BASE stays a palette the model renders with
-                // (native if the DAT has one, else whatever it already carries). Writing the mutation
-                // into the base renders nothing. CapturedObjDescPalettes is cleared because it forces
-                // CalculateObjDesc to early-return before the PaletteTemplate recolour branch.
-                pet.SetupTableId = setupId;
-                var petNativeBase = Creature.GetSetupDefaultPaletteId(setupId);
-                if (petNativeBase != 0)
-                    pet.PaletteBaseId = petNativeBase;
-                pet.PaletteTemplate = (int)paletteId.Value;
-                pet.RemoveProperty(PropertyString.CapturedObjDescPalettes);
+                // Base/template/captured-palette rule lives in PetMutationService.ApplyMutationPalette
+                // (shared with breeding and the Mutagenic Serum); this command only adds scale/shade.
+                ACE.Server.Services.PetMutationService.ApplyMutationPalette(pet, setupId, paletteId.Value);
                 if (scale.HasValue) pet.ObjScale = scale.Value;
                 if (shade.HasValue) pet.Shade = shade.Value;
 
                 AppendVisualDiff(sb, before, SnapshotPetVisuals(pet));
 
                 // Force a client-side redraw by cycling object tracking.
-                foreach (var viewer in pet.PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
-                {
-                    viewer.RemoveTrackedObject(pet, false);
-                    viewer.AddTrackedObject(pet);
-                }
+                ACE.Server.Services.PetMutationService.ForceClientRedraw(pet);
                 sb.Append("Applied to LIVE pet; client redraw forced.");
             }
             else
             {
                 var before = SnapshotDeviceVisuals(device);
 
-                device.VisualOverrideSetup = setupId;
-                var deviceNativeBase = Creature.GetSetupDefaultPaletteId(setupId);
-                if (deviceNativeBase != 0)
-                    device.VisualOverridePaletteBase = deviceNativeBase;
-                device.VisualOverridePaletteTemplate = (int)paletteId.Value;
-                device.RemoveProperty(PropertyString.CapturedObjDescPalettes);
+                ACE.Server.Services.PetMutationService.ApplyMutationPalette(device, setupId, paletteId.Value);
                 if (scale.HasValue) device.VisualOverrideScale = scale.Value;
                 if (shade.HasValue) device.VisualOverrideShade = shade.Value;
 

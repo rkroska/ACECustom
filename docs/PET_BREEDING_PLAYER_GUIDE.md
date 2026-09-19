@@ -109,8 +109,9 @@ thing happens: the spirit dissolves and the baby is born without the blessing.
 
 ## Consumables
 
-Ivo, Ruggan's Quartermaster, in the motel sells four things that change a breed. Each is used on a
-combat pet essence in your pack before the dance, and each is spent by the breed it affects.
+Ivo, Ruggan's Quartermaster, in the motel sells four things that change a breed, and one that
+changes a pet's colour. Each is used on a combat pet essence in your pack; the first four go on
+before the dance and are spent by the breed they affect.
 
 - **Courtship Incense** (Lesser +2.5%, Refined +5%, Exquisite +10%). Adds to the chance of a stat
   mutation on the next breed. Both parents can be primed and the bonuses add, up to +50%. A weaker
@@ -124,6 +125,9 @@ combat pet essence in your pack before the dance, and each is spent by the breed
 - **Offering of Subjugation.** Weakens the next spirit: it hits half as hard and falls much faster.
   It is only used up when a spirit actually rises, and the vendor item is refused outright while
   spirits are switched off on the server.
+- **Mutagenic Serum.** Use it on any combat pet essence and its colour is re-rolled on the spot from
+  the same pool a mutation draws on. Colour only: nothing else about the pet changes. Summon it (or
+  re-summon it) to see the new look.
 
 ---
 

@@ -164,7 +164,8 @@ A drudge. Three lines, forever, and that is the bit.
 
 Vendor (78780201). Stock: the Pet Neutering Kit (98760399) and the empty Pet Tailoring Kit
 (98760400), plus the six breeding consumables (78780250-78780255: three Courtship Incense tiers,
-Nurturing Draught, Chromatic Catalyst, Offering of Subjugation) once the sinks patch has run after
+Nurturing Draught, Chromatic Catalyst, Offering of Subjugation) and the Mutagenic Serum (78780257,
+its own patch) once the sinks patch has run after
 his weenie exists. The filled tailoring kit (98760401) is never sold; it only comes from extraction.
 Deadpan.
 

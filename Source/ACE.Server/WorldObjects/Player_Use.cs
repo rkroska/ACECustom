@@ -154,6 +154,9 @@ namespace ACE.Server.WorldObjects
                 skipTargetTypeCheck = true;
             else if ((sourceItem.WeenieClassId >= 78780250 && sourceItem.WeenieClassId <= 78780255) && target is PetDevice)
                 skipTargetTypeCheck = true;
+            // 78780256 (Ancestral Gene Re-roller) is reserved and unbuilt, so the serum is matched on its own.
+            else if (sourceItem.WeenieClassId == ACE.Server.Services.PetMutationService.MutagenicSerumWcid && target is PetDevice)
+                skipTargetTypeCheck = true;
 
             var sourceTargetType = sourceItem.TargetType ?? ItemType.None;
             var targetItemType = target.ItemType;
@@ -408,6 +411,85 @@ namespace ACE.Server.WorldObjects
 
                 PlayParticleEffect(PlayScript.EnchantUpRed, target.Guid);
                 SendMessage($"You consecrate {petDevice.Name} with the Offering of Subjugation. Its next mating guardian will be swiftly overcome!");
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Mutagenic Serum (78780257): re-rolls a combat pet essence's colour from the master
+            // palette pool. Appearance only - stats, mutation counts and potency are untouched.
+            if (sourceItem.WeenieClassId == ACE.Server.Services.PetMutationService.MutagenicSerumWcid)
+            {
+                const string serumProperty = "VisualOverridePaletteTemplate";
+
+                // Any combat pet essence qualifies: captured, looted or bred, juvenile or adult.
+                if (target is not PetDevice petDevice || !petDevice.IsCombatPetDevice())
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, null, null, false, "target is not a combat pet essence");
+                    SendTransientError("The Mutagenic Serum can only be used on combat pet essences.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                var paletteBefore = petDevice.VisualOverridePaletteTemplate.HasValue
+                    ? PetTrace.Hex((uint)petDevice.VisualOverridePaletteTemplate.Value)
+                    : "none";
+
+                // Roll before consuming: an empty pool must refuse without eating the serum.
+                if (!ACE.Server.Services.PetMutationService.TryRollMasterPalette(out var newPalette, out var poolIndex, out var poolCount))
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, paletteBefore, null, false, "palette pool is empty");
+                    SendTransientError("The Mutagenic Serum has nothing to draw from: the mutation palette pool is empty. It was not consumed.");
+                    SendUseDoneEvent();
+                    return;
+                }
+                var paletteAfter = PetTrace.Hex(newPalette);
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, paletteBefore, paletteAfter, false, "consume failed");
+                    SendTransientError("Failed to consume Mutagenic Serum.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                // Same base/template/captured-palette write a bred mutation makes; the device keeps its own setup.
+                var recolour = ACE.Server.Services.PetMutationService.ApplyMutationPalette(petDevice, null, newPalette);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+
+                // If this essence's pet is out, repaint it in place the way @mutate_pet does - but only
+                // while it is ticking on this thread's landblock group. World objects belong to their
+                // landblock thread; a pet that has strayed into another group waits for the next summon.
+                var liveRecoloured = false;
+                var pet = CurrentActivePet as CombatPet;
+                var liveSummoned = pet != null && !pet.IsDestroyed && pet.SummoningDeviceGuid == petDevice.Guid;
+                if (liveSummoned)
+                {
+                    var petLandblock = pet.CurrentLandblock;
+                    var sameGroup = petLandblock != null && CurrentLandblock != null
+                        && (!LandblockManager.CurrentlyTickingLandblockGroupsMultiThreaded
+                            || petLandblock.CurrentLandblockGroup == CurrentLandblock.CurrentLandblockGroup);
+                    if (sameGroup)
+                    {
+                        ACE.Server.Services.PetMutationService.ApplyMutationPalette(pet, pet.SetupTableId, newPalette);
+                        ACE.Server.Services.PetMutationService.ForceClientRedraw(pet);
+                        liveRecoloured = true;
+                    }
+                }
+
+                if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, paletteBefore, paletteAfter, true, null);
+                log.Info($"[MutagenicSerum] {Name} recoloured {petDevice.Name} (0x{petDevice.Guid.Full:X8}): palette {paletteBefore} -> {paletteAfter} " +
+                         $"(pool {poolIndex}/{poolCount}), base 0x{recolour.OldPaletteBase:X8} -> 0x{recolour.NewPaletteBase:X8} " +
+                         $"(native={recolour.NativeBaseApplied}), capturedPalettesCleared={recolour.CapturedPalettesCleared}, " +
+                         $"summoned={liveSummoned}, liveRecoloured={liveRecoloured}.");
+
+                PlayParticleEffect(PlayScript.EnchantUpPurple, target.Guid);
+                if (liveRecoloured)
+                    SendMessage($"You inject {petDevice.Name} with the Mutagenic Serum. Its colour has changed and your summoned pet has been recoloured.");
+                else if (liveSummoned)
+                    SendMessage($"You inject {petDevice.Name} with the Mutagenic Serum. Its colour has changed; dismiss and re-summon it to see the new look.");
+                else
+                    SendMessage($"You inject {petDevice.Name} with the Mutagenic Serum. Its colour has changed; summon it to see the new look.");
                 SendUseDoneEvent();
                 return;
             }
