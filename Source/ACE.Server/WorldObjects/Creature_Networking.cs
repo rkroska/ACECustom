@@ -138,6 +138,10 @@ namespace ACE.Server.WorldObjects
 
                     Biota.PropertiesTextureMap.CopyTo(objDesc.TextureChanges, BiotaDatabaseLock);
 
+                    // A captured or bred pet returns here (its body parts are biota anim-part rows), so
+                    // the recolour at the end of this method would never run for it.
+                    ApplyPaletteTemplateOverride(objDesc, thisSetupId);
+
                     return objDesc;
                 }
             }
@@ -371,27 +375,7 @@ namespace ACE.Server.WorldObjects
                 objDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
             }
 
-            int directPalOption = PaletteTemplate.HasValue ? (int)PaletteTemplate.Value : 0;
-            if ((directPalOption & 0xFF000000) == 0x04000000)
-            {
-                uint setupTexPal = GetSetupDefaultPaletteId(thisSetupId);
-                if (setupTexPal > 0 && (objDesc.PaletteID == 0 || objDesc.PaletteID == 0x040002AB || objDesc.PaletteID == 0x0400007E || (ClothingBase.HasValue && ClothingBase.Value == 0x100000AF)))
-                    objDesc.PaletteID = setupTexPal;
-                else if (objDesc.PaletteID == 0)
-                    objDesc.PaletteID = setupTexPal > 0 ? setupTexPal : (uint)directPalOption;
-
-                ushort itemPal = (ushort)(directPalOption & 0xFFFF);
-                bool exists = false;
-                foreach (var sp in objDesc.SubPalettes)
-                {
-                    if (sp.SubPaletteId == itemPal) { exists = true; break; }
-                }
-                if (!exists)
-                {
-                    objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 0, Length = 255 });
-                    objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 255, Length = 1 });
-                }
-            }
+            ApplyPaletteTemplateOverride(objDesc, thisSetupId);
 
             if (ServerConfig.pet_visual_packet_debug.Value)
             {
@@ -403,6 +387,40 @@ namespace ACE.Server.WorldObjects
             }
 
             return ApplyBiotaPartOverrides(objDesc);
+        }
+
+        /// <summary>
+        /// Paints a full 0x04 PaletteTemplate onto an ObjDesc: pick a base PaletteID the client can
+        /// overlay onto, then cover the whole 2048-colour palette with two sub-palette ranges. The
+        /// client ignores a PaletteID with no sub-palettes, so both halves matter.
+        ///
+        /// Called from the end of CalculateObjDesc and from its biota early-return. That early return
+        /// fires whenever a creature carries ANY biota anim-part, palette or texture rows and has
+        /// nothing equipped - which is every captured or bred pet, since its body parts live in those
+        /// anim-part rows. Without this call such a pet kept its weenie colours and every bred palette,
+        /// @mutate_pet roll and tailored look was silently dropped.
+        /// </summary>
+        private void ApplyPaletteTemplateOverride(ACE.Entity.ObjDesc objDesc, uint thisSetupId)
+        {
+            int directPalOption = PaletteTemplate.HasValue ? (int)PaletteTemplate.Value : 0;
+            if ((directPalOption & 0xFF000000) != 0x04000000)
+                return;
+
+            uint setupTexPal = GetSetupDefaultPaletteId(thisSetupId);
+            if (setupTexPal > 0 && (objDesc.PaletteID == 0 || objDesc.PaletteID == 0x040002AB || objDesc.PaletteID == 0x0400007E || (ClothingBase.HasValue && ClothingBase.Value == 0x100000AF)))
+                objDesc.PaletteID = setupTexPal;
+            else if (objDesc.PaletteID == 0)
+                objDesc.PaletteID = setupTexPal > 0 ? setupTexPal : (uint)directPalOption;
+
+            ushort itemPal = (ushort)(directPalOption & 0xFFFF);
+            foreach (var sp in objDesc.SubPalettes)
+            {
+                if (sp.SubPaletteId == itemPal)
+                    return;
+            }
+
+            objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 0, Length = 255 });
+            objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 255, Length = 1 });
         }
 
         /// <summary>Overlay the biota anim-part + texture overrides (zone appearance, baked looks) onto an ObjDesc,
