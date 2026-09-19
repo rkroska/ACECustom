@@ -367,6 +367,23 @@ namespace ACE.Server.WorldObjects
                     if (device == null)
                         continue;
 
+                    // A juvenile earns bond only on the kills that also grow it. Otherwise a newborn
+                    // farms trivial mobs for bond, and bond is what unlocks its inherited potency
+                    // (active potency = ceil(bond / divisor)), so it would arrive at full strength
+                    // without ever meeting the tier the growth counter demands. Same rule as
+                    // PetDevice.CreditMaturityKills: share at or above the minimum, victim at or
+                    // above the essence's tier. Adults and captured essences are unaffected.
+                    if (device.IsJuvenile)
+                    {
+                        var maturityMinShare = Math.Clamp(ServerConfig.pet_maturity_min_damage_share.Value, 0.0, 1.0);
+                        if (damagePercent < maturityMinShare)
+                            continue;
+
+                        var maturityTier = ACE.Server.Factories.Tables.Wcids.PetDeviceWcids.GetPetLevel(device.WeenieClassId);
+                        if (maturityTier.HasValue && (Level ?? 0) < maturityTier.Value)
+                            continue;
+                    }
+
                     var key = device.Guid.Full;
                     if (bondXpByDevice.TryGetValue(key, out var acc))
                         bondXpByDevice[key] = (playerDamager, acc.Xp + bondXp);

@@ -296,6 +296,13 @@ Properties on the device: `PetMaturityKills` (int, presence = "born from a breed
   per device per death. Players, combat pets and mating guardians never count as victims.
   `AddMaturityKill` adds `round(PetMaturityXpMultiplier)` kills (default 1, Draught 2) and removes the
   multiplier at adulthood.
+- Bond follows growth for a juvenile: the bond XP loop in `Creature_Death.OnDeath` applies the same
+  two tests (share at or above `pet_maturity_min_damage_share`, victim level at or above the essence
+  tier) before awarding, so a newborn cannot farm trivial mobs for bond. That matters because bond is
+  what unlocks inherited potency - active potency is `ceil(bond / pet_potency_bond_divisor)` - so
+  without the gate a baby born with high stored potency reached full strength on kills that were never
+  good enough to grow it. Adults and captured essences keep the ordinary bond rules; when a kill is
+  refused, the `maturity.kill` trace record's `reason` is the reason bond was skipped too.
 - Imprint: `TryImprintOnSummon` runs after a successful summon. First summoner of a bred essence gets
   `PetBondAttuned`, `PetBondAttunedCharacterId`, `Attuned`, `Bonded`. `ActOnUse` refuses other characters
   for bred essences regardless of `pet_bond_enabled`.

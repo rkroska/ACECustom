@@ -106,6 +106,11 @@ What the 100/100 gates mean in practice:
 - Bred babies are written at bond 1 and imprint on first summon, so a baby must be raised to
   adulthood (300 qualifying kills) and bonded to 100 before it can breed. Both are kill-driven; the
   NPC text should say so.
+- While a pet is still growing, bond comes only from the same kills that grow it: at or above its
+  tier, with at least `pet_maturity_min_damage_share` of the damage. Farming trivial creatures moves
+  neither counter. Adults and captured essences are unaffected. This also gates potency, since a
+  pet's usable potency is half its bond level rounded up, so an inherited pile of stored potency
+  unlocks at the pace the pet grows.
 
 ### Mutation
 
