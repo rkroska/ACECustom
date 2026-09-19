@@ -1707,6 +1707,10 @@ namespace ACE.Server.WorldObjects.Managers
 
             var targetPlayer = WorldObject as Player;
 
+            // [PetTrace] one record per tick; the parts list is only built when the trace is on.
+            var traceParts = PetTrace.Enabled ? new List<PetTrace.DotPart>() : null;
+            var traceBefore = traceParts != null ? (creature.Health?.Current ?? 0) : 0u;
+
             // get the total tick amount
             var tickAmountTotal = 0.0f;
             foreach (var enchantment in enchantments)
@@ -1714,6 +1718,7 @@ namespace ACE.Server.WorldObjects.Managers
                 //var totalAmount = enchantment.StatModValue;
                 //var totalTicks = GetNumTicks(enchantment);
                 var tickAmount = enchantment.StatModValue;
+                var traceBase = tickAmount;
 
                 // run tick amount through damage calculation functions?
                 // it appears retail might have done an initial damage calc,
@@ -1790,10 +1795,19 @@ namespace ACE.Server.WorldObjects.Managers
 
                 tickAmountTotal += tickAmount;
 
+                traceParts?.Add(new PetTrace.DotPart
+                {
+                    Damager = damager, SpellId = enchantment.SpellId, Base = traceBase, ResistMod = resistanceMod,
+                    DrrMod = damageResistRatingMod, DotResistMod = dotResistRatingMod, NetherMod = netherResistRatingMod, Amount = tickAmount,
+                });
+
                 if (isDead) break;
             }
 
             creature.TakeDamageOverTime(tickAmountTotal, damageType);
+
+            if (traceParts != null)
+                PetTrace.CombatDot(creature, damageType, aetheria, tickAmountTotal, traceBefore, traceParts);
 
             if (!creature.IsAlive) return;
 

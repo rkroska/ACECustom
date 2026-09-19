@@ -5047,7 +5047,7 @@ namespace ACE.Server.Command.Handlers
 
         /// <summary>
         /// Breeding parity harness: runs a [REPLAY] blob (from the website simulator's verbose log, or
-        /// from the server's own pet_breeding_verbose_logging output) through PetDevice.BreedingMath and
+        /// from the server's own pet_trace "breed.replay" records) through PetDevice.BreedingMath and
         /// reports PASS/FAIL against the blob's baby. The chat parser strips double quotes, so a blob
         /// pasted straight into the game client still parses (keys are re-quoted server side).
         /// "file <path>" runs every [REPLAY] line found in a text file on the server instead.
@@ -5224,6 +5224,35 @@ namespace ACE.Server.Command.Handlers
             if (player == null) return;
 
             PetDevice.RunBreedingDiagnostics(player);
+        }
+
+        /// <summary>
+        /// Writes one [PetTrace] device.dump record for the appraised pet device (or the summoned pet's
+        /// device) to the server log: every breeding property, the summon maths and the ID panel text.
+        /// Written regardless of pet_trace, so a device can be captured before and after a breed. The
+        /// optional note is stored as reason= so the two captures can be told apart.
+        /// </summary>
+        [CommandHandler("pet-dump", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
+            "Writes a [PetTrace] device.dump record for the appraised (or summoned) pet device to the server log.",
+            "@pet-dump [note]")]
+        public static void HandlePetDump(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            var target = CommandHandlerHelper.GetLastAppraisedObject(session) as PetDevice;
+            if (target == null && player.CurrentActivePet is CombatPet pet)
+                target = pet.TryGetSummoningDevice();
+
+            if (target == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "[PetTrace] Appraise a pet device in your pack (or summon its pet) first.");
+                return;
+            }
+
+            var note = parameters != null && parameters.Length > 0 ? string.Join(" ", parameters) : "manual";
+            var traceSession = PetTrace.DeviceDump(target, player, note);
+            CommandHandlerHelper.WriteOutputInfo(session, $"[PetTrace] device.dump written for {target.Name} (0x{target.Guid.Full:X8}), session {traceSession}. findstr \"session={traceSession}\" in the server log.");
         }
 
     }

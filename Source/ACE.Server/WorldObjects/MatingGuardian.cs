@@ -52,6 +52,59 @@ namespace ACE.Server.WorldObjects
         /// <summary>True if an Offering of Subjugation was consumed before this encounter, making the guardian fall in ~10-15s.</summary>
         public bool IsWeakened { get; set; }
 
+        // ---------------------------------------------------------------------------------------
+        // [PetTrace] bookkeeping. TraceSession is the breed session this guardian belongs to, so
+        // its combat records join the breeding session. The counters summarise the fight for the
+        // guardian.slain / timeout / lost record; the per-hit arithmetic rides on combat.damage.
+        // All of it is touched only on the guardian's own landblock thread and only when the
+        // trace is on.
+        // ---------------------------------------------------------------------------------------
+
+        /// <summary>Breed session id this guardian belongs to (null when the trace was off at spawn).</summary>
+        public string TraceSession { get; set; }
+
+        /// <summary>Why the breed resolved as lost: parentDied, destroyed, landblockUnload.</summary>
+        public string LostReason { get; private set; }
+
+        /// <summary>The scaling TakeDamage applied to the most recent incoming hit.</summary>
+        public struct IncomingTrace
+        {
+            public float Raw, NRaw, Mod, WeakMult, Scaled, Cap, Final;
+            public bool Capped;
+        }
+
+        public IncomingTrace LastIncoming;
+
+        private int traceInHits, traceInCapped, traceOutHits;
+        private float traceInRaw, traceInApplied, traceInMax, traceOutTotal;
+
+        private void TraceIncoming(in IncomingTrace t)
+        {
+            LastIncoming = t;
+            traceInHits++;
+            traceInRaw += t.Raw;
+            traceInApplied += t.Final;
+            if (t.Final > traceInMax) traceInMax = t.Final;
+            if (t.Capped) traceInCapped++;
+        }
+
+        /// <summary>Called by PetTrace.CombatDamage for every hit this guardian lands on a parent pet.</summary>
+        public void TraceOutgoing(uint dealt)
+        {
+            traceOutHits++;
+            traceOutTotal += dealt;
+        }
+
+        /// <summary>Fight summary keys: hits taken, raw vs applied totals, biggest hit, capped hits, hits dealt, time alive.</summary>
+        public PetTrace.Record AddFightSummary(PetTrace.Record r, string p)
+        {
+            return r.Add(p + "seconds", Timers.RunningTime - SpawnTime)
+                    .Add(p + "hitsTaken", traceInHits).Add(p + "rawTaken", traceInRaw).Add(p + "appliedTaken", traceInApplied)
+                    .Add(p + "maxHitTaken", traceInMax).Add(p + "cappedHits", traceInCapped)
+                    .Add(p + "hitsDealt", traceOutHits).Add(p + "damageDealt", traceOutTotal)
+                    .Add(p + "health", Health?.Current ?? 0).Add(p + "maxHealth", Health?.MaxValue ?? 0);
+        }
+
         public static bool IsActiveParentPet(CombatPet pet)
         {
             if (pet == null) return false;
@@ -77,7 +130,10 @@ namespace ACE.Server.WorldObjects
         {
             if (resolved) return;
             resolved = true;
-            log.Info($"[PetBreeding] Parent pet {pet.Name} (0x{pet.Guid.Full:X8}) died during mating ritual with {Name}; resolving breed as lost.");
+            LostReason = "parentDied:" + pet.Name;
+            // With the trace on, guardian.lost carries this fact (session, parent, fight summary).
+            if (!PetTrace.Enabled)
+                log.Info($"[PetBreeding] Parent pet {pet.Name} (0x{pet.Guid.Full:X8}) died during mating ritual with {Name}; resolving breed as lost.");
 
             try
             {
@@ -177,7 +233,11 @@ namespace ACE.Server.WorldObjects
         public override uint TakeDamage(WorldObject source, DamageType damageType, float amount, bool crit = false)
         {
             if (!CanBeDamagedBy(source))
+            {
+                if (PetTrace.Enabled)
+                    LastIncoming = new IncomingTrace { Raw = amount };
                 return 0;
+            }
 
             // Self-normalizing dynamic Damage Reduction:
             // N_raw = bossHP / rawAmount (hits to kill at zero mitigation)
@@ -197,13 +257,25 @@ namespace ACE.Server.WorldObjects
             if (IsWeakened)
                 appliedDamage *= 2.5f;
 
+            var scaledDamage = appliedDamage;
+
             // Hard anti-one-shot guarantee: no single hit exceeds 10% of max HP (25% if weakened)
             var maxAllowedHit = bossHp * (IsWeakened ? 0.25f : 0.10f);
-            if (appliedDamage > maxAllowedHit)
+            var capped = appliedDamage > maxAllowedHit;
+            if (capped)
                 appliedDamage = maxAllowedHit;
 
             if (float.IsNaN(appliedDamage) || float.IsInfinity(appliedDamage) || appliedDamage < 1.0f)
                 appliedDamage = 1.0f;
+
+            if (PetTrace.Enabled)
+            {
+                TraceIncoming(new IncomingTrace
+                {
+                    Raw = amount, NRaw = nRaw, Mod = mod, WeakMult = IsWeakened ? 2.5f : 1.0f,
+                    Scaled = scaledDamage, Cap = maxAllowedHit, Capped = capped, Final = appliedDamage,
+                });
+            }
 
             return base.TakeDamage(source, damageType, appliedDamage, crit);
         }
@@ -272,7 +344,9 @@ namespace ACE.Server.WorldObjects
             {
                 resolved = true;
                 var fightSeconds = Timers.RunningTime - SpawnTime;
-                log.Info($"[PetBreeding] Mating guardian {Name} (0x{Guid.Full:X8}) slain after {fightSeconds:F1}s by {lastDamager?.Name ?? "unknown"}.");
+                // With the trace on, guardian.slain (from OnGuardianSlain) carries the kill and the fight summary.
+                if (!PetTrace.Enabled)
+                    log.Info($"[PetBreeding] Mating guardian {Name} (0x{Guid.Full:X8}) slain after {fightSeconds:F1}s by {lastDamager?.Name ?? "unknown"}.");
 
                 try
                 {
@@ -298,7 +372,9 @@ namespace ACE.Server.WorldObjects
             if (!resolved)
             {
                 resolved = true;
-                log.Info($"[PetBreeding] Mating guardian {Name} (0x{Guid.Full:X8}) removed without dying (landblockUnload={fromLandblockUnload}); resolving breed as lost.");
+                LostReason = fromLandblockUnload ? "landblockUnload" : "destroyed";
+                if (!PetTrace.Enabled)
+                    log.Info($"[PetBreeding] Mating guardian {Name} (0x{Guid.Full:X8}) removed without dying (landblockUnload={fromLandblockUnload}); resolving breed as lost.");
                 try
                 {
                     onLost?.Invoke(this);

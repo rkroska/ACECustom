@@ -632,6 +632,9 @@ namespace ACE.Server.WorldObjects
             public uint GuardianGuid;
             public bool GuardianWeakened;
             public int LastMutatedStat;
+
+            /// <summary>[PetTrace] session id minted at the dance; null when the trace was off.</summary>
+            public string TraceSession;
         }
 
         /// <summary>
@@ -670,19 +673,30 @@ namespace ACE.Server.WorldObjects
             if (player1 == null)
                 return;
 
+            // [PetTrace] one session id per breed attempt; every record of this attempt (the guardian's
+            // included, seconds later) carries it. Minted only when the trace is on.
+            var trace = PetTrace.Enabled;
+            var session = trace ? PetTrace.NewSessionId() : null;
+
             if (ServerConfig.pet_breeding_verbose_logging.Value)
                 log.Info($"[PetBreeding] Breeding trigger received from {player1.Name} (Source: {triggerSource}, LB: 0x{player1.Location.Landblock:X4}, Cell: 0x{player1.Location.LandblockId.Raw:X8})");
+
+            if (trace)
+                PetTrace.Begin("breed.trigger", session).AddPlayer("p1.", player1).Add("source", triggerSource).Add("forced", forced)
+                    .AddGuid("cell", player1.Location?.Cell ?? 0).Add("variant", player1.CurrentLandblock?.VariationId ?? -1).Emit();
 
             if (!ServerConfig.pet_breeding_enabled.Value)
             {
                 if (ServerConfig.pet_breeding_verbose_logging.Value)
                     log.Warn($"[PetBreeding] Breeding aborted: ServerConfig.pet_breeding_enabled is false.");
+                if (trace) PetTrace.BreedGate(session, "enabled", "pet_breeding_enabled is false", player1, null);
                 if (player1.IsAdmin) player1.SendMessage("[Breeding Debug] Breeding failed: ServerConfig.pet_breeding_enabled is FALSE.");
                 return;
             }
 
             if (player1.IsTrading)
             {
+                if (trace) PetTrace.BreedGate(session, "trading", "player is in trade", player1, null);
                 if (player1.IsAdmin) player1.SendMessage("[Breeding Debug] Breeding failed: Player is in trade.");
                 return;
             }
@@ -690,6 +704,7 @@ namespace ACE.Server.WorldObjects
             // 1. Check if player1 has an active summoned combat pet
             if (player1.CurrentActivePet is not CombatPet pet1)
             {
+                if (trace) PetTrace.BreedGate(session, "noPet", "no active combat pet summoned", player1, null);
                 if (player1.IsAdmin) player1.SendMessage("[Breeding Debug] Breeding failed: You do not have an active Combat Pet summoned.");
                 return;
             }
@@ -709,6 +724,10 @@ namespace ACE.Server.WorldObjects
             {
                 if (ServerConfig.pet_breeding_verbose_logging.Value)
                     log.Info($"[PetBreeding] {player1.Name} location check failed: current LB=0x{currentLandblock:X4} (Cell=0x{player1.Location.Cell:X8}, Var={player1.CurrentLandblock?.VariationId ?? -1}).");
+                if (trace)
+                    PetTrace.BreedGate(session, "location",
+                        $"cell 0x{player1.Location.Cell:X8} variant {player1.CurrentLandblock?.VariationId ?? -1} is outside allowed 0x{ServerConfig.pet_breeding_allowed_landblock.Value:X} variant {ServerConfig.pet_breeding_allowed_variant.Value}; adminBypass={isAdminBypass}",
+                        player1, null);
                 if (isAdminBypass)
                 {
                     player1.SendMessage($"[Breeding Debug] Location check would fail for non-admins (current LB 0x{currentLandblock:X4}), but bypassed for Admin.");
@@ -728,6 +747,7 @@ namespace ACE.Server.WorldObjects
             var device1 = pet1.TryGetSummoningDevice() ?? player1.FindObject(pet1.SummoningDeviceGuid.Full, Player.SearchLocations.Everywhere) as PetDevice;
             if (device1 == null)
             {
+                if (trace) PetTrace.BreedGate(session, "device1", $"summoning device 0x{pet1.SummoningDeviceGuid.Full:X8} of pet {pet1.Name} not found", player1, null);
                 player1.SendTransientError("Failed to locate parent summoning device.");
                 return;
             }
@@ -793,6 +813,10 @@ namespace ACE.Server.WorldObjects
 
             if (roomCandidates.Count == 0)
             {
+                if (trace)
+                    PetTrace.BreedGate(session, "partnerScan",
+                        $"no room candidate among {onlinePlayers.Count} online players (same landblock, in area, danced within {danceWindow.TotalSeconds:0.#}s, pet in landcell 0x{pet1.Location?.Cell ?? 0:X8}); forced={forced}",
+                        player1, null);
                 if (player1.IsAdmin)
                     player1.SendMessage($"[Breeding Debug] No eligible partner found: needs to be in the breeding area, have danced within {danceWindow.TotalSeconds:0.#}s, and have a summoned pet sharing your pet's landcell. (Checked {onlinePlayers.Count} online players)");
                 else if (!forced)
@@ -840,6 +864,7 @@ namespace ACE.Server.WorldObjects
 
             if (player1.IsBusy || partner.IsBusy)
             {
+                if (trace) PetTrace.BreedGate(session, "busy", $"player1 busy={player1.IsBusy}, partner busy={partner.IsBusy}", player1, partner);
                 if (player1.IsAdmin) player1.SendMessage($"[Breeding Debug] Breeding aborted: Player or partner is busy.");
                 return;
             }
@@ -848,6 +873,7 @@ namespace ACE.Server.WorldObjects
             if (pendingFor != null)
             {
                 var pendingIsMine = pendingFor.Player1?.Guid.Full == player1.Guid.Full || pendingFor.Partner?.Guid.Full == player1.Guid.Full;
+                if (trace) PetTrace.BreedGate(session, "pendingGuardian", $"a mating guardian 0x{pendingFor.GuardianGuid:X8} (session {pendingFor.TraceSession ?? "none"}) is still standing for {(pendingIsMine ? player1.Name : partner.Name)}", player1, partner);
                 player1.SendMessage(pendingIsMine
                     ? "[Breeding] You already have a mating guardian to defeat. Finish that ritual first."
                     : $"[Breeding] {partner.Name} already has a mating guardian to defeat. They must finish that ritual first.");
@@ -860,9 +886,11 @@ namespace ACE.Server.WorldObjects
 
             // Every refusal below is a transient error, which the client flashes centre-screen and
             // never writes to chat, so a failed breed looks like nothing happened. Echo the reason
-            // into an admin's chat window so a test tells you which gate stopped it.
-            void DebugGate(string reason)
+            // into an admin's chat window so a test tells you which gate stopped it, and write the
+            // same reason to the trace under a stable gate name.
+            void DebugGate(string gate, string reason)
             {
+                if (trace) PetTrace.BreedGate(session, gate, reason, player1, partner);
                 if (player1.IsAdmin) player1.SendMessage($"[Breeding Debug] Gate failed: {reason}");
                 if (partner.IsAdmin && partner != player1) partner.SendMessage($"[Breeding Debug] Gate failed: {reason}");
             }
@@ -873,22 +901,37 @@ namespace ACE.Server.WorldObjects
 
                 if (device2 == null)
                 {
-                    DebugGate($"partner {partner.Name}'s summoning device could not be found (pet {pet2.Name}, device guid 0x{pet2.SummoningDeviceGuid.Full:X8}).");
+                    DebugGate("device2", $"partner {partner.Name}'s summoning device could not be found (pet {pet2.Name}, device guid 0x{pet2.SummoningDeviceGuid.Full:X8}).");
                     player1.SendTransientError("Failed to locate parent summoning devices.");
                     partner.SendTransientError("Failed to locate parent summoning devices.");
                     return;
                 }
 
+                // Both devices are known: record the whole attempt (both players, both devices, every
+                // rating, count, flag and stamp) and the effective config before any gate can refuse.
+                if (trace)
+                {
+                    PetTrace.Begin("breed.attempt", session).AddPlayer("p1.", player1).AddPlayer("p2.", partner)
+                        .Add("source", triggerSource).Add("forced", forced).Add("adminBypass", isAdminBypass)
+                        .Add("pet1", pet1.Name).AddGuid("pet1Guid", pet1.Guid.Full).Add("pet1Level", pet1.Level ?? 0).Add("pet1MaxHp", pet1.Health?.MaxValue ?? 0)
+                        .Add("pet2", pet2.Name).AddGuid("pet2Guid", pet2.Guid.Full).Add("pet2Level", pet2.Level ?? 0).Add("pet2MaxHp", pet2.Health?.MaxValue ?? 0)
+                        .AddGuid("cell1", pet1.Location?.Cell ?? 0).AddGuid("cell2", pet2.Location?.Cell ?? 0)
+                        .Add("candidates", roomCandidates.Count).Add("compatible", compatibleCandidates.Count)
+                        .AddDevice("a.", device1, player1).AddDevice("b.", device2, partner)
+                        .Emit();
+                    PetTrace.BreedConfig(session, BreedingMath.BreedingConfig.FromServerConfig());
+                }
+
                 if (device1.GetProperty(PropertyBool.PetNeutered) == true)
                 {
-                    DebugGate($"{device1.Name} (yours) is neutered.");
+                    DebugGate("neutered", $"{device1.Name} (yours) is neutered.");
                     player1.SendTransientError("Your pet is spayed/neutered and cannot breed.");
                     return;
                 }
 
                 if (device2.GetProperty(PropertyBool.PetNeutered) == true)
                 {
-                    DebugGate($"{device2.Name} ({partner.Name}'s) is neutered.");
+                    DebugGate("neutered", $"{device2.Name} ({partner.Name}'s) is neutered.");
                     player1.SendTransientError($"{partner.Name}'s pet is spayed/neutered and cannot breed.");
                     partner.SendTransientError("Your pet is spayed/neutered and cannot breed.");
                     return;
@@ -898,7 +941,7 @@ namespace ACE.Server.WorldObjects
                 var inInv2 = partner.FindObject(device2.Guid.Full, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) != null;
                 if (!inInv1 || !inInv2)
                 {
-                    DebugGate($"a device left its owner's inventory (yours in inventory: {inInv1}, {partner.Name}'s: {inInv2}).");
+                    DebugGate("inventory", $"a device left its owner's inventory (yours in inventory: {inInv1}, {partner.Name}'s: {inInv2}).");
                     player1.SendTransientError("Summoning devices must remain in inventory to breed.");
                     partner.SendTransientError("Summoning devices must remain in inventory to breed.");
                     return;
@@ -908,7 +951,7 @@ namespace ACE.Server.WorldObjects
                 var lvl2 = global::ACE.Server.Factories.Tables.Wcids.PetDeviceWcids.GetPetLevel(device2.WeenieClassId);
                 if (!lvl1.HasValue || !lvl2.HasValue)
                 {
-                    DebugGate($"tier lookup failed (wcid {device1.WeenieClassId} -> {(lvl1.HasValue ? lvl1.Value.ToString() : "none")}, " +
+                    DebugGate("tierLookup", $"tier lookup failed (wcid {device1.WeenieClassId} -> {(lvl1.HasValue ? lvl1.Value.ToString() : "none")}, " +
                               $"wcid {device2.WeenieClassId} -> {(lvl2.HasValue ? lvl2.Value.ToString() : "none")}). Only devices listed in PetDeviceWcids have a tier.");
                     player1.SendTransientError("Failed to determine parent pet tiers.");
                     partner.SendTransientError("Failed to determine parent pet tiers.");
@@ -919,7 +962,7 @@ namespace ACE.Server.WorldObjects
                 if (lvl1.Value < minParentLevel || lvl2.Value < minParentLevel)
                 {
                     var msg = $"Parent pets must be at least tier {minParentLevel} to breed.";
-                    DebugGate($"tier below pet_breeding_min_parent_level {minParentLevel} (yours {lvl1.Value}, {partner.Name}'s {lvl2.Value}).");
+                    DebugGate("minParentLevel", $"tier below pet_breeding_min_parent_level {minParentLevel} (yours {lvl1.Value}, {partner.Name}'s {lvl2.Value}).");
                     player1.SendTransientError(msg);
                     partner.SendTransientError(msg);
                     return;
@@ -931,7 +974,7 @@ namespace ACE.Server.WorldObjects
                 if (bond1 < minBond || bond2 < minBond)
                 {
                     var msg = $"Parent pets must have a bond level of at least {minBond} to breed.";
-                    DebugGate($"bond below pet_breeding_min_bond {minBond} (yours {bond1}, {partner.Name}'s {bond2}). " +
+                    DebugGate("minBond", $"bond below pet_breeding_min_bond {minBond} (yours {bond1}, {partner.Name}'s {bond2}). " +
                               $"pet_bond_enabled is {ServerConfig.pet_bond_enabled.Value}; bond only grows while it is TRUE.");
                     player1.SendTransientError(msg);
                     partner.SendTransientError(msg);
@@ -946,7 +989,7 @@ namespace ACE.Server.WorldObjects
                         if (!dev.IsShiny)
                             continue;
                         var other = owner == player1 ? partner : player1;
-                        DebugGate($"{dev.Name} ({owner.Name}'s) is shiny and pet_breeding_allow_shiny is false.");
+                        DebugGate("shiny", $"{dev.Name} ({owner.Name}'s) is shiny and pet_breeding_allow_shiny is false.");
                         owner.SendTransientError($"{dev.Name} is shiny and cannot breed. Shiny is a capture-only trait.");
                         other.SendTransientError($"Breeding cancelled: {owner.Name}'s pet is shiny and cannot breed.");
                         return;
@@ -959,7 +1002,7 @@ namespace ACE.Server.WorldObjects
                     if (!dev.IsJuvenile)
                         continue;
                     var other = owner == player1 ? partner : player1;
-                    DebugGate($"{dev.Name} ({owner.Name}'s) is juvenile: {dev.MaturityStageName}, {dev.MaturityKills}/{MaturityKillsRequired} kills.");
+                    DebugGate("juvenile", $"{dev.Name} ({owner.Name}'s) is juvenile: {dev.MaturityStageName}, {dev.MaturityKills}/{MaturityKillsRequired} kills.");
                     owner.SendTransientError($"{dev.Name} is still a {dev.MaturityStageName.ToLowerInvariant()} and cannot breed until it is an adult ({dev.MaturityKills}/{MaturityKillsRequired} kills).");
                     other.SendTransientError($"Breeding cancelled: {owner.Name}'s pet is not an adult yet.");
                     return;
@@ -973,7 +1016,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var sex = isMale1 ? "males" : "females";
                     var msgSex = $"Breeding cancelled: two {sex} cannot breed. You need one male and one female.";
-                    DebugGate($"both devices are {sex} ({device1.Name} and {device2.Name}). Use @setsex on an appraised device.");
+                    DebugGate("sex", $"both devices are {sex} ({device1.Name} and {device2.Name}). Use @setsex on an appraised device.");
                     player1.SendTransientError(msgSex);
                     partner.SendTransientError(msgSex);
                     return;
@@ -993,7 +1036,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var restHours = ServerConfig.pet_breeding_male_charge_reset_hours.Value;
                     var maleOwner = maleDevice == device1 ? player1 : partner;
-                    DebugGate($"{maleDevice.Name} ({maleOwner.Name}'s) has 0 of {maleMaxCharges} breeding charges left; refill {restHours:0.#}h after the last one. @pet-reset-cooldown clears it.");
+                    DebugGate("maleCharges", $"{maleDevice.Name} ({maleOwner.Name}'s) has 0 of {maleMaxCharges} breeding charges left; refill {restHours:0.#}h after the last one. @pet-reset-cooldown clears it.");
                     maleOwner.SendTransientError($"{maleDevice.Name} has exhausted its {maleMaxCharges} daily breeding charges. Rest for {restHours:0.#}h.");
                     return;
                 }
@@ -1005,7 +1048,7 @@ namespace ACE.Server.WorldObjects
                     if (nowUnix < nextDonor && !ServerConfig.pet_breeding_bypass_female_cooldown.Value)
                     {
                         var remaining = TimeSpan.FromSeconds(nextDonor - nowUnix);
-                        DebugGate($"{donorDevice.Name} is on the female recovery cooldown for another {remaining.Hours}h {remaining.Minutes}m. @pet-reset-cooldown clears it.");
+                        DebugGate("femaleCooldown", $"{donorDevice.Name} is on the female recovery cooldown for another {remaining.Hours}h {remaining.Minutes}m (nextBreed {nextDonor:0} > now {nowUnix:0}). @pet-reset-cooldown clears it.");
                         player1.SendTransientError($"{donorDevice.Name} is still recovering from her last litter. Ready in {remaining.Hours}h {remaining.Minutes}m.");
                         partner.SendTransientError("Breeding cancelled: the female is still recovering from her last litter.");
                         return;
@@ -1024,14 +1067,14 @@ namespace ACE.Server.WorldObjects
                 var babyBurden = Math.Max(device1.EncumbranceVal ?? 0, device2.EncumbranceVal ?? 0);
                 if (winner.GetFreeInventorySlots(false) <= 0)
                 {
-                    DebugGate($"{winner.Name} (the female's owner) has no free main-pack slot for the baby.");
+                    DebugGate("packSlot", $"{winner.Name} (the female's owner) has no free main-pack slot for the baby.");
                     winner.SendTransientError($"Breeding cancelled: your main pack has no free slot for the baby. Free a slot and dance again.");
                     loser.SendTransientError($"Breeding cancelled: {winner.Name}'s main pack has no free slot for the baby.");
                     return;
                 }
                 if (!winner.HasEnoughBurdenToAddToInventory(babyBurden))
                 {
-                    DebugGate($"{winner.Name} (the female's owner) cannot carry another {babyBurden} burden.");
+                    DebugGate("burden", $"{winner.Name} (the female's owner) cannot carry another {babyBurden} burden.");
                     winner.SendTransientError($"Breeding cancelled: you are too encumbered to carry the baby. Lighten your load and dance again.");
                     loser.SendTransientError($"Breeding cancelled: {winner.Name} is too encumbered to carry the baby.");
                     return;
@@ -1101,14 +1144,15 @@ namespace ACE.Server.WorldObjects
                 if (outcome.StatLine != BreedingMath.MutationLine.None)
                     mutationSummary.Add($"+{outcome.StatStep} {BreedingMath.LineName(outcome.StatLine)}");
 
-                if (ServerConfig.pet_breeding_verbose_logging.Value)
+                // [PetTrace] the decision, line by line: inheritance per line (draws 1-8), the stat and
+                // potency rolls (draws 9-11) with their arithmetic, and the REPLAY blob the parity
+                // harness runs. These lines used to sit under pet_breeding_verbose_logging; they live
+                // here now so the same fact is never logged twice.
+                if (trace)
                 {
-                    log.Info($"[PetBreeding] Decision for {pet1.Name} x {pet2.Name}: inherited stat mutations {outcome.InheritedStatMutations}, " +
-                             $"stat chance {outcome.StatChance:0.0000} roll {outcome.StatRoll:0.0000} -> {(outcome.StatMutated ? (config.ForceMutation ? "FORCED" : "MUTATED") : "no mutation")}" +
-                             $"{(outcome.StatLine != BreedingMath.MutationLine.None ? $" ({BreedingMath.LineName(outcome.StatLine)})" : outcome.StatAllLinesCapped ? " (every line capped)" : "")}; " +
-                             $"potency chance {outcome.PotencyChance:0.0000} roll {outcome.PotencyRoll:0.0000} -> {(outcome.PotencyApplied ? $"+{outcome.PotencyStep}" : outcome.PotencyMutated ? "capped" : "no mutation")}; " +
-                             $"baby {baby}");
-                    log.Info($"[PetBreeding] [REPLAY] {BreedingReplay.ToJson(inputs, outcome.RngDraws, baby)}");
+                    PetTrace.BreedInherit(session, inputs, outcome);
+                    PetTrace.BreedRoll(session, inputs, outcome);
+                    PetTrace.BreedReplay(session, "decision", BreedingReplay.ToJson(inputs, outcome.RngDraws, baby));
                 }
 
                 uint? babyPaletteBase = null;
@@ -1116,27 +1160,35 @@ namespace ACE.Server.WorldObjects
                 // Update charges & cooldowns - for everyone, admins included. This used to be skipped for
                 // admins, which meant charges never decremented and the recovery cooldown was never
                 // written on admin characters, so neither rule ever appeared to work in testing.
+                var chargesAfter = -1;
                 if (!ServerConfig.pet_breeding_bypass_male_charges.Value && maleDevice != null)
                 {
                     var chargesLeft = Math.Max(0, maleCharges - 1);
                     maleDevice.SetProperty(PropertyInt.PetMaleBreedingCharges, chargesLeft);
+                    chargesAfter = chargesLeft;
 
                     var studOwner = maleDevice == device1 ? player1 : partner;
                     studOwner.SendMessage($"[Breeding] {maleDevice.Name} spent a breeding charge: {chargesLeft}/{maleMaxCharges} left today.");
-                    log.Info($"[PetBreeding] Stud {maleDevice.Name} (0x{maleDevice.Guid.Full:X8}, {studOwner.Name}) charges {maleCharges} -> {chargesLeft}.");
+                    // breed.commit carries this fact when the trace is on.
+                    if (!trace)
+                        log.Info($"[PetBreeding] Stud {maleDevice.Name} (0x{maleDevice.Guid.Full:X8}, {studOwner.Name}) charges {maleCharges} -> {chargesLeft}.");
                 }
 
+                var nextBreedWritten = 0.0;
                 if (!ServerConfig.pet_breeding_bypass_female_cooldown.Value)
                 {
                     var donorCooldown = ServerConfig.pet_breeding_cooldown_hours.Value * 3600.0;
+                    nextBreedWritten = nowUnix + donorCooldown;
                     foreach (var donorDevice in donorDevices)
-                        donorDevice.SetProperty(PropertyFloat.PetNextBreedingTime, nowUnix + donorCooldown);
+                        donorDevice.SetProperty(PropertyFloat.PetNextBreedingTime, nextBreedWritten);
                 }
 
                 // Roll 50/50 for species donor parent
-                var donor = ThreadSafeRandom.Next(0, 1) == 0 ? device1 : device2;
+                var donorRoll = ThreadSafeRandom.Next(0, 1);
+                var donor = donorRoll == 0 ? device1 : device2;
                 var babyWcid = donor.WeenieClassId;
 
+                var paletteIndex = -1; var paletteCount = 0;
                 if (mutationSummary.Count > 0)
                 {
                     // Fully random draw from the same master DAT pool the 3D showroom offers, so a
@@ -1148,7 +1200,11 @@ namespace ACE.Server.WorldObjects
                             ? ACE.Server.Services.PetMutationService.GetVibrantPalettePool()
                             : ACE.Server.Services.PetMutationService.GetMasterPalettePool();
                         if (pool != null && pool.Count > 0)
-                            babyPaletteBase = pool[ThreadSafeRandom.Next(0, pool.Count - 1)].PaletteId;
+                        {
+                            paletteCount = pool.Count;
+                            paletteIndex = ThreadSafeRandom.Next(0, pool.Count - 1);
+                            babyPaletteBase = pool[paletteIndex].PaletteId;
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -1169,6 +1225,26 @@ namespace ACE.Server.WorldObjects
                     parentDevice.SaveBiotaToDatabase();
                 }
 
+                if (trace)
+                {
+                    PetTrace.Begin("breed.commit", session)
+                        .Add("male", maleDevice?.Name ?? "none").AddGuid("maleGuid", maleDevice?.Guid.Full ?? 0)
+                        .Add("female", femaleDevice.Name).AddGuid("femaleGuid", femaleDevice.Guid.Full)
+                        .Add("winner", winner.Name).AddGuid("winnerGuid", winner.Guid.Full)
+                        .Add("maleChargesBefore", maleCharges).Add("maleChargesAfter", chargesAfter).Add("bypassMaleCharges", ServerConfig.pet_breeding_bypass_male_charges.Value)
+                        .Add("now", nowUnix).Add("femaleNextBreed", nextBreedWritten).Add("bypassFemaleCooldown", ServerConfig.pet_breeding_bypass_female_cooldown.Value)
+                        .Add("incenseRemovedA", incense1).Add("incenseRemovedB", incense2)
+                        .Add("donorRoll", donorRoll).Add("donor", donor == device1 ? "A" : "B").Add("donorName", donor.Name).Add("babyWcid", babyWcid)
+                        .Add("mutated", mutationSummary.Count > 0).Add("mutations", string.Join(" and ", mutationSummary))
+                        .Add("catalystA", catalyst1).Add("catalystB", catalyst2).Add("palettePool", chromaticCatalystActive ? "vibrant" : "master")
+                        .Add("paletteCount", paletteCount).Add("paletteIndex", paletteIndex).AddGuid("palette", babyPaletteBase ?? 0)
+                        .Add("catalystConsumed", babyPaletteBase.HasValue && chromaticCatalystActive)
+                        .Add("guardianWeakened", guardianWeakened).Add("guardianSpawns", outcome.GuardianSpawned)
+                        .Add("lastMutatedStat", (int)outcome.LastMutatedStat)
+                        .AddGenetics("baby.", baby)
+                        .Emit();
+                }
+
                 var pending = new PendingBreed
                 {
                     Player1 = player1, Partner = partner, Winner = winner,
@@ -1176,6 +1252,7 @@ namespace ACE.Server.WorldObjects
                     BabyWcid = babyWcid, BabyPaletteBase = babyPaletteBase, MutationSummary = mutationSummary,
                     Baby = baby, Config = config, Inputs = inputs, RngDraws = outcome.RngDraws,
                     GuardianWeakened = guardianWeakened, LastMutatedStat = (int)outcome.LastMutatedStat,
+                    TraceSession = session,
                 };
 
                 // Mutation breeds can be gated behind a mating guardian: a monster wearing the
@@ -1212,6 +1289,7 @@ namespace ACE.Server.WorldObjects
                 if (pet1 == null || pet2 == null || pet1.Location == null || pet1.IsDestroyed || pet2.IsDestroyed)
                 {
                     log.Warn("[PetBreeding] Guardian skipped: a parent pet has no location or is gone. Completing birth immediately.");
+                    if (PetTrace.Enabled) PetTrace.Begin("guardian.skipped", p.TraceSession).Add("reason", "parent pet has no location or is gone").Emit();
                     return false;
                 }
 
@@ -1220,10 +1298,12 @@ namespace ACE.Server.WorldObjects
                 if (weenie == null)
                 {
                     log.Warn($"[PetBreeding] Guardian skipped: template weenie {templateWcid} not found (pet_breeding_guardian_template_wcid). Completing birth immediately.");
+                    if (PetTrace.Enabled) PetTrace.Begin("guardian.skipped", p.TraceSession).Add("reason", "template weenie not found").Add("template", templateWcid).Emit();
                     return false;
                 }
 
                 guardian = new MatingGuardian(weenie, GuidManager.NewDynamicGuid());
+                guardian.TraceSession = p.TraceSession;
 
                 // Look: exactly what the baby will look like. Same dressing path as a summon, then the
                 // same base/template rule the baby uses (native base, mutation in the template), and
@@ -1271,6 +1351,7 @@ namespace ACE.Server.WorldObjects
                 if (!guardian.EnterWorld())
                 {
                     log.Warn("[PetBreeding] Guardian skipped: EnterWorld failed. Completing birth immediately.");
+                    if (PetTrace.Enabled) PetTrace.Begin("guardian.skipped", p.TraceSession).Add("reason", "EnterWorld failed").Emit();
                     guardian.Unbind();
                     return false;
                 }
@@ -1288,9 +1369,31 @@ namespace ACE.Server.WorldObjects
                 p.Player1.SendMessage(stirMsg);
                 p.Partner.SendMessage(stirMsg);
 
-                log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) spawned for {p.Player1.Name} + {p.Partner.Name}: " +
-                         $"template={templateWcid}, level={guardian.Level}, hp={guardian.Health.MaxValue}, dmgRating={effective.DamageRating}, " +
-                         $"drRating={effective.DamageResistRating}, weakened={p.GuardianWeakened}, palette=0x{(p.BabyPaletteBase ?? 0):X8}, timeout={timeout:0}s");
+                if (PetTrace.Enabled)
+                {
+                    var dmgMult = ServerConfig.pet_breeding_guardian_damage_mult.Value;
+                    PetTrace.Begin("guardian.spawn", p.TraceSession)
+                        .AddCreature("g.", guardian).Add("template", templateWcid)
+                        .Add("pet1", pet1.Name).Add("pet1Level", pet1.Level ?? 1).Add("pet1MaxHp", pet1.Health.MaxValue)
+                        .Add("pet2", pet2.Name).Add("pet2Level", pet2.Level ?? 1).Add("pet2MaxHp", pet2.Health.MaxValue)
+                        .Add("levelRule", "level=max(pet1Level,pet2Level)").Add("level", guardian.Level ?? 0)
+                        .Add("hpRule", "maxHp=max(1,round((pet1MaxHp+pet2MaxHp)*healthMult))").Add("healthMult", hpMult).Add("maxHp", guardian.Health.MaxValue)
+                        .Add("ratingsRule", "the baby's summon ratings: gear+count*step and the derived crit lines")
+                        .Add("dmgRating", effective.DamageRating).Add("drRating", effective.DamageResistRating).Add("critRating", effective.CritRating)
+                        .Add("critDmgRating", effective.CritDamageRating).Add("critResRating", effective.CritResistRating).Add("critDmgResRating", effective.CritDamageResistRating)
+                        .Add("outgoingRule", "per hit base=clamp(defendingPetMaxHp*0.08,20,500)*damageMult*(weakened?0.5:1)")
+                        .Add("damageMult", dmgMult).Add("weakened", p.GuardianWeakened)
+                        .Add("incomingRule", "per hit: nRaw=maxHp/raw; mod=clamp((nRaw/30)^0.81,0.01,1); x2.5 weakened; cap maxHp*(weakened?0.25:0.10)")
+                        .AddGuid("palette", p.BabyPaletteBase ?? 0).Add("translucency", translucency)
+                        .AddGuid("cell", guardian.Location?.Cell ?? 0).Add("timeout", timeout)
+                        .Emit();
+                }
+                else
+                {
+                    log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) spawned for {p.Player1.Name} + {p.Partner.Name}: " +
+                             $"template={templateWcid}, level={guardian.Level}, hp={guardian.Health.MaxValue}, dmgRating={effective.DamageRating}, " +
+                             $"drRating={effective.DamageResistRating}, weakened={p.GuardianWeakened}, palette=0x{(p.BabyPaletteBase ?? 0):X8}, timeout={timeout:0}s");
+                }
 
                 // On the world queue, not the guardian: an action queued on a creature is silently
                 // dropped once that creature has no landblock, which is exactly the case we must handle.
@@ -1315,6 +1418,9 @@ namespace ACE.Server.WorldObjects
                         dev.RemoveProperty(PropertyBool.PetGuardianWeakened);
                         dev.ChangesDetected = true;
                         dev.SaveBiotaToDatabase();
+                        if (PetTrace.Enabled)
+                            PetTrace.Begin("consumable.consumed", p.TraceSession).Add("item", "Offering of Subjugation").Add("property", "PetGuardianWeakened")
+                                .AddGuid("device", dev.Guid.Full).Add("deviceName", dev.Name).Add("consumedBy", "guardian spawn").Emit();
                     }
                 }
 
@@ -1323,6 +1429,7 @@ namespace ACE.Server.WorldObjects
             catch (Exception ex)
             {
                 log.Error($"[PetBreeding] Guardian spawn threw; completing birth immediately. {ex}");
+                if (PetTrace.Enabled) PetTrace.Begin("guardian.skipped", p.TraceSession).Add("reason", "spawn threw").Add("error", ex.Message).Emit();
                 if (guardian != null)
                 {
                     // Make sure the fallback birth is the only birth: drop the registry entry (if we got
@@ -1430,9 +1537,34 @@ namespace ACE.Server.WorldObjects
             // the same BreedingMath helper Simulate uses. Base combat ratings remain clean because their
             // mutation counts are evaluated dynamically when summoned; potency is the one stat whose
             // effective value is stored directly on the device.
+            // [PetTrace] the eligible lines the blessing chose from, evaluated on the baby BEFORE the
+            // roll (the same lists RollAwakenedBlessing builds), so the pick index can be checked.
+            var traceEligible = "";
+            var tracePotStep = 0;
+            if (PetTrace.Enabled)
+            {
+                var eligible = BreedingMath.EligibleStatLines(p.Baby, p.Config.MaxStatMutations);
+                tracePotStep = BreedingMath.PotencyMutationStep(p.Config.PotencyMutationStep, p.Baby.PotencyStored, p.Config.PotencySoftCap, p.Config.ResolvedPotencyHardCap);
+                if (tracePotStep > 0)
+                    eligible.Add(BreedingMath.MutationLine.Potency);
+                traceEligible = string.Join(",", eligible);
+            }
+
             var blessing = BreedingMath.RollAwakenedBlessing(ref p.Baby, p.Config, static () => ThreadSafeRandom.Next(0.0f, 1.0f));
             if (blessing.Drew)
                 p.RngDraws?.Add(blessing.Roll);
+
+            if (PetTrace.Enabled)
+            {
+                var r = PetTrace.Begin("guardian.slain", p.TraceSession).AddCreature("g.", guardian);
+                guardian.AddFightSummary(r, "fight.");
+                r.Add("blessingRule", "eligible=stat lines under maxStatMutations then potency when its capped step>0; index=min(n-1,floor(roll*n)); draw 12")
+                 .Add("eligible", traceEligible).Add("eligibleCount", traceEligible.Length == 0 ? 0 : traceEligible.Split(',').Length)
+                 .Add("potencyStep", tracePotStep).Add("drew", blessing.Drew).Add("roll", blessing.Drew ? blessing.Roll : double.NaN)
+                 .Add("line", blessing.Line).Add("lineName", BreedingMath.LineName(blessing.Line)).Add("step", blessing.Step).Add("allLinesCapped", blessing.AllLinesCapped)
+                 .AddGenetics("baby.", p.Baby)
+                 .Emit();
+            }
 
             if (blessing.Line == BreedingMath.MutationLine.None)
             {
@@ -1448,12 +1580,13 @@ namespace ACE.Server.WorldObjects
             p.LastMutatedStat = (int)blessing.Line;
             p.MutationSummary.Add($"Awakened Blessing: +{mutationStep} {statName}");
 
-            if (ServerConfig.pet_breeding_verbose_logging.Value && p.RngDraws != null)
+            // The blessing REPLAY blob (draw 12 appended, guardianKilled:true) moved from the verbose
+            // switch into the trace with the rest of the decision lines.
+            if (PetTrace.Enabled && p.RngDraws != null)
             {
                 var killedInputs = p.Inputs;
                 killedInputs.Options.GuardianKilled = true;
-                log.Info($"[PetBreeding] Awakened Blessing roll {blessing.Roll:0.0000} -> {statName} +{mutationStep}; baby {p.Baby}");
-                log.Info($"[PetBreeding] [REPLAY] {BreedingReplay.ToJson(killedInputs, p.RngDraws, p.Baby)}");
+                PetTrace.BreedReplay(p.TraceSession, "blessing", BreedingReplay.ToJson(killedInputs, p.RngDraws, p.Baby));
             }
 
             p.Player1.PlayParticleEffect(PlayScript.LevelUp, p.Player1.Guid);
@@ -1479,7 +1612,14 @@ namespace ACE.Server.WorldObjects
             var lostMsg = "[Breeding] The spectral guardian dissolves back into the ether...";
             p.Player1.SendMessage(lostMsg);
             p.Partner.SendMessage(lostMsg);
-            log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) lost; completing birth for {p.Player1.Name} and {p.Partner.Name} regardless.");
+            if (PetTrace.Enabled)
+            {
+                var r = PetTrace.Begin("guardian.lost", p.TraceSession).AddCreature("g.", guardian).Add("reason", guardian.LostReason ?? "unknown");
+                guardian.AddFightSummary(r, "fight.");
+                r.Add("blessing", false).Emit();
+            }
+            else
+                log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) lost; completing birth for {p.Player1.Name} and {p.Partner.Name} regardless.");
 
             CompleteBirth(p);
         }
@@ -1500,7 +1640,15 @@ namespace ACE.Server.WorldObjects
             }
 
             var fightSeconds = ACE.Server.Entity.Timers.RunningTime - guardian.SpawnTime;
-            log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) timed out after {fightSeconds:F0}s with {guardian.Health.Current}/{guardian.Health.MaxValue} health left; completing birth regardless.");
+            if (PetTrace.Enabled)
+            {
+                var r = PetTrace.Begin("guardian.timeout", p.TraceSession).AddCreature("g.", guardian)
+                    .Add("timeout", Math.Max(5.0, ServerConfig.pet_breeding_guardian_timeout_seconds.Value));
+                guardian.AddFightSummary(r, "fight.");
+                r.Add("blessing", false).Emit();
+            }
+            else
+                log.Info($"[PetBreeding] Mating guardian {guardian.Name} (0x{guardian.Guid.Full:X8}) timed out after {fightSeconds:F0}s with {guardian.Health.Current}/{guardian.Health.MaxValue} health left; completing birth regardless.");
 
             guardian.Fade();
 
@@ -1628,9 +1776,11 @@ namespace ACE.Server.WorldObjects
                 baby.VisualOverridePaletteTemplate = (int)babyPaletteBase.Value;
                 baby.RemoveProperty(PropertyString.CapturedObjDescPalettes);
 
-                log.Info($"[PetBreeding] Mutation palette 0x{babyPaletteBase.Value:X8} applied to {baby.Name}: " +
-                         $"VisualOverridePaletteTemplate={(int)babyPaletteBase.Value}, CapturedObjDescPalettes cleared " +
-                         $"(otherwise CalculateObjDesc early-returns and the colour never reaches the client).");
+                // The birth record carries the palette keys when the trace is on.
+                if (!PetTrace.Enabled)
+                    log.Info($"[PetBreeding] Mutation palette 0x{babyPaletteBase.Value:X8} applied to {baby.Name}: " +
+                             $"VisualOverridePaletteTemplate={(int)babyPaletteBase.Value}, CapturedObjDescPalettes cleared " +
+                             $"(otherwise CalculateObjDesc early-returns and the colour never reaches the client).");
             }
 
             var mutationSuffix = mutationSummary.Count > 0
@@ -1650,7 +1800,34 @@ namespace ACE.Server.WorldObjects
             var liveWinner = PlayerManager.GetOnlinePlayer(winner.Guid.Full);
             var winnerOnline = liveWinner != null && !liveWinner.IsLoggingOut && !liveWinner.IsDestroyed;
 
-            if (winnerOnline && liveWinner.TryCreateInInventoryWithNetworking(baby))
+            var delivered = winnerOnline && liveWinner.TryCreateInInventoryWithNetworking(baby);
+
+            if (PetTrace.Enabled)
+            {
+                var stored = baby.ReadBreedingGenetics(p.Config);
+                var r = PetTrace.Begin("birth", p.TraceSession)
+                    .AddGuid("baby", baby.Guid.Full).Add("babyName", baby.Name).Add("babyWcid", babyWcid)
+                    .Add("donor", donor == p.Device1 ? "A" : "B").AddGuid("donorGuid", donor.Guid.Full)
+                    .Add("winner", winner.Name).AddGuid("winnerGuid", winner.Guid.Full)
+                    .Add("mutations", string.Join(" and ", mutationSummary)).Add("lastMutatedStat", p.LastMutatedStat)
+                    .Add("bond", baby.PetBondLevel ?? 0).Add("bondAttuned", baby.IsPetBondAttuned)
+                    .Add("juvenile", baby.IsJuvenile).Add("kills", baby.MaturityKills).Add("stage", baby.MaturityStage)
+                    .Add("mutTotalProp", baby.GetProperty(PropertyInt.PetMutationCount) ?? 0)
+                    .AddGenetics("decided.", genetics).AddGenetics("stored.", stored)
+                    .Add("storedMatchesDecided", stored.SameAs(genetics))
+                    .AddSummonMath("summon.", stored, p.Config)
+                    .AddGuid("palette", babyPaletteBase ?? 0).AddGuid("paletteBase", baby.VisualOverridePaletteBase ?? 0)
+                    .Add("paletteTemplate", baby.VisualOverridePaletteTemplate ?? 0)
+                    .Add("capturedPalettesCleared", babyPaletteBase.HasValue && babyPaletteBase.Value != 0)
+                    .AddGuid("setup", baby.VisualOverrideSetup ?? 0).Add("variant", baby.VisualOverrideCreatureVariant ?? 0)
+                    .Add("winnerOnline", winnerOnline)
+                    .Add("delivery", delivered ? "inventory" : "deferred")
+                    .Add("deliveryReason", delivered ? "TryCreateInInventoryWithNetworking succeeded" : winnerOnline ? "packs full, written to persisted inventory for next login" : "winner offline, written to persisted inventory for next login")
+                    .Add("dismissParents", ServerConfig.pet_breeding_dismiss_after_breed.Value);
+                r.Emit();
+            }
+
+            if (delivered)
             {
                 player1.SendMessage(successMsg);
                 partner.SendMessage(successMsg);
@@ -1682,8 +1859,9 @@ namespace ACE.Server.WorldObjects
                 baby.ContainerId = winner.Guid.Full;
                 baby.PlacementPosition = 0;
 
-                log.Info($"[PetBreeding] Baby {baby.Name} (0x{baby.Guid.Full:X8}) for {winner.Name} (0x{winner.Guid.Full:X8}) delivered to persisted inventory " +
-                         $"(winnerOnline={winnerOnline}); it will load into their pack at next login.");
+                if (!PetTrace.Enabled)
+                    log.Info($"[PetBreeding] Baby {baby.Name} (0x{baby.Guid.Full:X8}) for {winner.Name} (0x{winner.Guid.Full:X8}) delivered to persisted inventory " +
+                             $"(winnerOnline={winnerOnline}); it will load into their pack at next login.");
             }
 
             baby.SaveBiotaToDatabase();

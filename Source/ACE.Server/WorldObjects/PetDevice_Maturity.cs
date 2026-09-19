@@ -138,7 +138,11 @@ namespace ACE.Server.WorldObjects
             player.UpdateProperty(this, PropertyInt.Bonded, (int)BondedStatus.Bonded);
 
             player.SendMessage($"{GetBondMessageDisplayName()} has imprinted on you. It is now bound to this character and cannot be traded or dropped.");
-            log.Info($"[PetMaturity] {Name} (0x{Guid.Full:X8}) imprinted on {player.Name}.");
+            if (PetTrace.Enabled)
+                PetTrace.Begin("maturity.imprint", PetTrace.NewSessionId()).AddPlayer("p.", player).AddGuid("device", Guid.Full).Add("deviceName", Name)
+                    .Add("bondAttuned", true).Add("bondChar", PetBondAttunedCharacterId ?? 0).Emit();
+            else
+                log.Info($"[PetMaturity] {Name} (0x{Guid.Full:X8}) imprinted on {player.Name}.");
         }
 
         /// <summary>ID-panel line for a bred essence's ownership state, or null for an essence that was never bred.</summary>
@@ -214,7 +218,13 @@ namespace ACE.Server.WorldObjects
 
                     var share = info.TotalDamage / totalHealth;
                     if (share < minShare)
+                    {
+                        // [PetTrace] a juvenile that fell short of the share is worth a line; adults are not.
+                        if (PetTrace.Enabled && combatPet.TryGetSummoningDevice() is PetDevice shortDevice && shortDevice.IsJuvenile)
+                            PetTrace.MaturityKill(shortDevice, owner, combatPet, victim, info.TotalDamage, totalHealth, minShare,
+                                ACE.Server.Factories.Tables.Wcids.PetDeviceWcids.GetPetLevel(shortDevice.WeenieClassId), false, "share below minShare", 0, 0, 0, 0, 0, 0, false);
                         continue;
+                    }
 
                     var device = combatPet.TryGetSummoningDevice();
                     if (device == null && combatPet.SummoningDeviceGuid != ACE.Entity.ObjectGuid.Invalid)
@@ -225,7 +235,11 @@ namespace ACE.Server.WorldObjects
                     // Level gate: the creature must be at or above the essence's tier.
                     var tier = ACE.Server.Factories.Tables.Wcids.PetDeviceWcids.GetPetLevel(device.WeenieClassId);
                     if (tier.HasValue && victimLevel < tier.Value)
+                    {
+                        if (PetTrace.Enabled)
+                            PetTrace.MaturityKill(device, owner, combatPet, victim, info.TotalDamage, totalHealth, minShare, tier, false, "victim level below tier", 0, 0, 0, 0, 0, 0, false);
                         continue;
+                    }
 
                     credited ??= new HashSet<uint>();
                     if (!credited.Add(device.Guid.Full))
@@ -233,7 +247,7 @@ namespace ACE.Server.WorldObjects
 
                     try
                     {
-                        device.AddMaturityKill(owner, combatPet);
+                        device.AddMaturityKill(owner, combatPet, victim, info.TotalDamage, totalHealth, minShare, tier);
                     }
                     catch (Exception ex)
                     {
@@ -262,12 +276,13 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>Records one kill, advancing a stage or reaching adulthood when the counter crosses a boundary.</summary>
-        private void AddMaturityKill(Player owner, CombatPet pet)
+        private void AddMaturityKill(Player owner, CombatPet pet, Creature victim = null, float victimDamage = 0, float totalHealth = 0, double minShare = 0, int? tier = null)
         {
             var multiplier = (float)(GetProperty(PropertyFloat.PetMaturityXpMultiplier) ?? 1.0);
             var killsToAdd = (int)Math.Max(1, Math.Round(multiplier));
             var before = MaturityStage;
-            var kills = MaturityKills + killsToAdd;
+            var killsBefore = MaturityKills;
+            var kills = killsBefore + killsToAdd;
             SetProperty(PropertyInt.PetMaturityKills, kills);
 
             var displayName = GetBondMessageDisplayName();
@@ -281,7 +296,10 @@ namespace ACE.Server.WorldObjects
 
                 if (owner?.Session != null)
                     owner.SendMessage($"{displayName} has reached adulthood! It stands at its full size, fights at full strength, and can now breed.");
-                log.Info($"[PetMaturity] {Name} (0x{Guid.Full:X8}, {owner?.Name}) reached adulthood after {kills} kills.");
+                if (PetTrace.Enabled)
+                    PetTrace.MaturityKill(this, owner, pet, victim, victimDamage, totalHealth, minShare, tier, true, null, multiplier, killsToAdd, killsBefore, kills, before, MaturityStage, true);
+                else
+                    log.Info($"[PetMaturity] {Name} (0x{Guid.Full:X8}, {owner?.Name}) reached adulthood after {kills} kills.");
 
                 pet?.ApplyMaturity(this, grew: true);
                 NarrateGrowth(pet, "lets out a roar and rises to its full size!", PlayScript.WeddingBliss);
@@ -292,12 +310,15 @@ namespace ACE.Server.WorldObjects
             SaveBiotaToDatabase();
 
             var after = MaturityStage;
+            if (PetTrace.Enabled)
+                PetTrace.MaturityKill(this, owner, pet, victim, victimDamage, totalHealth, minShare, tier, true, null, multiplier, killsToAdd, killsBefore, kills, before, after, false);
             if (after > before)
             {
                 var stageName = GetMaturityStageName(after);
                 if (owner?.Session != null)
                     owner.SendMessage($"{displayName} has grown into a {stageName}! Its body swells with new strength. ({after}/{MaturityStages})");
-                log.Info($"[PetMaturity] {Name} (0x{Guid.Full:X8}, {owner?.Name}) grew to stage {after}/{MaturityStages} at {kills} kills.");
+                if (!PetTrace.Enabled)
+                    log.Info($"[PetMaturity] {Name} (0x{Guid.Full:X8}, {owner?.Name}) grew to stage {after}/{MaturityStages} at {kills} kills.");
                 pet?.ApplyMaturity(this, grew: true);
                 NarrateGrowth(pet, $"shudders and swells as it grows into a {stageName}!", null);
             }

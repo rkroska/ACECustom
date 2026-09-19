@@ -379,6 +379,8 @@ namespace ACE.Server.WorldObjects
             {
                 OnDamageTarget(target, damageEvent.CombatType, damageEvent.IsCritical);
 
+                var traceBefore = PetTrace.Enabled ? PetTrace.VitalCurrent(target, damageEvent.DamageType) : 0u;
+
                 if (targetPlayer != null)
                     appliedDamage = (uint)Math.Max(0, targetPlayer.TakeDamage(this, damageEvent));
                 else
@@ -392,6 +394,9 @@ namespace ACE.Server.WorldObjects
                     }
                     appliedDamage = target.TakeDamage(this, damageEvent.DamageType, damageEvent.Damage, damageEvent.IsCritical);
                 }
+
+                if (PetTrace.Enabled)
+                    PetTrace.CombatDamage(damageEvent, traceBefore, appliedDamage);
             }
             else
             {

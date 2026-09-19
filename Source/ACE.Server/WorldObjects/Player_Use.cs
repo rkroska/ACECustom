@@ -178,6 +178,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (target is not PetDevice petDevice)
                 {
+                    if (PetTrace.Enabled) PetTrace.Neuter(this, sourceItem, target, false, false, "target is not a pet device");
                     SendTransientError("This tool can only be used on combat pet devices.");
                     SendUseDoneEvent();
                     return;
@@ -185,6 +186,7 @@ namespace ACE.Server.WorldObjects
 
                 if (petDevice.GetProperty(global::ACE.Entity.Enum.Properties.PropertyBool.PetNeutered) == true)
                 {
+                    if (PetTrace.Enabled) PetTrace.Neuter(this, sourceItem, target, true, false, "already neutered");
                     SendTransientError("This pet is already spayed/neutered.");
                     SendUseDoneEvent();
                     return;
@@ -192,6 +194,7 @@ namespace ACE.Server.WorldObjects
 
                 if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
                 {
+                    if (PetTrace.Enabled) PetTrace.Neuter(this, sourceItem, target, false, false, "consume failed");
                     SendTransientError("Failed to consume neutering kit tool.");
                     SendUseDoneEvent();
                     return;
@@ -200,6 +203,7 @@ namespace ACE.Server.WorldObjects
                 petDevice.SetProperty(global::ACE.Entity.Enum.Properties.PropertyBool.PetNeutered, true);
                 petDevice.ChangesDetected = true;
                 petDevice.SaveBiotaToDatabase();
+                if (PetTrace.Enabled) PetTrace.Neuter(this, sourceItem, target, false, true, null);
 
                 PlayParticleEffect(PlayScript.AttribDownRed, target.Guid);
                 SendMessage($"You have permanently spayed/neutered {petDevice.Name}. It can no longer be used for breeding!");
@@ -226,6 +230,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (target is not PetDevice petDevice)
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetIncenseBonus", null, null, false, "target is not a pet device");
                     SendTransientError("Courtship Incense can only be used on combat pet devices.");
                     SendUseDoneEvent();
                     return;
@@ -233,6 +238,7 @@ namespace ACE.Server.WorldObjects
 
                 if (petDevice.GetProperty(PropertyBool.PetNeutered) == true)
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetIncenseBonus", petDevice.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0, null, false, "neutered");
                     SendTransientError("A spayed or neutered pet cannot be anointed with Courtship Incense.");
                     SendUseDoneEvent();
                     return;
@@ -249,6 +255,7 @@ namespace ACE.Server.WorldObjects
                 var currentBonus = petDevice.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0f;
                 if (currentBonus >= bonus)
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetIncenseBonus", currentBonus, bonus, false, "existing bonus is equal or stronger");
                     SendTransientError($"{petDevice.Name} is already primed with equal or stronger Courtship Incense (+{currentBonus * 100:0.#}%).");
                     SendUseDoneEvent();
                     return;
@@ -256,6 +263,7 @@ namespace ACE.Server.WorldObjects
 
                 if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetIncenseBonus", currentBonus, bonus, false, "consume failed");
                     SendTransientError("Failed to consume Courtship Incense.");
                     SendUseDoneEvent();
                     return;
@@ -264,6 +272,7 @@ namespace ACE.Server.WorldObjects
                 petDevice.SetProperty(PropertyFloat.PetIncenseBonus, bonus);
                 petDevice.ChangesDetected = true;
                 petDevice.SaveBiotaToDatabase();
+                if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetIncenseBonus", currentBonus, bonus, true, null);
 
                 PlayParticleEffect(PlayScript.HealthUpRed, target.Guid);
                 SendMessage($"You have anointed {petDevice.Name} with {sourceItem.Name}! Its next breeding will grant a +{bonus * 100:0.#}% mutation bonus.");
@@ -276,6 +285,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (target is not PetDevice petDevice)
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetChromaticCatalystActive", null, null, false, "target is not a pet device");
                     SendTransientError("The Chromatic Catalyst can only be used on combat pet devices.");
                     SendUseDoneEvent();
                     return;
@@ -283,6 +293,7 @@ namespace ACE.Server.WorldObjects
 
                 if (petDevice.GetProperty(PropertyBool.PetChromaticCatalystActive) == true)
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetChromaticCatalystActive", true, true, false, "already active");
                     SendTransientError($"{petDevice.Name} is already infused with a Chromatic Catalyst.");
                     SendUseDoneEvent();
                     return;
@@ -290,6 +301,7 @@ namespace ACE.Server.WorldObjects
 
                 if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetChromaticCatalystActive", false, true, false, "consume failed");
                     SendTransientError("Failed to consume Chromatic Catalyst.");
                     SendUseDoneEvent();
                     return;
@@ -298,6 +310,7 @@ namespace ACE.Server.WorldObjects
                 petDevice.SetProperty(PropertyBool.PetChromaticCatalystActive, true);
                 petDevice.ChangesDetected = true;
                 petDevice.SaveBiotaToDatabase();
+                if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetChromaticCatalystActive", false, true, true, null);
 
                 PlayParticleEffect(PlayScript.EnchantUpBlue, target.Guid);
                 SendMessage($"You infuse {petDevice.Name} with the Chromatic Catalyst! If a palette mutation occurs on its next breed, it will roll vibrant, high-saturation colors.");
@@ -310,6 +323,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (target is not PetDevice petDevice)
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetMaturityXpMultiplier", null, null, false, "target is not a pet device");
                     SendTransientError("Nurturing Draughts can only be given to combat pet devices.");
                     SendUseDoneEvent();
                     return;
@@ -317,6 +331,7 @@ namespace ACE.Server.WorldObjects
 
                 if (petDevice.GetProperty(PropertyBool.PetIsJuvenile) != true)
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetMaturityXpMultiplier", petDevice.GetProperty(PropertyFloat.PetMaturityXpMultiplier) ?? 1.0, null, false, "not juvenile");
                     SendTransientError("Nurturing Draughts can only be given to juvenile combat pets that have not yet reached adulthood.");
                     SendUseDoneEvent();
                     return;
@@ -324,13 +339,17 @@ namespace ACE.Server.WorldObjects
 
                 if ((petDevice.GetProperty(PropertyFloat.PetMaturityXpMultiplier) ?? 1.0f) >= 2.0f)
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetMaturityXpMultiplier", petDevice.GetProperty(PropertyFloat.PetMaturityXpMultiplier) ?? 1.0, 2.0, false, "already at 2.0 or more");
                     SendTransientError($"{petDevice.Name} is already under the effects of a Nurturing Draught.");
                     SendUseDoneEvent();
                     return;
                 }
 
+                var xpMultBefore = petDevice.GetProperty(PropertyFloat.PetMaturityXpMultiplier) ?? 1.0;
+
                 if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetMaturityXpMultiplier", xpMultBefore, 2.0, false, "consume failed");
                     SendTransientError("Failed to consume Nurturing Draught.");
                     SendUseDoneEvent();
                     return;
@@ -339,6 +358,7 @@ namespace ACE.Server.WorldObjects
                 petDevice.SetProperty(PropertyFloat.PetMaturityXpMultiplier, 2.0f);
                 petDevice.ChangesDetected = true;
                 petDevice.SaveBiotaToDatabase();
+                if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetMaturityXpMultiplier", xpMultBefore, 2.0, true, null);
 
                 PlayParticleEffect(PlayScript.HealthUpYellow, target.Guid);
                 SendMessage($"You administer the Nurturing Draught to {petDevice.Name}. It now earns 2x maturity kill credit until adulthood!");
@@ -351,6 +371,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (target is not PetDevice petDevice)
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetGuardianWeakened", null, null, false, "target is not a pet device");
                     SendTransientError("The Offering of Subjugation can only be used on combat pet devices.");
                     SendUseDoneEvent();
                     return;
@@ -358,6 +379,7 @@ namespace ACE.Server.WorldObjects
 
                 if (!ServerConfig.pet_breeding_guardian_enabled.Value)
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetGuardianWeakened", petDevice.GetProperty(PropertyBool.PetGuardianWeakened) == true, null, false, "pet_breeding_guardian_enabled is false");
                     SendTransientError("Mating guardians are not enabled on this server, so the Offering of Subjugation would have no effect. It was not consumed.");
                     SendUseDoneEvent();
                     return;
@@ -365,6 +387,7 @@ namespace ACE.Server.WorldObjects
 
                 if (petDevice.GetProperty(PropertyBool.PetGuardianWeakened) == true)
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetGuardianWeakened", true, true, false, "already active");
                     SendTransientError($"{petDevice.Name} is already under the effects of an Offering of Subjugation.");
                     SendUseDoneEvent();
                     return;
@@ -372,6 +395,7 @@ namespace ACE.Server.WorldObjects
 
                 if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
                 {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetGuardianWeakened", false, true, false, "consume failed");
                     SendTransientError("Failed to consume Offering of Subjugation.");
                     SendUseDoneEvent();
                     return;
@@ -380,6 +404,7 @@ namespace ACE.Server.WorldObjects
                 petDevice.SetProperty(PropertyBool.PetGuardianWeakened, true);
                 petDevice.ChangesDetected = true;
                 petDevice.SaveBiotaToDatabase();
+                if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetGuardianWeakened", false, true, true, null);
 
                 PlayParticleEffect(PlayScript.EnchantUpRed, target.Guid);
                 SendMessage($"You consecrate {petDevice.Name} with the Offering of Subjugation. Its next mating guardian will be swiftly overcome!");

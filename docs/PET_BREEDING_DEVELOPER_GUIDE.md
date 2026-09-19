@@ -15,6 +15,7 @@ Related: `PET_BREEDING_CONTENT_GUIDE.md` (content team), `PET_BREEDING_PLAYER_GU
 |---|---|
 | `Source/ACE.Server/WorldObjects/PetDevice_Breeding.cs` | The breed itself: area rule (`MatchesBreedingArea`), gates, partner search, guardian spawn and callbacks, birth and delivery, ID panel block, diagnostics. `BreedingMath` (nested): the pure inheritance / mutation / cap maths as `Simulate`, `RollAwakenedBlessing` and `SummonedStats` (section 12). |
 | `Source/ACE.Server/WorldObjects/PetDevice_BreedingReplay.cs` | `BreedingReplay`: parses, runs and reports a `[REPLAY]` blob from the website simulator (section 12). |
+| `Source/ACE.Server/WorldObjects/PetDevice_Trace.cs`, `PetDevice_Trace_Combat.cs` | `PetTrace`: the `[PetTrace]` session trace (record format, device dump, breeding records) and its combat half (every hit, evade, DoT tick, heal and death), one switch `pet_trace` (section 15). |
 | `Source/ACE.Server/WorldObjects/MatingGuardian.cs` | The ritual monster. `Creature` subclass with source-gated and scaled damage, pet-only targeting, no loot/XP/corpse, slain/lost callbacks, parent-death notification. |
 | `Source/ACE.Server/Entity/DamageEvent.cs` | Guardian outgoing damage override (`attacker is MatingGuardian`). |
 | `Source/ACE.Server/WorldObjects/PetDevice_Maturity.cs` | Juvenile growth (kill counter, stages, names, XP multiplier), imprinting, kill credit from creature deaths. |
@@ -30,7 +31,7 @@ Related: `PET_BREEDING_CONTENT_GUIDE.md` (content team), `PET_BREEDING_PLAYER_GU
 | `Source/ACE.Server/WorldObjects/Creature_Death.cs` | `OnDeath` calls `PetDevice.CreditMaturityKills(this)`. |
 | `Source/ACE.Server/WorldObjects/Player_Networking.cs`, `Player.cs` | Dance emote (`BroadcastMovement`) and typed-emote fallback (`HandleActionTalk`) stamp `LastDanceTime` and call `CheckMultiplayerBreeding`. |
 | `Source/ACE.Server/Managers/PropertyManager.cs` | All `pet_breeding_*`, `pet_maturity_*` config. |
-| `Source/ACE.Server/Command/Handlers/DeveloperCommands.cs` | `@breed`, `@breed-replay`, `@setsex`, `@pet-reset-cooldown`, `@pet-set-maturity`, `@pet-set-mutations`, `@pet-cleanse-palette`, `@pet-make-alpha`, `@mutate_pet`, `@petdesc`, `@pet-debug`. |
+| `Source/ACE.Server/Command/Handlers/DeveloperCommands.cs` | `@breed`, `@breed-replay`, `@setsex`, `@pet-reset-cooldown`, `@pet-set-maturity`, `@pet-set-mutations`, `@pet-cleanse-palette`, `@pet-make-alpha`, `@mutate_pet`, `@petdesc`, `@pet-debug`, `@pet-dump`. |
 | `Source/ACE.Server/Command/Handlers/PlayerCommands.cs` | `@dance`, `@breed-debug`, `@pet-name`. |
 | `Source/ACE.Server/Controllers/PetNamingController.cs` | Portal approve/deny for name requests. |
 | `Source/ACE.Server/Controllers/VisualizerController.cs`, `Services/VisualizerService.cs`, `Services/CurationService.cs` | 3D showroom data, `breeding-config`, curation and screenshots. |
@@ -474,9 +475,11 @@ crit lines) goes through `BreedingMath.RoundHalfUp` (`MidpointRounding.AwayFromZ
 2. The log ends with a line starting `[REPLAY] {"model":...}`. Copy everything from the `{` to the
    final `}` (one line, no spaces).
 
-The server writes the same blob when `pet_breeding_verbose_logging` is on:
-`[PetBreeding] [REPLAY] {...}` after the decision (`guardianKilled:false`, draws 1-11) and again
-after a slain guardian (`guardianKilled:true`, draw 12 appended). Those lines replay too.
+The server writes the same blob when `pet_trace` is on (section 15), as the `json=` value of a
+`breed.replay` record: `phase=decision` after the decision (`guardianKilled:false`, draws 1-11) and
+`phase=blessing` after a slain guardian (`guardianKilled:true`, draw 12 appended). Those lines replay
+too: `@breed-replay` finds the `{...}` inside the record. (They used to sit under
+`pet_breeding_verbose_logging`; that switch now covers only the dance-trigger and location lines.)
 
 ### Running @breed-replay
 
@@ -501,6 +504,8 @@ to one side means the other side was not updated; do not "fix" the test.
   effective value, package deal, gear-only lines, potency missing = 0 and count travels with stored,
   hard cap resolution, potency step below/at soft cap and clamped to the hard cap, derived crit lines)
   and `MatchesBreedingArea` (0 = anywhere, 16-bit = landblock, 32-bit = exact cell, variant filter).
+- `PetTraceTests`: a `[PetTrace]` record round-trips its `event | session | t | k=v` shape, stays 7-bit
+  ASCII on one line with no pipe inside a value, and parses from behind a log prefix (section 15).
 - `EnumCollisionTests`: no duplicate ids in the custom property ranges.
 - `SqlPatchSanityTests`: `Database/Updates/World` and `Shard` are 7-bit ASCII with LF line endings,
   and no `landblock_instance` INSERT names the generated `landblock` column.
@@ -524,4 +529,139 @@ Run from `Source`: `dotnet test ACE.Server.Tests\ACE.Server.Tests.csproj --filte
   `Attackable` or faction on a live creature.
 - `ThreadSafeRandom.Next(min, max)` is inclusive of `max`; index pools with `Count - 1`.
 - Logging: `pet_breeding_verbose_logging` and `pet_visual_packet_debug` gate the noisy lines. Keep new
-  per-packet or per-death logs behind a switch.
+  per-packet or per-death logs behind a switch. Anything a reviewer might need to recompute belongs in
+  the `[PetTrace]` session trace (section 15) as a `k=v` record, guarded by `PetTrace.Enabled` before
+  any string is built; do not add a second ad-hoc log line for a fact the trace already carries.
+
+---
+
+## 15. Session trace (`pet_trace`)
+
+One switch, `pet_trace` (`@modifybool pet_trace true`, default false), turns on a server-side trace
+that a shard owner can copy and paste to a third party so every value and every piece of arithmetic
+in a breeding session can be checked without database access. It covers the whole breeding session
+(consumables, every gate, the effective config, inheritance per line, the rolls, the REPLAY blob, the
+guardian, the birth, maturity credit, tailoring, neutering) **and every combat exchange server-wide**
+(every melee, missile and spell hit or miss, every DoT tick, every heal and every death, for players,
+monsters, combat pets and the mating guardian).
+
+**Volume warning.** With the switch on the server writes one line per swing, cast, tick, heal and
+death for everyone online. It is for a controlled test session on a test shard, never for a live
+shard. There is no second knob: turn it off when the session is done. With it off the cost is one
+bool read per call site (every record is guarded before any string is built).
+
+### Format
+
+```
+[PetTrace] <event> | session=<id> | t=<utc iso8601> | key=value | key=value | ...
+```
+
+- Logger `PetTrace` (log4net), level INFO, so the lines land in `ACE_Log.txt` next to everything
+  else; `log4net.config.example` has a commented appender/logger pair that routes them to their own
+  file (`PetTrace.txt`) instead.
+- One line per record, 7-bit ASCII, no tabs. Values never contain `|` (replaced by `/`), line breaks
+  or non-ASCII (replaced by `?`), so a line splits on ` | ` and each pair on the first `=`.
+- Numbers are invariant-culture and round-trip (`R`), so `0.30000001` is the exact float the code
+  compared. Guids are `0x` + 8 hex digits. Booleans are `true` / `false`, missing values `null`.
+- `session=` is minted once per breed attempt (at the dance) and carried by every record of that
+  attempt, including the guardian's records seconds later and every combat record the guardian is
+  part of. Standalone events (consumables, kills, tailoring, deaths, ordinary combat) mint a fresh id
+  per record or per exchange; correlate those on the device / creature guid keys.
+- Many records carry a `...Rule=` key: a one-line statement of the formula the numbers beside it
+  satisfy. It is documentation for the reader, not something the code evaluates.
+- `PetTrace.TryParse` (and `PetTraceTests`) is the reference parser.
+
+### Capturing and sharing a session
+
+1. `@modifybool pet_trace true` on the test shard.
+2. Optional: `@pet-dump before` with the parent device appraised (both parents), which writes a
+   `device.dump` record whatever the switch says.
+3. Run the breed (dance, or `@breed`), fight the guardian, let the birth land. Appraise the baby and
+   `@pet-dump after`.
+4. `@modifybool pet_trace false`.
+5. Extract the lines. Windows: `findstr "[PetTrace]" ACE_Log.txt > trace.txt`, or for one attempt
+   `findstr "session=3f9a1c2e" ACE_Log.txt`. Linux / Docker: `grep -F "[PetTrace]" ACE_Log.txt`.
+   The `breed.replay` line's `json=` value runs unchanged through `@breed-replay` or the website
+   simulator.
+6. Paste `trace.txt`. Nothing in it needs the database: every number's inputs are on the same line
+   or on an earlier line of the same session.
+
+With the trace on, the plain `[PetBreeding]`, `[PetMaturity]` and `[PetTailoring]` INFO lines for
+the same events (stud charges, guardian spawned / slain / lost / timed out, palette applied, deferred
+delivery, growth, imprint, extract / apply) are replaced by the records below, so a fact is never
+logged twice. `pet_breeding_verbose_logging` still gates the dance-trigger and location lines only.
+
+### Breeding records
+
+| Event | When | Keys (beyond `session`, `t`) |
+|---|---|---|
+| `breed.trigger` | every dance / `@breed` that reaches `CheckMultiplayerBreeding` | `p1.*`, `source`, `forced`, `cell`, `variant` |
+| `breed.gate` | one per refusal, before or after the devices are known | `gate` (stable name: `enabled`, `trading`, `noPet`, `location`, `device1`, `partnerScan`, `busy`, `pendingGuardian`, `device2`, `neutered`, `inventory`, `tierLookup`, `minParentLevel`, `minBond`, `shiny`, `juvenile`, `sex`, `maleCharges`, `femaleCooldown`, `packSlot`, `burden`), `reason` (the same text the admin chat line shows, with the compared values), `p1.*`, `p2.*` |
+| `breed.attempt` | once both devices are resolved, before the gates | both players (`p1.*`, `p2.*`), both pets (`pet1*`, `pet2*`, cells), and the full device block for each parent under `a.` / `b.`: guid, wcid, name, owner, tier, sex and override, neutered, shiny, bred, juvenile, stage, kills, bond, `chargesStored` / `chargesAvail` / `chargesRefresh`, `nextBreed`, `now`, every `gear*`, every `mut*` (as `ReadBreedingGenetics` resolves them), `potencyStored` / `potencyActive`, `incense`, `catalyst`, `weakened`, `xpMult`, setup / palette / variant |
+| `breed.config` | right after `breed.attempt` | every `BreedingConfig` field (the same set `/api/visualizer/breeding-config` exposes) plus `resolvedHardCap`, `higherParentChance`, `pet_bond_enabled`, the area (`allowedLandblock`, `allowedVariant`), dance window, bond / tier minimums, charges, cooldown, both bypass switches, dismiss, shiny, maturity and every guardian setting |
+| `breed.inherit` | eight records, one per line, draws 1-8 | `line`, `mode` (`gear+count`, `gearOnly`, `countOnly`, `stored+count`), `draw`, `a.gear` / `a.count` / `a.eff`, `b.*`, `step`, `higher`, `higherChance`, `roll`, `picked`, `baby.gear`, `baby.count`. For potency `gear` is the stored value. |
+| `breed.roll` `kind=stat` | draw 9 (and 10) | `base`, `decay`, `inherited`, `decayed`, `floor`, `incenseA` / `incenseB` / `incense`, `chance`, `roll`, `forced`, `mutated`, `maxStatMutations`, `eligible`, `eligibleCount`, `pickDraw`, `pickRoll`, `pickIndex`, `line`, `lineName`, `step`, `allLinesCapped` |
+| `breed.roll` `kind=potency` | draw 11 | `chance`, `draw`, `roll`, `mutated`, `storedBefore`, `stepConfig`, `softCap`, `softCapped`, `hardCapBreeding`, `maxStored`, `hardCap`, `step`, `applied`, `storedAfter`, `guardianSpawns` |
+| `breed.replay` | after the decision and after a slain guardian | `phase` (`decision` / `blessing`), `json` = the `BreedingReplay.ToJson` blob (section 12) |
+| `breed.commit` | after the side effects, before the guardian / birth | male and female device, winner, `maleChargesBefore` / `maleChargesAfter`, `now` / `femaleNextBreed`, both bypass flags, `incenseRemovedA/B`, `donorRoll`, `donor`, `babyWcid`, `mutated`, `mutations`, `catalystA/B`, `palettePool`, `paletteCount`, `paletteIndex`, `palette`, `catalystConsumed`, `guardianWeakened`, `guardianSpawns`, `lastMutatedStat`, `baby.*` genetics |
+| `guardian.spawn` | guardian entered the world | `g.*`, `template`, both pets' level and max hp, `level`, `healthMult`, `maxHp`, the six ratings it was given, `damageMult`, `weakened`, the outgoing and incoming damage rules, `palette`, `translucency`, `cell`, `timeout` |
+| `guardian.skipped` | spawn fell back to an immediate birth | `reason` |
+| `consumable.consumed` | the Offering removed from a device at spawn | `item`, `property`, `device`, `consumedBy` |
+| `guardian.slain` | parents killed it | `g.*`, `fight.*` (seconds, hits taken, raw vs applied totals, biggest hit, capped hits, hits dealt, damage dealt, health), the Awakened Blessing pick: `eligible`, `eligibleCount`, `potencyStep`, `drew`, `roll`, `line`, `step`, `allLinesCapped`, `baby.*` after it |
+| `guardian.timeout` / `guardian.lost` | the other two resolutions | `g.*`, `fight.*`, `reason` (`parentDied:<pet>`, `destroyed`, `landblockUnload`), `blessing=false` |
+| `birth` | the baby exists and delivery was attempted | `baby`, `babyName`, `babyWcid`, `donor`, `winner`, `mutations`, `lastMutatedStat`, bond, juvenile / kills / stage, `decided.*` (what Simulate produced) vs `stored.*` (what the device now carries) and `storedMatchesDecided`, `summon.*` (the summon maths line by line: each `gear + count * step`, the derived crit lines, `bonusHp`, the live stage-1 multiplier and every stage-1 value), palette keys, `winnerOnline`, `delivery` (`inventory` / `deferred`) and `deliveryReason`, `dismissParents` |
+| `device.dump` | `@pet-dump [note]` (always written) | `reason`, the full `d.*` device block, `summon.*`, `id.breeding` and `id.potency` (the ID panel text, `/`-joined) |
+| `maturity.kill` | a juvenile credited a kill, or refused one | `victim.*`, `victimLevel`, device / owner / pet, `petDamage`, `historyTotal`, `share`, `minShare`, `tier`, `credited`, `reason`; when credited `xpMult`, `killsToAdd`, `killsBefore` / `killsAfter`, `killsRequired`, `stages`, `killsPerStage`, `stageBefore` / `stageAfter`, `adult` |
+| `maturity.imprint` | first summon of a bred essence | `p.*`, `device`, `bondChar` |
+| `consumable.use` | any of the six consumables used on a device (success or refusal) | `p.*`, `item`, `itemWcid`, `target`, `property`, `before`, `after`, `consumed`, `reason`, `targetJuvenile`, `targetNeutered` |
+| `neuter.apply` | neutering kit (success or refusal) | `kit`, `target`, `before`, `after`, `applied`, `consumed`, `reason` |
+| `tailoring.extract` / `tailoring.apply` | kit used (success or refusal) | tool / kit / source / target guids, `read.*` (the visual set read from the kit), `before.*` / `after.*` (the device's visual set around an apply), `nameBefore` / `nameAfter`, `applied`, `consumed`, `reason` |
+
+### Combat records
+
+A landed hit is **one** record, `combat.damage`, which carries the attack section; `combat.attack` is
+written only for a swing or cast that dealt nothing (`reason=` `evaded`, `resisted`, `lifestone`,
+`invincible`, `hitGateOrBodyPart`, `targetDead`, `cannotBeDamagedBy`, ...). A DoT tick is one record
+per creature per tick however many DoTs stack. Rolls are captured where they are drawn
+(`DamageEvent.EvadeRoll` / `CritRoll` / `CritDefenseRoll` / `BaseDamageRoll` / `SchemeCRoll`, the
+spell projectile's crit roll); nothing about the order or count of draws changed.
+
+| Event | Keys |
+|---|---|
+| `combat.attack` | `kind` (`melee` / `missile` / `magic`), `atk.*` and `def.*` (guid, name, kind = `Player` / `Monster` / `CombatPet` / `Pet` / `MatingGuardian`, wcid, level, pet owner), weapon or `spell` / `spellId` / `school`, `dmgType`, `attackType`, `height`, `atkMotion`, `atkPart` (the body part a creature attacks with), `defPart`, `quadrant`, `atkSkill`, `defSkill`, `accuracyMod`, `evadeChance`, `evadeRoll`, `overpower`, `evaded`, `lifestone`; magic adds `magicSkill`, `magicDefense`, `resisted` (the resist roll is internal to `MagicDefenseCheck`); `hit=false`, `reason` |
+| `combat.damage` (melee / missile) | the attack section, `hit=true`, then in the order `DamageEvent` applies them: `partDVal` / `partDVar` (already potency-scaled for a pet), `baseMaxRaw`, `baseVariance`, `baseDamageBonus`, `baseElemental`, `baseDamageMod`, `baseMin` / `baseMax`, `baseRoll`, `maturityMult`, `enrageMult`, `lumFlat`, `wsFlat`, `schemeCRoll`, `base`; `attrMod`, `powerMod`, `slayerMod`, `dmgRating` and `dmgRatingBaseMod` (`(100+r)/100`), `recklessMod`, `sneakMod`, `heritageMod`, `pkDmgMod`, `dmgRatingMod`; `critRating`, `critResistRating`, `critChance`, `critRoll`, `critDefenseRoll`, `critDefended`, `crit`, `critDmgMod`, `critDmgRating`, `critDmgRatingMod`, `preMit`; `defBaseArmor`, `armorLayers`, `armorMod`, `shieldMod`, `weaponResistMod`, `resistMod`, `ownerResistMod`, `drr` and `drrBaseMod` (`100/(100+r)`), `critDrr` / `critDrrMod`, `pkDrrMod`, `drrMod`; `splitArrow`, `enrageReduction`, `pctHpFloor` / `preFloor` / `floorWon` (player defender), `prePetMit` / `petCritMult` / `petPhysMult` (pet defender), `mitigated`, `damage`, `absorbed`; `pet.*` when a combat pet attacks (below); `petDef.*` when one defends; `gOut.*` / `gIn.*` for the mating guardian's outgoing base (`clamp(petMaxHp*0.08,20,500)*damageMult*weakened`) and incoming scaling (`nRaw`, `mod`, `weakMult`, `cap`, `capped`, `final`); `vital`, `dealt`, `before`, `after`, `died` |
+| `combat.damage` (`kind=magic`) | the attack section, `critRating`, `critResistRating`, `critChance`, `critRoll`, `critDefenseRoll`, `crit`, `endgameCrit`, `pvp`; war/void: `spellMin`, `spellMax`, `zcProc`, `base` (after augs / replacement / variance), `augs`, `skillBonus`; life: `lifeBase`, `base`; `critDmgMod`, `critBonus`, `elementalMod`, `slayerMod`, `weaponResistMod`, `resistMod`, `absorbMod`, `attribMod`, `forkMult`, `zoneMult`, `petSpellMult`, `preRating`; then the `DamageTarget` chain: `dmgRating`, `heritageMod`, `sneakMod`, `critDmgRating` / `critDmgRatingMod`, `pkDmgRatingMod`, `dmgRatingMod`, `drr`, `critDrr` / `critDrrMod`, `pkDrrMod`, `drrMod`, `enrageReduction`; `pet.*` / `petDef.*`; `damage`, `absorbed`, `vital`, `dealt`, `before`, `after`, `died` |
+| `combat.damage` (`kind=boost`) | a harmful Boost (Harm etc.): `spell`, `minBoost` / `maxBoost` / `roll`, `resistType` / `resistMod`, `harmCap`, `afterResist`, `lifeAugs`, `afterAugs`, `mbAbsorbed`, `requested`, `applied`, `before` / `after`, `died` |
+| `combat.damage` (`kind=dot`) | one per creature per tick: `def.*`, `dmgType`, `aetheria`, `dots`, per DoT (`d1.` .. `d4.`) `from`, `spellId`, `base`, `resistMod`, `drrMod`, `dotResistMod`, `netherMod`, `amount`; `tick`, `before` / `after`, `died` |
+| `combat.damage` (`kind=lifeCost`) | the caster's own vital paid for a life projectile (Blight / Tenacity / Martyr's): `drainPercentage`, `requested`, `applied`, `before` / `after` |
+| `combat.heal` (`kind=kit`) | `kit`, `vital`, the skill check (`healingSkill`, `kitBoost`, `trainedMod`, `combatMod`, `effectiveSkill`, `difficulty`, `success`), `healkitMod`, `healBase`, `healMin` / `healMax`, `healingRatingMod`, `motelScale` (the own-pet scaling in the motel / encounter), `crit`, `staminaCost`, `amount`, `before` / `after`, `usesLeft` |
+| `combat.heal` (`kind=boost`) | a beneficial Boost: the same keys as the harmful one; `motelScale` is the motel own-pet heal scaling |
+| `combat.heal` (`kind=overflow`) | self-boost overflow handed to the caster's pet: `overflow`, `applied`, `after` |
+| `combat.heal` (`kind=transfer`) | drain / infuse: `src.*`, `dst.*`, `srcVital` / `dstVital`, `drain`, `proportion`, `drainMod`, `transferCap`, `lossPercent`, `boostMod`, `lifeAugs`, `mbAbsorbed`, `srcRequested` / `srcApplied` / `srcBefore` / `srcAfter`, `dstRequested` / `dstApplied` / `dstBefore` / `dstAfter`, `srcDied` |
+| `combat.death` | `def.*` (the victim), `dmgType`, `crit`, `maxHp`, `killer`, `killerGuid`, `killerKind`, `killerIsPlayer`, `killerOwner`, `historyTotal`, top five contributors `c1.` .. `c5.` (`name`, `guid`, `dmg`, `share`), `more` |
+
+The `pet.*` block on every hit a combat pet lands is what proves a bred pet's ratings and potency
+reached the damage it dealt: `dmgRatingProp` (the `DamageRating` property on the summoned creature),
+`dmgRatingEff` (`GetDamageRating()`, enchantments included, the value the swing used), the same pair
+for crit and crit damage, `maturityMult`, `dpsFactor`, `potencyApplied`, and from the device
+`gearDmg`, `mutDmg`, `dmgStep`, `expectedDmgRating` (`gear + count * step`, the adult value before the
+maturity multiplier), `mutCrit` / `critStep`, `mutVit`, `bond`, `juvenile` / `stage` / `strengthMult`,
+`potencyStored`, `potencyActive`, `potencyPerLevel`, `potencyMult` (the body-part multiplier that was
+baked into `partDVal` at summon).
+
+Example (abridged) of a stage-2 juvenile bred pet swinging at a monster:
+
+```
+[PetTrace] combat.damage | session=3f9a1c2e | t=2026-09-19T14:02:11.482Z | kind=melee | atk.name=Whelp Fire Skeleton Samurai | atk.kind=CombatPet | atk.owner=Schneebly | def.name=Olthoi Warrior | def.kind=Monster | def.level=180 | dmgType=Slash | atkPart=Hand | defPart=Head | atkSkill=612 | defSkill=430 | evadeChance=0.1234 | evadeRoll=0.5512 | evaded=false | hit=true | partDVal=63 | partDVar=0.5 | baseMax=63 | baseMin=31.5 | baseRoll=48.2 | maturityMult=0.6 | base=28.92 | attrMod=1.31 | powerMod=1 | slayerMod=1 | dmgRating=17 | dmgRatingBaseMod=1.17 | dmgRatingMod=1.17 | critRating=9 | critResistRating=0 | critChance=0.19 | critRoll=0.7134 | crit=false | preMit=44.3257 | defBaseArmor=180 | armorMod=0.3571 | shieldMod=1 | resistMod=1 | drr=20 | drrMod=0.8333 | damage=13.19 | pet.dmgRatingProp=17 | pet.dmgRatingEff=17 | pet.gearDmg=9 | pet.mutDmg=2 | pet.dmgStep=10 | pet.expectedDmgRating=29 | pet.stage=2 | pet.strengthMult=0.6 | pet.potencyStored=158 | pet.potencyActive=50 | pet.potencyPerLevel=0.01 | pet.potencyMult=1.5 | pet.potencyApplied=true | vital=health | dealt=13 | before=4200 | after=4187 | died=false
+```
+
+Reading it: the device says `gear 9 + 2 x 10 = 29` damage rating; at stage 2 the summoned pet carries
+`roundHalfUp(29 x 0.6) = 17`, which is the `dmgRating` the swing used (`(100 + 17) / 100 = 1.17`).
+The weenie hand part was `DVal 42`; potency 50 active at 0.01 per level is `x 1.5`, so `partDVal=63`
+is what the pet rolled from: `48.2 x 0.6 (maturity) = 28.92`, `x 1.31 x 1 x 1 x 1.17 = 44.33`
+before mitigation, `x 0.3571 (armor) x 1 x 1 x 0.8333 (DRR 20) = 13.19`, rounded to `13` dealt,
+`4200 -> 4187`. Change the mutation count, the potency or the stage and the same keys move.
+
+Not traced (not a creature-vs-creature exchange): falling damage, zone effect ticks, hotspots,
+`@smite`. The spell resist roll and the healing kit's amount roll are internal to their helpers; the
+records give the chance inputs (`magicSkill` / `magicDefense`, `healMin` / `healMax`) and the outcome.

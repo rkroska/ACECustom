@@ -46,6 +46,10 @@ namespace ACE.Server.WorldObjects
 
             onDeathEntered = true;
 
+            // [PetTrace] once per death, before the history is consumed by XP / maturity credit.
+            if (PetTrace.Enabled)
+                PetTrace.CombatDeath(this, lastDamager, damageType, criticalHit);
+
             IsTurning = false;
             IsMoving = false;
 

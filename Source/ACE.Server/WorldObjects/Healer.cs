@@ -209,6 +209,8 @@ namespace ACE.Server.WorldObjects
             var skillCheck = DoSkillCheck(healer, target, vital, ref difficulty);
             if (!skillCheck)
             {
+                if (PetTrace.Enabled)
+                    PetTrace.CombatHealKit(this, healer, target, vital, false, difficulty, 0, false, 0, vital.Current);
                 var failMsg = new GameMessageSystemChat($"You fail to heal {targetName}.{remainingMsg}", ChatMessageType.Broadcast);
                 healer.Session.Network.EnqueueSend(failMsg, stackSize);
                 if (healer != target && targetPlayer?.Session != null)
@@ -221,10 +223,15 @@ namespace ACE.Server.WorldObjects
             // heal up
             var healAmount = GetHealAmount(healer, target, vital, out var critical, out var staminaCost);
 
+            var traceBefore = PetTrace.Enabled ? vital.Current : 0u;
+
             healer.UpdateVitalDelta(healer.Stamina, (int)-staminaCost);
             target.UpdateVitalDelta(vital, healAmount);
             if (vital.Vital == PropertyAttribute2nd.MaxHealth)
                 target.DamageHistory.OnHeal(healAmount);
+
+            if (PetTrace.Enabled)
+                PetTrace.CombatHealKit(this, healer, target, vital, true, difficulty, healAmount, critical, staminaCost, traceBefore);
 
             //if (target.Fellowship != null)
             //target.Fellowship.OnVitalUpdate(target);

@@ -23,7 +23,15 @@ Conventions used throughout:
 
 Test switches (default false; use one at a time and restore afterwards):
 `pet_breeding_force_mutation`, `pet_breeding_bypass_male_charges`, `pet_breeding_bypass_female_cooldown`,
-`pet_breeding_verbose_logging`, `pet_visual_packet_debug`.
+`pet_breeding_verbose_logging`, `pet_visual_packet_debug`, `pet_trace`.
+
+`pet_trace` writes the copy-paste session trace (`[PetTrace]` records: every gate, roll, guardian event,
+birth, consumable, AND every combat exchange server-wide) to the server log; see the developer guide,
+section 15, for the record catalogue and how to extract a session (`findstr "[PetTrace]" ACE_Log.txt`).
+While it is on, the plain `[PetBreeding]` / `[PetMaturity]` / `[PetTailoring]` INFO lines quoted in the
+tests below are replaced by the equivalent trace records (`guardian.spawn`, `guardian.slain`, `birth`,
+`maturity.kill`, ...). `@pet-dump [note]` writes a `device.dump` record for the appraised device at any
+time, switch or not; use it before and after a breed to capture both parents and the baby.
 
 ---
 
@@ -312,6 +320,7 @@ Setup (either admin):
 - [ ] `@modifybool pet_breeding_guardian_enabled false`, `@breed`. **Verify** immediate birth with no guardian.
 - [ ] Non-mutation breeds never spawn a guardian even when enabled.
 - [ ] Log noise: with `pet_breeding_verbose_logging` and `pet_visual_packet_debug` both false, dance repeatedly and summon pets. **Verify** no "[PetBreeding] Breeding trigger received" or "[CREATURE PACKET DEBUG]" lines.
+- [ ] Trace off: with `pet_trace` false, dance, breed and fight. **Verify** no "[PetTrace]" line at all. Trace on: one `breed.trigger` per dance, a `breed.attempt` + `breed.config` + eight `breed.inherit` + two `breed.roll` + `breed.replay` + `breed.commit` per committed breed, `guardian.spawn`, one `combat.damage` per landed hit in the fight (with `gIn.*` on hits the guardian takes and `gOut.*` on hits it deals), `guardian.slain` with `fight.*` and the blessing pick, a second `breed.replay` (`phase=blessing`) and a `birth`. **Verify** `@breed-replay` passes on both `json=` values.
 
 Cleanup: restore `pet_breeding_force_mutation`, both bypass switches and `pet_breeding_dismiss_after_breed`. Leave `pet_breeding_guardian_enabled` at whatever you want live.
 

@@ -105,13 +105,17 @@ namespace ACE.Server.WorldObjects
 
                     if (damageEvent.HasDamage)
                     {
+                        var traceBefore = PetTrace.Enabled ? PetTrace.VitalCurrent(target, damageEvent.DamageType) : 0u;
+
                         if (targetPlayer != null)
                         {
                             if (!CanDamage(target))
                                 return;
 
                             // this is a player taking damage
-                            targetPlayer.TakeDamage(this, damageEvent);
+                            var dealtToPlayer = targetPlayer.TakeDamage(this, damageEvent);
+                            if (PetTrace.Enabled)
+                                PetTrace.CombatDamage(damageEvent, traceBefore, (uint)Math.Max(0, dealtToPlayer));
 
                             if (combatPet != null)
                                 CombatPet.TryNotifyOwnerOutgoingPhysical(combatPet, targetPlayer, damageEvent.Damage, damageEvent.DamageType, "Melee");
@@ -130,7 +134,9 @@ namespace ACE.Server.WorldObjects
                         {
                             // combat pet inflicting or receiving damage
                             //Console.WriteLine($"{target.Name} taking {Math.Round(damage)} {damageType} damage from {Name}");
-                            target.TakeDamage(this, damageEvent.DamageType, damageEvent.Damage);
+                            var dealt = target.TakeDamage(this, damageEvent.DamageType, damageEvent.Damage);
+                            if (PetTrace.Enabled)
+                                PetTrace.CombatDamage(damageEvent, traceBefore, dealt);
 
                             if (combatPet != null)
                                 CombatPet.TryNotifyOwnerOutgoingPhysical(combatPet, target, damageEvent.Damage, damageEvent.DamageType, "Melee");
@@ -166,15 +172,20 @@ namespace ACE.Server.WorldObjects
                                 
                                 if (cleaveDamageEvent.HasDamage)
                                 {
+                                    var cleaveBefore = PetTrace.Enabled ? PetTrace.VitalCurrent(cleaveHit, cleaveDamageEvent.DamageType) : 0u;
                                     if (cleaveHit is Player cleavePlayer)
                                     {
-                                        cleavePlayer.TakeDamage(this, cleaveDamageEvent);
+                                        var cleaveDealt = cleavePlayer.TakeDamage(this, cleaveDamageEvent);
+                                        if (PetTrace.Enabled)
+                                            PetTrace.CombatDamage(cleaveDamageEvent, cleaveBefore, (uint)Math.Max(0, cleaveDealt));
                                         if (combatPet != null)
                                             CombatPet.TryNotifyOwnerOutgoingPhysical(combatPet, cleavePlayer, cleaveDamageEvent.Damage, cleaveDamageEvent.DamageType, "Melee (cleave)");
                                     }
                                     else
                                     {
-                                        cleaveHit.TakeDamage(this, cleaveDamageEvent.DamageType, cleaveDamageEvent.Damage);
+                                        var cleaveDealt = cleaveHit.TakeDamage(this, cleaveDamageEvent.DamageType, cleaveDamageEvent.Damage);
+                                        if (PetTrace.Enabled)
+                                            PetTrace.CombatDamage(cleaveDamageEvent, cleaveBefore, cleaveDealt);
                                         if (combatPet != null)
                                             CombatPet.TryNotifyOwnerOutgoingPhysical(combatPet, cleaveHit, cleaveDamageEvent.Damage, cleaveDamageEvent.DamageType, "Melee (cleave)");
                                         EmitSplatter(cleaveHit, cleaveDamageEvent.Damage);

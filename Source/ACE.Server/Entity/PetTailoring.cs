@@ -42,28 +42,40 @@ namespace ACE.Server.Entity
         // Extract
         // ------------------------------------------------------------------
 
+        /// <summary>[PetTrace] one refusal record for either direction, with the reason.</summary>
+        private static void TraceRefused(string evt, Player player, WorldObject tool, WorldObject target, string reason)
+        {
+            PetTrace.Begin(evt, PetTrace.NewSessionId()).AddPlayer("p.", player)
+                .Add("tool", tool?.Name).AddGuid("toolGuid", tool?.Guid.Full ?? 0).Add("target", target?.Name).AddGuid("targetGuid", target?.Guid.Full ?? 0)
+                .Add("applied", false).Add("consumed", false).Add("reason", reason).Emit();
+        }
+
         public static void HandleExtract(Player player, WorldObject tool, WorldObject target)
         {
             if (target is not PetDevice source || !source.IsCombatPetDevice())
             {
+                if (PetTrace.Enabled) TraceRefused("tailoring.extract", player, tool, target, "target is not a combat pet essence");
                 player.SendTransientError("The Pet Tailoring Kit can only extract the appearance of a combat pet essence.");
                 return;
             }
 
             if (!source.VisualOverrideSetup.HasValue)
             {
+                if (PetTrace.Enabled) TraceRefused("tailoring.extract", player, tool, target, "no captured appearance");
                 player.SendTransientError($"{source.Name} has no captured appearance to extract.");
                 return;
             }
 
             if (IsSummoned(player, source))
             {
+                if (PetTrace.Enabled) TraceRefused("tailoring.extract", player, tool, target, "pet is summoned");
                 player.SendTransientError($"Dismiss {source.Name}'s pet before extracting its appearance.");
                 return;
             }
 
             if (source.IsBeingTradedOrContainsItemBeingTraded(player.ItemsInTradeWindow) || tool.IsBeingTradedOrContainsItemBeingTraded(player.ItemsInTradeWindow))
             {
+                if (PetTrace.Enabled) TraceRefused("tailoring.extract", player, tool, target, "item in trade window");
                 player.SendTransientError("You cannot tailor an item that is in the trade window.");
                 return;
             }
@@ -87,6 +99,7 @@ namespace ACE.Server.Entity
 
             if (!player.TryCreateInInventoryWithNetworking(kit))
             {
+                if (PetTrace.Enabled) TraceRefused("tailoring.extract", player, tool, target, "pack full for the filled kit");
                 player.SendTransientError("Your pack is full. Make room for the filled kit before extracting.");
                 kit.Destroy();
                 return;
@@ -97,10 +110,12 @@ namespace ACE.Server.Entity
             if (!player.TryConsumeFromInventoryWithNetworking(source, 1))
             {
                 player.TryConsumeFromInventoryWithNetworking(kit, 1);
+                if (PetTrace.Enabled) TraceRefused("tailoring.extract", player, tool, target, "source essence consume failed; kit backed out");
                 player.SendTransientError("Failed to consume the source essence.");
                 return;
             }
-            if (!player.TryConsumeFromInventoryWithNetworking(tool, 1))
+            var toolConsumed = player.TryConsumeFromInventoryWithNetworking(tool, 1);
+            if (!toolConsumed)
             {
                 // The source is gone; keep the kit rather than punish the player for a tool hiccup.
                 log.Warn($"[PetTailoring] Consumed source essence but could not consume tool {tool.Guid} for {player.Name}; kit kept.");
@@ -108,7 +123,14 @@ namespace ACE.Server.Entity
 
             player.PlayParticleEffect(PlayScript.AttribDownRed, player.Guid);
             player.SendMessage($"You extract the appearance of {creatureName} into the kit. The source essence is consumed.");
-            log.Info($"[PetTailoring] {player.Name} extracted {creatureName} (setup 0x{source.VisualOverrideSetup:X8}) into kit 0x{kit.Guid.Full:X8}.");
+            if (PetTrace.Enabled)
+                PetTrace.Begin("tailoring.extract", PetTrace.NewSessionId()).AddPlayer("p.", player)
+                    .Add("tool", tool.Name).AddGuid("toolGuid", tool.Guid.Full).Add("toolConsumed", toolConsumed)
+                    .Add("source", source.Name).AddGuid("sourceGuid", source.Guid.Full).Add("sourceWcid", source.WeenieClassId).Add("sourceConsumed", true)
+                    .Add("kit", kit.Name).AddGuid("kitGuid", kit.Guid.Full).Add("kitWcid", kit.WeenieClassId).AddGuid("kitIcon", kit.IconId)
+                    .Add("applied", true).AddVisuals("read.", kit).Emit();
+            else
+                log.Info($"[PetTailoring] {player.Name} extracted {creatureName} (setup 0x{source.VisualOverrideSetup:X8}) into kit 0x{kit.Guid.Full:X8}.");
         }
 
         // ------------------------------------------------------------------
@@ -119,6 +141,7 @@ namespace ACE.Server.Entity
         {
             if (target is not PetDevice device || !device.IsCombatPetDevice())
             {
+                if (PetTrace.Enabled) TraceRefused("tailoring.apply", player, kit, target, "target is not a combat pet essence");
                 player.SendTransientError("A filled Pet Tailoring Kit can only be applied to a combat pet essence.");
                 return;
             }
@@ -126,21 +149,32 @@ namespace ACE.Server.Entity
             var setup = kit.GetProperty(PropertyDataId.VisualOverrideSetup) ?? 0;
             if (setup == 0)
             {
+                if (PetTrace.Enabled) TraceRefused("tailoring.apply", player, kit, target, "kit holds no appearance");
                 player.SendTransientError("This kit holds no appearance.");
                 return;
             }
 
             if (IsSummoned(player, device))
             {
+                if (PetTrace.Enabled) TraceRefused("tailoring.apply", player, kit, target, "pet is summoned");
                 player.SendTransientError($"Dismiss {device.Name}'s pet before tailoring it.");
                 return;
             }
 
             if (device.IsBeingTradedOrContainsItemBeingTraded(player.ItemsInTradeWindow) || kit.IsBeingTradedOrContainsItemBeingTraded(player.ItemsInTradeWindow))
             {
+                if (PetTrace.Enabled) TraceRefused("tailoring.apply", player, kit, target, "item in trade window");
                 player.SendTransientError("You cannot tailor an item that is in the trade window.");
                 return;
             }
+
+            // [PetTrace] the device's look before the kit overwrites it (the record is written after).
+            PetTrace.Record traceBefore = null;
+            if (PetTrace.Enabled)
+                traceBefore = PetTrace.Begin("tailoring.apply", PetTrace.NewSessionId()).AddPlayer("p.", player)
+                    .Add("kit", kit.Name).AddGuid("kitGuid", kit.Guid.Full).Add("kitWcid", kit.WeenieClassId)
+                    .Add("target", device.Name).AddGuid("targetGuid", device.Guid.Full).Add("targetWcid", device.WeenieClassId)
+                    .AddVisuals("read.", kit).AddVisuals("before.", device);
 
             var nameBefore = device.Name;
             var previousCreatureName = device.VisualOverrideName;
@@ -181,12 +215,17 @@ namespace ACE.Server.Entity
             device.ChangesDetected = true;
             player.RushNextPlayerSave(0);
 
-            if (!player.TryConsumeFromInventoryWithNetworking(kit, 1))
+            var kitConsumed = player.TryConsumeFromInventoryWithNetworking(kit, 1);
+            if (!kitConsumed)
                 log.Warn($"[PetTailoring] Applied kit 0x{kit.Guid.Full:X8} to {device.Name} but could not consume it for {player.Name}.");
 
             player.PlayParticleEffect(PlayScript.EnchantUpPurple, device.Guid);
             player.SendMessage($"You tailor the appearance onto {device.Name}. Summon it to see the new look.");
-            log.Info($"[PetTailoring] {player.Name} applied kit 0x{kit.Guid.Full:X8} (setup 0x{setup:X8}) to {device.Name} (0x{device.Guid.Full:X8}).");
+            if (traceBefore != null)
+                traceBefore.AddVisuals("after.", device).Add("nameBefore", nameBefore).Add("nameAfter", device.Name).AddGuid("iconAfter", device.IconId)
+                    .Add("applied", true).Add("consumed", kitConsumed).Emit();
+            else
+                log.Info($"[PetTailoring] {player.Name} applied kit 0x{kit.Guid.Full:X8} (setup 0x{setup:X8}) to {device.Name} (0x{device.Guid.Full:X8}).");
         }
 
         // ------------------------------------------------------------------

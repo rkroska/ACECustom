@@ -165,6 +165,20 @@ namespace ACE.Server.Entity
 
         public bool CriticalDefended;
 
+        // [PetTrace] roll captures. Each is the very draw the decision below it used, stored so the
+        // trace can show "chance vs roll"; -1 means that draw never happened. BaseDamageRoll is the
+        // raw base roll before maturity / guardian / enrage / flat terms rewrite BaseDamage.
+        // Kept as double: ThreadSafeRandom.Next(float, float) returns a double and the original
+        // comparisons were float-vs-double, so a float field would change a boundary case.
+        public double EvadeRoll = -1.0;
+        public double CritRoll = -1.0;
+        public double CritDefenseRoll = -1.0;
+        public float BaseDamageRoll;
+        public float SchemeCRoll = -1.0f;
+
+        /// <summary>[PetTrace] session id shared by the attack and damage records of this one swing.</summary>
+        public string TraceSession;
+
         public static DamageEvent CalculateDamage(Creature attacker, Creature defender, WorldObject damageSource, MotionCommand? attackMotion = null, AttackHook attackHook = null)
         {
             var damageEvent = new DamageEvent();
@@ -178,6 +192,11 @@ namespace ACE.Server.Entity
             damageEvent.HandleExtensiveDebugLogging(attacker, defender);
 
             damageEvent.HandleLogging(attacker, defender);
+
+            // [PetTrace] a swing that dealt nothing is recorded here, once, for every caller; a landed
+            // hit is recorded by the caller after TakeDamage, when the applied amount is known.
+            if (PetTrace.Enabled && !damageEvent.HasDamage)
+                PetTrace.CombatAttack(damageEvent);
 
             return damageEvent;
         }
@@ -229,7 +248,8 @@ namespace ACE.Server.Entity
             if (!Overpower)
             {
                 EvasionChance = GetEvadeChance(attacker, defender);
-                if (EvasionChance > ThreadSafeRandom.Next(0.0f, 1.0f))
+                EvadeRoll = ThreadSafeRandom.Next(0.0f, 1.0f);
+                if (EvasionChance > EvadeRoll)
                 {
                     Evaded = true;
                     return 0.0f;
@@ -281,6 +301,7 @@ namespace ACE.Server.Entity
 
                     // Use float overload to match standard non-crit damage roll behavior (exclusive upper bound)
                     Damage = (float)ThreadSafeRandom.Next(baseMinDamageFloat, baseMaxDamageFloat);
+                    BaseDamageRoll = Damage;
 
                     // Apply optional multiplier — read from weapon, default 1.0 if missing/invalid.
                     // Applied before BaseDamage is set so ShowInfo() reflects the true final value.
@@ -398,8 +419,9 @@ namespace ACE.Server.Entity
                     && Managers.WeaponScaling.WeaponScalingCombat.TryGetEffectiveVariance(Weapon, out var schemeCVariance))
                 {
                     var envelopeMax = BaseDamageMod.MaxDamage + WeaponScalingFlatBonus;
+                    SchemeCRoll = (float)ThreadSafeRandom.Next(1.0f - (float)schemeCVariance, 1.0f);
                     BaseDamage = damageBonus
-                        + envelopeMax * (float)ThreadSafeRandom.Next(1.0f - (float)schemeCVariance, 1.0f);
+                        + envelopeMax * SchemeCRoll;
                 }
                 else
                     BaseDamage += WeaponScalingFlatBonus;
@@ -442,14 +464,16 @@ namespace ACE.Server.Entity
                 CriticalChance = 1.0f;
 
             // Inside the critical hit check - only calculate crit bonus if we actually crit
-            if (CriticalChance > ThreadSafeRandom.Next(0.0f, 1.0f))
+            CritRoll = ThreadSafeRandom.Next(0.0f, 1.0f);
+            if (CriticalChance > CritRoll)
             {
                 if (playerDefender != null && playerDefender.AugmentationCriticalDefense > 0)
                 {
                     var criticalDefenseMod = playerAttacker != null ? 0.05f : 0.25f;
                     var criticalDefenseChance = playerDefender.AugmentationCriticalDefense * criticalDefenseMod;
 
-                    if (criticalDefenseChance > ThreadSafeRandom.Next(0.0f, 1.0f))
+                    CritDefenseRoll = ThreadSafeRandom.Next(0.0f, 1.0f);
+                    if (criticalDefenseChance > CritDefenseRoll)
                         CriticalDefended = true;
                 }
 
@@ -872,6 +896,7 @@ namespace ACE.Server.Entity
                 BaseDamageMod.ElementalBonus = WorldObject.GetMissileElementalDamageBonus(Weapon, attacker, DamageType);
 
             BaseDamage = (float)ThreadSafeRandom.Next(BaseDamageMod.MinDamage, BaseDamageMod.MaxDamage);
+            BaseDamageRoll = BaseDamage;
         }
 
         /// <summary>
@@ -888,6 +913,7 @@ namespace ACE.Server.Entity
 
             BaseDamageMod = attacker.GetBaseDamage(AttackPart.Value);
             BaseDamage = (float)ThreadSafeRandom.Next(BaseDamageMod.MinDamage, BaseDamageMod.MaxDamage);
+            BaseDamageRoll = BaseDamage;
 
             DamageType = attacker.GetDamageType(AttackPart.Value, CombatType);
         }
