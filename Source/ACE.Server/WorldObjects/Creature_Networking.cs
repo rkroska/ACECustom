@@ -214,35 +214,29 @@ namespace ACE.Server.WorldObjects
                                 itemSubPal = item.ClothingSubPalEffects[item.ClothingSubPalEffects.Keys.ElementAt(0)];
                             }
 
+                            // Equipped items resolve their colour exactly as master does: the item's
+                            // PaletteTemplate selects a CloSubPalEffect, and each CloSubPalette's
+                            // PaletteSet is read and indexed by shade. A PaletteTemplate that is not a
+                            // key in the table is an ordinal the table does not define, NOT a palette
+                            // id, so it must fall through to the table's first effect rather than being
+                            // used directly - doing the latter handed the client palette 0x040000NN and
+                            // repainted whatever the garment covered (Flame Coat, Mattekar robes).
                             float shade = 0.0f;
                             if (w.Shade.HasValue)
                                 shade = (float)w.Shade.Value;
                             for (int i = 0; i < itemSubPal.CloSubPalettes.Count; i++)
                             {
-                                ushort itemPal = 0;
-                                if ((palOption & 0xFF000000) == 0x04000000)
-                                {
-                                    itemPal = (ushort)(palOption & 0xFFFF);
-                                }
-                                else if (palOption > 0 && !item.ClothingSubPalEffects.ContainsKey((uint)palOption))
-                                {
-                                    itemPal = (ushort)(palOption & 0xFFFF);
-                                }
-                                else
-                                {
-                                    var itemPalSet = DatManager.PortalDat.ReadFromDat<PaletteSet>(itemSubPal.CloSubPalettes[i].PaletteSet);
-                                    if (itemPalSet != null)
-                                        itemPal = (ushort)itemPalSet.GetPaletteID(shade);
-                                }
+                                var itemPalSet = DatManager.PortalDat.ReadFromDat<PaletteSet>(itemSubPal.CloSubPalettes[i].PaletteSet);
+                                if (itemPalSet == null)
+                                    continue;
 
-                                if (itemPal != 0)
+                                ushort itemPal = (ushort)itemPalSet.GetPaletteID(shade);
+
+                                for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
                                 {
-                                    for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
-                                    {
-                                        ushort palOffset = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].Offset / 8);
-                                        ushort numColors = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].NumColors / 8);
-                                        objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = palOffset, Length = numColors });
-                                    }
+                                    ushort palOffset = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].Offset / 8);
+                                    ushort numColors = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].NumColors / 8);
+                                    objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = palOffset, Length = numColors });
                                 }
                             }
                         }
@@ -267,19 +261,31 @@ namespace ACE.Server.WorldObjects
                     }
 
                     int palOption = PaletteTemplate.HasValue ? (int)PaletteTemplate.Value : 0;
-                    uint setupTexPal = GetSetupDefaultPaletteId(thisSetupId);
-                    if (setupTexPal > 0 && (objDesc.PaletteID == 0 || objDesc.PaletteID == 0x040002AB || objDesc.PaletteID == 0x0400007E || ClothingBase.Value == 0x100000AF))
+                    bool hasFullPaletteOverride = (palOption & 0xFF000000) == 0x04000000;
+
+                    // Resolving a native base palette is ONLY for a full 0x04 override (a bred or mutated
+                    // pet): that colour has nothing to overlay onto unless a base is set. An ordinary
+                    // creature must keep whatever AddBaseModelData gave it - which for the 313 creatures
+                    // with no PaletteBase is 0. Master sends 0, the client cannot resolve it and falls back
+                    // to the model's own colours, and that fallback is the intended look. Forcing the
+                    // setup's texture palette here gave the Undead Custodian 0x04000742 in place of 0 and
+                    // its robe lost the brown trim.
+                    if (hasFullPaletteOverride)
                     {
-                        objDesc.PaletteID = setupTexPal;
+                        uint setupTexPal = GetSetupDefaultPaletteId(thisSetupId);
+                        if (setupTexPal > 0 && (objDesc.PaletteID == 0 || objDesc.PaletteID == 0x040002AB || objDesc.PaletteID == 0x0400007E || ClothingBase.Value == 0x100000AF))
+                        {
+                            objDesc.PaletteID = setupTexPal;
+                        }
                     }
 
-                    if ((palOption & 0xFF000000) == 0x04000000)
+                    if (hasFullPaletteOverride)
                     {
                         ushort itemPal = (ushort)(palOption & 0xFFFF);
 
                         // Subpalettes overlay the base PaletteID. If the base is unset the client has nothing
                         // to overlay onto and discards the whole palette block, rendering the model default.
-                        // The ClothingSubPalEffects branch below already guards this; mirror it here.
+                        // That is what we want for an ordinary creature, but not for a pet's mutation colour.
                         if (objDesc.PaletteID == 0)
                             objDesc.PaletteID = (uint)(0x04000000 | itemPal);
 
@@ -300,27 +306,27 @@ namespace ACE.Server.WorldObjects
 
                         if (itemSubPal != null)
                         {
-                            float shade = Shade.HasValue ? (float)Shade.Value : 0.5f;
+                            // Default shade 0, as master does and as the equipped-item loop above does.
+                            // GetPaletteID indexes the PaletteSet by shade, so a 0.5 default silently picks
+                            // a different entry on any set with 3+ palettes: the Undead Custodian's set has
+                            // 10, and 0.5 gave it 0x04000FF8 where master gives 0x04000FFA.
+                            float shade = Shade.HasValue ? (float)Shade.Value : 0.0f;
                             for (int i = 0; i < itemSubPal.CloSubPalettes.Count; i++)
                             {
+                                // As on the equipped-item path above: a PaletteTemplate that is not a
+                                // key in this table is an ordinal, not a palette id. Read the real
+                                // PaletteSet. A full 0x04 override never reaches here - it is handled
+                                // by the branch above and by ApplyPaletteTemplateOverride.
                                 ushort itemPal = 0;
-                                if (palOption > 0 && !creatureCloTable.ClothingSubPalEffects.ContainsKey((uint)palOption))
-                                {
-                                    itemPal = (ushort)(palOption & 0xFFFF);
-                                }
-                                else
-                                {
-                                    var itemPalSet = DatManager.PortalDat.ReadFromDat<PaletteSet>(itemSubPal.CloSubPalettes[i].PaletteSet);
-                                    if (itemPalSet != null)
-                                        itemPal = (ushort)itemPalSet.GetPaletteID(shade);
-                                }
+                                var itemPalSet = DatManager.PortalDat.ReadFromDat<PaletteSet>(itemSubPal.CloSubPalettes[i].PaletteSet);
+                                if (itemPalSet != null)
+                                    itemPal = (ushort)itemPalSet.GetPaletteID(shade);
 
                                 if (itemPal != 0)
                                 {
-                                    if (objDesc.PaletteID == 0)
-                                    {
-                                        objDesc.PaletteID = (uint)(0x04000000 | itemPal);
-                                    }
+                                    // No PaletteID assignment here: master leaves it as AddBaseModelData set
+                                    // it, and a 0 base is what makes the client render the model's own
+                                    // colours. Writing 0x04000000|itemPal instead rebased the whole creature.
 
                                     for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
                                     {
