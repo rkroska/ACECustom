@@ -14,6 +14,11 @@
    section 9) and needs no migration: the new property ids are just new rows in
    biota_properties_int / _float / _bool / _string / _d_i_d.
 
+   WRONG-DATABASE GUARD
+     Section 0 aborts the script unless the selected schema is the shard. Workbench
+     keeps the schema you last selected, so running this straight after the world
+     patch would otherwise create the table in ace_world.
+
    RE-RUNNABLE
      Yes. CREATE TABLE IF NOT EXISTS, and the index is only added when it is absent,
      so an existing table with data is left alone.
@@ -26,6 +31,29 @@
 
 SET @__old_safe_updates = @@SQL_SAFE_UPDATES;
 SET SQL_SAFE_UPDATES = 0;
+
+/* -------------------------------------------------------------------------------------
+   0. SCHEMA GUARD - refuse to run against anything but the shard database.
+
+   This script uses DATABASE(), not an explicit schema name, so it builds the table in
+   whichever schema the client has selected. In MySQL Workbench that is the last schema
+   you double-clicked, which after running the world patch is ace_world - and the table
+   lands in the wrong database, silently and harmlessly enough that nobody notices.
+
+   `biota` and `character` exist only in the shard, so requiring both is a reliable
+   fingerprint. If they are absent this aborts with a table-not-found error whose name
+   states the problem (SIGNAL is not allowed outside a stored program, and an identifier
+   over 64 characters fails with a length error instead of a useful one).
+   ------------------------------------------------------------------------------------- */
+SET @__is_shard = (
+    SELECT COUNT(*) FROM information_schema.tables
+    WHERE table_schema = DATABASE() AND table_name IN ('biota', 'character'));
+
+SET @__guard = IF(@__is_shard = 2, 'DO 0',
+    'SELECT 1 FROM `RUN_THIS_AGAINST_ace_shard_NOT_ace_world`');
+PREPARE __guard_stmt FROM @__guard;
+EXECUTE __guard_stmt;
+DEALLOCATE PREPARE __guard_stmt;
 
 /* -------------------------------------------------------------------------------------
    1. Pet name request queue
