@@ -296,7 +296,7 @@ INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780200, 98, True);   -- Invincible: belt and braces
 -- Outfit addition on top of the template's clothes.
 INSERT INTO `weenie_properties_create_list` (`object_Id`,`destination_Type`,`weenie_Class_Id`,`stack_Size`,`palette`,`shade`,`try_To_Bond`) VALUES
-  (78780200, 2, 10697, NULL, 8, 0.5, False);
+  (78780200, 2, 10697,    1, 8, 0.5, False);
 
 -- ------------------------------------------------------------------------------------
 -- 78780201  Ivo, Ruggan's Quartermaster
@@ -541,8 +541,8 @@ INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
 -- Outfit (create_list destination_Type 2 = worn).
 DELETE FROM `weenie_properties_create_list` WHERE `object_Id` = 78780204 AND `destination_Type` = 2;
 INSERT INTO `weenie_properties_create_list` (`object_Id`,`destination_Type`,`weenie_Class_Id`,`stack_Size`,`palette`,`shade`,`try_To_Bond`) VALUES
-  (78780204, 2, 8371, NULL, 11, 0.3, False),
-  (78780204, 2, 132, NULL, 39, 0.9, False);
+  (78780204, 2, 8371,    1, 11, 0.3, False),
+  (78780204, 2, 132,    1, 39, 0.9, False);
 -- Template 3920 is already female (Gender 2, setup 0x0200004E); nothing to fix.
 
 -- ------------------------------------------------------------------------------------
@@ -597,10 +597,10 @@ INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
 -- Outfit (create_list destination_Type 2 = worn).
 DELETE FROM `weenie_properties_create_list` WHERE `object_Id` = 78780210 AND `destination_Type` = 2;
 INSERT INTO `weenie_properties_create_list` (`object_Id`,`destination_Type`,`weenie_Class_Id`,`stack_Size`,`palette`,`shade`,`try_To_Bond`) VALUES
-  (78780210, 2, 130, NULL, 61, 0.1, False),
-  (78780210, 2, 117, NULL, 39, 0.9, False),
-  (78780210, 2, 132, NULL, 39, 0.9, False),
-  (78780210, 2, 5588, NULL, 39, 0.9, False);
+  (78780210, 2, 130,    1, 61, 0.1, False),
+  (78780210, 2, 117,    1, 39, 0.9, False),
+  (78780210, 2, 132,    1, 39, 0.9, False),
+  (78780210, 2, 5588,    1, 39, 0.9, False);
 
 -- ------------------------------------------------------------------------------------
 -- 78780211  Registered Browerk, Champion Line
@@ -1810,7 +1810,7 @@ INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES
 
 -- 3. Portal Destination (Landblock 0x013A02AE, Variant 3)
 DELETE FROM `weenie_properties_position` WHERE `object_Id` = 98760388;
-INSERT INTO `weenie_properties_position` (`object_Id`, `type`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, `variation_Id`)
+INSERT INTO `weenie_properties_position` (`object_Id`, `position_Type`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, `variation_Id`)
 VALUES (98760388, 2, 20578990, 0, 0, 0, 1, 0, 0, 0, 3); -- Type 2 = Destination, Cell = 0x013A02AE (20578990)
 
 -- 4. Spawn Portal next to Professor Ruggan in Lin
@@ -1937,7 +1937,7 @@ WHERE object_Id = 78780201 AND type = 57;
        Expect one row reading 20578990 / 3. */
 SELECT obj_Cell_Id, CONCAT('0x', LPAD(HEX(obj_Cell_Id), 8, '0')) AS cell_Hex, variation_Id
 FROM weenie_properties_position
-WHERE object_Id = 98760388 AND type = 2;
+WHERE object_Id = 98760388 AND position_Type = 2;
 
 /* V5. Did the portal actually get placed? Expect exactly one row.
        ZERO rows means no NPC named 'Prof. Ruggan' / 'Professor Ruggan' is placed in
