@@ -124,5 +124,34 @@ namespace ACE.Server.Tests
             Assert.IsTrue(RoomAssignManager.TryParseRooms("1|0x01F701D3  [ 1  1 1 ]  1 0  0 0|0x01F701D3", out var rooms, out var error), error);
             Assert.AreEqual(1f, rooms[0].X);
         }
+
+        [TestMethod]
+        public void HugeRotation_IsNormalized_NotOverflowedToZero()
+        {
+            Assert.IsTrue(RoomAssignManager.TryParseRooms("1|0x01F701D3 [1 1 1] 1e20 0 0 0|0x01F701D3", out var rooms, out var error), error);
+            Assert.AreEqual(1f, rooms[0].QW, 0.00001f);
+        }
+
+        [TestMethod]
+        public void OutdoorCell_IsRefused()
+        {
+            Assert.IsFalse(RoomAssignManager.TryParseRooms("1|0x01F70001 [1 1 1] 1 0 0 0|0x01F70001", out _, out var error));
+            StringAssert.Contains(error, "outdoor");
+        }
+
+        [TestMethod]
+        public void RoomNumberZeroOrNegative_IsRefused()
+        {
+            Assert.IsFalse(RoomAssignManager.TryParseRooms("0|0x01F701D3 [1 1 1] 1 0 0 0|0x01F701D3", out _, out _), "zero");
+            Assert.IsFalse(RoomAssignManager.TryParseRooms("-1|0x01F701D3 [1 1 1] 1 0 0 0|0x01F701D3", out _, out _), "negative");
+        }
+
+        [TestMethod]
+        public void CellIdWithSpaceOrTooManyDigits_IsRefused()
+        {
+            Assert.IsFalse(RoomAssignManager.TryParseRooms("1|0x01F701D3 [1 1 1] 1 0 0 0|0x 01F701D3", out _, out _), "space inside the id");
+            Assert.IsFalse(RoomAssignManager.TryParseRooms("1|0x01F701D3 [1 1 1] 1 0 0 0|0x001F701D3", out _, out _), "9 hex digits");
+            Assert.IsFalse(RoomAssignManager.TryParseRooms("1|0x01F701D3 [1 1 1] 1 0 0 0|0x01F701D3,", out _, out _), "trailing comma");
+        }
     }
 }

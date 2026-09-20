@@ -81,6 +81,7 @@ namespace ACE.Server.Managers
         internal static void Open(Player player)
         {
             WorldStatus = WorldStatusState.Open;
+            RoomAssignManager.OnWorldOpened();
             PlayerManager.BroadcastToAuditChannel(player, "World is now open");
         }
 

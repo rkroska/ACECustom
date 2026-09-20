@@ -65,9 +65,10 @@ namespace ACE.Server.WorldObjects
                 UpdatePortalDestination(relativeDestination);
             }
 
-            // Room Assign: a room portal's rooms exist in its destination's variation from the moment it is placed.
+            // Room Assign: a SPAWNED room portal (generator, summon, /createinst) makes its rooms known in its destination's
+            // variation. Database placements never run EnterWorld - RoomAssignManager reads those at startup.
             if (Destination != null)
-                RoomAssignManager.OnSourceEnteredWorld(OriginalPortal ?? WeenieClassId, Destination.Variation);
+                RoomAssignManager.OnSourceEnteredWorld(RoomSourceWcid, Destination.Variation);
 
             return true;
         }
@@ -96,11 +97,14 @@ namespace ACE.Server.WorldObjects
                 SetPosition(PositionType.Destination, new Position(wo.Location));
 
                 // Room Assign: a link-spot room portal's rooms exist in the link's variation.
-                RoomAssignManager.OnSourceEnteredWorld(OriginalPortal ?? WeenieClassId, wo.Location?.Variation);
+                RoomAssignManager.OnSourceEnteredWorld(RoomSourceWcid, wo.Location?.Variation);
             }
         }
 
         public bool IsGateway { get => WeenieClassId == 1955; }
+
+        /// <summary>The WCID Room Assign looks a room list up by: a summoned gateway asks about the portal it was made from.</summary>
+        public uint RoomSourceWcid => OriginalPortal ?? WeenieClassId;
 
         //public override void OnActivate(WorldObject activator)
         //{
@@ -282,7 +286,7 @@ namespace ACE.Server.WorldObjects
             // full dungeon must not stop a tie or summon. Recall does its own check before its delay.
             // A portal with no uses left says so below instead ("The portal's energy has faded").
             if (CurrentLandblock != null && !(PortalUseCount.HasValue && PortalUseCount.Value <= 0)
-                && !RoomAssignManager.CheckPortalHasRoom(player, OriginalPortal ?? WeenieClassId, Destination, throttle: true, reserve: true))
+                && !RoomAssignManager.CheckPortalHasRoom(player, RoomSourceWcid, Destination, throttle: true, reserve: true))
                 return new ActivationResult(false);
 
             if (Quest != null)
@@ -391,7 +395,7 @@ namespace ACE.Server.WorldObjects
             // Room Assign portal (2026-09-16): straight into a room (their own first), reserved, or REFUSED - the player
             // stays where they are and the use is given back. A summoned gateway resolves to its original portal. The room
             // landing is already corrected by AdjustDungeon.
-            var assign = RoomAssignManager.AssignPortalRoom(player, OriginalPortal ?? WeenieClassId, portalDest, out var roomDest, out var roomNumber);
+            var assign = RoomAssignManager.AssignPortalRoom(player, RoomSourceWcid, portalDest, out var roomDest, out var roomNumber);
             if (assign == RoomAssignManager.PortalAssign.Refused)
             {
                 if (usedCount)

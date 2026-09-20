@@ -15,6 +15,7 @@ using ACE.Database.Models.World;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 
@@ -62,6 +63,12 @@ namespace ACE.Server.Managers
         /// <summary>Hard cap on a reservation that never saw its player land (normally released on landing).</summary>
         private static readonly TimeSpan ReservationTime = TimeSpan.FromSeconds(30);
 
+        /// <summary>
+        /// Hard cap on a PENDING reservation - one made before the trip is certain (a recall at cast, a portal at its use
+        /// check). Short: while it stands, its player is "on the way" and every other trigger is refused.
+        /// </summary>
+        private static readonly TimeSpan PendingReservationTime = TimeSpan.FromSeconds(10);
+
         /// <summary>Owner 2026-09-16: was 10 s, too long to wait for the message.</summary>
         private static readonly TimeSpan FullMessageInterval = TimeSpan.FromSeconds(1);
 
@@ -93,10 +100,14 @@ namespace ACE.Server.Managers
         private static TimeSpan StartupGraceTime => TimeSpan.FromMinutes(Math.Clamp(ServerConfig.room_assign_startup_grace_minutes.Value, 0, MaxStartupGraceMinutes));
 
         /// <summary>
-        /// When the startup grace began (UTC): set by Initialize as the world opens, so a slow boot does not use it up.
-        /// Falls back to the first use of this class if Initialize never ran.
+        /// When the startup grace began (UTC ticks): the first time the world opens to players (OnWorldOpened), so a slow boot
+        /// or a server started with the world closed does not use it up. Until then, the first use of this class.
         /// </summary>
-        private static DateTime _graceStartUtc = DateTime.UtcNow;
+        private static long _graceStartTicks = DateTime.UtcNow.Ticks;
+        private static int _worldOpened;
+
+        /// <summary>A landing rotation shorter than this is treated as all zero.</summary>
+        private const double MinRotationLength = 0.01;
 
         private const string MessagePlateAllTaken = "Every chamber is taken. Move on the plate to try again.";
         private const string MessagePortalAllTaken = "Every chamber is taken. Try again later.";
@@ -129,8 +140,12 @@ namespace ACE.Server.Managers
             /// </summary>
             public string Key(int? variation) => KeyFor(variation, Anchor);
 
+            // The key is built for every room on every check, inside _lock: cache the string per (anchor, variation).
+            private static readonly ConcurrentDictionary<(uint Anchor, int? Variation), string> _keys = new ConcurrentDictionary<(uint, int?), string>();
+
             internal static string KeyFor(int? variation, uint anchor)
-                => $"{VariationManager.NormalizeBase(variation)?.ToString(CultureInfo.InvariantCulture)}|{anchor:X8}";
+                => _keys.GetOrAdd((anchor, VariationManager.NormalizeBase(variation)),
+                    k => $"{k.Variation?.ToString(CultureInfo.InvariantCulture)}|{k.Anchor:X8}");
         }
 
         /// <summary>Rooms never exist in the base world (variation null/0): retail content is never a room.</summary>
@@ -161,16 +176,28 @@ namespace ACE.Server.Managers
 
         // Strict on purpose: Position.TryParse silently falls back to a default facing when the rotation does not parse,
         // which is exactly what a pasted /location line does (its ", v:2" leaves a comma on the last number).
+        /// <summary>A cell id as authored: 0x plus 1-8 hex digits, nothing else (NumberStyles.HexNumber would allow "0x 1F7").</summary>
+        private static readonly Regex CellRx = new Regex(@"^0x[0-9A-Fa-f]{1,8}$", RegexOptions.Compiled);
+
         private static readonly Regex LandingRx = new Regex(@"^0x([0-9A-Fa-f]{8})\s+\[\s*(\S+)\s+(\S+)\s+(\S+)\s*\]\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$", RegexOptions.Compiled);
 
         /// <summary>
-        /// Program startup, after WorldManager.Initialize and before the world accepts logins: loads every room source (a
-        /// database query that must not run on a game thread) and starts the startup grace.
+        /// Program startup, before sockets open: loads every room source and where each is placed (database queries that must
+        /// not run on a game thread).
         /// </summary>
         public static void Initialize()
         {
-            _graceStartUtc = DateTime.UtcNow;
             ScanRoomSources();
+        }
+
+        /// <summary>WorldManager.Open: the startup grace starts the first time the world opens to players, never again.</summary>
+        public static void OnWorldOpened()
+        {
+            if (Interlocked.Exchange(ref _worldOpened, 1) == 0)
+                Interlocked.Exchange(ref _graceStartTicks, DateTime.UtcNow.Ticks);
+
+            // A startup scan that failed must not wait for the first teleport or login to retry it.
+            EnsureRoomSourcesLoaded();
         }
 
         /// <summary>
@@ -210,6 +237,7 @@ namespace ACE.Server.Managers
 
                 try
                 {
+                    var started = DateTime.UtcNow;
                     List<uint> ids;
                     using (var context = new WorldDbContext())
                         ids = context.WeeniePropertiesString
@@ -219,16 +247,12 @@ namespace ACE.Server.Managers
                             .ToList();
 
                     foreach (var id in ids)
-                    {
                         GetRooms(id);
 
-                        var weenie = DatabaseManager.World.GetCachedWeenie(id);
-                        if (weenie?.WeenieType == WeenieType.Portal && (weenie.PropertiesPosition == null || !weenie.PropertiesPosition.ContainsKey(PositionType.Destination)))
-                            log.Warn($"[RoomAssign] wcid {id}: room portal has no Destination on its weenie - its rooms are only known once a placed copy has loaded or been used.");
-                    }
+                    var placements = RememberPlacements(ids);
 
                     _sourcesScanned = 1;
-                    log.Info($"[RoomAssign] {ids.Count} room source(s) in the world database.");
+                    log.Info($"[RoomAssign] {ids.Count} room source(s) in the world database, {placements} placement(s) in room variations ({(DateTime.UtcNow - started).TotalSeconds.ToString("0.##", CultureInfo.InvariantCulture)} s).");
                 }
                 catch (Exception ex)
                 {
@@ -236,6 +260,88 @@ namespace ACE.Server.Managers
                     log.Error($"[RoomAssign] Loading room sources failed, retrying in {ScanRetry.TotalSeconds:0} s: {ex}");
                 }
             }
+        }
+
+        /// <summary>
+        /// Startup scan: where every room source is placed in the world database, so its rooms are known in that variation
+        /// before its landblock loads (landblock loading does not run EnterWorld). A plate: its placement's variation. A
+        /// portal - one carrying a list, or pointing at a plate - its destination's variation: the weenie's Destination, else
+        /// its link spot's placement, else its own placement (a relative destination). Returns the count remembered.
+        /// </summary>
+        private static int RememberPlacements(List<uint> sourceIds)
+        {
+            List<WeeniePropertiesDID> pointers;
+            List<LandblockInstance> placed;
+            List<LandblockInstanceLink> links;
+            List<LandblockInstance> linkSpots;
+
+            using (var context = new WorldDbContext())
+            {
+                pointers = context.WeeniePropertiesDID.Where(d => d.Type == (ushort)PropertyDataId.RoomAssignPlate).ToList();
+
+                var wcids = sourceIds.Concat(pointers.Select(d => d.ObjectId)).Distinct().ToList();
+                placed = context.LandblockInstance.Where(i => wcids.Contains(i.WeenieClassId)).ToList();
+
+                var guids = placed.Select(i => i.Guid).ToList();
+                links = context.LandblockInstanceLink.Where(l => guids.Contains(l.ParentGuid)).ToList();
+
+                var childGuids = links.Select(l => l.ChildGuid).Distinct().ToList();
+                linkSpots = context.LandblockInstance.Where(i => childGuids.Contains(i.Guid)).ToList();
+            }
+
+            var sources = new HashSet<uint>(sourceIds);
+            var spotVariation = linkSpots.ToDictionary(i => i.Guid, i => i.VariationId);
+            var linkedTo = new Dictionary<uint, uint>();
+            foreach (var link in links)
+                linkedTo.TryAdd(link.ParentGuid, link.ChildGuid);
+
+            var plateOf = new Dictionary<uint, uint>();
+            foreach (var pointer in pointers)
+                plateOf.TryAdd(pointer.ObjectId, pointer.Value);
+
+            var remembered = 0;
+
+            foreach (var instance in placed)
+            {
+                var weenie = DatabaseManager.World.GetCachedWeenie(instance.WeenieClassId);
+                if (weenie == null)
+                    continue;
+
+                uint sourceWcid;
+                int? variation;
+
+                if (weenie.WeenieType == WeenieType.Portal)
+                {
+                    if (weenie.PropertiesString != null && weenie.PropertiesString.ContainsKey(PropertyString.RoomAssignRooms))
+                        sourceWcid = instance.WeenieClassId;
+                    else if (!plateOf.TryGetValue(instance.WeenieClassId, out sourceWcid))
+                        continue;
+
+                    // A link spot wins: Portal.SetLinkProperties overwrites the weenie's Destination with it when the portal loads.
+                    if (linkedTo.TryGetValue(instance.Guid, out var child) && spotVariation.TryGetValue(child, out var linkVariation))
+                        variation = linkVariation;
+                    else if (weenie.PropertiesPosition != null && weenie.PropertiesPosition.TryGetValue(PositionType.Destination, out var destination))
+                        variation = destination.VariationId;
+                    else
+                        variation = instance.VariationId;
+                }
+                else if (sources.Contains(instance.WeenieClassId))
+                {
+                    sourceWcid = instance.WeenieClassId;
+                    variation = instance.VariationId;
+                }
+                else
+                    continue;
+
+                if (!IsRoomVariation(variation))
+                    continue;
+
+                lock (_lock)
+                    if (_sourceSeen.Add(SourceKey(sourceWcid, variation)))
+                        remembered++;
+            }
+
+            return remembered;
         }
 
         /// <summary>
@@ -298,7 +404,12 @@ namespace ACE.Server.Managers
                     RegisterRooms(wcid, parsed);
 
                     if (good != null)
-                        MoveClaims(good.Rooms, parsed);
+                    {
+                        MoveClaims(wcid, good.Rooms, parsed);
+
+                        foreach (var oldRoom in good.Rooms)
+                            _badLandingWarned.Remove(oldRoom);
+                    }
                 }
 
                 log.Info($"[RoomAssign] wcid {wcid}: loaded {parsed.Count} room(s).");
@@ -367,8 +478,9 @@ namespace ACE.Server.Managers
                     }
                 }
 
-                var rotationLength = MathF.Sqrt(nums[3] * nums[3] + nums[4] * nums[4] + nums[5] * nums[5] + nums[6] * nums[6]);
-                if (rotationLength < 0.01f)
+                // In double: a huge float squared would overflow to infinity and normalise to an all-zero rotation.
+                var rotationLength = Math.Sqrt((double)nums[3] * nums[3] + (double)nums[4] * nums[4] + (double)nums[5] * nums[5] + (double)nums[6] * nums[6]);
+                if (!double.IsFinite(rotationLength) || rotationLength < MinRotationLength)
                 {
                     error = $"room {number}: the landing rotation is all zero (use 1 0 0 0 for the default facing)";
                     return false;
@@ -376,7 +488,7 @@ namespace ACE.Server.Managers
 
                 // A hand-typed rotation need not be unit length; the client expects one.
                 for (var i = 3; i < 7; i++)
-                    nums[i] /= rotationLength;
+                    nums[i] = (float)(nums[i] / rotationLength);
 
                 var room = new Room
                 {
@@ -392,10 +504,18 @@ namespace ACE.Server.Managers
                 foreach (var cellRaw in fields[2].Split(','))
                 {
                     var cellText = cellRaw.Trim();
-                    if (!cellText.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ||
+                    if (!CellRx.IsMatch(cellText) ||
                         !uint.TryParse(cellText.Substring(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var cell))
                     {
                         error = $"room {number}: \"{cellText}\" is not a cell id";
+                        return false;
+                    }
+
+                    // Indoor cells only (0x0100 and up): the outdoor cells of a landblock are never part of a dungeon, and the
+                    // login rules for a portal-only dungeon ignore them.
+                    if ((cell & 0xFFFF) < 0x0100)
+                    {
+                        error = $"room {number}: cell 0x{cell:X8} is an outdoor cell - a room is made of indoor cells (0x...0100 and up)";
                         return false;
                     }
 
@@ -471,21 +591,21 @@ namespace ACE.Server.Managers
             public Room Room;
         }
 
-        /// <summary>A "no plate in this variation" answer is re-checked after this.</summary>
-        private static readonly TimeSpan NoPlateRecheck = TimeSpan.FromSeconds(60);
-
         private static readonly object _lock = new object();
         private static readonly Dictionary<string, Reservation> _reservations = new Dictionary<string, Reservation>();   // room key -> player on their way in
         private static readonly Dictionary<uint, string> _reservedBy = new Dictionary<uint, string>();                   // player guid -> room key
         private static readonly Dictionary<string, Hold> _holds = new Dictionary<string, Hold>();                        // room key -> account it is held for
+        private static readonly Dictionary<string, uint> _roomOwner = new Dictionary<string, uint>();                     // room key -> the account it was last handed to
         private static readonly Dictionary<uint, DateTime> _lastFullMessage = new Dictionary<uint, DateTime>();
         private static readonly Dictionary<uint, List<RoomRef>> _roomByCell = new Dictionary<uint, List<RoomRef>>();     // cell -> rooms + source WCID
         private static readonly Dictionary<ushort, HashSet<uint>> _sourcesByLandblock = new Dictionary<ushort, HashSet<uint>>();   // landblock -> source WCIDs
-        // "wcid|variation" -> the source was seen in that variation: a placed copy entered the world, or it was used. Kept
-        // until restart - a portal's destination variation and a plate's placement do not change, and a source removed
-        // from a variation only keeps its rooms recognised there (holds, login checks) until then.
+        // "wcid|variation" -> the source's rooms exist in that variation: read from its database placements at startup, or a
+        // copy was spawned (/createinst, a generator) or used there. Kept until restart - a source removed from a variation
+        // only keeps its rooms recognised there (holds, login checks) until then.
         private static readonly HashSet<string> _sourceSeen = new HashSet<string>();
-        private static readonly Dictionary<string, DateTime> _noPlateUntil = new Dictionary<string, DateTime>();         // "wcid|variation" -> no placement, re-checked after
+
+        /// <summary>Rooms already warned about a landing outside their cells (per parsed Room object; cleared when its list is re-parsed).</summary>
+        private static readonly HashSet<Room> _badLandingWarned = new HashSet<Room>();
 
         // Logout holds an ACCOUNT may still take before its next FRESH hand-out. Without a limit, relogging - or recalling
         // into the room you stand in - renewed a hold forever. Cleared when the account's character logs out outside a room
@@ -540,12 +660,16 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Call with _lock held, after a list was re-parsed. A room is the same room when it shares a cell with an old one.
-        /// Its key is its lowest cell, so an edit that adds or removes that cell changes the key: holds and reservations
-        /// move to the new key (never over a claim already there), and reservations point at the new room's cells.
+        /// Call with _lock held, after RegisterRooms, when a list was re-parsed. A room is the same room when it shares a cell
+        /// with an old one. Its key is its lowest cell, so an edit that adds or removes that cell changes the key. Every move
+        /// is worked out first and applied in ONE pass, using the exact old key in the variations this source is used in, so a
+        /// chain of changed anchors cannot carry a claim from room to room. A claim is never moved onto a room that already
+        /// has one, and never away from an anchor another source still lists (both are logged).
         /// </summary>
-        private static void MoveClaims(List<Room> oldRooms, List<Room> newRooms)
+        private static void MoveClaims(uint sourceWcid, List<Room> oldRooms, List<Room> newRooms)
         {
+            var moved = new Dictionary<uint, Room>();   // old anchor -> new room
+
             foreach (var oldRoom in oldRooms)
             {
                 var newRoom = newRooms.FirstOrDefault(r => r.Cells.Overlaps(oldRoom.Cells));
@@ -556,36 +680,69 @@ namespace ACE.Server.Managers
                     if (reservation.Room == oldRoom)
                         reservation.Room = newRoom;
 
-                if (newRoom.Anchor == oldRoom.Anchor)
+                if (newRoom.Anchor == oldRoom.Anchor || StillListedElsewhere(sourceWcid, oldRoom.Anchor))
                     continue;
 
-                var oldSuffix = $"|{oldRoom.Anchor:X8}";
+                moved[oldRoom.Anchor] = newRoom;
+            }
 
-                foreach (var key in _holds.Keys.Where(k => k.EndsWith(oldSuffix, StringComparison.Ordinal)).ToList())
+            if (moved.Count == 0)
+                return;
+
+            // The variations this source's rooms are used in - a key of another source's dungeon must not be touched.
+            var variations = new List<int?>();
+            foreach (var seen in _sourceSeen)
+                if (seen.StartsWith($"{sourceWcid}|", StringComparison.Ordinal))
                 {
-                    var newKey = key.Substring(0, key.Length - oldSuffix.Length) + $"|{newRoom.Anchor:X8}";
-                    if (!_holds.ContainsKey(newKey))
-                        _holds[newKey] = _holds[key];
-                    _holds.Remove(key);
+                    var text = seen.Substring(seen.IndexOf('|') + 1);
+                    variations.Add(text.Length == 0 ? (int?)null : int.Parse(text, CultureInfo.InvariantCulture));
                 }
 
-                foreach (var key in _reservations.Keys.Where(k => k.EndsWith(oldSuffix, StringComparison.Ordinal)).ToList())
+            foreach (var pair in moved)
+            {
+                foreach (var variation in variations)
                 {
-                    var reservation = _reservations[key];
-                    _reservations.Remove(key);
+                    var oldKey = Room.KeyFor(variation, pair.Key);
+                    var newKey = pair.Value.Key(variation);
 
-                    var newKey = key.Substring(0, key.Length - oldSuffix.Length) + $"|{newRoom.Anchor:X8}";
-                    if (_reservations.ContainsKey(newKey))
+                    if (_holds.TryGetValue(oldKey, out var hold))
                     {
-                        _reservedBy.Remove(reservation.Guid);
-                        continue;
+                        _holds.Remove(oldKey);
+
+                        if (_holds.ContainsKey(newKey))
+                            log.Warn($"[RoomAssign] Room list edit (wcid {sourceWcid}): the hold on {oldKey} for account {hold.Account} was dropped - room {pair.Value.Number} already has one.");
+                        else
+                            _holds[newKey] = hold;
                     }
 
-                    _reservations[newKey] = reservation;
-                    _reservedBy[reservation.Guid] = newKey;
+                    if (_reservations.TryGetValue(oldKey, out var reservation))
+                    {
+                        _reservations.Remove(oldKey);
+
+                        if (_reservations.ContainsKey(newKey))
+                        {
+                            _reservedBy.Remove(reservation.Guid);
+                            log.Warn($"[RoomAssign] Room list edit (wcid {sourceWcid}): the reservation on {oldKey} for 0x{reservation.Guid:X8} was dropped - room {pair.Value.Number} is already reserved.");
+                        }
+                        else
+                        {
+                            _reservations[newKey] = reservation;
+                            _reservedBy[reservation.Guid] = newKey;
+                        }
+                    }
+
+                    if (_roomOwner.TryGetValue(oldKey, out var owner))
+                    {
+                        _roomOwner.Remove(oldKey);
+                        _roomOwner[newKey] = owner;
+                    }
                 }
             }
         }
+
+        /// <summary>Call with _lock held. True when another source still has a room with this anchor - its claims stay put.</summary>
+        private static bool StillListedElsewhere(uint sourceWcid, uint anchor)
+            => _roomByCell.TryGetValue(anchor, out var refs) && refs.Any(r => r.SourceWcid != sourceWcid && r.Room.Anchor == anchor);
 
         /// <summary>
         /// The PORTAL-ONLY source whose dungeon this cell is in (its landblock, in the source's variation), or 0. A portal-only
@@ -595,6 +752,10 @@ namespace ACE.Server.Managers
         private static uint FindPortalOnlyDungeon(uint cell, int? variation)
         {
             if (_roomSourceCount == 0 || !IsRoomVariation(variation))
+                return 0;
+
+            // Only indoor cells: the outdoor cells of a landblock (below 0x0100) are never part of a dungeon.
+            if ((cell & 0xFFFF) < 0x0100)
                 return 0;
 
             uint[] sources;
@@ -608,7 +769,13 @@ namespace ACE.Server.Managers
             uint portalSource = 0;
             foreach (var wcid in sources)
             {
-                if (!IsSourceVariation(wcid, variation, cell))
+                // Placed or spawned there, not merely a weenie whose Destination points at this variation: a portal that is
+                // placed nowhere must not make a dungeon eject people (owner 2026-09-17).
+                bool placed;
+                lock (_lock)
+                    placed = _sourceSeen.Contains(SourceKey(wcid, variation));
+
+                if (!placed)
                     continue;
 
                 if (DatabaseManager.World.GetCachedWeenie(wcid)?.WeenieType != WeenieType.Portal)
@@ -620,20 +787,19 @@ namespace ACE.Server.Managers
             return portalSource;
         }
 
-        private static string SourceKey(uint wcid, int? variation) => $"{wcid}|{VariationManager.NormalizeBase(variation)}";
+        private static string SourceKey(uint wcid, int? variation)
+            => $"{wcid}|{VariationManager.NormalizeBase(variation)?.ToString(CultureInfo.InvariantCulture)}";
 
         /// <summary>Call with _lock held. Remembers that a source exists in a variation.</summary>
         private static void RememberSource(string key)
         {
             _sourceSeen.Add(key);
-            _noPlateUntil.Remove(key);
         }
 
         /// <summary>
-        /// A placed room portal's destination is known (it entered the world, or a link spot set it), or a room plate entered
-        /// the world: its rooms exist in that variation from now on, before anyone uses it. This is what scopes a portal
-        /// whose destination is not on its weenie (link spot, relative destination) and a plate that is not a database
-        /// placement (spawned by a generator).
+        /// A room portal or plate copy was SPAWNED (/createinst, a generator, a summon - Portal/PressurePlate.EnterWorld) or
+        /// a link spot set a portal's destination: its rooms exist in that variation from now on. Database placements do not
+        /// come through here (landblock loading skips EnterWorld) - RememberPlacements reads those at startup.
         /// </summary>
         public static void OnSourceEnteredWorld(uint wcid, int? variation)
         {
@@ -662,77 +828,24 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Whether a plate source is placed in a variation: seen in the world or used there, else found in the landblock's
-        /// database placements.
+        /// Whether a source's rooms exist in this variation - memory only, never the database (this runs on teleport and
+        /// login). A plate source: where it is placed. A portal source: where its placed copies lead (a link spot or relative
+        /// destination can differ from the weenie's own), or its weenie's Destination variation. Never the base world.
         /// </summary>
-        private static bool IsPlatePlaced(uint plateWcid, int? variation, uint roomCell)
+        private static bool IsSourceVariation(uint sourceWcid, int? variation)
         {
             if (!IsRoomVariation(variation))
                 return false;
 
-            var key = SourceKey(plateWcid, variation);
-            var now = DateTime.UtcNow;
-
             lock (_lock)
-            {
-                if (_sourceSeen.Contains(key))
+                if (_sourceSeen.Contains(SourceKey(sourceWcid, variation)))
                     return true;
-
-                // Remembered "not here": a player teleporting inside a room landblock must not open a database context on
-                // every teleport. A plate placed later is seen within NoPlateRecheck, or at once when it loads or is used.
-                if (_noPlateUntil.TryGetValue(key, out var until) && now < until)
-                    return false;
-            }
-
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock((ushort)(roomCell >> 16), VariationManager.NormalizeBase(variation));
-
-            // A copy: the cached list is the shared one that /createinst and /removeinst edit in place.
-            foreach (var instance in instances?.ToArray() ?? Array.Empty<LandblockInstance>())
-            {
-                if (instance?.WeenieClassId != plateWcid)
-                    continue;
-
-                lock (_lock)
-                    RememberSource(key);
-
-                return true;
-            }
-
-            lock (_lock)
-            {
-                if (_sourceSeen.Contains(key))
-                    return true;
-
-                _noPlateUntil[key] = now + NoPlateRecheck;
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Whether a source's rooms exist in this variation. A portal source: its weenie's Destination variation, or - for a
-        /// portal whose destination comes from a link spot or is relative - a variation a placed copy was seen in. A plate
-        /// source: where the plate is placed. Never the base world.
-        /// </summary>
-        private static bool IsSourceVariation(uint sourceWcid, int? variation, uint cell)
-        {
-            if (!IsRoomVariation(variation))
-                return false;
 
             var weenie = DatabaseManager.World.GetCachedWeenie(sourceWcid);
-            if (weenie == null)
-                return false;
 
-            if (weenie.WeenieType == WeenieType.Portal)
-            {
-                if (weenie.PropertiesPosition != null && weenie.PropertiesPosition.TryGetValue(PositionType.Destination, out var destination))
-                    return VariationManager.NormalizeBase(destination.VariationId) == VariationManager.NormalizeBase(variation);
-
-                lock (_lock)
-                    return _sourceSeen.Contains(SourceKey(sourceWcid, variation));
-            }
-
-            return IsPlatePlaced(sourceWcid, variation, cell);
+            return weenie?.WeenieType == WeenieType.Portal
+                && weenie.PropertiesPosition != null && weenie.PropertiesPosition.TryGetValue(PositionType.Destination, out var destination)
+                && VariationManager.NormalizeBase(destination.VariationId) == VariationManager.NormalizeBase(variation);
         }
 
         /// <summary>The room at a cell, in its source's variation; null anywhere else (base world included).</summary>
@@ -751,9 +864,9 @@ namespace ACE.Server.Managers
                 candidates = refs.ToArray();
             }
 
-            // Outside _lock: IsSourceVariation may read the world database (plate placements).
+            // Outside _lock: IsSourceVariation takes _lock itself and may read the weenie cache.
             foreach (var candidate in candidates)
-                if (IsSourceVariation(candidate.SourceWcid, variation, cell))
+                if (IsSourceVariation(candidate.SourceWcid, variation))
                     return candidate;
 
             return null;
@@ -810,6 +923,11 @@ namespace ACE.Server.Managers
             if (_holds.TryGetValue(key, out var existing) && existing.Account != account && IsHoldActive(existing, now))
                 return false;
 
+            // Only the account the room was handed to may hold it: someone who got inside another player's room (an unsealed
+            // room, a cell missing from the list) must not be able to take it over by teleporting out or logging out there.
+            if (_roomOwner.TryGetValue(key, out var owner) && owner != account)
+                return false;
+
             SpendHolds(account);
             _holds[key] = new Hold { Account = account, Until = now + time, Kind = kind };
             return true;
@@ -827,13 +945,22 @@ namespace ACE.Server.Managers
             var key = room.Key(variation);
             _reservations[key] = new Reservation
             {
-                Guid = guid, Account = account, Room = room, Variation = variation, Until = now + ReservationTime, CreatedUnix = Time.GetUnixTime(),
+                Guid = guid, Account = account, Room = room, Variation = variation, CreatedUnix = Time.GetUnixTime(),
+                Until = now + (commit ? ReservationTime : PendingReservationTime),
                 Pending = !commit, PendingFresh = !commit && fresh,
             };
             _reservedBy[guid] = key;
 
             if (!commit)
                 return;
+
+            // The room is theirs from here: only this account may hold it when it is left or logged out of.
+            _roomOwner[key] = account;
+
+            // IsFreeFor let them have it, so another account's hold here is not counting (its setting is 0): it must not
+            // come back over this player if the setting is turned on again.
+            if (_holds.TryGetValue(key, out var staleHold) && staleHold.Account != account)
+                _holds.Remove(key);
 
             SpendHolds(account);
 
@@ -908,7 +1035,9 @@ namespace ACE.Server.Managers
         {
             public readonly HashSet<string> Rooms = new HashSet<string>();
             public readonly HashSet<uint> Accounts = new HashSet<uint>();
-            public readonly Dictionary<uint, Player> Online = new Dictionary<uint, Player>();
+
+            /// <summary>Only players holding a reservation - ReleaseDoneReservations needs those, not every online player.</summary>
+            public readonly Dictionary<uint, Player> Holders = new Dictionary<uint, Player>();
         }
 
         /// <summary>
@@ -925,7 +1054,7 @@ namespace ACE.Server.Managers
 
             foreach (var kv in _reservations)
             {
-                if (!occupancy.Online.TryGetValue(kv.Value.Guid, out var player) || !ReservationDone(kv.Value, player, out var inRoom))
+                if (!occupancy.Holders.TryGetValue(kv.Value.Guid, out var player) || !ReservationDone(kv.Value, player, out var inRoom))
                     continue;
 
                 (done ??= new List<string>()).Add(kv.Key);
@@ -985,7 +1114,10 @@ namespace ACE.Server.Managers
 
         /// <summary>Admins do not count as occupants, get no holds and are never moved or assigned by portals (owner rulings 2026-09-16).</summary>
         private static bool IsStaff(Player player)
-            => player.IsAdmin || (player.Session != null && player.Session.AccessLevel >= AccessLevel.Admin);
+            => IsStaff(player.Session?.AccessLevel ?? AccessLevel.Player, player.IsAdmin);
+
+        private static bool IsStaff(AccessLevel accessLevel, bool isAdmin)
+            => isAdmin || accessLevel >= AccessLevel.Admin;
 
         private static uint AccountOf(Player player) => player.Account?.AccountId ?? player.Session?.AccountId ?? 0;
 
@@ -1013,12 +1145,24 @@ namespace ACE.Server.Managers
             var occupancy = new Occupancy();
             var landblock = rooms.Count > 0 ? rooms[0].LandingCell >> 16 : 0;
 
+            // The guids worth keeping a Player for: usually none, never more than one per room.
+            HashSet<uint> holders = null;
+            lock (_lock)
+                foreach (var reservation in _reservations.Values)
+                    (holders ??= new HashSet<uint>()).Add(reservation.Guid);
+
             foreach (var player in PlayerManager.GetAllOnline())
             {
                 var guid = player.Guid.Full;
-                occupancy.Online[guid] = player;
+
+                if (holders != null && holders.Contains(guid))
+                    occupancy.Holders[guid] = player;
 
                 if (guid == excludeGuid)
+                    continue;
+
+                // On their way out: they are saved where they stand, but the room is not theirs to block once the save lands.
+                if (player.IsLoggingOut && player.CurrentLandblock == null)
                     continue;
 
                 var location = player.Location;
@@ -1121,8 +1265,6 @@ namespace ACE.Server.Managers
             return null;
         }
 
-        /// <summary>Rooms already warned about a landing outside their cells (per parsed Room object, so a fixed list warns again if still bad).</summary>
-        private static readonly HashSet<Room> _badLandingWarned = new HashSet<Room>();
 
         private enum ClaimResult { Claimed, NoRoom, AccountBusy, OnTheWay }
 
@@ -1189,6 +1331,13 @@ namespace ACE.Server.Managers
             return ClaimResult.NoRoom;
         }
 
+        /// <summary>
+        /// Call with _lock held. True within the message interval after this player was refused: a repeat trigger (collisions
+        /// fire every physics step) is refused silently BEFORE the occupancy scan, which walks every online player.
+        /// </summary>
+        private static bool RecentlyRefused(uint guid, DateTime now)
+            => _lastFullMessage.TryGetValue(guid, out var last) && now - last < FullMessageInterval;
+
         /// <summary>Call with _lock held. Say a refusal at most once per interval per player.</summary>
         private static bool ShouldSayFull(uint guid, DateTime now)
         {
@@ -1205,6 +1354,12 @@ namespace ACE.Server.Managers
         // ---------------------------------------------------------------------------------------------------------
         // The plate
         // ---------------------------------------------------------------------------------------------------------
+
+        /// <summary>Same as Portal's minTimeSinceLastPortal.</summary>
+        private const double PlateMinTimeSinceLastPortal = 3.5;
+
+        /// <summary>Owner 2026-09-17: a room plate's arming window is 1 s unless its weenie sets PressurePlateCooldown (50502).</summary>
+        private const double RoomPlateDefaultCooldown = 1.0;
 
         /// <summary>
         /// A player moved on a room plate. Runs in place of the stock plate activation, which would send "used too
@@ -1230,14 +1385,34 @@ namespace ACE.Server.Managers
 
                 // Cheap checks first - this fires many times a second while someone moves on the plate. The arming window
                 // (PressurePlateCooldown, 50502) is plate-wide and silent.
-                var cooldown = plate.EffectivePressurePlateCooldown;
-                if (cooldown > 0 && now < plate.LastUseTime + TimeSpan.FromSeconds(cooldown))
+                if (!plate.IsArmed(now, RoomPlateDefaultCooldown))
                     return;
+
+                // The gates every portal applies (Portal.CheckUseRequirements): no escape from a PK fight, no chained teleports.
+                if (player.Teleporting)
+                    return;
+
+                if (player.LastPortalTeleportTimestamp != null && Time.GetUnixTime() - player.LastPortalTeleportTimestamp.Value < PlateMinTimeSinceLastPortal)
+                    return;
+
+                if (player.PKTimerActive)
+                {
+                    bool sayPk;
+                    lock (_lock)
+                        sayPk = ShouldSayFull(guid, now);
+
+                    if (sayPk)
+                        player.Session.Network.EnqueueSend(new GameEventWeenieError(player.Session, WeenieError.YouHaveBeenInPKBattleTooRecently));
+                    return;
+                }
 
                 lock (_lock)
                 {
+                    // Cheapest first: a refused player and a player already on their way cost nothing more.
+                    if (RecentlyRefused(guid, now))
+                        return;
+
                     PurgeExpired(now);
-                    RememberSource(SourceKey(plate.WeenieClassId, variation));
 
                     if (IsOnTheWay(player, guid))
                         return;
@@ -1263,8 +1438,13 @@ namespace ACE.Server.Managers
                 // Only a hand-out uses the arming window - a step that finds every room taken must not lock others out.
                 plate.LastUseTime = now;
 
+                lock (_lock)
+                    RememberSource(SourceKey(plate.WeenieClassId, variation));
+
                 player.EnqueueBroadcast(new GameMessageSound(player.Guid, plate.UseSound));
-                WorldManager.ThreadSafeTeleport(player, landing);
+
+                // fromPortal: this counts as a portal teleport, so the plate's own "no chained teleports" gate is armed by it.
+                WorldManager.ThreadSafeTeleport(player, landing, null, true);
                 Say(player, MessageSentToRoom(room.Number));
 
                 log.Debug($"[RoomAssign] {player.Name} (0x{player.Guid}) sent by plate {plate.WeenieClassId} to room {room.Number}.");
@@ -1345,10 +1525,12 @@ namespace ACE.Server.Managers
                 else
                 {
                     bool onTheWay;
+                    bool recentlyRefused;
                     lock (_lock)
                     {
                         PurgeExpired(now);
                         onTheWay = IsOnTheWay(player, guid);
+                        recentlyRefused = throttle && RecentlyRefused(guid, now);
                     }
 
                     if (onTheWay)
@@ -1357,6 +1539,9 @@ namespace ACE.Server.Managers
                             Say(player, MessageOnTheWay);
                         return false;
                     }
+
+                    if (recentlyRefused)
+                        return false;
 
                     var account = AccountOf(player);
                     var occupancy = BuildOccupancy(rooms, variation, guid);
@@ -1460,7 +1645,8 @@ namespace ACE.Server.Managers
 
                 isRoomPortal = true;
 
-                if (player.IsLoggingOut || player.Session == null || player.CurrentLandblock == null)
+                // Dead: a recall whose 2 s delay outlived the player must not carry the corpse into a room.
+                if (player.IsLoggingOut || player.Session == null || player.CurrentLandblock == null || player.IsDead)
                 {
                     lock (_lock)
                         RemoveOwnReservation(guid);
@@ -1476,8 +1662,10 @@ namespace ACE.Server.Managers
 
                 if (result != ClaimResult.Claimed)
                 {
-                    lock (_lock)
-                        RemoveOwnReservation(guid);
+                    // OnTheWay: their reservation belongs to a trip still under way to another dungeon - keep it.
+                    if (result != ClaimResult.OnTheWay)
+                        lock (_lock)
+                            RemoveOwnReservation(guid);
 
                     Say(player, result == ClaimResult.AccountBusy ? MessageAccountHasRoom : result == ClaimResult.OnTheWay ? MessageOnTheWay : MessagePortalAllTaken);
                     return PortalAssign.Refused;
@@ -1551,7 +1739,10 @@ namespace ACE.Server.Managers
                 {
                     PurgeExpired(now);
 
-                    if (_reservedBy.TryGetValue(guid, out var reservedKey) && reservedKey != key)
+                    // Already travelling to another room (committed): that room is theirs now. A PENDING reservation (a recall
+                    // still in its delay) changes nothing until it commits, so this room is still held.
+                    if (_reservedBy.TryGetValue(guid, out var reservedKey) && reservedKey != key
+                        && _reservations.TryGetValue(reservedKey, out var trip) && trip.Guid == guid && !trip.Pending)
                         return;
 
                     held = SetHold(key, AccountOf(player), holdTime, HoldKind.Leave, now);
@@ -1588,6 +1779,7 @@ namespace ACE.Server.Managers
                 var found = location != null && !player.IsDead && !IsStaff(player) ? FindRoomAt(location.Cell, location.Variation) : null;
 
                 var held = false;
+                var renewed = false;
                 var creditLeft = 0;
                 var holdTime = LogoutHoldTime;
 
@@ -1608,9 +1800,17 @@ namespace ACE.Server.Managers
 
                     _logoutHoldCredit.TryGetValue(account, out creditLeft);
 
-                    if (creditLeft > 0)
+                    // Their account already has a live logout hold on this room: this is a second FinalizeLogout for the same
+                    // logout (a forced logoff after a stuck save). Keep the hold; spend no credit.
+                    var roomKey = found.Room.Key(location.Variation);
+                    if (_holds.TryGetValue(roomKey, out var existing) && existing.Account == account && existing.Kind == HoldKind.Logout && IsHoldActive(existing, now))
                     {
-                        held = SetHold(found.Room.Key(location.Variation), account, holdTime, HoldKind.Logout, now);
+                        existing.Until = now + holdTime;
+                        renewed = true;
+                    }
+                    else if (creditLeft > 0)
+                    {
+                        held = SetHold(roomKey, account, holdTime, HoldKind.Logout, now);
 
                         if (held)
                         {
@@ -1623,9 +1823,13 @@ namespace ACE.Server.Managers
                     }
                 }
 
-                if (held)
-                    log.Info($"[RoomAssign] {player.Name} (0x{player.Guid}) logged out in room {found.Room.Number} - held for {holdTime.TotalMinutes:0.##} minutes ({creditLeft} renewal(s) left).");
-                else if (creditLeft <= 0)
+                if (renewed)
+                    log.Info($"[RoomAssign] {player.Name} (0x{player.Guid}) logged out again in room {found.Room.Number} - its hold kept, no renewal spent.");
+                else if (held)
+                    log.Info($"[RoomAssign] {player.Name} (0x{player.Guid}) logged out in room {found.Room.Number} - held for {holdTime.TotalMinutes.ToString("0.##", CultureInfo.InvariantCulture)} minutes ({creditLeft} renewal(s) left).");
+                else if (creditLeft > 0)
+                    log.Info($"[RoomAssign] {player.Name} (0x{player.Guid}) logged out in room {found.Room.Number} - no hold, another account holds it.");
+                else
                     log.Info($"[RoomAssign] {player.Name} (0x{player.Guid}) logged out in room {found.Room.Number} - no hold, renewals used up since the last fresh hand-out.");
             }
             catch (Exception ex)
@@ -1645,6 +1849,25 @@ namespace ACE.Server.Managers
             location.RotationZ = position.RotationZ;
             location.RotationW = position.RotationW;
             location.VariationId = variation;
+        }
+
+        /// <summary>
+        /// Rewrites the saved location to the character's lifestone - where death also sends them (Sanctuary, else
+        /// Instantiation). With neither, the same fallback DoPlayerEnterWorld uses for a character with no location: leaving
+        /// them in a room they hold no claim on would let two accounts share it.
+        /// </summary>
+        private static void MoveToLifestone(ACE.Entity.Models.Biota biota, ACE.Entity.Models.PropertiesPosition location)
+        {
+            if (!biota.PropertiesPosition.TryGetValue(PositionType.Sanctuary, out var lifestone))
+                biota.PropertiesPosition.TryGetValue(PositionType.Instantiation, out lifestone);
+
+            if (lifestone != null)
+            {
+                WriteLocation(location, lifestone);
+                return;
+            }
+
+            WriteLocation(location, new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f), null);
         }
 
         private static void WriteLocation(ACE.Entity.Models.PropertiesPosition location, ACE.Entity.Models.PropertiesPosition source)
@@ -1683,10 +1906,9 @@ namespace ACE.Server.Managers
                 if (biota?.PropertiesPosition == null || !biota.PropertiesPosition.TryGetValue(PositionType.Location, out var location))
                     return null;
 
-                if (accessLevel >= AccessLevel.Admin)
-                    return null;
+                var isAdmin = biota.PropertiesBool != null && biota.PropertiesBool.TryGetValue(PropertyBool.IsAdmin, out var flag) && flag;
 
-                if (biota.PropertiesBool != null && biota.PropertiesBool.TryGetValue(PropertyBool.IsAdmin, out var isAdmin) && isAdmin)
+                if (IsStaff(accessLevel, isAdmin))
                     return null;
 
                 var guid = biota.Id;
@@ -1697,6 +1919,15 @@ namespace ACE.Server.Managers
 
                 var found = FindRoomAt(location.ObjCellId, variation);
                 var rooms = found != null ? GetRooms(found.SourceWcid) : null;
+
+                // GetRooms may have re-parsed an edited list: take the room from the list it returned, not from the cell map,
+                // so the key matches the claims MoveClaims has just moved.
+                var room = rooms?.FirstOrDefault(r => r.Cells.Contains(location.ObjCellId));
+                if (room == null)
+                {
+                    found = null;
+                    rooms = null;
+                }
 
                 // An Olthoi logging in at the lifestone is moved there after this - treat them as not in a room.
                 var olthoiAtLifestone = biota.PropertiesInt != null && biota.PropertiesInt.TryGetValue(PropertyInt.HeritageGroup, out var heritage)
@@ -1735,7 +1966,7 @@ namespace ACE.Server.Managers
                 var stays = false;
                 var byGrace = false;
                 var graceTime = StartupGraceTime;
-                var inGrace = graceTime > TimeSpan.Zero && now - _graceStartUtc < graceTime;
+                var inGrace = graceTime > TimeSpan.Zero && now.Ticks - Interlocked.Read(ref _graceStartTicks) < graceTime.Ticks;
 
                 lock (_lock)
                 {
@@ -1793,17 +2024,7 @@ namespace ACE.Server.Managers
                     }
                 }
 
-                // To their lifestone - where death also sends them (Sanctuary, else Instantiation).
-                if (!biota.PropertiesPosition.TryGetValue(PositionType.Sanctuary, out var lifestone))
-                    biota.PropertiesPosition.TryGetValue(PositionType.Instantiation, out lifestone);
-
-                if (lifestone == null)
-                {
-                    log.Warn($"[RoomAssign] Character 0x{guid:X8} logged in to room {found.Room.Number} without a claim it can keep, and it has no lifestone - left in place.");
-                    return null;
-                }
-
-                WriteLocation(location, lifestone);
+                MoveToLifestone(biota, location);
 
                 var reason = busy ? "another character of the account has a room" : hadClaim ? "every room is taken" : "it holds no claim on the room";
                 log.Info($"[RoomAssign] Character 0x{guid:X8} logged in to room {found.Room.Number} - {reason}, moved to the lifestone.");
@@ -1867,17 +2088,8 @@ namespace ACE.Server.Managers
                 RemoveOwnReservation(guid);
             }
 
-            if (!biota.PropertiesPosition.TryGetValue(PositionType.Sanctuary, out var lifestone))
-                biota.PropertiesPosition.TryGetValue(PositionType.Instantiation, out lifestone);
-
-            if (lifestone == null)
-            {
-                log.Warn($"[RoomAssign] Character 0x{guid:X8} logged in outside the rooms of portal {sourceWcid} and has no lifestone - left in place.");
-                return null;
-            }
-
             var fromCell = location.ObjCellId;
-            WriteLocation(location, lifestone);
+            MoveToLifestone(biota, location);
             log.Info($"[RoomAssign] Character 0x{guid:X8} logged in outside the rooms of portal {sourceWcid} (cell 0x{fromCell:X8}) - moved to the lifestone.");
             return MessageCannotRemain;
         }

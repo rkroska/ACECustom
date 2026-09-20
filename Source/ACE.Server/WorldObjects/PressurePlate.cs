@@ -45,12 +45,23 @@ namespace ACE.Server.WorldObjects
                 UseSound = Sound.TriggerActivated;
         }
 
+        /// <summary>
+        /// False while the plate-wide cooldown since LastUseTime is running. defaultCooldown replaces the retail 2 s for a
+        /// plate whose weenie does not set PressurePlateCooldown (a room plate uses 1 s).
+        /// </summary>
+        public bool IsArmed(DateTime now, double? defaultCooldown = null)
+        {
+            var cooldown = CooldownOr(defaultCooldown);
+            return !(cooldown > 0 && now < LastUseTime + TimeSpan.FromSeconds(cooldown));
+        }
+
         public override bool EnterWorld()
         {
             if (!base.EnterWorld())
                 return false;
 
-            // Room Assign: a room plate's rooms exist where it is placed, including a plate that is not a database placement.
+            // Room Assign: a SPAWNED room plate (generator, /createinst) makes its rooms known where it is. Database placements
+            // never run EnterWorld - RoomAssignManager reads those at startup.
             RoomAssignManager.OnSourceEnteredWorld(WeenieClassId, Location?.Variation);
             return true;
         }
@@ -60,15 +71,14 @@ namespace ACE.Server.WorldObjects
         /// capped at one year. A value authored in SQL never goes through the setter, and TimeSpan.FromSeconds or the
         /// DateTime add would throw on a huge one - on every collision (review 2026-09-16).
         /// </summary>
-        public double EffectivePressurePlateCooldown
+        public double EffectivePressurePlateCooldown => CooldownOr(null);
+
+        private double CooldownOr(double? defaultCooldown)
         {
-            get
-            {
-                var cooldown = PressurePlateCooldown ?? DefaultPressurePlateCooldown;
-                if (double.IsNaN(cooldown) || double.IsInfinity(cooldown))
-                    return DefaultPressurePlateCooldown;
-                return Math.Clamp(cooldown, 0, MaxPressurePlateCooldown);
-            }
+            var cooldown = PressurePlateCooldown ?? defaultCooldown ?? DefaultPressurePlateCooldown;
+            if (double.IsNaN(cooldown) || double.IsInfinity(cooldown))
+                return defaultCooldown ?? DefaultPressurePlateCooldown;
+            return Math.Clamp(cooldown, 0, MaxPressurePlateCooldown);
         }
 
         public override void SetLinkProperties(WorldObject wo)
@@ -96,13 +106,11 @@ namespace ACE.Server.WorldObjects
             // Room Assign plate (2026-09-16): the WEENIE carries a room list (string 50500), re-read from the cache on
             // every step so an /id upload applies live. It replaces the stock activation entirely - see RoomAssignManager.
             // Rooms never exist in the base world: a plate placed there acts as a normal plate.
-            var rooms = RoomAssignManager.IsRoomVariation(Location?.Variation) ? RoomAssignManager.GetRooms(WeenieClassId) : null;
+            // The stock Active gate lives in base.OnActivate, which a room plate never reaches - and it is cheaper than the
+            // room-list lookup this fires on every step.
+            var rooms = Active && RoomAssignManager.IsRoomVariation(Location?.Variation) ? RoomAssignManager.GetRooms(WeenieClassId) : null;
             if (rooms != null)
             {
-                // The stock Active gate lives in base.OnActivate, which a room plate never reaches.
-                if (!Active)
-                    return;
-
                 RoomAssignManager.OnPlateStep(this, player, rooms);
                 return;
             }
@@ -124,9 +132,8 @@ namespace ACE.Server.WorldObjects
             // ExecuteEmoteSet drops a second player's activation while busy. So adding one delayed
             // action to the emote set silently reinstates the gate no matter what this property says.
             var currentTime = DateTime.UtcNow;
-            var cooldown = EffectivePressurePlateCooldown;
 
-            if (cooldown > 0 && currentTime < LastUseTime + TimeSpan.FromSeconds(cooldown))
+            if (!IsArmed(currentTime))
                 return;
 
             LastUseTime = currentTime;
