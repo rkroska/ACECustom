@@ -4390,7 +4390,7 @@ namespace ACE.Server.Command.Handlers
                 {
                     var resistType = Creature.GetResistanceType(el.Type);
                     
-                    // Intentionally passes null attacker/weapon — /weakness shows *natural* base
+                    // Intentionally passes null attacker/weapon - /weakness shows *natural* base
                     // resistances independent of the caller's current weapon (diagnostic use).
                     // GetWeakestElement() (runtime selector for Prismatic Strike) correctly passes
                     // the real attacker+weapon so rending/cleaving modifiers are factored in.
@@ -4735,8 +4735,16 @@ namespace ACE.Server.Command.Handlers
 
             // Admin tool: warn but still apply, so a texture-covered pet can still be poked at.
             var hiddenCheckDevice = device ?? (pet as CombatPet)?.TryGetSummoningDevice();
-            if (hiddenCheckDevice != null && ACE.Server.Services.PetMutationService.ColourChangeIsHidden(hiddenCheckDevice, out var hiddenTextures))
-                sb.Append($"[WARNING] This essence's captured look replaces {hiddenTextures} textures, which cover any palette underneath. The colour will not be visible.\n");
+            if (hiddenCheckDevice != null)
+            {
+                var vis = ACE.Server.Services.PetMutationService.GetColourChangeVisibility(hiddenCheckDevice);
+                if (vis.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.Hidden)
+                    sb.Append($"[WARNING] Captured textures cover {vis.TexturedParts} of {vis.TotalParts} body parts, so this palette will not be visible.\n");
+                else if (vis.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.Unknown)
+                    sb.Append($"[WARNING] {vis.TextureCount} captured textures and no part list: the palette may be covered where they sit.\n");
+                else if (vis.TextureCount > 0)
+                    sb.Append($"Captured textures: {vis.TextureCount} across {vis.TexturedParts} of {vis.TotalParts} parts - the remaining parts will show this palette.\n");
+            }
 
             if (pet != null)
             {

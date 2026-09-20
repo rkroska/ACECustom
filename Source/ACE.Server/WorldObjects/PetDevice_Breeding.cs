@@ -1966,9 +1966,14 @@ namespace ACE.Server.WorldObjects
             if (imprintLine != null)
                 sb.AppendLine(imprintLine);
 
-            // Say it up front rather than letting a mutation or a serum quietly do nothing.
-            if (ACE.Server.Services.PetMutationService.ColourChangeIsHidden(this, out _))
-                sb.AppendLine("Colour: fixed by this pet's captured textures (mutations and serums cannot change it)");
+            // Say it up front rather than letting a mutation or a serum quietly do nothing. Only claim
+            // the colour is fixed when the captured textures actually cover the body: a few
+            // replacements still leave the rest of the parts tinting.
+            var colourVis = ACE.Server.Services.PetMutationService.GetColourChangeVisibility(this);
+            if (colourVis.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.Hidden)
+                sb.AppendLine($"Colour: fixed by this pet's captured textures on {colourVis.TexturedParts} of {colourVis.TotalParts} parts (mutations and serums cannot change it)");
+            else if (colourVis.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.Unknown)
+                sb.AppendLine($"Colour: {colourVis.TextureCount} captured textures may cover part of a new colour");
 
             var dmgStep = (int)ServerConfig.pet_breeding_damage_mutation_step.Value;
             var drStep = (int)ServerConfig.pet_breeding_dr_mutation_step.Value;

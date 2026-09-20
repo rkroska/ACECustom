@@ -458,30 +458,137 @@ namespace ACE.Server.Services
         }
 
         /// <summary>
-        /// True when a colour change on this essence would not be visible: its captured look replaces
-        /// the body's surfaces with textures of their own, and a palette only tints the surfaces
-        /// underneath them. Two pets of the same species can differ here - it depends on what the
-        /// capture stored, not on the creature - so this is read from the device, not from a profile.
-        /// <paramref name="textureCount"/> is how many surface replacements the capture holds.
+        /// How much of a pet's body its captured textures cover, and therefore whether a palette
+        /// change can be seen at all.
+        /// </summary>
+        public enum ColourCoverage
+        {
+            /// <summary>No captured textures, or few enough that the palette still shows on the rest.</summary>
+            Visible,
+            /// <summary>Captured textures cover essentially every part; a palette cannot show through.</summary>
+            Hidden,
+            /// <summary>Textures are present but the capture stored no part list, so coverage is unknowable.</summary>
+            Unknown,
+        }
+
+        /// <summary>What <see cref="GetColourChangeVisibility"/> measured, so a caller can refuse, warn or print.</summary>
+        public sealed class ColourChangeVisibility
+        {
+            public ColourCoverage Coverage;
+            /// <summary>Number of surface replacements the capture holds.</summary>
+            public int TextureCount;
+            /// <summary>Distinct body parts those replacements land on.</summary>
+            public int TexturedParts;
+            /// <summary>Body parts the capture defines at all; 0 when it stored no part list.</summary>
+            public int TotalParts;
+            /// <summary>TexturedParts / TotalParts, or null when TotalParts is 0.</summary>
+            public double? Fraction;
+            /// <summary>True only when a colour change genuinely cannot be seen.</summary>
+            public bool BlocksColour => Coverage == ColourCoverage.Hidden;
+        }
+
+        /// <summary>
+        /// A texture replacement hides the palette for the ONE part it lands on, so a colour change is
+        /// invisible only when the capture retextures essentially every part. Anything less and the
+        /// remaining parts still tint: a Sawato Bandit with 3 replacements across 34 parts recolours
+        /// normally. Requiring merely that textures exist refused 784 of this shard's essences, 44 of
+        /// them wrongly.
+        ///
+        /// Slack is deliberate: a handful of parts are never visible anyway (mouth interiors, surfaces
+        /// under armour), so demanding 100% would keep near-invisible pets eligible.
+        /// </summary>
+        private const double ColourHiddenPartFraction = 0.90;
+
+        /// <summary>
+        /// Measures whether a colour change on this essence would be visible. Read from the device
+        /// rather than a species profile: two pets of the same creature differ here, because it depends
+        /// on what the capture stored.
+        /// </summary>
+        public static ColourChangeVisibility GetColourChangeVisibility(PetDevice device)
+        {
+            if (device == null)
+                return new ColourChangeVisibility { Coverage = ColourCoverage.Visible };
+
+            return GetColourChangeVisibility(device.CapturedObjDescTextures, device.CapturedObjDescAnimParts);
+        }
+
+        /// <summary>
+        /// The pure half of <see cref="GetColourChangeVisibility(PetDevice)"/>, taking the two stored
+        /// strings directly so the coverage rule can be tested without a live device.
+        /// </summary>
+        public static ColourChangeVisibility GetColourChangeVisibility(string capturedTextures, string capturedAnimParts)
+        {
+            var result = new ColourChangeVisibility { Coverage = ColourCoverage.Visible };
+
+            var captured = capturedTextures;
+            if (string.IsNullOrEmpty(captured))
+                return result;
+
+            // Textures are stored as "part:oldTexture:newTexture", anim parts as "part:animationId".
+            var texturedParts = ParseLeadingIndices(captured, out var textureCount);
+            result.TextureCount = textureCount;
+            result.TexturedParts = texturedParts.Count;
+
+            if (textureCount == 0)
+                return result;
+
+            var allParts = ParseLeadingIndices(capturedAnimParts, out _);
+            result.TotalParts = allParts.Count;
+
+            if (result.TotalParts == 0)
+            {
+                // Textures exist but there is no part list to measure them against. Callers warn
+                // instead of refusing: blocking the feature outright is the worse failure.
+                result.Coverage = ColourCoverage.Unknown;
+                return result;
+            }
+
+            // Only parts the capture actually defines can be covered.
+            texturedParts.IntersectWith(allParts);
+            result.TexturedParts = texturedParts.Count;
+            result.Fraction = (double)result.TexturedParts / result.TotalParts;
+
+            if (result.Fraction >= ColourHiddenPartFraction)
+                result.Coverage = ColourCoverage.Hidden;
+
+            return result;
+        }
+
+        /// <summary>
+        /// Collects the leading "part" index of each comma-separated "index:rest" entry.
+        /// <paramref name="entryCount"/> counts entries, including repeats on the same part.
+        /// </summary>
+        private static HashSet<int> ParseLeadingIndices(string packed, out int entryCount)
+        {
+            var parts = new HashSet<int>();
+            entryCount = 0;
+            if (string.IsNullOrEmpty(packed))
+                return parts;
+
+            foreach (var entry in packed.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (string.IsNullOrWhiteSpace(entry))
+                    continue;
+                entryCount++;
+
+                var colon = entry.IndexOf(':');
+                var head = colon < 0 ? entry : entry.Substring(0, colon);
+                if (int.TryParse(head.Trim(), out var idx))
+                    parts.Add(idx);
+            }
+            return parts;
+        }
+
+        /// <summary>
+        /// True only when a colour change genuinely cannot be seen. Kept for callers that just need the
+        /// yes/no; use <see cref="GetColourChangeVisibility"/> when Unknown must be told apart from
+        /// Visible. <paramref name="textureCount"/> is how many surface replacements the capture holds.
         /// </summary>
         public static bool ColourChangeIsHidden(PetDevice device, out int textureCount)
         {
-            textureCount = 0;
-            if (device == null)
-                return false;
-
-            var captured = device.CapturedObjDescTextures;
-            if (string.IsNullOrEmpty(captured))
-                return false;
-
-            // Stored as "part:oldTexture:newTexture" entries separated by commas.
-            foreach (var entry in captured.Split(',', StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (!string.IsNullOrWhiteSpace(entry))
-                    textureCount++;
-            }
-
-            return textureCount > 0;
+            var v = GetColourChangeVisibility(device);
+            textureCount = v.TextureCount;
+            return v.BlocksColour;
         }
 
         /// <summary>

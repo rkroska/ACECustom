@@ -430,12 +430,16 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                // A capture that replaced the body's surfaces hides any palette underneath it, so the
-                // serum would roll a colour nobody can see. Refuse before consuming it.
-                if (ACE.Server.Services.PetMutationService.ColourChangeIsHidden(petDevice, out var hiddenTextureCount))
+                // A capture that retextured essentially the whole body hides any palette underneath it,
+                // so the serum would roll a colour nobody can see. Refuse before consuming it - but only
+                // when the textures really do cover the body. A few replacements leave the rest of the
+                // parts tinting normally, and refusing those blocked the serum on most captured essences.
+                var visibility = ACE.Server.Services.PetMutationService.GetColourChangeVisibility(petDevice);
+                if (visibility.BlocksColour)
                 {
-                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, null, null, false, $"colour hidden by {hiddenTextureCount} captured textures");
-                    SendTransientError($"{petDevice.Name} cannot have its colour changed: its captured appearance replaces the creature's textures, which cover any colour underneath. The serum was not used.");
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, null, null, false,
+                        $"colour hidden: {visibility.TexturedParts}/{visibility.TotalParts} parts retextured by {visibility.TextureCount} captured textures");
+                    SendTransientError($"{petDevice.Name} cannot have its colour changed: its captured appearance retextures {visibility.TexturedParts} of its {visibility.TotalParts} body parts, which cover any colour underneath. The serum was not used.");
                     SendUseDoneEvent();
                     return;
                 }
@@ -494,6 +498,12 @@ namespace ACE.Server.WorldObjects
                          $"summoned={liveSummoned}, liveRecoloured={liveRecoloured}.");
 
                 PlayParticleEffect(PlayScript.EnchantUpPurple, target.Guid);
+
+                // Textures present but the capture stored no part list, so whether the colour shows
+                // could not be measured. Say so rather than silently taking the serum.
+                if (visibility.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.Unknown)
+                    SendMessage($"[WARNING] {petDevice.Name} carries {visibility.TextureCount} captured textures and no part list, so the new colour may be covered where they sit.");
+
                 if (liveRecoloured)
                     SendMessage($"You inject {petDevice.Name} with the Mutagenic Serum. Its colour has changed and your summoned pet has been recoloured.");
                 else if (liveSummoned)
