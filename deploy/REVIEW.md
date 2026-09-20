@@ -14,9 +14,10 @@ look of **298 weenies / 996 placed instances, about 1.7% of the candidate set**,
 named below, none of them common trash and none of them players. Cosmetic only. That is a
 look-and-confirm item, not a blocker.
 
-What is left blocking is B2: as your shard is configured right now, `pet_bond_enabled` is off
-and the bond gate is 100, so **every breed attempt is refused**. That is a one-command fix,
-but nothing works until it is done.
+What is left is B2, and it is configuration: the breeding area is stored as landblock **364**
+(the Marketplace) while the portal delivers players to **314** (the motel), and `pet_trace` is
+live on the shard right now. Both are one command each. (An earlier revision of this review
+called the bond gate a blocker - that was wrong, see B2a.)
 
 ---
 
@@ -92,13 +93,22 @@ Of those 5,480, most of the four deltas turn out to be inert on real data:
 
 | Delta | Weenies actually affected |
 |---|---|
-| `PaletteID` forced to setup default (only fires when `PaletteBaseDID` is absent) | **6** |
+| `PaletteID` forced to setup default (fires when `PaletteBase` is absent) | **313** - see the correction below |
 | The two magic `PaletteID` overrides (`0x040002AB`, `0x0400007E`) | **0** |
 | The `0x04xxxxxx` full-palette branch | **0** (no retail creature uses one) |
 | Has `PaletteTemplate` **and** `Shade` - same palette picked as before | 4,056 |
 | Has `Shade`, no `PaletteTemplate` - same as before | 81 |
 | **Bucket B: has `PaletteTemplate`, no `Shade`** - shade default moved `0` -> `0.5` | **1,076** |
 | **Bucket A: neither** - old applied *no* subpalettes, new applies them at shade 0.5 | **267** |
+
+> **Correction to the table above.** The `PaletteID` row first read **6**. That query tested
+> `weenie_properties_d_i_d type = 2`, which is MotionTable - `PropertyDataId.PaletteBase` is
+> **6**. Re-run correctly, **313 creatures / 1,000 placed instances** have no PaletteBase and so
+> had their base palette forced. This was confirmed in-game: the Undead Custodian's packet showed
+> `PaletteID=0x04000742` where master sends `0`, and its robe lost the brown trim. Fixed by
+> scoping the override to the `0x04` pet-palette case; the fix also cut the "gains subpalettes"
+> group from 267 to 106, because a creature with no PaletteBase now sends an unresolvable base
+> and the client falls back to the model's own colours, exactly as on master.
 
 ### Resolved against the real DAT files
 
@@ -173,17 +183,46 @@ was not part of the original creature analysis. Measured the same way:
 | `PaletteTemplate` IS a key in the table - unchanged | 2,165 |
 | No readable ClothingTable - unchanged | 62 |
 | `PaletteTemplate` is `0x04xxxxxx` | 0 |
-| **`PaletteTemplate` NOT a key -> raw ordinal used as a subpalette id** | **42** |
+| `PaletteTemplate` NOT a key, **but the fallback effect has ZERO CloSubPalettes** - unchanged | 21 |
+| **GENUINELY AFFECTED** | **21** |
 
-Those 42 are wearable player gear, including a complete armour set:
+> **CORRECTION to an earlier revision of this review.** A first pass reported 42 affected items
+> and 71 affected creatures. That over-counted. The raw-ordinal branch lives *inside*
+> `for (int i = 0; i < itemSubPal.CloSubPalettes.Count; i++)`, so an object is only affected
+> when the effect actually in use has at least one `CloSubPalette`. Half the items and five of
+> the creatures have a fallback effect with **zero**, meaning no subpalette is written at all -
+> on master or on the branch - so they are untouched.
+>
+> **The Gelidite / Leikotha's Tears set is in that unaffected group** and should be removed from
+> the affected list. Its clothing table `0x100005EF` has `ClothingSubPalEffects` key `[1]` whose
+> effect has zero CloSubPalettes. The shard owner observing that its pieces "all look the same"
+> is them rendering normally, not a symptom.
 
-- **Gelidite / Leikotha's Tears** - all 15 pieces (30511, 30513-30528), `PaletteTemplate=4`
-- Borelean Jumpsuit (87188), Monster Fight Shirt (87153), Flame Coat (55790801)
-- Pirate Skeleton Guise (90000037), Nightmare Visage (290500280), Knath Valley Mask (3110177)
-- Shadow Walker Shirt (3998210), Jester's PJ's (290500191), Red Flag (5579199)
+**Corrected totals: 66 creatures (225 placed instances) + 21 equippable items = 87 objects.**
 
-So the defect is **71 creature weenies + 42 equippable items**, and a player wearing Gelidite
-armour will see it on their own character.
+The affected items, ordered by how much of the body they repaint (`parts` = `CloObjectEffects`
+on the HumanMale setup - a 17-part effect replaces the entire body model):
+
+| WCID | Name | Parts | master palette | current palette |
+|---|---|---|---|---|
+| 87188 | Borelean Jumpsuit | 17 | `0x0400197E` | `0x04000014` |
+| 290500191 | Jester's PJ's | 17 | *(none - empty PaletteSet)* | `0x0400002E` |
+| 290500317 / 696900215 | Island Mattekar Robe | 14 | `0x04000EDC` | `0x04000064` |
+| 3000000001 | Hoory Mattekar Over-robe | 14 | `0x040005F2` | `0x04000064` |
+| 99258429 | Plaguefang's Robe | 14 | `0x04001712` | `0x04000068` |
+| **55790801** | **Flame Coat** | **7** | `0x040014BE` | `0x04000045` |
+| 227190179 | Advanced Academy Coat | 6 | `0x04001083` | `0x04000064` |
+| 3110177, 227199990, 227198888, 93000001, 420559, 290500620 | masks / helms | 1 | varies | varies |
+| 5579199, 3998210, 290500501, 694200217, 420558, 290500618, 227190087 | flag / shirts / shields | 0 | varies | varies |
+
+**Confirmed in-game by the shard owner:** equipping the **Flame Coat (55790801)** "changed the
+colour of my entire character". That is this defect at its most visible - the coat's clothing
+base replaces **7 body parts** (chest, abdomen, both upper and lower arms), so painting them
+with `0x04000045` instead of `0x040014BE` recolours the whole torso and arms. The two 17-part
+items would repaint the entire body model.
+
+Severity is still cosmetic - no data, combat or economy impact - but "cosmetic" here can mean
+a player's whole character changing colour, not a subtle tint.
 
 ### Recommended fix
 
@@ -233,12 +272,31 @@ null or a small enum value. Players are not at risk from that call.
 
 Not a code defect - `PropertyManager.cs` - but it will decide whether launch day works.
 
-**B2a. Breeding cannot happen at all as currently configured.** `pet_bond_enabled` defaults to
-`false` (`PropertyManager.cs:446`). Bond XP is only awarded when it is on. Gate 8 requires
-`PetBondLevel >= pet_breeding_min_bond`, which is 100, and `PetBondLevel` falls back to 1.
-`CompleteBirth` writes babies at bond 1. So with bond disabled **no essence can ever reach the
-gate and every breed is refused**. Either turn bond on or drop `pet_breeding_min_bond` to 1.
-Pick one deliberately; RUNBOOK 7c has both.
+**B2a. WITHDRAWN - this was wrong.** An earlier revision called the bond gate a launch blocker:
+`pet_bond_enabled` defaults to `false` in code and `pet_breeding_min_bond` to 100, so on paper no
+essence can ever reach the gate. **That reasoning used the code defaults without reading the
+shard's stored values**, which is precisely the mistake CLAUDE.md warns about. Queried directly
+(2026-09-20), this shard already stores `pet_bond_enabled = true` and `pet_breeding_min_bond = 1`.
+Breeding is not blocked by bond. Changing the code default would not affect this shard either way,
+since stored values win; it is worth doing only for fresh installs.
+
+**B2a (replacement). The breeding area is set to the wrong landblock.** Stored values on this
+shard:
+
+| Property | Stored | Should be |
+|---|---|---|
+| `pet_breeding_allowed_landblock` | **364** = `0x016C`, the **Marketplace** | **314** = `0x013A`, the motel |
+| `pet_breeding_allowed_variant` | *not stored* - code default 3 | 3, set explicitly |
+| `pet_trace` | **true** | **false** |
+| `pet_breeding_force_mutation` | **true** | false |
+
+The portal delivers players to `0x013A` variant 3, but the ritual area is configured as the
+Marketplace, so a breed cannot happen where the content is. `IsInMotelOrEncounter()` also returns
+true there, which switches on own-pet beneficial-spell targeting and the up-to-8x heal scaling in
+a public town.
+
+`pet_trace = true` is the performance one: one log line per swing, cast, DoT tick, heal and death
+for every player online, live right now.
 
 **B2b. Nothing caps mutation growth - accepted as a design choice.** `pet_breeding_max_stat_mutations`
 defaults to `0`, which the code reads as *uncapped* (`PetDevice_Breeding.cs:160`).
@@ -392,6 +450,7 @@ internet.
 | L4 | `CreditMaturityKills` now runs on **every** creature death server-wide. It early-returns when `pet_maturity_enabled` is false and is wrapped in try/catch, but with maturity on it walks `DamageHistory` and resolves each attacker by GUID. | `WorldObjects/Creature_Death.cs:84` | Fine; just know it is a new per-death cost. |
 | L5 | `Content/sql/weenies/98760399-98760401 Pet Tailoring and Neutering Kits.sql` is byte-identical to the `Database/Updates/World` copy. Two files to keep in sync. | - | Delete one, or note which is canonical. |
 | L6 | `.gitattributes` has `* text=auto` with no binary rule for the committed web bundle, so `wwwroot/assets/*.js` churns CRLF/LF on every checkout. Harmless but noisy (it is why the bundle "differs" from `dist`). | `.gitattributes:1` | Add `Source/ACE.Server/wwwroot/** -text`. |
+| L6b | `VisualizerService.MergeCustomClothingBaseJson` reads clothing overrides from two **hardcoded absolute paths**, `C:\ACE\Mods\CustomClothingBase\json\` (406 files present on this machine) and `C:\Scripting\CustomClothingBase\json\`. Machine-specific; breaks on any other host and on Docker. Note it affects **only the web 3D showroom** - the game server's render path does not read these, so it cannot explain an in-game appearance difference. | `Services/VisualizerService.cs:707-710` | Move to a config value or a path relative to `DatFilesDirectory`. |
 | L7 | Pre-existing, not this branch: `PropertyManager.cs` lines 454, 455, 475, 476, 502, 509, 519, 902, 948, 951 contain em-dashes, `x`-signs and ellipses in config descriptions, which `@showprops` renders **in the AC client**. | `Managers/PropertyManager.cs` | Optional cleanup; flagging because it violates the same rule the branch otherwise respects. |
 | L8 | `DamageEvent` gained 8 fields (~40 bytes) allocated per swing for trace capture, even when tracing is off. | `Entity/DamageEvent.cs:168-187` | Negligible; noted for completeness. |
 
