@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using ACE.Database;
 using ACE.Entity.Enum;
@@ -188,10 +188,15 @@ namespace ACE.Server.Entity
                 device.IconId = portrait;
 
             // Name: same rebuild the capture system uses, so "Fire Drudge Essence (200)" style names
-            // swap the creature head and keep the template tail.
-            var rebuilt = PetDevice.BuildDisplayNameAfterCaptureApply(device.Name, previousCreatureName, device.VisualOverrideName);
-            if (!string.IsNullOrEmpty(rebuilt))
-                device.Name = rebuilt;
+            // swap the creature head and keep the template tail. An owner-chosen, staff-approved
+            // PetCustomName is left alone - tailoring changes the look, not the name someone was given
+            // permission to use.
+            if (string.IsNullOrWhiteSpace(device.GetProperty(PropertyString.PetCustomName)))
+            {
+                var rebuilt = PetDevice.BuildDisplayNameAfterCaptureApply(device.Name, previousCreatureName, device.VisualOverrideName);
+                if (!string.IsNullOrEmpty(rebuilt))
+                    device.Name = rebuilt;
+            }
             SyncUseString(device, nameBefore, device.Name);
 
             // Push name and icon to the client. Per-property updates alone are not enough: the client

@@ -616,6 +616,28 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// The base name a summoned pet is given, before <see cref="Pet"/> prepends "Owner's ".
+        ///
+        /// An approved <see cref="PropertyString.PetCustomName"/> wins and is used verbatim. The owner chose
+        /// it and staff approved it, so it is not a capture-derived name and must not be run through the
+        /// owner-prefix cleanup: that cleanup cannot tell "Owner's " from a possessive inside the name
+        /// itself, and would turn "Bob's Burgers" into "Burgers".
+        ///
+        /// With no custom name the capture-derived <paramref name="visualOverrideName"/> is used, with its
+        /// chained "Owner's " prefixes stripped as before - legacy devices carry them baked in.
+        /// </summary>
+        public static string ResolveSummonedPetBaseName(string customName, string visualOverrideName)
+        {
+            if (!string.IsNullOrWhiteSpace(customName))
+                return customName.Trim();
+
+            if (string.IsNullOrEmpty(visualOverrideName))
+                return null;
+
+            return StripCapturedCreatureNamePrefixes(visualOverrideName);
+        }
+
+        /// <summary>
         /// Strips chained "Owner's " style prefixes from a stored capture name (same rules as summon naming).
         /// </summary>
         public static string StripCapturedCreatureNamePrefixes(string name)
@@ -1300,21 +1322,12 @@ namespace ACE.Server.WorldObjects
             if (VisualOverrideScale.HasValue)
                 pet.ObjScale = (float)VisualOverrideScale.Value;
             
-            // Apply creature name override
-            if (!string.IsNullOrEmpty(VisualOverrideName))
-            {
-                // Strip ALL existing "Player's" prefixes to get base creature name
-                var baseName = VisualOverrideName;
-                int apostropheIdx;
-                while ((apostropheIdx = baseName.IndexOf("'s ")) > 0)
-                {
-                    baseName = baseName.Substring(apostropheIdx + 3);
-                }
-                
-                // Now add only the current owner's name
-                //pet.Name = $"{ownerName}'s {baseName}";
-                pet.Name = $"{baseName}";
-            }
+            // Apply creature name override. An approved PetCustomName is authoritative and is used
+            // verbatim; otherwise the capture-derived name has its chained "Owner's " prefixes stripped.
+            // Pet.Init prepends "Owner's " afterwards, so "Bob's Burgers" summons as "Owner's Bob's Burgers".
+            var resolvedName = ResolveSummonedPetBaseName(GetProperty(PropertyString.PetCustomName), VisualOverrideName);
+            if (!string.IsNullOrEmpty(resolvedName))
+                pet.Name = resolvedName;
             
             // Apply creature type (species) override
             if (VisualOverrideCreatureType.HasValue)

@@ -318,8 +318,19 @@ namespace ACE.Server.Controllers
             var device = owner.FindObject(petGuid, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) as PetDevice;
             if (device == null)
             {
-                // Not in the online owner's possession any more: the biota path settles whether it exists at all.
-                return RenameOffline(owner.Guid.Full, petGuid, oldName, newName);
+                // Not on the character. The search covers the main pack, every side pack and equipped
+                // items (Container.GetInventoryItem recurses), so this means the essence really is
+                // elsewhere - dropped, in a chest, sold or traded away.
+                //
+                // Do NOT fall through to RenameOffline here. That reads the biota straight from the
+                // shard with skipCache, edits the detached copy and writes the whole thing back, while
+                // the server still has the object loaded somewhere else. The in-memory copy knows
+                // nothing about the write, so whichever saves last wins and any property changed since
+                // the last save can be silently reverted. It also runs synchronous DB I/O on the world
+                // queue, stalling every landblock for the duration.
+                //
+                // Auto-deny instead; the owner can request again once it is back in their possession.
+                return RenameResult.Mismatch("the device is not in the owner's possession");
             }
 
             if (!string.Equals(device.Name, oldName, StringComparison.Ordinal))
@@ -327,6 +338,9 @@ namespace ACE.Server.Controllers
 
             device.Name = newName;
             device.VisualOverrideName = newName;
+            // Authoritative owner-chosen name: the summon path uses this verbatim rather than running it
+            // through the "Owner's " prefix cleanup, which would eat a legitimate possessive in the name.
+            device.SetProperty(PropertyString.PetCustomName, newName);
             device.ChangesDetected = true;
             device.SaveBiotaToDatabase();
             device.ChangesDetected = true;
@@ -371,9 +385,13 @@ namespace ACE.Server.Controllers
             if (!string.Equals(currentName, oldName, StringComparison.Ordinal))
                 return RenameResult.Mismatch($"the device is now named \"{currentName}\", not \"{oldName}\"");
 
-            var rwLock = new ReaderWriterLockSlim();
+            // Only reached when the owner is genuinely offline, so nothing else holds this biota and a
+            // local lock is sufficient. Disposed rather than left for the finalizer.
+            using var rwLock = new ReaderWriterLockSlim();
             biota.SetProperty(PropertyString.Name, newName, rwLock, out _);
             biota.SetProperty(PropertyString.CapturedCreatureName, newName, rwLock, out _);
+            // Same authoritative record as the online path, so the name survives the next summon.
+            biota.SetProperty(PropertyString.PetCustomName, newName, rwLock, out _);
 
             if (!DatabaseManager.Shard.BaseDatabase.SaveBiota(biota, rwLock))
                 return RenameResult.Failed("the shard database rejected the biota save");
