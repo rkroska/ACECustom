@@ -278,6 +278,63 @@ serum, stocked on Ivo the same way. Rules that matter for pricing:
 | @dance | Player | Performs the dance emote without typing it. |
 | @breed-debug | Player | Prints breeding switch, location match, the player's own pet status and a count of nearby players with pets. Admins also see each online player's name, distance, landblock and pet. |
 | @pet-debug | Developer | Same output as @breed-debug. |
+| @export-template, @et, @ed template | Developer | Turns the creature or object you are looking at into a new weenie SQL file that looks exactly like it. See below. |
+
+### Turning a pet (or anything) into a new NPC or monster: `@et`
+
+A summoned pet's look exists only at runtime - the setup, clothing base, palette, shade, scale and the
+per-part anim / palette / texture rows the capture and mutation systems stamped on it. `@ed <wcid>` and
+`@export-sql` only export weenies that are already in the world database, so that look could not be
+captured. `@export-template` (short `@et`, or `@ed template ...` to also drop the file in Discord) exports
+the **currently selected** object (or the last one you appraised) as a ready-to-load weenie.
+
+The visuals are the point of the tool. The appearance is taken from what is actually **rendered**
+(`CalculateObjDesc`): for a pet that is its captured / mutated rows, for a monster its overrides, and for a
+player character the composed armour and clothing they are wearing at that moment. Held items (weapon,
+shield, caster) are separate objects, so they are written as `create_list` Wield rows instead. The flavour
+only decides whether the result fights back:
+
+- `monster` (the default): a faithful copy - attackable, keeps its attributes, vitals, skills, body parts
+  and spell book. For a **pet** the held weapons are capture skins, so they are left out here (the copy
+  fights with its body parts like the pet did); use `npc` if you want them shown.
+- `npc`: same look, plus the NPC treatment used for Ruggan's Annex (not attackable, invincible, stuck,
+  yellow radar blip, click-to-talk, no loot / XP / corpse) and every held item as a Wield row.
+- A **player** source defaults to `npc`, is always exported as a plain creature, and has all account and
+  character state stripped (only appearance, level, heritage, gender, attributes, trained skills and held
+  items survive). Re-export after a gear change and you get a different look.
+- A pet **essence / device** is refused: summon the pet and select the pet.
+- A non-creature (chest, portal, prop) exports its type, look and name; no combat properties are invented.
+
+Every argument is optional and the order does not matter:
+
+```
+@et                              selected object, its own name, next free id
+@et npc                          same, as an NPC
+@et Gene's Handler               name override (apostrophes are fine)
+@et 78790300 npc Gene's Handler  explicit id (decimal or 0x hex), any order
+@et 78790300 overwrite           replace a weenie that already exists at that id
+@ed template npc                 same export, file also sent to the Discord exports channel
+```
+
+Ids come from the **temporary export block `78790000`-`78799999`** - the whole 7879 prefix is automatic
+export space and nothing you hand-author lives there, so a file from this tool can never collide with
+the 7878 content. The tool picks the lowest free id (checked against the world database at export time),
+keeps a persisted high-water mark so two exports made before either file is loaded never share an id,
+refuses an explicit id that already exists unless you add `overwrite`, warns when an explicit id is
+outside the block, and refuses rather than wraps when the block is used up
+(`content_template_export_wcid_start` / `_end` / `_next_wcid` in the server config).
+
+The block is **staging, not a home**: load the file, `@clearcache weenie`, `@ci <wcid>` or `@create
+<wcid>`, iterate, and when the creature is final renumber it into your own 7878 range. `@id`,
+`@import-sql`, `@import-sql-folders` and `@import-json` refuse a wcid inside the block ("temporary export
+staging block ... add the word force") so nothing accumulates there by accident.
+
+The file lands in the content folder like every other export (`<content_folder>/sql/weenies/<wcid>
+<name>.sql`); the chat reply prints the full path, what was captured in one line, and the next steps.
+The SQL header records the source name and wcid, who exported it, the UTC time, the flavour, the held-item
+dependencies and a warning that the look depends on the client having the same DAT art. Its DELETE is
+deliberately narrow (id **and** the generated `tmpl<wcid>_<slug>` class name) so re-running the file only
+ever replaces its own export.
 
 ---
 

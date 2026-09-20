@@ -33,6 +33,7 @@ Related: `PET_BREEDING_CONTENT_GUIDE.md` (content team), `PET_BREEDING_PLAYER_GU
 | `Source/ACE.Server/Managers/PropertyManager.cs` | All `pet_breeding_*`, `pet_maturity_*` config. |
 | `Source/ACE.Server/Command/Handlers/DeveloperCommands.cs` | `@breed`, `@breed-replay`, `@setsex`, `@pet-reset-cooldown`, `@pet-set-maturity`, `@pet-set-mutations`, `@pet-cleanse-palette`, `@pet-make-alpha`, `@mutate_pet`, `@petdesc`, `@pet-debug`, `@pet-dump`. |
 | `Source/ACE.Server/Command/Handlers/PlayerCommands.cs` | `@dance`, `@breed-debug`, `@pet-name`. |
+| `Source/ACE.Server/Entity/TemplateExport.cs`, `Command/Handlers/DeveloperContentCommands.cs` | `@export-template` / `@et` / `@ed template`: exports the selected live object (pet, monster, NPC, player, prop) as a weenie SQL template - rendered `ObjDesc` baked into anim part / palette / texture rows, held items as Wield rows, instance and pet bookkeeping stripped, `monster` (faithful) or `npc` (Ivo-block treatment) flavour. Ids from the temporary block `78790000`-`78799999` (`content_template_export_wcid_start` / `_end`, persisted high-water mark `_next_wcid`); the import commands refuse that block without `force`. Snapshot runs via `LandblockManager.RunOnThreadFor`. |
 | `Source/ACE.Server/Controllers/PetNamingController.cs` | Portal approve/deny for name requests. |
 | `Source/ACE.Server/Controllers/VisualizerController.cs`, `Services/VisualizerService.cs`, `Services/CurationService.cs` | 3D showroom data, `breeding-config`, curation and screenshots. |
 | `Source/ACE.WebPortal/ClientApp/src/utils/breedingModel.ts`, `components/PetBreedingCalculator.tsx` | Website simulator: a TypeScript mirror of `BreedingMath` and the roll logic. |
@@ -522,6 +523,10 @@ to one side means the other side was not updated; do not "fix" the test.
 - `EnumCollisionTests`: no duplicate ids in the custom property ranges.
 - `SqlPatchSanityTests`: `Database/Updates/World` and `Shard` are 7-bit ASCII with LF line endings,
   and no `landblock_instance` INSERT names the generated `landblock` column.
+- `TemplateExportTests`: the pure half of `@export-template` (order-insensitive argument parsing,
+  lowest-free / high-water-mark wcid allocation and its refusals, `tmpl<wcid>_<slug>` class names,
+  property filtering for creatures and the player whitelist, the npc overlay, held-item Wield rows,
+  the narrow DELETE, and the ASCII / LF shape of the header and chat reply).
 
 Run from `Source`: `dotnet test ACE.Server.Tests\ACE.Server.Tests.csproj --filter "FullyQualifiedName~PetBreeding"`.
 

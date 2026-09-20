@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Text;
 using System.Text.RegularExpressions;
 
 using Microsoft.EntityFrameworkCore;
@@ -98,6 +99,13 @@ namespace ACE.Server.Command.Handlers.Processors
         [CommandHandler("import-json", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports json data from the Content folder", "<wcid>")]
         public static void HandleImportJson(Session session, params string[] parameters)
         {
+            parameters = TemplateExport.StripForceKeyword(parameters, out var force);
+            if (parameters.Length == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: import-json <wcid> [content-type] [force]");
+                return;
+            }
+
             var param = parameters[0];
             var contentType = FileType.Weenie;
 
@@ -126,12 +134,12 @@ namespace ACE.Server.Command.Handlers.Processors
                     break;
 
                 case FileType.Weenie:
-                    ImportJsonWeenie(session, param);
+                    ImportJsonWeenie(session, param, force);
                     break;
             }
         }
 
-        public static void ImportJsonWeenie(Session session, string wcid)
+        public static void ImportJsonWeenie(Session session, string wcid, bool force = false)
         {
             DirectoryInfo di = VerifyContentFolder(session);
             if (!di.Exists) return;
@@ -156,7 +164,7 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             foreach (var file in files)
-                ImportJsonWeenie(session, json_folder, file.Name);
+                ImportJsonWeenie(session, json_folder, file.Name, force);
         }
 
         public static void ImportJsonRecipe(Session session, string recipeId)
@@ -246,13 +254,27 @@ namespace ACE.Server.Command.Handlers.Processors
         [CommandHandler("import-sql-folders", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports all weenie sql data from the Content folder and all sub-folders", "<wcid>")]
         public static void HandleImportSQLFolders(Session session, params string[] parameters)
         {
+            parameters = TemplateExport.StripForceKeyword(parameters, out var force);
+            if (parameters.Length == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: import-sql-folders <wcid> [force]");
+                return;
+            }
+
             var param = parameters[0];
-            ImportSQLWeenie(session, param, true);
+            ImportSQLWeenie(session, param, true, force);
         }
 
         [CommandHandler("import-sql", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports sql data from the Content folder", "<wcid>")]
         public static void HandleImportSQL(Session session, params string[] parameters)
         {
+            parameters = TemplateExport.StripForceKeyword(parameters, out var force);
+            if (parameters.Length == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: import-sql <wcid> [content-type] [force]");
+                return;
+            }
+
             var param = parameters[0];
             var contentType = FileType.Weenie;
 
@@ -291,7 +313,7 @@ namespace ACE.Server.Command.Handlers.Processors
                         break;
 
                     case FileType.Weenie:
-                        ImportSQLWeenie(session, param);
+                        ImportSQLWeenie(session, param, force: force);
                         break;
                 }
             }
@@ -301,7 +323,7 @@ namespace ACE.Server.Command.Handlers.Processors
             }
         }
 
-        public static void ImportSQLWeenie(Session session, string wcid, bool withFolders = false)
+        public static void ImportSQLWeenie(Session session, string wcid, bool withFolders = false, bool force = false)
         {
             DirectoryInfo di = VerifyContentFolder(session);
             if (!di.Exists) return;
@@ -328,7 +350,7 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             foreach (var file in files)
-                ImportSQLWeenie(session, file.DirectoryName + sep, file.Name);
+                ImportSQLWeenie(session, file.DirectoryName + sep, file.Name, force);
                 
         }
 
@@ -501,13 +523,16 @@ namespace ACE.Server.Command.Handlers.Processors
         /// <summary>
         /// Converts JSON to SQL, imports to database, and clears the weenie cache
         /// </summary>
-        private static void ImportJsonWeenie(Session session, string json_folder, string json_file)
+        private static void ImportJsonWeenie(Session session, string json_folder, string json_file, bool force = false)
         {
             if (!uint.TryParse(Regex.Match(json_file, @"\d+").Value, out var wcid))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find wcid from {json_file}");
                 return;
             }
+
+            if (RefuseImportIntoExportBlock(session, wcid, force))
+                return;
 
             // convert json -> sql
             var sqlFile = json2sql_weenie(session, json_folder, json_file);
@@ -909,13 +934,34 @@ namespace ACE.Server.Command.Handlers.Processors
         /// <summary>
         /// Converts SQL to JSON, imports to database, clears the weenie cache
         /// </summary>
-        private static void ImportSQLWeenie(Session session, string sql_folder, string sql_file)
+        /// <summary>
+        /// The @export-template block (content_template_export_wcid_start .. _end) is TEMPORARY staging: exports
+        /// land there to be spawned and iterated, and are renumbered into hand-authored space when final. Importing
+        /// content there by id is refused unless the author adds the word force. Spawn commands (@ci, @create,
+        /// @createinst) are untouched; spawning from the block is how an export is tested.
+        /// </summary>
+        private static bool RefuseImportIntoExportBlock(Session session, uint wcid, bool force)
+        {
+            var start = TemplateExport.ClampToUint(ServerConfig.content_template_export_wcid_start.Value);
+            var end = TemplateExport.ClampToUint(ServerConfig.content_template_export_wcid_end.Value);
+
+            if (force || !TemplateExport.IsInExportBlock(wcid, start, end))
+                return false;
+
+            CommandHandlerHelper.WriteOutputInfo(session, TemplateExport.ImportRefusal(wcid, start, end));
+            return true;
+        }
+
+        private static void ImportSQLWeenie(Session session, string sql_folder, string sql_file, bool force = false)
         {
             if (!uint.TryParse(Regex.Match(sql_file, @"\d+").Value, out var wcid))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find wcid from {sql_file}");
                 return;
             }
+
+            if (RefuseImportIntoExportBlock(session, wcid, force))
+                return;
 
             // import sql to db
             ImportSQL(sql_folder + sql_file);
@@ -2920,12 +2966,17 @@ namespace ACE.Server.Command.Handlers.Processors
         {
             try
             {
-                string identifier = parameters[0];
+                parameters = TemplateExport.StripForceKeyword(parameters, out var force);
+                string identifier = parameters.Length > 0 ? parameters[0] : null;
                 if (string.IsNullOrEmpty(identifier))
                 {
                     CommandHandlerHelper.WriteOutputInfo(session, "Invalid identifier");
                     return;
                 }
+
+                // the export staging block is not a home for content: refuse before touching Discord
+                if (uint.TryParse(identifier, out var guardWcid) && RefuseImportIntoExportBlock(session, guardWcid, force))
+                    return;
 
                 string sql = await DiscordChatManager.GetSqlFromDiscordMessageAsync(20, identifier);
 
@@ -3104,9 +3155,23 @@ namespace ACE.Server.Command.Handlers.Processors
             HandleExportClothingToDiscord(session, parameters);
         }
 
-        [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file and load to Discord", "<wcid> [content-type]")]
+        [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file and load to Discord", "<wcid> [content-type] | template [wcid] [npc|monster] [overwrite] [name...]")]
         public static void HandleExportSqlToDiscord(Session session, params string[] parameters)
         {
+            // "@ed template ..." exports the SELECTED live object (not a database weenie) and hands the file to
+            // Discord like every other @ed export. Every other form of @ed is untouched.
+            if (parameters.Length > 0 && parameters[0].Equals("template", StringComparison.OrdinalIgnoreCase))
+            {
+                if (session?.Player == null)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "export-discord template needs a logged-in character with something selected.");
+                    return;
+                }
+
+                ExportTemplate(session, parameters.Skip(1).ToArray(), toDiscord: true);
+                return;
+            }
+
             var param = parameters[0];            
             var contentType = FileType.Weenie;
 
@@ -3188,6 +3253,288 @@ namespace ACE.Server.Command.Handlers.Processors
         public static void HandleExportSqlToDiscordAlias(Session session, params string[] parameters)
         {
             HandleExportSqlToDiscord(session, parameters);
+        }
+
+        // ------------------------------------------------------------------------------------------------
+        // @export-template / @et / @ed template
+        //
+        // Exports the SELECTED (or last appraised) live world object as a ready-to-load weenie SQL template:
+        // the look as rendered (CalculateObjDesc), the tables, bags, attributes, vitals, skills, body parts and
+        // held items, minus instance and pet bookkeeping. The pure rules live in Entity/TemplateExport.cs; this
+        // side picks the target, snapshots it on the thread that owns it, allocates the wcid and writes the file
+        // through the same WeenieSQLWriter every other export uses.
+        // ------------------------------------------------------------------------------------------------
+
+        [CommandHandler("export-template", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
+            "Exports the selected (or last appraised) object, with its live appearance, as a new weenie SQL template in the temporary export block",
+            "[wcid] [npc|monster] [overwrite] [name...] - every argument optional, any order. monster (default) = faithful copy; npc = not attackable, invincible, stuck, radar NPC, no loot/XP/corpse. A player source defaults to npc. Use '@ed template ...' for the Discord hand-off.")]
+        public static void HandleExportTemplate(Session session, params string[] parameters)
+        {
+            ExportTemplate(session, parameters, toDiscord: false);
+        }
+
+        [CommandHandler("et", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
+            "Alias for export-template - exports the selected object as a weenie SQL template",
+            "[wcid] [npc|monster] [overwrite] [name...]")]
+        public static void HandleExportTemplateAlias(Session session, params string[] parameters)
+        {
+            ExportTemplate(session, parameters, toDiscord: false);
+        }
+
+        private static void ExportTemplate(Session session, string[] parameters, bool toDiscord)
+        {
+            if (session?.Player == null)
+                return;
+
+            var args = TemplateExport.ParseArguments(parameters);
+
+            var target = session.Player.SelectedTarget;
+            if (target == null && session.Player.RequestedAppraisalTarget != null)
+                target = CommandHandlerHelper.GetLastAppraisedObject(session);
+
+            if (target == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Nothing to export: select (or appraise) the creature or object you want to turn into a template, then run the command again.");
+                return;
+            }
+
+            if (target is PetDevice)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"'{target.Name}' is a pet essence/device and has no appearance of its own. Summon the pet, select the pet, and run the command again.");
+                return;
+            }
+
+            // Thread audit: a selected target is in view and normally in this player's landblock group, but a stale
+            // appraisal target may be ticked by another group. The snapshot reads the target's biota and equipment,
+            // so it runs on the thread that owns the target: now when this thread does, otherwise on the world
+            // queue between ticks (LandblockManager.RunOnThreadFor).
+            LandblockManager.RunOnThreadFor(target, ACE.Server.Entity.Actions.ActionType.DeveloperContent_ExportTemplate,
+                () => ExportTemplateOnOwningThread(session, target, args, toDiscord));
+        }
+
+        private static void ExportTemplateOnOwningThread(Session session, WorldObject target, TemplateExport.Arguments args, bool toDiscord)
+        {
+            try
+            {
+                var blockStart = TemplateExport.ClampToUint(ServerConfig.content_template_export_wcid_start.Value);
+                var blockEnd = TemplateExport.ClampToUint(ServerConfig.content_template_export_wcid_end.Value);
+                var highWater = ServerConfig.content_template_export_next_wcid.Value;
+
+                // Authoritative and fresh: every class id in the world database, read for this export. The same
+                // dictionary drives the wcid choice and the writer's name comments, so nothing is read twice.
+                Dictionary<uint, string> existing;
+                try
+                {
+                    existing = DatabaseManager.World.GetAllWeenieNames();
+                }
+                catch (Exception e)
+                {
+                    log.Error($"[TemplateExport] GetAllWeenieNames failed: {e}");
+                    CommandHandlerHelper.WriteOutputInfo(session, "Could not read the world database to verify the wcid; nothing was exported.");
+                    return;
+                }
+
+                var choice = TemplateExport.ChooseWcid(args.ExplicitWcid, args.Overwrite, blockStart, blockEnd, highWater, existing);
+                if (choice.Refused)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, choice.RefusalReason);
+                    return;
+                }
+
+                // The high-water mark moves and is written to the shard database BEFORE the file exists, so a crash
+                // between here and the file write cannot hand the same id out twice.
+                if (choice.NextHighWaterMark > highWater)
+                    PersistExportHighWaterMark(session, choice.NextHighWaterMark);
+
+                var snapshot = SnapshotForTemplate(target);
+                var flavour = args.Flavour ?? TemplateExport.DefaultFlavour(snapshot);
+                var name = TemplateExport.ChooseName(snapshot.LiveName, args.NameOverride);
+                var className = TemplateExport.BuildClassName(choice.Wcid, name);
+                var exportedUtc = DateTime.UtcNow;
+
+                Weenie weenie;
+                TemplateExport.CaptureSummary summary;
+                target.BiotaDatabaseLock.EnterReadLock();
+                try
+                {
+                    weenie = TemplateExport.BuildWeenie(snapshot, choice.Wcid, className, name, flavour, exportedUtc, out summary);
+                }
+                finally
+                {
+                    target.BiotaDatabaseLock.ExitReadLock();
+                }
+
+                var capturedFromInt = target.GetProperty(PropertyInt.CapturedCreatureWCID);
+                uint? capturedFrom = capturedFromInt.HasValue && capturedFromInt.Value > 0 ? (uint)capturedFromInt.Value : null;
+
+                var header = TemplateExport.BuildHeader(new TemplateExport.HeaderInfo
+                {
+                    NewWcid = choice.Wcid,
+                    ClassName = className,
+                    Name = name,
+                    SourceWcid = target.WeenieClassId,
+                    SourceName = target.Name ?? "",
+                    SourceGuid = target.Guid.Full,
+                    SourceType = target.WeenieType,
+                    CapturedFromWcid = capturedFrom,
+                    SourceIsPlayer = snapshot.IsPlayer,
+                    Exporter = session.Player.Name,
+                    ExportedUtc = exportedUtc,
+                    Flavour = flavour,
+                    Summary = summary,
+                    Wielded = snapshot.Wielded,
+                    BlockStart = blockStart,
+                    BlockEnd = blockEnd,
+                });
+
+                var deleteSql = TemplateExport.BuildDeleteStatement(choice.Wcid, className);
+
+                if (WeenieSQLWriter == null)
+                {
+                    WeenieSQLWriter = new WeenieSQLWriter();
+                    WeenieSQLWriter.SpellNames = DatabaseManager.World.GetAllSpellNames();
+                    WeenieSQLWriter.TreasureDeath = DatabaseManager.World.GetAllTreasureDeath();
+                    WeenieSQLWriter.TreasureWielded = DatabaseManager.World.GetAllTreasureWielded();
+                    WeenieSQLWriter.PacketOpCodes = PacketOpCodeNames.Values;
+                }
+                WeenieSQLWriter.WeenieNames = existing;
+
+                // same folder convention as @export-sql
+                var sep = Path.DirectorySeparatorChar;
+                var di = VerifyContentFolder(session, false);
+                var sqlFolder = $"{di.FullName}{sep}sql{sep}weenies{sep}";
+                Directory.CreateDirectory(sqlFolder);
+                var fileName = WeenieSQLWriter.GetDefaultFileName(weenie);
+                var fullPath = sqlFolder + fileName;
+
+                string sqlText;
+                using (var mem = new MemoryStream())
+                {
+                    using (var sw = new StreamWriter(mem, new UTF8Encoding(false), 4096, leaveOpen: true) { NewLine = "\n" })
+                    {
+                        sw.Write(header);
+                        sw.Write(deleteSql);
+                        sw.WriteLine();
+                        WeenieSQLWriter.CreateSQLINSERTStatement(weenie, sw);
+                    }
+                    sqlText = Encoding.UTF8.GetString(mem.ToArray());
+                }
+
+                // SQL patches are LF-only, 7-bit ASCII, no BOM (AGENTS.md)
+                sqlText = sqlText.Replace("\r\n", "\n").Replace("\r", "");
+                var bytes = new UTF8Encoding(false).GetBytes(sqlText);
+                File.WriteAllBytes(fullPath, bytes);
+
+                if (toDiscord)
+                    _ = SendTemplateToDiscordAsync(session.Player.Name, fileName, bytes);
+
+                var reply = TemplateExport.BuildChatReply(new TemplateExport.ReplyInfo
+                {
+                    Name = name,
+                    Wcid = choice.Wcid,
+                    ClassName = className,
+                    Flavour = flavour,
+                    FlavourIgnored = summary.FlavourIgnored,
+                    SourceIsPlayer = snapshot.IsPlayer,
+                    ReplacedExisting = choice.ReplacesExisting,
+                    ExistingName = choice.ExistingName,
+                    OutsideBlock = choice.OutsideBlock,
+                    SourceName = TemplateExport.ToAscii(target.Name ?? ""),
+                    SourceWcid = target.WeenieClassId,
+                    CapturedFromWcid = capturedFrom,
+                    FilePath = fullPath,
+                    SentToDiscord = toDiscord,
+                    SummaryLine = summary.ToLine(),
+                    WieldSkippedForPet = summary.WieldSkippedForPet,
+                    BlockStart = blockStart,
+                    BlockEnd = blockEnd,
+                    BlockUsedFraction = choice.BlockUsedFraction,
+                });
+
+                CommandHandlerHelper.WriteOutputInfo(session, reply);
+                log.Info($"[TemplateExport] {session.Player.Name} exported '{target.Name}' (wcid {target.WeenieClassId}, 0x{target.Guid.Full:X8}) as {choice.Wcid} {className} [{TemplateExport.FlavourName(flavour)}] -> {fullPath}");
+            }
+            catch (Exception e)
+            {
+                log.Error($"[TemplateExport] export of '{target?.Name}' (0x{target?.Guid.Full:X8}) failed: {e}");
+                CommandHandlerHelper.WriteOutputInfo(session, $"Export failed: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Reads the live object on its owning thread. CalculateObjDesc takes the biota read lock itself, so it
+        /// runs here, before BuildWeenie takes the lock; the equipment dictionary is only safe on this thread.
+        /// </summary>
+        private static TemplateExport.Snapshot SnapshotForTemplate(WorldObject target)
+        {
+            var objDesc = target.CalculateObjDesc();
+
+            var wielded = new List<TemplateExport.WieldedItem>();
+            if (target is Creature creature)
+            {
+                // held slots only (weapon, shield, caster, two-handed, missile weapon): worn armour and clothing
+                // are already composed into the ObjDesc; pack contents are nobody's business
+                foreach (var item in creature.EquippedObjects.Values)
+                {
+                    var location = item.CurrentWieldedLocation ?? EquipMask.None;
+                    if ((location & EquipMask.Selectable) == 0)
+                        continue;
+
+                    wielded.Add(new TemplateExport.WieldedItem(item.WeenieClassId, item.Name ?? "", item.PaletteTemplate ?? 0, (float)(item.Shade ?? 0)));
+                }
+            }
+
+            return new TemplateExport.Snapshot
+            {
+                Biota = target.Biota,
+                LiveName = target.Name,
+                IsPlayer = target is Player,
+                IsPet = target is Pet, // CombatPet derives from Pet
+                IsCreature = target is Creature,
+                ObjDescPaletteId = objDesc.PaletteID,
+                AnimParts = objDesc.AnimPartChanges.ToList(),
+                SubPalettes = objDesc.SubPalettes.ToList(),
+                TextureChanges = objDesc.TextureChanges.ToList(),
+                Wielded = wielded,
+            };
+        }
+
+        /// <summary>
+        /// Advances content_template_export_next_wcid in memory (SetValue, which also queues the periodic drain)
+        /// and writes it to the shard database right now, so a crash before the periodic save cannot reuse an id.
+        /// </summary>
+        private static void PersistExportHighWaterMark(Session session, long next)
+        {
+            const string key = "content_template_export_next_wcid";
+
+            ServerConfig.SetValue(key, next);
+
+            try
+            {
+                var description = ServerConfig.content_template_export_next_wcid.Description;
+                if (DatabaseManager.ShardConfig.LongExists(key))
+                    DatabaseManager.ShardConfig.SaveLong(new ACE.Database.Models.Shard.ConfigPropertiesLong { Key = key, Value = next, Description = description });
+                else
+                    DatabaseManager.ShardConfig.AddLong(key, next, description);
+            }
+            catch (Exception e)
+            {
+                log.Error($"[TemplateExport] could not persist {key}={next} immediately: {e}");
+                CommandHandlerHelper.WriteOutputInfo(session, "WARNING: the export high-water mark could not be written to the shard database right now; it is held in memory and goes out with the periodic config save.");
+            }
+        }
+
+        private static async Task SendTemplateToDiscordAsync(string playerName, string fileName, byte[] bytes)
+        {
+            try
+            {
+                using (var mem = new MemoryStream(bytes))
+                    await DiscordChatManager.SendDiscordFileAsync(playerName, fileName, ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, fileName));
+            }
+            catch (Exception e)
+            {
+                log.Error($"[TemplateExport] Discord hand-off of {fileName} failed: {e}");
+            }
         }
 
         [CommandHandler("export-sql", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file", "<wcid> [content-type]")]
