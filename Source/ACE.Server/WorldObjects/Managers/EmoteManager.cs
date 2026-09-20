@@ -2208,11 +2208,27 @@ namespace ACE.Server.WorldObjects.Managers
                             else if (creditFailed)
                             {
                                 // Payment already happened, so this is the one case where the player is out
-                                // of pocket with nothing recorded. Say so rather than looking like success.
-                                log.Error($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: took payment from {player.Name} for {selectedQuestStamp} but could not record the credit. MANUAL RESTORE NEEDED.");
-                                if (player.Session?.Network != null)
+                                // of pocket with nothing recorded. Hand a TAKE turn-in back: with no account
+                                // row the stamp stays eligible, so a later turn-in can still earn it. An NPC
+                                // on the old shape took its payment in an earlier action this one cannot see,
+                                // so there is nothing to return here and it stays a manual restore.
+                                var returned = takeWcid != 0 ? ReturnQuestStampTake(player, takeWcid, takeAmount) : 0;
+
+                                if (takeWcid != 0 && returned == takeAmount)
                                 {
-                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your stamp could not be recorded. Please contact an admin.", ChatMessageType.Broadcast));
+                                    log.Error($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: could not record the credit for {selectedQuestStamp} for {player.Name} - returned {returned}x {takeWcid}.");
+                                    if (player.Session?.Network != null)
+                                    {
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your stamp could not be recorded, so your turn-in was returned. Please try again later.", ChatMessageType.Broadcast));
+                                    }
+                                }
+                                else
+                                {
+                                    log.Error($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: took payment from {player.Name} (0x{player.Guid}) for {selectedQuestStamp} but could not record the credit, and returned {returned} of {takeAmount}x {takeWcid}. MANUAL RESTORE NEEDED.");
+                                    if (player.Session?.Network != null)
+                                    {
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your stamp could not be recorded. Please contact an admin.", ChatMessageType.Broadcast));
+                                    }
                                 }
                             }
                             else if (characterSolves != 1)
@@ -4541,6 +4557,40 @@ namespace ACE.Server.WorldObjects.Managers
             }
 
             return batch;
+        }
+
+        /// <summary>
+        /// Hands a TAKE turn-in back after the account credit could not be recorded.
+        /// Returns how many were returned, so the caller can tell a full refund from a partial one.
+        /// </summary>
+        private static int ReturnQuestStampTake(Player player, uint takeWcid, int takeAmount)
+        {
+            var returned = 0;
+
+            while (returned < takeAmount)
+            {
+                var item = WorldObjectFactory.CreateNewWorldObject(takeWcid);
+                if (item == null)
+                    break;
+
+                var stackSize = 1;
+                if (item is Stackable)
+                {
+                    stackSize = Math.Min(takeAmount - returned, item.MaxStackSize ?? 1);
+                    item.SetStackSize(stackSize);
+                }
+
+                // Can still fail: a wielded turn-in frees no pack slot when it is consumed.
+                if (!player.TryCreateInInventoryWithNetworking(item))
+                {
+                    item.Destroy();
+                    break;
+                }
+
+                returned += stackSize;
+            }
+
+            return returned;
         }
 
         /// <summary>True when the action consumes the turn-in itself, so no refund item is ever created.</summary>

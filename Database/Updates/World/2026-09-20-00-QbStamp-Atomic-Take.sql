@@ -38,7 +38,8 @@
 -- grammar cannot express it and the parser rejects a negative amount, so those
 -- rows are left alone rather than silently downgraded to "take 1" - the NPC
 -- keeps the old shape and the old window. 438 such rows exist world-wide;
--- none belong to the weenies below.
+-- none belong to the weenies below. A zero or any other negative stack_Size is
+-- left alone the same way: only NULL or 1 and up is folded.
 --
 -- NOTE on the REFUND: section. It is left in the message so the rollback stays
 -- lossless, but it is INERT while TAKE: is present: with nothing to grant the
@@ -55,16 +56,17 @@
 START TRANSACTION;
 
 -- --- 1. carry the TakeItems wcid (and stack size, when set) into the message
--- Both statements below use the SAME predicate: category 13 and a non-"take all"
--- TakeItems. If they disagree, a set can gain the prefix and keep its TakeItems,
--- and the item is taken twice.
+-- Both statements below use the SAME predicate: category 13 and a TakeItems whose
+-- stack_Size is NULL or at least 1 (never "take all", zero or a stray negative).
+-- If they disagree, a set can gain the prefix and keep its TakeItems, and the item
+-- is taken twice.
 UPDATE weenie_properties_emote_action a
 JOIN (
     SELECT emote_Id, MIN(weenie_Class_Id) AS weenie_Class_Id, MIN(stack_Size) AS stack_Size, COUNT(*) AS take_rows
       FROM weenie_properties_emote_action
      WHERE type = 74
        AND weenie_Class_Id IS NOT NULL
-       AND (stack_Size IS NULL OR stack_Size <> -1)
+       AND (stack_Size IS NULL OR stack_Size >= 1)
      GROUP BY emote_Id
     HAVING COUNT(*) = 1          -- two takes in one set would fold only one and delete both
 ) t ON t.emote_Id = a.emote_Id
@@ -92,7 +94,7 @@ DELETE a FROM weenie_properties_emote_action a
    AND (g.message LIKE CONCAT('TAKE:', a.weenie_Class_Id, '|%')
         OR g.message LIKE CONCAT('TAKE:', a.weenie_Class_Id, ':%'))
  WHERE a.type = 74
-   AND (a.stack_Size IS NULL OR a.stack_Size <> -1)
+   AND (a.stack_Size IS NULL OR a.stack_Size >= 1)
    AND e.category = 13
    AND e.object_Id IN (696900158, 98760330, 98760369);
 
