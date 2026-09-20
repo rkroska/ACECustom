@@ -429,7 +429,7 @@ namespace ACE.Server.WorldObjects
                 player.SendWeenieError(WeenieError.ITeleported);
 
                 if (roomNumber > 0)
-                    player.Session?.Network.EnqueueSend(new GameMessageSystemChat(RoomAssignManager.MessageSentToRoom(roomNumber), ChatMessageType.Broadcast));
+                    player.Session?.Network.EnqueueSend(new GameMessageSystemChat(RoomAssignManager.MessageSentToRoom(RoomSourceWcid, roomNumber), ChatMessageType.Broadcast));
 
             }), true);
         }

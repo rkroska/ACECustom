@@ -1493,7 +1493,7 @@ namespace ACE.Server.WorldObjects
                         targetPlayer.Teleport(teleportDest);
 
                         if (roomNumber > 0)
-                            targetPlayer.Session?.Network.EnqueueSend(new GameMessageSystemChat(RoomAssignManager.MessageSentToRoom(roomNumber), ChatMessageType.Broadcast));
+                            targetPlayer.Session?.Network.EnqueueSend(new GameMessageSystemChat(RoomAssignManager.MessageSentToRoom(portal.RoomSourceWcid, roomNumber), ChatMessageType.Broadcast));
                     });
                     portalRecall.EnqueueChain();
                 }

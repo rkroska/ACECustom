@@ -47,7 +47,8 @@ namespace ACE.Server.Managers
     ///    account has logout-hold credit). One hold per account.
     /// An account whose other character is standing in or travelling to a room gets no room at all.
     /// A player gets, in order: the room reserved for them, the room they stand in, the room held for their account, the
-    /// first free room. Only the last is a FRESH hand-out; only a fresh hand-out grants logout-hold credit
+    /// room their account was last handed, the first free room. The last two are FRESH hand-outs; only a fresh hand-out
+    /// grants logout-hold credit
     /// (1 + room_assign_logout_hold_renewals).
     ///
     /// Threading: a plate step, portal or recall runs on its landblock group's thread, teleport on whatever thread
@@ -121,7 +122,25 @@ namespace ACE.Server.Managers
 
         private static string MessageMovedToRoom(int room) => $"Your chamber was taken while you were away. You have been moved to chamber {room}.";
 
-        public static string MessageSentToRoom(int room) => $"You are sent to chamber {room}.";
+        /// <summary>
+        /// The arrival line (owner 2026-09-20), the same for every dungeon: "The Tyrant's Quarry opens Chamber 1 to you,
+        /// and seals it behind you." The dungeon's name is the NAME of the weenie the player came in by - the room portal
+        /// (a summoned gateway: the portal it was made from), or the plate. "The" is put in front unless the name has it.
+        /// </summary>
+        public static string MessageSentToRoom(uint entranceWcid, int room)
+        {
+            string name = null;
+            var weenie = DatabaseManager.World.GetCachedWeenie(entranceWcid);
+            if (weenie?.PropertiesString != null)
+                weenie.PropertiesString.TryGetValue(PropertyString.Name, out name);
+
+            name = string.IsNullOrWhiteSpace(name) ? "dungeon" : name.Trim();
+
+            if (!name.StartsWith("The ", StringComparison.OrdinalIgnoreCase))
+                name = "The " + name;
+
+            return $"{name} opens Chamber {room} to you, and seals it behind you.";
+        }
 
         public sealed class Room
         {
@@ -1207,8 +1226,8 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Call with _lock held. The room this player gets, in order (owner rulings 2026-09-16): the room reserved for them
         /// (a recall reserves at cast), the room they stand in (a recall from inside a room is no way to jump rooms), the
-        /// room held for their account (always back to their own room while it is free), then the first free room - the only
-        /// FRESH hand-out. Null when none is free.
+        /// room held for their account (always back to their own room while it is free), then the room their account was
+        /// last handed (2026-09-20), then the first free room - the last two are FRESH hand-outs. Null when none is free.
         /// </summary>
         private static Room PickRoom(List<Room> rooms, int? variation, uint guid, uint account, Occupancy occupancy, Room current, DateTime now, out bool fresh, HashSet<Room> skip = null)
         {
@@ -1229,6 +1248,17 @@ namespace ACE.Server.Managers
             foreach (var room in rooms)
                 if (skip?.Contains(room) != true && _holds.TryGetValue(room.Key(variation), out var hold) && hold.Account == account && IsHoldActive(hold, now) && IsFreeFor(room, variation, account, occupancy, now))
                     return room;
+
+            // The room this account was last handed, while nobody else has taken it: a player back after their hold ran
+            // out (a long run from the lifestone) returns to their own room and corpse, not to room 1. It does not keep the
+            // room from the next arrival - only a hold does that. Fresh like any first-free room.
+            foreach (var room in rooms)
+                if (skip?.Contains(room) != true && _roomOwner.TryGetValue(room.Key(variation), out var lastOwner) && lastOwner == account
+                    && IsFreeFor(room, variation, account, occupancy, now))
+                {
+                    fresh = true;
+                    return room;
+                }
 
             foreach (var room in rooms)
             {
@@ -1445,7 +1475,7 @@ namespace ACE.Server.Managers
 
                 // fromPortal: this counts as a portal teleport, so the plate's own "no chained teleports" gate is armed by it.
                 WorldManager.ThreadSafeTeleport(player, landing, null, true);
-                Say(player, MessageSentToRoom(room.Number));
+                Say(player, MessageSentToRoom(plate.WeenieClassId, room.Number));
 
                 log.Debug($"[RoomAssign] {player.Name} (0x{player.Guid}) sent by plate {plate.WeenieClassId} to room {room.Number}.");
             }
@@ -1934,9 +1964,8 @@ namespace ACE.Server.Managers
                     && (heritage == (int)HeritageGroup.Olthoi || heritage == (int)HeritageGroup.OlthoiAcid)
                     && biota.PropertiesBool != null && biota.PropertiesBool.TryGetValue(PropertyBool.LoginAtLifestone, out var atLifestone) && atLifestone;
 
-                // Outside every room, inside a PORTAL-ONLY dungeon (owner 2026-09-16): nobody gets there legitimately. Back to
-                // the room their account holds, if it is free; otherwise to their lifestone. Never a new room - rooms are
-                // only handed out through the portal, where its requirements are checked.
+                // Outside every room, inside a PORTAL-ONLY dungeon: nobody gets there legitimately. Into a room picked like
+                // any hand-out (owner 2026-09-20), or to their lifestone when none is free.
                 if (found == null && !olthoiAtLifestone)
                 {
                     var dungeon = FindPortalOnlyDungeon(location.ObjCellId, variation);
@@ -1959,7 +1988,7 @@ namespace ACE.Server.Managers
 
                 // Never count this character: after a client crash the old session can still be standing in the room.
                 var occupancy = BuildOccupancy(rooms, variation, guid);
-                var key = found.Room.Key(variation);
+                var key = room.Key(variation);
 
                 bool hadClaim;
                 bool busy;
@@ -1978,7 +2007,7 @@ namespace ACE.Server.Managers
 
                     busy = IsAccountBusy(guid, account, occupancy);
 
-                    var free = IsFreeFor(found.Room, variation, account, occupancy, now);
+                    var free = IsFreeFor(room, variation, account, occupancy, now);
 
                     // Startup grace: the restart wiped every hold - a free room is theirs again, first in wins. It counts
                     // as a fresh hand-out, so they get logout-hold credit back too.
@@ -1991,7 +2020,7 @@ namespace ACE.Server.Managers
                     if (hadClaim && !busy && free)
                     {
                         stays = true;
-                        Reserve(guid, account, found.Room, variation, now, fresh: byGrace);
+                        Reserve(guid, account, room, variation, now, fresh: byGrace);
                     }
                     else if (!hadClaim || busy)
                     {
@@ -2003,7 +2032,7 @@ namespace ACE.Server.Managers
                 if (stays)
                 {
                     if (byGrace)
-                        log.Info($"[RoomAssign] Character 0x{guid:X8} logged in to room {found.Room.Number} within the startup grace - kept it.");
+                        log.Info($"[RoomAssign] Character 0x{guid:X8} logged in to room {room.Number} within the startup grace - kept it.");
                     return null;
                 }
 
@@ -2013,7 +2042,7 @@ namespace ACE.Server.Managers
                     if (result == ClaimResult.Claimed)
                     {
                         WriteLocation(location, landing, variation);
-                        log.Info($"[RoomAssign] Character 0x{guid:X8} logged in to room {found.Room.Number}, which someone else has - moved to room {newRoom.Number}.");
+                        log.Info($"[RoomAssign] Character 0x{guid:X8} logged in to room {room.Number}, which someone else has - moved to room {newRoom.Number}.");
                         return MessageMovedToRoom(newRoom.Number);
                     }
 
@@ -2027,7 +2056,7 @@ namespace ACE.Server.Managers
                 MoveToLifestone(biota, location);
 
                 var reason = busy ? "another character of the account has a room" : hadClaim ? "every room is taken" : "it holds no claim on the room";
-                log.Info($"[RoomAssign] Character 0x{guid:X8} logged in to room {found.Room.Number} - {reason}, moved to the lifestone.");
+                log.Info($"[RoomAssign] Character 0x{guid:X8} logged in to room {room.Number} - {reason}, moved to the lifestone.");
                 return busy ? MessageAccountHasRoom : hadClaim ? MessageMovedOut : MessageNoClaim;
             }
             catch (Exception ex)
@@ -2038,48 +2067,36 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Login outside every room of a portal-only dungeon: into the room the account holds (if free for them), else to
-        /// the lifestone. The held room is reserved while they load in.
+        /// Login outside every room of a portal-only dungeon (owner 2026-09-20, replacing the 2026-09-16 "held room or
+        /// lifestone" rule): into a room picked like any hand-out - the room the account holds, the room it was last
+        /// handed, else the first free room - reserved while they load in; to the lifestone only when no room is free or
+        /// another character of the account has one.
         /// </summary>
         private static string HandleLoginOutsideRooms(ACE.Entity.Models.Biota biota, ACE.Entity.Models.PropertiesPosition location,
             uint guid, uint account, int? variation, uint sourceWcid, List<Room> rooms, DateTime now)
         {
             var occupancy = BuildOccupancy(rooms, variation, guid);
-            Room held = null;
+            var fromCell = location.ObjCellId;
 
+            // Which room the account holds, read before ClaimRoom spends the hold: it decides the message.
+            string heldKey = null;
             lock (_lock)
+                foreach (var room in rooms)
+                    if (_holds.TryGetValue(room.Key(variation), out var hold) && hold.Account == account && IsHoldActive(hold, now))
+                    {
+                        heldKey = room.Key(variation);
+                        break;
+                    }
+
+            var result = ClaimRoom(null, guid, account, rooms, variation, sourceWcid, occupancy, null, now, out var claimed, out var landing);
+
+            if (result == ClaimResult.Claimed)
             {
-                PurgeExpired(now);
-                ReleaseDoneReservations(occupancy, guid);
+                WriteLocation(location, landing, variation);
 
-                if (!IsAccountBusy(guid, account, occupancy))
-                    foreach (var room in rooms)
-                        if (_holds.TryGetValue(room.Key(variation), out var hold) && hold.Account == account && IsHoldActive(hold, now)
-                            && IsFreeFor(room, variation, account, occupancy, now))
-                        {
-                            held = room;
-                            break;
-                        }
-            }
-
-            if (held != null)
-            {
-                var landing = Landing(held, variation, sourceWcid);
-
-                lock (_lock)
-                {
-                    if (landing != null && !IsAccountBusy(guid, account, occupancy) && IsFreeFor(held, variation, account, occupancy, now))
-                        Reserve(guid, account, held, variation, now, fresh: false);
-                    else
-                        held = null;
-                }
-
-                if (held != null)
-                {
-                    WriteLocation(location, landing, variation);
-                    log.Info($"[RoomAssign] Character 0x{guid:X8} logged in outside the rooms of portal {sourceWcid} - returned to its held room {held.Number}.");
-                    return MessageBackToRoom;
-                }
+                var back = claimed.Key(variation) == heldKey;
+                log.Info($"[RoomAssign] Character 0x{guid:X8} logged in outside the rooms of portal {sourceWcid} (cell 0x{fromCell:X8}) - {(back ? "returned to its held room" : "moved to room")} {claimed.Number}.");
+                return back ? MessageBackToRoom : MessageSentToRoom(sourceWcid, claimed.Number);
             }
 
             lock (_lock)
@@ -2088,10 +2105,9 @@ namespace ACE.Server.Managers
                 RemoveOwnReservation(guid);
             }
 
-            var fromCell = location.ObjCellId;
             MoveToLifestone(biota, location);
-            log.Info($"[RoomAssign] Character 0x{guid:X8} logged in outside the rooms of portal {sourceWcid} (cell 0x{fromCell:X8}) - moved to the lifestone.");
-            return MessageCannotRemain;
+            log.Info($"[RoomAssign] Character 0x{guid:X8} logged in outside the rooms of portal {sourceWcid} (cell 0x{fromCell:X8}) - {(result == ClaimResult.AccountBusy ? "another character of the account has a room" : "every room is taken")}, moved to the lifestone.");
+            return result == ClaimResult.AccountBusy ? MessageAccountHasRoom : MessageCannotRemain;
         }
     }
 }
