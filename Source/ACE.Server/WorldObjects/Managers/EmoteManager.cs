@@ -4576,7 +4576,8 @@ namespace ACE.Server.WorldObjects.Managers
                 var stackSize = 1;
                 if (item is Stackable)
                 {
-                    stackSize = Math.Min(takeAmount - returned, item.MaxStackSize ?? 1);
+                    // a stackable authored with MaxStackSize 0 would give a zero-size stack that never advances the count
+                    stackSize = Math.Min(takeAmount - returned, Math.Max(1, (int)(item.MaxStackSize ?? 1)));
                     item.SetStackSize(stackSize);
                 }
 
