@@ -313,8 +313,16 @@ Every argument is optional and the order does not matter:
 @et Gene's Handler               name override (apostrophes are fine)
 @et 78790300 npc Gene's Handler  explicit id (decimal or 0x hex), any order
 @et 78790300 overwrite           replace a weenie that already exists at that id
-@ed template npc                 same export, file also sent to the Discord exports channel
+@ed template npc                 same export, always sent to Discord (even with auto-Discord off)
 ```
+
+By default every export is also **loaded into ace_world** and **sent to the Discord exports channel**, so
+it can be spawned straight away and anyone can download the file. The chat reply says it is loading; a
+second line confirms `Loaded <wcid> into ace_world` (or prints the error and the manual command). Two
+server switches turn this off: `content_template_export_auto_import` and
+`content_template_export_auto_discord` (`@modifybool`). Only ids **inside** the staging block are ever
+auto-loaded: an explicit id outside it, and especially an `overwrite` there, is written to the file only,
+so real content is never replaced without you loading it yourself.
 
 Ids come from the **temporary export block `78790000`-`78799999`** - the whole 7879 prefix is automatic
 export space and nothing you hand-author lives there, so a file from this tool can never collide with
@@ -324,8 +332,8 @@ refuses an explicit id that already exists unless you add `overwrite`, warns whe
 outside the block, and refuses rather than wraps when the block is used up
 (`content_template_export_wcid_start` / `_end` / `_next_wcid` in the server config).
 
-The block is **staging, not a home**: load the file, `@clearcache weenie`, `@ci <wcid>` or `@create
-<wcid>`, iterate, and when the creature is final renumber it into your own 7878 range. `@id`,
+The block is **staging, not a home**: export (it loads itself), `@ci <wcid>` or `@create <wcid>`,
+iterate, and when the creature is final renumber it into your own 7878 range. `@id`,
 `@import-sql`, `@import-sql-folders` and `@import-json` refuse a wcid inside the block ("temporary export
 staging block ... add the word force") so nothing accumulates there by accident.
 

@@ -678,9 +678,43 @@ namespace ACE.Server.Tests
             StringAssert.Contains(reply, "verified free at export time");
             StringAssert.Contains(reply, "reserved for exports");
             StringAssert.Contains(reply, "90% used");
-            StringAssert.Contains(reply, "@clearcache weenie");
+            // Not auto-loaded (switch off): the manual step must name the exact command, force included,
+            // or the import is refused inside the staging block.
+            StringAssert.Contains(reply, "@import-sql 78790000 force");
             StringAssert.Contains(reply, "@ci 78790000");
             StringAssert.Contains(lines[lines.Length - 1], "renumber");
+        }
+
+        [TestMethod]
+        public void BuildChatReply_ImportStarted_SaysItIsLoading()
+        {
+            var reply = TemplateExport.BuildChatReply(new TemplateExport.ReplyInfo
+            {
+                Name = "X", Wcid = 78790000, ClassName = "tmpl78790000_x", Flavour = TemplateExport.Flavour.Npc,
+                SourceName = "Y", SourceWcid = 1, FilePath = "f.sql", SummaryLine = "s", BlockStart = BlockStart, BlockEnd = BlockEnd,
+                ImportStarted = true, SentToDiscord = true,
+            });
+
+            StringAssert.Contains(reply, "loading it into ace_world now");
+            StringAssert.Contains(reply, "@ci 78790000");
+            StringAssert.Contains(reply, "(also sent to Discord)");
+            Assert.IsFalse(reply.Contains("@import-sql"), "no manual import step when it is already being loaded");
+            AssertAscii(reply);
+        }
+
+        [TestMethod]
+        public void BuildChatReply_OutsideBlock_ManualImportWithoutForce()
+        {
+            // Outside the block the import commands do not refuse, so force would be wrong advice; and the
+            // command never auto-loads there, so the reply must ask for a reviewed manual import.
+            var reply = TemplateExport.BuildChatReply(new TemplateExport.ReplyInfo
+            {
+                Name = "X", Wcid = 78780300, ClassName = "tmpl78780300_x", Flavour = TemplateExport.Flavour.Npc, OutsideBlock = true,
+                SourceName = "Y", SourceWcid = 1, FilePath = "f.sql", SummaryLine = "s", BlockStart = BlockStart, BlockEnd = BlockEnd,
+            });
+
+            StringAssert.Contains(reply, "review the file, then @import-sql 78780300,");
+            Assert.IsFalse(reply.Contains("force"));
         }
 
         [TestMethod]

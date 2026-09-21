@@ -3267,7 +3267,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
         [CommandHandler("export-template", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
             "Exports the selected (or last appraised) object, with its live appearance, as a new weenie SQL template in the temporary export block",
-            "[wcid] [npc|monster] [overwrite] [name...] - every argument optional, any order. monster (default) = faithful copy; npc = not attackable, invincible, stuck, radar NPC, no loot/XP/corpse. A player source defaults to npc. Use '@ed template ...' for the Discord hand-off.")]
+            "[wcid] [npc|monster] [overwrite] [name...] - every argument optional, any order. monster (default) = faithful copy; npc = not attackable, invincible, stuck, radar NPC, no loot/XP/corpse. A player source defaults to npc. The file is loaded into ace_world and sent to Discord automatically (content_template_export_auto_import / _auto_discord).")]
         public static void HandleExportTemplate(Session session, params string[] parameters)
         {
             ExportTemplate(session, parameters, toDiscord: false);
@@ -3425,8 +3425,18 @@ namespace ACE.Server.Command.Handlers.Processors
                 var bytes = new UTF8Encoding(false).GetBytes(sqlText);
                 File.WriteAllBytes(fullPath, bytes);
 
-                if (toDiscord)
+                // Discord: always for "@ed template"; for @et when the switch is on and a channel exists.
+                var sendToDiscord = toDiscord
+                    || (ServerConfig.content_template_export_auto_discord.Value && (ConfigManager.Config?.Chat?.ExportsChannelId ?? 0) != 0);
+                if (sendToDiscord)
                     _ = SendTemplateToDiscordAsync(session.Player.Name, fileName, bytes);
+
+                // Load it into ace_world so it can be spawned at once - but only inside the staging block. An explicit
+                // id outside it may be real content (with "overwrite", an existing weenie), so that stays a reviewed,
+                // manual import.
+                var autoImport = ServerConfig.content_template_export_auto_import.Value && !choice.OutsideBlock;
+                if (autoImport)
+                    StartTemplateImport(session, fullPath, choice.Wcid);
 
                 var reply = TemplateExport.BuildChatReply(new TemplateExport.ReplyInfo
                 {
@@ -3443,7 +3453,8 @@ namespace ACE.Server.Command.Handlers.Processors
                     SourceWcid = target.WeenieClassId,
                     CapturedFromWcid = capturedFrom,
                     FilePath = fullPath,
-                    SentToDiscord = toDiscord,
+                    SentToDiscord = sendToDiscord,
+                    ImportStarted = autoImport,
                     SummaryLine = summary.ToLine(),
                     WieldSkippedForPet = summary.WieldSkippedForPet,
                     BlockStart = blockStart,
@@ -3459,6 +3470,30 @@ namespace ACE.Server.Command.Handlers.Processors
                 log.Error($"[TemplateExport] export of '{target?.Name}' (0x{target?.Guid.Full:X8}) failed: {e}");
                 CommandHandlerHelper.WriteOutputInfo(session, $"Export failed: {e.Message}");
             }
+        }
+
+        /// <summary>
+        /// Loads an exported template into ace_world and drops the weenie from the cache, off the landblock thread:
+        /// the export runs on the thread that owns the target, and a database write there would stall its tick.
+        /// The file already carries a DELETE for its own id, so re-exporting over the same id is safe.
+        /// </summary>
+        private static void StartTemplateImport(Session session, string fullPath, uint wcid)
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    ImportSQL(fullPath);
+                    DatabaseManager.World.ClearCachedWeenie(wcid);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Loaded {wcid} into ace_world. Spawn it with @ci {wcid} or @create {wcid}.");
+                    log.Info($"[TemplateExport] auto-imported {wcid} from {fullPath}");
+                }
+                catch (Exception e)
+                {
+                    log.Error($"[TemplateExport] auto-import of {wcid} from {fullPath} failed: {e}");
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[ERROR] The file was written but could not be loaded into ace_world: {e.Message}. Load it by hand with @import-sql {wcid} force.");
+                }
+            });
         }
 
         /// <summary>

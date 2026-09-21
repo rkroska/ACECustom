@@ -964,6 +964,8 @@ namespace ACE.Server.Entity
             public uint? CapturedFromWcid { get; set; }
             public string FilePath { get; set; }
             public bool SentToDiscord { get; set; }
+            /// <summary>The file is being loaded into ace_world in the background; a second line confirms it.</summary>
+            public bool ImportStarted { get; set; }
             public string SummaryLine { get; set; }
             public bool WieldSkippedForPet { get; set; }
             public uint BlockStart { get; set; }
@@ -1007,12 +1009,18 @@ namespace ACE.Server.Entity
                 lines.Add(status);
             }
 
-            var next = $"Next: load the SQL into ace_world, then @clearcache weenie, then @ci {r.Wcid} or @create {r.Wcid} to try it.";
+            string next;
+            if (r.ImportStarted)
+                next = $"Next: loading it into ace_world now; once it says it is loaded, @ci {r.Wcid} or @create {r.Wcid} to try it.";
+            else if (r.OutsideBlock)
+                next = $"Next: review the file, then @import-sql {r.Wcid}, then @ci {r.Wcid} or @create {r.Wcid} to try it.";
+            else
+                next = $"Next: @import-sql {r.Wcid} force (the block is staging, hence force), then @ci {r.Wcid} or @create {r.Wcid} to try it.";
             if (r.SourceIsPlayer && r.Flavour == Flavour.Monster && !r.FlavourIgnored)
                 next += " A player export has no body parts or TargetingTactic; add them by hand if it should fight.";
             lines.Add(next);
 
-            lines.Add("When it is final, renumber it into your own hand-authored range (7878) before it becomes permanent content; imports into the export block are refused.");
+            lines.Add("When it is final, renumber it into your own hand-authored range (7878) before it becomes permanent content; the export block is staging only.");
 
             // explicit "\n" only: the client draws a bare "\r" as a music note (CLAUDE.md)
             return string.Join("\n", lines.Select(ToAscii));
