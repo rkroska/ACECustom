@@ -4872,10 +4872,16 @@ namespace ACE.Server.Command.Handlers
             target.SetProperty(PropertyBool.PetIsMaleOverride, becomesMale);
             target.SetProperty(PropertyInt.PetMaleBreedingCharges, maxMaleCharges);
             target.SetProperty(PropertyFloat.PetMaleChargesRefreshTime, Time.GetUnixTime());
-            // Repaint the sex square and push it, or the icon keeps the old colour until relog.
+            // Repaint the sex square. A lone PrivateUpdateDataID is not enough: the client caches
+            // inventory art and ignores it, so the square kept its old colour until relog. Send the
+            // same full snapshot and slot move that tailoring and capture use to force a redraw.
             target.ApplySexIconUnderlay();
-            if (target.IconUnderlayId.HasValue)
-                session.Network.EnqueueSend(new GameMessagePrivateUpdateDataID(target, PropertyDataId.IconUnderlay, target.IconUnderlayId.Value));
+            player.UpdateProperty(target, PropertyDataId.IconUnderlay, target.IconUnderlayId ?? 0u);
+            player.EnqueueBroadcast(new GameMessageUpdateObject(target));
+            if (target.CurrentWieldedLocation != null)
+                player.EnqueueBroadcast(new GameMessageObjDescEvent(player));
+            else if (player.FindObject(target.Guid.Full, Player.SearchLocations.MyInventory) != null)
+                player.MoveItemToFirstContainerSlot(target);
             target.ChangesDetected = true;
             target.SaveBiotaToDatabase();
 
