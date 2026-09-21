@@ -1141,21 +1141,21 @@ INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,
 -- ---- Openers (HeartBeat: say a line, then signal across the hall) ----
 
 INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`quest`)
-VALUES (78780210, 5, 0.03, NULL);
+VALUES (78780210, 5, 0.0075, NULL);
 SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`message`) VALUES
   (@e, 0, 8, 0, 0, 'A Browerk is brown. That is what the word means. That is the entire word.'),
   (@e, 1, 88, 0, 0, 'annex_feud_a1');
 
 INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`quest`)
-VALUES (78780210, 5, 0.03, NULL);
+VALUES (78780210, 5, 0.015, NULL);
 SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`message`) VALUES
   (@e, 0, 8, 0, 0, 'Every creature in this lounge has papers. Every creature in that ward has... a situation.'),
   (@e, 1, 88, 0, 0, 'annex_feud_a2');
 
 INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`quest`)
-VALUES (78780210, 5, 0.03, NULL);
+VALUES (78780210, 5, 0.0225, NULL);
 SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`message`) VALUES
   (@e, 0, 8, 0, 0, 'Bloodline. Conformation. Restraint. Three concepts, none of them represented over there.'),
@@ -1169,7 +1169,7 @@ INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,
   (@e, 1, 88, 0, 0, 'annex_feud_a6');
 
 INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`quest`)
-VALUES (78780220, 5, 0.03, NULL);
+VALUES (78780220, 5, 0.015, NULL);
 SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`message`) VALUES
   (@e, 0, 8, 0, 0, 'They call it purebred. I call it beige with a certificate.'),
@@ -1301,14 +1301,18 @@ INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,
 
 -- ---- Idle lines that belong to nobody's argument ----
 
+-- HeartBeat probabilities are STACKED THRESHOLDS, not per-line chances. EmoteManager.GetEmoteSet rolls
+-- r in [0,1), keeps the sets whose probability > r and takes the LOWEST - so equal values always pick
+-- the first set and the rest never fire. Spread an NPC's total rate across its lines instead:
+-- three lines sharing 3% are 0.01 / 0.02 / 0.03, each firing ~1% of heartbeats.
 INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`quest`)
-VALUES (78780200, 5, 0.02, NULL);
+VALUES (78780200, 5, 0.0067, NULL);
 SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`message`) VALUES
   (@e, 0, 8, 0, 0, 'Mrs. Ruggan sent another letter. I said he was in the field. He is under a desk.');
 
 INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`quest`)
-VALUES (78780200, 5, 0.02, NULL);
+VALUES (78780200, 5, 0.0133, NULL);
 SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`message`) VALUES
   (@e, 0, 8, 0, 0, 'There is a sign. There was a sign.');
@@ -1320,13 +1324,13 @@ INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,
   (@e, 0, 8, 0, 0, 'Nine hundred essences catalogued. Nobody asks about those.');
 
 INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`quest`)
-VALUES (78780202, 5, 0.04, NULL);
+VALUES (78780202, 5, 0.0133, NULL);
 SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`message`) VALUES
   (@e, 0, 8, 0, 0, 'You. Yes. Dance. That is the entire ritual. I did not design it.');
 
 INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`quest`)
-VALUES (78780202, 5, 0.04, NULL);
+VALUES (78780202, 5, 0.0267, NULL);
 SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`message`) VALUES
   (@e, 0, 8, 0, 0, 'Everyone dances here. Even the Registrar. Once. He does not discuss it.');
