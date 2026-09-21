@@ -109,9 +109,10 @@ thing happens: the spirit dissolves and the baby is born without the blessing.
 
 ## Consumables
 
-Ivo, Ruggan's Quartermaster, in the motel sells four things that change a breed, and one that
-changes a pet's colour. Each is used on a combat pet essence in your pack; the first four go on
-before the dance and are spent by the breed they affect.
+Ivo, Ruggan's Quartermaster, in the motel sells four things that affect breeding or growth, and
+one that changes a pet's colour. Each is used on a combat pet essence in your pack, and has to go on
+before the event it affects - the breed, the spirit, or the kills that grow a young pet. Each entry
+below says when the item is used up.
 
 - **Courtship Incense** (Lesser +2.5%, Refined +5%, Exquisite +10%). Adds to the chance of a stat
   mutation on the next breed. Both parents can be primed and the bonuses add, up to +50%. A weaker

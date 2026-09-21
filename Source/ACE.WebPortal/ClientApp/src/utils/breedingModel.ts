@@ -595,7 +595,8 @@ export function breed(
         catalystA: !!options.catalystA, catalystB: !!options.catalystB,
         guardianKilled: options.guardianKilled ?? true,
       },
-      rngDraws: rngDraws.map(d => Number(d.toFixed(6))),
+      // Full precision: a draw rounded across a threshold would replay the other way.
+      rngDraws,
       baby,
     })}`)
   }
@@ -826,6 +827,13 @@ export function runSelfCheck(): SelfCheckResult {
   const cappedA: PetGenetics = { ...EMPTY_GENETICS, potencyStored: 120 }
   const r3 = breed(cappedA, cappedA, { ...config, maxStatMutations: 0 }, {}, scriptedRng([0, 0, 0, 0, 0, 0, 0, 0, 0.5, 0, 0.0]))
   check('capped potency mutation not applied', [r3.potencyRoll.mutated, r3.potencyRoll.applied, r3.hasMutation, r3.paletteRolled], [true, false, false, false])
+
+  // seededRng is what makes a breed replayable: two generators with one seed must agree draw for draw.
+  const seedA = seededRng(20260921)
+  const seedB = seededRng(20260921)
+  check('seededRng deterministic',
+    Array.from({ length: 6 }, () => seedA()),
+    Array.from({ length: 6 }, () => seedB()))
 
   // Incense clamp and chance floor.
   check('incense clamp', combinedIncenseBonus(0.4, 0.3), 0.5)

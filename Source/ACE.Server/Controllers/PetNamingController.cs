@@ -309,6 +309,12 @@ namespace ACE.Server.Controllers
                 // Owner logged out before the action ran: fall through to the offline path.
             }
 
+            // Re-resolve right before the offline write. An owner who logged in since the checks above has
+            // the character loaded; editing the detached database copy now would be undone by their next
+            // save. Send it back to pending instead so the reviewer can approve it again.
+            if (PlayerManager.GetOnlinePlayer(characterId) != null)
+                return RenameResult.Failed("the owner logged in while the rename was being processed; approve it again");
+
             return RenameOffline(characterId, petGuid, oldName, newName);
         }
 

@@ -244,8 +244,8 @@ old default; that covers the remaining 28 creatures in the "different palette pi
 looks right, leave the 0.5 default alone.
 
 **Revised severity: MEDIUM, with one confirmed defect to fix.** Cosmetic only - no data,
-combat or economy impact - but it is a real regression against master affecting 71 creature
-weenies and 42 wearable items, and it is confirmed in-game. The fix above is four lines.
+combat or economy impact - but it is a real regression against master affecting 66 creatures
+and 21 equippable items (87 objects), and it is confirmed in-game. The fix above is four lines.
 
 **What to do.** Spawn or visit **Undead Librarian (2001006)**, **Master Soldier (38845)** and
 **Undead Custodian (2001007)** - one from each changed group. If they look right, close this
@@ -541,7 +541,7 @@ I had no running server and no database, so these could not be checked from sour
 ## Suggested order of work
 
 1. Fix the `PaletteTemplate & 0xFFFF` branch (4 lines, two call sites) - confirmed in-game,
-   affects 71 creatures and 42 wearable items including the Gelidite set. Then H1 (a few
+   affects 66 creatures and 21 equippable items (87 objects). Then H1 (a few
    lines, removes M5 too) and L1 (strip two BOMs). No code has been changed yet.
 2. B2 is decided: bond on, gate 100, growth uncapped, decay stays at 0.35. Only B2c is left -
    turn the test switches off (RUNBOOK 7a).

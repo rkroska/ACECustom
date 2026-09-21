@@ -1808,6 +1808,14 @@ namespace ACE.Server.Command.Handlers
 
             var oldName = petDevice.Name;
 
+            // pet_name_requests.old_name is NOT NULL, and the reviewer needs to see what is being renamed.
+            // Refuse here, before the cooldown is taken and before any database work.
+            if (string.IsNullOrWhiteSpace(oldName))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("That pet has no current name, so it cannot be renamed. Please contact staff.", ChatMessageType.Broadcast));
+                return;
+            }
+
             if (string.Equals(oldName, requestedName, StringComparison.Ordinal))
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"{oldName} already has that name.", ChatMessageType.Broadcast));

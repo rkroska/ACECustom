@@ -92,5 +92,6 @@ WHERE s.`type` = 1 AND (s.`value` = 'Prof. Ruggan' OR s.`value` = 'Professor Rug
 ORDER BY l.`guid`
 LIMIT 1;
 
--- 5. Pet Neutering / Tailoring kits (98760399-98760401) are defined ONLY in
---    2026-09-09-01-Pet-Tailoring-and-Neutering-Kits.sql; the older copies that lived here were removed.
+-- 5. Pet Neutering / Tailoring kits (98760399-98760401) are not defined here. The canonical patch is
+--    2026-09-09-01-Pet-Tailoring-and-Neutering-Kits.sql; Content/sql/weenies holds its import mirror
+--    (98760399-98760401 Pet Tailoring and Neutering Kits.sql). The older copies that lived here were removed.

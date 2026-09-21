@@ -47,11 +47,14 @@ of the control flow, not a sample.
 | | Count | After the fix |
 |---|---|---|
 | Creatures on the raw-ordinal branch | 71 | 64 match master exactly; 7 still differ (shade 0.5, a separate issue) |
-| Equipped items on the raw-ordinal branch | 42 | 42 match master exactly |
+| Equipped items on the raw-ordinal branch | 21 | 21 match master exactly |
 | Equipped items where `PaletteTemplate` IS a key | 2,165 | untouched |
 | Everything else | - | untouched |
 
-Total blast radius: **113 objects, all of which currently render wrong.**
+Total blast radius: **87 objects that currently render wrong - 66 creatures and 21 equippable
+items.** 71 creatures enter the raw-ordinal branch, but 5 of them have a fallback effect with zero
+CloSubPalettes, so no subpalette is written for them on master or the branch (REVIEW.md, the
+correction under the equipped-item table).
 
 ### Automated coverage
 
@@ -62,9 +65,8 @@ in-game.
 ---
 
 > **These tables are pass/fail only AFTER the fix is applied.** Readings taken on the current
-> build are *baselines*. In particular, pre-fix every Gelidite piece receives subpalette id `4`
-> and therefore looks identical to every other piece - consistently wrong, not correct. Record
-> what you see now, apply the fix, and compare.
+> build are *baselines*. Record what you see now, apply the fix, and compare. (The Gelidite set is
+> not affected - see the correction under A5-A7.)
 
 ### A1-A4. Creatures on the affected branch - these should get their colour back
 

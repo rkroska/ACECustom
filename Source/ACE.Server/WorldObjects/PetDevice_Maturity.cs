@@ -184,6 +184,27 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// The one rule for whether a kill counts toward a juvenile's growth, shared by
+        /// <see cref="CreditMaturityKills"/> and the bond award in Creature_Death so the two cannot drift:
+        /// the pet did at least <paramref name="minShare"/> of the damage, to a creature at or above the
+        /// essence's tier. Returns null when the kill qualifies, otherwise the reason it does not.
+        /// <paramref name="tier"/> is the essence tier, for callers that trace it. Callers decide what a
+        /// non-juvenile means; this does not look at maturity.
+        /// </summary>
+        public static string MaturityCreditRefusal(PetDevice device, double damageShare, int victimLevel, double minShare, out int? tier)
+        {
+            tier = ACE.Server.Factories.Tables.Wcids.PetDeviceWcids.GetPetLevel(device.WeenieClassId);
+
+            if (damageShare < minShare)
+                return "share below minShare";
+
+            if (tier.HasValue && victimLevel < tier.Value)
+                return "victim level below tier";
+
+            return null;
+        }
+
+        /// <summary>
         /// Called when any creature dies. Every juvenile combat pet that did enough of the damage to
         /// a creature at or above its essence tier earns one maturity kill.
         /// </summary>
@@ -217,14 +238,6 @@ namespace ACE.Server.WorldObjects
                         continue;
 
                     var share = info.TotalDamage / totalHealth;
-                    if (share < minShare)
-                    {
-                        // [PetTrace] a juvenile that fell short of the share is worth a line; adults are not.
-                        if (PetTrace.Enabled && combatPet.TryGetSummoningDevice() is PetDevice shortDevice && shortDevice.IsJuvenile)
-                            PetTrace.MaturityKill(shortDevice, owner, combatPet, victim, info.TotalDamage, totalHealth, minShare,
-                                ACE.Server.Factories.Tables.Wcids.PetDeviceWcids.GetPetLevel(shortDevice.WeenieClassId), false, "share below minShare", 0, 0, 0, 0, 0, 0, false);
-                        continue;
-                    }
 
                     var device = combatPet.TryGetSummoningDevice();
                     if (device == null && combatPet.SummoningDeviceGuid != ACE.Entity.ObjectGuid.Invalid)
@@ -232,12 +245,12 @@ namespace ACE.Server.WorldObjects
                     if (device == null || !device.IsJuvenile)
                         continue;
 
-                    // Level gate: the creature must be at or above the essence's tier.
-                    var tier = ACE.Server.Factories.Tables.Wcids.PetDeviceWcids.GetPetLevel(device.WeenieClassId);
-                    if (tier.HasValue && victimLevel < tier.Value)
+                    var refusal = MaturityCreditRefusal(device, share, victimLevel, minShare, out var tier);
+                    if (refusal != null)
                     {
+                        // [PetTrace] a juvenile that missed out is worth a line; adults never reach here.
                         if (PetTrace.Enabled)
-                            PetTrace.MaturityKill(device, owner, combatPet, victim, info.TotalDamage, totalHealth, minShare, tier, false, "victim level below tier", 0, 0, 0, 0, 0, 0, false);
+                            PetTrace.MaturityKill(device, owner, combatPet, victim, info.TotalDamage, totalHealth, minShare, tier, false, refusal, 0, 0, 0, 0, 0, 0, false);
                         continue;
                     }
 

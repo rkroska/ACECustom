@@ -14,6 +14,47 @@ namespace ACE.Server.Tests
     [TestClass]
     public class PetNamingTests
     {
+        // ---- growth-stage tag: removed only where ApplyMaturity puts it ------------------
+
+        private static readonly string[] Stages = { "Newborn", "Whelp", "Juvenile", "Adolescent", "Young Adult", "Stage 1" };
+
+        [TestMethod]
+        public void StageTag_AfterOwnerPrefix_IsRemoved()
+        {
+            Assert.AreEqual("+Bob's Drudge", CombatPet.StripMaturityStageTag("+Bob's Whelp Drudge", Stages));
+        }
+
+        [TestMethod]
+        public void StageWord_ElsewhereInTheName_IsKept()
+        {
+            // The old global Replace turned this into "+Bob's Gromnie" on every summon.
+            Assert.AreEqual("+Bob's Gromnie Whelp", CombatPet.StripMaturityStageTag("+Bob's Gromnie Whelp", Stages));
+        }
+
+        [TestMethod]
+        public void StackedTagsFromOlderBuilds_AreAllRemoved()
+        {
+            Assert.AreEqual("+Bob's Drudge", CombatPet.StripMaturityStageTag("+Bob's Adolescent Whelp Drudge", Stages));
+        }
+
+        [TestMethod]
+        public void MultiWordStage_IsRemoved()
+        {
+            Assert.AreEqual("+Bob's Drudge", CombatPet.StripMaturityStageTag("+Bob's Young Adult Drudge", Stages));
+        }
+
+        [TestMethod]
+        public void NoOwnerPrefix_TagAtStart_IsRemoved()
+        {
+            Assert.AreEqual("Drudge", CombatPet.StripMaturityStageTag("Newborn Drudge", Stages));
+        }
+
+        [TestMethod]
+        public void UntaggedName_IsUnchanged()
+        {
+            Assert.AreEqual("+Bob's Flaw's Dingleberry", CombatPet.StripMaturityStageTag("+Bob's Flaw's Dingleberry", Stages));
+        }
+
         // ---- approved custom names are verbatim ----------------------------------------
 
         [TestMethod]

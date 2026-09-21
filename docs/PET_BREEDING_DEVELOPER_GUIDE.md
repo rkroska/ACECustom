@@ -260,8 +260,9 @@ Spawned by `TrySpawnMatingGuardian` when the breed rolled any mutation and `pet_
     without the blessing.
   - `OnGuardianLost` (from `Destroy` without a death, or `OnParentDied` when `CombatPet.Die` notifies
     the guardian that a parent pet died): same message, `CompleteBirth` without the blessing.
-  All three remove the entry from `pendingGuardianBreeds` (a `ConcurrentDictionary` keyed by guardian
-  GUID). The ritual can never lose a paid breed.
+  All three `TryRemove` the entry from `pendingGuardianBreeds` (a `ConcurrentDictionary` keyed by
+  guardian GUID), so a registered breed resolves at most once while the process keeps running. It is
+  not durable: a restart loses it (below).
 - `Die` is overridden to a minimal animation + destroy; no Siphon Lens, no emotes, no treasure.
 - `CombatPet.IsInMotelOrEncounter()` is true inside the breeding area or while registered as a parent
   pet of a live guardian. `Healer`, `Player_Magic` (beneficial spells only; harmful spells on your own

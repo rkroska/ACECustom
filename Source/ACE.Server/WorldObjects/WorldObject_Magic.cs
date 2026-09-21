@@ -889,6 +889,14 @@ namespace ACE.Server.WorldObjects
 
             // Drain Resistances - allows one to partially resist drain health/stamina/mana and harm attacks (not including other life transfer spells).
             var isDrain = spell.TransferFlags.HasFlag(TransferFlags.TargetSource | TransferFlags.CasterDestination);
+
+            // A drain takes from a source that must accept damage from this caster - a mating guardian only
+            // from its parent pets. Harm spells get the same rule in HandleCastSpell_Boost; a drain changes
+            // vitals directly and never passes TakeDamage, so without this a bystander could drain a guardian
+            // to death. Non-drain transfers are unaffected.
+            if (isDrain && !transferSource.CanBeDamagedBy(this))
+                return;
+
             var drainMod = isDrain ? (float)transferSource.GetResistanceMod(GetDrainResistanceType(spell.Source)) : 1.0f;
 
             srcVitalChange = (uint)Math.Round(transferSource.GetCreatureVital(spell.Source).Current * spell.Proportion * drainMod);

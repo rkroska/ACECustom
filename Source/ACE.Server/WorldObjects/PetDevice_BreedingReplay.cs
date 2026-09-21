@@ -249,7 +249,7 @@ namespace ACE.Server.WorldObjects
             {
                 var draws = new JArray();
                 foreach (var d in rngDraws ?? Array.Empty<double>())
-                    draws.Add(Math.Round(d, 6));
+                    draws.Add(d); // full precision: a draw rounded across a threshold replays the other way
 
                 var root = new JObject
                 {

@@ -117,9 +117,7 @@ namespace ACE.Server.WorldObjects
 
             // Name: "<Owner>'s <Stage> <Creature>" while growing, plain once adult. Strip any previous
             // stage tag first so a grown pet does not stack "Adolescent Whelp".
-            var name = Name ?? "";
-            foreach (var stageName in PetDevice.AllMaturityStageNames())
-                name = name.Replace(stageName + " ", "");
+            var name = StripMaturityStageTag(Name, PetDevice.AllMaturityStageNames());
             if (maturityEnabled && device.IsJuvenile)
             {
                 var tag = device.MaturityStageName + " ";
@@ -133,6 +131,39 @@ namespace ACE.Server.WorldObjects
                 EnqueueBroadcast(new GameMessageUpdateObject(this));
                 PlayParticleEffect(PlayScript.LevelUp, Guid);
             }
+        }
+
+        /// <summary>
+        /// Removes the growth-stage tag ApplyMaturity inserts - and only that. The tag goes straight after
+        /// the first "'s " (the owner prefix) or at the very start, so only that position is checked: a stage
+        /// word anywhere else ("Gromnie Whelp", or an approved custom name) is part of the name and stays.
+        /// Loops so a stacked tag left by older builds ("Adolescent Whelp") is removed as well.
+        /// </summary>
+        public static string StripMaturityStageTag(string name, IEnumerable<string> stageNames)
+        {
+            if (string.IsNullOrEmpty(name))
+                return "";
+
+            var ownerPrefix = name.IndexOf("'s ", StringComparison.Ordinal);
+            var at = ownerPrefix >= 0 ? ownerPrefix + 3 : 0;
+            var stages = new List<string>(stageNames ?? Array.Empty<string>());
+
+            bool stripped;
+            do
+            {
+                stripped = false;
+                foreach (var stage in stages)
+                {
+                    var tag = stage + " ";
+                    if (name.Length - at >= tag.Length && string.CompareOrdinal(name, at, tag, 0, tag.Length) == 0)
+                    {
+                        name = name.Remove(at, tag.Length);
+                        stripped = true;
+                    }
+                }
+            } while (stripped);
+
+            return name;
         }
 
         public PetDevice TryGetSummoningDevice()

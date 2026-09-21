@@ -376,11 +376,7 @@ namespace ACE.Server.WorldObjects
                     if (device.IsJuvenile)
                     {
                         var maturityMinShare = Math.Clamp(ServerConfig.pet_maturity_min_damage_share.Value, 0.0, 1.0);
-                        if (damagePercent < maturityMinShare)
-                            continue;
-
-                        var maturityTier = ACE.Server.Factories.Tables.Wcids.PetDeviceWcids.GetPetLevel(device.WeenieClassId);
-                        if (maturityTier.HasValue && (Level ?? 0) < maturityTier.Value)
+                        if (PetDevice.MaturityCreditRefusal(device, damagePercent, Level ?? 0, maturityMinShare, out _) != null)
                             continue;
                     }
 

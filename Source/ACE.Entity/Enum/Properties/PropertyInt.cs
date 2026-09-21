@@ -771,6 +771,15 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         Vitality                                = 9058,
 
+        // Legacy ids 9057 / 9058 - checked 2026-09-21, no remap migration needed:
+        //  * EssenceSalvageYield was 9057 on master but is set on no world weenie (0 weenie_properties_int
+        //    rows), so nothing moves to 9076. Every shard row at 9057 is a pet device holding 8-10, which is
+        //    PetMaleBreedingCharges: remapping 9057 -> 9076 would wipe breeding charges.
+        //  * PetMutationCount sat at 9058 only in branch builds ef2fbdc66..f4ec7c96b; master never used
+        //    9058. Rows left there are dev-shard data, read only as the last-resort Vitality fallback after
+        //    PetMutVitalityCount / PetMutVitality (present on every such device), and PetMutationCount
+        //    itself is read only by [PetTrace]. A production shard cannot hold either.
+
         /// <summary>
         /// Optional per-creature override for Essence Resonator salvage yield.
         /// Set this on a creature weenie to make salvaging essences from that creature

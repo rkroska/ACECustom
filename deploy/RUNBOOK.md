@@ -10,10 +10,12 @@ Deliverables in this directory:
 | `RUNBOOK.md` | you | this file |
 | `REVIEW.md` | you | the pre-production review and its findings |
 
-Read `REVIEW.md` before you start. One finding is marked BLOCKER and it is configuration,
-not code: `pet_bond_enabled` is off on your shard while the bond gate is 100, so every breed
-is refused until step 7c runs. The creature appearance change (B1) has been measured and is
-down to a three-creature look-and-confirm in step 9.1.
+Read `REVIEW.md` before you start. The bond gate is not a blocker: the shard already stores
+`pet_bond_enabled = true` and `pet_breeding_min_bond = 1`. The configuration that does need
+fixing is the stored breeding landblock `364` (the Marketplace, not the motel), `pet_trace`
+left on, and the mutation settings still at test values - all in step 7. The creature
+appearance change (B1) has been measured and is down to a three-creature look-and-confirm in
+step 9.1.
 
 Budget: about 45 minutes of hands-on work, of which 15 is the smoke test, plus however
 long it takes you to place 15 NPCs (step 8). Placing the NPCs is the long pole and it
@@ -388,6 +390,15 @@ exist in the world and nothing on his shop list can be bought.
    `@breed-debug`, note the `Cell=0x........`, then walk the whole room re-running it. If the
    cell id changes, the room spans more than one landcell and two players standing on
    opposite sides of it will fail to breed with no error message. Pick a different room.
+
+   Then narrow the breeding area from the whole landblock (step 7b's `314`) to that one cell,
+   pasting the raw cell id `@breed-debug` printed:
+   ```
+   @modifylong pet_breeding_allowed_landblock 0x013A02AE
+   ```
+   (that value is an example - use your own). A full 32-bit cell matches only that exact cell,
+   for breeding and for the motel's own-pet healing rule alike. Re-run `@breed-debug` in the
+   room: it should read `exact cell` and `VALID (Room OK)`.
 4. Walk to each mark and place:
    ```
    @createinst 78780200     The Drop           Fenwick, Kennel Intern
@@ -422,8 +433,9 @@ exist in the world and nothing on his shop list can be bought.
    ```
 6. Export the placements so they survive a world refresh, and commit the result:
    ```
-   @export-sql 313A
+   @export-sql 013A landblock
    ```
+   Run it while you are standing in variation 3: the export takes the variation you are in.
    Without this, a world reload from the base SQL wipes every placement you just made.
 
 ---
