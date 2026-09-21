@@ -3519,12 +3519,16 @@ namespace ACE.Server.Command.Handlers.Processors
                 }
             }
 
+            var isPet = target is Pet; // CombatPet derives from Pet
+
             return new TemplateExport.Snapshot
             {
                 Biota = target.Biota,
-                LiveName = target.Name,
+                // A pet's live name is "Owner's [Stage] Creature"; the template is named for the creature.
+                LiveName = isPet ? TemplateExport.PetBaseName(target.Name, PetDevice.AllMaturityStageNames()) : target.Name,
+                PetTemplate = isPet ? DatabaseManager.World.GetCachedWeenie(target.WeenieClassId) : null,
                 IsPlayer = target is Player,
-                IsPet = target is Pet, // CombatPet derives from Pet
+                IsPet = isPet,
                 IsCreature = target is Creature,
                 ObjDescPaletteId = objDesc.PaletteID,
                 AnimParts = objDesc.AnimPartChanges.ToList(),

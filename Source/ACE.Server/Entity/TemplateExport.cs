@@ -339,6 +339,95 @@ namespace ACE.Server.Entity
             public IReadOnlyList<PropertiesPalette> SubPalettes { get; set; } = Array.Empty<PropertiesPalette>();
             public IReadOnlyList<PropertiesTextureMap> TextureChanges { get; set; } = Array.Empty<PropertiesTextureMap>();
             public IReadOnlyList<WieldedItem> Wielded { get; set; } = Array.Empty<WieldedItem>();
+            /// <summary>
+            /// Pet sources only: the pet's own summon weenie. Summoning writes runtime state onto the live pet
+            /// (bond and gear ratings, the owner's faction, boosted vitals, a despawn timer); the export puts the
+            /// template's values back, see <see cref="RevertPetSummonState"/>. Null when it could not be read.
+            /// </summary>
+            public ACE.Entity.Models.Weenie PetTemplate { get; set; }
+        }
+
+        /// <summary>
+        /// A summoned pet's name is "Owner's [Stage] Creature". The default template name is the creature part
+        /// alone: the owner prefix (up to the first "'s ") and a growth-stage tag straight after it are dropped.
+        /// An approved custom name keeps its own possessive ("Owner's Flaw's Dingleberry" -> "Flaw's Dingleberry").
+        /// Falls back to the live name when nothing would be left.
+        /// </summary>
+        public static string PetBaseName(string liveName, IEnumerable<string> stageNames)
+        {
+            if (string.IsNullOrWhiteSpace(liveName))
+                return liveName ?? "";
+
+            var ownerPrefix = liveName.IndexOf("'s ", StringComparison.Ordinal);
+            var rest = ownerPrefix >= 0 ? liveName.Substring(ownerPrefix + 3) : liveName;
+            rest = ACE.Server.WorldObjects.CombatPet.StripMaturityStageTag(rest, stageNames).Trim();
+
+            return rest.Length > 0 ? rest : liveName;
+        }
+
+        /// <summary>
+        /// Ints that summoning a combat pet rewrites from the owner, the essence's gear and bond, and the gem
+        /// imbue. On export they are reset to the pet template's values, or removed when it has none.
+        /// </summary>
+        public static readonly PropertyInt[] PetSummonDerivedInts =
+        {
+            PropertyInt.DamageRating, PropertyInt.DamageResistRating, PropertyInt.CritRating,
+            PropertyInt.CritDamageRating, PropertyInt.CritResistRating, PropertyInt.CritDamageResistRating,
+            PropertyInt.Faction1Bits, PropertyInt.ImbuedEffect,
+        };
+
+        /// <summary>
+        /// Undoes what summoning wrote onto a live pet, so a template made from it is the creature and not this
+        /// one summon of it. Without this, every copy despawned about nine minutes after it spawned (the pet's
+        /// Lifespan, which Creature.Heartbeat enforces on any object), fought with the pet's bond and gear
+        /// ratings, carried the owner's faction and luminance counts, and let players walk through it.
+        ///
+        /// Lifespan and TimeToRot are dropped outright, not restored: the pet template ships its own despawn
+        /// timer (a pet concept), and a placed NPC or monster must not expire. Vitals are restored only when the
+        /// template has them; otherwise the live values stay, as there is nothing better to use.
+        /// </summary>
+        public static void RevertPetSummonState(Weenie w, ACE.Entity.Models.Weenie template)
+        {
+            RemoveInt(w, PropertyInt.Lifespan);
+            RemoveFloat(w, PropertyFloat.TimeToRot);
+
+            foreach (var p in PetSummonDerivedInts)
+            {
+                RemoveInt(w, p);
+                if (template?.PropertiesInt != null && template.PropertiesInt.TryGetValue(p, out var v))
+                    SetInt(w, p, v);
+            }
+
+            foreach (var row in w.WeeniePropertiesInt64.Where(r => ((PropertyInt64)r.Type).ToString().StartsWith("LumAug", StringComparison.Ordinal)).ToList())
+                w.WeeniePropertiesInt64.Remove(row);
+            if (template?.PropertiesInt64 != null)
+                foreach (var kvp in template.PropertiesInt64.Where(k => k.Key.ToString().StartsWith("LumAug", StringComparison.Ordinal)))
+                    w.WeeniePropertiesInt64.Add(new WeeniePropertiesInt64 { ObjectId = w.ClassId, Type = (ushort)kvp.Key, Value = kvp.Value });
+
+            if (template?.PropertiesAttribute2nd != null)
+            {
+                foreach (var row in w.WeeniePropertiesAttribute2nd)
+                {
+                    if (template.PropertiesAttribute2nd.TryGetValue((PropertyAttribute2nd)row.Type, out var baseVital))
+                    {
+                        row.InitLevel = baseVital.InitLevel;
+                        row.LevelFromCP = 0;
+                        row.CPSpent = 0;
+                        row.CurrentLevel = 0;
+                    }
+                }
+            }
+
+            // Pets are ethereal so they never body-block their owner; a placed creature should be solid. The bool
+            // wins over the PhysicsState default (WorldObject.CalculatedPhysicsState); the bit is cleared as well
+            // so the row does not contradict it.
+            var physicsState = GetInt(w, PropertyInt.PhysicsState);
+            if (GetBool(w, PropertyBool.Ethereal) == true || (physicsState.HasValue && (physicsState.Value & (int)PhysicsState.Ethereal) != 0))
+            {
+                SetBool(w, PropertyBool.Ethereal, false);
+                if (physicsState.HasValue)
+                    SetInt(w, PropertyInt.PhysicsState, physicsState.Value & ~(int)PhysicsState.Ethereal);
+            }
         }
 
         /// <summary>Players default to npc (a copy that fights back is almost never wanted); everything else to monster.</summary>
@@ -495,6 +584,8 @@ namespace ACE.Server.Entity
             public bool WieldSkippedForPet { get; set; }
             /// <summary>The flavour keyword had nothing to act on (not a creature).</summary>
             public bool FlavourIgnored { get; set; }
+            /// <summary>A pet source: summon state was reverted to the pet template (see RevertPetSummonState).</summary>
+            public bool PetSummonStateReverted { get; set; }
 
             public string ToLine()
             {
@@ -517,6 +608,7 @@ namespace ACE.Server.Entity
                 if (Emotes > 0) parts.Add($"{Emotes} emote sets");
                 if (CreateListRows > 0) parts.Add($"{CreateListRows} create list rows");
                 if (WieldedItems > 0) parts.Add($"{WieldedItems} wielded items");
+                if (PetSummonStateReverted) parts.Add("pet summon boosts and despawn timer removed");
                 return string.Join(", ", parts);
             }
         }
@@ -719,6 +811,13 @@ namespace ACE.Server.Entity
                 }
             }
 
+            // --- pet summon state ----------------------------------------------------------------------
+            if (s.IsPet)
+            {
+                RevertPetSummonState(w, s.PetTemplate);
+                summary.PetSummonStateReverted = true;
+            }
+
             // --- held items ---------------------------------------------------------------------------
             // A held weapon changes how a creature fights (weapon damage instead of body parts). A pet's held
             // weapons are capture skins whose damage is neutralised at runtime only, so for the monster flavour of
@@ -836,6 +935,8 @@ namespace ACE.Server.Entity
         // ------------------------------------------------------------------------------------------------
 
         /// <summary>The int properties the Ivo block deletes before re-adding its own (67, 68, 16, 95, 133, 134, 290, 291).</summary>
+        public const double NpcMinUseRadius = 3.0;
+
         public static readonly PropertyInt[] NpcRemovedInts =
         {
             PropertyInt.Tolerance, PropertyInt.TargetingTactic, PropertyInt.ItemUseable, PropertyInt.RadarBlipColor,
@@ -851,6 +952,11 @@ namespace ACE.Server.Entity
             SetInt(w, PropertyInt.RadarBlipColor, (int)RadarColor.NPC);
             SetInt(w, PropertyInt.ShowableOnRadar, (int)RadarBehavior.ShowAlways);
             SetInt(w, PropertyInt.PlayerKillerStatus, (int)ACE.Entity.Enum.PlayerKillerStatus.RubberGlue);
+
+            // Clickable from a normal distance (Ivo and Fenwick use 3); a pet source carries 0.5.
+            var useRadius = GetFloat(w, PropertyFloat.UseRadius);
+            if (!useRadius.HasValue || useRadius.Value < NpcMinUseRadius)
+                SetFloat(w, PropertyFloat.UseRadius, NpcMinUseRadius);
 
             SetBool(w, PropertyBool.Stuck, true);       // stays where it is placed
             SetBool(w, PropertyBool.Attackable, false); // Creature.IsNPC => !Attackable && TargetingTactic == None
@@ -1081,6 +1187,19 @@ namespace ACE.Server.Entity
         public static double? GetFloat(Weenie w, PropertyFloat p)
         {
             return w.WeeniePropertiesFloat.FirstOrDefault(r => r.Type == (ushort)p)?.Value;
+        }
+
+        public static void SetFloat(Weenie w, PropertyFloat p, double value)
+        {
+            var row = w.WeeniePropertiesFloat.FirstOrDefault(r => r.Type == (ushort)p);
+            if (row != null) row.Value = value;
+            else w.WeeniePropertiesFloat.Add(new WeeniePropertiesFloat { ObjectId = w.ClassId, Type = (ushort)p, Value = value });
+        }
+
+        public static void RemoveFloat(Weenie w, PropertyFloat p)
+        {
+            foreach (var row in w.WeeniePropertiesFloat.Where(r => r.Type == (ushort)p).ToList())
+                w.WeeniePropertiesFloat.Remove(row);
         }
 
         public static string GetString(Weenie w, PropertyString p)

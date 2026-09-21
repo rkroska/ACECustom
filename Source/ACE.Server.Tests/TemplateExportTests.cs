@@ -685,6 +685,121 @@ namespace ACE.Server.Tests
             StringAssert.Contains(lines[lines.Length - 1], "renumber");
         }
 
+        // ---- pet summon state is not part of the template ---------------------------------------
+
+        private static TemplateExport.Snapshot SummonedPetSnapshot(ACE.Entity.Models.Weenie template)
+        {
+            var s = PetSnapshot(withWielded: false);
+            var b = s.Biota;
+            // What CombatPet.Init writes onto a live pet (values from the reported Tumerok Priest export).
+            b.PropertiesInt[PropertyInt.Lifespan] = 543;
+            b.PropertiesInt[PropertyInt.Faction1Bits] = 1;
+            b.PropertiesInt[PropertyInt.DamageRating] = 190;
+            b.PropertiesInt[PropertyInt.DamageResistRating] = 233;
+            b.PropertiesInt[PropertyInt.CritRating] = 5;
+            b.PropertiesInt[PropertyInt.PhysicsState] = 1036;          // Ethereal | ReportCollisions | Gravity
+            b.PropertiesFloat[PropertyFloat.TimeToRot] = 600;
+            b.PropertiesFloat[PropertyFloat.UseRadius] = 0.5;
+            b.PropertiesBool[PropertyBool.Ethereal] = true;
+            b.PropertiesInt64[PropertyInt64.LumAugVoidCount] = 1850;
+            b.PropertiesAttribute2nd = new Dictionary<PropertyAttribute2nd, PropertiesAttribute2nd>
+            {
+                { PropertyAttribute2nd.MaxHealth, new PropertiesAttribute2nd { InitLevel = 4320 } },
+            };
+            s.PetTemplate = template;
+            return s;
+        }
+
+        [TestMethod]
+        public void PetExport_DropsTheDespawnTimer_EvenWhenTheTemplateHasOne()
+        {
+            // The pet template itself ships Lifespan 43: restoring it would still delete every copy.
+            var template = new ACE.Entity.Models.Weenie { WeenieClassId = 49149, ClassName = "tumerokpriestpet", WeenieType = WeenieType.CombatPet, PropertiesInt = new Dictionary<PropertyInt, int> { { PropertyInt.Lifespan, 43 } } };
+            var w = TemplateExport.BuildWeenie(SummonedPetSnapshot(template), 78790000, "tmpl78790000_x", "X", TemplateExport.Flavour.Npc, DateTime.UtcNow, out var summary);
+
+            Assert.IsNull(TemplateExport.GetInt(w, PropertyInt.Lifespan));
+            Assert.IsNull(TemplateExport.GetFloat(w, PropertyFloat.TimeToRot));
+            Assert.IsTrue(summary.PetSummonStateReverted);
+            StringAssert.Contains(summary.ToLine(), "despawn timer removed");
+        }
+
+        [TestMethod]
+        public void PetExport_RatingsAndVitalsComeFromTheTemplate()
+        {
+            var template = new ACE.Entity.Models.Weenie
+            {
+                WeenieClassId = 49149, ClassName = "tumerokpriestpet", WeenieType = WeenieType.CombatPet, 
+                PropertiesInt = new Dictionary<PropertyInt, int> { { PropertyInt.DamageRating, 10 } },
+                PropertiesAttribute2nd = new Dictionary<PropertyAttribute2nd, PropertiesAttribute2nd>
+                {
+                    { PropertyAttribute2nd.MaxHealth, new PropertiesAttribute2nd { InitLevel = 1250 } },
+                },
+            };
+            var w = TemplateExport.BuildWeenie(SummonedPetSnapshot(template), 78790000, "tmpl78790000_x", "X", TemplateExport.Flavour.Monster, DateTime.UtcNow, out _);
+
+            Assert.AreEqual(10, TemplateExport.GetInt(w, PropertyInt.DamageRating), "template value, not the pet's 190");
+            Assert.IsNull(TemplateExport.GetInt(w, PropertyInt.DamageResistRating), "template has none, so none");
+            Assert.IsNull(TemplateExport.GetInt(w, PropertyInt.CritRating));
+            Assert.IsNull(TemplateExport.GetInt(w, PropertyInt.Faction1Bits), "the owner's faction must not carry over");
+            Assert.AreEqual(0, w.WeeniePropertiesInt64.Count, "the owner's luminance counts must not carry over");
+            Assert.AreEqual(1250u, w.WeeniePropertiesAttribute2nd.Single().InitLevel, "base health, not the bonded 4320");
+        }
+
+        [TestMethod]
+        public void PetExport_IsSolid()
+        {
+            var w = TemplateExport.BuildWeenie(SummonedPetSnapshot(null), 78790000, "tmpl78790000_x", "X", TemplateExport.Flavour.Monster, DateTime.UtcNow, out _);
+
+            Assert.AreEqual(false, TemplateExport.GetBool(w, PropertyBool.Ethereal));
+            Assert.AreEqual(1036 & ~(int)PhysicsState.Ethereal, TemplateExport.GetInt(w, PropertyInt.PhysicsState));
+        }
+
+        [TestMethod]
+        public void PetExport_WithoutTemplate_StillStripsSummonState()
+        {
+            var w = TemplateExport.BuildWeenie(SummonedPetSnapshot(null), 78790000, "tmpl78790000_x", "X", TemplateExport.Flavour.Monster, DateTime.UtcNow, out _);
+
+            Assert.IsNull(TemplateExport.GetInt(w, PropertyInt.Lifespan));
+            Assert.IsNull(TemplateExport.GetInt(w, PropertyInt.DamageRating));
+            Assert.IsNull(TemplateExport.GetInt(w, PropertyInt.Faction1Bits));
+            Assert.AreEqual(4320u, w.WeeniePropertiesAttribute2nd.Single().InitLevel, "no template: nothing better than the live value");
+        }
+
+        [TestMethod]
+        public void NpcExport_IsClickableFromANormalDistance()
+        {
+            var w = TemplateExport.BuildWeenie(SummonedPetSnapshot(null), 78790000, "tmpl78790000_x", "X", TemplateExport.Flavour.Npc, DateTime.UtcNow, out _);
+            Assert.AreEqual(TemplateExport.NpcMinUseRadius, TemplateExport.GetFloat(w, PropertyFloat.UseRadius));
+
+            var m = TemplateExport.BuildWeenie(SummonedPetSnapshot(null), 78790001, "tmpl78790001_x", "X", TemplateExport.Flavour.Monster, DateTime.UtcNow, out _);
+            Assert.AreEqual(0.5, TemplateExport.GetFloat(m, PropertyFloat.UseRadius), "monster flavour is left as captured");
+        }
+
+        [TestMethod]
+        public void NonPetExport_KeepsItsRatingsAndTimers()
+        {
+            var s = PetSnapshot(withWielded: false);
+            s.IsPet = false;
+            s.Biota.PropertiesInt[PropertyInt.DamageRating] = 40;
+            s.Biota.PropertiesInt[PropertyInt.Lifespan] = 3600;
+            var w = TemplateExport.BuildWeenie(s, 78790000, "tmpl78790000_x", "X", TemplateExport.Flavour.Monster, DateTime.UtcNow, out var summary);
+
+            Assert.AreEqual(40, TemplateExport.GetInt(w, PropertyInt.DamageRating));
+            Assert.AreEqual(3600, TemplateExport.GetInt(w, PropertyInt.Lifespan), "only pet summon state is reverted");
+            Assert.IsFalse(summary.PetSummonStateReverted);
+        }
+
+        private static readonly string[] Stages = { "Newborn", "Whelp", "Juvenile", "Adolescent", "Young Adult" };
+
+        [TestMethod]
+        public void PetBaseName_DropsOwnerAndStage()
+        {
+            Assert.AreEqual("Tumerok Priest", TemplateExport.PetBaseName("+Schneebly's Tumerok Priest", Stages));
+            Assert.AreEqual("Tumerok Priest", TemplateExport.PetBaseName("+Schneebly's Whelp Tumerok Priest", Stages));
+            Assert.AreEqual("Flaw's Dingleberry", TemplateExport.PetBaseName("+Schneebly's Flaw's Dingleberry", Stages));
+            Assert.AreEqual("Browerk", TemplateExport.PetBaseName("Browerk", Stages));
+        }
+
         [TestMethod]
         public void BuildChatReply_ImportStarted_SaysItIsLoading()
         {
