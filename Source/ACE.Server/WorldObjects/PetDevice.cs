@@ -445,41 +445,65 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Paints the sex-coloured square behind the inventory icon. Sex is derived from the GUID, so
-        /// this needs nothing stored and works on essences that already exist: it runs on every load.
-        /// The value is not flagged as a change, so it costs no database write of its own - it is
-        /// recomputed each time the device is instantiated, and follows the config if the art changes.
-        /// Call it again after anything that flips the sex.
+        /// The sex-coloured square this essence shows behind its inventory icon: the configured male or
+        /// female underlay for a combat pet essence, or null when it is not one or the feature is off.
+        /// Sex comes from the GUID (or the admin override), so every combat essence always has one.
+        /// </summary>
+        public uint? SexIconUnderlay
+        {
+            get
+            {
+                if (!ServerConfig.pet_sex_icon_underlay_enabled.Value)
+                    return null;
+
+                try
+                {
+                    // Only combat pet essences breed, so only they carry a sex. IsCombatPetDevice reads
+                    // the cached summon weenie; a world database that is not up yet must not throw out
+                    // of a property read.
+                    if (!IsCombatPetDevice())
+                        return null;
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+
+                var configured = IsMale
+                    ? ServerConfig.pet_sex_icon_underlay_male.Value
+                    : ServerConfig.pet_sex_icon_underlay_female.Value;
+
+                if (configured <= 0 || configured > uint.MaxValue)
+                    return null;
+
+                return (uint)configured;
+            }
+        }
+
+        /// <summary>
+        /// On a combat pet essence the sex square always wins, whatever was written to the stored
+        /// property. It used to be painted once, in the constructor, so anything that wrote the
+        /// underlay afterwards lost it until the next load: siphoning copies the template's underlay,
+        /// and no combat-pet template ships one, so every capture blanked the square. Deriving it on
+        /// read covers the wire serialiser, every UpdateProperty push, and any writer added later.
+        /// Non-combat devices, and a disabled feature, fall through to the stored value.
+        /// </summary>
+        public override uint? IconUnderlayId
+        {
+            get => SexIconUnderlay ?? base.IconUnderlayId;
+            set => base.IconUnderlayId = value;
+        }
+
+        /// <summary>
+        /// Writes the derived square into the stored property as well, so readers that bypass
+        /// <see cref="IconUnderlayId"/> and go straight to the biota (the web portal) see it too.
+        /// Display never depends on this: the getter derives the square either way.
         /// </summary>
         public void ApplySexIconUnderlay()
         {
-            if (!ServerConfig.pet_sex_icon_underlay_enabled.Value)
-                return;
-
-            try
-            {
-                // Only combat pet essences breed, so only they carry a sex. IsCombatPetDevice reads the
-                // cached summon weenie; this runs from the constructor, so a world database that is not
-                // up yet must not take the device down with it.
-                if (!IsCombatPetDevice())
-                    return;
-            }
-            catch (Exception ex)
-            {
-                log.Debug($"{nameof(ApplySexIconUnderlay)}: skipped for {Name} ({Guid}): {ex.Message}");
-                return;
-            }
-
-            var configured = IsMale
-                ? ServerConfig.pet_sex_icon_underlay_male.Value
-                : ServerConfig.pet_sex_icon_underlay_female.Value;
-
-            if (configured <= 0 || configured > uint.MaxValue)
-                return;
-
-            var underlay = (uint)configured;
-            if (IconUnderlayId != underlay)
-                IconUnderlayId = underlay;
+            var underlay = SexIconUnderlay;
+            if (underlay.HasValue && base.IconUnderlayId != underlay)
+                base.IconUnderlayId = underlay;
         }
 
         /// <summary>

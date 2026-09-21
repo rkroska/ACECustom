@@ -207,6 +207,10 @@ namespace ACE.Server.Entity
             if (useStr != null)
                 player.UpdateProperty(device, PropertyString.Use, useStr);
             player.UpdateProperty(device, PropertyDataId.Icon, device.IconId);
+            // The sex square: the client caches each icon layer separately, so a new portrait alone
+            // leaves whatever underlay it last drew. Capture pushes this for the same reason.
+            device.ApplySexIconUnderlay();
+            player.UpdateProperty(device, PropertyDataId.IconUnderlay, device.IconUnderlayId ?? 0u);
 
             player.EnqueueBroadcast(new ACE.Server.Network.GameMessages.Messages.GameMessageUpdateObject(device));
             if (device.CurrentWieldedLocation != null)

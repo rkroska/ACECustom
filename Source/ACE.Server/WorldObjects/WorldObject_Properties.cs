@@ -1539,7 +1539,7 @@ namespace ACE.Server.WorldObjects
         // ====== Weenie Header 2 Properties ======
         // ========================================
         // used in CalculateWeenieHeaderFlag2()
-        public uint? IconUnderlayId
+        public virtual uint? IconUnderlayId
         {
             get => GetProperty(PropertyDataId.IconUnderlay);
             set { if (!value.HasValue) RemoveProperty(PropertyDataId.IconUnderlay); else SetProperty(PropertyDataId.IconUnderlay, value.Value); }
