@@ -50,6 +50,16 @@ namespace ACE.Server.Managers
         public static readonly List<LandblockGroup> landblockGroups = new List<LandblockGroup>();
 
         /// <summary>
+        /// Variant review 2026-09-17: serializes "not loaded -> construct -> register" in <see cref="GetLandblock(LandblockId, bool, int?, bool)"/>.
+        /// Two group threads first-loading the same (landblock, variation) used to both construct; the loser's
+        /// registration then REPLACED the winner in <see cref="landblocks"/> while <see cref="loadedLandblocks"/> kept
+        /// the winner, and both ran Init - two live instances of one layer. One lock for all keys: it is held only for
+        /// construction (dat reads, no DB) and the three table adds, so first-loads of different blocks on different group
+        /// threads serialize briefly; Init runs outside it as before.
+        /// </summary>
+        private static readonly object landblockCreateLock = new object();
+
+        /// <summary>
         /// DestructionQueue is concurrent because it can be added to by multiple threads at once, publicly via AddToDestructionQueue()
         /// </summary>
         private static readonly ConcurrentDictionary<VariantCacheId, Landblock> destructionQueue = new ConcurrentDictionary<VariantCacheId, Landblock>();
@@ -97,33 +107,15 @@ namespace ACE.Server.Managers
             }
         }
 
-        private static bool AddUpdateLandblock(VariantCacheId landblockKey, Landblock landblock)
+        /// <summary>
+        /// Drops a landblock from <see cref="landblocks"/>. Variant review 2026-09-17: this replaced AddUpdateLandblock,
+        /// whose add branch moved under <see cref="landblockCreateLock"/> in GetLandblock and whose TryUpdate branch was
+        /// how the loser of a first-load race evicted the winner. Registration happens in exactly one place now; an
+        /// existing registration is never replaced.
+        /// </summary>
+        private static bool RemoveLandblock(VariantCacheId landblockKey)
         {
-            bool result = false;
-            var lb = GetLandblock(landblockKey);
-            if (lb == null && landblock == null)            
-                return result;
-            if (lb == null && landblock != null)
-            {
-                result = landblocks.TryAdd(landblockKey, landblock);
-                    //landblocks.Add(landblockKey, landblock);
-                //Console.WriteLine("Added AddUpdateLandblock Landblock: " + landblock.Id.Raw + " v: " + landblock.VariationId);
-                //if (landblock.Id.Raw == 27197439)
-                //{
-                //    Console.WriteLine(new StackTrace());
-                //}
-            }
-            else if (lb != null && landblock == null)
-            {
-                result = landblocks.TryRemove(landblockKey, out Landblock removedLandblock);
-            }
-            else if (lb != null && landblock != null)
-            {
-                result = landblocks.TryUpdate(landblockKey, landblock, lb);
-                //Console.WriteLine("Updated AddUpdateLandblock landblock: " + lb.Id.Raw + " : " + landblock.Id.Raw + " v: " + landblock.VariationId);
-            }
-
-            return result;
+            return landblocks.TryRemove(landblockKey, out _);
         }
 
         private static Landblock GetLandblock(VariantCacheId landblockKey)
@@ -609,7 +601,7 @@ namespace ACE.Server.Managers
 
         public static bool IsLoaded(LandblockId landblockId, int? variationId = null)
         {
-            return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId }) != null;
+            return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = VariationManager.NormalizeBase(variationId) }) != null;
         }
 
         /// <summary>No-create lookup of the LOADED landblock instance for (landblock, variation) -
@@ -617,7 +609,7 @@ namespace ACE.Server.Managers
         /// one (see Player.ValidateCurrentLandblockTick's stale-instance void heal, 2026-08-10).</summary>
         public static Landblock GetLoadedLandblock(LandblockId landblockId, int? variationId)
         {
-            return GetLandblock(new VariantCacheId() { Landblock = landblockId.Landblock, Variant = variationId });
+            return GetLandblock(new VariantCacheId() { Landblock = landblockId.Landblock, Variant = VariationManager.NormalizeBase(variationId) });
         }
 
         /// <summary>
@@ -675,6 +667,19 @@ namespace ACE.Server.Managers
         /// </summary>
         public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, int? variation, bool permaload = false)
         {
+            // Variation 0 is always base (owner ruling 2026-09-14): the cache, the group key and the adjacency wiring are
+            // EXACT on int?, while visibility treats 0 and null as one bucket. A raw 0 arriving here used to build a
+            // separate "(id, 0)" instance - its own group, its own empty cells - whose objects could still see and hit base
+            // objects ticked by another thread. Normalize once at this choke point; the log finds the producers.
+            if (variation.HasValue && variation.Value == 0)
+            {
+                if (ACE.Server.Diagnostics.LogRateLimiter.ShouldEmit("landblock_variation_zero", TimeSpan.FromMinutes(5), out var suppressedZero))
+                    log.Warn($"LandblockManager: explicit variation 0 requested for 0x{landblockId.Landblock:X4} - treated as base (null)." +
+                             (suppressedZero > 0 ? $" {suppressedZero} similar suppressed since the last report." : string.Empty) +
+                             $" Stack: {Environment.StackTrace}");
+                variation = null;
+            }
+
             Landblock landblock;
 
             bool setAdjacents = false;
@@ -683,49 +688,44 @@ namespace ACE.Server.Managers
 
             if (landblock == null)
             {
-                // load up this landblock                    
-                landblock = new Landblock(landblockId, variation);
+                var created = false;
 
-                // Both adds below used to `return landblock` on failure - handing back an instance whose
-                // physics was built in the ctor (so it is walkable) but whose Init() had NOT run, i.e. a
-                // permanent void. Losing an add almost always means another thread won the race, so the
-                // right answer is the WINNER's already-initialized landblock, not our orphan.
-                if (!AddUpdateLandblock(cacheKey, landblock))
+                // See landblockCreateLock: the miss is re-checked under the lock so exactly one thread constructs and
+                // registers an instance for this key; every other thread that missed gets that instance back.
+                lock (landblockCreateLock)
                 {
-                    log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks! Falling back to the cached instance.");
-                    var existing = GetLandblock(cacheKey);
-                    if (existing != null)
-                        return existing;
+                    landblock = GetLandblock(cacheKey);
+                    if (landblock == null)
+                    {
+                        // load up this landblock
+                        landblock = new Landblock(landblockId, variation);
 
-                    // No winner to fall back on - initialize ours rather than return a void.
-                    log.Error($"LandblockManager: no cached instance for {landblock.Id.Raw:X8}, v:{variation} after a failed add - initializing the new one to avoid a void landblock.");
-                    // fall through: register it in the group list below so it is ticked, watched and unloaded like any other
+                        // The key was just seen absent from `landblocks`, and the only remover (UnloadLandblocks) clears
+                        // `loadedLandblocks` before `landblocks`, so all three adds succeed. If one ever does not, the tables
+                        // disagree about this key: log it and make them agree on this instance rather than tick an instance
+                        // that some lookups cannot reach.
+                        var addedActive = landblocks.TryAdd(cacheKey, landblock);
+                        var addedLoaded = loadedLandblocks.TryAdd(cacheKey, landblock);
+                        var addedPending = landblockGroupPendingAdditions.TryAdd(cacheKey, landblock);
+                        if (!addedActive || !addedLoaded || !addedPending)
+                        {
+                            log.Error($"LandblockManager: registration of {landblock.Id.Raw:X8}, v:{variation?.ToString() ?? "null"} found a stale entry under the create lock " +
+                                      $"(landblocks={addedActive}, loadedLandblocks={addedLoaded}, pendingGroupAdditions={addedPending}) - overwriting so the three tables agree.");
+                            landblocks[cacheKey] = landblock;
+                            loadedLandblocks[cacheKey] = landblock;
+                            landblockGroupPendingAdditions[cacheKey] = landblock;
+                        }
+
+                        created = true;
+                    }
                 }
 
-                if (!loadedLandblocks.TryAdd(cacheKey, landblock))
+                if (created)
                 {
-                    log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks! Falling back to the cached instance.");
-                    var existing = GetLandblock(cacheKey);
-                    if (existing != null && !ReferenceEquals(existing, landblock))
-                        return existing;
+                    landblock.Init(variation);
 
-                    log.Error($"LandblockManager: no distinct cached instance for {landblock.Id.Raw:X8}, v:{variation} after a failed add - initializing to avoid a void landblock.");
-                    // fall through: register it in the group list below so it is ticked, watched and unloaded like any other
+                    setAdjacents = true;
                 }
-
-                bool res = landblockGroupPendingAdditions.TryAdd(cacheKey, landblock);
-                if (!res)
-                {
-                    log.Error($"LandblockManager: failed to add {landblock.Id} to landblockGroupPendingAdditions");
-                }
-                //if (landblock.Id.ToString().StartsWith("019E"))
-                //{                        
-                //    Console.WriteLine($"Landblock loading {landblock.Id} v:{landblock.VariationId}, group: {landblock.CurrentLandblockGroup}\n" +
-                //        $"From: {new System.Diagnostics.StackTrace()}");
-                //}
-                landblock.Init(variation);
-
-                setAdjacents = true;
             }
             else
             {
@@ -918,7 +918,7 @@ namespace ACE.Server.Managers
                         // remove from list of managed landblocks
                         if (loadedLandblocks.Remove(cacheKey, out landblock))
                         {
-                            AddUpdateLandblock(cacheKey, null);
+                            RemoveLandblock(cacheKey);
 
                             // remove from landblock group
                             for (int i = landblockGroups.Count - 1; i >= 0; i--)
@@ -974,7 +974,8 @@ namespace ACE.Server.Managers
                         landblockLock.ExitWriteLock();
                     }
                 if (unloadFailed)
-                        log.Error($"LandblockManager: failed to unload {landblock.Id.Raw:X8}");
+                        // A failed Remove(out) leaves `landblock` null, so name the key, not the instance (review 2026-09-17).
+                        log.Error($"LandblockManager: failed to unload 0x{cacheKey.Landblock:X4}, v:{cacheKey.Variant?.ToString() ?? "null"} - it was queued for destruction but is not in loadedLandblocks");
                     else
                     {
                         var clearedCount = DatabaseManager.World.ClearLandblockCache(landblock.Id.Landblock, cacheKey.Variant);

@@ -466,7 +466,7 @@ namespace ACE.Server.Entity
             // drift, after which dormancy judged it as v11, the unload was queued under the wrong key, the registry
             // removal missed, and every base player got a registered, walkable, permanently EMPTY landblock.
             // Spawn for the variation this instance IS; say so if the caller asked for another.
-            if (VariationId != variationId)   // exact int? compare - the instance query beneath is exact too (review 2026-09-13)
+            if (VariationId != variationId)   // exact int? compare - both values are already normalized (0 is always base), so exact is right
             {
                 log.Warn($"[Landblock] CreateWorldObjects {Id.Landblock:X4}: asked to spawn v={variationId?.ToString() ?? "null"} on the v={VariationId?.ToString() ?? "null"} instance - spawning for the instance's own variation");
                 variationId = VariationId;
@@ -923,7 +923,7 @@ namespace ACE.Server.Entity
         private void SpawnEncounters()
         {
             // World DB encounter table has no per-variation rows; by default these generators spawn on every landblock load.
-            // Optional: align with unlayered base (VariationId null only) — skips explicit layers including retail 0 and prestige.
+            // Optional: align with the base landblock (VariationId null; 0 is always base and never reaches here) — skips layers 1-10 and prestige.
             if (ServerConfig.encounter_spawn_base_layer_only.Value && VariationId.HasValue)
                 return;
 
@@ -1736,8 +1736,8 @@ namespace ACE.Server.Entity
             var ownVariation = VariationManager.NormalizeBase(wo.Location.Variation);
             if (wo.Location.Variation.HasValue && ownVariation != VariationManager.NormalizeBase(this.VariationId))
             {
-                // Look up and continue with the NORMALIZED value (CodeRabbit #519): the landblock cache keys raw int?, so
-                // a raw 0 would miss the null-keyed base instance and build a separate "v0" one.
+                // Look up and continue with the NORMALIZED value (CodeRabbit #519). GetLandblock normalizes 0 itself since
+                // 2026-09-17; passing the normalized value keeps this comparison and that lookup on the same key.
                 var ownInstance = LandblockManager.GetLandblock(Id, false, ownVariation);
                 if (ownInstance != null && !ReferenceEquals(ownInstance, this))
                 {
