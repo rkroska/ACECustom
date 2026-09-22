@@ -354,10 +354,17 @@ Captured palettes would otherwise keep overriding the new template.
 2. **Clothing base.**
 3. **Equipped items.**
 
-The 0x04 template is applied on paths 1 and 2 by `ApplyPaletteTemplateOverride`, which appends the
-full 2048-colour palette as subpalettes. **Equipped items keep their own palettes**, which is why an
-armoured NPC can't be whole-body mutated while wearing armour. The annex's mutated Sawato bandit
-therefore has its armour **baked** into model rows instead (section 13).
+The 0x04 template is applied on every path by `ApplyPaletteTemplateOverride`, which appends the full
+2048-colour palette as subpalettes **after** anything else, so it overrides the colour ranges worn items
+add. Paletted armour (loot-gen gear) therefore recolours with the wearer. Armour drawn with full-colour
+textures does not: a texture that ignores palettes keeps its look whatever palette is applied. The
+annex's mutated Sawato bandit has its armour **baked** into model rows (section 13), which also keeps
+its look stable when it respawns.
+
+An ordinary creature without a full 0x04 override takes master's path unchanged. The branch's
+clothing handling splits a 2048-colour layer into 255 + 1; master sends it as a byte-wrapped 0, which
+the client ignores, and clothing mods were tuned against that (the Vile Remoran turned grey when it
+went through the branch's path).
 
 ### Visibility
 
@@ -365,6 +372,11 @@ Some captured essences retexture most body parts, and a palette can't show throu
 `GetColourChangeVisibility` counts retextured parts:
 
 - At 90% or more, the colour is hidden: the serum refuses and is not consumed, and appraisal says so.
+
+`MeasureFixedColourPolygons` also reads the DAT model, with the capture's part and texture swaps
+applied, and judges **each polygon by its own surface**: a polygon is fixed colour when its texture is
+not palette-indexed (PFID_INDEX16 / P8), for example R8G8B8. At 60% or more of the drawn polygons the
+model is fixed colour and gets the same refusal (the Spectral Nanjou Shou-jen measures 66%).
 
 ### Showcase colour cycle
 
@@ -377,6 +389,23 @@ The annex's Ward pets change colour live:
 - **Nothing is persisted.** Placed-NPC biota is never saved, so the colour resets on respawn.
 
 This is general-purpose: any creature weenie can opt in.
+
+### Spawn colour
+
+A generator can give its spawns a chance of a mutation colour: `SpawnColourMutationChance` (float
+9061) on the generator, for example 0.5. In `GeneratorProfile.Spawn` each creature rolls on its own
+before it enters the world. A hit sets `PaletteTemplate` to a random palette from the vibrant pool; a
+fixed-colour model (above) is skipped. A spawned generator inherits the chance, so a generator of
+generators passes it down. Capture already stores `PaletteTemplate` as `CapturedPaletteTemplate`, so a
+coloured spawn becomes a coloured pet. Nothing extra marks a coloured spawn: only the colour shows it.
+
+### Translucency
+
+Sixteen of the 72 combat pet summon templates carry `Translucency` 0.5 (every Maiden and K'nath), so
+any look captured onto them was half see-through. `PetTranslucency` (float 9062) on the essence
+replaces the template's value at summon, before the pet enters the world. Ivo's Solidifying and Fading
+Tinctures step it by 0.1 between 0 and 0.5, starting from the template's value, and refuse at either
+end. It stays with the essence, not the look, so tailoring does not change it.
 
 ---
 
@@ -437,9 +466,26 @@ The mutation odds at defaults and the effect of incense:
 | **Ward** (mutated, proud) | Splotch and five pets whose colours cycle |
 | **Staff** | Fenwick (the tutorial on click) and Ivo (the vendor) |
 | **Flavour** | DJ Skulk, Gary, Mrs. Ruggan, Denton, and the drudge family Mubb, Gorta and Mubb Junior |
+| **Scenery** | The fallen sign at Fenwick's feet (house rules on appraisal) |
+| **Monsters** | The prismatic generator's 10 Nasty Brass Monkeys: half come out coloured, and only combat pets can hurt them |
 
 All NPCs are clones of retail weenies that already render, made harmless: not attackable, no
 targeting tactic, stuck and invincible.
+
+### Pets-only monsters
+
+`OnlyCombatPetsCanDamage` (bool 50057) makes a creature refuse damage from anything but a combat pet:
+
+- `Creature.CanBeDamagedBy` resolves projectiles and spell projectiles to their launcher and accepts
+  only a `CombatPet`. Every attack path already asked it (melee, missiles, spell projectiles, harm and
+  drain life magic); `Creature.TakeDamage` now asks it too, which covers everything else.
+- Damage over time is summed across casters and applied with no source, so
+  `EnchantmentManager.ApplyDamageTick` drops each refused caster's share before the sum.
+- The ring AoE in `Player_Magic.cs` (Rocky Shrapnel, Ring of Agony, the smart rings) builds its own hit
+  message after calling `TakeDamage`, so it skips a refused target before any damage maths.
+- Every refusal tells the player "can only be harmed by combat pets", at most once per 10 s.
+- Debuffs are enchantments and never ask, so players can still weaken the monster for their pet.
+- A generator copies the flag onto everything it spawns, nested generators included.
 
 ### Dialogue engine constraints
 
@@ -542,7 +588,7 @@ prod copy.
 | - | Denied renames send no in-game message | Confusion | Documented; possible fix: notify on deny |
 | - | Bexley's and Splotch's click pools (about 10 s) can drop a scene cue | A rare cut-off scene | Accepted |
 | - | Actors' idle lines can land mid-scene | Cosmetic | Accepted; the fix is to move idle lines onto the director |
-| - | Stale text: Ivo's "three things", two setting descriptions, the `PetIsMaleOverride` comment | Cosmetic and misleading | Fix in a content pass |
+| - | Stale text: two setting descriptions, the `PetIsMaleOverride` comment | Cosmetic and misleading | Fix in a content pass |
 
 ### Open questions (from the deploy plan)
 
@@ -570,7 +616,7 @@ prod copy.
 - **Put the feud** (Bexley versus Splotch) **on the director** as scenes, instead of the removed
   openers.
 - **78780256 Ancestral Gene Re-roller** (reserved).
-- **78780205 Ruggan's Notes and 78780206 the knocked-over sign** (readable items).
+- **78780205 Ruggan's Notes** (a readable item).
 - **Restrict breeding to one room** by setting the area to a single verified cell.
 
 ---
@@ -685,12 +731,16 @@ summoned pet. Admin commands write most of them directly (reference, section 5.3
 | Range | Contents |
 |---|---|
 | 78780200-78780204 | Fenwick, Ivo (vendor), DJ Skulk, Gary, Mrs. Ruggan |
+| 78780206 | Fallen sign |
 | 78780210-78780215 | Bexley and the Registry pets, including the Certified Sawato Bandit |
 | 78780220-78780225 | Splotch and the Ward pets, including The Sawato Situation (colour cycle on 221-225) |
 | 78780230-78780233 | Mubb, Gorta, Mubb Junior, Denton |
 | 78780240, 78780241 | Scene Director (hidden), Scene Tester (test only) |
 | 78780250-78780255, 78780257 | Incense x3, Nurturing Draught, Chromatic Catalyst, Offering of Subjugation, Mutagenic Serum |
+| 78780261 | Portal to Prof. Ruggan (annex exit) |
+| 78780262-78780263 | Solidifying and Fading Tinctures |
+| 78780264 | Annex prismatic generator |
 | 98760388 | Portal to Seedy Motel |
 | 78780258-78780260 | Neutering Kit, Tailoring Kit, Tailoring Kit (Filled). Moved from 98760399-98760401 on 2026-09-21: prod uses those ids for other content. |
 | 78790000-78799999 | `@et` staging block (temporary; never shipped) |
-| Reserved | 78780205, 78780206, 78780256 |
+| Reserved | 78780205, 78780256 (next free: 78780265) |

@@ -289,6 +289,7 @@ the tailoring kit copies it (`Entity/PetTailoring.cs:245-274`).
 | 78780202 | DJ Skulk | 5595 dancing drudge | Dance floor; suspect two | yes |
 | 78780203 | Gary | 29008 Browerk | "Just here for the music"; suspect three; scale 0.275 | yes |
 | 78780204 | Mrs. Ruggan | 3920 | Walk-on | yes |
+| 78780206 | Fallen Sign | 8564 Old Rotted Sign, ethereal | House rules on appraisal (LongDesc). Placed at (39.0, -23.0) tipped 90 degrees about X so it lies on its back; `@create` always spawns it upright | yes |
 | 78780210 | Bexley, Keeper of the Registry | 42720 | Registry lead; reads the paternity results | yes |
 | 78780211 | Registered Browerk, Champion Line | 29008 | Registry pet | **not placed** |
 | 78780212 | Certified Shreth, Third Generation | 4108 | Registry pet | yes |
@@ -306,11 +307,12 @@ the tailoring kit copies it (`Entity/PetTailoring.cs:245-274`).
 | 78780232 | Mubb Junior | 7 Drudge Skulker, scale 0.55, palette 0x04001081 | The neon baby (no colour cycle) | yes |
 | 78780233 | Denton | 35462 Jarvis Hammerstone | Thinks mutations are contagious | yes |
 | 78780240 | Annex Scene Director | 7, scale 0.05 | Hidden; starts every scene | yes |
+| 78780264 | Annex Prismatic Generator | 31015111 TethBSDGeneratorNew | 10 Nasty Brass Monkeys (260031), 5 m scatter, 20 s regen. `SpawnColourMutationChance` 0.5 and `OnlyCombatPetsCanDamage`, both passed to the monkeys | yes, cell 0x01060163 |
 | 78780241 | Scene Tester | 7 | **Test only**: click or say a phrase to start a scene | test only |
 | 78780234 / 78780235 | Baby Candidate B / C | - | Retired; deleted by the paternity patch | no |
 
-Reserved and unbuilt: 78780205 (Ruggan's Notes), 78780206 (knocked-over sign), 78780256 (Ancestral
-Gene Re-roller). The remaining ids in 78780200-78780249 are free.
+Reserved and unbuilt: 78780205 (Ruggan's Notes), 78780256 (Ancestral Gene Re-roller). The remaining ids in
+78780200-78780249 are free; the next free id in the block is 78780265.
 
 ### 4.2 Items and portal
 
@@ -341,8 +343,12 @@ Doriathazaar. The constants live in `Entity/PetTailoring.cs`. **Never write to 9
 script that can reach prod.** Test servers carrying the old kits are converted by
 `deploy/test-only/Move-Kits-To-7878-TEST-SERVER-ONLY.sql`, which is guarded by the kit names.
 
+**Both portals use the standard portal model, setup 0x020001B3** (2,083 retail portals use it). They were
+built with 0x02000004, which is the Armoredillo model and has no portal swirl.
+
 **Portal 98760388:**
-- Placed in Lin at 0xDB3B0019 (95.53, 17.70, 31.80), 2 m east of Prof. Ruggan (694201298).
+- Placed beside Prof. Ruggan (694201298) at 0xDB3B0019; on prod at (83.99, 1.70, 30.94). The bundle leaves that
+  placement alone.
 - Destination: cell 0x01060186 (35.98, -20.04, 0.005), **variation 2**, facing Fenwick. That is the Drop.
 
 **Exit portal 78780261 (Portal to Prof. Ruggan):**
@@ -473,10 +479,11 @@ passive ones included.
 
 | Item | Effect | Refused (not consumed) when | Consumed |
 |---|---|---|---|
-| Courtship Incense (78780250/51/52) | Sets `PetIncenseBonus` to 0.025, 0.05 or 0.10. Both parents' bonuses add to the stat chance, capped at +0.50, so the practical maximum is +0.20. Doesn't affect potency. | The essence is neutered, or already has an equal or stronger bonus. A stronger bonus replaces a weaker one, and the weaker one is lost. | By the next committed breed, mutated or not |
+| Courtship Incense (78780250/51/52) | Sets `PetIncenseBonus` to 0.025, 0.05 or 0.10. Both parents' bonuses add to the base before the decay (`(base + incense) / (1 + decay x mutations)`), capped at +0.50 combined, so the practical maximum is +0.20 on a fresh line. Doesn't affect potency. | The essence is neutered, or already has an equal or stronger bonus. A stronger bonus replaces a weaker one, and the weaker one is lost. | By the next committed breed, mutated or not |
 | Nurturing Draught (78780253) | `PetMaturityXpMultiplier` = 2.0: each qualifying kill credits 2. | The raw `PetIsJuvenile` flag is not set, or the draught is already active. | Cleared at adulthood |
 | Chromatic Catalyst (78780254) | Sets `PetChromaticCatalystActive`: a rolled palette comes from the vibrant pool. | Already active. | Only when a palette is rolled, from both parents |
-| Offering of Subjugation (78780255) | Sets `PetGuardianWeakened`: the spirit hits for x0.5, takes x2.5 damage, and its per-hit cap rises from 10% to 25% of its health. | Spirits are disabled, or the offering is already active. | When a spirit spawns, from both parents. **Its item text ("cast into the hearth", "guarantee victory") is wrong.** |
+| Offering of Subjugation (78780255) | Sets `PetGuardianWeakened`: the spirit hits for x0.5, takes x2.5 damage, and its per-hit cap rises from 10% to 25% of its health. | Spirits are disabled, or the offering is already active. | When a spirit spawns, from both parents. |
+| Solidifying / Fading Tincture (78780262 / 78780263) | Steps `PetTranslucency` (float 9062) down / up by 0.1, between 0 and 0.5. The starting level is the essence's own value, else its summon template's `Translucency` (0.5 for Maiden and K'nath, else 0). `PetDevice` applies it at summon; 0 removes the property. | Not a combat essence, or the step would pass 0 or 0.5. | On success |
 | Mutagenic Serum (78780257) | Rolls a master-pool palette onto the essence the way a bred mutation is written. Recolours a live pet on the same landblock group. | Not a combat essence; captured textures cover at least 90% of the body parts; **the model mostly uses full-colour textures** (60%+ of its drawn polygons have non-palette textures such as R8G8B8, e.g. the Spectral Nanjou Shou-jen); or the pool is empty. | On success |
 | Pet Neutering Kit (78780258) | Sets `PetNeutered` permanently. | Already neutered. | On success |
 | Pet Tailoring Kit (78780259) | Extract: creates "Pet Tailoring Kit (creature)" holding the source's full visual set; **the source essence is destroyed**, and only after the kit is safely in the pack. | Not a combat essence, no `VisualOverrideSetup`, pet summoned, in a trade, or pack full. | Tool and source essence |
@@ -538,12 +545,13 @@ but players must stand their pets together. To restrict breeding to one room, se
 
 - **Registry wing:** Bexley, 78780212-78780215.
 - **Ward wing:** Splotch, 78780222-78780225.
-- **The Drop:** Fenwick, Mrs. Ruggan.
+- **The Drop:** Fenwick, Mrs. Ruggan, the fallen sign at Fenwick's feet, and the exit portal behind.
 - **Ivo's nook.**
 - **The dance floor:** DJ Skulk, Gary.
 - **Room 4:** Mubb, Gorta, Mubb Junior.
 - **Hallway:** Denton.
 - **Hidden:** the director, in a corner, within 60 m of Mubb, Denton and Bexley.
+- **Lower level:** the prismatic monkey generator (cell 0x01060163).
 
 The longest scene link in the current layout is Mubb to DJ Skulk, at 37 m.
 
@@ -808,7 +816,13 @@ For a test session only; revert them after.
 | **Scenes** | Scene Tester: click, or say `scene neon`, `scene brighter`, `scene splotch`, `scene dj`, `scene gary`, `scene denton`, `scene results` | Every line in order; the Tester ignores input for 35 s |
 | **Director** | Remove the Tester, place the director, wait | A scene about every 3-4 minutes, never two at once |
 | **Colour cycle** | Stand in the Ward for a minute (needs the new build) | Each Ward pet sparkles and changes colour at a different moment |
-| **Portal** | Use the portal in Lin | Arrive at the Drop, beside Fenwick |
+| **Portal** | Use the portal beside Prof. Ruggan | Arrive at the Drop, facing Fenwick; both portals show the swirl model |
+| **Exit portal** | Use the Portal to Prof. Ruggan in the annex | Arrive beside Ruggan, clear of the motel portal |
+| **Fallen sign** | Appraise it at Fenwick's feet | House rules; it lies on its back (reload the landblock, `@create` shows it upright) |
+| **Tinctures** | Solidifying five times on a Maiden or K'nath essence, then once more; Fading on a normal one | 40, 30, 20, 10, solid, then refused; appraisal shows the level; resummon to see it |
+| **Pets-only** | Hit a monkey yourself (melee, a war spell, a ring spell such as Rocky Shrapnel), then send your pet | You do nothing and get "can only be harmed by combat pets" once per 10 s; debuffs still land; the pet kills it |
+| **Spawn colour** | Watch the monkey generator respawn; capture a coloured monkey | About half are coloured; the captured pet keeps its colour |
+| **Rename** | `@pet-name A` then, after 60 s, `@pet-name B`; approve on `/pet-names` | Two rows: A denied "Replaced by a newer request", B pending; approving B keeps the damage word and tier in the essence name |
 
 ### 11.4 Database verification
 
@@ -914,7 +928,16 @@ plus every SQL file. Restore it before regenerating the bundle if test has been 
 - **Equal emote probabilities:** only the first set ever fires.
 - **A NULL-quest HearChat set** answers every line spoken nearby.
 - **Variations don't inherit** base placements, and `@createinst` places in *your* variation.
-- **Armour keeps its own colours.** Bake the look for a whole-body mutation.
+- **Armour recolours only where its textures take a palette.** A full mutation palette is added last and
+  overrides paletted armour (loot-gen gear, the Sawato Situation). Custom armour with full-colour (R8G8B8)
+  textures keeps its look; measure it with the per-polygon rule in `PetMutationService.MeasureFixedColourPolygons`.
+- **Anything that calls `TakeDamage` directly and prints its own hit line must check `CanBeDamagedBy`
+  first.** The ring AoE in `Player_Magic.cs` did not, so a pets-only monster showed 11,000,000-point hits
+  that never landed. `TakeDamage` refuses the damage, but it cannot take back a message already built.
+- **`landblock_instance.guid` is AUTO_INCREMENT.** Setting it to NULL invents a guid instead of failing; the
+  bundle's range guard raises error 1242 with a two-row subquery instead.
+- **`mysql --abort-source-on-error` does not exist in MySQL 8.0.** Batch mode (`mysql db < file`) already stops
+  at the first error; never add `--force`.
 - **Content-folder SQL is not applied at startup here.** `AutoApplyWorldCustomizations` only runs inside the
   `AutoUpdateWorldDatabase` block (`Program.cs:226-231`), which is off. The setting reading `true` in
   `Config.js` is misleading on its own.
@@ -923,9 +946,7 @@ plus every SQL file. Restore it before regenerating the bundle if test has been 
   - It runs against the **last selected schema**.
   - It keeps executing after an error.
   - It leaves a failed transaction holding locks until you run `ROLLBACK` in the same tab.
-- **Stale in-game and code text:**
-  - The Offering's item text.
-  - Ivo's "Three things on the list".
+- **Stale code text:**
   - The `pet_breeding_enabled` and `pet_breeding_force_mutation` descriptions.
   - The `PetIsMaleOverride` comment.
   - A comment in `PetDevice_BreedingReplay.cs:14`.

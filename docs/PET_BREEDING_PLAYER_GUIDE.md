@@ -82,6 +82,10 @@ Everyone else is for fun, and worth a click:
 - **Mubb, Gorta and their baby, Mubb Junior**, a drudge family with a question about the father.
 - **Denton**, who is sure mutations are contagious.
 - **Mrs. Ruggan**, who would like to know where her husband is.
+- **The fallen sign** at Fenwick's feet. Appraise it for the house rules. Yes, it is on the floor.
+- **The Nasty Brass Monkeys** further in. Only a **combat pet** can hurt them: your own weapons and
+  spells do nothing, though your debuffs still help your pet. About **half of them come out in a
+  bright colour**, and a coloured one you capture keeps its colour.
 
 Stick around a few minutes and they start arguing with each other.
 
@@ -283,6 +287,8 @@ out on any creature. A litter that doesn't mutate keeps the parent's colours.
   high-saturation** colours.
 - Some captured essences have body textures that cover most of the model, so a new colour barely
   shows. The ID panel tells you when that is the case.
+- **Coloured monsters.** Some spawns come out in a random vivid colour, like the monkeys in the annex.
+  Capture one and your pet keeps that colour.
 
 ---
 
@@ -358,8 +364,10 @@ item, then click the essence.
 ### How the supplies behave
 
 - **Courtship Incense:**
-  - Put it on either parent, or both. The two bonuses add up, so the most you can reach is 5% + 20% =
-    **25%**.
+  - Put it on either parent, or both. The two bonuses add up, so on a fresh line the most you can
+    reach is 5% + 20% = **25%**.
+  - Like the base chance, it **shrinks as a line collects mutations**: a line carrying 10 mutations
+    gets half, one carrying 20 gets a third. It never drops below 2%.
   - It is used up by the **next litter that actually happens**, whether or not it mutates.
   - A stronger incense **replaces** a weaker one, and the weaker one is wasted. An equal or weaker one
     is refused.
@@ -377,6 +385,14 @@ item, then click the essence.
     show.
   - With the pet summoned nearby, it recolours on the spot. Otherwise the new colour shows at the next
     summon.
+- **Solidifying and Fading Tinctures:**
+  - Each one moves the pet 10% less or more see-through, between fully solid and 50%.
+  - Maidens and K'nath start at 50%, everything else at 0%. The ID panel shows the current level.
+  - Refused, and **not used up**, at either end.
+  - The change shows at the next summon. It stays with the essence even if you tailor a new look
+    onto it.
+- **Stacks:** the Mutagenic Serum stacks to 50, the Pet Tailoring Kit to 10, and a filled kit never
+  stacks (each one holds a different look).
 
 ---
 
@@ -408,10 +424,12 @@ item, then click the essence.
   - 3 to 32 characters.
   - Letters, numbers, spaces, apostrophes and hyphens only.
   - Must be different from the current name.
-- **Review:** a staff member reviews the request on the web portal. A new request replaces your
-  pending one, and you can send one per minute.
-- **When it's approved:** you get a chat message if you are online. The new name sticks through
-  summons and tailoring.
+- **Review:** a staff member reviews the request on the web portal. You can have one request waiting
+  at a time and send one per minute. A new request replaces the waiting one, and staff see the new
+  name as a new request.
+- **When it's approved:** you get a chat message if you are online. The pet itself takes the new name,
+  and the essence keeps its damage type and tier: "Slash Spectral Nanjou Shou-jen Essence" becomes
+  "Slash Sir Fluffington Essence". The name sticks through summons and tailoring.
 - **If it's denied, there is no message.** If the name hasn't changed after a while, ask staff.
 
 ---
@@ -505,3 +523,7 @@ Heal your pet, or let the 90 seconds run out. You still get the baby either way.
 
 **How do I get out?**
 Use the **Portal to Prof. Ruggan** in the annex, or recall.
+
+**A monster says it "can only be harmed by combat pets".**
+That is on purpose. Only a combat pet can damage it. Your debuffs still work, so weaken it and let
+your pet finish it.
