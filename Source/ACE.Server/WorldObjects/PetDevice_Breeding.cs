@@ -7,6 +7,7 @@ using ACE.DatLoader;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Entity.Models;
 using ACE.Server.Factories;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
@@ -1092,6 +1093,15 @@ namespace ACE.Server.WorldObjects
                     partner.SendMessage(forcedMsg);
                 }
 
+                // Litters bred: counted for both owners now that the breed is certain, on the characters
+                // rather than the essences, so it survives the pets being traded away or destroyed. An
+                // admin-forced breed is a test tool and is not counted.
+                if (!forced)
+                {
+                    CountLitterBred(player1);
+                    CountLitterBred(partner);
+                }
+
                 // Breeding resolves in this same tick, so the particles play once on the birth path below
                 // rather than twice in the same instant.
                 var ritualMsg = $"The mating ritual has begun between {pet1.Name} and {pet2.Name}...";
@@ -1469,6 +1479,47 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// The creature name a baby inherits with its look. Prefers the weenie name behind
+        /// <see cref="PropertyInt.CapturedCreatureWCID"/>, which survives a rename, over the stored
+        /// <see cref="PetDevice.VisualOverrideName"/>, which a rename overwrites with the owner's chosen name.
+        /// Falls back to the stored name for legacy essences that predate the captured WCID.
+        /// </summary>
+        private static string ResolveInheritedCreatureName(PetDevice donor)
+        {
+            var creatureWcid = donor.GetProperty(PropertyInt.CapturedCreatureWCID);
+            if (creatureWcid.HasValue && creatureWcid.Value > 0)
+            {
+                var weenieName = DatabaseManager.World.GetCachedWeenie((uint)creatureWcid.Value)?.GetProperty(PropertyString.Name);
+                if (!string.IsNullOrWhiteSpace(weenieName))
+                    return weenieName;
+            }
+
+            return donor.VisualOverrideName;
+        }
+
+        /// <summary>
+        /// One more committed breed for this owner (PropertyInt.PetLittersBred, the "Litters bred"
+        /// leaderboard). Kept on the character, not the essence, so it survives the pets being traded
+        /// away or destroyed. Never throws into the breeding path.
+        /// </summary>
+        private static void CountLitterBred(Player owner)
+        {
+            if (owner == null)
+                return;
+
+            try
+            {
+                var count = owner.GetProperty(PropertyInt.PetLittersBred) ?? 0;
+                owner.SetProperty(PropertyInt.PetLittersBred, count + 1);
+                owner.ChangesDetected = true;
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[PetBreeding] Could not count the litter for {owner.Name}: {ex}");
+            }
+        }
+
+        /// <summary>
         /// Physics radius of a creature from its live physics object, falling back to its setup's
         /// bounding sphere. Creatures do not push each other apart at placement, so spawn spacing
         /// has to be computed by hand.
@@ -1701,7 +1752,10 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            baby.Name = donor.Name;
+            // baby.Name is still the template weenie's name here (e.g. "Electrified Moar Essence (250)").
+            // It is kept as the starting point so the " Essence (tier)" suffix is always correct, and the
+            // creature word is composed in below once the inherited look is known.
+            var templateName = baby.Name;
 
             // Copy visual overrides
             baby.VisualOverrideSetup = donor.VisualOverrideSetup;
@@ -1711,7 +1765,10 @@ namespace ACE.Server.WorldObjects
             baby.VisualOverridePaletteBase = donor.VisualOverridePaletteBase;
             baby.VisualOverrideClothingBase = donor.VisualOverrideClothingBase;
             baby.VisualOverrideScale = donor.VisualOverrideScale;
-            baby.VisualOverrideName = donor.VisualOverrideName;
+            // The look's REAL creature, not whatever the parent happens to be called. A rename overwrites
+            // CapturedCreatureName with the owner's chosen name but leaves CapturedCreatureWCID intact, so a
+            // baby of "Bob's Banana" that looks like a white rabbit is born a White Rabbit, matching its icon.
+            baby.VisualOverrideName = ResolveInheritedCreatureName(donor);
             // The shiny variant is never inherited, even if a shiny somehow reached this point.
             baby.VisualOverrideCreatureVariant = donor.IsShiny && !ServerConfig.pet_breeding_allow_shiny.Value
                 ? null
@@ -1720,6 +1777,32 @@ namespace ACE.Server.WorldObjects
             baby.VisualOverrideShade = donor.VisualOverrideShade;
             baby.VisualOverridePaletteTemplate = donor.VisualOverridePaletteTemplate;
             baby.VisualOverrideCapturedItems = donor.VisualOverrideCapturedItems;
+
+            // The capture identity travels with the look, exactly as the tailoring kit already carries it
+            // (PetTailoring.CopyVisuals). Without CapturedSourceDamageType the baby falls back to its template's
+            // damage word and silently changes element - a Slash parent producing an Electric baby.
+            // PetCustomName is deliberately NOT copied: the baby is a new pet and takes its creature's name.
+            foreach (var capProp in new[] { PropertyInt.CapturedSourceDamageType, PropertyInt.CapturedCreatureWCID })
+            {
+                var capVal = donor.GetProperty(capProp);
+                if (capVal.HasValue)
+                    baby.SetProperty(capProp, capVal.Value);
+            }
+
+            // Compose the name from the look the baby actually inherited, then front it with the element it
+            // will really attack with. Both are known now, so the baby is born correctly named rather than
+            // waiting for its first summon to repair it.
+            var composed = BuildDisplayNameAfterCaptureApply(templateName, null, baby.VisualOverrideName);
+            var babyDamageType = TryResolveCapturedSourceDamageTypeForCombatPet(baby);
+            if (babyDamageType.HasValue)
+                composed = ApplyEssenceDamageLabel(composed, babyDamageType.Value);
+
+            baby.Name = composed;
+
+            // The Use line comes from the template weenie and still names the template creature
+            // ("...summon or dismiss your Lightning Skeleton Samurai."). Capture and tailoring both re-sync it;
+            // breeding did not, which is why bred pets described a creature they did not look like.
+            MonsterCapture.SyncPetDeviceUseStringAfterSkinRename(baby, templateName, baby.Name);
 
             // The ObjDesc recipe (part meshes, subpalette ranges, texture swaps) is what makes the
             // baby look like its parent. Without it a bred pet falls back to the bare weenie.

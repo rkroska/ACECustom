@@ -677,10 +677,10 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Rebuilds pet device inventory name after applying a new capture skin: keeps the prefix before the
-        /// creature token and the " Essence..." suffix (e.g. "Lightning Maiden Essence" → "Lightning Floeshark Essence").
-        /// When a previous <see cref="VisualOverrideName"/> exists, it is stripped from the head for a reliable prefix;
-        /// otherwise the last word of the head is treated as the template creature token (works for "Lightning Maiden").
+        /// Rebuilds a pet device inventory name after a new capture skin: composes
+        /// "&lt;damage word&gt; &lt;creature&gt; Essence (tier)" from the leading damage word and the new creature,
+        /// keeping the " Essence..." suffix. Everything else in the old head belonged to the PREVIOUS look and
+        /// is dropped, so the result is idempotent - rebuilding an already-correct name returns it unchanged.
         /// </summary>
         public static string BuildDisplayNameAfterCaptureApply(string currentDeviceName, string previousCapturedCreatureName, string newCapturedCreatureName)
         {
@@ -697,18 +697,22 @@ namespace ACE.Server.WorldObjects
 
             var tail = currentDeviceName.Substring(idx);
             var head = currentDeviceName.Substring(0, idx);
-            var oldMid = StripCapturedCreatureNamePrefixes(previousCapturedCreatureName ?? "");
 
-            string prefix;
-            if (!string.IsNullOrEmpty(oldMid) && head.EndsWith(oldMid, StringComparison.OrdinalIgnoreCase))
-                prefix = head.Substring(0, head.Length - oldMid.Length).TrimEnd();
-            else
+            // Only a leading damage word survives. The rest of the head names the PREVIOUS look
+            // ("Phyntos Swarm", "Skeleton", "K'nath"), and carrying it forward is what produced names like
+            // "Lightning Skeleton Brown Bunny Essence": every re-skin kept the old creature's words and
+            // appended the new one. previousCapturedCreatureName is no longer needed to find the boundary,
+            // and is kept only so existing call sites compile unchanged.
+            var headParts = head.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var prefix = headParts.Length > 0 && IsEssenceDamageLeadWord(headParts[0]) ? headParts[0] : "";
+
+            // "Fire" + "Fire Wisp" reads as one creature, not two words. Only collapse when the creature has
+            // another word left over, so a creature actually named "Fire" keeps its name.
+            if (prefix.Length > 0)
             {
-                var parts = head.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length >= 2)
-                    prefix = string.Join(" ", parts, 0, parts.Length - 1);
-                else
-                    prefix = "";
+                var midParts = newMid.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (midParts.Length > 1 && midParts[0].Equals(prefix, StringComparison.OrdinalIgnoreCase))
+                    newMid = string.Join(" ", midParts, 1, midParts.Length - 1);
             }
 
             if (string.IsNullOrEmpty(prefix))
@@ -728,7 +732,9 @@ namespace ACE.Server.WorldObjects
             var essenceIdx = Name.LastIndexOf(" Essence", StringComparison.OrdinalIgnoreCase);
             var tail = essenceIdx >= 0 ? Name.Substring(essenceIdx) : "";
 
-            var baseName = StripCapturedCreatureNamePrefixes(VisualOverrideName);
+            // Same rule as summon naming: an owner-chosen name is used verbatim, because the prefix cleanup
+            // cannot tell "Owner's " from a possessive inside the name and would call "Bob's Burgers" "Burgers".
+            var baseName = ResolveSummonedPetBaseName(GetProperty(PropertyString.PetCustomName), VisualOverrideName);
 
             return string.IsNullOrEmpty(tail) ? baseName : baseName + tail;
         }
@@ -1121,39 +1127,141 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// If the name begins with a known damage-type label (<see cref="EssenceNameDamageLeadWords"/> or
-        /// <see cref="TryMatchEssenceDamageLeadWordToDamageType"/>), replace that word with
-        /// <paramref name="weaponDt"/>'s display label. If the first word is not a known damage lead-in,
-        /// returns <paramref name="name"/> unchanged (no insertion).
+        /// True when <paramref name="word"/> is a recognised essence damage lead-in: a <see cref="DamageType"/>
+        /// spelling (Fire, Lightning, Slash) or a matrix flavour word (Caustic, Volcanic, Frost, Excited).
         /// </summary>
-        private static string ReplaceLeadingEssenceDamageLabel(string name, DamageType weaponDt)
+        private static bool IsEssenceDamageLeadWord(string word)
         {
-            var n = name.TrimStart();
-            var sp = n.IndexOf(' ');
-            if (sp <= 0)
-                return name;
-
-            var lead = n[..sp];
-            if (!EssenceNameDamageLeadWords.Contains(lead)
-                && !TryMatchEssenceDamageLeadWordToDamageType(lead).HasValue)
-                return name;
-
-            var tail = n[sp..];
-            return weaponDt.DisplayName() + tail;
+            return !string.IsNullOrEmpty(word)
+                   && (EssenceNameDamageLeadWords.Contains(word)
+                       || TryMatchEssenceDamageLeadWordToDamageType(word).HasValue);
         }
 
         /// <summary>
-        /// Updates this combat pet essence's <see cref="WorldObject.Name"/> from the summoned pet's weapons: strips
-        /// any legacy <c> [Slash]</c> suffix, then replaces a leading elemental/physical word (Acid, Fire, …) with the
-        /// weapon's damage label (Slash, Bludgeon, Lightning, …).
+        /// Puts <paramref name="damageType"/> at the front of an essence name. A wrong damage word is replaced;
+        /// a flavour spelling that already means this type is kept, so "Volcanic Moar Essence" stays Volcanic on
+        /// a Fire pet; and a name with no damage word at all (K'nath, Iron Golem, Holiday Bosh) gains one rather
+        /// than staying silent about its element.
+        /// </summary>
+        private static string ApplyEssenceDamageLabel(string name, DamageType damageType)
+        {
+            var n = (name ?? "").TrimStart();
+            if (n.Length == 0)
+                return name;
+
+            var label = damageType.DisplayName();
+            var sp = n.IndexOf(' ');
+            var lead = sp > 0 ? n[..sp] : n;
+
+            string leadOut, body;
+            if (IsEssenceDamageLeadWord(lead))
+            {
+                // Keep the author's flavour wording when it already means this damage type.
+                leadOut = TryMatchEssenceDamageLeadWordToDamageType(lead) == damageType ? lead : label;
+                body = sp > 0 ? n[(sp + 1)..] : "";
+            }
+            else
+            {
+                leadOut = label;
+                body = n;
+            }
+
+            // "Fire" + "Fire Wisp Essence" reads as one creature, not two words. Only collapse when the
+            // creature keeps a word, so a creature actually named "Fire" is not erased.
+            var bodyParts = body.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (bodyParts.Length > 1 && bodyParts[0].Equals(leadOut, StringComparison.OrdinalIgnoreCase))
+                body = string.Join(" ", bodyParts, 1, bodyParts.Length - 1);
+
+            return body.Length == 0 ? leadOut : leadOut + " " + body;
+        }
+
+        /// <summary>
+        /// The damage type an unarmed creature really attacks with: its most common body-part DType. Used for
+        /// NAMING only, and only when neither a weapon nor a stored capture type resolves, so essences whose
+        /// template carries no damage word still show the element their pet deals.
+        /// </summary>
+        private static DamageType? TryGetDominantBodyPartDamageType(Creature pet)
+        {
+            if (pet?.Biota?.PropertiesBodyPart == null)
+                return null;
+
+            var counts = new Dictionary<DamageType, int>();
+            foreach (var part in pet.Biota.PropertiesBodyPart.Values)
+            {
+                var dt = part.DType;
+                if (dt == DamageType.Undef || dt == DamageType.Base || dt.IsMultiDamage())
+                    continue;
+
+                counts.TryGetValue(dt, out var seen);
+                counts[dt] = seen + 1;
+            }
+
+            var best = DamageType.Undef;
+            var bestCount = 0;
+            foreach (var kvp in counts)
+            {
+                // Ties break on the lower enum value so the same creature always names itself the same way.
+                if (kvp.Value > bestCount || (kvp.Value == bestCount && (int)kvp.Key < (int)best))
+                {
+                    best = kvp.Key;
+                    bestCount = kvp.Value;
+                }
+            }
+
+            return best == DamageType.Undef ? null : best;
+        }
+
+        /// <summary>
+        /// Recomposes this essence's name from its stored look, so a name that drifted - leftover words from an
+        /// earlier skin, or a " Essence (tier)" suffix an older rename dropped - repairs itself the next time the
+        /// pet is summoned. An owner-approved <see cref="PropertyString.PetCustomName"/> is used verbatim.
+        /// Returns <paramref name="current"/> untouched when the look cannot be resolved, so an unfamiliar name
+        /// is never rewritten into something partial.
+        /// </summary>
+        private string RebuildEssenceNameFromStoredLook(string current)
+        {
+            var creature = ResolveSummonedPetBaseName(GetProperty(PropertyString.PetCustomName), VisualOverrideName);
+            if (string.IsNullOrWhiteSpace(creature) || string.IsNullOrEmpty(current))
+                return current;
+
+            var working = current;
+            if (working.LastIndexOf(" Essence", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                // Take the suffix back from the template weenie, which always carries one. If the template has
+                // none either (e.g. "Baby Yanga"), there is no suffix to restore and the name is left alone.
+                var templateName = DatabaseManager.World.GetCachedWeenie(WeenieClassId)?.GetProperty(PropertyString.Name);
+                var tplIdx = templateName?.LastIndexOf(" Essence", StringComparison.OrdinalIgnoreCase) ?? -1;
+                if (tplIdx < 0)
+                    return current;
+
+                working += templateName.Substring(tplIdx);
+            }
+
+            // The builder strips "Owner's " prefixes from a capture name, which would also eat a possessive
+            // inside an owner-chosen name. Build around a placeholder and substitute afterwards.
+            const string placeholder = "\u0001";
+            var built = BuildDisplayNameAfterCaptureApply(working, null, placeholder);
+            if (string.IsNullOrEmpty(built) || !built.Contains(placeholder))
+                return current;
+
+            return built.Replace(placeholder, creature);
+        }
+
+        /// <summary>
+        /// Updates this combat pet essence's <see cref="WorldObject.Name"/> at summon: strips any legacy
+        /// <c> [Slash]</c> suffix, recomposes the name from the stored look so a drifted name repairs itself,
+        /// then fronts it with the element the pet actually attacks with.
         /// </summary>
         private void RefreshCombatPetEssenceDisplayNameForSummonedPet(CombatPet pet, Player owner)
         {
             if (!IsCombatPetDevice() || pet == null || owner?.Session == null)
                 return;
 
-            var stripped = GetDisplayNameWithoutWeaponDamageSuffix(Name ?? "");
-            var weaponDt = TryGetPrimaryWeaponDamageTypeForDisplay(pet, this);
+            var stripped = RebuildEssenceNameFromStoredLook(GetDisplayNameWithoutWeaponDamageSuffix(Name ?? ""));
+
+            // Weapon, then stored capture type, then the creature's own body parts. The last covers templates
+            // that carry no damage word at all, so every summoned pet can name its element.
+            var weaponDt = TryGetPrimaryWeaponDamageTypeForDisplay(pet, this) ?? TryGetDominantBodyPartDamageType(pet);
             if (!weaponDt.HasValue)
             {
                 if (stripped != Name)
@@ -1162,7 +1270,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var rebuilt = ReplaceLeadingEssenceDamageLabel(stripped, weaponDt.Value);
+            var rebuilt = ApplyEssenceDamageLabel(stripped, weaponDt.Value);
             if (stripped != rebuilt)
                 Name = rebuilt;
             else if (stripped != Name)
@@ -1190,7 +1298,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var rebuilt = ReplaceLeadingEssenceDamageLabel(stripped, weaponDt.Value);
+            var rebuilt = ApplyEssenceDamageLabel(stripped, weaponDt.Value);
             if (stripped != rebuilt)
                 Name = rebuilt;
             else if (stripped != Name)

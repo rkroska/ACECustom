@@ -210,6 +210,11 @@ namespace ACE.Server.Entity
             }
             SyncUseString(device, nameBefore, device.Name);
 
+            // The kit carries CapturedSourceDamageType across (CopyVisuals), so the leading damage word can
+            // now be wrong. Capture re-syncs it at MonsterCapture.ApplyAppearanceToCrate; tailoring did not,
+            // leaving the name disagreeing with the element until the next summon.
+            device.RefreshCombatPetEssenceDisplayNameAfterSkinApply(player);
+
             // Push name and icon to the client. Per-property updates alone are not enough: the client
             // caches inventory names and art, so the capture path also sends a full object snapshot and
             // mirrors the slot move the client performs when it receives one. Same here.

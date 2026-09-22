@@ -642,11 +642,31 @@ namespace ACE.Server.WorldObjects
                 if (capDtResolved.HasValue)
                 {
                     var dt = capDtResolved.Value;
-                    var meleeWeapon = GetEquippedMeleeWeapon();
-                    if (meleeWeapon != null)
-                        meleeWeapon.SetProperty(PropertyInt.DamageType, (int)dt);
-                    else
+
+                    // Both hands. A capture skin can bring two weapons across, and the pet alternates between
+                    // them each swing, so stamping only one left the other on its original element and the pet
+                    // hit with two different damage types. forceMainHand because Init runs while the stance is
+                    // still NonCombat, where GetEquippedMeleeWeapon() answers for whichever hand is next.
+                    var mainHand = GetEquippedMeleeWeapon(forceMainHand: true);
+                    var offHand = GetDualWieldWeapon();
+
+                    if (mainHand != null)
+                        mainHand.SetProperty(PropertyInt.DamageType, (int)dt);
+                    if (offHand != null)
+                        offHand.SetProperty(PropertyInt.DamageType, (int)dt);
+
+                    // Genuinely unarmed - no melee weapon and no launcher - so the melee path would fall
+                    // through to the creature's own body parts and ignore the captured element entirely.
+                    // That is how a "Cold Dire Mattie Essence" ended up hitting for Electric: the Mattekar look
+                    // brings no weapons, so the Moar's Electric body parts decided the damage while the name
+                    // said Cold. OutgoingDamageTypeOverride is read by Monster_Combat.GetDamageType ahead of
+                    // the body-part fallback, so it is what actually carries a captured element onto an
+                    // unarmed pet. DamageType is still set for appraisal and any non-melee reader.
+                    if (GetEquippedWeapon() == null)
+                    {
                         SetProperty(PropertyInt.DamageType, (int)dt);
+                        SetProperty(PropertyInt.OutgoingDamageTypeOverride, (int)dt);
+                    }
                 }
             }
 

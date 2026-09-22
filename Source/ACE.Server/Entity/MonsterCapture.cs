@@ -1063,7 +1063,7 @@ namespace ACE.Server.Entity
         /// Updates <see cref="PropertyString.Use"/> when the device display name's creature token changes
         /// (e.g. "your Fire Maiden." → "your Fire Lich Oppressor.").
         /// </summary>
-        private static void SyncPetDeviceUseStringAfterSkinRename(PetDevice crate, string nameBeforeApply, string nameAfterApply)
+        internal static void SyncPetDeviceUseStringAfterSkinRename(PetDevice crate, string nameBeforeApply, string nameAfterApply)
         {
             var use = crate.GetProperty(PropertyString.Use);
             if (string.IsNullOrEmpty(use) || string.IsNullOrEmpty(nameBeforeApply) || string.IsNullOrEmpty(nameAfterApply))
