@@ -345,13 +345,15 @@ item, then click the essence.
 |---|---|---|
 | **Pet Neutering Kit** | 2,500,000 (10 MMD) | Permanently stops that essence from breeding. |
 | **Pet Tailoring Kit** | 125,000,000 (500 MMD) | Moves a look from one essence to another. [See below](#11-changing-your-pets-look-and-name). |
-| **Lesser Courtship Incense** | 1,250,000 (5 MMD) | +2.5% stat mutation chance on that essence's next litter. |
-| **Refined Courtship Incense** | 2,500,000 (10 MMD) | +5% on the next litter. |
-| **Exquisite Courtship Incense** | 5,000,000 (20 MMD) | +10% on the next litter. |
+| **Lesser Courtship Incense** | 1,250,000 (5 MMD) | Up to +2.5% stat mutation chance on that essence's next litter. Like the base chance, it shrinks as a line collects mutations: a line with 10 gets half. |
+| **Refined Courtship Incense** | 2,500,000 (10 MMD) | Up to +5% on the next litter. |
+| **Exquisite Courtship Incense** | 5,000,000 (20 MMD) | Up to +10% on the next litter. |
 | **Nurturing Draught** | 2,500,000 (10 MMD) | Juveniles only: every qualifying kill counts double until adulthood. |
 | **Chromatic Catalyst** | 2,500,000 (10 MMD) | If the next litter mutates, its new colour comes from the vivid pool. |
 | **Offering of Subjugation** | 2,500,000 (10 MMD) | The next spirit fight is much easier: the spirit hits half as hard, takes 2.5x damage, and each hit can take a quarter of its health instead of a tenth. |
 | **Mutagenic Serum** | 25,000,000 (100 MMD) | Re-rolls this essence's colour right now. Colour only; stats are untouched. |
+| **Solidifying Tincture** | 12,500,000 (50 MMD) | Makes the pet 10% less see-through, down to fully solid. Maidens and K'nath start at 50%, everything else at 0%. |
+| **Fading Tincture** | 12,500,000 (50 MMD) | Makes the pet 10% more see-through, up to 50%. Either tincture is refused, and kept, at its limit. Appraise the essence to see its level. |
 
 ### How the supplies behave
 

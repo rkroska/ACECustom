@@ -2011,6 +2011,15 @@ namespace ACE.Server.WorldObjects
 
                 if (!CanDamage(creature)) continue;
 
+                // OnlyCombatPetsCanDamage (and any other creature that refuses this caster): it calls
+                // TakeDamage directly and prints its own hit line, so it has to be skipped here, not just
+                // refused in TakeDamage - otherwise the player reads "You crush X for 11,000,000 points".
+                if (!creature.CanBeDamagedBy(this))
+                {
+                    NotifyPetsOnlyTarget(creature);
+                    continue;
+                }
+
                 // PK status check (mirrors SpellProjectile.OnCollideObject).
                 var pkError = CheckPKStatusVsTarget(creature, spell);
                 if (pkError != null) continue;

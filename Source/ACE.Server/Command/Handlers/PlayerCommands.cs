@@ -1816,7 +1816,10 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            if (string.Equals(oldName, requestedName, StringComparison.Ordinal))
+            // A renamed essence keeps its damage word and tier ("Slash Sir Fluffington Essence"), so compare the
+            // pet's own name too, not just the whole essence name.
+            var currentPetName = petDevice.GetProperty(PropertyString.PetCustomName) ?? petDevice.VisualOverrideName;
+            if (string.Equals(oldName, requestedName, StringComparison.Ordinal) || string.Equals(currentPetName, requestedName, StringComparison.Ordinal))
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"{oldName} already has that name.", ChatMessageType.Broadcast));
                 return;
@@ -1897,9 +1900,14 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        /// <summary>Review note on a pending request that a newer @pet-name replaced.</summary>
+        internal const string ReplacedRequestNote = "Replaced by a newer request";
+
         /// <summary>
-        /// Background thread only (no world objects). A character has at most one pending request: an existing
-        /// pending row is rewritten in place (returns true), otherwise a new row is inserted (returns false).
+        /// Background thread only (no world objects). A character has at most one pending request. A new request
+        /// closes the pending one as denied ("Replaced by a newer request") and inserts a fresh row with a new id
+        /// (returns true), otherwise it just inserts (returns false). The row is never rewritten in place: the
+        /// portal approves by id, so a reviewer who loaded the old name must not approve a newer one unseen.
         /// </summary>
         private static bool SubmitPetNameRequest(uint characterId, string characterName, uint petGuid, string oldName, string requestedName)
         {
@@ -1915,24 +1923,26 @@ namespace ACE.Server.Command.Handlers
                 cmd.Parameters.Add(p);
             }
 
-            using (var updateCmd = con.CreateCommand())
-            {
-                updateCmd.CommandText =
-                    "UPDATE `pet_name_requests` SET `character_name` = @characterName, `pet_guid` = @petGuid, `old_name` = @oldName, " +
-                    "`requested_name` = @requestedName, `created_at` = UTC_TIMESTAMP() " +
-                    "WHERE `character_id` = @characterId AND `status` = 0";
-                AddParam(updateCmd, "@characterName", characterName);
-                AddParam(updateCmd, "@petGuid", petGuid);
-                AddParam(updateCmd, "@oldName", oldName);
-                AddParam(updateCmd, "@requestedName", requestedName);
-                AddParam(updateCmd, "@characterId", (long)characterId);
+            // One transaction, so there is never a moment with two pending rows or none. A reviewer's approve
+            // claims the old row with WHERE status = 0 too: whichever runs first wins the row lock, and the
+            // other then matches nothing, so an old name is either approved as seen or replaced, never both.
+            using var tx = con.BeginTransaction();
+            bool replaced;
 
-                if (updateCmd.ExecuteNonQuery() > 0)
-                    return true;
+            using (var closeCmd = con.CreateCommand())
+            {
+                closeCmd.Transaction = tx;
+                closeCmd.CommandText =
+                    "UPDATE `pet_name_requests` SET `status` = 2, `review_note` = @note, `reviewed_at` = UTC_TIMESTAMP(), `reviewed_by` = 'system' " +
+                    "WHERE `character_id` = @characterId AND `status` = 0";
+                AddParam(closeCmd, "@note", ReplacedRequestNote);
+                AddParam(closeCmd, "@characterId", (long)characterId);
+                replaced = closeCmd.ExecuteNonQuery() > 0;
             }
 
             using (var insertCmd = con.CreateCommand())
             {
+                insertCmd.Transaction = tx;
                 insertCmd.CommandText =
                     "INSERT INTO `pet_name_requests` (`character_id`, `character_name`, `pet_guid`, `old_name`, `requested_name`) " +
                     "VALUES (@characterId, @characterName, @petGuid, @oldName, @requestedName)";
@@ -1944,7 +1954,8 @@ namespace ACE.Server.Command.Handlers
                 insertCmd.ExecuteNonQuery();
             }
 
-            return false;
+            tx.Commit();
+            return replaced;
         }
 
         private static readonly TimeSpan MyQuests = TimeSpan.FromSeconds(60);

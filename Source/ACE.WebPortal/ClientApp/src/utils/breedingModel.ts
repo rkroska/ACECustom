@@ -165,11 +165,12 @@ function clamp01(v: number, max = 1): number {
 
 /**
  * Stat mutation chance for a baby whose inherited stat-mutation count is `babyStatMutations`.
- * statChance = clamp(max(floor, base / (1 + decay * count)) + incense, 0, 1)
+ * statChance = clamp(max(floor, (base + incense) / (1 + decay * count)), 0, 1)
+ * Incense decays with the line like the base does (matches BreedingMath.StatMutationChance).
  */
 export function statMutationChance(babyStatMutations: number, config: BreedingConfig, incenseBonus = 0): number {
-  const decayed = config.baseMutationChance / (1.0 + config.mutationDecayRate * babyStatMutations)
-  return clamp01(Math.max(config.mutationMinFloor, decayed) + incenseBonus)
+  const decayed = (config.baseMutationChance + incenseBonus) / (1.0 + config.mutationDecayRate * babyStatMutations)
+  return clamp01(Math.max(config.mutationMinFloor, decayed))
 }
 
 /** Potency mutation chance. Incense does not apply. */
@@ -461,10 +462,9 @@ export function breed(
   const statChance = statMutationChance(inheritedStatMutations, config, incenseBonus)
   const statRollValue = roll()
   if (verbose) {
-    const decayed = config.baseMutationChance / (1 + config.mutationDecayRate * inheritedStatMutations)
-    v(`[STAT CHANCE MATH] base ${config.baseMutationChance} / (1 + decay ${config.mutationDecayRate} x ${inheritedStatMutations} inherited) = ${fmt(decayed)}` +
-      `; max(floor ${config.mutationMinFloor}, ${fmt(decayed)}) = ${fmt(Math.max(config.mutationMinFloor, decayed))}` +
-      `; + incense ${fmt(incenseBonus)} -> clamped ${fmt(statChance)}` +
+    const decayed = (config.baseMutationChance + incenseBonus) / (1 + config.mutationDecayRate * inheritedStatMutations)
+    v(`[STAT CHANCE MATH] (base ${config.baseMutationChance} + incense ${fmt(incenseBonus)}) / (1 + decay ${config.mutationDecayRate} x ${inheritedStatMutations} inherited) = ${fmt(decayed)}` +
+      `; max(floor ${config.mutationMinFloor}, ${fmt(decayed)}) -> clamped ${fmt(statChance)}` +
       (config.forceMutation ? ' (force_mutation is ON: the roll is ignored)' : ''))
   }
   const statMutated = config.forceMutation || statRollValue < statChance

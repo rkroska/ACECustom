@@ -804,6 +804,11 @@ namespace ACE.Server.WorldObjects
         /// <param name="amount">The amount of damage rounded</param>
         public virtual uint TakeDamage(WorldObject source, DamageType damageType, float amount, bool crit = false)
         {
+            // OnlyCombatPetsCanDamage: refuse anything that is not a combat pet. A null source is a combined DoT
+            // tick, already filtered per caster in EnchantmentManager.ApplyDamageTick.
+            if (source != null && !CanBeDamagedBy(source))
+                return 0;
+
             var tryDamage = (int)Math.Round(amount);
 
             if (damageType == DamageType.Stamina)

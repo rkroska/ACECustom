@@ -342,7 +342,12 @@ namespace ACE.Server.Controllers
             if (!string.Equals(device.Name, oldName, StringComparison.Ordinal))
                 return RenameResult.Mismatch($"the device is now named \"{device.Name}\", not \"{oldName}\"");
 
-            device.Name = newName;
+            // Only the creature part of the essence name changes, so "Slash Spectral Nanjou Shou-jen Essence"
+            // becomes "Slash Sir Fluffington Essence": the damage word and the tier stay.
+            var summonName = device.PetClass.HasValue ? DatabaseManager.World.GetCachedWeenie((uint)device.PetClass.Value)?.GetProperty(PropertyString.Name) : null;
+            var essenceName = ComposeRenamedEssenceName(device.Name, device.VisualOverrideName, summonName, newName);
+
+            device.Name = essenceName;
             device.VisualOverrideName = newName;
             // Authoritative owner-chosen name: the summon path uses this verbatim rather than running it
             // through the "Owner's " prefix cleanup, which would eat a legitimate possessive in the name.
@@ -351,7 +356,7 @@ namespace ACE.Server.Controllers
             device.SaveBiotaToDatabase();
             device.ChangesDetected = true;
 
-            owner.UpdateProperty(device, PropertyString.Name, newName);
+            owner.UpdateProperty(device, PropertyString.Name, essenceName);
             owner.UpdateProperty(device, PropertyString.CapturedCreatureName, newName);
             owner.EnqueueBroadcast(new GameMessageUpdateObject(device));
             owner.RushNextPlayerSave(0);
@@ -394,7 +399,14 @@ namespace ACE.Server.Controllers
             // Only reached when the owner is genuinely offline, so nothing else holds this biota and a
             // local lock is sufficient. Disposed rather than left for the finalizer.
             using var rwLock = new ReaderWriterLockSlim();
-            biota.SetProperty(PropertyString.Name, newName, rwLock, out _);
+            string previousCreatureName = null;
+            biota.PropertiesString?.TryGetValue(PropertyString.CapturedCreatureName, out previousCreatureName);
+            int petClass = 0;
+            var hasPetClass = biota.PropertiesInt?.TryGetValue(PropertyInt.PetClass, out petClass) == true && petClass > 0;
+            var summonName = hasPetClass ? DatabaseManager.World.GetCachedWeenie((uint)petClass)?.GetProperty(PropertyString.Name) : null;
+            var essenceName = ComposeRenamedEssenceName(currentName, previousCreatureName, summonName, newName);
+
+            biota.SetProperty(PropertyString.Name, essenceName, rwLock, out _);
             biota.SetProperty(PropertyString.CapturedCreatureName, newName, rwLock, out _);
             // Same authoritative record as the online path, so the name survives the next summon.
             biota.SetProperty(PropertyString.PetCustomName, newName, rwLock, out _);
@@ -403,6 +415,24 @@ namespace ACE.Server.Controllers
                 return RenameResult.Failed("the shard database rejected the biota save");
 
             return RenameResult.Renamed();
+        }
+
+        /// <summary>
+        /// The essence name after a rename: the creature part swapped for the new name, keeping the leading
+        /// damage word and the " Essence (tier)" tail. The creature part is found from the captured creature name,
+        /// else the summon template's name. A name that does not have that shape just becomes the new name.
+        /// </summary>
+        internal static string ComposeRenamedEssenceName(string currentName, string previousCreatureName, string summonCreatureName, string newName)
+        {
+            var previous = !string.IsNullOrWhiteSpace(previousCreatureName) ? previousCreatureName : summonCreatureName;
+
+            // The helper strips possessives from a captured creature's name ("Bob's Drudge" -> "Drudge"). An
+            // owner-chosen name must be kept as written, so build around a placeholder and put the name in after.
+            const string placeholder = "\u0001";
+            var built = PetDevice.BuildDisplayNameAfterCaptureApply(currentName, previous, placeholder);
+            if (string.IsNullOrEmpty(built) || !built.Contains(placeholder))
+                return newName;
+            return built.Replace(placeholder, newName);
         }
 
         private static bool IsPossessedBy(ACE.Entity.Models.Biota biota, uint characterId)

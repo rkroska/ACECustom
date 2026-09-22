@@ -402,7 +402,10 @@ namespace ACE.Server.WorldObjects
             }
 
             if (!creatureTarget.CanBeDamagedBy(ProjectileSource))
+            {
+                (ProjectileSource as Player)?.NotifyPetsOnlyTarget(creatureTarget);
                 return;
+            }
 
             var critical = false;
             var critDefended = false;
@@ -1277,6 +1280,7 @@ namespace ACE.Server.WorldObjects
             if (!target.CanBeDamagedBy(ProjectileSource))
             {
                 if (tr != null) { tr.Reason = "cannotBeDamagedBy"; PetTrace.CombatSpellMiss(this, target, tr); }
+                (ProjectileSource as Player)?.NotifyPetsOnlyTarget(target);
                 return;
             }
 

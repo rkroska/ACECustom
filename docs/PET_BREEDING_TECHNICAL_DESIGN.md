@@ -218,7 +218,7 @@ together with that parent's line. Players can't cherry-pick a mutation off a wea
 ### Mutation
 
 ```
-stat chance    = clamp( max(floor, base / (1 + decay x inheritedStatMutations)) + incense, 0, 1 )
+stat chance    = clamp( max(floor, (base + incense) / (1 + decay x inheritedStatMutations)), 0, 1 )
 potency chance = pet_breeding_potency_mutation_chance        (independent; incense does not apply)
 ```
 
@@ -389,16 +389,20 @@ from 5 MMD (Lesser incense) to 500 MMD (the tailoring kit).
 |---|---|---|---|
 | Pet Neutering Kit | 2.5M (10 MMD) | Permanently removes an essence from breeding | Supply control |
 | Pet Tailoring Kit | 125M (500 MMD) | Moves a look between essences; the source is destroyed | The top sink: a prized look costs a destroyed essence plus 500 MMD |
-| Lesser / Refined / Exquisite Courtship Incense | 1.25M / 2.5M / 5M (5 / 10 / 20 MMD) | +2.5 / 5 / 10% stat mutation chance on the next litter | Spent on every committed breed, mutated or not |
+| Lesser / Refined / Exquisite Courtship Incense | 1.25M / 2.5M / 5M (5 / 10 / 20 MMD) | Up to +2.5 / 5 / 10% stat mutation chance on the next litter, decaying with the line | Spent on every committed breed, mutated or not |
 | Nurturing Draught | 2.5M (10 MMD) | Double growth credit until adulthood | Time, not power |
 | Chromatic Catalyst | 2.5M (10 MMD) | Vivid palette **if** a mutation happens | Only spent when a colour rolls, so no wasted gold |
 | Offering of Subjugation | 2.5M (10 MMD) | Much easier spirit fight | Only spent when a spirit spawns |
 | Mutagenic Serum | 25M (100 MMD) | Re-roll colour, no stats | Pure cosmetics |
+| Solidifying / Fading Tincture | 12.5M (50 MMD) each | Steps the pet's translucency down / up by 10%, between solid and 50% | Pure cosmetics; refused at either limit |
 
 The mutation odds at defaults and the effect of incense:
 
 - **Base:** a 5% stat roll per litter, plus 3% potency.
-- **Best case:** Exquisite incense on both parents gives 25% + 3%.
+- **Best case:** Exquisite incense on both parents gives 25% + 3% on a fresh line.
+- **Incense decays with the line** (decay 0.1 on prod): Exquisite on one parent is 15% on a fresh line, 10% at
+  5 mutations, 7.5% at 10 and 5% at 20, never below the 2% floor. Added after the decay, as it first was, it
+  held a paying player near 12% forever, which cancelled decay for anyone who bought it.
 - **Mutations stack across generations**, so the long-term sink is breeding many litters to build a
   line.
 
@@ -665,6 +669,9 @@ On the essence (DEV), unless marked. Full writers and readers are in the referen
 | `CapturedCreatureName`, `CapturedItems`, `CapturedCreatureVariant`, `CapturedCreatureType`, `CapturedCreatureWCID`, `CapturedSourceDamageType` | String 9009/9010, Int 9039/9037/9033/9054 | Species identity; travels with a tailored look |
 | `PetCustomName` | String 9018 | Approved custom name |
 | `ShowcaseColourCycleSeconds` (CRE) | Float 9060 | NPC colour cycle interval; never saved |
+| `OnlyCombatPetsCanDamage` (CRE, GEN) | Bool 50057 | Only combat pets can damage it; generators pass it to their spawns |
+| `SpawnColourMutationChance` (GEN) | Float 9061 | Chance per spawned creature of a random vivid colour; inherited by nested generators |
+| `PetTranslucency` (PET) | Float 9062 | Translucency the pet summons with (0-0.5), set by the Solidifying and Fading Tinctures |
 | Retail, reused: `PaletteTemplate`, `PaletteBase`, `DefaultScale`, `IconUnderlay`, `Translucency`, `Attuned`, `Bonded`, `Gear*`, `*Rating`, `HearLocalSignals`, `HearLocalSignalsRadius` | Int 3, DID 6, Float 39, DID 52, Float 76, Int 114/33, Int 370-375, Int 307-316, Int 290/291 | See the reference, 3.5 |
 
 **How to test:** appraise an essence (the breeding, growth and mutation lines are built from these);

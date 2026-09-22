@@ -50,7 +50,7 @@ VALUES (78780250,  1,   33558818) /* Setup */
 DELETE FROM weenie_properties_string WHERE object_Id = 78780250;
 INSERT INTO weenie_properties_string (object_Id, type, value)
 VALUES (78780250,  1, 'Lesser Courtship Incense')
-     , (78780250, 14, 'Use on a combat pet essence before breeding to prime it. Grants +2.5% mutation chance on the next breeding attempt.')
+     , (78780250, 14, 'Use on a combat pet essence before breeding to prime it. Grants up to +2.5% mutation chance on the next breeding attempt; less on a heavily mutated line.')
      , (78780250, 15, 'A fragrant ceremonial incense stick.')
      , (78780250, 16, 'A fragrant ceremonial incense stick.');
 
@@ -92,7 +92,7 @@ VALUES (78780251,  1,   33558818)
 DELETE FROM weenie_properties_string WHERE object_Id = 78780251;
 INSERT INTO weenie_properties_string (object_Id, type, value)
 VALUES (78780251,  1, 'Refined Courtship Incense')
-     , (78780251, 14, 'Use on a combat pet essence before breeding to prime it. Grants +5.0% mutation chance on the next breeding attempt.')
+     , (78780251, 14, 'Use on a combat pet essence before breeding to prime it. Grants up to +5.0% mutation chance on the next breeding attempt; less on a heavily mutated line.')
      , (78780251, 15, 'A potent ceremonial incense stick.')
      , (78780251, 16, 'A potent ceremonial incense stick.');
 
@@ -133,7 +133,7 @@ VALUES (78780252,  1,   33558818)
 DELETE FROM weenie_properties_string WHERE object_Id = 78780252;
 INSERT INTO weenie_properties_string (object_Id, type, value)
 VALUES (78780252,  1, 'Exquisite Courtship Incense')
-     , (78780252, 14, 'Use on a combat pet essence before breeding to prime it. Grants +10.0% mutation chance on the next breeding attempt.')
+     , (78780252, 14, 'Use on a combat pet essence before breeding to prime it. Grants up to +10.0% mutation chance on the next breeding attempt; less on a heavily mutated line.')
      , (78780252, 15, 'An exquisite masterwork incense stick.')
      , (78780252, 16, 'An exquisite masterwork incense stick.');
 

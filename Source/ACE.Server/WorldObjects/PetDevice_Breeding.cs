@@ -428,11 +428,15 @@ namespace ACE.Server.WorldObjects
             public static double CombinedIncenseBonus(double incenseA, double incenseB)
                 => Math.Clamp(incenseA + incenseB, 0.0, 0.50);
 
-            /// <summary>clamp(max(floor, base / (1 + decay * babyStatMutations)) + incense, 0, 1)</summary>
+            /// <summary>
+            /// clamp(max(floor, (base + incense) / (1 + decay * babyStatMutations)), 0, 1). Incense decays with the
+            /// line like the base does, so a heavily mutated line slows down for paying players too; added after
+            /// the decay it held the chance near base + incense forever.
+            /// </summary>
             public static double StatMutationChance(int babyStatMutations, in BreedingConfig config, double incenseBonus)
             {
-                var decayed = config.BaseMutationChance / (1.0 + config.MutationDecayRate * babyStatMutations);
-                return Math.Clamp(Math.Max(config.MutationMinFloor, decayed) + incenseBonus, 0.0, 1.0);
+                var decayed = (config.BaseMutationChance + incenseBonus) / (1.0 + config.MutationDecayRate * babyStatMutations);
+                return Math.Clamp(Math.Max(config.MutationMinFloor, decayed), 0.0, 1.0);
             }
 
             /// <summary>Effective value of a line: gear base plus mutation count times step.</summary>
@@ -1976,6 +1980,16 @@ namespace ACE.Server.WorldObjects
                 sb.AppendLine("Colour: fixed - most of this creature is drawn with full-colour textures, so mutations and serums cannot visibly change it");
             else if (colourVis.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.Unknown)
                 sb.AppendLine($"Colour: {colourVis.TextureCount} captured textures may cover part of a new colour");
+
+            // Translucency: the tincture-set level, else the summon template's (Maiden and K'nath are 50%).
+            var translucency = GetProperty(PropertyFloat.PetTranslucency);
+            if (!translucency.HasValue && PetClass.HasValue)
+            {
+                var summonWeenie = DatabaseManager.World.GetCachedWeenie((uint)PetClass.Value);
+                translucency = summonWeenie != null ? ACE.Entity.Models.WeenieExtensions.GetProperty(summonWeenie, PropertyFloat.Translucency) : null;
+            }
+            if (translucency.HasValue && translucency.Value >= 0.001)
+                sb.AppendLine($"Translucency: {translucency.Value * 100:0}% see-through (Solidifying and Fading Tinctures change it a tenth at a time)");
 
             var dmgStep = (int)ServerConfig.pet_breeding_damage_mutation_step.Value;
             var drStep = (int)ServerConfig.pet_breeding_dr_mutation_step.Value;

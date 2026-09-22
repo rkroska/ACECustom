@@ -390,6 +390,12 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         PetGuardianWeakened = 50056,
 
+        /// <summary>
+        /// Only combat pets can damage this creature: players, other monsters and everything else do nothing (server/custom).
+        /// Set on a generator, it is copied to everything the generator spawns, so nested generators pass it down too.
+        /// </summary>
+        OnlyCombatPetsCanDamage = 50057,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }

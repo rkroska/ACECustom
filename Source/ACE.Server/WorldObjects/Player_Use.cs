@@ -11,6 +11,12 @@ namespace ACE.Server.WorldObjects
 {
     partial class Player
     {
+        /// <summary>Tinctures sold by Ivo that step a combat pet's translucency down / up (docs/WCID_ALLOCATION_7878.md).</summary>
+        public const uint SolidifyingTinctureWcid = 78780262;
+        public const uint FadingTinctureWcid = 78780263;
+        private const double TranslucencyStep = 0.1;
+        private const double MaxPetTranslucency = 0.5;
+
         /// <summary>
         /// This is set by HandleActionUseItem / TryUseItem
         /// </summary>
@@ -157,6 +163,8 @@ namespace ACE.Server.WorldObjects
             // 78780256 (Ancestral Gene Re-roller) is reserved and unbuilt, so the serum is matched on its own.
             else if (sourceItem.WeenieClassId == ACE.Server.Services.PetMutationService.MutagenicSerumWcid && target is PetDevice)
                 skipTargetTypeCheck = true;
+            else if ((sourceItem.WeenieClassId == SolidifyingTinctureWcid || sourceItem.WeenieClassId == FadingTinctureWcid) && target is PetDevice)
+                skipTargetTypeCheck = true;
 
             var sourceTargetType = sourceItem.TargetType ?? ItemType.None;
             var targetItemType = target.ItemType;
@@ -278,7 +286,7 @@ namespace ACE.Server.WorldObjects
                 if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetIncenseBonus", currentBonus, bonus, true, null);
 
                 PlayParticleEffect(PlayScript.HealthUpRed, target.Guid);
-                SendMessage($"You have anointed {petDevice.Name} with {sourceItem.Name}! Its next breeding will grant a +{bonus * 100:0.#}% mutation bonus.");
+                SendMessage($"You have anointed {petDevice.Name} with {sourceItem.Name}! Its next breeding will grant up to +{bonus * 100:0.#}% mutation bonus.");
                 SendUseDoneEvent();
                 return;
             }
@@ -411,6 +419,62 @@ namespace ACE.Server.WorldObjects
 
                 PlayParticleEffect(PlayScript.EnchantUpRed, target.Guid);
                 SendMessage($"You consecrate {petDevice.Name} with the Offering of Subjugation. Its next mating guardian will be swiftly overcome!");
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Solidifying (78780262) and Fading (78780263) Tinctures: step the pet's translucency down or up by a
+            // tenth, between 0 (solid) and 0.5. The level lives on the essence and replaces the summon template's.
+            if (sourceItem.WeenieClassId == SolidifyingTinctureWcid || sourceItem.WeenieClassId == FadingTinctureWcid)
+            {
+                const string tinctureProperty = "PetTranslucency";
+                var fading = sourceItem.WeenieClassId == FadingTinctureWcid;
+
+                if (target is not PetDevice petDevice || !petDevice.IsCombatPetDevice())
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, tinctureProperty, null, null, false, "target is not a combat pet essence");
+                    SendTransientError($"The {sourceItem.Name} can only be used on combat pet essences.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                // Where the pet is now: its own level if a tincture has set one, else its summon template's.
+                var current = petDevice.GetProperty(PropertyFloat.PetTranslucency);
+                if (!current.HasValue)
+                {
+                    var template = petDevice.PetClass.HasValue ? ACE.Database.DatabaseManager.World.GetCachedWeenie((uint)petDevice.PetClass.Value) : null;
+                    current = template != null ? ACE.Entity.Models.WeenieExtensions.GetProperty(template, PropertyFloat.Translucency) ?? 0.0 : 0.0;
+                }
+                var currentLevel = Math.Round(Math.Clamp(current.Value, 0.0, MaxPetTranslucency), 1);
+                var nextLevel = Math.Round(currentLevel + (fading ? TranslucencyStep : -TranslucencyStep), 1);
+
+                if (nextLevel < -0.001 || nextLevel > MaxPetTranslucency + 0.001)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, tinctureProperty, currentLevel, currentLevel, false, fading ? "already at the limit" : "already solid");
+                    SendTransientError(fading
+                        ? $"{petDevice.Name} is already as see-through as a pet can be ({MaxPetTranslucency * 100:0}%). The tincture was not used."
+                        : $"{petDevice.Name} is already fully solid. The tincture was not used.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, tinctureProperty, currentLevel, nextLevel, false, "consume failed");
+                    SendTransientError($"Failed to consume the {sourceItem.Name}.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                petDevice.SetProperty(PropertyFloat.PetTranslucency, nextLevel);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+                if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, tinctureProperty, currentLevel, nextLevel, true, null);
+
+                PlayParticleEffect(PlayScript.EnchantUpPurple, target.Guid);
+                SendMessage(nextLevel < 0.001
+                    ? $"{petDevice.Name} is now fully solid. Summon it again to see the change."
+                    : $"{petDevice.Name} is now {nextLevel * 100:0}% see-through. Summon it again to see the change.");
                 SendUseDoneEvent();
                 return;
             }

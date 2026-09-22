@@ -1029,7 +1029,7 @@ export default function PetBreedingCalculator() {
             <div className="text-xs">
               <span className="font-extrabold text-white uppercase tracking-wider mr-2">Breeding Quick Guide:</span>
               <span className="text-neutral-300">
-                1. Bring a <strong>Male Stud</strong> (10 charges; refill 24h after the last refill) • 2. Bring a <strong>Female Dam</strong> (4h recovery after each breed) • 3. In the <strong>Seedy Motel</strong>, with both pets in the same landcell, both players perform <code>*dance*</code> (or <code>@dance</code>) within 5 seconds of each other. Boost results with <strong>Courtship Incense</strong> (+2.5%, +5%, or +10% stat mutation chance; potency is unaffected) and a <strong>Chromatic Catalyst</strong> (vibrant palette pool when a mutation rolls a new colour); use <strong>Pet Tailoring Kits</strong> for cosmetic appearances and <strong>Pet Neutering Kits</strong> to prevent breeding.
+                1. Bring a <strong>Male Stud</strong> (10 charges; refill 24h after the last refill) • 2. Bring a <strong>Female Dam</strong> (4h recovery after each breed) • 3. In the <strong>Seedy Motel</strong>, with both pets in the same landcell, both players perform <code>*dance*</code> (or <code>@dance</code>) within 5 seconds of each other. Boost results with <strong>Courtship Incense</strong> (up to +2.5%, +5%, or +10% stat mutation chance, decaying with the line like the base chance; potency is unaffected) and a <strong>Chromatic Catalyst</strong> (vibrant palette pool when a mutation rolls a new colour); use <strong>Pet Tailoring Kits</strong> for cosmetic appearances and <strong>Pet Neutering Kits</strong> to prevent breeding.
               </span>
             </div>
           </div>
@@ -1762,7 +1762,7 @@ export default function PetBreedingCalculator() {
                   Mutation Aids & Rare Color Palettes
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  <strong>Courtship Incense</strong> adds +2.5%, +5%, or +10% to the stat mutation chance (both parents' incense stacks, up to +50%); it does not affect the potency roll. A <strong>Chromatic Catalyst</strong> on either parent makes a rolled mutation palette come from the vibrant pool, and is only consumed when a palette is actually rolled.
+                  <strong>Courtship Incense</strong> adds +2.5%, +5%, or +10% to the base before the decay, so it shrinks with the line like the base does (both parents' incense stacks, up to +50%); it does not affect the potency roll. A <strong>Chromatic Catalyst</strong> on either parent makes a rolled mutation palette come from the vibrant pool, and is only consumed when a palette is actually rolled.
                 </p>
               </div>
 

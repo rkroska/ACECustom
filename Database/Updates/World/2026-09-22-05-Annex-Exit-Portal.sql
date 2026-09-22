@@ -45,7 +45,7 @@ VALUES (78780261,  1, 'Portal to Prof. Ruggan') /* Name */
 
 DELETE FROM `weenie_properties_d_i_d` WHERE `object_Id` = 78780261;
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
-VALUES (78780261, 1,  33554436) /* Setup - portal */
+VALUES (78780261, 1,  33554867) /* Setup - 0x020001B3, the standard portal swirl */
      , (78780261, 2, 150994947) /* MotionTable */
      , (78780261, 8, 100667499) /* Icon */;
 

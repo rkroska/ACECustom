@@ -370,10 +370,22 @@ namespace ACE.Server.Tests
         public void StatMutationChance_MatchesWebFormula()
         {
             var config = new BreedingMath.BreedingConfig { BaseMutationChance = 0.05, MutationDecayRate = 0.5, MutationMinFloor = 0.02 };
-            Assert.AreEqual(0.075, BreedingMath.StatMutationChance(2, config, 0.05), 1e-12);   // 0.05 / 2 = 0.025 + 0.05
+            Assert.AreEqual(0.05, BreedingMath.StatMutationChance(2, config, 0.05), 1e-12);    // (0.05 + 0.05) / 2: incense decays too
             Assert.AreEqual(0.02, BreedingMath.StatMutationChance(100, config, 0.0), 1e-12);   // floor
             Assert.AreEqual(1.0, BreedingMath.StatMutationChance(0, new BreedingMath.BreedingConfig { BaseMutationChance = 0.8 }, 0.5)); // clamp
             Assert.AreEqual(0.5, BreedingMath.CombinedIncenseBonus(0.4, 0.3));
+        }
+
+        [TestMethod]
+        public void StatMutationChance_IncenseDecaysWithTheLine()
+        {
+            // prod settings: base 5%, decay 0.1, floor 2%; Exquisite incense on one parent (+10%)
+            var config = new BreedingMath.BreedingConfig { BaseMutationChance = 0.05, MutationDecayRate = 0.1, MutationMinFloor = 0.02 };
+            Assert.AreEqual(0.15, BreedingMath.StatMutationChance(0, config, 0.10), 1e-12);    // a fresh line gets the full bonus
+            Assert.AreEqual(0.075, BreedingMath.StatMutationChance(10, config, 0.10), 1e-12);  // 0.15 / 2
+            Assert.AreEqual(0.025, BreedingMath.StatMutationChance(50, config, 0.10), 1e-12);  // 0.15 / 6
+            Assert.AreEqual(0.02, BreedingMath.StatMutationChance(100, config, 0.10), 1e-12);  // 0.15 / 11 is under the floor
+            Assert.AreEqual(0.025, BreedingMath.StatMutationChance(10, config, 0.0), 1e-12);   // no incense: unchanged from before
         }
     }
 }

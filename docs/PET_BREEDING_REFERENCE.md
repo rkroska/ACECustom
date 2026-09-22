@@ -102,9 +102,9 @@ code default. The branch adds 51 settings, and every one is read by the code; no
 | `pet_breeding_cooldown_hours` | double | 4.0 | - | Female rest after a litter: `PetNextBreedingTime = now + hours x 3600`. This is rest, not gestation. 0 or negative = ready immediately. | `PetDevice_Breeding.cs:1180` | Appraise the female: "(recovering - ready to breed in 3h 59m)". |
 | `pet_breeding_bypass_female_cooldown` | bool | false | **false** | TEST ONLY. The cooldown is neither checked nor written. | `PetDevice_Breeding.cs:846, 1048, 1178` | Breed the same female twice. |
 | `pet_breeding_dismiss_after_breed` | bool | true | - | Both parent pets are destroyed 2 s after the birth. | `PetDevice_Breeding.cs:1885-1900` | Pets vanish about 2 s after the birth message. |
-| `pet_breeding_base_mutation_chance` | double | 0.05 | - | Stat-mutation chance = `clamp(max(floor, base / (1 + decay x babyInheritedStatMutations)) + incense, 0, 1)`. The floor applies after decay, so base 0 with floor 0.02 still gives 2%. Also served anonymously at `GET /api/Visualizer/breeding-config`. | `PetDevice_Breeding.cs:178` (formula 432-436) | Set 1.0: every birth is "[GENETIC MUTATION]". |
+| `pet_breeding_base_mutation_chance` | double | 0.05 | - | Stat-mutation chance = `clamp(max(floor, (base + incense) / (1 + decay x babyInheritedStatMutations)), 0, 1)`. Incense decays with the line like the base does (changed 2026-09-22; it used to be added after the decay). The floor applies after decay, so base 0 with floor 0.02 still gives 2%. Also served anonymously at `GET /api/Visualizer/breeding-config`. | `PetDevice_Breeding.cs:178` (formula 432-436) | Set 1.0: every birth is "[GENETIC MUTATION]". |
 | `pet_breeding_mutation_decay_rate` | double | 0.0 (prod: 0.1 via the shard script) | - | Divides the base chance by `1 + decay x (stat mutations the baby inherited)`. Potency is not counted. 0 = flat. There is no guard against negative values. | `PetDevice_Breeding.cs:180, 434` | Set 1.0 with `pet_trace` on: `breed.roll` chance falls. |
-| `pet_breeding_mutation_min_floor` | double | 0.02 | - | Lower bound on the decayed chance, before incense. | `PetDevice_Breeding.cs:181, 435` | As above. |
+| `pet_breeding_mutation_min_floor` | double | 0.02 | - | Lower bound on the decayed chance (base and incense together). | `PetDevice_Breeding.cs:181, 435` | As above. |
 | `pet_breeding_force_mutation` | bool | false | **false** | TEST ONLY. The stat roll always succeeds (the draw is still consumed, so replays stay aligned). Does **not** force potency. The code description ("and color mutation") is loose: colour follows from any mutation. | `PetDevice_Breeding.cs:191, 329` | Every birth mutates. |
 | `pet_breeding_max_stat_mutations` | long | 0 | - | Per-line cap on the mutation **count** for damage, damage resist, crit and vitality. At or below 0 = uncapped. A capped line is removed from the pick list and from the blessing. Appraisal shows `[n/cap Muts]`. | `PetDevice_Breeding.cs:190, 413-421, 1993, 2005` | Set 1, force mutations on already-mutated parents. |
 | `pet_breeding_damage_mutation_step` | long | 10 | - | Damage Rating per damage mutation. **Counts are stored, ratings are computed at summon**, so a change re-scales every bred pet at its next summon. Also derives crit damage `round(0.8 x bonus)`. | `CombatPet.cs:449`; `PetDevice_Breeding.cs:182, 1978` | Change it, re-summon a mutated pet. |
@@ -236,6 +236,16 @@ the tailoring kit copies it (`Entity/PetTailoring.cs:245-274`).
 |---|---|---|
 | `ShowcaseColourCycleSeconds` | Float 9060 | Seconds between colour changes on an NPC. Checked on each creature heartbeat (about 5 s). The first tick picks a random phase. When due and a player is within 96 m, the NPC rolls a **vibrant** palette into `PaletteTemplate`, broadcasts an ObjDesc update and plays `EnchantUpPurple`. Unset or at or below 0 = off. **Never saved**, so the colour resets on respawn. Set to 60 on 78780221-78780225. (PropertyInt 9060 is an unrelated property on a different enum.) |
 
+### 3.4a Spawn and pet properties (new)
+
+| Property | Id | Meaning |
+|---|---|---|
+| `OnlyCombatPetsCanDamage` | Bool 50057 | On a creature: only combat pets can damage it. Players, other monsters and damage over time from anyone else do nothing. On a generator: copied to everything it spawns, so nested generators pass it down. Enforced in `Creature.CanBeDamagedBy`, `Creature.TakeDamage` and `EnchantmentManager.ApplyDamageTick`. |
+| `SpawnColourMutationChance` | Float 9061 | On a generator: each creature it spawns has this chance (0.01 = 1%) of a random vivid mutation colour. Nested generators inherit it. Models drawn mostly with full-colour textures are skipped. A captured coloured spawn keeps its colour. `GeneratorProfile.ApplySpawnColour`. |
+| `PetTranslucency` | Float 9062 | On a combat pet essence: the translucency its pet summons with, 0 (solid) to 0.5, stepped a tenth at a time by the Solidifying (78780262) and Fading (78780263) Tinctures. Replaces the summon template's value (Maiden and K'nath templates carry 0.5). Unset = the template's value. Shown on appraisal. `PetDevice` summon, `Player_Use` handler. |
+
+**How to test:** set one on a generator (`INSERT INTO weenie_properties_bool (object_Id, type, value) VALUES (<wcid>, 50057, 1);` or float 9061 at 1.0 for a sure hit), `@clearcache`, and let it respawn. Live, on one object: appraise it, then `@setproperty PropertyBool.OnlyCombatPetsCanDamage true`.
+
 ### 3.4b Colour visibility and rendering rules
 
 - **Colour visibility** (`PetMutationService.GetColourChangeVisibility`): `Hidden` when captured textures cover 90%+ of
@@ -275,7 +285,7 @@ the tailoring kit copies it (`Entity/PetTailoring.cs:245-274`).
 | WCID | Name | Built from | Role | Placed |
 |---|---|---|---|---|
 | 78780200 | Fenwick, Kennel Intern | 42720 Ealdred | Greeter at the Drop; 14-line tutorial on click | yes |
-| 78780201 | Ivo, Ruggan's Quartermaster | 46425 Marid | **Vendor** (type 12), pyreals, 9 items | yes |
+| 78780201 | Ivo, Ruggan's Quartermaster | 46425 Marid | **Vendor** (type 12), pyreals, 11 items | yes |
 | 78780202 | DJ Skulk | 5595 dancing drudge | Dance floor; suspect two | yes |
 | 78780203 | Gary | 29008 Browerk | "Just here for the music"; suspect three; scale 0.275 | yes |
 | 78780204 | Mrs. Ruggan | 3920 | Walk-on | yes |
@@ -318,10 +328,12 @@ Gene Re-roller). The remaining ids in 78780200-78780249 are free.
 | 78780254 | Chromatic Catalyst | Tool | 2,500,000 (10 MMD) |
 | 78780255 | Offering of Subjugation | Tool | 2,500,000 (10 MMD) |
 | 78780257 | Mutagenic Serum | Tool | 25,000,000 (100 MMD) |
+| 78780262 | Solidifying Tincture | Tool | 12,500,000 (50 MMD) |
+| 78780263 | Fading Tincture | Tool | 12,500,000 (50 MMD) |
 
-Ivo's sell rate is 1.0, so the price equals the item's `Value` (int 19). The Mutagenic Serum and Pet
-Tailoring Kit have MaxStackSize 1: a stack's Value is unit price x count in a 32-bit int, and a 100-stack
-of either overflows it, which makes the vendor charge 1 pyreal.
+Ivo's sell rate is 1.0, so the price equals the item's `Value` (int 19). A stack's Value is unit price x
+count in a 32-bit int, so stack sizes keep it under 2.1B: the Mutagenic Serum stacks to 50 and the Pet
+Tailoring Kit to 10 (1.25B each). The filled kit never stacks, because each one holds a different look.
 
 **The kits were renumbered on 2026-09-21.** They used to be 98760399-98760401, but on production those three
 ids are other content: Tyrannical Drudge Gen (a generator placed 65 times), the Realm of Woe portal and
@@ -478,19 +490,23 @@ passive ones included.
   owns.
 - **Rules:**
   - 3-32 characters, matching `^[a-zA-Z0-9' -]+$`.
-  - Not the current name.
+  - Not the current name (the essence name or the pet's own name).
   - 60 s per-character in-memory cooldown.
   - There is no profanity or uniqueness check.
-- **Storage:** writes or replaces the character's single pending row in `ace_shard.pet_name_requests`,
-  optionally posts to Discord, and confirms in chat.
+- **Storage:** one pending row per character in `ace_shard.pet_name_requests`. A new request closes the
+  pending one as denied ("Replaced by a newer request", reviewed by `system`) and inserts a new row, in
+  one transaction, so a reviewer who loaded the old name cannot approve the new one unseen: their
+  Approve on the old id gets "already been reviewed". Optionally posts to Discord, and confirms in chat.
 
 **Approval** (`Controllers/PetNamingController.cs`, `/api/PetNaming`, portal page `/pet-names`):
 
 - **Access:** every action requires portal admin or the `pet-naming` page permission.
 - **Approve:** an atomic claim (`status 0 -> 1`).
 - **If the owner is online:** the rename runs on the world queue, waiting up to 10 s. The device must
-  be in the owner's possession and still carry `old_name`. It sets `Name`, `VisualOverrideName` and
-  `PetCustomName`, renames a summoned pet live, and tells the owner.
+  be in the owner's possession and still carry `old_name`. It sets `VisualOverrideName` and
+  `PetCustomName` to the new name, and swaps only the creature part of `Name`, so
+  "Slash Spectral Nanjou Shou-jen Essence" becomes "Slash Sir Fluffington Essence" (damage word and tier
+  kept). It renames a summoned pet live and tells the owner.
 - **If the owner is offline:** it edits the shard biota directly.
 - **Name mismatch:** auto-deny and HTTP 409. A transient failure returns the request to pending
   (HTTP 500).

@@ -7,7 +7,7 @@ code and the test databases on that date.
 
 | Script | Database | What it does |
 |---|---|---|
-| `deploy/Annex-Prod-Bundle.sql` | `ace_world` | All 34 weenies + the 22 annex placements, copied from test |
+| `deploy/Annex-Prod-Bundle.sql` | `ace_world` | All 38 weenies + the 24 annex placements, copied from test |
 | `deploy/Annex-Prod-Shard.sql` | `ace_shard` | The `pet_name_requests` table + the breeding settings prod needs |
 
 Both are one paste each, safe to re-run, and end with verification queries.
@@ -24,18 +24,20 @@ from the build output, and this repo's `Database/Updates` files are not copied t
 
 ### What the world bundle contains
 
-- **Weenies (34), row for row from test**, nothing cloned from retail templates at import time:
+- **Weenies (38), row for row from test**, nothing cloned from retail templates at import time:
   - 78780200-78780225 - the annex cast: Fenwick, Ivo, DJ Skulk, Gary, Mrs. Ruggan, Bexley and the
     Registry pets, Splotch and the Ward pets, both Sawato Bandits
   - 78780230-78780233, 78780240 - the paternity storyline: Mubb, Gorta, Mubb Junior, Denton and the
     hidden Scene Director
-  - 78780250-78780255, 78780257 - breeding consumables and the Mutagenic Serum
+  - 78780206 - the fallen sign in the Drop (appraise it for the house rules)
+  - 78780250-78780255, 78780257, 78780262-78780263 - breeding consumables, the Mutagenic Serum and the two translucency tinctures
   - 98760388 - the motel portal, now pointing at the annex
   - 78780258-78780260 - the neutering and tailoring kits
   - 78780261 - the annex exit portal, back to Prof. Ruggan
+  - 78780264 - the prismatic monkey generator (50% colourful spawns, only combat pets can hurt them)
 - **Left out, test-only:** Scene Tester 78780241 and Baby Candidates 78780234/78780235. The @et staging
   export 78790009 is outside the bundle's range.
-- **Placements (22):** the annex (0x0106 variation 2), including the exit portal. Every placement gets a fresh guid above the
+- **Placements (24):** the annex (0x0106 variation 2), including the exit portal, the fallen sign and the monkey generator. Every placement gets a fresh guid above the
   highest one already used in that landblock on prod, so nothing can collide.
 - **The portal's placement is not touched.** Prod already has 98760388 placed beside its own Prof.
   Ruggan (0xDB3B, a different spot than on test). The bundle replaces the portal weenie (new
@@ -79,8 +81,8 @@ python deploy/export_annex_bundle.py
    `mysql ace_world < deploy/Annex-Prod-Bundle.sql` (batch mode stops at the first error, before COMMIT;
    never add `--force`). In Workbench, watch for
    red lines; if one appears, run `ROLLBACK` in the same tab. Check its results:
-   - V1 = 34 weenies
-   - V2 = 22 placements
+   - V1 = 38 weenies
+   - V2 = 24 placements
    - V2b = at least one row (the portal is still placed)
    - V3 and V4 = no rows
 6. **Start the server.**
@@ -92,10 +94,13 @@ python deploy/export_annex_bundle.py
 - [ ] `@fetchlong pet_breeding_allowed_landblock` shows 262 and `@fetchlong pet_breeding_allowed_variant` shows 2.
   (`@showprops` crashes on this codebase, a bug on master since 2025-12; use `@fetchlong` or `@petserverconfig`.)
 - [ ] Click Fenwick. You should get the 14-line tutorial.
-- [ ] Ivo sells 9 items at the MMD prices: incense 5 / 10 / 20, Draught, Catalyst, Offering and
-  Neutering Kit 10 each, Serum 100, Tailoring Kit 500. The Serum and Tailoring Kit do not stack.
+- [ ] Ivo sells 11 items at the MMD prices: incense 5 / 10 / 20, Draught, Catalyst, Offering and
+  Neutering Kit 10 each, both Tinctures 50, Serum 100, Tailoring Kit 500. The Serum stacks to 50 and the Tailoring Kit to 10;
+  the filled kit does not stack.
 - [ ] Stand around for about 5 minutes and watch for a paternity scene.
 - [ ] Ward pets and The Sawato Situation sparkle and change colour about once a minute.
+- [ ] At the monkey generator, about half of the 10 Nasty Brass Monkeys are brightly coloured. Hitting one
+  yourself does nothing; your combat pet can kill it.
 - [ ] Breed two eligible pets in the annex: tier 100+, bond 100+.
 
 ## Settings

@@ -426,12 +426,12 @@ namespace ACE.Server.WorldObjects
             foreach (var line in eligible)
                 eligibleNames.Append(eligibleNames.Length > 0 ? "," : "").Append(line);
 
-            var decayed = c.BaseMutationChance / (1.0 + c.MutationDecayRate * o.InheritedStatMutations);
+            var decayed = (c.BaseMutationChance + o.IncenseBonus) / (1.0 + c.MutationDecayRate * o.InheritedStatMutations);
             var pickConsumed = o.StatMutated && eligible.Count > 0;
             var pickRoll = pickConsumed && draws.Count >= 10 ? draws[9] : double.NaN;
 
             var stat = Begin("breed.roll", session).Add("kind", "stat")
-                .Add("rule", "chance=clamp(max(floor, base/(1+decay*inherited))+incense,0,1); mutated=forced||roll<chance")
+                .Add("rule", "chance=clamp(max(floor, (base+incense)/(1+decay*inherited)),0,1); mutated=forced||roll<chance")
                 .Add("base", c.BaseMutationChance).Add("decay", c.MutationDecayRate).Add("inherited", o.InheritedStatMutations)
                 .Add("decayed", decayed).Add("floor", c.MutationMinFloor)
                 .Add("incenseA", inputs.Options.IncenseA).Add("incenseB", inputs.Options.IncenseB).Add("incense", o.IncenseBonus)

@@ -38,7 +38,7 @@ INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`) VALUES
 
 DELETE FROM `weenie_properties_d_i_d` WHERE `object_Id` = 98760388;
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES
-(98760388, 1, 0x02000004),  -- Setup DID (Purple Portal)
+(98760388, 1, 0x020001B3),  -- Setup DID: the standard portal swirl (0x02000004 was the Armoredillo model)
 (98760388, 2, 150994947),   -- MotionTable
 (98760388, 8, 100667499);   -- Icon
 

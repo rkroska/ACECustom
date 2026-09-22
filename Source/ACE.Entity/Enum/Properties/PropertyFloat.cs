@@ -346,5 +346,18 @@ namespace ACE.Entity.Enum.Properties
         /// redraws, while a player is nearby. Live only - the colour is never saved. Unset = off.
         /// </summary>
         ShowcaseColourCycleSeconds = 9060,
+
+        /// <summary>
+        /// Generators: the chance (0.01 = 1%) that each creature this generator spawns gets a random vivid
+        /// mutation colour. Copied to spawned generators, so nested generators pass it down. Unset = off.
+        /// </summary>
+        SpawnColourMutationChance = 9061,
+
+        /// <summary>
+        /// Combat pet essence: the translucency its pet summons with (0 = solid .. 0.5), set a tenth at a time by
+        /// the Solidifying and Fading Tinctures. Replaces the summon template's own value (Maiden and K'nath
+        /// templates are 0.5). Unset = the template's value.
+        /// </summary>
+        PetTranslucency = 9062,
     }
 }

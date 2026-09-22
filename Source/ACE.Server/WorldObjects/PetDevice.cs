@@ -1221,6 +1221,12 @@ namespace ACE.Server.WorldObjects
             if (VisualOverrideSetup.HasValue)
                 ApplyVisualOverridesTo(pet);
 
+            // Solidifying / Fading Tincture: the essence's own translucency replaces the summon template's,
+            // before the pet enters the world. 0 means fully solid, so the property is removed.
+            var petTranslucency = GetProperty(PropertyFloat.PetTranslucency);
+            if (petTranslucency.HasValue)
+                pet.Translucency = petTranslucency.Value < 0.001 ? null : (float)petTranslucency.Value;
+
             // Juvenile size and name must be in place before Init enters the world.
             if (pet is CombatPet juvenileCandidate)
                 juvenileCandidate.PrepareMaturityForSummon(this);

@@ -1733,6 +1733,11 @@ namespace ACE.Server.WorldObjects.Managers
                     continue;
                 }
 
+                // the ticks are summed and applied with no source, so a caster the target refuses (OnlyCombatPetsCanDamage)
+                // has to be dropped here
+                if (!creature.CanBeDamagedBy(damager))
+                    continue;
+
                 var resistanceMod = creature.GetResistanceMod(damageType, damager, null);
 
                 var sourcePlayer = damager as Player;

@@ -21,7 +21,7 @@ INSERT INTO weenie_properties_int (object_Id, type, value)
 VALUES (78780257,   1,    128)  /* ItemType - Misc */
      , (78780257,   5,     10)  /* EncumbranceVal */
      , (78780257,   8,     10)  /* Mass */
-     , (78780257,  11,      1)  /* MaxStackSize - 1: a 100-stack at 25M each overflows the int stack Value and the vendor charges 1 pyreal */
+     , (78780257,  11,     50)  /* MaxStackSize - 50 (1.25B): a stack's Value is unit x count in an int, and 86+ at 25M overflows it */
      , (78780257,  12,      1)  /* StackSize */
      , (78780257,  13,      1)  /* StackUnitEncumbrance */
      , (78780257,  14,      1)  /* StackUnitMass */

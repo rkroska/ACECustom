@@ -406,7 +406,7 @@ duplicate in the custom range. Three collisions shipped on this branch before th
 `@pet-name <name>` (`PlayerCommands.HandlePetName`): 3-32 characters matching `^[a-zA-Z0-9' -]+$`,
 targets the summoned pet's device or a selected combat essence the player possesses, refuses the
 current name, and enforces a 60 s per-character cooldown taken before the background work starts.
-The DB write (`pet_name_requests`, one pending row per character, rewritten in place) and the optional
+The DB write (`pet_name_requests`, one pending row per character; a new request closes the old one and inserts a new row) and the optional
 Discord embed run on a `Task`; the reply is delivered through `WorldManager.EnqueueAction` with the
 player re-resolved, because the world objects belong to the landblock thread.
 

@@ -1,10 +1,10 @@
 /* =====================================================================================
    Pet Breeding / Ruggan's Annex - PROD BUNDLE for ace_world
-   Exported 2026-09-21 from the test server by deploy/export_annex_bundle.py.
+   Exported 2026-09-22 from the test server by deploy/export_annex_bundle.py.
    Re-run that script on test to refresh this file; never hand-edit it.
 
-   CREATES 34 weenies, copied row for row from test:
-     78780200-78780299  (33)
+   CREATES 38 weenies, copied row for row from test:
+     78780200-78780299  (37)
      98760388  (1)
    Left out as test-only: Baby Candidate B (78780234), Baby Candidate C (78780235), Scene Tester (78780241).
    PLACES them: see the PLACEMENTS section. Guids are fresh on the target, never copied from test.
@@ -31,7 +31,7 @@ START TRANSACTION;
 
 /* ---- WEENIES ---------------------------------------------------------------------- */
 -- Clean slate: the weenie_properties_* FKs cascade, so this clears every property row too.
-DELETE FROM `weenie` WHERE `class_Id` IN (78780200,78780201,78780202,78780203,78780204,78780210,78780211,78780212,78780213,78780214,78780215,78780220,78780221,78780222,78780223,78780224,78780225,78780230,78780231,78780232,78780233,78780240,78780250,78780251,78780252,78780253,78780254,78780255,78780257,78780258,78780259,78780260,78780261,98760388);
+DELETE FROM `weenie` WHERE `class_Id` IN (78780200,78780201,78780202,78780203,78780204,78780206,78780210,78780211,78780212,78780213,78780214,78780215,78780220,78780221,78780222,78780223,78780224,78780225,78780230,78780231,78780232,78780233,78780240,78780250,78780251,78780252,78780253,78780254,78780255,78780257,78780258,78780259,78780260,78780261,78780262,78780263,78780264,98760388);
 
 -- 78780200  Fenwick, Kennel Intern
 INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (78780200, 'annex-fenwick', 10, NOW());
@@ -175,7 +175,9 @@ INSERT INTO `weenie_properties_create_list` (`object_Id`,`destination_Type`,`wee
   (78780201, 4, 78780253, -1, 0, 0.0, False),
   (78780201, 4, 78780254, -1, 0, 0.0, False),
   (78780201, 4, 78780255, -1, 0, 0.0, False),
-  (78780201, 4, 78780257, -1, 0, 0.0, False);
+  (78780201, 4, 78780257, -1, 0, 0.0, False),
+  (78780201, 4, 78780262, -1, 0, 0.0, False),
+  (78780201, 4, 78780263, -1, 0, 0.0, False);
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`,`type`,`value`) VALUES
   (78780201, 1, 33554433),
   (78780201, 2, 150994945),
@@ -245,13 +247,14 @@ INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
 INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`weenie_Class_Id`,`style`,`substyle`,`quest`,`vendor_Type`,`min_Health`,`max_Health`,`damage_type`) VALUES (78780201, 7, 1.0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`motion`,`message`,`test_String`,`min`,`max`,`min_64`,`max_64`,`min_Dbl`,`max_Dbl`,`stat`,`display`,`amount`,`amount_64`,`hero_X_P_64`,`percent`,`spell_Id`,`wealth_Rating`,`treasure_Class`,`treasure_Type`,`p_Script`,`sound`,`destination_Type`,`weenie_Class_Id`,`stack_Size`,`palette`,`shade`,`try_To_Bond`,`obj_Cell_Id`,`origin_X`,`origin_Y`,`origin_Z`,`angles_W`,`angles_X`,`angles_Y`,`angles_Z`) VALUES
-  (@e, 0, 10, 0.0, 0.0, NULL, 'Nine things on the list. Most of them are smoke in a jar.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+  (@e, 0, 10, 0.0, 0.0, NULL, 'Eleven things on the list. Most of them are smoke in a jar.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
   (@e, 1, 10, 3.5, 0.0, NULL, 'The incense makes the next litter likelier to come out changed. Bigger jar, better odds. Both parents can wear it.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
   (@e, 2, 10, 3.5, 0.0, NULL, 'The draught grows a baby twice as fast. The catalyst makes a change come out loud. The offering makes the spirit easy to put down.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
   (@e, 3, 10, 3.5, 0.0, NULL, 'The serum re-rolls a colour on the spot. The stats stay where they were.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-  (@e, 4, 10, 3.5, 0.0, NULL, 'The tailoring kit takes the look off one pet and puts it on another. The first one does not survive that. The price reflects it.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-  (@e, 5, 10, 3.5, 0.0, NULL, 'The neutering kit is for people who have made a decision. I don''t ask which decision.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-  (@e, 6, 10, 3.5, 0.0, NULL, 'Buy off the list. I don''t haggle and I don''t explain the Professor.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  (@e, 4, 10, 3.5, 0.0, NULL, 'The tinctures make a pet more or less see-through, a tenth at a time. They do nothing for actual ghosts.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+  (@e, 5, 10, 3.5, 0.0, NULL, 'The tailoring kit takes the look off one pet and puts it on another. The first one does not survive that. The price reflects it.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+  (@e, 6, 10, 3.5, 0.0, NULL, 'The neutering kit is for people who have made a decision. I don''t ask which decision.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+  (@e, 7, 10, 3.5, 0.0, NULL, 'Buy off the list. I don''t haggle and I don''t explain the Professor.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 -- 78780202  DJ Skulk
 INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (78780202, 'annex-dj-skulk', 10, NOW());
@@ -640,6 +643,34 @@ INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`wee
 SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`motion`,`message`,`test_String`,`min`,`max`,`min_64`,`max_64`,`min_Dbl`,`max_Dbl`,`stat`,`display`,`amount`,`amount_64`,`hero_X_P_64`,`percent`,`spell_Id`,`wealth_Rating`,`treasure_Class`,`treasure_Type`,`p_Script`,`sound`,`destination_Type`,`weenie_Class_Id`,`stack_Size`,`palette`,`shade`,`try_To_Bond`,`obj_Cell_Id`,`origin_X`,`origin_Y`,`origin_Z`,`angles_W`,`angles_X`,`angles_Y`,`angles_Z`) VALUES
   (@e, 0, 8, 0.0, 0.0, NULL, 'Where IS he.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+-- 78780206  Fallen Sign
+INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (78780206, 'annex_fallen_sign', 1, NOW());
+INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
+  (78780206, 1, True),
+  (78780206, 12, True),
+  (78780206, 13, True),
+  (78780206, 22, False);
+INSERT INTO `weenie_properties_d_i_d` (`object_Id`,`type`,`value`) VALUES
+  (78780206, 1, 33556890),
+  (78780206, 8, 100668115);
+INSERT INTO `weenie_properties_float` (`object_Id`,`type`,`value`) VALUES
+  (78780206, 54, 3.0);
+INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
+  (78780206, 1, 128),
+  (78780206, 5, 9000),
+  (78780206, 8, 1500),
+  (78780206, 16, 1),
+  (78780206, 19, 0),
+  (78780206, 93, 1052);
+INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
+  (78780206, 1, 'Fallen Sign'),
+  (78780206, 16, 'RUGGAN''S ANNEX - HOUSE RULES
+1. Both pets in the same room. Both owners dance.
+2. The baby goes to the dam''s owner. Settle up first.
+3. Do not feed the Registry. Do not pet the Ward.
+4. Shinies do not breed. Do not ask.
+5. This is a filing annex.  - Prof. R.');
 
 -- 78780210  Bexley, Keeper of the Registry
 INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (78780210, 'annex-bexley', 10, NOW());
@@ -2752,7 +2783,7 @@ INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
   (78780250, 94, 128);
 INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
   (78780250, 1, 'Lesser Courtship Incense'),
-  (78780250, 14, 'Use on a combat pet essence before breeding to prime it. Grants +2.5% mutation chance on the next breeding attempt.'),
+  (78780250, 14, 'Use on a combat pet essence before breeding to prime it. Grants up to +2.5% mutation chance on the next breeding attempt; less on a heavily mutated line.'),
   (78780250, 15, 'A fragrant ceremonial incense stick.'),
   (78780250, 16, 'A fragrant ceremonial incense stick.');
 
@@ -2782,7 +2813,7 @@ INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
   (78780251, 94, 128);
 INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
   (78780251, 1, 'Refined Courtship Incense'),
-  (78780251, 14, 'Use on a combat pet essence before breeding to prime it. Grants +5.0% mutation chance on the next breeding attempt.'),
+  (78780251, 14, 'Use on a combat pet essence before breeding to prime it. Grants up to +5.0% mutation chance on the next breeding attempt; less on a heavily mutated line.'),
   (78780251, 15, 'A potent ceremonial incense stick.'),
   (78780251, 16, 'A potent ceremonial incense stick.');
 
@@ -2811,7 +2842,7 @@ INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
   (78780252, 94, 128);
 INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
   (78780252, 1, 'Exquisite Courtship Incense'),
-  (78780252, 14, 'Use on a combat pet essence before breeding to prime it. Grants +10.0% mutation chance on the next breeding attempt.'),
+  (78780252, 14, 'Use on a combat pet essence before breeding to prime it. Grants up to +10.0% mutation chance on the next breeding attempt; less on a heavily mutated line.'),
   (78780252, 15, 'An exquisite masterwork incense stick.'),
   (78780252, 16, 'An exquisite masterwork incense stick.');
 
@@ -2916,7 +2947,7 @@ INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
   (78780257, 1, 128),
   (78780257, 5, 10),
   (78780257, 8, 10),
-  (78780257, 11, 1),
+  (78780257, 11, 50),
   (78780257, 12, 1),
   (78780257, 13, 1),
   (78780257, 14, 1),
@@ -2980,7 +3011,7 @@ INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
   (78780259, 1, 128),
   (78780259, 5, 25),
   (78780259, 8, 25),
-  (78780259, 11, 1),
+  (78780259, 11, 10),
   (78780259, 12, 1),
   (78780259, 13, 1),
   (78780259, 14, 1),
@@ -3037,7 +3068,7 @@ INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780261, 15, True),
   (78780261, 63, True);
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`,`type`,`value`) VALUES
-  (78780261, 1, 33554436),
+  (78780261, 1, 33554867),
   (78780261, 2, 150994947),
   (78780261, 8, 100667499);
 INSERT INTO `weenie_properties_float` (`object_Id`,`type`,`value`) VALUES
@@ -3055,6 +3086,88 @@ INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
   (78780261, 1, 'Portal to Prof. Ruggan'),
   (78780261, 14, 'Double click this portal to return to Prof. Ruggan.');
 
+-- 78780262  Solidifying Tincture
+INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (78780262, 'ace78780262-solidifyingtincture', 44, NOW());
+INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
+  (78780262, 11, True),
+  (78780262, 13, True),
+  (78780262, 14, True);
+INSERT INTO `weenie_properties_d_i_d` (`object_Id`,`type`,`value`) VALUES
+  (78780262, 1, 33554446),
+  (78780262, 8, 100670839),
+  (78780262, 52, 100689404);
+INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
+  (78780262, 1, 128),
+  (78780262, 5, 10),
+  (78780262, 8, 10),
+  (78780262, 11, 100),
+  (78780262, 12, 1),
+  (78780262, 13, 1),
+  (78780262, 14, 1),
+  (78780262, 16, 524296),
+  (78780262, 18, 10),
+  (78780262, 19, 12500000),
+  (78780262, 93, 1044),
+  (78780262, 94, 128);
+INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
+  (78780262, 1, 'Solidifying Tincture'),
+  (78780262, 14, 'Use on a combat pet essence to make its pet 10% less see-through, down to fully solid. Maidens and K''nath start at 50%. Summon the pet again to see the change. Does nothing for a look that is itself translucent.'),
+  (78780262, 15, 'A thick, cloudy tincture that makes spectral things opaque.'),
+  (78780262, 16, 'A thick, cloudy tincture that makes spectral things opaque.');
+
+-- 78780263  Fading Tincture
+INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (78780263, 'ace78780263-fadingtincture', 44, NOW());
+INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
+  (78780263, 11, True),
+  (78780263, 13, True),
+  (78780263, 14, True);
+INSERT INTO `weenie_properties_d_i_d` (`object_Id`,`type`,`value`) VALUES
+  (78780263, 1, 33554446),
+  (78780263, 8, 100670839),
+  (78780263, 52, 100689403);
+INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
+  (78780263, 1, 128),
+  (78780263, 5, 10),
+  (78780263, 8, 10),
+  (78780263, 11, 100),
+  (78780263, 12, 1),
+  (78780263, 13, 1),
+  (78780263, 14, 1),
+  (78780263, 16, 524296),
+  (78780263, 18, 10),
+  (78780263, 19, 12500000),
+  (78780263, 93, 1044),
+  (78780263, 94, 128);
+INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
+  (78780263, 1, 'Fading Tincture'),
+  (78780263, 14, 'Use on a combat pet essence to make its pet 10% more see-through, up to 50%. Summon the pet again to see the change.'),
+  (78780263, 15, 'A thin, pale tincture that lets the light through whatever drinks it.'),
+  (78780263, 16, 'A thin, pale tincture that lets the light through whatever drinks it.');
+
+-- 78780264  Annex Prismatic Generator
+INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (78780264, 'annex_prismatic_generator', 1, NOW());
+INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
+  (78780264, 1, True),
+  (78780264, 11, True),
+  (78780264, 18, True),
+  (78780264, 132, True),
+  (78780264, 50057, True);
+INSERT INTO `weenie_properties_d_i_d` (`object_Id`,`type`,`value`) VALUES
+  (78780264, 1, 33555051),
+  (78780264, 8, 100667494);
+INSERT INTO `weenie_properties_float` (`object_Id`,`type`,`value`) VALUES
+  (78780264, 41, 20.0),
+  (78780264, 43, 5.0),
+  (78780264, 9061, 0.5);
+INSERT INTO `weenie_properties_generator` (`object_Id`,`probability`,`weenie_Class_Id`,`delay`,`init_Create`,`max_Create`,`when_Create`,`where_Create`,`stack_Size`,`palette_Id`,`shade`,`obj_Cell_Id`,`origin_X`,`origin_Y`,`origin_Z`,`angles_W`,`angles_X`,`angles_Y`,`angles_Z`) VALUES
+  (78780264, -1.0, 260031, 1.0, 10, 10, 1, 2, -1, 0, 0.0, 0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
+  (78780264, 81, 10),
+  (78780264, 82, 10),
+  (78780264, 93, 1044);
+INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
+  (78780264, 1, 'Annex Prismatic Generator');
+
 -- 98760388  Portal to Seedy Motel
 INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (98760388, 'seedy_motel_portal', 7, NOW());
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
@@ -3065,7 +3178,7 @@ INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (98760388, 15, True),
   (98760388, 63, True);
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`,`type`,`value`) VALUES
-  (98760388, 1, 33554436),
+  (98760388, 1, 33554867),
   (98760388, 2, 150994947),
   (98760388, 8, 100667499);
 INSERT INTO `weenie_properties_float` (`object_Id`,`type`,`value`) VALUES
@@ -3085,42 +3198,44 @@ INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
 
 /* ---- PLACEMENTS ------------------------------------------------------------------- */
 
--- The annex: 22 placement(s).
+-- The annex: 24 placement(s).
 DELETE FROM `landblock_instance` WHERE `landblock` = 0x0106 AND `variation_Id` = 2 AND `weenie_Class_Id` BETWEEN 78780200 AND 78780299;
 SET @g = (SELECT COALESCE(MAX(`guid`), 0x70105FFF) FROM `landblock_instance` WHERE `guid` BETWEEN 0x70106000 AND 0x70106FFF);
-SET @g = IF(@g + 22 > 1880125439, (SELECT 1 UNION SELECT 2), @g); -- 1880125439 = 0x70106FFF, the top of this landblock's range
+SET @g = IF(@g + 24 > 1880125439, (SELECT 1 UNION SELECT 2), @g); -- 1880125439 = 0x70106FFF, the top of this landblock's range
 INSERT INTO `landblock_instance` (`guid`,`weenie_Class_Id`,`obj_Cell_Id`,`origin_X`,`origin_Y`,`origin_Z`,
   `angles_W`,`angles_X`,`angles_Y`,`angles_Z`,`is_Link_Child`,`last_Modified`,`variation_Id`) VALUES
-  (@g + 1, 78780222, 0x0106019D, 55.1495, -23.873, 0.00200051, 0.999258, 0.0, 0.0, -0.0385069, False, NOW(), 2), -- Ursuin, Unregistered
-  (@g + 2, 78780223, 0x0106018F, 45.0584, -24.4, -0.0149994, 0.99995, 0.0, 0.0, 0.00997638, False, NOW(), 2), -- Nine-Colour Shreth
-  (@g + 3, 78780224, 0x010601A6, 73.9587, -23.4926, 0.0033254, 0.888357, 0.0, 0.0, 0.459154, False, NOW(), 2), -- Subject Twelve
-  (@g + 4, 78780212, 0x010601A6, 65.8673, -16.3726, -0.00299972, -0.00243423, 0.0, 0.0, -0.999997, False, NOW(), 2), -- Certified Shreth, Third Generation
-  (@g + 5, 78780213, 0x0106018F, 54.9419, -16.127, 0.00200051, -0.00429613, 0.0, 0.0, -0.999991, False, NOW(), 2), -- Pedigreed Ursuin (Papers Pending)
-  (@g + 6, 78780214, 0x010601A6, 73.7327, -16.1424, 0.00332546, 0.46581, 0.0, 0.0, 0.884885, False, NOW(), 2), -- Drudge Skulker of Record
-  (@g + 7, 78780233, 0x0106018F, 49.6757, -19.6893, 0.00500047, -0.694313, 0.0, 0.0, -0.719673, False, NOW(), 2), -- Denton
-  (@g + 8, 78780200, 0x01060186, 41.1518, -21.1851, 0.00500041, -0.746286, 0.0, 0.0, -0.665626, False, NOW(), 2), -- Fenwick, Kennel Intern
-  (@g + 9, 78780204, 0x01060186, 41.3706, -18.8561, 0.00500041, -0.609131, 0.0, 0.0, -0.79307, False, NOW(), 2), -- Mrs. Ruggan
-  (@g + 10, 78780220, 0x01060186, 36.2615, -23.7276, 0.0113304, -0.929735, 0.0, 0.0, 0.368228, False, NOW(), 2), -- Splotch
-  (@g + 11, 78780202, 0x010601A6, 74.0187, -18.4773, 0.0033254, 0.65115, 0.0, 0.0, 0.758949, False, NOW(), 2), -- DJ Skulk
-  (@g + 12, 78780203, 0x01060186, 36.0829, -16.145, 0.0113304, -0.372708, 0.0, 0.0, 0.927949, False, NOW(), 2), -- Gary
-  (@g + 13, 78780210, 0x01060187, 38.2976, -32.6147, 0.00500005, 0.996455, 0.0, 0.0, -0.0841315, False, NOW(), 2), -- Bexley, Keeper of the Registry
-  (@g + 14, 78780230, 0x01060182, 38.6779, -6.44777, 0.00332493, 0.252831, 0.0, 0.0, -0.967511, False, NOW(), 2), -- Mubb
-  (@g + 15, 78780231, 0x01060182, 41.2217, -6.2459, 0.00332493, -0.193173, 0.0, 0.0, -0.981165, False, NOW(), 2), -- Gorta
-  (@g + 16, 78780232, 0x01060182, 40.0049, -6.92743, 0.00192499, -0.0068951, 0.0, 0.0, -0.999976, False, NOW(), 2), -- Mubb Junior
-  (@g + 17, 78780223, 0x010601A6, 65.5085, -24.2238, -0.0112495, 0.999373, 0.0, 0.0, 0.0354174, False, NOW(), 2), -- Nine-Colour Shreth
-  (@g + 18, 78780201, 0x01060187, 43.0561, -32.6733, 0.00500005, 0.976197, 0.0, 0.0, 0.216888, False, NOW(), 2), -- Ivo, Ruggan's Quartermaster
-  (@g + 19, 78780240, 0x01060178, 33.6161, -20.5616, 0.000174951, -0.727399, 0.0, 0.0, -0.686215, False, NOW(), 2), -- Annex Scene Director
-  (@g + 20, 78780225, 0x0106018F, 45.0388, -24.5199, 0.00500041, -0.999689, 0.0, 0.0, -0.0249216, False, NOW(), 2), -- The Sawato Situation
-  (@g + 21, 78780215, 0x0106018F, 45.1932, -15.4979, 0.00500041, -0.0127857, 0.0, 0.0, 0.999918, False, NOW(), 2), -- Certified Sawato Bandit, Reformed
-  (@g + 22, 78780261, 0x01060179, 29.7858, -30.0347, 0.005, -0.999403, 0.0, 0.0, -0.03454, False, NOW(), 2); -- Portal to Prof. Ruggan
+  (@g + 1, 78780264, 0x01060163, 79.9978, -58.5984, -5.945, 0.999963, 0.0, 0.0, -0.00857348, False, NOW(), 2), -- Annex Prismatic Generator
+  (@g + 2, 78780222, 0x0106019D, 55.1495, -23.873, 0.00200051, 0.999258, 0.0, 0.0, -0.0385069, False, NOW(), 2), -- Ursuin, Unregistered
+  (@g + 3, 78780223, 0x0106018F, 45.0584, -24.4, -0.0149994, 0.99995, 0.0, 0.0, 0.00997638, False, NOW(), 2), -- Nine-Colour Shreth
+  (@g + 4, 78780224, 0x010601A6, 73.9587, -23.4926, 0.0033254, 0.888357, 0.0, 0.0, 0.459154, False, NOW(), 2), -- Subject Twelve
+  (@g + 5, 78780212, 0x010601A6, 65.8673, -16.3726, -0.00299972, -0.00243423, 0.0, 0.0, -0.999997, False, NOW(), 2), -- Certified Shreth, Third Generation
+  (@g + 6, 78780213, 0x0106018F, 54.9419, -16.127, 0.00200051, -0.00429613, 0.0, 0.0, -0.999991, False, NOW(), 2), -- Pedigreed Ursuin (Papers Pending)
+  (@g + 7, 78780214, 0x010601A6, 73.7327, -16.1424, 0.00332546, 0.46581, 0.0, 0.0, 0.884885, False, NOW(), 2), -- Drudge Skulker of Record
+  (@g + 8, 78780233, 0x0106018F, 49.6757, -19.6893, 0.00500047, -0.694313, 0.0, 0.0, -0.719673, False, NOW(), 2), -- Denton
+  (@g + 9, 78780200, 0x01060186, 41.1518, -21.1851, 0.00500041, -0.746286, 0.0, 0.0, -0.665626, False, NOW(), 2), -- Fenwick, Kennel Intern
+  (@g + 10, 78780204, 0x01060186, 41.3706, -18.8561, 0.00500041, -0.609131, 0.0, 0.0, -0.79307, False, NOW(), 2), -- Mrs. Ruggan
+  (@g + 11, 78780220, 0x01060186, 36.2615, -23.7276, 0.0113304, -0.929735, 0.0, 0.0, 0.368228, False, NOW(), 2), -- Splotch
+  (@g + 12, 78780202, 0x010601A6, 74.0187, -18.4773, 0.0033254, 0.65115, 0.0, 0.0, 0.758949, False, NOW(), 2), -- DJ Skulk
+  (@g + 13, 78780203, 0x01060186, 36.0829, -16.145, 0.0113304, -0.372708, 0.0, 0.0, 0.927949, False, NOW(), 2), -- Gary
+  (@g + 14, 78780210, 0x01060187, 38.2976, -32.6147, 0.00500005, 0.996455, 0.0, 0.0, -0.0841315, False, NOW(), 2), -- Bexley, Keeper of the Registry
+  (@g + 15, 78780230, 0x01060182, 38.6779, -6.44777, 0.00332493, 0.252831, 0.0, 0.0, -0.967511, False, NOW(), 2), -- Mubb
+  (@g + 16, 78780231, 0x01060182, 41.2217, -6.2459, 0.00332493, -0.193173, 0.0, 0.0, -0.981165, False, NOW(), 2), -- Gorta
+  (@g + 17, 78780232, 0x01060182, 40.0049, -6.92743, 0.00192499, -0.0068951, 0.0, 0.0, -0.999976, False, NOW(), 2), -- Mubb Junior
+  (@g + 18, 78780223, 0x010601A6, 65.5085, -24.2238, -0.0112495, 0.999373, 0.0, 0.0, 0.0354174, False, NOW(), 2), -- Nine-Colour Shreth
+  (@g + 19, 78780201, 0x01060187, 43.0561, -32.6733, 0.00500005, 0.976197, 0.0, 0.0, 0.216888, False, NOW(), 2), -- Ivo, Ruggan's Quartermaster
+  (@g + 20, 78780240, 0x01060178, 33.6161, -20.5616, 0.000174951, -0.727399, 0.0, 0.0, -0.686215, False, NOW(), 2), -- Annex Scene Director
+  (@g + 21, 78780225, 0x0106018F, 45.0388, -24.5199, 0.00500041, -0.999689, 0.0, 0.0, -0.0249216, False, NOW(), 2), -- The Sawato Situation
+  (@g + 22, 78780215, 0x0106018F, 45.1932, -15.4979, 0.00500041, -0.0127857, 0.0, 0.0, 0.999918, False, NOW(), 2), -- Certified Sawato Bandit, Reformed
+  (@g + 23, 78780261, 0x01060179, 29.7858, -30.0347, 0.005, -0.999403, 0.0, 0.0, -0.03454, False, NOW(), 2), -- Portal to Prof. Ruggan
+  (@g + 24, 78780206, 0x01060186, 39.0, -23.0, 0.05, 0.707107, 0.707107, 0.0, 0.0, False, NOW(), 2); -- Fallen Sign
 
 COMMIT;
 SET SQL_SAFE_UPDATES = @__old_safe_updates;
 
-/* V1. Expect 34. */
-SELECT COUNT(*) AS bundle_weenies FROM `weenie` WHERE `class_Id` IN (78780200,78780201,78780202,78780203,78780204,78780210,78780211,78780212,78780213,78780214,78780215,78780220,78780221,78780222,78780223,78780224,78780225,78780230,78780231,78780232,78780233,78780240,78780250,78780251,78780252,78780253,78780254,78780255,78780257,78780258,78780259,78780260,78780261,98760388);
+/* V1. Expect 38. */
+SELECT COUNT(*) AS bundle_weenies FROM `weenie` WHERE `class_Id` IN (78780200,78780201,78780202,78780203,78780204,78780206,78780210,78780211,78780212,78780213,78780214,78780215,78780220,78780221,78780222,78780223,78780224,78780225,78780230,78780231,78780232,78780233,78780240,78780250,78780251,78780252,78780253,78780254,78780255,78780257,78780258,78780259,78780260,78780261,78780262,78780263,78780264,98760388);
 
-/* V2. Expect 22. */
+/* V2. Expect 24. */
 SELECT COUNT(*) AS bundle_placements FROM `landblock_instance` WHERE `landblock` = 0x0106 AND `variation_Id` = 2
   AND `weenie_Class_Id` BETWEEN 78780200 AND 78780299;
 

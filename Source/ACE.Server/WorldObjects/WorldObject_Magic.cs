@@ -623,7 +623,10 @@ namespace ACE.Server.WorldObjects
 
             // A creature that refuses damage from this caster takes no harm/drain (heals still apply).
             if (tryBoost < 0 && !targetCreature.CanBeDamagedBy(this))
+            {
                 tryBoost = 0;
+                (this as Player)?.NotifyPetsOnlyTarget(targetCreature);
+            }
 
             var traceBefore = PetTrace.Enabled ? PetTrace.VitalCurrent(targetCreature, spell.VitalDamageType) : 0u;
 
@@ -895,7 +898,10 @@ namespace ACE.Server.WorldObjects
             // vitals directly and never passes TakeDamage, so without this a bystander could drain a guardian
             // to death. Non-drain transfers are unaffected.
             if (isDrain && !transferSource.CanBeDamagedBy(this))
+            {
+                (this as Player)?.NotifyPetsOnlyTarget(transferSource);
                 return;
+            }
 
             var drainMod = isDrain ? (float)transferSource.GetResistanceMod(GetDrainResistanceType(spell.Source)) : 1.0f;
 

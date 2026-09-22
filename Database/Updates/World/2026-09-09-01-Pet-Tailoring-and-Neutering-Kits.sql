@@ -64,7 +64,7 @@ INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (78780259,     1,    128) /* ItemType - Misc */
      , (78780259,     5,     25) /* EncumbranceVal */
      , (78780259,     8,     25) /* Mass */
-     , (78780259,    11,    1) /* MaxStackSize - 1: an 18+ stack at 125M each overflows the int stack Value and the vendor charges 1 pyreal */
+     , (78780259,    11,   10) /* MaxStackSize - 10 (1.25B): a stack's Value is unit x count in an int, and 18+ at 125M overflows it. The filled kit stays 1: each holds a different look */
      , (78780259,    12,      1) /* StackSize */
      , (78780259,    13,      1) /* StackUnitEncumbrance */
      , (78780259,    14,      1) /* StackUnitMass */
