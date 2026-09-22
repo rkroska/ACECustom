@@ -165,7 +165,7 @@ namespace ACE.Server.Managers
                 if (remaining <= TimeSpan.Zero || !gate.Done.Wait(remaining))
                 {
                     timedOut = true;
-                    log.Error($"LandblockManager: waited {unloadGateTimeout.TotalMilliseconds:N0}ms for 0x{cacheKey.Landblock:X4}, v:{cacheKey.Variant?.ToString() ?? "null"} to finish unloading on thread {gate.OwnerThreadId} - proceeding anyway.");
+                    log.Error($"LandblockManager: waited {unloadGateTimeout.TotalMilliseconds:N0}ms for 0x{cacheKey.Landblock:X4}, v:{cacheKey.Variant?.ToString() ?? "null"} to finish unloading on thread {gate.OwnerThreadId} - handing back the instance being unloaded rather than building over it.");
                     return null;
                 }
             }
@@ -828,20 +828,27 @@ namespace ACE.Server.Managers
                     break;
 
                 var unloadInProgress = false;
+                LandblockUnloadGate timedOutGate = null;
 
                 // See landblockCreateLock: the miss is re-checked under the lock so exactly one thread constructs and
                 // registers an instance for this key; every other thread that missed gets that instance back. The unloader
                 // deregisters under this same lock (with its gate already open), so a miss WITH a gate present here means
                 // a teardown is in flight - never build over it; release the lock, wait for the gate, and come back.
-                // Once this lookup's wait budget is spent (already logged by WaitForUnloadGate) it builds anyway, which
-                // is what every lookup did before the gate existed.
+                // Once this lookup's wait budget is spent (already logged by WaitForUnloadGate) it stops waiting, but it
+                // still never builds: it is handed the instance being torn down - what every lookup returned before the
+                // gate existed - so the old Unload() can never evict a replacement's shared state (review 2026-09-21).
                 lock (landblockCreateLock)
                 {
                     landblock = GetLandblock(cacheKey);
                     if (landblock == null)
                     {
-                        if (!unloadWaitTimedOut && unloadGates.ContainsKey(cacheKey))
-                            unloadInProgress = true;
+                        if (unloadGates.TryGetValue(cacheKey, out var openGate))
+                        {
+                            if (unloadWaitTimedOut)
+                                timedOutGate = openGate;
+                            else
+                                unloadInProgress = true;
+                        }
                         else
                         {
                             // load up this landblock
@@ -867,6 +874,9 @@ namespace ACE.Server.Managers
                         }
                     }
                 }
+
+                if (timedOutGate != null)
+                    return timedOutGate.Instance;
 
                 if (unloadInProgress)
                     continue;   // back to WaitForUnloadGate, which blocks until the teardown closes its gate or the budget runs out
@@ -1092,6 +1102,10 @@ namespace ACE.Server.Managers
                                 if (loadedLandblocks.TryRemove(new KeyValuePair<VariantCacheId, Landblock>(cacheKey, landblock)))
                                 {
                                     RemoveLandblock(cacheKey, landblock);
+
+                                    // An instance registered and unloaded before the tick grouped it would otherwise be grouped
+                                    // and ticked AFTER its teardown. Instance-checked, so a same-key replacement's entry stays.
+                                    landblockGroupPendingAdditions.TryRemove(new KeyValuePair<VariantCacheId, Landblock>(cacheKey, landblock));
 
                                     // remove from landblock group
                                     for (int i = landblockGroups.Count - 1; i >= 0; i--)
