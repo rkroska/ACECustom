@@ -307,6 +307,7 @@ Gene Re-roller). The remaining ids in 78780200-78780249 are free.
 | WCID | Name | Type | Price (Ivo) |
 |---|---|---|---|
 | 98760388 | Portal to Seedy Motel | Portal | - |
+| 78780261 | Portal to Prof. Ruggan (annex exit) | Portal | - |
 | 78780258 | Pet Neutering Kit | Tool | 2,500,000 (10 MMD) |
 | 78780259 | Pet Tailoring Kit | Tool | 125,000,000 (500 MMD) |
 | 78780260 | Pet Tailoring Kit (Filled) | Tool | not sold; only produced by extract (Value 125,000,000, kept equal to the empty kit) |
@@ -330,8 +331,12 @@ script that can reach prod.** Test servers carrying the old kits are converted b
 
 **Portal 98760388:**
 - Placed in Lin at 0xDB3B0019 (95.53, 17.70, 31.80), 2 m east of Prof. Ruggan (694201298).
-- Destination: cell 0x01060186 (35.18, -19.76, 0.005), **variation 2**. That is the Drop, beside Fenwick.
-- There is **no exit portal** inside variation 2.
+- Destination: cell 0x01060186 (35.98, -20.04, 0.005), **variation 2**, facing Fenwick. That is the Drop.
+
+**Exit portal 78780261 (Portal to Prof. Ruggan):**
+- Placed in the annex at cell 0x01060179 (29.79, -30.03, 0.005), variation 2.
+- Destination: 0xDB3B0019 (80.28, 18.18, 30.70), beside Prof. Ruggan and a few steps from the motel portal.
+- SQL: `Database/Updates/World/2026-09-22-05-Annex-Exit-Portal.sql`; it is in the prod bundle.
 
 Prof. Ruggan is older custom content that is not in this repo.
 
@@ -505,7 +510,7 @@ Status values: 0 pending, 1 approved, 2 denied.
 | Variation | **2**. A private copy holding only annex content, because variations do not inherit base placements. |
 | Breeding setting | `pet_breeding_allowed_landblock` 262, `pet_breeding_allowed_variant` 2 (stored in the shard) |
 | Entry | Portal 98760388 in Lin, arriving at the Drop (cell 0x01060186) |
-| Exit | none (recall) |
+| Exit | Portal 78780261 at cell 0x01060179, back to Prof. Ruggan |
 | Floor | One floor, z roughly 0. Placements span x 34..74, y -33..-6. |
 
 **Same landcell:** breeding needs both **pets** in the same landcell. The whole landblock is the area,

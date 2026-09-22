@@ -417,7 +417,7 @@ The mutation odds at defaults and the effect of incense:
   but a pairing is always intimate, and two strangers down a corridor can't be paired by accident.
 - **Entry and exit:**
   - **Entry:** portal 98760388 beside Prof. Ruggan in Lin lands at the Drop (cell 0x01060186).
-  - **Exit:** none. Players recall (open question Q4).
+  - **Exit:** portal 78780261 at cell 0x01060179 returns players beside Prof. Ruggan (0xDB3B0019).
 - **Healing:** "in the motel" also enables own-pet healing (`CombatPet.IsInMotelOrEncounter`), so
   players can support their pets during a spirit fight.
 
@@ -547,7 +547,7 @@ prod copy.
 | Q1 | Is `pet_bond_enabled` on in prod? **Yes** (from the prod dump). |
 | Q2 | Should the guardian be on? **Yes.** |
 | Q3 | Mutation decay? **0.1**, written by the shard script. |
-| Q4 | Add an exit portal to the annex? **Yes**, back to Prof. Ruggan (in progress). |
+| Q4 | Add an exit portal to the annex? **Done:** 78780261, back to Prof. Ruggan. |
 | Q5 | Confirm the portal arrival point in game. **Confirmed**; facing turned toward Fenwick. |
 | Q6 | Does prod have Prof. Ruggan at 0xDB3B? **Yes.** |
 | Q7 | The placement leftovers: a duplicate Shreth, and two unplaced pets. **Intentional.** |
@@ -567,7 +567,6 @@ prod copy.
   openers.
 - **78780256 Ancestral Gene Re-roller** (reserved).
 - **78780205 Ruggan's Notes and 78780206 the knocked-over sign** (readable items).
-- **An exit portal** back to Prof. Ruggan.
 - **Restrict breeding to one room** by setting the area to a single verified cell.
 
 ---

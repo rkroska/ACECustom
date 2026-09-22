@@ -3,8 +3,8 @@
    Exported 2026-09-21 from the test server by deploy/export_annex_bundle.py.
    Re-run that script on test to refresh this file; never hand-edit it.
 
-   CREATES 33 weenies, copied row for row from test:
-     78780200-78780299  (32)
+   CREATES 34 weenies, copied row for row from test:
+     78780200-78780299  (33)
      98760388  (1)
    Left out as test-only: Baby Candidate B (78780234), Baby Candidate C (78780235), Scene Tester (78780241).
    PLACES them: see the PLACEMENTS section. Guids are fresh on the target, never copied from test.
@@ -28,7 +28,7 @@ START TRANSACTION;
 
 /* ---- WEENIES ---------------------------------------------------------------------- */
 -- Clean slate: the weenie_properties_* FKs cascade, so this clears every property row too.
-DELETE FROM `weenie` WHERE `class_Id` IN (78780200,78780201,78780202,78780203,78780204,78780210,78780211,78780212,78780213,78780214,78780215,78780220,78780221,78780222,78780223,78780224,78780225,78780230,78780231,78780232,78780233,78780240,78780250,78780251,78780252,78780253,78780254,78780255,78780257,78780258,78780259,78780260,98760388);
+DELETE FROM `weenie` WHERE `class_Id` IN (78780200,78780201,78780202,78780203,78780204,78780210,78780211,78780212,78780213,78780214,78780215,78780220,78780221,78780222,78780223,78780224,78780225,78780230,78780231,78780232,78780233,78780240,78780250,78780251,78780252,78780253,78780254,78780255,78780257,78780258,78780259,78780260,78780261,98760388);
 
 -- 78780200  Fenwick, Kennel Intern
 INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (78780200, 'annex-fenwick', 10, NOW());
@@ -3021,6 +3021,34 @@ INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
   (78780260, 15, 'A filled pet tailoring kit.'),
   (78780260, 16, 'A filled pet tailoring kit.');
 
+-- 78780261  Portal to Prof. Ruggan
+INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (78780261, 'annex_exit_portal', 7, NOW());
+INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
+  (78780261, 1, True),
+  (78780261, 11, False),
+  (78780261, 12, True),
+  (78780261, 13, True),
+  (78780261, 15, True),
+  (78780261, 63, True);
+INSERT INTO `weenie_properties_d_i_d` (`object_Id`,`type`,`value`) VALUES
+  (78780261, 1, 33554436),
+  (78780261, 2, 150994947),
+  (78780261, 8, 100667499);
+INSERT INTO `weenie_properties_float` (`object_Id`,`type`,`value`) VALUES
+  (78780261, 54, -0.1);
+INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
+  (78780261, 1, 65536),
+  (78780261, 16, 32),
+  (78780261, 93, 3084),
+  (78780261, 111, 1),
+  (78780261, 133, 4),
+  (78780261, 150, 3);
+INSERT INTO `weenie_properties_position` (`object_Id`,`position_Type`,`obj_Cell_Id`,`origin_X`,`origin_Y`,`origin_Z`,`angles_W`,`angles_X`,`angles_Y`,`angles_Z`,`variation_Id`) VALUES
+  (78780261, 2, 3678076953, 80.2836, 18.1845, 30.6953, -0.967966, 0.0, 0.0, -0.251082, NULL);
+INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
+  (78780261, 1, 'Portal to Prof. Ruggan'),
+  (78780261, 14, 'Double click this portal to return to Prof. Ruggan.');
+
 -- 98760388  Portal to Seedy Motel
 INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (98760388, 'seedy_motel_portal', 7, NOW());
 INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
@@ -3044,15 +3072,15 @@ INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
   (98760388, 133, 4),
   (98760388, 150, 3);
 INSERT INTO `weenie_properties_position` (`object_Id`,`position_Type`,`obj_Cell_Id`,`origin_X`,`origin_Y`,`origin_Z`,`angles_W`,`angles_X`,`angles_Y`,`angles_Z`,`variation_Id`) VALUES
-  (98760388, 2, 17170822, 35.1771, -19.7579, 0.005, 0.698934, 0.0, 0.0, -0.715186, 2);
+  (98760388, 2, 17170822, 35.98, -20.044, 0.005, 0.710829, 0.0, 0.0, -0.703365, 2);
 INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
   (98760388, 1, 'Portal to Seedy Motel'),
   (98760388, 14, 'Double click this portal to travel to the Seedy Motel.');
 
 /* ---- PLACEMENTS ------------------------------------------------------------------- */
 
--- The annex: 21 placement(s).
-DELETE FROM `landblock_instance` WHERE `landblock` = 0x0106 AND `variation_Id` = 2 AND `weenie_Class_Id` BETWEEN 78780200 AND 78780249;
+-- The annex: 22 placement(s).
+DELETE FROM `landblock_instance` WHERE `landblock` = 0x0106 AND `variation_Id` = 2 AND `weenie_Class_Id` BETWEEN 78780200 AND 78780299;
 SET @g = (SELECT COALESCE(MAX(`guid`), 0x70105FFF) FROM `landblock_instance` WHERE `guid` BETWEEN 0x70106000 AND 0x70106FFF);
 INSERT INTO `landblock_instance` (`guid`,`weenie_Class_Id`,`obj_Cell_Id`,`origin_X`,`origin_Y`,`origin_Z`,
   `angles_W`,`angles_X`,`angles_Y`,`angles_Z`,`is_Link_Child`,`last_Modified`,`variation_Id`) VALUES
@@ -3076,17 +3104,18 @@ INSERT INTO `landblock_instance` (`guid`,`weenie_Class_Id`,`obj_Cell_Id`,`origin
   (@g + 18, 78780201, 0x01060187, 43.0561, -32.6733, 0.00500005, 0.976197, 0.0, 0.0, 0.216888, False, NOW(), 2), -- Ivo, Ruggan's Quartermaster
   (@g + 19, 78780240, 0x01060178, 33.6161, -20.5616, 0.000174951, -0.727399, 0.0, 0.0, -0.686215, False, NOW(), 2), -- Annex Scene Director
   (@g + 20, 78780225, 0x0106018F, 45.0388, -24.5199, 0.00500041, -0.999689, 0.0, 0.0, -0.0249216, False, NOW(), 2), -- The Sawato Situation
-  (@g + 21, 78780215, 0x0106018F, 45.1932, -15.4979, 0.00500041, -0.0127857, 0.0, 0.0, 0.999918, False, NOW(), 2); -- Certified Sawato Bandit, Reformed
+  (@g + 21, 78780215, 0x0106018F, 45.1932, -15.4979, 0.00500041, -0.0127857, 0.0, 0.0, 0.999918, False, NOW(), 2), -- Certified Sawato Bandit, Reformed
+  (@g + 22, 78780261, 0x01060179, 29.7858, -30.0347, 0.005, -0.999403, 0.0, 0.0, -0.03454, False, NOW(), 2); -- Portal to Prof. Ruggan
 
 COMMIT;
 SET SQL_SAFE_UPDATES = @__old_safe_updates;
 
-/* V1. Expect 33. */
-SELECT COUNT(*) AS bundle_weenies FROM `weenie` WHERE `class_Id` IN (78780200,78780201,78780202,78780203,78780204,78780210,78780211,78780212,78780213,78780214,78780215,78780220,78780221,78780222,78780223,78780224,78780225,78780230,78780231,78780232,78780233,78780240,78780250,78780251,78780252,78780253,78780254,78780255,78780257,78780258,78780259,78780260,98760388);
+/* V1. Expect 34. */
+SELECT COUNT(*) AS bundle_weenies FROM `weenie` WHERE `class_Id` IN (78780200,78780201,78780202,78780203,78780204,78780210,78780211,78780212,78780213,78780214,78780215,78780220,78780221,78780222,78780223,78780224,78780225,78780230,78780231,78780232,78780233,78780240,78780250,78780251,78780252,78780253,78780254,78780255,78780257,78780258,78780259,78780260,78780261,98760388);
 
-/* V2. Expect 21. */
+/* V2. Expect 22. */
 SELECT COUNT(*) AS bundle_placements FROM `landblock_instance` WHERE `landblock` = 0x0106 AND `variation_Id` = 2
-  AND `weenie_Class_Id` BETWEEN 78780200 AND 78780249;
+  AND `weenie_Class_Id` BETWEEN 78780200 AND 78780299;
 
 /* V2b. The motel portal must still be placed (this bundle does not move it). Expect at least one row. */
 SELECT HEX(`guid`) AS guid, HEX(`obj_Cell_Id`) AS cell, `origin_X`, `origin_Y`, `origin_Z` FROM `landblock_instance`

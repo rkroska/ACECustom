@@ -39,7 +39,7 @@ WEENIE_RANGES = [(78780200, 78780299), (98760388, 98760388)]
 TEST_ONLY = {78780241: "Scene Tester", 78780234: "Baby Candidate B", 78780235: "Baby Candidate C"}
 # (label, landblock, variation or None, wcid filter as SQL, delete scope as SQL)
 PLACEMENT_GROUPS = [
-    ("the annex", 0x0106, 2, "BETWEEN 78780200 AND 78780249"),
+    ("the annex", 0x0106, 2, "BETWEEN 78780200 AND 78780299"),  # the cast and the exit portal 78780261
 ]
 # The motel portal's PLACEMENT is deliberately not exported: prod already has 98760388 placed beside
 # its own Prof. Ruggan (0xDB3B, a different spot than on test). The bundle replaces the portal weenie
@@ -191,7 +191,7 @@ def main():
     w("")
     w("/* V2. Expect %d. */" % total_place)
     w("SELECT COUNT(*) AS bundle_placements FROM `landblock_instance` WHERE `landblock` = 0x0106 AND `variation_Id` = 2")
-    w("  AND `weenie_Class_Id` BETWEEN 78780200 AND 78780249;")
+    w("  AND `weenie_Class_Id` BETWEEN 78780200 AND 78780299;")
     w("")
     w("/* V2b. The motel portal must still be placed (this bundle does not move it). Expect at least one row. */")
     w("SELECT HEX(`guid`) AS guid, HEX(`obj_Cell_Id`) AS cell, `origin_X`, `origin_Y`, `origin_Z` FROM `landblock_instance`")

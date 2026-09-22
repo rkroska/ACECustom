@@ -52,7 +52,8 @@ south-west of where the Lin portal drops you. It is at about **54.7S, 73.5E**.
 It takes you to **Ruggan's Annex**, the back room of the motel where the Professor breeds the
 essences he was only supposed to catalogue. You arrive at **the Drop**, next to Fenwick.
 
-**There is no exit portal inside.** Leave by recall: lifestone, house, allegiance, or a portal tie.
+**To leave,** use the **Portal to Prof. Ruggan** in the annex. It takes you back beside him, a few
+steps from the motel portal. Recalling works too.
 
 Only the annex counts. Dancing anywhere else with a combat pet out just tells you:
 
@@ -498,4 +499,4 @@ Each dancer needs their own summoned pet, so it takes two characters logged in t
 Heal your pet, or let the 90 seconds run out. You still get the baby either way.
 
 **How do I get out?**
-Recall. There is no exit portal in the annex.
+Use the **Portal to Prof. Ruggan** in the annex, or recall.
