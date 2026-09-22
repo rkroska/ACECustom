@@ -535,7 +535,16 @@ namespace ACE.Server.WorldObjects
                     return false;
                 }
 
-                totalPrice += GetSellCost(item);
+                // priced wide, so a single item past uint is refused instead of relying on how the cast rounds it
+                var cost = GetSellCostWide(item.Value, item.ItemType);
+                if (cost > uint.MaxValue)
+                {
+                    player.SendTransientError("That purchase is too large.");
+                    CleanupCreatedItems(defaultItems);
+                    return false;
+                }
+
+                totalPrice += cost;
             }
 
             if (totalPrice > uint.MaxValue)
@@ -591,13 +600,20 @@ namespace ACE.Server.WorldObjects
         public uint GetSellCost(Weenie item) => GetSellCost(item.GetValue(), item.GetItemType());
 
         private uint GetSellCost(int? value, ItemType? itemType)
+            => (uint)Math.Min(GetSellCostWide(value, itemType), uint.MaxValue);
+
+        /// <summary>
+        /// The sell price without narrowing to uint. Same float arithmetic as before, so normal prices are
+        /// unchanged; a negative Value still prices at 1.
+        /// </summary>
+        private long GetSellCostWide(int? value, ItemType? itemType)
         {
             var sellRate = SellPrice ?? 1.0;
             if (itemType == ItemType.PromissoryNote)
                 sellRate = 1.15;
 
-            var cost = Math.Max(1, (uint)Math.Ceiling(((float)sellRate * (value ?? 0)) - 0.1));
-            return cost;
+            var raw = Math.Ceiling(((float)sellRate * (value ?? 0)) - 0.1);
+            return Math.Max(1L, (long)raw);
         }
 
         public int GetBuyCost(WorldObject item) => GetBuyCost(item.Value, item.ItemType);
