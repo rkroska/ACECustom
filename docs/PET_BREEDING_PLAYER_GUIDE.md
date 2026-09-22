@@ -1,219 +1,501 @@
 # Pet Breeding - Player Guide
 
-You can breed your combat pets. A litter needs two players, one male and one female pet, and a dance.
-The baby inherits from both parents, can mutate into something rarer than either, and has to be
-raised before it comes into its own.
+Your combat pets can have babies. Bring a partner, bring one male and one female essence, go to the
+Seedy Motel, and dance. The baby takes after both parents, sometimes comes out stronger and in a
+colour nobody has seen before, and has to be raised before it is any use in a fight.
+
+This guide covers everything a player needs: getting there, what you need, the ritual, the spirit
+fight, raising the baby, the shop, and what every message means.
 
 ---
 
-## Before you start
+## Contents
 
-Look at the ID panel of any combat pet essence. Near the bottom you will see lines like:
+1. [The short version](#1-the-short-version)
+2. [Getting to the Seedy Motel](#2-getting-to-the-seedy-motel)
+3. [Who is in there](#3-who-is-in-there)
+4. [Reading your essence](#4-reading-your-essence)
+5. [Can these two pets breed?](#5-can-these-two-pets-breed)
+6. [The ritual, step by step](#6-the-ritual-step-by-step)
+7. [The spirit fight](#7-the-spirit-fight)
+8. [The baby](#8-the-baby)
+9. [Raising a juvenile](#9-raising-a-juvenile)
+10. [Ivo's shop](#10-ivos-shop)
+11. [Changing your pet's look and name](#11-changing-your-pets-look-and-name)
+12. [Commands](#12-commands)
+13. [When it says no](#13-when-it-says-no)
+14. [Tips](#14-tips)
+15. [Questions](#15-questions)
+
+---
+
+## 1. The short version
+
+1. Take the **Portal to Seedy Motel** next to Prof. Ruggan in Lin.
+2. You and your partner each summon a combat pet: one **male**, one **female**, both **tier 100 or
+   higher**, both **bond level 100 or higher**, neither shiny, neutered or still growing.
+3. Stand your two pets **right next to each other**.
+4. Both of you **dance** within **5 seconds** of each other: type `*dance*` or `@dance`.
+5. The baby goes to the **female's owner**. It is born small. Kill **300** creatures at its tier or
+   higher with it out and it grows up.
+
+About one litter in twenty comes out **mutated**: a permanent stat bonus and a brand new colour. When
+that happens, the baby's spirit rises and your two pets have **90 seconds** to beat it for a bonus.
+
+---
+
+## 2. Getting to the Seedy Motel
+
+The **Portal to Seedy Motel** stands in **Lin**, right beside **Prof. Ruggan**, a short walk
+south-west of where the Lin portal drops you. It is at about **54.7S, 73.5E**.
+
+It takes you to **Ruggan's Annex**, the back room of the motel where the Professor breeds the
+essences he was only supposed to catalogue. You arrive at **the Drop**, next to Fenwick.
+
+**There is no exit portal inside.** Leave by recall: lifestone, house, allegiance, or a portal tie.
+
+Only the annex counts. Dancing anywhere else with a combat pet out just tells you:
+
+> You must be in the designated breeding area to perform the breeding ritual.
+
+---
+
+## 3. Who is in there
+
+**Fenwick, Kennel Intern** stands at the Drop. **Click him** for the whole tutorial, fourteen lines, a
+few seconds apart. He has explained it four hundred times and it shows. His numbers are right.
+
+**Ivo, Ruggan's Quartermaster** sells the kits and breeding supplies. See [Ivo's shop](#10-ivos-shop).
+
+Everyone else is for fun, and worth a click:
+
+- **The Registry**: Bexley, Keeper of the Registry, and his plain, correctly coloured, fully
+  documented pets, including a Certified Sawato Bandit.
+- **The Ward**: Splotch and the mutants, loud, proud and rarely the same colour for long. Some of
+  them change colour about once a minute.
+- **DJ Skulk**, the drudge on the dance floor, who will tell you to dance. He is right.
+- **Gary.** He is just here for the music.
+- **Mubb, Gorta and their baby, Mubb Junior**, a drudge family with a question about the father.
+- **Denton**, who is sure mutations are contagious.
+- **Mrs. Ruggan**, who would like to know where her husband is.
+
+Stick around a few minutes and they start arguing with each other.
+
+---
+
+## 4. Reading your essence
+
+Appraise any combat pet essence. Near the bottom of the ID panel you will see its breeding lines.
+
+### Sex
+
+Every combat essence is male or female, fixed forever. It is effectively a coin flip when the
+essence first exists. A coloured square behind the icon also shows the sex at a glance.
 
 ```
+Sex: Male (10/10 breeding charges today)
 Sex: Male (9/10 breeding charges today) - refills in 16h 30m
 Sex: Female (ready to breed)
 Sex: Female (recovering - ready to breed in 3h 12m)
+Sex: Female (neutered - cannot breed)
+Sex: Male (shiny - cannot breed)
+Sex: Female (newborn - cannot breed yet)
 ```
 
-- **Sex** is fixed for each essence. It is a coin flip when the essence is created. Two males or two
-  females cannot breed.
-- **Males** are studs. Each holds ten breeding charges. The whole count refills 24 hours after its
-  last refill, not 24 hours after each breed; the ID panel shows when. An essence that has never been
-  checked starts its clock the first time you look at it.
-- **Females** are dams. After a litter she rests for four hours before she can breed again.
-- **The baby always goes to the female's owner.** If you are lending a stud, agree on your cut first.
-  Her owner needs a free slot in the main pack and room under the burden limit, or the breed is
-  refused before anything is spent.
+- **Males (studs)** hold **10 breeding charges**. Each litter uses one. The whole count refills **24
+  hours after the last refill**, not 24 hours after each breed, and the panel shows when. An essence
+  nobody has looked at yet starts its clock the first time it is checked.
+- **Females (dams)** rest **4 hours** after a litter. This is rest, not pregnancy; the baby arrives
+  straight away.
 
-Some essences cannot breed, and their ID panel says so: shiny essences, neutered essences, and young
-that have not grown up yet.
+### Bred essences
 
-Two more gates are checked at the dance and refused in red text if they fail:
-
-- **Tier 100 or higher.** Pet essences come in tiers (50, 80, 100, 125, 150, 180, 200, 250, 300).
-  Tier 50 and 80 essences cannot breed.
-- **Bond level 100 or higher on both parents.** Bond grows from kills while the essence is bonded
-  to you, and only while the server has pet bonding switched on. An essence that has never bonded
-  counts as level 1. A bred baby starts at bond 1, so raising it to breed means growing it to an
-  adult *and* bonding it to 100.
-
----
-
-## The ritual
-
-1. Both players go to the **Seedy Motel**.
-2. Each summons their pet. The two pets must stand in the **same room**.
-3. Both players perform the **dance emote** (`*dance*`, or `@dance`) within five seconds of each
-   other.
-
-You will see "The mating ritual has begun between <pet> and <pet>..." and moments later the birth
-message. The baby essence appears in the female owner's pack. Both parents are dismissed afterwards;
-resummon them to breed again.
-
-If you dance and see "Your pet performs the courtship dance, waiting for a partner...", the server
-could not find a partner: nobody in the room danced within five seconds with a pet standing in your
-pet's cell. If the pair was found but the breed was refused, the reason is in the red text.
-
-`@breed-debug` shows whether breeding is switched on, whether you are standing in the right place,
-your own pet's sex, charges or recovery time, and how many players with pets are near you. It does
-not check every rule, so read the refusal message first.
-
-If the birth happens while the female's owner is logged out or has filled every pack (only possible
-during a spirit fight), the baby is not dropped on the ground. It waits in her pack and is there at
-her next login.
-
----
-
-## What the baby inherits
-
-- **Species and look** come from one parent, chosen at random.
-- **Stats** come from both, line by line. For each line the baby takes the stronger parent's value
-  about 55% of the time and the weaker parent's the rest, so two strong parents make a strong baby
-  and the baby is never weaker than the weaker parent on any line.
-- **Mutations** travel with the line they belong to. A lineage that has been bred carefully for many
-  generations is visibly better than a fresh capture.
-- **Potency** is inherited the same way as a stat line. An essence with no potency counts as zero.
-
----
-
-## Mutations
-
-Two independent rolls happen on every breed:
-
-- About one breed in twenty, one stat gains a permanent boost: damage, damage resist, crit rating,
-  or vitality (max health).
-- About one breed in thirty-three, potency gains a permanent boost. Above 1,000 potency the gain is
-  a quarter of the usual amount.
-
-Both can land on the same breed. Whenever either lands, the baby also gets a **new colour**, rolled
-from every creature palette in the game. It can be anything. Some are beautiful, some are odd, all
-are rare. The ID panel lists every mutation the essence carries under "Genetic Mutations".
-
-There is no limit to how many mutations a lineage can accumulate.
-
-### The spirit
-
-This part of the ritual is switched off unless the server enables it. When it is on and a mutation
-lands, something stirs before the baby is born. A **spirit of the offspring** rises in front of the
-two parents, wearing the exact look and colour the baby will have. Only the two parent pets can harm
-it, and it will only fight them. It cannot hurt you. You can heal your own pet with kits or spells
-while it is in the motel or fighting the spirit.
-
-Bring it down together and the baby is born with an extra **Awakened Blessing**: one more mutation
-on top of whatever the breed rolled. If the fight runs long, the spirit fades and the birth completes
-without the blessing; you never lose a litter to the spirit. If one of the parents dies, the same
-thing happens: the spirit dissolves and the baby is born without the blessing.
-
----
-
-## Consumables
-
-Ivo, Ruggan's Quartermaster, in the motel sells four things that affect breeding or growth, and
-one that changes a pet's colour. Each is used on a combat pet essence in your pack, and has to go on
-before the event it affects - the breed, the spirit, or the kills that grow a young pet. Each entry
-below says when the item is used up.
-
-- **Courtship Incense** (Lesser +2.5%, Refined +5%, Exquisite +10%). Adds to the chance of a stat
-  mutation on the next breed. Both parents can be primed and the bonuses add, up to +50%. A weaker
-  incense will not replace a stronger one already on the essence. It does not change the potency
-  roll, and it is spent by any breed that goes through, mutation or not.
-- **Chromatic Catalyst.** If the next breed rolls a new colour, it is drawn from a pool of vivid,
-  saturated palettes instead of the whole range. It is only used up when a colour actually rolls, so
-  it stays on the essence until then.
-- **Nurturing Draught.** Give to a young essence and every qualifying kill counts double until it
-  reaches adulthood. Adults cannot take it.
-- **Offering of Subjugation.** Weakens the next spirit: it hits half as hard and falls much faster.
-  It is only used up when a spirit actually rises, and the vendor item is refused outright while
-  spirits are switched off on the server.
-- **Mutagenic Serum.** Use it on any combat pet essence and its colour is re-rolled on the spot from
-  the same pool a mutation draws on. Colour only: nothing else about the pet changes. Summon it (or
-  re-summon it) to see the new look.
-
----
-
-## Raising young
-
-A bred essence is born a **Newborn**: half the size, half the strength, and it cannot breed. Its ID
-panel shows its growth:
+Essences born from breeding also show:
 
 ```
-Growth: Newborn 1/5 - 60 kills to Whelp, 300 to Adult
+Growth: Juvenile 3/5 - 45 kills to Adolescent, 165 to Adult
+Bond: Unbound (imprints on first summon)
 ```
 
-It grows by hunting. A kill counts when:
+and, once they have mutations:
 
-- the creature is **at or above your pet's tier**, and
-- your pet did a real share of the damage, at least a tenth.
-
-Every sixty kills it grows a stage: Newborn, Whelp, Juvenile, Adolescent, Young Adult. Each stage adds
-a tenth of adult size and strength (health, damage and ratings), so a Young Adult fights at 90%. Your
-pet grows before your eyes, its name changes, and it is healed to full. At three hundred kills it
-becomes an **Adult**: full size, full strength, and able to breed once its bond reaches 100. Anyone
-nearby sees it happen.
-
-You do not need to resummon to grow. If your pet is out when it crosses a stage, it changes on the spot.
+```
+Total Mutations: 2
+--- Genetic Mutations ---
+* Damage:        +10 [1 Muts]
+* Vitality:      +50 HP [1 Muts]
+```
 
 ---
 
-## Binding
+## 5. Can these two pets breed?
 
-A bred essence belongs to the **first character who summons it**. From that moment it is attuned:
-it cannot be traded or dropped, and no other character can use it. Its ID panel shows who it is bound to.
+Check all of these before you travel.
 
-This means:
+| Requirement | Detail |
+|---|---|
+| **One male, one female** | Two males or two females are refused. |
+| **Tier 100 or higher** | Essences come in tiers 50, 80, 100, 125, 150, 180, 200, 250, 300. Tiers 50 and 80 cannot breed. |
+| **Bond 100 or higher, both parents** | Bond grows from kills. An essence that never bonded counts as 1. |
+| **Not shiny** | Shiny is a capture-only trait. Shiny essences never breed. |
+| **Not neutered** | A Pet Neutering Kit is permanent. |
+| **Fully grown** | A bred pet cannot breed until it is an Adult. |
+| **Stud has a charge left** | See the sex line. |
+| **Dam has rested** | See the sex line. |
+| **Both essences in your packs** | Don't put them in a chest or drop them mid-ritual. |
+| **Room for the baby** | The dam's owner needs a **free slot in the main pack** and enough **burden** room. |
+| **Nobody trading** | Close the trade window first. |
 
-- If you want to sell or gift a baby, do it **before anyone summons it**. A newborn straight from the
-  litter is tradeable, including one that was tucked into your pack while you were offline.
-- You cannot buy a finished pet. Whoever raises it, keeps it.
-- Only bred essences imprint this way. A captured essence keeps whatever trade rules it already had.
-
----
-
-## Naming
-
-`@pet-name <name>` asks for a new name for your summoned pet (or the essence selected in your pack).
-Names are 3 to 32 characters of letters, numbers, spaces, apostrophes and hyphens. Staff review every
-request; you get a chat message when it is submitted, and the pet is renamed when it is approved. One
-request per minute, and a new request replaces any you still have waiting. If the essence changes
-hands, is renamed or is destroyed before review, the request is denied automatically.
-
----
-
-## Kits
-
-Ivo sells two tools for essences.
-
-- **Pet Neutering Kit.** Use on a pet essence to make it permanently unable to breed. Cannot be
-  undone.
-- **Pet Tailoring Kit.** Use on a combat essence to extract its entire look, model, colour, size and
-  all, into a filled kit. The source essence is destroyed. Use the filled kit on another combat essence
-  and it takes on that look while keeping its own stats, potency, bond and lineage. Dismiss the pet
-  first. A shiny look makes the new essence shiny, which means it can no longer breed.
+If anything is wrong, the breed is refused **before** anything is spent: no charge used, no rest
+timer started, no supplies used up.
 
 ---
 
-## Quick answers
+## 6. The ritual, step by step
 
-**My stud shows 10/10 after breeding.** Check you are looking at the essence that was actually
-summoned. Identical essences are easy to mix up.
+1. **Both of you** take the portal into the annex.
+2. **Each of you summons one combat pet.**
+3. **Put the two pets right next to each other.** The game checks that both pets are in the **same
+   spot** (the same small area of floor), not just the same building. Standing them side by side on
+   the dance floor always works.
+4. **Both of you dance within 5 seconds of each other.** Type `*dance*`, or use `@dance`. The first
+   dancer sees:
 
-**I danced and nothing happened.** Same room, both pets out, both dances within five seconds, one male
-and one female, in the motel, both tier 100+ and bond 100+. `@breed-debug` confirms the place and
-your own pet; the refusal text in red names anything else.
+   > [Breeding] Your pet performs the courtship dance, waiting for a partner... (Your partner must
+   > have their pet summoned in the same room and \*dance\* within 5 seconds).
 
-**Breeding cancelled: your main pack has no free slot.** The baby needs a slot in the female owner's
-main pack, not a side pack. Free one and dance again.
+   That is normal. It means you are waiting for your partner.
+5. When the second dancer dances, the game checks everything in section 5. If all is well you both
+   see:
 
-**The colour did not change.** Only mutations change colour, and mutations are rare. A normal litter
-looks like its donor parent. A potency mutation changes colour too.
+   > The mating ritual has begun between (pet) and (pet)...
 
-**Can I breed a shiny?** No. Shiny is a capture-only trait.
+   The stud's owner sees how many charges are left:
 
-**I gave someone a baby and now they cannot use it.** It was summoned before the trade and is bound to
-you. Trade newborns unsummoned.
+   > [Breeding] (stud) spent a breeding charge: 9/10 left today.
 
-**Does growth count when my pet is not out?** No. It must be summoned and fighting.
+6. **No mutation:** the baby is born immediately.
+   **Mutation:** the baby's spirit rises first. See [the spirit fight](#7-the-spirit-fight).
+7. The baby appears in the **dam's owner's** pack:
 
-**The Offering was not consumed.** Spirits are off on this server, or no mutation rolled, so no spirit
-rose. It stays on the essence for next time.
+   > Congratulations! A baby pet has been born: (name)! Placed in (owner)'s inventory.
+
+8. **Both parent pets are sent home** a couple of seconds later. To breed again, summon again.
+
+If several pets are dancing at once, the game pairs you with the closest pet that can actually
+breed with yours.
+
+---
+
+## 7. The spirit fight
+
+When a litter mutates, this happens first:
+
+> The union stirs something... Spirit of (name) rises before (pet) and (pet)! Only the two parents
+> can harm it. They have 90s to bring it down together.
+
+- The spirit wears the baby's exact look and new colour, and is see-through.
+- **Only the two parent pets can hurt it.** You can't, other players can't, and other pets can't. If
+  one of your parents is dismissed, re-summoning a pet of yours brings it back into the fight.
+- **It only attacks the parent pets, never players.** Each hit takes a slice of the defending pet's
+  health, so keep an eye on them.
+- **You can heal your own pet** in the annex and during the fight, with healing kits or beneficial
+  spells.
+- It has as much health as **both parents put together**, and every hit your pets land counts, but a
+  single hit can take at most a tenth of its health.
+
+### How it ends
+
+| Outcome | What happens |
+|---|---|
+| **Your pets kill it** | > Spirit of (name) yields to its parents and dissolves into light... Then the **Awakened Blessing**: one extra mutation on the baby, on top of what it already rolled. |
+| **90 seconds pass** | > [Breeding] The spectral guardian dissolves back into the ether... The baby is born normally, without the blessing. |
+| **A parent pet dies** | Same as a timeout. |
+
+**You never lose the baby by losing the fight.** The worst outcome is missing the bonus.
+
+> **Known issue:** if the **server restarts during a spirit fight**, that litter is lost, and the
+> charge and rest timer are already spent. Avoid breeding right before a scheduled restart.
+
+**Offering of Subjugation** (from Ivo) makes the next spirit much weaker. See [the shop](#10-ivos-shop).
+
+---
+
+## 8. The baby
+
+### Who gets it
+
+**Always the female's owner.** If you are lending a stud or borrowing a dam, **settle the deal
+before you dance**. The game will not.
+
+If the dam's owner logs out or fills their packs during a spirit fight, the baby is tucked away safely
+and waiting in their pack at next login:
+
+> A baby pet has been born: (name)! (owner)'s packs are full, so the baby has been tucked away and
+> will be in (owner)'s pack at their next login.
+
+A baby is never dropped on the ground.
+
+### What it is
+
+- **Species, look and name:** from one parent, **50/50**. The whole look comes with it.
+- **Sex:** its own coin flip. Two females can produce a male.
+- **Shiny:** never inherited.
+- **Bond:** starts at 1.
+- **Growth:** born a **Newborn** juvenile. See [raising a juvenile](#9-raising-a-juvenile).
+
+### Stats
+
+Each stat line is inherited **separately**. For each line the baby takes the **better parent's value
+55%** of the time and the **other parent's 45%** of the time, so every line is always one of the two
+parents' values.
+
+The lines are Damage, Damage Resist, Crit, Crit Damage, Crit Resist, Crit Damage Resist, Vitality and
+Potency. A parent's mutations on a line travel **together with** that line: inherit that parent's
+Damage, and you inherit its Damage mutations too.
+
+### Mutations
+
+| Roll | Chance | What you get |
+|---|---|---|
+| **Stat mutation** | **5%** per litter, plus any Courtship Incense | One random line: **+10 Damage Rating**, **+10 Damage Resist Rating**, **+5 Crit Rating**, or **+50 Vitality** (max health) |
+| **Potency mutation** | **3%** per litter, rolled separately | **+25 Potency**. A quarter of that once the essence already has 1,000 or more. |
+
+- Mutations are **permanent** and **pass down** to future babies.
+- Damage and Damage Resist mutations also add some Crit Damage, Crit Resist and Crit Damage Resist
+  when the pet is summoned.
+- There is **no limit** on how many a line can stack.
+
+When a litter mutates, the announcement says so:
+
+> ... [GENETIC MUTATION] Gained +10 Damage Rating & Rare DAT Palette unlocked!
+
+### New colours
+
+A mutated baby always gets a **brand new colour**, rolled from a huge pool of palettes that can come
+out on any creature. A litter that doesn't mutate keeps the parent's colours.
+
+- **Chromatic Catalyst** (from Ivo) makes that roll come from a smaller pool of **vivid,
+  high-saturation** colours.
+- Some captured essences have body textures that cover most of the model, so a new colour barely
+  shows. The ID panel tells you when that is the case.
+
+---
+
+## 9. Raising a juvenile
+
+A bred baby is born small and weak and has to grow up.
+
+| Stage | Size and strength | Kills to get here |
+|---|---|---|
+| **Newborn** | 50% | 0 |
+| **Whelp** | 60% | 60 |
+| **Juvenile** | 70% | 120 |
+| **Adolescent** | 80% | 180 |
+| **Young Adult** | 90% | 240 |
+| **Adult** | 100% | 300 |
+
+Strength covers the pet's health, damage and all of its combat ratings.
+
+### What counts as a kill
+
+- The pet must be **summoned and fighting**.
+- It must have done **at least 10% of the creature's total health** in damage.
+- The creature must be **at or above the essence's tier** in level. A tier 150 baby needs level 150+
+  creatures.
+- Players, other pets and breeding spirits never count.
+
+### Growing up
+
+It happens on the spot. The pet heals to full and its name updates:
+
+> (pet) has grown into a Juvenile! Its body swells with new strength. (3/5)
+
+> (pet) has reached adulthood! It stands at its full size, fights at full strength, and can now
+> breed.
+
+While it is young, its summoned name shows its stage, for example "Anna's Whelp Drudge Skulker".
+
+A **Nurturing Draught** from Ivo makes every qualifying kill count double until adulthood.
+
+### Imprinting: the first summon matters
+
+A bred essence **belongs to the first character who summons it**:
+
+> (pet) has imprinted on you. It is now bound to this character and cannot be traded or dropped.
+
+**Sell or trade a baby before anyone summons it.** After that it is yours for good. The ID panel shows
+`Bond: Unbound (imprints on first summon)` until then.
+
+To **breed** a bred pet later, it has to be an **Adult** and reach **bond 100**. Bond grows on the
+same qualifying kills.
+
+---
+
+## 10. Ivo's shop
+
+Ivo sells everything for **pyreals** (prices below also in MMDs, 1 MMD = 250,000 pyreals). Every item is used **on a pet essence in your pack**: use the
+item, then click the essence.
+
+| Item | Price | What it does |
+|---|---|---|
+| **Pet Neutering Kit** | 2,500,000 (10 MMD) | Permanently stops that essence from breeding. |
+| **Pet Tailoring Kit** | 125,000,000 (500 MMD) | Moves a look from one essence to another. [See below](#11-changing-your-pets-look-and-name). |
+| **Lesser Courtship Incense** | 1,250,000 (5 MMD) | +2.5% stat mutation chance on that essence's next litter. |
+| **Refined Courtship Incense** | 2,500,000 (10 MMD) | +5% on the next litter. |
+| **Exquisite Courtship Incense** | 5,000,000 (20 MMD) | +10% on the next litter. |
+| **Nurturing Draught** | 2,500,000 (10 MMD) | Juveniles only: every qualifying kill counts double until adulthood. |
+| **Chromatic Catalyst** | 2,500,000 (10 MMD) | If the next litter mutates, its new colour comes from the vivid pool. |
+| **Offering of Subjugation** | 2,500,000 (10 MMD) | The next spirit fight is much easier: the spirit hits half as hard, takes 2.5x damage, and each hit can take a quarter of its health instead of a tenth. |
+| **Mutagenic Serum** | 25,000,000 (100 MMD) | Re-rolls this essence's colour right now. Colour only; stats are untouched. |
+
+### How the supplies behave
+
+- **Courtship Incense:**
+  - Put it on either parent, or both. The two bonuses add up, so the most you can reach is 5% + 20% =
+    **25%**.
+  - It is used up by the **next litter that actually happens**, whether or not it mutates.
+  - A stronger incense **replaces** a weaker one, and the weaker one is wasted. An equal or weaker one
+    is refused.
+  - A neutered essence can't be anointed.
+- **Chromatic Catalyst:** only used up when a colour is actually rolled. If both parents carry one,
+  **both** are used.
+- **Offering of Subjugation:**
+  - Only used up when a spirit actually rises. If both parents carry one, both are used.
+  - It doesn't guarantee a win: the 90 seconds still apply.
+  - If the server has spirit fights turned off, it is refused and not used up.
+- **Nurturing Draught:** juveniles only, one at a time, and it wears off at adulthood.
+- **Mutagenic Serum:**
+  - Combat essences only.
+  - Refused, and **not used up**, if the essence's textures cover its body so a new colour would not
+    show.
+  - With the pet summoned nearby, it recolours on the spot. Otherwise the new colour shows at the next
+    summon.
+
+---
+
+## 11. Changing your pet's look and name
+
+### Pet Tailoring Kit
+
+1. **Extract:**
+   - Use an empty kit on a combat essence. **That essence is destroyed**, and you get "Pet Tailoring
+     Kit (creature)" holding its look.
+   - Dismiss the pet first, and make sure you have a free pack slot.
+2. **Apply:**
+   - Use the filled kit on another combat essence. It takes on that look.
+   - It **keeps** its stats, mutations, potency, bond, sex, growth and owner.
+   - The look carries its **damage type** with it, so the pet may start hitting with a different
+     element.
+   - A **shiny** look makes the essence shiny, and shiny essences can't breed. A normal look over a
+     shiny essence makes it breedable.
+
+### Renaming: `@pet-name`
+
+```
+@pet-name Sir Fluffington
+```
+
+- **Which essence:** your summoned combat pet's essence. If none is out, the combat essence you have
+  **selected** in your pack.
+- **Name rules:**
+  - 3 to 32 characters.
+  - Letters, numbers, spaces, apostrophes and hyphens only.
+  - Must be different from the current name.
+- **Review:** a staff member reviews the request on the web portal. A new request replaces your
+  pending one, and you can send one per minute.
+- **When it's approved:** you get a chat message if you are online. The new name sticks through
+  summons and tailoring.
+- **If it's denied, there is no message.** If the name hasn't changed after a while, ask staff.
+
+---
+
+## 12. Commands
+
+| Command | What it does |
+|---|---|
+| `@dance` | The courtship dance. Same as typing `*dance*`. |
+| `@breed-debug` | Checks where you are and what you have out. See below. |
+| `@pet-name <name>` | Asks staff to rename a pet. |
+| `@pets` | Your Pet Registry: essences you have shown to Professor Ruggan. |
+
+`@breed-debug` shows something like:
+
+```
+=== PET BREEDING DIAGNOSTICS ===
+Breeding System Enabled: True
+Your Location: Landblock=0x0106, Cell=0x01060186, Variant=2
+Allowed Target: whole landblock 0x106, Variant=2 => Location Match: VALID (Room OK)
+Your Active Pet: Anna's Drudge Skulker (WCID ...) | Device: Drudge Skulker Essence
+  Sex: Male (9/10 charges)
+Eligible breeding partners nearby: 1
+```
+
+**"Eligible partners nearby" is only a rough count** of players with a pet out near you. It doesn't
+check sex, tier, bond or whether your pets are standing together. The dance is the real test.
+
+---
+
+## 13. When it says no
+
+Most refusals **flash in the middle of your screen and are not written to chat**, so they are easy to
+miss. Watch the screen when you dance. If a refusal appears, **nothing was spent**.
+
+| Message | What to do |
+|---|---|
+| You must be in the designated breeding area to perform the breeding ritual. | Go to the annex. |
+| [Breeding] Your pet performs the courtship dance, waiting for a partner... | Normal: your partner hasn't danced yet, or their pet isn't right next to yours. Move the pets together and both dance again. |
+| Parent pets must be at least tier 100 to breed. | Use tier 100 or higher essences. |
+| Parent pets must have a bond level of at least 100 to breed. | Keep hunting with the pet until its bond reaches 100. |
+| Breeding cancelled: two males cannot breed. You need one male and one female. | Check the sex lines on the ID panels. |
+| (essence) is shiny and cannot breed. Shiny is a capture-only trait. | Shiny essences never breed. |
+| (essence) is still a whelp and cannot breed until it is an adult (75/300 kills). | Raise it to Adult first. |
+| Your pet is spayed/neutered and cannot breed. | Permanent. |
+| (essence) has exhausted its 10 daily breeding charges. Rest for 24h. | Shown to the stud's owner only. Wait for the refill. |
+| (essence) is still recovering from her last litter. Ready in 2h 15m. | Wait for the dam to rest. |
+| Breeding cancelled: your main pack has no free slot for the baby. Free a slot and dance again. | The dam's owner needs a free main-pack slot. |
+| Breeding cancelled: you are too encumbered to carry the baby. Lighten your load and dance again. | The dam's owner needs burden room. |
+| Summoning devices must remain in inventory to breed. | Keep both essences in your packs. |
+| [Breeding] You already have a mating guardian to defeat. Finish that ritual first. | Finish the spirit fight that's still going. |
+| This pet device is bonded to another character. | The essence imprinted on someone else. |
+
+---
+
+## 14. Tips
+
+- **Check both ID panels before you travel.** Sex, charges, rest time and growth are all there.
+- **Dam's owner: empty a main-pack slot first.** It's the most common surprise refusal.
+- **Pets touching, then dance.** "Same room" really means standing together.
+- **Lending a stud?** The baby goes to the dam's owner. Agree on the price first.
+- **Selling babies?** Sell before anyone summons them, or they imprint on the first summoner.
+- **Incense on both parents** stacks. Put the expensive one on whichever parent you're rolling with
+  most.
+- **Heal your pets during the spirit fight.** The blessing is only for a win.
+- **Don't breed right before a server restart**, in case a spirit rises.
+- **Mutations stack across generations.** Breed your best mutated pets together to build a line.
+
+---
+
+## 15. Questions
+
+**Does the colour mutation happen on its own?**
+No. A new colour only comes with a stat or potency mutation.
+
+**Can I pick the baby's species?**
+No. It comes from one parent or the other, 50/50.
+
+**Can I change my essence's sex?**
+No. It is fixed.
+
+**I danced and nothing happened.**
+Check the middle of your screen: the reason flashes there. If you saw the "waiting for a partner" line
+in chat, your partner didn't dance within 5 seconds, or your pets weren't standing together.
+
+**Can I breed with my own two pets on two characters?**
+Each dancer needs their own summoned pet, so it takes two characters logged in together, one per pet.
+
+**The spirit is winning.**
+Heal your pet, or let the 90 seconds run out. You still get the baby either way.
+
+**How do I get out?**
+Recall. There is no exit portal in the annex.

@@ -522,14 +522,27 @@ namespace ACE.Server.WorldObjects
             }
 
             // calculate price
-            uint totalPrice = 0;
+            // summed as long: a uint total wrapped past 4.29B and let a huge purchase through for a small amount
+            long totalPrice = 0;
 
             foreach (var item in purchaseItems)
             {
-                var cost = GetSellCost(item);
+                // a stack whose Value overflowed int (unit price x count) would otherwise be charged 1 pyreal
+                if ((item.Value ?? 0) < 0)
+                {
+                    player.SendTransientError("That purchase is too large.");
+                    CleanupCreatedItems(defaultItems);
+                    return false;
+                }
 
-                // detect rollover?
-                totalPrice += cost;
+                totalPrice += GetSellCost(item);
+            }
+
+            if (totalPrice > uint.MaxValue)
+            {
+                player.SendTransientError("That purchase is too large.");
+                CleanupCreatedItems(defaultItems);
+                return false;
             }
 
             // verify player has enough currency
@@ -568,7 +581,7 @@ namespace ACE.Server.WorldObjects
             // everything is verified at this point
 
             // send transaction to player for further processing
-            player.FinalizeBuyTransaction(this, defaultItems, uniqueItems, totalPrice);
+            player.FinalizeBuyTransaction(this, defaultItems, uniqueItems, (uint)totalPrice);
 
             return true;
         }

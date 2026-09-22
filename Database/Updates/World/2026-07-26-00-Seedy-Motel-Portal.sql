@@ -1,6 +1,7 @@
 -- Custom Seedy Motel Portal Setup
 -- WCID: 98760388
--- Landblock: 0x013A02AE, Variant: 3
+-- Destination: the annex, landblock 0x0106 variation 2, cell 0x01060186 ("The Drop", next to Fenwick).
+-- It used to be 0x013A02AE variation 3; the annex moved to 0x0106 variation 2 on 2026-09-21.
 
 -- 1. Define the Portal Weenie
 DELETE FROM `weenie` WHERE `class_Id` = 98760388;
@@ -41,10 +42,11 @@ INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES
 (98760388, 2, 150994947),   -- MotionTable
 (98760388, 8, 100667499);   -- Icon
 
--- 3. Portal Destination (Landblock 0x013A02AE, Variant 3)
+-- 3. Portal Destination: annex landblock 0x0106 variation 2, "The Drop" beside Fenwick.
+--    A spot in cell 0x01060186 that was stood on in game, facing into the room.
 DELETE FROM `weenie_properties_position` WHERE `object_Id` = 98760388;
-INSERT INTO `weenie_properties_position` (`object_Id`, `type`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, `variation_Id`)
-VALUES (98760388, 2, 20578990, 0, 0, 0, 1, 0, 0, 0, 3); -- Type 2 = Destination, Cell = 0x013A02AE (20578990)
+INSERT INTO `weenie_properties_position` (`object_Id`, `position_Type`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, `variation_Id`)
+VALUES (98760388, 2, 0x01060186, 35.1771, -19.7579, 0.005, 0.715186, 0, 0, 0.698934, 2); -- Type 2 = Destination
 
 -- 4. Spawn Portal next to Professor Ruggan in Lin
 --
@@ -92,6 +94,6 @@ WHERE s.`type` = 1 AND (s.`value` = 'Prof. Ruggan' OR s.`value` = 'Professor Rug
 ORDER BY l.`guid`
 LIMIT 1;
 
--- 5. Pet Neutering / Tailoring kits (98760399-98760401) are not defined here. The canonical patch is
+-- 5. Pet Neutering / Tailoring kits (78780258-78780260) are not defined here. The canonical patch is
 --    2026-09-09-01-Pet-Tailoring-and-Neutering-Kits.sql; Content/sql/weenies holds its import mirror
---    (98760399-98760401 Pet Tailoring and Neutering Kits.sql). The older copies that lived here were removed.
+--    (78780258-78780260 Pet Tailoring and Neutering Kits.sql). The older copies that lived here were removed.

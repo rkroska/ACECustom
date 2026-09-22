@@ -232,5 +232,35 @@ namespace ACE.Server.Tests
             Assert.AreEqual(2, v.TotalParts);
             Assert.AreEqual(PetMutationService.ColourCoverage.Visible, v.Coverage);
         }
+
+        // ---- Full-colour (non-palette) textures ---------------------------------------------------------
+
+        [TestMethod]
+        public void FixedColour_SpectralNanjouShouJen_IsFixed()
+        {
+            // Measured from the DAT: 293 of 441 drawn polygons use R8G8B8 textures (66%); the rest are INDEX16.
+            Assert.IsTrue(PetMutationService.IsFixedColourModel(293, 441));
+        }
+
+        [TestMethod]
+        public void FixedColour_AtTheSixtyPercentLine()
+        {
+            Assert.IsTrue(PetMutationService.IsFixedColourModel(60, 100), "60% full-colour is the threshold");
+            Assert.IsFalse(PetMutationService.IsFixedColourModel(59, 100), "below 60% enough of the model still recolours");
+        }
+
+        [TestMethod]
+        public void FixedColour_PalettedOrUnmeasured_IsNotFixed()
+        {
+            Assert.IsFalse(PetMutationService.IsFixedColourModel(0, 500), "a fully palette-indexed model (a drudge) recolours normally");
+            Assert.IsFalse(PetMutationService.IsFixedColourModel(0, 0), "an unmeasured model must never block the serum");
+        }
+
+        [TestMethod]
+        public void FixedColour_BlocksColour_LikeHidden()
+        {
+            var v = new PetMutationService.ColourChangeVisibility { Coverage = PetMutationService.ColourCoverage.FixedColour };
+            Assert.IsTrue(v.BlocksColour, "the serum refuses a full-colour model instead of being wasted");
+        }
     }
 }

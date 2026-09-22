@@ -1,5 +1,10 @@
 # Pet Breeding - Content Guide
 
+> **SUPERSEDED (2026-09-21).** Kept for history. Use `PET_BREEDING_REFERENCE.md`, `PET_BREEDING_TECHNICAL_DESIGN.md` and
+> `PET_BREEDING_PLAYER_GUIDE.md`. This file predates the annex move to landblock 0x0106 variation 2
+> and contains details that are now wrong.
+
+
 Audience: the people who build quests, NPCs, monsters, vendors and dungeons. No code required.
 Everything below can be tuned live with the `@modify*` commands or placed in the world with the
 normal content tools.

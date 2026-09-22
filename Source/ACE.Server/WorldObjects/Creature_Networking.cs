@@ -244,6 +244,25 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            // An ordinary creature (no full 0x04 mutation palette) renders EXACTLY as master does. The block
+            // below exists for the 0x04 override (showcase NPCs, a guardian or pet without biota parts); letting
+            // ordinary creatures through it changed their look. Example: master writes a 2048-colour clothing
+            // sub-palette as Length 256, which goes out as byte 0, so the client ignores that layer. Clothing mods
+            // were tuned against that - Vile Remoran 71600059, ClothingBase 0x10000636 template 85, lays a
+            // full-range grey layer under a red one and shows red on prod. The block below splits the range into
+            // 255 + 1, the grey layer is really applied, and the Remoran turned grey.
+            if (coverage.Count == 0 && ClothingBase.HasValue && !HasFullPaletteOverride(PaletteTemplate))
+            {
+                // Same as master: shiny textures, then the base clothing path, then biota part overrides.
+                if (CreatureVariant.HasValue)
+                {
+                    var baseObjDesc = base.CalculateObjDesc();
+                    baseObjDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
+                    return ApplyBiotaPartOverrides(baseObjDesc);
+                }
+                return ApplyBiotaPartOverrides(base.CalculateObjDesc());
+            }
+
             if (coverage.Count == 0 && ClothingBase.HasValue)
             {
                 if (DatManager.PortalDat.TryReadClothingTable((uint)ClothingBase.Value, out var creatureCloTable))
@@ -406,6 +425,10 @@ namespace ACE.Server.WorldObjects
         /// anim-part rows. Without this call such a pet kept its weenie colours and every bred palette,
         /// @mutate_pet roll and tailored look was silently dropped.
         /// </summary>
+        /// <summary>True when a PaletteTemplate is a full 0x04 DAT palette id (a mutation colour), not a retail template ordinal.</summary>
+        private static bool HasFullPaletteOverride(int? paletteTemplate) =>
+            paletteTemplate.HasValue && (paletteTemplate.Value & 0xFF000000) == 0x04000000;
+
         private void ApplyPaletteTemplateOverride(ACE.Entity.ObjDesc objDesc, uint thisSetupId)
         {
             int directPalOption = PaletteTemplate.HasValue ? (int)PaletteTemplate.Value : 0;

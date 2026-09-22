@@ -340,5 +340,11 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         [AssessmentProperty]
         PetMaturityXpMultiplier = 9059,
+
+        /// <summary>
+        /// Showcase NPCs: every this many seconds the creature re-rolls a vibrant mutation colour and
+        /// redraws, while a player is nearby. Live only - the colour is never saved. Unset = off.
+        /// </summary>
+        ShowcaseColourCycleSeconds = 9060,
     }
 }

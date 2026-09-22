@@ -435,6 +435,16 @@ namespace ACE.Server.WorldObjects
                 // when the textures really do cover the body. A few replacements leave the rest of the
                 // parts tinting normally, and refusing those blocked the serum on most captured essences.
                 var visibility = ACE.Server.Services.PetMutationService.GetColourChangeVisibility(petDevice);
+                if (visibility.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.FixedColour)
+                {
+                    // Most of the model uses full-colour textures that ignore palettes, so the serum would change
+                    // the stored colour and nothing would look different. Same refusal, different reason.
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, null, null, false,
+                        $"colour fixed: {visibility.FixedColourPercent}% of the model uses full-colour textures");
+                    SendTransientError($"{petDevice.Name} cannot visibly change colour: most of its body is drawn with full-colour textures that ignore palettes. The serum was not used.");
+                    SendUseDoneEvent();
+                    return;
+                }
                 if (visibility.BlocksColour)
                 {
                     if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, null, null, false,

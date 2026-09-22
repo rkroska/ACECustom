@@ -36,6 +36,8 @@ namespace ACE.Server.WorldObjects
 
             EmoteManager.HeartBeat();
 
+            ShowcaseColourHeartbeat(currentUnixTime);
+
             DamageHistory.TryPrune();
 
             // delete items when RemainingLifespan <= 0

@@ -21,20 +21,21 @@ INSERT INTO weenie_properties_int (object_Id, type, value)
 VALUES (78780257,   1,    128)  /* ItemType - Misc */
      , (78780257,   5,     10)  /* EncumbranceVal */
      , (78780257,   8,     10)  /* Mass */
-     , (78780257,  11,    100)  /* MaxStackSize */
+     , (78780257,  11,      1)  /* MaxStackSize - 1: a 100-stack at 25M each overflows the int stack Value and the vendor charges 1 pyreal */
      , (78780257,  12,      1)  /* StackSize */
      , (78780257,  13,      1)  /* StackUnitEncumbrance */
      , (78780257,  14,      1)  /* StackUnitMass */
      , (78780257,  16, 524296)  /* ItemUseable - SourceContainedTargetContained */
      , (78780257,  18,     10)  /* UiEffects - Magical */
-     , (78780257,  19, 250000)  /* Value - 250,000 Pyreals */
+     , (78780257,  19, 25000000)  /* Value - 25,000,000 Pyreals (100 MMD) */
      , (78780257,  93,   1044)  /* PhysicsState */
      , (78780257,  94,    128); /* TargetType - Misc (PetDevice) */
 
 DELETE FROM weenie_properties_d_i_d WHERE object_Id = 78780257;
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value)
-VALUES (78780257,  1,  33554446) /* Setup - Potion bottle */
-     , (78780257,  8, 100668175);/* Icon - Elixir */
+VALUES (78780257,  1,   33554446) /* Setup - Potion bottle */
+     , (78780257,  8,  100672518) /* Icon (0x06002406) */
+     , (78780257, 52,  100689403); /* IconUnderlay (0x060065FB) */
 
 DELETE FROM weenie_properties_string WHERE object_Id = 78780257;
 INSERT INTO weenie_properties_string (object_Id, type, value)

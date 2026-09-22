@@ -4740,6 +4740,8 @@ namespace ACE.Server.Command.Handlers
                 var vis = ACE.Server.Services.PetMutationService.GetColourChangeVisibility(hiddenCheckDevice);
                 if (vis.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.Hidden)
                     sb.Append($"[WARNING] Captured textures cover {vis.TexturedParts} of {vis.TotalParts} body parts, so this palette will not be visible.\n");
+                else if (vis.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.FixedColour)
+                    sb.Append($"[WARNING] {vis.FixedColourPercent}% of this model is drawn with full-colour textures that ignore palettes, so this palette will not be visible.\n");
                 else if (vis.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.Unknown)
                     sb.Append($"[WARNING] {vis.TextureCount} captured textures and no part list: the palette may be covered where they sit.\n");
                 else if (vis.TextureCount > 0)
@@ -5146,10 +5148,12 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, $"{obj.Name} is now [{(isMale ? $"Male] - Stud ({maxCharges}/{maxCharges} Charges)" : "Female] - Dam")}.");
         }
 
-        [CommandHandler("petdesc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+        // Player-level on purpose: it only reads the caller's OWN summoned pet and prints model / palette ids,
+        // which players can use to troubleshoot a colour or tailoring question with staff.
+        [CommandHandler("petdesc", AccessLevel.Player, CommandHandlerFlag.RequiresWorld,
             "Dumps the ObjDesc actually sent to the client for your summoned pet, and which CalculateObjDesc path produced it.",
             "@petdesc")]
-        [CommandHandler("pet-desc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld,
+        [CommandHandler("pet-desc", AccessLevel.Player, CommandHandlerFlag.RequiresWorld,
             "Dumps the ObjDesc actually sent to the client for your summoned pet.", "@pet-desc")]
         public static void HandlePetDesc(Session session, params string[] parameters)
         {

@@ -469,6 +469,11 @@ namespace ACE.Server.Services
             Hidden,
             /// <summary>Textures are present but the capture stored no part list, so coverage is unknowable.</summary>
             Unknown,
+            /// <summary>
+            /// Most of the model is drawn with full-colour textures (R8G8B8 and similar) that ignore palettes
+            /// entirely, so a palette change is applied but cannot show (e.g. the Spectral Nanjou Shou-jen).
+            /// </summary>
+            FixedColour,
         }
 
         /// <summary>What <see cref="GetColourChangeVisibility"/> measured, so a caller can refuse, warn or print.</summary>
@@ -483,8 +488,10 @@ namespace ACE.Server.Services
             public int TotalParts;
             /// <summary>TexturedParts / TotalParts, or null when TotalParts is 0.</summary>
             public double? Fraction;
-            /// <summary>True only when a colour change genuinely cannot be seen.</summary>
-            public bool BlocksColour => Coverage == ColourCoverage.Hidden;
+            /// <summary>Share (0-100) of the model's drawn polygons whose textures cannot take a palette; -1 when not measured.</summary>
+            public int FixedColourPercent = -1;
+            /// <summary>True when a colour change cannot usefully be seen: covered by textures, or full-colour textures.</summary>
+            public bool BlocksColour => Coverage == ColourCoverage.Hidden || Coverage == ColourCoverage.FixedColour;
         }
 
         /// <summary>
@@ -509,7 +516,149 @@ namespace ACE.Server.Services
             if (device == null)
                 return new ColourChangeVisibility { Coverage = ColourCoverage.Visible };
 
-            return GetColourChangeVisibility(device.CapturedObjDescTextures, device.CapturedObjDescAnimParts);
+            var result = GetColourChangeVisibility(device.CapturedObjDescTextures, device.CapturedObjDescAnimParts);
+
+            // Covered by textures already says it all. Otherwise check whether the model's own textures take a
+            // palette at all.
+            if (result.Coverage != ColourCoverage.Hidden && (device.VisualOverrideSetup ?? 0) != 0)
+            {
+                var (fixedPolys, drawnPolys) = MeasureFixedColourPolygons(device.VisualOverrideSetup.Value,
+                    device.CapturedObjDescAnimParts, device.CapturedObjDescTextures);
+                if (drawnPolys > 0)
+                    result.FixedColourPercent = (int)Math.Round(100.0 * fixedPolys / drawnPolys);
+                if (IsFixedColourModel(fixedPolys, drawnPolys))
+                    result.Coverage = ColourCoverage.FixedColour;
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Share of a model's drawn polygons that must use full-colour (non-palette) textures before a colour
+        /// change counts as not visible. Measured by polygons, not parts, because parts differ wildly in size.
+        /// The Spectral Nanjou Shou-jen is 66% (its body is R8G8B8; two INDEX16 parts are the rest) and a
+        /// palette change does not visibly change it; a Drudge Skulker is 0%.
+        /// </summary>
+        private const double FixedColourPolygonFraction = 0.60;
+
+        /// <summary>The empty placeholder GfxObj many setups use for unused part slots (as in CreatureVariant).</summary>
+        private const uint NullPart = 0x010001EC;
+
+        private static readonly ConcurrentDictionary<string, (int FixedPolys, int DrawnPolys)> _fixedColourCache = new();
+
+        /// <summary>Pure rule, so it can be tested without the DAT.</summary>
+        public static bool IsFixedColourModel(int fixedPolygons, int drawnPolygons) =>
+            drawnPolygons > 0 && (double)fixedPolygons / drawnPolygons >= FixedColourPolygonFraction;
+
+        /// <summary>
+        /// How much of the model (by polygon count) cannot take a palette. Reads the Portal DAT: the setup's
+        /// parts with the capture's anim-part overrides ("part:gfxObjId") applied, and each surface's texture with
+        /// the capture's texture swaps ("part:oldTexture:newTexture") applied. A part takes a palette when at
+        /// least one of its surfaces resolves to a palette-indexed texture (PFID_INDEX16 or PFID_P8). Cached per
+        /// setup and capture strings. Any DAT failure counts as "not measured" (0, 0), which never blocks.
+        /// </summary>
+        public static (int FixedPolys, int DrawnPolys) MeasureFixedColourPolygons(uint setupId, string capturedAnimParts, string capturedTextures)
+        {
+            var key = setupId + "|" + (capturedAnimParts ?? "") + "|" + (capturedTextures ?? "");
+            return _fixedColourCache.GetOrAdd(key, _ =>
+            {
+                try
+                {
+                    var setup = DatManager.PortalDat?.ReadFromDat<SetupModel>(setupId);
+                    if (setup?.Parts == null)
+                        return (0, 0);
+
+                    var parts = new List<uint>(setup.Parts);
+                    foreach (var (idx, gfxId) in ParsePairs(capturedAnimParts))
+                    {
+                        while (parts.Count <= idx) parts.Add(0);
+                        parts[idx] = gfxId;
+                    }
+
+                    // (part, oldTexture) -> newTexture
+                    var swaps = new Dictionary<(int, uint), uint>();
+                    if (!string.IsNullOrEmpty(capturedTextures))
+                    {
+                        foreach (var entry in capturedTextures.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            var bits = entry.Split(':');
+                            if (bits.Length == 3 && int.TryParse(bits[0].Trim(), out var p) &&
+                                uint.TryParse(bits[1].Trim(), out var oldTex) && uint.TryParse(bits[2].Trim(), out var newTex))
+                                swaps[(p, oldTex)] = newTex;
+                        }
+                    }
+
+                    int fixedPolys = 0, drawnPolys = 0;
+                    for (int i = 0; i < parts.Count; i++)
+                    {
+                        var partId = parts[i];
+                        if (partId == 0 || partId == NullPart)
+                            continue;
+                        var gfx = DatManager.PortalDat.ReadFromDat<GfxObj>(partId);
+                        if (gfx?.Surfaces == null || gfx.Surfaces.Count == 0)
+                            continue;
+
+                        var polys = Math.Max(1, gfx.Polygons?.Count ?? 1);
+                        drawnPolys += polys;
+
+                        var takesPalette = false;
+                        foreach (var surfaceId in gfx.Surfaces)
+                        {
+                            var surface = DatManager.PortalDat.ReadFromDat<Surface>(surfaceId);
+                            if (surface == null)
+                                continue;
+                            var texId = surface.OrigTextureId;
+                            if (swaps.TryGetValue((i, texId), out var swapped))
+                                texId = swapped;
+                            if (IsPaletteIndexedTexture(texId))
+                            {
+                                takesPalette = true;
+                                break;
+                            }
+                        }
+                        if (!takesPalette)
+                            fixedPolys += polys;
+                    }
+                    return (fixedPolys, drawnPolys);
+                }
+                catch (Exception ex)
+                {
+                    log.Warn($"[PetMutation] Could not measure palette use for setup 0x{setupId:X8}: {ex.Message}");
+                    return (0, 0);
+                }
+            });
+        }
+
+        /// <summary>True when a surface texture (0x05) or texture (0x06) resolves to a palette-indexed image.</summary>
+        private static bool IsPaletteIndexedTexture(uint texId)
+        {
+            if (texId == 0)
+                return false;
+
+            IEnumerable<uint> textures = (texId & 0xFF000000) == 0x05000000
+                ? (IEnumerable<uint>)DatManager.PortalDat.ReadFromDat<SurfaceTexture>(texId)?.Textures ?? new List<uint>()
+                : new List<uint> { texId };
+
+            foreach (var t in textures)
+            {
+                var tex = DatManager.PortalDat.ReadFromDat<Texture>(t);
+                if (tex != null && (tex.Format == SurfacePixelFormat.PFID_INDEX16 || tex.Format == SurfacePixelFormat.PFID_P8))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>Parses "index:value" pairs, skipping anything malformed.</summary>
+        private static IEnumerable<(int Index, uint Value)> ParsePairs(string packed)
+        {
+            if (string.IsNullOrEmpty(packed))
+                yield break;
+            foreach (var entry in packed.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var bits = entry.Split(':');
+                if (bits.Length == 2 && int.TryParse(bits[0].Trim(), out var idx) && idx >= 0 && uint.TryParse(bits[1].Trim(), out var val))
+                    yield return (idx, val);
+            }
         }
 
         /// <summary>

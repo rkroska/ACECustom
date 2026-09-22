@@ -37,14 +37,15 @@ VALUES (78780250,   1,    128)  /* ItemType - Misc */
      , (78780250,  14,      1)  /* StackUnitMass */
      , (78780250,  16, 524296)  /* ItemUseable - SourceContainedTargetContained */
      , (78780250,  18,     10)  /* UiEffects - Magical */
-     , (78780250,  19, 100000)  /* Value - 100,000 Pyreals */
+     , (78780250,  19, 1250000)  /* Value - 1,250,000 Pyreals (5 MMD) */
      , (78780250,  93,   1044)  /* PhysicsState */
      , (78780250,  94,    128); /* TargetType - Misc (PetDevice) */
 
 DELETE FROM weenie_properties_d_i_d WHERE object_Id = 78780250;
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value)
-VALUES (78780250,  1,  33558818) /* Setup */
-     , (78780250,  8, 100670879);/* Icon */
+VALUES (78780250,  1,   33558818) /* Setup */
+     , (78780250,  8,  100670744) /* Icon (0x06001D18) */
+     , (78780250, 52,  100689404); /* IconUnderlay (0x060065FC) */
 
 DELETE FROM weenie_properties_string WHERE object_Id = 78780250;
 INSERT INTO weenie_properties_string (object_Id, type, value)
@@ -77,15 +78,16 @@ VALUES (78780251,   1,    128)
      , (78780251,  14,      1)
      , (78780251,  16, 524296)
      , (78780251,  18,     10)
-     , (78780251,  19, 500000)  /* Value - 500,000 Pyreals */
+     , (78780251,  19, 2500000)  /* Value - 2,500,000 Pyreals (10 MMD) */
      , (78780251,  93,   1044)
      , (78780251,  94,    128);
 
 DELETE FROM weenie_properties_d_i_d WHERE object_Id = 78780251;
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value)
-VALUES (78780251,  1,  33558818)
-     , (78780251,  8, 100670879)
-     , (78780251, 22, 872415275); /* PhysicsEffectTable (0x3400002B); NOT an icon overlay - IconOverlay is DID type 50 */
+VALUES (78780251,  1,   33558818)
+     , (78780251,  8,  100670743) /* Icon (0x06001D17) */
+     , (78780251, 22,  872415275) /* PhysicsEffectTable (0x3400002B); NOT an icon overlay - IconOverlay is DID type 50 */
+     , (78780251, 52,  100689404); /* IconUnderlay (0x060065FC) */
 
 DELETE FROM weenie_properties_string WHERE object_Id = 78780251;
 INSERT INTO weenie_properties_string (object_Id, type, value)
@@ -118,15 +120,15 @@ VALUES (78780252,   1,     128)
      , (78780252,  14,       1)
      , (78780252,  16,  524296)
      , (78780252,  18,      10)
-     , (78780252,  19, 2500000) /* Value - 2,500,000 Pyreals */
+     , (78780252,  19, 5000000)  /* Value - 5,000,000 Pyreals (20 MMD) */
      , (78780252,  93,    1044)
      , (78780252,  94,     128);
 
 DELETE FROM weenie_properties_d_i_d WHERE object_Id = 78780252;
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value)
-VALUES (78780252,  1,  33558818)
-     , (78780252,  8, 100670879)
-     , (78780252, 50, 100671392); /* IconOverlay (0x06001FA0) - was mis-typed as 22 (PhysicsEffectTable) */
+VALUES (78780252,  1,   33558818)
+     , (78780252,  8,  100670742) /* Icon (0x06001D16) */
+     , (78780252, 52,  100689404); /* IconUnderlay (0x060065FC) */
 
 DELETE FROM weenie_properties_string WHERE object_Id = 78780252;
 INSERT INTO weenie_properties_string (object_Id, type, value)
@@ -159,14 +161,15 @@ VALUES (78780253,   1,    128)
      , (78780253,  14,      1)
      , (78780253,  16, 524296)  /* ItemUseable - SourceContainedTargetContained */
      , (78780253,  18,     10)  /* UiEffects - Magical */
-     , (78780253,  19, 500000)  /* Value - 500,000 Pyreals */
+     , (78780253,  19, 2500000)  /* Value - 2,500,000 Pyreals (10 MMD) */
      , (78780253,  93,   1044)
      , (78780253,  94,    128); /* TargetType - Misc */
 
 DELETE FROM weenie_properties_d_i_d WHERE object_Id = 78780253;
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value)
-VALUES (78780253,  1,  33554446) /* Setup - Potion bottle */
-     , (78780253,  8, 100668175);/* Icon - Elixir */
+VALUES (78780253,  1,   33554446) /* Setup - Potion bottle */
+     , (78780253,  8,  100670839) /* Icon (0x06001D77) */
+     , (78780253, 52,  100676546); /* IconUnderlay (0x060033C2) */
 
 DELETE FROM weenie_properties_string WHERE object_Id = 78780253;
 INSERT INTO weenie_properties_string (object_Id, type, value)
@@ -199,14 +202,15 @@ VALUES (78780254,   1,     128)
      , (78780254,  14,       1)
      , (78780254,  16,  524296)  /* ItemUseable - SourceContainedTargetContained */
      , (78780254,  18,      10)  /* UiEffects - Magical */
-     , (78780254,  19, 1000000)  /* Value - 1,000,000 Pyreals */
+     , (78780254,  19, 2500000)  /* Value - 2,500,000 Pyreals (10 MMD) */
      , (78780254,  93,    1044)
      , (78780254,  94,     128); /* TargetType - Misc */
 
 DELETE FROM weenie_properties_d_i_d WHERE object_Id = 78780254;
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value)
-VALUES (78780254,  1,  33558818)
-     , (78780254,  8, 100670881);/* Icon - Prism/Catalyst */
+VALUES (78780254,  1,   33558818)
+     , (78780254,  8,  100686621) /* Icon (0x06005B1D) */
+     , (78780254, 52,  100676443); /* IconUnderlay (0x0600335B) */
 
 DELETE FROM weenie_properties_string WHERE object_Id = 78780254;
 INSERT INTO weenie_properties_string (object_Id, type, value)
@@ -239,14 +243,15 @@ VALUES (78780255,   1,    128)  /* ItemType - Misc */
      , (78780255,  14,      1)
      , (78780255,  16, 524296)  /* ItemUseable - SourceContainedTargetContained */
      , (78780255,  18,     10)  /* UiEffects - Magical */
-     , (78780255,  19, 500000)  /* Value - 500,000 Pyreals */
+     , (78780255,  19, 2500000)  /* Value - 2,500,000 Pyreals (10 MMD) */
      , (78780255,  93,   1044)
      , (78780255,  94,    128); /* TargetType - Misc */
 
 DELETE FROM weenie_properties_d_i_d WHERE object_Id = 78780255;
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value)
-VALUES (78780255,  1,  33558818)
-     , (78780255,  8, 100670879);/* Icon */
+VALUES (78780255,  1,   33558818)
+     , (78780255,  8,  100675792) /* Icon (0x060030D0) */
+     , (78780255, 52,  100683040); /* IconUnderlay (0x06004D20) */
 
 DELETE FROM weenie_properties_string WHERE object_Id = 78780255;
 INSERT INTO weenie_properties_string (object_Id, type, value)

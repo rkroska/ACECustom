@@ -904,7 +904,11 @@ namespace ACE.Server.WorldObjects
             ClothingBaseEffect clothingBaseEffect = null;
             if (!item.ClothingBaseEffects.TryGetValue(SetupTableId, out clothingBaseEffect))
             {
-                if (item.ClothingBaseEffects.Count == 1)
+                // Borrowing a single-entry table's effect for a different setup is only for a full 0x04
+                // mutation palette. For everything else master applies nothing here, and matching master keeps
+                // every existing creature and item looking exactly as it does on production.
+                bool fullPaletteOverride = PaletteTemplate.HasValue && (PaletteTemplate.Value & 0xFF000000) == 0x04000000;
+                if (fullPaletteOverride && item.ClothingBaseEffects.Count == 1)
                     clothingBaseEffect = item.ClothingBaseEffects.Values.FirstOrDefault();
             }
 

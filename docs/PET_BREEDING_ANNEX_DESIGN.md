@@ -1,5 +1,10 @@
 # Ruggan's Annex - Breeding Area Design
 
+> **SUPERSEDED (2026-09-21).** Kept for history. Use `PET_BREEDING_TECHNICAL_DESIGN.md`, `PET_BREEDING_TECHNICAL_DESIGN.md` and
+> `PET_BREEDING_PLAYER_GUIDE.md`. This file predates the annex move to landblock 0x0106 variation 2
+> and contains details that are now wrong.
+
+
 Audience: whoever builds this in the world. Companion to `PET_BREEDING_CONTENT_GUIDE.md`
 (the tunables) and `PET_BREEDING_PLAYER_GUIDE.md` (the rules as players read them).
 

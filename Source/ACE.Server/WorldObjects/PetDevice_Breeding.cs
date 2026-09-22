@@ -1972,6 +1972,8 @@ namespace ACE.Server.WorldObjects
             var colourVis = ACE.Server.Services.PetMutationService.GetColourChangeVisibility(this);
             if (colourVis.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.Hidden)
                 sb.AppendLine($"Colour: fixed by this pet's captured textures on {colourVis.TexturedParts} of {colourVis.TotalParts} parts (mutations and serums cannot change it)");
+            else if (colourVis.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.FixedColour)
+                sb.AppendLine("Colour: fixed - most of this creature is drawn with full-colour textures, so mutations and serums cannot visibly change it");
             else if (colourVis.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.Unknown)
                 sb.AppendLine($"Colour: {colourVis.TextureCount} captured textures may cover part of a new colour");
 

@@ -91,7 +91,7 @@ INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
   (78780200, 98, True);   -- Invincible: belt and braces
 -- Outfit addition on top of the template's clothes.
 INSERT INTO `weenie_properties_create_list` (`object_Id`,`destination_Type`,`weenie_Class_Id`,`stack_Size`,`palette`,`shade`,`try_To_Bond`) VALUES
-  (78780200, 2, 10697, NULL, 8, 0.5, False);
+  (78780200, 2, 10697,    1, 8, 0.5, False);
 
 -- ------------------------------------------------------------------------------------
 -- 78780201  Ivo, Ruggan's Quartermaster
@@ -143,12 +143,12 @@ INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
 -- Template 46425 trades in Stipends: it carries AlternateCurrency (DataId 57), which makes
 -- the client price everything in that currency. Ivo deals in pyreals, so drop it.
 DELETE FROM `weenie_properties_d_i_d` WHERE `object_Id` = 78780201 AND `type` = 57;
--- Vendor stock (destination_Type 4). The primed kit 98760401 is deliberately not
--- sold: it only exists as the result of using 98760400 on a pet.
+-- Vendor stock (destination_Type 4). The primed kit 78780260 is deliberately not
+-- sold: it only exists as the result of using 78780259 on a pet.
 DELETE FROM `weenie_properties_create_list` WHERE `object_Id` = 78780201 AND `destination_Type` = 4;
 INSERT INTO `weenie_properties_create_list` (`object_Id`,`destination_Type`,`weenie_Class_Id`,`stack_Size`,`palette`,`shade`,`try_To_Bond`) VALUES
-  (78780201, 4, 98760399, -1, 0, 0, False),   -- Neutering Kit
-  (78780201, 4, 98760400, -1, 0, 0, False);   -- Pet Tailoring Kit
+  (78780201, 4, 78780258, -1, 0, 0, False),   -- Neutering Kit
+  (78780201, 4, 78780259, -1, 0, 0, False);   -- Pet Tailoring Kit
 DELETE FROM `weenie_properties_int` WHERE `object_Id` = 78780201 AND `type` IN (74,75,76);
 INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
   (78780201, 74, 0),         -- MerchandiseItemTypes: buys nothing back
@@ -336,8 +336,8 @@ INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
 -- Outfit (create_list destination_Type 2 = worn).
 DELETE FROM `weenie_properties_create_list` WHERE `object_Id` = 78780204 AND `destination_Type` = 2;
 INSERT INTO `weenie_properties_create_list` (`object_Id`,`destination_Type`,`weenie_Class_Id`,`stack_Size`,`palette`,`shade`,`try_To_Bond`) VALUES
-  (78780204, 2, 8371, NULL, 11, 0.3, False),
-  (78780204, 2, 132, NULL, 39, 0.9, False);
+  (78780204, 2, 8371,    1, 11, 0.3, False),
+  (78780204, 2, 132,    1, 39, 0.9, False);
 -- Template 3920 is already female (Gender 2, setup 0x0200004E); nothing to fix.
 
 -- ------------------------------------------------------------------------------------
@@ -392,10 +392,10 @@ INSERT INTO `weenie_properties_bool` (`object_Id`,`type`,`value`) VALUES
 -- Outfit (create_list destination_Type 2 = worn).
 DELETE FROM `weenie_properties_create_list` WHERE `object_Id` = 78780210 AND `destination_Type` = 2;
 INSERT INTO `weenie_properties_create_list` (`object_Id`,`destination_Type`,`weenie_Class_Id`,`stack_Size`,`palette`,`shade`,`try_To_Bond`) VALUES
-  (78780210, 2, 130, NULL, 61, 0.1, False),
-  (78780210, 2, 117, NULL, 39, 0.9, False),
-  (78780210, 2, 132, NULL, 39, 0.9, False),
-  (78780210, 2, 5588, NULL, 39, 0.9, False);
+  (78780210, 2, 130,    1, 61, 0.1, False),
+  (78780210, 2, 117,    1, 39, 0.9, False),
+  (78780210, 2, 132,    1, 39, 0.9, False),
+  (78780210, 2, 5588,    1, 39, 0.9, False);
 
 -- ------------------------------------------------------------------------------------
 -- 78780211  Registered Browerk, Champion Line

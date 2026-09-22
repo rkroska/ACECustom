@@ -53,7 +53,7 @@ of the control flow, not a sample.
 
 Total blast radius: **87 objects that currently render wrong - 66 creatures and 21 equippable
 items.** 71 creatures enter the raw-ordinal branch, but 5 of them have a fallback effect with zero
-CloSubPalettes, so no subpalette is written for them on master or the branch (REVIEW.md, the
+CloSubPalettes, so no subpalette is written for them on master or the branch (the since-deleted REVIEW.md, the
 correction under the equipped-item table).
 
 ### Automated coverage

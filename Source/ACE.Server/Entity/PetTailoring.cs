@@ -26,9 +26,11 @@ namespace ACE.Server.Entity
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        public const uint NeuteringKitWcid = 98760399;
-        public const uint TailoringKitWcid = 98760400;
-        public const uint FilledTailoringKitWcid = 98760401;
+        // 7878 block, beside the breeding consumables (docs/WCID_ALLOCATION_7878.md). They were 98760399-98760401,
+        // which production already uses for other content (a generator, a portal and a creature).
+        public const uint NeuteringKitWcid = 78780258;
+        public const uint TailoringKitWcid = 78780259;
+        public const uint FilledTailoringKitWcid = 78780260;
 
         public static bool IsTailoringTool(uint wcid) => wcid == TailoringKitWcid || wcid == FilledTailoringKitWcid;
 
