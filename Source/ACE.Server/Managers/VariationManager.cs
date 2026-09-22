@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using ACE.Common;
 
 using ACE.Entity.Enum.Properties;
 using ACE.Server.WorldObjects;
@@ -73,9 +74,7 @@ namespace ACE.Server.Managers
         /// <summary>Collapse the base bucket: null and 0 both become null; every other value is preserved.</summary>
         public static int? NormalizeBase(int? variation)
         {
-            if (!variation.HasValue || variation.Value == 0)
-                return null;
-            return variation;
+            return VariantCacheId.NormalizeBase(variation);   // one definition, shared with ACE.Database (2026-09-17)
         }
 
         /// <summary>

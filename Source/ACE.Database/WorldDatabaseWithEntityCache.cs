@@ -703,9 +703,12 @@ namespace ACE.Database
             cachedLandblockInstances.Clear();
         }
 
+        // Variation 0 is always base (owner ruling 2026-09-14): NULL is the one stored value for the base layer, 0 is
+        // accepted as input and converted with VariantCacheId.NormalizeBase so a raw 0 neither keys a second cache entry
+        // nor queries `variation_Id = 0` (no row has it).
         public bool ClearCachedInstancesByLandblock(ushort Landblock, int? variationId)
         {
-            VariantCacheId cacheKey = new VariantCacheId { Landblock = Landblock, Variant = variationId };
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = Landblock, Variant = VariantCacheId.NormalizeBase(variationId) };
             return cachedLandblockInstances.TryRemove(cacheKey, out _);
         }
 
@@ -739,6 +742,7 @@ namespace ACE.Database
 
         public List<LandblockInstance> GetCachedInstancesByLandblock(WorldDbContext context, ushort landblock, int? variation = null)
         {
+            variation = VariantCacheId.NormalizeBase(variation);
             VariantCacheId cacheKey = new VariantCacheId { Landblock = landblock, Variant = variation };
             if (cachedLandblockInstances.TryGetValue(cacheKey, out var value))
                 return value;
@@ -802,6 +806,7 @@ namespace ACE.Database
             int count = 0;
 
             // 1. Clear Landblock Instances
+            variationId = VariantCacheId.NormalizeBase(variationId);
             VariantCacheId cacheKey = new VariantCacheId { Landblock = landblockId, Variant = variationId };
             if (cachedLandblockInstances.TryRemove(cacheKey, out var instances))
             {
@@ -818,7 +823,7 @@ namespace ACE.Database
             // If the variationId is NOT null/0, we should be careful.
             // But usually Unload is called for the whole landblock when it's empty.
 
-            // Only the true unlayered landblock (null variation) shares these landblock-wide caches; explicit layer 0 is distinct.
+            // Only the base landblock (null after normalization - 0 is always base) shares these landblock-wide caches.
             if (variationId == null)
             {
                 // 2. Clear Encounters
