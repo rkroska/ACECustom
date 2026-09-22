@@ -1599,6 +1599,81 @@ namespace ACE.Server.Managers
             player.QuestCompletionCount = player.Account.CachedQuestBonusCount;
         }
 
+        /// <summary>
+        /// Makes sure the account-level quest bonus row for <paramref name="questName"/> exists, whatever
+        /// the character's solve count is.
+        ///
+        /// Stamp() only writes the account row when the CHARACTER's count lands on exactly 1, so a
+        /// character re-solving a quest it already had (1 -> 2) gets no quest bonus at all. That is
+        /// invisible to the player and, for anything that charges for a stamp, means they paid for
+        /// nothing. Callers that hand out a stamp as a purchased reward use this to close that gap.
+        ///
+        /// Returns true only when a row was actually written, so the caller can tell the player.
+        /// </summary>
+        public static bool EnsureAccountQuestStamp(Player player, string questName, out bool failed)
+        {
+            failed = false;
+
+            if (player == null || player.IsMule || player.Account == null || string.IsNullOrWhiteSpace(questName))
+                return false;
+
+            // Key the row the same way Stamp() did. Stamp(questFormat) calls Update(GetQuestName(...)),
+            // so the @comment is already stripped by the time the account row is written - looking up the
+            // raw "Foo@bar" here would miss the "Foo" row that exists and insert a duplicate worth double
+            // quest bonus. Callers pass the raw list entry, so normalise.
+            var name = GetQuestName(questName);
+
+            // Deliberately NOT short-circuiting on the cached list. UpdatePlayerQuestCompletions
+            // updates that cache BEFORE SaveChanges and swallows any failure, so after a failed write
+            // the cache claims a row that does not exist - which is exactly the case this method is
+            // here to repair. Read the DB and decide from it.
+
+            try
+            {
+                var acctId = player.Account.AccountId;
+
+                using (Database.Models.Auth.AuthDbContext context = new Database.Models.Auth.AuthDbContext())
+                {
+                    var acctQuest = context.AccountQuest.Where(x => x.AccountId == acctId && x.Quest == name).FirstOrDefault();
+
+                    if (acctQuest == null)
+                    {
+                        context.AccountQuest.Add(new Database.Models.Auth.AccountQuest() { AccountId = acctId, Quest = name, NumTimesCompleted = 1 });
+                    }
+                    else if ((acctQuest.NumTimesCompleted ?? 0) < 1)
+                    {
+                        acctQuest.NumTimesCompleted = 1;
+                        context.AccountQuest.Update(acctQuest);
+                    }
+                    else
+                    {
+                        // Already credited. Refresh the cache from what the DB actually holds, in case
+                        // it was out of step, rather than leaving the count stale until relog.
+                        // num_Times_Completed is nullable in the schema; an unchecked cast throws here,
+                        // and the catch below would turn that into a silent no-repair.
+                        player.Account.UpdateAccountQuestsCacheByQuestName(name, acctQuest.NumTimesCompleted ?? 0);
+                        player.QuestCompletionCount = player.Account.CachedQuestBonusCount;
+                        return false;
+                    }
+
+                    context.SaveChanges();
+                }
+
+                player.Account.UpdateAccountQuestsCacheByQuestName(name, 1);
+                player.QuestCompletionCount = player.Account.CachedQuestBonusCount;
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // The caller has already taken payment by this point, so it needs to tell the two
+                // false results apart: "already credited" and "could not reach the database".
+                failed = true;
+                log.Error($"QuestManager.EnsureAccountQuestStamp({player.Name}, {name}) failed: {ex.Message}", ex);
+                return false;
+            }
+        }
+
         public static uint GetSpecialWeenieReward()
         {
             var list = GetSpecialWeenieRewardsList();
