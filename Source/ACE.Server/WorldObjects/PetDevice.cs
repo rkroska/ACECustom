@@ -1248,6 +1248,39 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Rebuilds <see cref="PropertyString.Use"/> from the template weenie's, swapping the template's creature
+        /// for this essence's current one, so the description always names what the pet actually looks like.
+        /// Recomposed from the template rather than patched, which means a Use line that already drifted is
+        /// repaired instead of carried forward, and a wrong result cannot accumulate across summons.
+        /// </summary>
+        private void RefreshUseStringFromStoredLook(Player owner)
+        {
+            var weenie = DatabaseManager.World.GetCachedWeenie(WeenieClassId);
+            var templateUse = weenie?.GetProperty(PropertyString.Use);
+            var templateName = weenie?.GetProperty(PropertyString.Name);
+            if (string.IsNullOrEmpty(templateUse) || string.IsNullOrEmpty(templateName))
+                return;
+
+            static string HeadBeforeEssence(string n)
+            {
+                var idx = (n ?? "").LastIndexOf(" Essence", StringComparison.OrdinalIgnoreCase);
+                return idx < 0 ? (n ?? "") : n.Substring(0, idx);
+            }
+
+            var templateHead = HeadBeforeEssence(templateName);
+            var currentHead = HeadBeforeEssence(Name);
+            if (string.IsNullOrEmpty(templateHead) || string.IsNullOrEmpty(currentHead))
+                return;
+
+            var rebuilt = templateUse.Replace(templateHead, currentHead, StringComparison.OrdinalIgnoreCase);
+            if (string.Equals(rebuilt, GetProperty(PropertyString.Use), StringComparison.Ordinal))
+                return;
+
+            SetProperty(PropertyString.Use, rebuilt);
+            owner?.UpdateProperty(this, PropertyString.Use, rebuilt);
+        }
+
+        /// <summary>
         /// Updates this combat pet essence's <see cref="WorldObject.Name"/> at summon: strips any legacy
         /// <c> [Slash]</c> suffix, recomposes the name from the stored look so a drifted name repairs itself,
         /// then fronts it with the element the pet actually attacks with.
@@ -1267,6 +1300,7 @@ namespace ACE.Server.WorldObjects
                 if (stripped != Name)
                     Name = stripped;
                 TryNotifySummonerNameProperty(owner);
+                RefreshUseStringFromStoredLook(owner);
                 return;
             }
 
@@ -1277,6 +1311,7 @@ namespace ACE.Server.WorldObjects
                 Name = stripped;
 
             TryNotifySummonerNameProperty(owner);
+            RefreshUseStringFromStoredLook(owner);
         }
 
         /// <summary>
