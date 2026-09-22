@@ -1989,7 +1989,7 @@ namespace ACE.Server.WorldObjects
                 translucency = summonWeenie != null ? ACE.Entity.Models.WeenieExtensions.GetProperty(summonWeenie, PropertyFloat.Translucency) : null;
             }
             if (translucency.HasValue && translucency.Value >= 0.001)
-                sb.AppendLine($"Translucency: {translucency.Value * 100:0}% see-through (Solidifying and Fading Tinctures change it a tenth at a time)");
+                sb.AppendLine($"Translucency: {translucency.Value * 100:0}%");
 
             var dmgStep = (int)ServerConfig.pet_breeding_damage_mutation_step.Value;
             var drStep = (int)ServerConfig.pet_breeding_dr_mutation_step.Value;

@@ -900,8 +900,8 @@ SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`message`) VALUES
   (@e, 0, 10, 0, 0, 'Where is he.'),
   (@e, 1, 10, 3, 0, 'He told me this was a filing annex.'),
-  (@e, 2, 10, 3, 0, 'There is a pink Ursuin in my husband''s filing annex.'),
-  (@e, 3, 10, 3, 0, 'When you see him, tell him the lens order is still not delivered. He will know. He will pretend not to.');
+  (@e, 2, 10, 3, 0, 'There is a drudge paternity dispute happening in my husband''s filing annex.'),
+  (@e, 3, 10, 3, 0, 'If you see the Professor, tell him I found the receipts for the incense. All of them.');
 
 -- Bexley: prim, and entirely about the other wing.
 INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`quest`)
