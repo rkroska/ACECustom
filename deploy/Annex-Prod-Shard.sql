@@ -1,22 +1,25 @@
 /* =====================================================================================
    Pet Breeding / Ruggan's Annex - PROD SHARD SCRIPT for ace_shard
-   Run with ace_shard selected (section 0 refuses to run anywhere else).
+   Open it in Workbench and run it: it selects ace_shard itself (USE below), and section 0
+   refuses to run anywhere else.
 
    WHAT IT DOES
      1. Creates pet_name_requests (the @pet-name queue the web portal reviews), if absent.
      2. Writes the breeding settings prod needs. Stored values override the code defaults
-        (CLAUDE.md), so the location MUST be written here: the code default still points at
-        the old motel (0x013A variation 3).
+        (CLAUDE.md), so the location is written here too, so prod is right even on an older
+        build whose default still points at the old motel (0x013A variation 3).
      3. Pins every TEST-ONLY switch to off, so no test value can leak into prod.
      4. Shows, at the end, the settings breeding depends on that this script does NOT change.
 
-   Everything else (mutation rates, cooldowns, charges, maturity) is left at the code
-   default on purpose - see deploy/PROD_DEPLOY_PLAN.md for the full table.
+   Mutation decay is set to 0.1 (section 4). Everything else (mutation rates, cooldowns,
+   charges, maturity) is left at the code default on purpose - see deploy/PROD_DEPLOY_PLAN.md.
 
    RE-RUNNABLE, and nothing is dropped. Run it with the server stopped; a running server
    also picks the settings up by itself within 5 minutes.
    All text is 7-bit ASCII with LF line endings, per CLAUDE.md.
    ===================================================================================== */
+
+USE `ace_shard`;  -- whichever schema Workbench has selected, this runs against the shard
 
 SET @__old_safe_updates = @@SQL_SAFE_UPDATES;
 SET SQL_SAFE_UPDATES = 0;

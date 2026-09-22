@@ -99,8 +99,9 @@ def main():
     w("   Left out as test-only: " + ", ".join("%s (%d)" % (v, k) for k, v in sorted(TEST_ONLY.items())) + ".")
     w("   PLACES them: see the PLACEMENTS section. Guids are fresh on the target, never copied from test.")
     w("")
-    w("   ONE TRANSACTION. Run it so an error stops before COMMIT:")
-    w("       mysql --abort-source-on-error ace_world < deploy/Annex-Prod-Bundle.sql")
+    w("   ONE TRANSACTION. Run it so an error stops before COMMIT (batch mode stops at the first error;")
+    w("   never add --force):")
+    w("       mysql ace_world < deploy/Annex-Prod-Bundle.sql")
     w("   In Workbench, select ace_world first and watch the output: Workbench keeps going after errors.")
     w("   Re-runnable: everything it owns is deleted first.")
     w("")
@@ -111,6 +112,8 @@ def main():
     w("   Then read the V1-V4 results at the end.")
     w("   All text is 7-bit ASCII with LF line endings, per CLAUDE.md.")
     w("   ===================================================================================== */")
+    w("")
+    w("USE `ace_world`;  -- whichever schema Workbench has selected, this runs against the world database")
     w("")
     w("SET @__old_safe_updates = @@SQL_SAFE_UPDATES;")
     w("SET SQL_SAFE_UPDATES = 0;")
@@ -173,6 +176,11 @@ def main():
             grp = [r for r in rows if r[12] == lbk]
             w("SET @g = (SELECT COALESCE(MAX(`guid`), 0x%08X) FROM `landblock_instance` WHERE `guid` BETWEEN 0x%08X AND 0x%08X);"
               % (lo - 1, lo, lo | 0xFFF))
+            # Out of room in this landblock's static guid range: a two-row subquery raises error 1242 in any
+            # sql_mode, which stops the script before COMMIT instead of writing guids from the next landblock.
+            # (NULL would not work: guid is AUTO_INCREMENT, so MySQL would invent one.)
+            w("SET @g = IF(@g + %d > %d, (SELECT 1 UNION SELECT 2), @g); -- %d = 0x%08X, the top of this landblock's range"
+              % (len(grp), lo | 0xFFF, lo | 0xFFF, lo | 0xFFF))
             w("INSERT INTO `landblock_instance` (`guid`,`weenie_Class_Id`,`obj_Cell_Id`,`origin_X`,`origin_Y`,`origin_Z`,")
             w("  `angles_W`,`angles_X`,`angles_Y`,`angles_Z`,`is_Link_Child`,`last_Modified`,`variation_Id`) VALUES")
             vals = ["  (@g + %d, %d, 0x%08X, %s, %s, %s, %s, %s, %s, %s, False, NOW(), %s)" %

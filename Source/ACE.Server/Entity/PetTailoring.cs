@@ -19,8 +19,8 @@ namespace ACE.Server.Entity
     ///
     /// Apply: use the filled kit on a target essence. Only the visual properties are written; the
     /// target keeps its own stats, potency, bond, sex, mutations, maturity and imprint. The kit is
-    /// consumed once, after the apply succeeds. Same ordering rules as MonsterCapture: snapshot,
-    /// verify, write, then consume.
+    /// consumed once, after every check passes and before the look is written, so a failed consume
+    /// changes nothing and a kit can never be applied twice.
     /// </summary>
     public static class PetTailoring
     {
@@ -181,6 +181,15 @@ namespace ACE.Server.Entity
             var nameBefore = device.Name;
             var previousCreatureName = device.VisualOverrideName;
 
+            // Consume the kit before anything on the device changes: if it cannot be consumed, nothing is
+            // applied, so a kit can never be reused. The destroyed kit's properties stay readable in memory.
+            if (!player.TryConsumeFromInventoryWithNetworking(kit, 1))
+            {
+                if (PetTrace.Enabled) TraceRefused("tailoring.apply", player, kit, target, "kit consume failed");
+                player.SendTransientError("The kit could not be used. Nothing was changed.");
+                return;
+            }
+
             // Visuals only. Everything else on the device is untouched.
             CopyVisuals(kit, device, kit.GetProperty(PropertyDataId.VisualOverrideIcon) ?? 0);
 
@@ -226,15 +235,11 @@ namespace ACE.Server.Entity
             device.ChangesDetected = true;
             player.RushNextPlayerSave(0);
 
-            var kitConsumed = player.TryConsumeFromInventoryWithNetworking(kit, 1);
-            if (!kitConsumed)
-                log.Warn($"[PetTailoring] Applied kit 0x{kit.Guid.Full:X8} to {device.Name} but could not consume it for {player.Name}.");
-
             player.PlayParticleEffect(PlayScript.EnchantUpPurple, device.Guid);
             player.SendMessage($"You tailor the appearance onto {device.Name}. Summon it to see the new look.");
             if (traceBefore != null)
                 traceBefore.AddVisuals("after.", device).Add("nameBefore", nameBefore).Add("nameAfter", device.Name).AddGuid("iconAfter", device.IconId)
-                    .Add("applied", true).Add("consumed", kitConsumed).Emit();
+                    .Add("applied", true).Add("consumed", true).Emit();
             else
                 log.Info($"[PetTailoring] {player.Name} applied kit 0x{kit.Guid.Full:X8} (setup 0x{setup:X8}) to {device.Name} (0x{device.Guid.Full:X8}).");
         }

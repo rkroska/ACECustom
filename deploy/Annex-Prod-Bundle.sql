@@ -9,8 +9,9 @@
    Left out as test-only: Baby Candidate B (78780234), Baby Candidate C (78780235), Scene Tester (78780241).
    PLACES them: see the PLACEMENTS section. Guids are fresh on the target, never copied from test.
 
-   ONE TRANSACTION. Run it so an error stops before COMMIT:
-       mysql --abort-source-on-error ace_world < deploy/Annex-Prod-Bundle.sql
+   ONE TRANSACTION. Run it so an error stops before COMMIT (batch mode stops at the first error;
+   never add --force):
+       mysql ace_world < deploy/Annex-Prod-Bundle.sql
    In Workbench, select ace_world first and watch the output: Workbench keeps going after errors.
    Re-runnable: everything it owns is deleted first.
 
@@ -21,6 +22,8 @@
    Then read the V1-V4 results at the end.
    All text is 7-bit ASCII with LF line endings, per CLAUDE.md.
    ===================================================================================== */
+
+USE `ace_world`;  -- whichever schema Workbench has selected, this runs against the world database
 
 SET @__old_safe_updates = @@SQL_SAFE_UPDATES;
 SET SQL_SAFE_UPDATES = 0;
@@ -242,10 +245,13 @@ INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
 INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`weenie_Class_Id`,`style`,`substyle`,`quest`,`vendor_Type`,`min_Health`,`max_Health`,`damage_type`) VALUES (78780201, 7, 1.0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`motion`,`message`,`test_String`,`min`,`max`,`min_64`,`max_64`,`min_Dbl`,`max_Dbl`,`stat`,`display`,`amount`,`amount_64`,`hero_X_P_64`,`percent`,`spell_Id`,`wealth_Rating`,`treasure_Class`,`treasure_Type`,`p_Script`,`sound`,`destination_Type`,`weenie_Class_Id`,`stack_Size`,`palette`,`shade`,`try_To_Bond`,`obj_Cell_Id`,`origin_X`,`origin_Y`,`origin_Z`,`angles_W`,`angles_X`,`angles_Y`,`angles_Z`) VALUES
-  (@e, 0, 10, 0.0, 0.0, NULL, 'Three things on the list. Two of them are the same thing at different stages.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-  (@e, 1, 10, 3.5, 0.0, NULL, 'The tailoring kit takes the look off one pet and puts it on another. The first one does not survive that. The price reflects it.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-  (@e, 2, 10, 3.5, 0.0, NULL, 'The last one is for people who have made a decision. I don''t ask which decision.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-  (@e, 3, 10, 3.5, 0.0, NULL, 'Buy off the list. I don''t haggle and I don''t explain the Professor.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  (@e, 0, 10, 0.0, 0.0, NULL, 'Nine things on the list. Most of them are smoke in a jar.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+  (@e, 1, 10, 3.5, 0.0, NULL, 'The incense makes the next litter likelier to come out changed. Bigger jar, better odds. Both parents can wear it.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+  (@e, 2, 10, 3.5, 0.0, NULL, 'The draught grows a baby twice as fast. The catalyst makes a change come out loud. The offering makes the spirit easy to put down.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+  (@e, 3, 10, 3.5, 0.0, NULL, 'The serum re-rolls a colour on the spot. The stats stay where they were.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+  (@e, 4, 10, 3.5, 0.0, NULL, 'The tailoring kit takes the look off one pet and puts it on another. The first one does not survive that. The price reflects it.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+  (@e, 5, 10, 3.5, 0.0, NULL, 'The neutering kit is for people who have made a decision. I don''t ask which decision.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+  (@e, 6, 10, 3.5, 0.0, NULL, 'Buy off the list. I don''t haggle and I don''t explain the Professor.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 -- 78780202  DJ Skulk
 INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (78780202, 'annex-dj-skulk', 10, NOW());
@@ -3082,6 +3088,7 @@ INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
 -- The annex: 22 placement(s).
 DELETE FROM `landblock_instance` WHERE `landblock` = 0x0106 AND `variation_Id` = 2 AND `weenie_Class_Id` BETWEEN 78780200 AND 78780299;
 SET @g = (SELECT COALESCE(MAX(`guid`), 0x70105FFF) FROM `landblock_instance` WHERE `guid` BETWEEN 0x70106000 AND 0x70106FFF);
+SET @g = IF(@g + 22 > 1880125439, (SELECT 1 UNION SELECT 2), @g); -- 1880125439 = 0x70106FFF, the top of this landblock's range
 INSERT INTO `landblock_instance` (`guid`,`weenie_Class_Id`,`obj_Cell_Id`,`origin_X`,`origin_Y`,`origin_Z`,
   `angles_W`,`angles_X`,`angles_Y`,`angles_Z`,`is_Link_Child`,`last_Modified`,`variation_Id`) VALUES
   (@g + 1, 78780222, 0x0106019D, 55.1495, -23.873, 0.00200051, 0.999258, 0.0, 0.0, -0.0385069, False, NOW(), 2), -- Ursuin, Unregistered

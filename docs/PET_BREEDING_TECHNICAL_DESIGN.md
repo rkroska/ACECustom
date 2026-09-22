@@ -412,7 +412,7 @@ The mutation odds at defaults and the effect of incense:
   - The base variation is a retail drudge dungeon that stays untouched.
   - Variations load only their own placements, so the annex is a private, fully furnished copy.
   - Breeding is scoped to it by `pet_breeding_allowed_landblock` 262 and `_variant` 2, which are
-    stored in the shard. **The code default still points at the old motel (0x013A / 3).**
+    stored in the shard. The code default is the same (0x0106 / 2) since Q8.
 - **The same-landcell rule.** Both **pets** must stand in the same landcell. The area can be large,
   but a pairing is always intimate, and two strangers down a corridor can't be paired by accident.
 - **Entry and exit:**
@@ -579,8 +579,8 @@ left at the default. Full behaviour, edge cases and code locations are in the re
 | Setting | Default | Prod | Purpose |
 |---|---|---|---|
 | `pet_breeding_enabled` | true | true | Master switch |
-| `pet_breeding_allowed_landblock` | 0x013A | **262** | Breeding area: 0 anywhere, a 16-bit landblock, or a 32-bit exact cell |
-| `pet_breeding_allowed_variant` | 3 | **2** | Required variation (-1 any) |
+| `pet_breeding_allowed_landblock` | 0x0106 | **262** | Breeding area: 0 anywhere, a 16-bit landblock, or a 32-bit exact cell |
+| `pet_breeding_allowed_variant` | 2 | **2** | Required variation (-1 any) |
 | `pet_breeding_dance_sync_seconds` | 5.0 | - | Partner dance window |
 | `pet_breeding_min_parent_level` | 100 | - | Minimum essence tier |
 | `pet_breeding_min_bond` | 100 | - | Minimum bond on both parents (needs `pet_bond_enabled`) |
@@ -629,8 +629,8 @@ left at the default. Full behaviour, edge cases and code locations are in the re
 | `content_template_export_next_wcid` | 0 | - | `@et` high-water mark |
 | `content_template_export_auto_import` | true | - | `@et` loads into `ace_world` |
 | `content_template_export_auto_discord` | true | - | `@et` posts to Discord |
-| `pet_bond_enabled` (pre-existing) | **false** | **unknown (Q1)** | **Required on for breeding** |
-| `pet_potency_enabled` (pre-existing) | false | unknown | Potency's combat effect |
+| `pet_bond_enabled` (pre-existing) | **false** | **true** (prod dump, Q1) | **Required on for breeding** |
+| `pet_potency_enabled` (pre-existing) | false | true (prod dump) | Potency's combat effect |
 
 **How to test each one:** change it live with `@modifybool`, `@modifylong`, `@modifydouble` or
 `@modifystring`, then follow the matching recipe in the reference, section 2 (the "How to test" column)

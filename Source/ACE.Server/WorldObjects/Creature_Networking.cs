@@ -373,13 +373,13 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
+                    // Only a full 0x04 override reaches here (ordinary creatures returned above), so the
+                    // mutation palette must still be painted on when the clothing table cannot be read.
+                    var baseObjDesc = base.CalculateObjDesc();
                     if (CreatureVariant.HasValue)
-                    {
-                        var baseObjDesc = base.CalculateObjDesc();
                         baseObjDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
-                        return ApplyBiotaPartOverrides(baseObjDesc);
-                    }
-                    return ApplyBiotaPartOverrides(base.CalculateObjDesc());
+                    ApplyPaletteTemplateOverride(baseObjDesc, thisSetupId);
+                    return ApplyBiotaPartOverrides(baseObjDesc);
                 }
             }
 

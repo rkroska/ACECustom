@@ -76,7 +76,8 @@ python deploy/export_annex_bundle.py
    - V3: read every row. Anything the script did not write overrides a code default.
    - V4: `pet_bond_enabled` must be 1 (see Q1).
 5. **Run the world bundle** with `ace_world` selected:
-   `mysql --abort-source-on-error ace_world < deploy/Annex-Prod-Bundle.sql`. In Workbench, watch for
+   `mysql ace_world < deploy/Annex-Prod-Bundle.sql` (batch mode stops at the first error, before COMMIT;
+   never add `--force`). In Workbench, watch for
    red lines; if one appears, run `ROLLBACK` in the same tab. Check its results:
    - V1 = 34 weenies
    - V2 = 22 placements

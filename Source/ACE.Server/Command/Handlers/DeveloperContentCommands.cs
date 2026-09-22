@@ -3318,7 +3318,6 @@ namespace ACE.Server.Command.Handlers.Processors
             {
                 var blockStart = TemplateExport.ClampToUint(ServerConfig.content_template_export_wcid_start.Value);
                 var blockEnd = TemplateExport.ClampToUint(ServerConfig.content_template_export_wcid_end.Value);
-                var highWater = ServerConfig.content_template_export_next_wcid.Value;
 
                 // Authoritative and fresh: every class id in the world database, read for this export. The same
                 // dictionary drives the wcid choice and the writer's name comments, so nothing is read twice.
@@ -3334,17 +3333,24 @@ namespace ACE.Server.Command.Handlers.Processors
                     return;
                 }
 
-                var choice = TemplateExport.ChooseWcid(args.ExplicitWcid, args.Overwrite, blockStart, blockEnd, highWater, existing);
-                if (choice.Refused)
+                // Exports run on the source's landblock thread, so two on different landblocks can run at once.
+                // The mark is read, the id chosen and the new mark saved under one lock, so they never pick the same id.
+                TemplateExport.WcidChoice choice;
+                lock (ExportWcidLock)
                 {
-                    CommandHandlerHelper.WriteOutputInfo(session, choice.RefusalReason);
-                    return;
-                }
+                    var highWater = ServerConfig.content_template_export_next_wcid.Value;
+                    choice = TemplateExport.ChooseWcid(args.ExplicitWcid, args.Overwrite, blockStart, blockEnd, highWater, existing);
+                    if (choice.Refused)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, choice.RefusalReason);
+                        return;
+                    }
 
-                // The high-water mark moves and is written to the shard database BEFORE the file exists, so a crash
-                // between here and the file write cannot hand the same id out twice.
-                if (choice.NextHighWaterMark > highWater)
-                    PersistExportHighWaterMark(session, choice.NextHighWaterMark);
+                    // The high-water mark moves and is written to the shard database BEFORE the file exists, so a crash
+                    // between here and the file write cannot hand the same id out twice. If it cannot be saved, stop.
+                    if (choice.NextHighWaterMark > highWater && !PersistExportHighWaterMark(session, choice.NextHighWaterMark))
+                        return;
+                }
 
                 var snapshot = SnapshotForTemplate(target);
                 var flavour = args.Flavour ?? TemplateExport.DefaultFlavour(snapshot);
@@ -3387,7 +3393,11 @@ namespace ACE.Server.Command.Handlers.Processors
                     BlockEnd = blockEnd,
                 });
 
-                var deleteSql = TemplateExport.BuildDeleteStatement(choice.Wcid, className);
+                // A confirmed overwrite replaces whatever holds the id, whatever it is called; the narrow delete
+                // (id AND generated class_Name) would leave a differently named row and the INSERT would then fail.
+                var deleteSql = choice.ReplacesExisting
+                    ? $"-- Overwrite confirmed: replaces the existing weenie at this id ('{TemplateExport.ToAscii(choice.ExistingName)}').\nDELETE FROM `weenie` WHERE `class_Id` = {choice.Wcid};\n"
+                    : TemplateExport.BuildDeleteStatement(choice.Wcid, className);
 
                 if (WeenieSQLWriter == null)
                 {
@@ -3538,15 +3548,17 @@ namespace ACE.Server.Command.Handlers.Processors
             };
         }
 
+        /// <summary>Serialises the export wcid choice and its high-water mark update across landblock threads.</summary>
+        private static readonly object ExportWcidLock = new object();
+
         /// <summary>
-        /// Advances content_template_export_next_wcid in memory (SetValue, which also queues the periodic drain)
-        /// and writes it to the shard database right now, so a crash before the periodic save cannot reuse an id.
+        /// Writes content_template_export_next_wcid to the shard database right now, so a crash before the periodic
+        /// save cannot reuse an id, then advances it in memory. Returns false, and changes nothing, when the write
+        /// fails; the caller then stops the export.
         /// </summary>
-        private static void PersistExportHighWaterMark(Session session, long next)
+        private static bool PersistExportHighWaterMark(Session session, long next)
         {
             const string key = "content_template_export_next_wcid";
-
-            ServerConfig.SetValue(key, next);
 
             try
             {
@@ -3558,9 +3570,13 @@ namespace ACE.Server.Command.Handlers.Processors
             }
             catch (Exception e)
             {
-                log.Error($"[TemplateExport] could not persist {key}={next} immediately: {e}");
-                CommandHandlerHelper.WriteOutputInfo(session, "WARNING: the export high-water mark could not be written to the shard database right now; it is held in memory and goes out with the periodic config save.");
+                log.Error($"[TemplateExport] could not persist {key}={next}: {e}");
+                CommandHandlerHelper.WriteOutputInfo(session, "The export high-water mark could not be written to the shard database, so nothing was exported. Try again, and check the server log if it keeps failing.");
+                return false;
             }
+
+            ServerConfig.SetValue(key, next);
+            return true;
         }
 
         private static async Task SendTemplateToDiscordAsync(string playerName, string fileName, byte[] bytes)

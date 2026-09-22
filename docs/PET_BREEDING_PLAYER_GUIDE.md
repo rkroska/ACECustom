@@ -39,8 +39,11 @@ fight, raising the baby, the shop, and what every message means.
 5. The baby goes to the **female's owner**. It is born small. Kill **300** creatures at its tier or
    higher with it out and it grows up.
 
-About one litter in twenty comes out **mutated**: a permanent stat bonus and a brand new colour. When
-that happens, the baby's spirit rises and your two pets have **90 seconds** to beat it for a bonus.
+About one litter in thirteen comes out **mutated**, before incense. Two separate rolls decide it: a
+stat mutation (about 1 in 20) and a potency mutation (about 1 in 33), so a litter can get a stat
+bonus, a potency bonus, or both. The stat chance shrinks slowly as a line collects mutations, so a
+well-bred line settles nearer one litter in twenty. Any mutation also gives the baby a brand new
+colour, and its spirit rises: your two pets have **90 seconds** to beat it for a bonus.
 
 ---
 

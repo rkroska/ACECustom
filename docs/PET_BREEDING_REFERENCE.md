@@ -90,8 +90,8 @@ code default. The branch adds 51 settings, and every one is read by the code; no
 | Setting | Type | Default | Prod | What it does | Read at | How to test |
 |---|---|---|---|---|---|---|
 | `pet_breeding_enabled` | bool | true | true | Master switch. False: breeding returns immediately, the appraisal breeding block is not built, and `PetNextBreedingTime` is not synced. **Does not** stop consumables being used. The description in code ("using one device on another") is stale: breeding is dance-driven. | `PetDevice_Breeding.cs:688, 1908, 2083`; `PetDevice.cs:224` | Set false, dance with a partner: nothing happens (admins see a debug line). Appraise: no "Sex:" block. |
-| `pet_breeding_allowed_landblock` | long | 0x013A | **262** | Where breeding is allowed. 0 = anywhere. At most 0xFFFF = the whole landblock. Above 0xFFFF = that exact 32-bit cell only. Checked for the dancer and each candidate partner, and used by `CombatPet.IsInMotelOrEncounter` (own-pet healing). Negative matches nothing. **The code default is the old motel.** | `PetDevice_Breeding.cs:48, 729, 2085`; `CombatPet.cs:1859` | `@breed-debug` in the annex: "Location Match: VALID". |
-| `pet_breeding_allowed_variant` | long | 3 | **2** | Landblock variation that must match. -1 = any. | `PetDevice_Breeding.cs:49, 2086` | `@breed-debug` shows Variant and the match. |
+| `pet_breeding_allowed_landblock` | long | 0x0106 | **262** | Where breeding is allowed. 0 = anywhere. At most 0xFFFF = the whole landblock. Above 0xFFFF = that exact 32-bit cell only. Checked for the dancer and each candidate partner, and used by `CombatPet.IsInMotelOrEncounter` (own-pet healing). Negative matches nothing. | `PetDevice_Breeding.cs:48, 729, 2085`; `CombatPet.cs:1859` | `@breed-debug` in the annex: "Location Match: VALID". |
+| `pet_breeding_allowed_variant` | long | 2 | **2** | Landblock variation that must match. -1 = any. | `PetDevice_Breeding.cs:49, 2086` | `@breed-debug` shows Variant and the match. |
 | `pet_breeding_dance_sync_seconds` | double | 5.0 | - | Window the partner's last dance must fall in, measured when the second player dances. Ignored by `@breed`. There is also a fixed 2 s per-player dance rate limit. | `PetDevice_Breeding.cs:744` (used 787-823) | Set 30; two players dance 20 s apart and the breed fires. |
 | `pet_breeding_min_parent_level` | long | 100 | - | Minimum **tier** of both essences (`PetDeviceWcids.GetPetLevel`; tiers 50, 80, 100, 125, 150, 180, 200, 250, 300). A wcid missing from the table refuses with "Failed to determine parent pet tiers". | `PetDevice_Breeding.cs:961` | Set 300, breed tier 200s: "Parent pets must be at least tier 300 to breed." |
 | `pet_breeding_min_bond` | long | 100 | - | Both devices' `PetBondLevel` (unset = 1) must be at least this. **Bond only grows while `pet_bond_enabled` is true, and that defaults to false, so on pure defaults nobody can breed.** Babies start at bond 1. | `PetDevice_Breeding.cs:971` | Set 1, breed two fresh essences. |
@@ -885,7 +885,7 @@ plus every SQL file. Restore it before regenerating the bundle if test has been 
 
 ## 14. Gotchas
 
-- **Stored config overrides code.** The breeding location default is still 0x013A / 3. Always check
+- **Stored config overrides code.** A stored value always wins over the code default (0x0106 / 2). Always check
   `@fetchlong` / `@petserverconfig` (not `@showprops`, which crashes).
 - **`pet_bond_enabled` false means no breeding, ever.**
 - **Transient errors never reach chat.** Players miss them, so tell them to watch the screen.

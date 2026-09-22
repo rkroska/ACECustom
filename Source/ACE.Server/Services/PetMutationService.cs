@@ -553,8 +553,9 @@ namespace ACE.Server.Services
         /// <summary>
         /// How much of the model (by polygon count) cannot take a palette. Reads the Portal DAT: the setup's
         /// parts with the capture's anim-part overrides ("part:gfxObjId") applied, and each surface's texture with
-        /// the capture's texture swaps ("part:oldTexture:newTexture") applied. A part takes a palette when at
-        /// least one of its surfaces resolves to a palette-indexed texture (PFID_INDEX16 or PFID_P8). Cached per
+        /// the capture's texture swaps ("part:oldTexture:newTexture") applied. Each polygon is judged by its own
+        /// surface: it takes a palette when that surface resolves to a palette-indexed texture (PFID_INDEX16 or
+        /// PFID_P8). Cached per
         /// setup and capture strings. Any DAT failure counts as "not measured" (0, 0), which never blocks.
         /// </summary>
         public static (int FixedPolys, int DrawnPolys) MeasureFixedColourPolygons(uint setupId, string capturedAnimParts, string capturedTextures)
@@ -598,26 +599,39 @@ namespace ACE.Server.Services
                         if (gfx?.Surfaces == null || gfx.Surfaces.Count == 0)
                             continue;
 
-                        var polys = Math.Max(1, gfx.Polygons?.Count ?? 1);
-                        drawnPolys += polys;
-
-                        var takesPalette = false;
-                        foreach (var surfaceId in gfx.Surfaces)
+                        // which of this part's surfaces take a palette (a missing surface counts as taking one, so it never blocks)
+                        var surfaceTakesPalette = new bool[gfx.Surfaces.Count];
+                        for (int s = 0; s < gfx.Surfaces.Count; s++)
                         {
-                            var surface = DatManager.PortalDat.ReadFromDat<Surface>(surfaceId);
+                            var surface = DatManager.PortalDat.ReadFromDat<Surface>(gfx.Surfaces[s]);
                             if (surface == null)
+                            {
+                                surfaceTakesPalette[s] = true;
                                 continue;
+                            }
                             var texId = surface.OrigTextureId;
                             if (swaps.TryGetValue((i, texId), out var swapped))
                                 texId = swapped;
-                            if (IsPaletteIndexedTexture(texId))
-                            {
-                                takesPalette = true;
-                                break;
-                            }
+                            surfaceTakesPalette[s] = IsPaletteIndexedTexture(texId);
                         }
-                        if (!takesPalette)
-                            fixedPolys += polys;
+
+                        if (gfx.Polygons == null || gfx.Polygons.Count == 0)
+                        {
+                            drawnPolys += 1;
+                            if (!surfaceTakesPalette.Any(p => p))
+                                fixedPolys += 1;
+                            continue;
+                        }
+
+                        // each polygon is judged by its own surface, so a mixed part counts only its full-colour faces
+                        foreach (var poly in gfx.Polygons.Values)
+                        {
+                            drawnPolys++;
+                            var surfaceIndex = poly.Stippling.HasFlag(StipplingType.NoPos) ? poly.NegSurface : poly.PosSurface;
+                            var takesPalette = surfaceIndex < 0 || surfaceIndex >= surfaceTakesPalette.Length || surfaceTakesPalette[surfaceIndex];
+                            if (!takesPalette)
+                                fixedPolys++;
+                        }
                     }
                     return (fixedPolys, drawnPolys);
                 }
@@ -656,7 +670,8 @@ namespace ACE.Server.Services
             foreach (var entry in packed.Split(',', StringSplitOptions.RemoveEmptyEntries))
             {
                 var bits = entry.Split(':');
-                if (bits.Length == 2 && int.TryParse(bits[0].Trim(), out var idx) && idx >= 0 && uint.TryParse(bits[1].Trim(), out var val))
+                // anim-part indices are a byte on the wire; a larger one would make the caller pad the part list to it
+                if (bits.Length == 2 && int.TryParse(bits[0].Trim(), out var idx) && idx >= 0 && idx <= byte.MaxValue && uint.TryParse(bits[1].Trim(), out var val))
                     yield return (idx, val);
             }
         }

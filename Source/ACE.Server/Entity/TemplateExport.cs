@@ -314,6 +314,17 @@ namespace ACE.Server.Entity
             return sb.ToString();
         }
 
+        /// <summary>
+        /// ToAscii for emote text: keeps null as null (an action with no text stays NULL) and keeps "\n" line
+        /// breaks, which the client draws, while dropping everything else it cannot.
+        /// </summary>
+        public static string ToAsciiEmoteText(string input)
+        {
+            if (input == null)
+                return null;
+            return string.Join("\n", input.Replace("\r\n", "\n").Split('\n').Select(ToAscii));
+        }
+
         // ------------------------------------------------------------------------------------------------
         // Snapshot of the live object (filled by the command on the owning thread)
         // ------------------------------------------------------------------------------------------------
@@ -907,7 +918,7 @@ namespace ACE.Server.Entity
                 {
                     Order = order++,
                     Type = a.Type, Delay = a.Delay, Extent = a.Extent, Motion = (uint?)a.Motion,
-                    Message = a.Message, TestString = a.TestString,
+                    Message = ToAsciiEmoteText(a.Message), TestString = ToAsciiEmoteText(a.TestString),
                     Min = a.Min, Max = a.Max, Min64 = a.Min64, Max64 = a.Max64, MinDbl = a.MinDbl, MaxDbl = a.MaxDbl,
                     Stat = a.Stat, Display = a.Display, Amount = a.Amount, Amount64 = a.Amount64, HeroXP64 = a.HeroXP64,
                     Percent = a.Percent, SpellId = a.SpellId, WealthRating = a.WealthRating, TreasureClass = a.TreasureClass,

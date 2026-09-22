@@ -56,5 +56,8 @@ VALUES (78780261, 2, 0xDB3B0019, 80.283607, 18.184467, 30.695301, -0.967966, 0, 
 -- The placement, with the next free static guid in landblock 0x0106.
 DELETE FROM `landblock_instance` WHERE `weenie_Class_Id` = 78780261 AND `landblock` = 0x0106 AND `variation_Id` = 2;
 SET @g = (SELECT COALESCE(MAX(`guid`), 0x70105FFF) FROM `landblock_instance` WHERE `guid` BETWEEN 0x70106000 AND 0x70106FFF);
+-- Range full (1880125439 = 0x70106FFF): the two-row subquery raises error 1242 and stops the script,
+-- rather than use a guid from the next landblock. NULL would not do: guid is AUTO_INCREMENT.
+SET @g = IF(@g + 1 > 1880125439, (SELECT 1 UNION SELECT 2), @g);
 INSERT INTO `landblock_instance` (`guid`, `weenie_Class_Id`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, `is_Link_Child`, `last_Modified`, `variation_Id`)
 VALUES (@g + 1, 78780261, 0x01060179, 29.785805, -30.034668, 0.005, -0.999403, 0, 0, -0.034540, False, NOW(), 2);

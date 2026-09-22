@@ -884,10 +884,13 @@ INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`que
 VALUES (78780201, 7, 1, NULL);
 SET @e = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`,`order`,`type`,`delay`,`extent`,`message`) VALUES
-  (@e, 0, 10, 0, 0, 'Three things on the list. Two of them are the same thing at different stages.'),
-  (@e, 1, 10, 3.5, 0, 'The tailoring kit takes the look off one pet and puts it on another. The first one does not survive that. The price reflects it.'),
-  (@e, 2, 10, 3.5, 0, 'The last one is for people who have made a decision. I don''t ask which decision.'),
-  (@e, 3, 10, 3.5, 0, 'Buy off the list. I don''t haggle and I don''t explain the Professor.');
+  (@e, 0, 10, 0, 0, 'Nine things on the list. Most of them are smoke in a jar.'),
+  (@e, 1, 10, 3.5, 0, 'The incense makes the next litter likelier to come out changed. Bigger jar, better odds. Both parents can wear it.'),
+  (@e, 2, 10, 3.5, 0, 'The draught grows a baby twice as fast. The catalyst makes a change come out loud. The offering makes the spirit easy to put down.'),
+  (@e, 3, 10, 3.5, 0, 'The serum re-rolls a colour on the spot. The stats stay where they were.'),
+  (@e, 4, 10, 3.5, 0, 'The tailoring kit takes the look off one pet and puts it on another. The first one does not survive that. The price reflects it.'),
+  (@e, 5, 10, 3.5, 0, 'The neutering kit is for people who have made a decision. I don''t ask which decision.'),
+  (@e, 6, 10, 3.5, 0, 'Buy off the list. I don''t haggle and I don''t explain the Professor.');
 
 -- Mrs. Ruggan: four questions, none of them answerable.
 INSERT INTO `weenie_properties_emote` (`object_Id`,`category`,`probability`,`quest`)
