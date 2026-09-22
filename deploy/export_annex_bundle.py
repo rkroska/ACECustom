@@ -13,11 +13,22 @@ Read-only: it only SELECTs. The file it writes:
   * Leaves out test-only NPCs (TEST_ONLY below).
   * Is safe to re-run: every weenie and placement it owns is deleted first, inside one transaction.
 """
-import datetime, os, sys
+import datetime, json, os, re, sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from export_annex_landblock import login  # same Config.js login
 import pymysql
+
+CONFIG_JS = os.environ.get("ACE_CONFIG_JS", os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "Source", "ACE.Server", "bin", "x64", "Release", "net10.0", "Config.js"))
+
+
+def login():
+    """The ace_world login from the server's Config.js (comments stripped; it is JSON with comments)."""
+    txt = open(CONFIG_JS, encoding="utf-8-sig").read()
+    txt = re.sub(r"/\*.*?\*/", "", txt, flags=re.S)
+    txt = "\n".join(re.sub(r"(^|\s)//.*$", "", line) for line in txt.splitlines())
+    return json.loads(txt)["MySql"]["World"]
+
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "deploy", "Annex-Prod-Bundle.sql")

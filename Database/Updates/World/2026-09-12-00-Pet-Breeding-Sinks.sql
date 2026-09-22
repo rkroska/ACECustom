@@ -256,9 +256,9 @@ VALUES (78780255,  1,   33558818)
 DELETE FROM weenie_properties_string WHERE object_Id = 78780255;
 INSERT INTO weenie_properties_string (object_Id, type, value)
 VALUES (78780255,  1, 'Offering of Subjugation')
-     , (78780255, 14, 'Cast into the hearth or anoint onto a pet device before breeding to weaken its mating guardian and guarantee victory.')
-     , (78780255, 15, 'Cast into the hearth or anoint onto a pet device before breeding to weaken its mating guardian and guarantee victory.')
-     , (78780255, 16, 'Cast into the hearth or anoint onto a pet device before breeding to weaken its mating guardian and guarantee victory.');
+     , (78780255, 14, 'Use on a combat pet essence before breeding. If the litter mutates and its spirit rises, the spirit is badly weakened: it hits for half, takes 2.5x damage, and each blow can take a quarter of its health. Consumed from both parents when a spirit appears.')
+     , (78780255, 15, 'Use on a combat pet essence before breeding. If the litter mutates and its spirit rises, the spirit is badly weakened: it hits for half, takes 2.5x damage, and each blow can take a quarter of its health. Consumed from both parents when a spirit appears.')
+     , (78780255, 16, 'Use on a combat pet essence before breeding. If the litter mutates and its spirit rises, the spirit is badly weakened: it hits for half, takes 2.5x damage, and each blow can take a quarter of its health. Consumed from both parents when a spirit appears.');
 
 /* ========================================================================= */
 /* 7. Stock items on Ivo, Ruggan's Quartermaster (78780201) if present        */

@@ -101,8 +101,8 @@ python deploy/export_annex_bundle.py
 
 | Setting | Value | Why |
 |---|---|---|
-| `pet_breeding_allowed_landblock` | 262 (0x0106) | The code default still says 0x013A, the old motel |
-| `pet_breeding_allowed_variant` | 2 | The code default still says 3 |
+| `pet_breeding_allowed_landblock` | 262 (0x0106) | Matches the code default since Q8; written so an older build is right too |
+| `pet_breeding_allowed_variant` | 2 | As above |
 | `pet_breeding_enabled` | true | Same as the default, written for clarity |
 | `pet_breeding_guardian_enabled` | **true** | Default is false. See Q2. |
 | `pet_breeding_force_mutation` | false | Test-only switch, pinned off |
@@ -111,6 +111,7 @@ python deploy/export_annex_bundle.py
 | `pet_breeding_verbose_logging` | false | Players can spam it with a dance macro |
 | `pet_trace` | false | Debug only; on for test |
 | `pet_visual_packet_debug` | false | Debug only; on for test |
+| `pet_breeding_mutation_decay_rate` | **0.1** | Default is 0 (flat). Gentle diminishing returns; see Q3. |
 
 ### Left at the code default on prod
 
@@ -119,7 +120,6 @@ Fenwick's tutorial quotes these numbers, and they match.
 | Setting | Prod (code default) | Test currently | Notes |
 |---|---|---|---|
 | `pet_breeding_base_mutation_chance` | **0.05 (5%)** | 0.20 | Fenwick: "about one in twenty" |
-| `pet_breeding_mutation_decay_rate` | **0** (flat) | 0.35 | See Q3 |
 | `pet_breeding_mutation_min_floor` | 0.02 | 0.02 | |
 | `pet_breeding_potency_mutation_chance` | **0.03 (3%)** | 0.50 | |
 | `pet_breeding_min_bond` | **100** | 1 | Needs `pet_bond_enabled` (Q1) |
@@ -157,30 +157,32 @@ No existing setting's default changed on this branch. It only adds 51 new settin
 - **Q1. Is `pet_bond_enabled` on in prod?** **Answered from the prod dump: yes** (and
   `pet_potency_enabled` is on too). Prod also has no stored `pet_breeding_*` settings, so the shard
   script's values apply cleanly.
-- **Q2. Mating guardian on or off?** The code default is off. The script turns it on because it is on
+- **Q2. Mating guardian on or off?** **Answered: on.** The code default is off. The script turns it on because it is on
   in test and Fenwick's tutorial describes it ("Its spirit stands up and the two parents have to put
   it down"). Known accepted issue H2: a server restart during a guardian fight loses that breed.
-- **Q3. Mutation decay.** Test uses 0.35 (diminishing returns per inherited mutation); the prod default
-  is 0 (flat 5%). Keep the default?
+- **Q3. Mutation decay.** **Answered: 0.1**, written by the shard script. Chance per litter is
+  5% / (1 + 0.1 x mutations carried), floored at 2%: 5% at 0, 3.3% at 5, 2.5% at 10, floor at ~15.
+  About 290 litters to a 10-mutation line without incense (200 at decay 0, 420 at 0.35, judged too steep).
 - **Q4. The annex has no exit.** Variation 2 holds only the annex NPCs; the retail dungeon's Surface
   Portal is in the base layer and does not appear there. Players must recall out. Add an exit portal
-  (for example back to Prof. Ruggan)?
+  (for example back to Prof. Ruggan)? **Answered: yes**, to Prof. Ruggan at 0xDB3B. Waiting on two
+  in-game positions (the portal spot in the annex and the arrival beside Ruggan).
 - **Q5. Portal arrival point.** Set to "The Drop" in cell 0x01060186 (35.18, -19.76), beside Fenwick,
-  where the Scene Tester stood on test. Confirm it by using the portal on test (after `@clearcache`).
+  where the Scene Tester stood on test. **Answered: the spot is right**; the facing was turned 180
+  degrees on 2026-09-21 so players land facing Fenwick.
 - **Q6. Does prod have Prof. Ruggan (694201298) at 0xDB3B?** **Answered from the prod dump: yes**,
   with the motel portal already placed beside him. The bundle updates the portal's destination and
   leaves that placement where it is.
 - **Q7. Two Nine-Colour Shreths are placed; the Teal Incident and Registered Browerk are not.** The
-  bundle ships the layout exactly as it is on test.
+  bundle ships the layout exactly as it is on test. **Answered: intentional.**
 - **Q8. The code default for the breeding location still says 0x013A variation 3.** The shard script
-  overrides it, so prod is fine. Change the default in `PropertyManager.cs` so a fresh server is right
-  too?
+  overrides it, so prod is fine. **Done:** the default is now 0x0106 variation 2.
 - **Q9. Older docs still describe 0x013A:** `docs/PET_BREEDING_ANNEX_DESIGN.md` and comments in the
   older annex SQL. The superseded deploy scripts, `RUNBOOK.md` and `REVIEW.md` were deleted on
   2026-09-21; the current docs are `docs/PET_BREEDING_TECHNICAL_DESIGN.md`, `PET_BREEDING_REFERENCE.md`
-  and `PET_BREEDING_PLAYER_GUIDE.md`.
-- **Q10. Which branch does the prod build come from?** Everything is committed on
-  `feature/pet-breeding-motel`.
+  and `PET_BREEDING_PLAYER_GUIDE.md`. **Answered: leave the old docs as they are** (they carry
+  superseded banners).
+- **Q10. Which branch does the prod build come from?** **Answered: `feature/pet-breeding-motel`.**
 
 ## Rollback
 

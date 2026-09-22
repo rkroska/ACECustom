@@ -46,7 +46,7 @@ INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES
 --    A spot in cell 0x01060186 that was stood on in game, facing into the room.
 DELETE FROM `weenie_properties_position` WHERE `object_Id` = 98760388;
 INSERT INTO `weenie_properties_position` (`object_Id`, `position_Type`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, `variation_Id`)
-VALUES (98760388, 2, 0x01060186, 35.1771, -19.7579, 0.005, 0.715186, 0, 0, 0.698934, 2); -- Type 2 = Destination
+VALUES (98760388, 2, 0x01060186, 35.1771, -19.7579, 0.005, 0.698934, 0, 0, -0.715186, 2); -- Type 2 = Destination
 
 -- 4. Spawn Portal next to Professor Ruggan in Lin
 --

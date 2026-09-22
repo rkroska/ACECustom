@@ -2892,9 +2892,9 @@ INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
   (78780255, 94, 128);
 INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
   (78780255, 1, 'Offering of Subjugation'),
-  (78780255, 14, 'Cast into the hearth or anoint onto a pet device before breeding to weaken its mating guardian and guarantee victory.'),
-  (78780255, 15, 'Cast into the hearth or anoint onto a pet device before breeding to weaken its mating guardian and guarantee victory.'),
-  (78780255, 16, 'Cast into the hearth or anoint onto a pet device before breeding to weaken its mating guardian and guarantee victory.');
+  (78780255, 14, 'Use on a combat pet essence before breeding. If the litter mutates and its spirit rises, the spirit is badly weakened: it hits for half, takes 2.5x damage, and each blow can take a quarter of its health. Consumed from both parents when a spirit appears.'),
+  (78780255, 15, 'Use on a combat pet essence before breeding. If the litter mutates and its spirit rises, the spirit is badly weakened: it hits for half, takes 2.5x damage, and each blow can take a quarter of its health. Consumed from both parents when a spirit appears.'),
+  (78780255, 16, 'Use on a combat pet essence before breeding. If the litter mutates and its spirit rises, the spirit is badly weakened: it hits for half, takes 2.5x damage, and each blow can take a quarter of its health. Consumed from both parents when a spirit appears.');
 
 -- 78780257  Mutagenic Serum
 INSERT INTO `weenie` (`class_Id`,`class_Name`,`type`,`last_Modified`) VALUES (78780257, 'ace78780257-mutagenicserum', 44, NOW());
@@ -3044,7 +3044,7 @@ INSERT INTO `weenie_properties_int` (`object_Id`,`type`,`value`) VALUES
   (98760388, 133, 4),
   (98760388, 150, 3);
 INSERT INTO `weenie_properties_position` (`object_Id`,`position_Type`,`obj_Cell_Id`,`origin_X`,`origin_Y`,`origin_Z`,`angles_W`,`angles_X`,`angles_Y`,`angles_Z`,`variation_Id`) VALUES
-  (98760388, 2, 17170822, 35.1771, -19.7579, 0.005, 0.715186, 0.0, 0.0, 0.698934, 2);
+  (98760388, 2, 17170822, 35.1771, -19.7579, 0.005, 0.698934, 0.0, 0.0, -0.715186, 2);
 INSERT INTO `weenie_properties_string` (`object_Id`,`type`,`value`) VALUES
   (98760388, 1, 'Portal to Seedy Motel'),
   (98760388, 14, 'Double click this portal to travel to the Seedy Motel.');

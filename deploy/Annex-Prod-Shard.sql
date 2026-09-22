@@ -79,6 +79,12 @@ INSERT INTO `config_properties_boolean` (`key`, `value`, `description`) VALUES
   ('pet_visual_packet_debug',        0, 'If TRUE, logs every creature ObjDesc. Very noisy, debug only.')
 ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), `description` = VALUES(`description`);
 
+/* 4. Mutation decay (plan Q3): a gentle slope. Each stat mutation a pet already carries costs about
+      two more litters for the next one; the 2% floor is reached at about 15 mutations. */
+INSERT INTO `config_properties_double` (`key`, `value`, `description`) VALUES
+  ('pet_breeding_mutation_decay_rate', 0.1, 'Decay factor per inherited mutation: chance = base / (1 + decay x mutations), floored at pet_breeding_mutation_min_floor. 0.1 = gentle diminishing returns.')
+ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), `description` = VALUES(`description`);
+
 SET SQL_SAFE_UPDATES = @__old_safe_updates;
 
 /* =====================================================================================

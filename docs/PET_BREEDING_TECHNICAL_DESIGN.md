@@ -226,7 +226,7 @@ potency chance = pet_breeding_potency_mutation_chance        (independent; incen
 |---|---|
 | `base` | 0.05 |
 | `floor` | 0.02 |
-| `decay` | 0 (flat) |
+| `decay` | 0 (flat) in code; **0.1 on prod** (shard script) |
 | `incense` | sum of both parents' bonuses, clamped 0..0.50 (practical maximum +0.20) |
 
 - **A stat mutation** picks one line uniformly from damage, DR, crit and vitality, skipping any line
@@ -538,22 +538,22 @@ prod copy.
 | - | Denied renames send no in-game message | Confusion | Documented; possible fix: notify on deny |
 | - | Bexley's and Splotch's click pools (about 10 s) can drop a scene cue | A rare cut-off scene | Accepted |
 | - | Actors' idle lines can land mid-scene | Cosmetic | Accepted; the fix is to move idle lines onto the director |
-| - | Stale text: the Offering's item text, Ivo's "three things", two setting descriptions, the `PetIsMaleOverride` comment | Cosmetic and misleading | Fix in a content pass |
+| - | Stale text: Ivo's "three things", two setting descriptions, the `PetIsMaleOverride` comment | Cosmetic and misleading | Fix in a content pass |
 
 ### Open questions (from the deploy plan)
 
 | Q | Question |
 |---|---|
-| Q1 | Is `pet_bond_enabled` on in prod? **If not, nobody can breed.** |
-| Q2 | Should the guardian be on? It is on in the prod script, to match Fenwick's tutorial. |
-| Q3 | Keep flat mutation odds (decay 0), or use test's 0.35? |
-| Q4 | Add an exit portal to the annex? |
-| Q5 | Confirm the portal arrival point in game. |
-| Q6 | Does prod have Prof. Ruggan at 0xDB3B? |
-| Q7 | The placement leftovers: a duplicate Shreth, and two unplaced pets. |
-| Q8 | Change the code default for the location to 0x0106 / 2? |
-| Q9 | Update or delete the superseded docs and deploy files? |
-| Q10 | Which branch does the prod build come from? Nothing is committed yet. |
+| Q1 | Is `pet_bond_enabled` on in prod? **Yes** (from the prod dump). |
+| Q2 | Should the guardian be on? **Yes.** |
+| Q3 | Mutation decay? **0.1**, written by the shard script. |
+| Q4 | Add an exit portal to the annex? **Yes**, back to Prof. Ruggan (in progress). |
+| Q5 | Confirm the portal arrival point in game. **Confirmed**; facing turned toward Fenwick. |
+| Q6 | Does prod have Prof. Ruggan at 0xDB3B? **Yes.** |
+| Q7 | The placement leftovers: a duplicate Shreth, and two unplaced pets. **Intentional.** |
+| Q8 | Change the code default for the location to 0x0106 / 2? **Done.** |
+| Q9 | Update or delete the superseded docs and deploy files? **Deploy files deleted; old docs left.** |
+| Q10 | Which branch does the prod build come from? **`feature/pet-breeding-motel`.** |
 
 ---
 
