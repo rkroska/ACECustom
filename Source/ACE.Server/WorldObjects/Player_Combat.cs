@@ -352,10 +352,36 @@ namespace ACE.Server.WorldObjects
                 return CombatType.Missile;
         }
 
+        private double lastPetsOnlyNoticeTime;
+
+        /// <summary>
+        /// Tells the player why a creature flagged OnlyCombatPetsCanDamage took nothing. At most once every
+        /// 10 seconds, so a ring spell across ten of them or a stream of swings is one line, not a wall.
+        /// Silent for anything else that refuses damage (a mating guardian keeps its own rules).
+        /// </summary>
+        public void NotifyPetsOnlyTarget(Creature target)
+        {
+            if (target == null || target.GetProperty(PropertyBool.OnlyCombatPetsCanDamage) != true)
+                return;
+
+            var now = Time.GetUnixTime();
+            if (now - lastPetsOnlyNoticeTime < 10.0)
+                return;
+            lastPetsOnlyNoticeTime = now;
+
+            Session?.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} can only be harmed by combat pets.", ChatMessageType.Combat));
+        }
+
         public DamageEvent DamageTarget(Creature target, WorldObject damageSource)
         {
             if (target.Health.Current <= 0)
                 return null;
+
+            if (!target.CanBeDamagedBy(this))
+            {
+                NotifyPetsOnlyTarget(target);
+                return null;
+            }
 
             var targetPlayer = target as Player;
 
@@ -376,6 +402,8 @@ namespace ACE.Server.WorldObjects
             {
                 OnDamageTarget(target, damageEvent.CombatType, damageEvent.IsCritical);
 
+                var traceBefore = PetTrace.Enabled ? PetTrace.VitalCurrent(target, damageEvent.DamageType) : 0u;
+
                 if (targetPlayer != null)
                     appliedDamage = (uint)Math.Max(0, targetPlayer.TakeDamage(this, damageEvent));
                 else
@@ -389,6 +417,9 @@ namespace ACE.Server.WorldObjects
                     }
                     appliedDamage = target.TakeDamage(this, damageEvent.DamageType, damageEvent.Damage, damageEvent.IsCritical);
                 }
+
+                if (PetTrace.Enabled)
+                    PetTrace.CombatDamage(damageEvent, traceBefore, appliedDamage);
             }
             else
             {

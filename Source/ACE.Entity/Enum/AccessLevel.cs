@@ -1,4 +1,4 @@
-﻿namespace ACE.Entity.Enum
+namespace ACE.Entity.Enum
 {
     public enum AccessLevel
     {
@@ -7,6 +7,9 @@
         Sentinel    = 2,
         Envoy       = 3,
         Developer   = 4,
-        Admin       = 5
+        Admin       = 5,
+
+        // User-facing command access; kept as an alias so existing Player access values remain stable.
+        User        = Player
     }
 }

@@ -116,7 +116,7 @@ When you assess a bonded **combat** essence, you may see something like:
 ```text
 Potency: 25 stored (10 active, 15 dormant)
 Bond: 20
-Body Training: +20% damage from potency (active)
+Potency Bonus: +20% damage (from active potency)
 ```
 
 If **Bond Strain** is enabled on the server (optional feature), high active Potency can show a line about reduced **your** damage rating while the combat pet is out. This is **off by default** on most launches.

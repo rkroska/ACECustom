@@ -118,7 +118,7 @@ namespace ACE.Server.Services
             return Image.LoadPixelData<Rgba32>(rgba, texture.Width, texture.Height);
         }
 
-        private static byte[] ToRgba8(Texture texture, uint? uiEffects = null)
+        public static byte[] ToRgba8(Texture texture, uint? uiEffects = null)
         {
             int width = texture.Width;
             int height = texture.Height;
@@ -295,22 +295,24 @@ namespace ACE.Server.Services
                 }
             }
 
-            // Post-process to remove literal white masks globally across any texture format
-            for (int i = 0; i < width * height; i++)
+            // Post-process to apply UI icon effect swatches if requested
+            if (uiEffects.HasValue && uiEffects.Value != 0)
             {
-                // Skip pixels that are already fully transparent (e.g., the background index 0)
-                if (rgba8[i * 4 + 3] == 0) continue;
-                
-                if (rgba8[i * 4] == 255 && rgba8[i * 4 + 1] == 255 && rgba8[i * 4 + 2] == 255)
+                for (int i = 0; i < width * height; i++)
                 {
-                    if (effectPixels != null && effectPixels.Length == rgba8.Length) {
-                        rgba8[i * 4] = effectPixels[i * 4];
-                        rgba8[i * 4 + 1] = effectPixels[i * 4 + 1];
-                        rgba8[i * 4 + 2] = effectPixels[i * 4 + 2];
-                        // If the swatch texture itself is transparent at this pixel, we mirror that
-                        rgba8[i * 4 + 3] = effectPixels[i * 4 + 3];
-                    } else {
-                        rgba8[i * 4 + 3] = 0;
+                    // Skip pixels that are already fully transparent (e.g., the background index 0)
+                    if (rgba8[i * 4 + 3] == 0) continue;
+                    
+                    if (rgba8[i * 4] == 255 && rgba8[i * 4 + 1] == 255 && rgba8[i * 4 + 2] == 255)
+                    {
+                        if (effectPixels != null && effectPixels.Length == rgba8.Length) {
+                            rgba8[i * 4] = effectPixels[i * 4];
+                            rgba8[i * 4 + 1] = effectPixels[i * 4 + 1];
+                            rgba8[i * 4 + 2] = effectPixels[i * 4 + 2];
+                            rgba8[i * 4 + 3] = effectPixels[i * 4 + 3];
+                        } else {
+                            rgba8[i * 4 + 3] = 0;
+                        }
                     }
                 }
             }

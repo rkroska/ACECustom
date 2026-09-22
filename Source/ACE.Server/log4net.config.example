@@ -38,7 +38,27 @@
 
   <logger name="Packets">
     <level value="INFO" />
-  </logger> 
+  </logger>
+
+  <!-- Pet session / combat trace (ServerConfig.pet_trace, logger "PetTrace"). The records go to the
+       root appenders by default; uncomment this pair to give them their own file. -->
+  <!--
+  <appender name="PetTraceFile" type="log4net.Appender.RollingFileAppender">
+    <file value="PetTrace.txt" />
+    <appendToFile value="true" />
+    <rollingStyle value="Size" />
+    <maxSizeRollBackups value="10" />
+    <maximumFileSize value="20480KB" />
+    <staticLogFileName value="true" />
+    <layout type="log4net.Layout.PatternLayout">
+      <conversionPattern value="%message%newline" />
+    </layout>
+  </appender>
+  <logger name="PetTrace" additivity="false">
+    <level value="INFO" />
+    <appender-ref ref="PetTraceFile" />
+  </logger>
+  -->
 
   <appender name="asyncForwarder" type="Log4Net.Async.AsyncForwardingAppender,Log4Net.Async">
     <appender-ref ref="Console" />

@@ -616,7 +616,10 @@ namespace ACE.Server.WorldObjects
 
             // Invalidate beneficial spells against Creature/Non-player targets
             if (targetCreature != null && targetPlayer == null && spell.IsBeneficial)
-                return true;
+            {
+                if (!(targetCreature is CombatPet pet && pet.P_PetOwner == this && pet.IsInMotelOrEncounter()))
+                    return true;
+            }
 
             // check item spells
             if (targetCreature == null && target.WielderId != null)
@@ -647,7 +650,12 @@ namespace ACE.Server.WorldObjects
                 return true;
 
             if (targetCreature != null && targetCreature != this && spell.NonComponentTargetType == ItemType.Creature && !CanDamage(targetCreature))
-                return true;
+            {
+                // Only BENEFICIAL spells may bypass the CanDamage guard for your own pet in the motel or a
+                // guardian encounter; harmful spells on your own pet stay blocked.
+                if (!(spell.IsBeneficial && targetCreature is CombatPet pet && pet.P_PetOwner == this && pet.IsInMotelOrEncounter()))
+                    return true;
+            }
 
             return false;
         }
@@ -2002,6 +2010,15 @@ namespace ACE.Server.WorldObjects
                 if (center.Distance2D(creature.Location) > radius) continue;
 
                 if (!CanDamage(creature)) continue;
+
+                // OnlyCombatPetsCanDamage (and any other creature that refuses this caster): it calls
+                // TakeDamage directly and prints its own hit line, so it has to be skipped here, not just
+                // refused in TakeDamage - otherwise the player reads "You crush X for 11,000,000 points".
+                if (!creature.CanBeDamagedBy(this))
+                {
+                    NotifyPetsOnlyTarget(creature);
+                    continue;
+                }
 
                 // PK status check (mirrors SpellProjectile.OnCollideObject).
                 var pkError = CheckPKStatusVsTarget(creature, spell);

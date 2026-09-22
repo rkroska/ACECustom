@@ -12,6 +12,7 @@ using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 using log4net;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -494,7 +495,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b w n mmd - Withdraw 250k trade note", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b w n c 5 - Withdraw 5 trade notes of 10k each", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b t p 1m \"Player Name\" - Transfer 1M pyreals to Player Name", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/b t n mmd 50 PlayerName - Transfer 50× 250k notes worth (12.5M pyreals)", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b t n mmd 50 PlayerName - Transfer 50x 250k notes worth (12.5M pyreals)", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.System));
 
                 return;
@@ -809,7 +810,7 @@ namespace ACE.Server.Command.Handlers
                     {
                         // Transfer succeeded - the method already sent base message
                         // Just note it was a trade note equivalent transfer
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"(Equivalent to {noteCount}× {denomination.ToUpper()} notes)", ChatMessageType.System));
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"(Equivalent to {noteCount}x {denomination.ToUpper()} notes)", ChatMessageType.System));
                     }
                     
                     return;
@@ -1421,7 +1422,7 @@ namespace ACE.Server.Command.Handlers
 
         }
 
-        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "top qb|level|enl|title|augs|deaths|bank|lum|attr|bond(s)|sumbond(s)|enlcoins|wenlcoins|mkeys|lkeys|jails|notguilty|pets|shinies|potency")]
+        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "top qb|level|enl|title|augs|deaths|bank|lum|attr|bond(s)|sumbond(s)|enlcoins|wenlcoins|mkeys|lkeys|jails|notguilty|pets|shinies|potency|mutations|summutations|litters")]
         public static async void DisplayTop(Session session, params string[] parameters)
         {
             try
@@ -1545,6 +1546,27 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Highest Pet Potency Level:", ChatMessageType.Broadcast));
                         }
                     }
+                    else if (key == "mutations")
+                    {
+                        sqlLeaderboardRequested = true;
+                        list = await cache.GetTopBankedInt64Async(context, "mutations", LeaderboardInlineSql.TopPetMutations);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Most Mutated Pet:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "summutations")
+                    {
+                        sqlLeaderboardRequested = true;
+                        list = await cache.GetTopBankedInt64Async(context, "summutations", LeaderboardInlineSql.TopSumPetMutations);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Total Pet Mutations:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "litters")
+                    {
+                        sqlLeaderboardRequested = true;
+                        list = await cache.GetTopBankedInt64Async(context, "litters", LeaderboardInlineSql.TopLittersBred);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Accounts by Litters Bred:", ChatMessageType.Broadcast));
+                    }
                     else if (key == "enlcoins")
                     {
                         list = await cache.GetTopBankedInt64Async(context, "enlcoins", LeaderboardInlineSql.TopBankedEnlightenedCoins);
@@ -1623,7 +1645,7 @@ namespace ACE.Server.Command.Handlers
                     }
                     else
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies, potency", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies, potency, mutations, summutations, litters", ChatMessageType.Broadcast));
                         return;
                     }
 
@@ -1751,6 +1773,211 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
         }
 
+        private static readonly System.Text.RegularExpressions.Regex PetNameRequestPattern = new(@"^[a-zA-Z0-9' -]+$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>
+        /// Requests a name change for the player's active or selected inventory combat pet device.
+        /// The request is queued for staff review in the web portal rather than applied immediately,
+        /// so players cannot self-approve inappropriate names.
+        /// </summary>
+        [CommandHandler("pet-name", AccessLevel.Player, CommandHandlerFlag.RequiresWorld,
+            "Request a name change for your combat pet (subject to staff approval)",
+            "Usage: @pet-name <name>")]
+        public static void HandlePetName(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+
+            if (parameters == null || parameters.Length == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: @pet-name <name>", ChatMessageType.Broadcast);
+                return;
+            }
+
+            var requestedName = string.Join(" ", parameters).Trim();
+
+            if (requestedName.Length < 3 || requestedName.Length > 32)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Pet names must be between 3 and 32 characters.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            if (!PetNameRequestPattern.IsMatch(requestedName))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Pet names may only contain letters, numbers, spaces, apostrophes and hyphens.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            PetDevice petDevice = null;
+            if (player.CurrentActivePet is CombatPet activePet)
+            {
+                petDevice = activePet.TryGetSummoningDevice()
+                    ?? player.FindObject(activePet.SummoningDeviceGuid.Full, Player.SearchLocations.Everywhere) as PetDevice;
+            }
+            else if (CommandHandlerHelper.GetSelected(session) is PetDevice selectedDevice &&
+                     selectedDevice.IsCombatPetDevice() &&
+                     player.GetAllPossessions().Any(item => item.Guid.Full == selectedDevice.Guid.Full))
+            {
+                petDevice = selectedDevice;
+            }
+
+            if (petDevice == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    "Summon the combat pet you want to rename, or select its device in your inventory.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var oldName = petDevice.Name;
+
+            // pet_name_requests.old_name is NOT NULL, and the reviewer needs to see what is being renamed.
+            // Refuse here, before the cooldown is taken and before any database work.
+            if (string.IsNullOrWhiteSpace(oldName))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("That pet has no current name, so it cannot be renamed. Please contact staff.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // A renamed essence keeps its damage word and tier ("Slash Sir Fluffington Essence"), so compare the
+            // pet's own name too, not just the whole essence name.
+            var currentPetName = petDevice.GetProperty(PropertyString.PetCustomName) ?? petDevice.VisualOverrideName;
+            if (string.Equals(oldName, requestedName, StringComparison.Ordinal) || string.Equals(currentPetName, requestedName, StringComparison.Ordinal))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{oldName} already has that name.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // Cooldown per character: the cooldown is taken the moment the request is accepted (before the
+            // background work runs) so a burst of commands cannot queue a burst of DB writes and Discord posts.
+            var characterId = player.Character.Id;
+            var now = DateTime.UtcNow;
+            if (PetNameRequestCooldowns.TryGetValue(characterId, out var last) && now - last < PetNameRequestCooldown)
+            {
+                var wait = (int)Math.Ceiling((PetNameRequestCooldown - (now - last)).TotalSeconds);
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"You may submit another pet name request in {wait} second{(wait == 1 ? "" : "s")}.", ChatMessageType.Broadcast));
+                return;
+            }
+            PetNameRequestCooldowns[characterId] = now;
+            PrunePetNameRequestCooldowns(now);
+
+            // Everything the background task needs is captured here as plain values: it must not touch the
+            // player, the device or the session, which belong to this landblock thread.
+            var characterName = player.Name;
+            var petGuid = petDevice.Guid.Full;
+            var channelId = ConfigManager.Config?.Chat?.AdminChannelId ?? ConfigManager.Config?.Chat?.AdminAuditId ?? 0;
+
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                $"Submitting your request to rename {oldName} to \"{requestedName}\"...", ChatMessageType.Broadcast));
+
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                string reply;
+                try
+                {
+                    var replaced = SubmitPetNameRequest(characterId, characterName, petGuid, oldName, requestedName);
+
+                    if (channelId > 0)
+                    {
+                        _ = DiscordChatManager.SendDiscordChannelEmbedAsync(
+                            replaced ? "Pet Rename Request (updated)" : "Pet Rename Request",
+                            $"**Player:** {characterName}\n**Pet:** {oldName}\n**Requested name:** {requestedName}\n**GUID:** 0x{petGuid:X8}",
+                            null,
+                            channelId);
+                    }
+
+                    reply = replaced
+                        ? $"Your pending pet name request has been replaced: {oldName} to \"{requestedName}\" is now waiting for staff review."
+                        : $"Your request to rename {oldName} to \"{requestedName}\" has been submitted for staff review.";
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[PetNaming] Failed to save pet name request for {characterName}: {ex.Message}", ex);
+                    PetNameRequestCooldowns.TryRemove(characterId, out _);
+                    reply = "Failed to submit your pet name request. Please try again later.";
+                }
+
+                // Thread audit: the reply reaches the player through the world queue, which drains between landblock
+                // ticks; the player is re-resolved there because they may have logged out while the DB call ran.
+                WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.PetNaming_RequestResult, () =>
+                {
+                    var online = PlayerManager.GetOnlinePlayer(characterId);
+                    online?.Session?.Network.EnqueueSend(new GameMessageSystemChat(reply, ChatMessageType.Broadcast));
+                }));
+            });
+        }
+
+        private static readonly TimeSpan PetNameRequestCooldown = TimeSpan.FromSeconds(60);
+        private static readonly ConcurrentDictionary<uint, DateTime> PetNameRequestCooldowns = new();
+
+        private static void PrunePetNameRequestCooldowns(DateTime now)
+        {
+            if (PetNameRequestCooldowns.Count < 1000)
+                return;
+
+            foreach (var entry in PetNameRequestCooldowns)
+            {
+                if (now - entry.Value >= PetNameRequestCooldown)
+                    PetNameRequestCooldowns.TryRemove(entry.Key, out _);
+            }
+        }
+
+        /// <summary>Review note on a pending request that a newer @pet-name replaced.</summary>
+        internal const string ReplacedRequestNote = "Replaced by a newer request";
+
+        /// <summary>
+        /// Background thread only (no world objects). A character has at most one pending request. A new request
+        /// closes the pending one as denied ("Replaced by a newer request") and inserts a fresh row with a new id
+        /// (returns true), otherwise it just inserts (returns false). The row is never rewritten in place: the
+        /// portal approves by id, so a reviewer who loaded the old name must not approve a newer one unseen.
+        /// </summary>
+        private static bool SubmitPetNameRequest(uint characterId, string characterName, uint petGuid, string oldName, string requestedName)
+        {
+            using var ctx = new ACE.Database.Models.Shard.ShardDbContext();
+            var con = ctx.Database.GetDbConnection();
+            if (con.State != System.Data.ConnectionState.Open) con.Open();
+
+            static void AddParam(System.Data.IDbCommand cmd, string name, object value)
+            {
+                var p = cmd.CreateParameter();
+                p.ParameterName = name;
+                p.Value = value;
+                cmd.Parameters.Add(p);
+            }
+
+            // One transaction, so there is never a moment with two pending rows or none. A reviewer's approve
+            // claims the old row with WHERE status = 0 too: whichever runs first wins the row lock, and the
+            // other then matches nothing, so an old name is either approved as seen or replaced, never both.
+            using var tx = con.BeginTransaction();
+            bool replaced;
+
+            using (var closeCmd = con.CreateCommand())
+            {
+                closeCmd.Transaction = tx;
+                closeCmd.CommandText =
+                    "UPDATE `pet_name_requests` SET `status` = 2, `review_note` = @note, `reviewed_at` = UTC_TIMESTAMP(), `reviewed_by` = 'system' " +
+                    "WHERE `character_id` = @characterId AND `status` = 0";
+                AddParam(closeCmd, "@note", ReplacedRequestNote);
+                AddParam(closeCmd, "@characterId", (long)characterId);
+                replaced = closeCmd.ExecuteNonQuery() > 0;
+            }
+
+            using (var insertCmd = con.CreateCommand())
+            {
+                insertCmd.Transaction = tx;
+                insertCmd.CommandText =
+                    "INSERT INTO `pet_name_requests` (`character_id`, `character_name`, `pet_guid`, `old_name`, `requested_name`) " +
+                    "VALUES (@characterId, @characterName, @petGuid, @oldName, @requestedName)";
+                AddParam(insertCmd, "@characterId", (long)characterId);
+                AddParam(insertCmd, "@characterName", characterName);
+                AddParam(insertCmd, "@petGuid", petGuid);
+                AddParam(insertCmd, "@oldName", oldName);
+                AddParam(insertCmd, "@requestedName", requestedName);
+                insertCmd.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+            return replaced;
+        }
 
         private static readonly TimeSpan MyQuests = TimeSpan.FromSeconds(60);
 
@@ -4111,6 +4338,21 @@ namespace ACE.Server.Command.Handlers
 
                 session.Network.EnqueueSend(new GameMessageSystemChat($"- {corpse.name} (Rot: {timeStr}){loadStatus} @ {locStr}", ChatMessageType.Broadcast));
             }
+        }
+
+        [CommandHandler("dance", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Performs the courtship dance.", "")]
+        public static void HandleDance(Session session, string[] parameters)
+        {
+            session.Player.HandleActionSoulEmote("*dance*");
+        }
+
+        [CommandHandler("breed-debug", AccessLevel.User, CommandHandlerFlag.RequiresWorld, "Shows breeding diagnostics for your current location, pet, and nearby partner availability.", "@breed-debug")]
+        public static void HandleBreedDebug(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            PetDevice.RunBreedingDiagnostics(player);
         }
     }
 }

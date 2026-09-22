@@ -315,5 +315,49 @@ namespace ACE.Entity.Enum.Properties
         /// the elemental_weakness_default_factor server knob. Applied after mitigation, so it's a relative reward for
         /// using the right element even against heavily-mitigated endgame mobs.</summary>
         ElementalWeaknessFactor = 9055,
+
+        /// <summary>
+        /// Next allowed breeding/mating timestamp (Unix time) for a pet device.
+        /// </summary>
+        [AssessmentProperty]
+        PetNextBreedingTime = 9056,
+
+        /// <summary>
+        /// Unix timestamp of the last Stud breeding-charge refill. Charges are topped back up to
+        /// pet_breeding_male_max_charges once pet_breeding_male_charge_reset_hours has elapsed.
+        /// </summary>
+        [AssessmentProperty]
+        PetMaleChargesRefreshTime = 9057,
+
+        /// <summary>
+        /// Mutation chance bonus granted by Courtship Incense applied to a pet device for its next breed.
+        /// </summary>
+        [AssessmentProperty]
+        PetIncenseBonus = 9058,
+
+        /// <summary>
+        /// Maturity kill credit multiplier granted by Nurturing Draughts (e.g. 2.0 = double XP per kill).
+        /// </summary>
+        [AssessmentProperty]
+        PetMaturityXpMultiplier = 9059,
+
+        /// <summary>
+        /// Showcase NPCs: every this many seconds the creature re-rolls a vibrant mutation colour and
+        /// redraws, while a player is nearby. Live only - the colour is never saved. Unset = off.
+        /// </summary>
+        ShowcaseColourCycleSeconds = 9060,
+
+        /// <summary>
+        /// Generators: the chance (0.01 = 1%) that each creature this generator spawns gets a random vivid
+        /// mutation colour. Copied to spawned generators, so nested generators pass it down. Unset = off.
+        /// </summary>
+        SpawnColourMutationChance = 9061,
+
+        /// <summary>
+        /// Combat pet essence: the translucency its pet summons with (0 = solid .. 0.5), set a tenth at a time by
+        /// the Solidifying and Fading Tinctures. Replaces the summon template's own value (Maiden and K'nath
+        /// templates are 0.5). Unset = the template's value.
+        /// </summary>
+        PetTranslucency = 9062,
     }
 }

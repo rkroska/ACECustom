@@ -262,6 +262,10 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         ShowPetEchoDrops                  = 9050,
 
+        /// <summary>Combat pet essence: has been neutered/spayed to prevent breeding (server/custom).</summary>
+        [AssessmentProperty]
+        PetNeutered                       = 9051,
+
         // -- ILT Ability Charm System (50000-50099) ---------------------------------
         /// <summary>On an ability charm item: marks it as an ability-granting charm.</summary>
         IsAbilityCharm   = 50000,
@@ -369,6 +373,28 @@ namespace ACE.Entity.Enum.Properties
         /// weapons; the drop path (ZoneLootMutator.TrySpecialRolls) attunes to the killed monster's kind and must
         /// never set this. Appraisal reads "All Creatures Slayer".</summary>
         SlayerAllCreatures = 50052,
+
+        /// <summary>Combat pet device is designated as a Stud (10 daily breeding charges).</summary>
+        [AssessmentProperty]
+        PetIsMaleOverride = 50053,
+
+        /// <summary>Bred combat pet essence that has not yet reached adulthood (server/custom).</summary>
+        [AssessmentProperty]
+        PetIsJuvenile = 50054,
+
+        /// <summary>Chromatic Catalyst is active on this pet device, ensuring high-saturation/vibrant palette mutations on next breed.</summary>
+        [AssessmentProperty]
+        PetChromaticCatalystActive = 50055,
+
+        /// <summary>The mating guardian bound to this pet device has been weakened by an Offering of Subjugation (server/custom).</summary>
+        [AssessmentProperty]
+        PetGuardianWeakened = 50056,
+
+        /// <summary>
+        /// Only combat pets can damage this creature: players, other monsters and everything else do nothing (server/custom).
+        /// Set on a generator, it is copied to everything the generator spawns, so nested generators pass it down too.
+        /// </summary>
+        OnlyCombatPetsCanDamage = 50057,
 
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }

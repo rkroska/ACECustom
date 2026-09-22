@@ -47,6 +47,9 @@ namespace ACE.Server.WorldObjects
         /// <summary>True for Fork-spawned secondary projectiles — prevents recursive forking.</summary>
         public bool IsForkProjectile { get; set; }
 
+        /// <summary>[PetTrace] per-collision capture of CalculateDamage's terms; null when the trace is off.</summary>
+        public PetTrace.SpellTrace Trace;
+
         /// <summary>Damage multiplier applied at the end of CalculateDamage. Used by Fork charm tiers (0.50 / 0.75 / 1.00).</summary>
         public float ForkDamageMult { get; set; } = 1.0f;
 
@@ -398,9 +401,17 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            if (!creatureTarget.CanBeDamagedBy(ProjectileSource))
+            {
+                (ProjectileSource as Player)?.NotifyPetsOnlyTarget(creatureTarget);
+                return;
+            }
+
             var critical = false;
             var critDefended = false;
             var overpower = false;
+
+            Trace = PetTrace.Enabled ? new PetTrace.SpellTrace() : null;
 
             float? damage = null;
             try
@@ -520,13 +531,21 @@ namespace ACE.Server.WorldObjects
             var sourcePlayer = source as Player;
             var targetPlayer = target as Player;
 
+            // [PetTrace] the per-collision capture (null when off). Filled as the terms are decided;
+            // a bail-out below writes a combat.attack miss, DamageTarget writes the hit.
+            var tr = Trace;
+
             if (!target.IsAlive || targetPlayer != null && targetPlayer.Invincible)
+            {
+                if (tr != null) { tr.Reason = !target.IsAlive ? "targetDead" : "invincible"; PetTrace.CombatSpellMiss(this, target, tr); }
                 return null;
+            }
             if (targetPlayer != null && targetPlayer.ZcDamageImmune)
             {
                 // Cheat Death window: the hit is absorbed here and never reaches DamageTarget, so the feedback the
                 // melee paths give from TakeDamage has to come from this bail-out
                 targetPlayer.ZcAnnounceAbsorb(ProjectileSource, $"{Spell.Name} ({Spell.DamageType.ToString().ToLowerInvariant()})");
+                if (tr != null) { tr.Reason = "zcImmune"; PetTrace.CombatSpellMiss(this, target, tr); }
                 return null;
             }
 
@@ -537,6 +556,7 @@ namespace ACE.Server.WorldObjects
                     sourcePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"The Lifestone's magic protects {targetPlayer.Name} from the attack!", ChatMessageType.Magic));
 
                 targetPlayer.HandleLifestoneProtection();
+                if (tr != null) { tr.Reason = "lifestone"; PetTrace.CombatSpellMiss(this, target, tr); }
                 return null;
             }
 
@@ -564,8 +584,18 @@ namespace ACE.Server.WorldObjects
             var resistSource = IsWeaponSpell ? weapon : source;
 
             var resisted = source.TryResistSpell(target, Spell, resistSource, true);
+            if (tr != null)
+            {
+                tr.Resisted = resisted;
+                tr.Overpower = overpower;
+                tr.MagicSkill = sourceCreature?.GetCreatureSkill(Spell.School)?.Current ?? 0;
+                tr.MagicDefense = target.GetEffectiveMagicDefense();
+            }
             if (resisted && !overpower)
+            {
+                if (tr != null) { tr.Reason = "resisted"; PetTrace.CombatSpellMiss(this, target, tr); }
                 return null;
+            }
 
             // THE canonical endgame gate for this cast (owner 2026-09-10): a governed monster at
             // variation 11+, or a player casting with ZC-stamped gear. Everything else - the whole
@@ -583,14 +613,18 @@ namespace ACE.Server.WorldObjects
             // critical hit
             var criticalChance = GetWeaponMagicCritFrequency(weapon, sourceCreature, attackSkill, target);
 
-            if (ThreadSafeRandom.Next(0.0f, 1.0f) < criticalChance)
+            var critRoll = ThreadSafeRandom.Next(0.0f, 1.0f);
+            if (tr != null) { tr.CritChance = criticalChance; tr.CritRoll = critRoll; }
+            if (critRoll < criticalChance)
             {
                 if (targetPlayer != null && targetPlayer.AugmentationCriticalDefense > 0)
                 {
                     var criticalDefenseMod = sourcePlayer != null ? 0.05f : 0.25f;
                     var criticalDefenseChance = targetPlayer.AugmentationCriticalDefense * criticalDefenseMod;
 
-                    if (criticalDefenseChance > ThreadSafeRandom.Next(0.0f, 1.0f))
+                    var critDefenseRoll = ThreadSafeRandom.Next(0.0f, 1.0f);
+                    if (tr != null) tr.CritDefenseRoll = critDefenseRoll;
+                    if (criticalDefenseChance > critDefenseRoll)
                         critDefended = true;
                 }
 
@@ -798,6 +832,7 @@ namespace ACE.Server.WorldObjects
                 }
 
                 var isZcProc = procDmgOverride.HasValue && procDmgOverride.Value > 0;
+                if (tr != null) tr.ZcProc = isZcProc;
 
                 if (isZcProc)
                     baseDamage = (long)Math.Round(procDmgOverride.Value);
@@ -826,6 +861,7 @@ namespace ACE.Server.WorldObjects
 
                     if (augs > 0)
                         baseDamage += augs;
+                    if (tr != null) tr.Augs = augs;
                 }
 
                 // Zone Control (retail-semantics since 2026-08-02, owner ruling — the old WYSIWYG felt-damage
@@ -915,7 +951,10 @@ namespace ACE.Server.WorldObjects
             }
             // Fork Charm: reduce damage for fork projectiles based on tier multiplier.
             if (IsForkProjectile)
+            {
                 finalDamage *= ForkDamageMult;
+                if (tr != null) tr.Fork = ForkDamageMult;
+            }
 
             // (The 2026-07-27 WYSIWYG felt-damage override that used to live here was REMOVED 2026-08-02:
             // spell_damage is now a plain PRE-mitigation base replacement and rides the retail pipeline.)
@@ -925,7 +964,11 @@ namespace ACE.Server.WorldObjects
             {
                 var zoneProfile = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(sourceCreature);
                 if (zoneProfile != null && zoneProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellDamageMult))
-                    finalDamage *= (float)zoneProfile.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellDamageMult);
+                {
+                    var zoneMult = (float)zoneProfile.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.SpellDamageMult);
+                    finalDamage *= zoneMult;
+                    if (tr != null) tr.ZoneMult = zoneMult;
+                }
             }
 
             // show debug info (after fork mult so displayed damage matches actual dealt damage)
@@ -944,7 +987,22 @@ namespace ACE.Server.WorldObjects
             {
                 var m = combatPet.GetSpellProjectileDamageTakenMultiplier();
                 if (m < 1.0f)
+                {
                     finalDamage *= m;
+                    if (tr != null) tr.PetSpellMult = m;
+                }
+            }
+
+            if (tr != null)
+            {
+                tr.Crit = criticalHit; tr.CritDefended = critDefended; tr.IsPvp = isPVP; tr.EndgameCrit = endgameCrit;
+                tr.IsLife = Spell.MetaSpellType == ACE.Entity.Enum.SpellType.LifeProjectile;
+                tr.LifeBase = LifeProjectileDamage * Spell.DamageRatio;
+                tr.BaseMin = Spell.MinDamage; tr.BaseMax = Spell.MaxDamage;
+                tr.BaseRoll = tr.IsLife ? lifeMagicDamage : baseDamage;
+                tr.SkillBonus = skillBonus; tr.CritBonus = critDamageBonus; tr.WeaponCritDmgMod = weaponCritDamageMod;
+                tr.Elemental = elementalDamageMod; tr.Slayer = slayerMod; tr.WeaponResist = weaponResistanceMod; tr.Resist = resistanceMod;
+                tr.Absorb = absorbMod; tr.Attrib = attribBonus; tr.PreRating = finalDamage;
             }
 
             // v11+ percent-HP floor: applied in DamageTarget, AFTER the attacker/defender rating mods,
@@ -1209,10 +1267,26 @@ namespace ACE.Server.WorldObjects
         {
             var targetPlayer = target as Player;
 
+            var tr = Trace;
+
             if (targetPlayer != null && targetPlayer.ZcDamageImmune && !targetPlayer.Invincible && !target.IsDead)
                 targetPlayer.ZcAnnounceAbsorb(ProjectileSource, $"{Math.Round(damage):N0} {Spell.DamageType.ToString().ToLowerInvariant()} damage ({Spell.Name})");
             if (targetPlayer != null && (targetPlayer.Invincible || targetPlayer.ZcDamageImmune) || target.IsDead)
+            {
+                if (tr != null) { tr.Reason = target.IsDead ? "targetDead" : "invincibleOrImmune"; PetTrace.CombatSpellMiss(this, target, tr); }
                 return;
+            }
+
+            if (!target.CanBeDamagedBy(ProjectileSource))
+            {
+                if (tr != null) { tr.Reason = "cannotBeDamagedBy"; PetTrace.CombatSpellMiss(this, target, tr); }
+                (ProjectileSource as Player)?.NotifyPetsOnlyTarget(target);
+                return;
+            }
+
+            var traceVital = Spell.Category == SpellCategory.StaminaLowering ? DamageType.Stamina
+                           : Spell.Category == SpellCategory.ManaLowering ? DamageType.Mana : DamageType.Health;
+            var traceBefore = tr != null ? PetTrace.VitalCurrent(target, traceVital) : 0u;
 
             var sourceCreature = ProjectileSource as Creature;
             var sourcePlayer = ProjectileSource as Player;
@@ -1397,7 +1471,12 @@ namespace ACE.Server.WorldObjects
                     //targetPlayer.Fellowship.OnVitalUpdate(targetPlayer);
             }
 
+            var traceDealt = amount;              // the vital change actually applied (0 when fully absorbed)
             amount = (uint)Math.Round(damage);    // full amount for debugging
+
+            if (tr != null)
+                PetTrace.CombatSpellDamage(this, target, tr, heritageMod, sneakAttackMod, critDamageRatingMod, critDamageResistRatingMod,
+                    pkDamageRatingMod, pkDamageResistRatingMod, damageRatingMod, damageResistRatingMod, damage, traceVital, traceBefore, traceDealt, mbResult.AmountAbsorbed);
 
             // show debug info
             if (sourceCreature != null && sourceCreature.DebugDamage.HasFlag(Creature.DebugDamageType.Attacker))

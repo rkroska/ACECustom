@@ -165,6 +165,28 @@ namespace ACE.Server.Entity
 
         public bool CriticalDefended;
 
+        // [PetTrace] roll captures. Each is the very draw the decision below it used, stored so the
+        // trace can show "chance vs roll"; -1 means that draw never happened. BaseDamageRoll is the
+        // raw base roll before maturity / guardian / enrage / flat terms rewrite BaseDamage.
+        // Kept as double: ThreadSafeRandom.Next(float, float) returns a double and the original
+        // comparisons were float-vs-double, so a float field would change a boundary case.
+        public double EvadeRoll = -1.0;
+        public double CritRoll = -1.0;
+        public double CritDefenseRoll = -1.0;
+        public float BaseDamageRoll;
+
+    /// <summary>
+    /// [PetTrace] the range BaseDamageRoll was actually drawn from. BaseDamageMod.MinDamage/MaxDamage
+    /// are recomputed from DamageMod, which maturity scaling rewrites after the roll, so reading them
+    /// back at trace time prints a range the roll sits outside of.
+    /// </summary>
+    public float BaseDamageRollMin = -1.0f;
+    public float BaseDamageRollMax = -1.0f;
+        public float SchemeCRoll = -1.0f;
+
+        /// <summary>[PetTrace] session id shared by the attack and damage records of this one swing.</summary>
+        public string TraceSession;
+
         public static DamageEvent CalculateDamage(Creature attacker, Creature defender, WorldObject damageSource, MotionCommand? attackMotion = null, AttackHook attackHook = null)
         {
             var damageEvent = new DamageEvent();
@@ -178,6 +200,11 @@ namespace ACE.Server.Entity
             damageEvent.HandleExtensiveDebugLogging(attacker, defender);
 
             damageEvent.HandleLogging(attacker, defender);
+
+            // [PetTrace] a swing that dealt nothing is recorded here, once, for every caller; a landed
+            // hit is recorded by the caller after TakeDamage, when the applied amount is known.
+            if (PetTrace.Enabled && !damageEvent.HasDamage)
+                PetTrace.CombatAttack(damageEvent);
 
             return damageEvent;
         }
@@ -229,7 +256,8 @@ namespace ACE.Server.Entity
             if (!Overpower)
             {
                 EvasionChance = GetEvadeChance(attacker, defender);
-                if (EvasionChance > ThreadSafeRandom.Next(0.0f, 1.0f))
+                EvadeRoll = ThreadSafeRandom.Next(0.0f, 1.0f);
+                if (EvasionChance > EvadeRoll)
                 {
                     Evaded = true;
                     return 0.0f;
@@ -281,6 +309,9 @@ namespace ACE.Server.Entity
 
                     // Use float overload to match standard non-crit damage roll behavior (exclusive upper bound)
                     Damage = (float)ThreadSafeRandom.Next(baseMinDamageFloat, baseMaxDamageFloat);
+                    BaseDamageRoll = Damage;
+                    BaseDamageRollMin = baseMinDamageFloat;
+                    BaseDamageRollMax = baseMaxDamageFloat;
 
                     // Apply optional multiplier — read from weapon, default 1.0 if missing/invalid.
                     // Applied before BaseDamage is set so ShowInfo() reflects the true final value.
@@ -299,6 +330,39 @@ namespace ACE.Server.Entity
                 GetBaseDamage(playerAttacker);
             else
                 GetBaseDamage(attacker, AttackMotion ?? MotionCommand.Invalid, AttackHook);
+
+            // Juvenile combat pets hit for a percentage of their adult damage.
+            if (attacker is CombatPet maturingPet && maturingPet.MaturityDamageMult < 0.999f)
+            {
+                BaseDamage *= maturingPet.MaturityDamageMult;
+                if (BaseDamageMod != null)
+                    BaseDamageMod.DamageMod *= maturingPet.MaturityDamageMult;
+            }
+
+            // Mating Guardian scales base damage proportional to the defending parent pet's max health (~8%, clamped [20, 500]),
+            // then by pet_breeding_guardian_damage_mult (a true multiplier: 0.5 = half).
+            if (attacker is MatingGuardian guardian && defender is CombatPet matingPet)
+            {
+                var petMaxHp = matingPet.Health?.MaxValue ?? 500;
+                BaseDamage = Math.Clamp(petMaxHp * 0.08f, 20.0f, 500.0f);
+
+                var guardianDamageMult = ServerConfig.pet_breeding_guardian_damage_mult.Value;
+                if (double.IsNaN(guardianDamageMult) || double.IsInfinity(guardianDamageMult) || guardianDamageMult < 0.0)
+                    guardianDamageMult = 1.0;
+                BaseDamage *= (float)guardianDamageMult;
+
+                // A weakened guardian (Offering of Subjugation consumed) hits its own parent pets for half.
+                if (guardian.IsWeakened)
+                    BaseDamage *= 0.5f;
+
+                if (BaseDamageMod != null)
+                {
+                    BaseDamageMod.BaseDamage.MaxDamage = (int)Math.Round(BaseDamage);
+                    BaseDamageMod.DamageBonus = 0;
+                    BaseDamageMod.ElementalBonus = 0;
+                    BaseDamageMod.DamageMod = 1.0f;
+                }
+            }
 
             // NEW: Apply enrage multiplier if the attacker is a mob and enraged
             if (attacker.IsEnraged && !(attacker is Player))
@@ -365,8 +429,9 @@ namespace ACE.Server.Entity
                     && Managers.WeaponScaling.WeaponScalingCombat.TryGetEffectiveVariance(Weapon, out var schemeCVariance))
                 {
                     var envelopeMax = BaseDamageMod.MaxDamage + WeaponScalingFlatBonus;
+                    SchemeCRoll = (float)ThreadSafeRandom.Next(1.0f - (float)schemeCVariance, 1.0f);
                     BaseDamage = damageBonus
-                        + envelopeMax * (float)ThreadSafeRandom.Next(1.0f - (float)schemeCVariance, 1.0f);
+                        + envelopeMax * SchemeCRoll;
                 }
                 else
                     BaseDamage += WeaponScalingFlatBonus;
@@ -409,14 +474,16 @@ namespace ACE.Server.Entity
                 CriticalChance = 1.0f;
 
             // Inside the critical hit check - only calculate crit bonus if we actually crit
-            if (CriticalChance > ThreadSafeRandom.Next(0.0f, 1.0f))
+            CritRoll = ThreadSafeRandom.Next(0.0f, 1.0f);
+            if (CriticalChance > CritRoll)
             {
                 if (playerDefender != null && playerDefender.AugmentationCriticalDefense > 0)
                 {
                     var criticalDefenseMod = playerAttacker != null ? 0.05f : 0.25f;
                     var criticalDefenseChance = playerDefender.AugmentationCriticalDefense * criticalDefenseMod;
 
-                    if (criticalDefenseChance > ThreadSafeRandom.Next(0.0f, 1.0f))
+                    CritDefenseRoll = ThreadSafeRandom.Next(0.0f, 1.0f);
+                    if (criticalDefenseChance > CritDefenseRoll)
                         CriticalDefended = true;
                 }
 
@@ -839,6 +906,9 @@ namespace ACE.Server.Entity
                 BaseDamageMod.ElementalBonus = WorldObject.GetMissileElementalDamageBonus(Weapon, attacker, DamageType);
 
             BaseDamage = (float)ThreadSafeRandom.Next(BaseDamageMod.MinDamage, BaseDamageMod.MaxDamage);
+            BaseDamageRoll = BaseDamage;
+            BaseDamageRollMin = BaseDamageMod.MinDamage;
+            BaseDamageRollMax = BaseDamageMod.MaxDamage;
         }
 
         /// <summary>
@@ -855,6 +925,9 @@ namespace ACE.Server.Entity
 
             BaseDamageMod = attacker.GetBaseDamage(AttackPart.Value);
             BaseDamage = (float)ThreadSafeRandom.Next(BaseDamageMod.MinDamage, BaseDamageMod.MaxDamage);
+            BaseDamageRoll = BaseDamage;
+            BaseDamageRollMin = BaseDamageMod.MinDamage;
+            BaseDamageRollMax = BaseDamageMod.MaxDamage;
 
             DamageType = attacker.GetDamageType(AttackPart.Value, CombatType);
         }

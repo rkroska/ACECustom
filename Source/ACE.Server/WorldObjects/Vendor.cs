@@ -522,14 +522,36 @@ namespace ACE.Server.WorldObjects
             }
 
             // calculate price
-            uint totalPrice = 0;
+            // summed as long: a uint total wrapped past 4.29B and let a huge purchase through for a small amount
+            long totalPrice = 0;
 
             foreach (var item in purchaseItems)
             {
-                var cost = GetSellCost(item);
+                // a stack whose Value overflowed int (unit price x count) would otherwise be charged 1 pyreal
+                if ((item.Value ?? 0) < 0)
+                {
+                    player.SendTransientError("That purchase is too large.");
+                    CleanupCreatedItems(defaultItems);
+                    return false;
+                }
 
-                // detect rollover?
+                // priced wide, so a single item past uint is refused instead of relying on how the cast rounds it
+                var cost = GetSellCostWide(item.Value, item.ItemType);
+                if (cost > uint.MaxValue)
+                {
+                    player.SendTransientError("That purchase is too large.");
+                    CleanupCreatedItems(defaultItems);
+                    return false;
+                }
+
                 totalPrice += cost;
+            }
+
+            if (totalPrice > uint.MaxValue)
+            {
+                player.SendTransientError("That purchase is too large.");
+                CleanupCreatedItems(defaultItems);
+                return false;
             }
 
             // verify player has enough currency
@@ -568,7 +590,7 @@ namespace ACE.Server.WorldObjects
             // everything is verified at this point
 
             // send transaction to player for further processing
-            player.FinalizeBuyTransaction(this, defaultItems, uniqueItems, totalPrice);
+            player.FinalizeBuyTransaction(this, defaultItems, uniqueItems, (uint)totalPrice);
 
             return true;
         }
@@ -578,13 +600,20 @@ namespace ACE.Server.WorldObjects
         public uint GetSellCost(Weenie item) => GetSellCost(item.GetValue(), item.GetItemType());
 
         private uint GetSellCost(int? value, ItemType? itemType)
+            => (uint)Math.Min(GetSellCostWide(value, itemType), uint.MaxValue);
+
+        /// <summary>
+        /// The sell price without narrowing to uint. Same float arithmetic as before, so normal prices are
+        /// unchanged; a negative Value still prices at 1.
+        /// </summary>
+        private long GetSellCostWide(int? value, ItemType? itemType)
         {
             var sellRate = SellPrice ?? 1.0;
             if (itemType == ItemType.PromissoryNote)
                 sellRate = 1.15;
 
-            var cost = Math.Max(1, (uint)Math.Ceiling(((float)sellRate * (value ?? 0)) - 0.1));
-            return cost;
+            var raw = Math.Ceiling(((float)sellRate * (value ?? 0)) - 0.1);
+            return Math.Max(1L, (long)raw);
         }
 
         public int GetBuyCost(WorldObject item) => GetBuyCost(item.Value, item.ItemType);

@@ -111,6 +111,14 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         SpellSuppressionMessage = 9017,
 
+        /// <summary>
+        /// A pet name the owner requested with @pet-name and staff approved. Authoritative: the summon path
+        /// uses it verbatim and never strips or rebuilds it, so a legitimate possessive in the player's own
+        /// name survives ("Bob's Burgers" summons as "Owner's Bob's Burgers"). Absent on every device that
+        /// has not been renamed, in which case the capture-derived name and its owner-prefix cleanup apply.
+        /// </summary>
+        PetCustomName = 9018,
+
         /// <summary>Zone Control live stat resolution (2026-08-22): the GRADE record of every ZC line on the
         /// piece - "key:grade;key:grade;..." with grade 0-1000 (where in the band it rolled), core four as
         /// c1..c4. The retail Gear* / AL / 502xx props are a CACHE resolved from this against the live ladder.

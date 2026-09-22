@@ -298,6 +298,7 @@ AppVeyor/
 # ACEmulator specific files
 Source/ACE.Server/config.js
 Source/ACE.Server/Config.js
+Source/ACE.Server/config.json
 Database/tools/password.txt
 Database/tools/.env.readonly
 Database/tools/.env.write
@@ -307,6 +308,7 @@ docker-compose.yml
 /httplocalhost8000contentuser=rudy&p.txt
 
 # Local dev scratch (repo root / server tree)
+scratch/
 /build_log*.txt
 /diff*.txt
 /diff_*.txt

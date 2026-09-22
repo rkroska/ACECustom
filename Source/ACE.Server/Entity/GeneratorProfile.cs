@@ -348,6 +348,21 @@ namespace ACE.Server.Entity
                 obj.Generator = Generator;
                 obj.GeneratorId = Generator.Guid.Full;
 
+                // inherited, so a generator of generators passes it all the way down to the creatures
+                if (Generator.GetProperty(PropertyBool.OnlyCombatPetsCanDamage) == true)
+                    obj.SetProperty(PropertyBool.OnlyCombatPetsCanDamage, true);
+
+                // SpawnColourMutationChance: nested generators inherit the chance; each creature rolls for itself.
+                var colourChance = Generator.GetProperty(PropertyFloat.SpawnColourMutationChance) ?? 0.0;
+                if (colourChance > 0.0)
+                {
+                    if (obj.IsGenerator)
+                        obj.SetProperty(PropertyFloat.SpawnColourMutationChance, colourChance);
+                    else if (obj is Creature spawnedCreature && obj is not Player && obj is not CombatPet
+                             && ACE.Common.ThreadSafeRandom.Next(0.0f, 1.0f) < colourChance)
+                        ApplySpawnColour(spawnedCreature);
+                }
+
                 var success = false;
 
                 if (RegenLocationType.HasFlag(RegenLocationType.Specific))
@@ -397,6 +412,29 @@ namespace ACE.Server.Entity
             }
 
             return spawned;
+        }
+
+        /// <summary>
+        /// SpawnColourMutationChance hit: paint a random vivid mutation colour (the Chromatic Catalyst pool) onto a
+        /// creature before it enters the world. Models drawn mostly with full-colour textures are skipped, since the
+        /// colour would not show. Capturing the creature keeps the colour (CapturedPaletteTemplate).
+        /// </summary>
+        private static void ApplySpawnColour(Creature creature)
+        {
+            var (fixedPolys, drawnPolys) = ACE.Server.Services.PetMutationService.MeasureFixedColourPolygons(creature.SetupTableId, null, null);
+            if (ACE.Server.Services.PetMutationService.IsFixedColourModel(fixedPolys, drawnPolys))
+                return;
+
+            var pool = ACE.Server.Services.PetMutationService.GetVibrantPalettePool();
+            if (pool == null || pool.Count == 0)
+                return;
+
+            var paletteId = pool[ACE.Common.ThreadSafeRandom.Next(0, pool.Count - 1)].PaletteId; // Next(min, max) includes max
+            if (paletteId == 0)
+                return;
+
+            // A 0x04 template is a full palette override; Creature.CalculateObjDesc applies it.
+            creature.PaletteTemplate = (int)paletteId;
         }
 
         /// <summary>

@@ -479,6 +479,11 @@ namespace ACE.Server.Entity.Actions
         CreatureDeath_PetBondAward,         // thread audit: pet bond XP award handed to the world queue
         PetPotency_ResidueAward,            // thread audit: pet residue award handed to the world queue
         Vendor_RetrySoldItemRemove,         // vendor sell: failed batched remove retried on the vendor's queue
+        PetDevice_DismissAfterBreed,        // pet breeding: parent pets dismissed after the ritual completes
+        PetDevice_GuardianTimeout,          // pet breeding: mating guardian encounter timed out
+        PetNaming_ApproveRename,            // thread audit: portal approve renames the device on the world queue, never the HTTP thread
+        DeveloperContent_ExportTemplate,    // thread audit: @export-template snapshots its target on the thread that owns it (world queue otherwise)
+        PetNaming_RequestResult,            // thread audit: @pet-name background DB/Discord result delivered on the world queue
     }
     public static class ActionTypeConverter
     {

@@ -35,6 +35,18 @@ namespace ACE.Server.Controllers
                 ["bond"] = "Max pet bond",
                 ["sumbond"] = "Sum pet bonds",
                 ["potency"] = "Max pet potency",
+                ["mutations"] = "Most mutated pet",
+                ["summutations"] = "Total pet mutations",
+                ["litters"] = "Litters bred",
+            };
+
+        /// <summary>Pet breeding mutation counts (PropertyInt 9070-9074), served through the generic cached path.</summary>
+        private static readonly Dictionary<string, string> PetMutationBoardSql =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["mutations"] = LeaderboardInlineSql.TopPetMutations,
+                ["summutations"] = LeaderboardInlineSql.TopSumPetMutations,
+                ["litters"] = LeaderboardInlineSql.TopLittersBred,
             };
 
         /// <summary>PropertyInt player discipline stats (9044–9045).</summary>
@@ -238,7 +250,7 @@ namespace ACE.Server.Controllers
                 });
             }
 
-            if (DisciplineStatBoardSql.TryGetValue(norm, out var disciplineSql))
+            if (DisciplineStatBoardSql.TryGetValue(norm, out var disciplineSql) || PetMutationBoardSql.TryGetValue(norm, out disciplineSql))
             {
                 var disciplineData = await cache.GetTopBankedInt64Async(context, norm, disciplineSql);
                 var disciplineRows = disciplineData.Select((x, i) => new

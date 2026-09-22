@@ -901,8 +901,18 @@ namespace ACE.Server.WorldObjects
             if (!ClothingBase.HasValue || !DatManager.PortalDat.TryReadClothingTable((uint)ClothingBase, out item))
                 return objDesc;
 
-            if (item.ClothingBaseEffects.TryGetValue(SetupTableId, out ClothingBaseEffect clothingBaseEffect))
-            // Check if the ClothingBase is applicable for this Setup. (Gear Knights, this is usually you.)
+            ClothingBaseEffect clothingBaseEffect = null;
+            if (!item.ClothingBaseEffects.TryGetValue(SetupTableId, out clothingBaseEffect))
+            {
+                // Borrowing a single-entry table's effect for a different setup is only for a full 0x04
+                // mutation palette. For everything else master applies nothing here, and matching master keeps
+                // every existing creature and item looking exactly as it does on production.
+                bool fullPaletteOverride = PaletteTemplate.HasValue && (PaletteTemplate.Value & 0xFF000000) == 0x04000000;
+                if (fullPaletteOverride && item.ClothingBaseEffects.Count == 1)
+                    clothingBaseEffect = item.ClothingBaseEffects.Values.FirstOrDefault();
+            }
+
+            if (clothingBaseEffect != null)
             {
                 // Add the model and texture(s)
                 foreach (CloObjectEffect t in clothingBaseEffect.CloObjectEffects)

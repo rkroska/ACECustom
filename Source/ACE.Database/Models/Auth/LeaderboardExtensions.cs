@@ -306,6 +306,15 @@ namespace ACE.Database.Models.Auth
                     case "potency":
                         sql = LeaderboardInlineSql.SelfPlacementPotency(accountId);
                         break;
+                    case "mutations":
+                        sql = LeaderboardInlineSql.SelfPlacementPetMutations(accountId);
+                        break;
+                    case "summutations":
+                        sql = LeaderboardInlineSql.SelfPlacementSumPetMutations(accountId);
+                        break;
+                    case "litters":
+                        sql = LeaderboardInlineSql.SelfPlacementLittersBred(accountId);
+                        break;
                     default:
                         return null;
                 }

@@ -1018,6 +1018,25 @@ namespace ACE.Server.WorldObjects
                     EnqueueBroadcast(new GameMessageSoulEmote(Guid.Full, Name, message), LocalBroadcastRange);
 
                 OnTalk(message);
+
+                var trimmed = message?.Trim().Trim('*').Trim();
+                if (!string.IsNullOrEmpty(trimmed) && trimmed.Equals("dance", StringComparison.OrdinalIgnoreCase))
+                {
+                    // BroadcastMovement() already triggers breeding off the DrudgeDance motion. Only fall
+                    // back to the chat-emote text when that path did not just fire for this same emote,
+                    // otherwise a single *dance* runs the ritual twice.
+                    var motionAlreadyFired = (LastSoulEmote == MotionCommand.DrudgeDance || LastSoulEmote == MotionCommand.DrudgeDanceState)
+                        && DateTime.UtcNow < LastSoulEmoteEndTime;
+
+                    // Rate limit the partner scan: it walks online players in the dungeon.
+                    var scanReady = DateTime.UtcNow - LastDanceTime >= TimeSpan.FromSeconds(2);
+
+                    if (!motionAlreadyFired && scanReady)
+                    {
+                        LastDanceTime = DateTime.UtcNow;
+                        PetDevice.CheckMultiplayerBreeding(this, $"ChatEmote: {message}");
+                    }
+                }
             }
             else
                 SendGagError();

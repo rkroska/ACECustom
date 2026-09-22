@@ -1,0 +1,391 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using ACE.Server.WorldObjects;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+using BreedingMath = ACE.Server.WorldObjects.PetDevice.BreedingMath;
+using BreedingReplay = ACE.Server.WorldObjects.PetDevice.BreedingReplay;
+
+namespace ACE.Server.Tests
+{
+    /// <summary>
+    /// Parity harness between the website breeding simulator (ClientApp/src/utils/breedingModel.ts)
+    /// and the server's PetDevice.BreedingMath. Every blob below is a [REPLAY] line the web model
+    /// emitted in verbose mode: the inputs, every random draw it consumed, and the baby it produced.
+    /// The server must reproduce the identical baby from the identical draws, consuming every draw.
+    ///
+    /// If a blob here starts failing, either breedingModel.ts or BreedingMath changed alone. They must
+    /// change together, and the blobs (and BREEDING_MODEL_VERSION) with them.
+    /// </summary>
+    [TestClass]
+    public class PetBreedingParityTests
+    {
+        // ------------------------------------------------------------------------------------
+        // Blobs captured from the live website simulator (model 2026-09-18.1).
+        // ------------------------------------------------------------------------------------
+
+        private const string RealA = """{"model":"2026-09-18.1","parentA":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":0,"vit":3,"pot":0,"potencyStored":22},"parentB":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":1,"vit":1,"pot":2,"potencyStored":158},"config":{"baseMutationChance":0.2,"potencyMutationChance":0.5,"mutationDecayRate":0.35,"mutationMinFloor":0.02,"damageMutationStep":10,"drMutationStep":10,"critMutationStep":5,"vitalityMutationStep":50,"potencyMutationStep":25,"potencySoftCap":1000,"potencyHardCap":0,"potencyMaxStored":0,"maxStatMutations":0,"forceMutation":true,"guardianEnabled":true},"options":{"incenseA":0,"incenseB":0,"catalystA":false,"catalystB":false,"guardianKilled":true},"rngDraws":[0.023667,0.484869,0.665382,0.194285,0.338872,0.017979,0.046754,0.853325,0.219428,0.17697,0.386064,0.98874],"baby":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":2,"dr":2,"crit":0,"vit":3,"pot":2,"potencyStored":72}}""";
+
+        private const string RealB = """{"model":"2026-09-18.1","parentA":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":0,"vit":3,"pot":0,"potencyStored":22},"parentB":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":1,"vit":1,"pot":2,"potencyStored":158},"config":{"baseMutationChance":0.2,"potencyMutationChance":0.5,"mutationDecayRate":0.35,"mutationMinFloor":0.02,"damageMutationStep":10,"drMutationStep":10,"critMutationStep":5,"vitalityMutationStep":50,"potencyMutationStep":25,"potencySoftCap":1000,"potencyHardCap":0,"potencyMaxStored":0,"maxStatMutations":0,"forceMutation":true,"guardianEnabled":true},"options":{"incenseA":0,"incenseB":0,"catalystA":false,"catalystB":false,"guardianKilled":true},"rngDraws":[0.288369,0.405023,0.574123,0.728767,0.632023,0.548275,0.271353,0.493799,0.195492,0.02843,0.780413,0.262871],"baby":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":2,"dr":3,"crit":0,"vit":3,"pot":2,"potencyStored":158}}""";
+
+        private const string RealC = """{"model":"2026-09-18.1","parentA":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":0,"vit":3,"pot":0,"potencyStored":22},"parentB":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":1,"vit":1,"pot":2,"potencyStored":158},"config":{"baseMutationChance":0.2,"potencyMutationChance":0.5,"mutationDecayRate":0.35,"mutationMinFloor":0.02,"damageMutationStep":10,"drMutationStep":10,"critMutationStep":5,"vitalityMutationStep":50,"potencyMutationStep":25,"potencySoftCap":1000,"potencyHardCap":0,"potencyMaxStored":0,"maxStatMutations":0,"forceMutation":true,"guardianEnabled":true},"options":{"incenseA":0,"incenseB":0,"catalystA":false,"catalystB":false,"guardianKilled":true},"rngDraws":[0.957511,0.313936,0.181614,0.155147,0.781482,0.263474,0.204135,0.048177,0.08088,0.638402,0.091847,0.530396],"baby":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":3,"vit":3,"pot":3,"potencyStored":183}}""";
+
+        // ------------------------------------------------------------------------------------
+        // Blobs generated by running breedingModel.ts (esbuild + node) with scripted draws, one per
+        // rule the harness must cover. Inheritance draws are the same for most of them:
+        // 0.1, 0.9, 0.2, 0.6, 0.3, 0.54, 0.7, 0.01.
+        // ------------------------------------------------------------------------------------
+
+        /// <summary>forceMutation off, stat roll 0.95 and potency roll 0.95 both miss: 10 draws, no guardian.</summary>
+        private const string NoMutation = """{"model":"2026-09-18.1","parentA":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":0,"vit":3,"pot":0,"potencyStored":22},"parentB":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":1,"vit":1,"pot":2,"potencyStored":158},"config":{"baseMutationChance":0.2,"potencyMutationChance":0.5,"mutationDecayRate":0.35,"mutationMinFloor":0.02,"damageMutationStep":10,"drMutationStep":10,"critMutationStep":5,"vitalityMutationStep":50,"potencyMutationStep":25,"potencySoftCap":1000,"potencyHardCap":0,"potencyMaxStored":0,"maxStatMutations":0,"forceMutation":false,"guardianEnabled":true},"options":{"incenseA":0,"incenseB":0,"catalystA":false,"catalystB":false,"guardianKilled":true},"rngDraws":[0.1,0.9,0.2,0.6,0.3,0.54,0.7,0.01,0.95,0.95],"baby":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":1,"vit":1,"pot":2,"potencyStored":158}}""";
+
+        /// <summary>Parent A stored 1000 (= soft cap): potency roll applies the quarter step (6), and the blessing picks potency for another 6.</summary>
+        private const string SoftCap = """{"model":"2026-09-18.1","parentA":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":0,"vit":3,"pot":4,"potencyStored":1000},"parentB":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":1,"vit":1,"pot":2,"potencyStored":158},"config":{"baseMutationChance":0.2,"potencyMutationChance":0.5,"mutationDecayRate":0.35,"mutationMinFloor":0.02,"damageMutationStep":10,"drMutationStep":10,"critMutationStep":5,"vitalityMutationStep":50,"potencyMutationStep":25,"potencySoftCap":1000,"potencyHardCap":0,"potencyMaxStored":0,"maxStatMutations":0,"forceMutation":false,"guardianEnabled":true},"options":{"incenseA":0,"incenseB":0,"catalystA":false,"catalystB":false,"guardianKilled":true},"rngDraws":[0.1,0.9,0.2,0.6,0.3,0.54,0.7,0.01,0.95,0.1,0.99],"baby":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":1,"vit":1,"pot":6,"potencyStored":1012}}""";
+
+        /// <summary>potencyMaxStored 210 with stored 200: the potency step clamps to 10, then the blessing sees potency capped (step 0) and picks over the 4 stat lines only.</summary>
+        private const string MaxStoredCap = """{"model":"2026-09-18.1","parentA":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":0,"vit":3,"pot":0,"potencyStored":200},"parentB":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":1,"vit":1,"pot":2,"potencyStored":158},"config":{"baseMutationChance":0.2,"potencyMutationChance":0.5,"mutationDecayRate":0.35,"mutationMinFloor":0.02,"damageMutationStep":10,"drMutationStep":10,"critMutationStep":5,"vitalityMutationStep":50,"potencyMutationStep":25,"potencySoftCap":1000,"potencyHardCap":0,"potencyMaxStored":210,"maxStatMutations":0,"forceMutation":false,"guardianEnabled":true},"options":{"incenseA":0,"incenseB":0,"catalystA":false,"catalystB":false,"guardianKilled":true},"rngDraws":[0.1,0.9,0.2,0.6,0.3,0.54,0.7,0.01,0.95,0.1,0.99],"baby":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":1,"vit":2,"pot":1,"potencyStored":210}}""";
+
+        /// <summary>maxStatMutations 2: the baby inherits dmg 2 / dr 2 / vit 2 / crit 1, so only crit is eligible; the blessing then finds every stat line capped and can only pick potency.</summary>
+        private const string PerLineCap = """{"model":"2026-09-18.1","parentA":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":2,"dr":2,"crit":1,"vit":2,"pot":0,"potencyStored":22},"parentB":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":0,"dr":0,"crit":0,"vit":0,"pot":2,"potencyStored":158},"config":{"baseMutationChance":0.2,"potencyMutationChance":0.5,"mutationDecayRate":0.35,"mutationMinFloor":0.02,"damageMutationStep":10,"drMutationStep":10,"critMutationStep":5,"vitalityMutationStep":50,"potencyMutationStep":25,"potencySoftCap":1000,"potencyHardCap":0,"potencyMaxStored":0,"maxStatMutations":2,"forceMutation":false,"guardianEnabled":true},"options":{"incenseA":0,"incenseB":0,"catalystA":false,"catalystB":false,"guardianKilled":true},"rngDraws":[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.9,0.05,0.5,0.95,0.5],"baby":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":2,"dr":2,"crit":2,"vit":2,"pot":1,"potencyStored":47}}""";
+
+        /// <summary>Incense +0.10 and +0.05 lift a flat 5% chance to 20%, so a 0.18 roll mutates only because of the incense. Guardian disabled: no blessing draw.</summary>
+        private const string Incense = """{"model":"2026-09-18.1","parentA":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":0,"vit":3,"pot":0,"potencyStored":22},"parentB":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":1,"vit":1,"pot":2,"potencyStored":158},"config":{"baseMutationChance":0.05,"potencyMutationChance":0.5,"mutationDecayRate":0,"mutationMinFloor":0.02,"damageMutationStep":10,"drMutationStep":10,"critMutationStep":5,"vitalityMutationStep":50,"potencyMutationStep":25,"potencySoftCap":1000,"potencyHardCap":0,"potencyMaxStored":0,"maxStatMutations":0,"forceMutation":false,"guardianEnabled":false},"options":{"incenseA":0.1,"incenseB":0.05,"catalystA":false,"catalystB":false,"guardianKilled":true},"rngDraws":[0.1,0.9,0.2,0.6,0.3,0.54,0.7,0.01,0.18,0.3,0.95],"baby":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":3,"crit":1,"vit":1,"pot":2,"potencyStored":158}}""";
+
+        /// <summary>Guardian disabled with a forced mutation and a catalyst: 11 draws, no blessing.</summary>
+        private const string GuardianDisabled = """{"model":"2026-09-18.1","parentA":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":0,"vit":3,"pot":0,"potencyStored":22},"parentB":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":1,"vit":1,"pot":2,"potencyStored":158},"config":{"baseMutationChance":0.2,"potencyMutationChance":0.5,"mutationDecayRate":0.35,"mutationMinFloor":0.02,"damageMutationStep":10,"drMutationStep":10,"critMutationStep":5,"vitalityMutationStep":50,"potencyMutationStep":25,"potencySoftCap":1000,"potencyHardCap":0,"potencyMaxStored":0,"maxStatMutations":0,"forceMutation":true,"guardianEnabled":false},"options":{"incenseA":0,"incenseB":0,"catalystA":true,"catalystB":false,"guardianKilled":true},"rngDraws":[0.1,0.9,0.2,0.6,0.3,0.54,0.7,0.01,0.5,0.6,0.2],"baby":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":2,"vit":1,"pot":3,"potencyStored":183}}""";
+
+        /// <summary>Guardian spawned but not killed: same 11 draws as above, no blessing.</summary>
+        private const string GuardianNotKilled = """{"model":"2026-09-18.1","parentA":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":0,"vit":3,"pot":0,"potencyStored":22},"parentB":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":1,"vit":1,"pot":2,"potencyStored":158},"config":{"baseMutationChance":0.2,"potencyMutationChance":0.5,"mutationDecayRate":0.35,"mutationMinFloor":0.02,"damageMutationStep":10,"drMutationStep":10,"critMutationStep":5,"vitalityMutationStep":50,"potencyMutationStep":25,"potencySoftCap":1000,"potencyHardCap":0,"potencyMaxStored":0,"maxStatMutations":0,"forceMutation":true,"guardianEnabled":true},"options":{"incenseA":0,"incenseB":0,"catalystA":false,"catalystB":false,"guardianKilled":false},"rngDraws":[0.1,0.9,0.2,0.6,0.3,0.54,0.7,0.01,0.5,0.6,0.2],"baby":{"gearDamage":9,"gearDamageResist":0,"gearCrit":3,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":2,"crit":2,"vit":1,"pot":3,"potencyStored":183}}""";
+
+        /// <summary>Forced stat mutation with every line at maxStatMutations 1 (no pick draw) and potency at potencyMaxStored (roll mutates, nothing applied): no guardian, 10 draws, baby unchanged.</summary>
+        private const string AllCapped = """{"model":"2026-09-18.1","parentA":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":1,"crit":1,"vit":1,"pot":0,"potencyStored":300},"parentB":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":1,"crit":1,"vit":1,"pot":0,"potencyStored":300},"config":{"baseMutationChance":0.2,"potencyMutationChance":0.5,"mutationDecayRate":0.35,"mutationMinFloor":0.02,"damageMutationStep":10,"drMutationStep":10,"critMutationStep":5,"vitalityMutationStep":50,"potencyMutationStep":25,"potencySoftCap":1000,"potencyHardCap":0,"potencyMaxStored":300,"maxStatMutations":1,"forceMutation":true,"guardianEnabled":true},"options":{"incenseA":0,"incenseB":0,"catalystA":false,"catalystB":false,"guardianKilled":true},"rngDraws":[0.1,0.9,0.2,0.6,0.3,0.54,0.7,0.01,0.5,0.1],"baby":{"gearDamage":9,"gearDamageResist":0,"gearCrit":6,"gearCritDamage":0,"gearCritResist":0,"gearCritDamageResist":11,"dmg":1,"dr":1,"crit":1,"vit":1,"pot":0,"potencyStored":300}}""";
+
+        public static IEnumerable<object[]> AllBlobs()
+        {
+            yield return new object[] { "RealA", RealA };
+            yield return new object[] { "RealB", RealB };
+            yield return new object[] { "RealC", RealC };
+            yield return new object[] { "NoMutation", NoMutation };
+            yield return new object[] { "SoftCap", SoftCap };
+            yield return new object[] { "MaxStoredCap", MaxStoredCap };
+            yield return new object[] { "PerLineCap", PerLineCap };
+            yield return new object[] { "Incense", Incense };
+            yield return new object[] { "GuardianDisabled", GuardianDisabled };
+            yield return new object[] { "GuardianNotKilled", GuardianNotKilled };
+            yield return new object[] { "AllCapped", AllCapped };
+        }
+
+        // ------------------------------------------------------------------------------------
+        // Replay parity
+        // ------------------------------------------------------------------------------------
+
+        [TestMethod]
+        [DynamicData(nameof(AllBlobs), DynamicDataSourceType.Method)]
+        public void Replay_ServerReproducesWebBaby_AndConsumesEveryDraw(string name, string blobText)
+        {
+            var blob = BreedingReplay.Parse(blobText);
+            var result = BreedingReplay.Run(blob);
+
+            Assert.IsTrue(result.Pass, $"{name}: {string.Join("; ", result.Mismatches)}\n{BreedingReplay.FormatReport(result)}");
+            Assert.AreEqual(blob.RngDraws.Length, result.DrawsConsumed, $"{name}: draw count");
+            Assert.IsTrue(blob.ExpectedBaby.HasValue && result.Outcome.Baby.SameAs(blob.ExpectedBaby.Value), $"{name}: baby");
+        }
+
+        [TestMethod]
+        public void Replay_RealA_IntermediateDecisionsMatchTheWebLog()
+        {
+            // Hand-checked against the web model's verbose log for blob A.
+            var r = BreedingReplay.Run(BreedingReplay.Parse(RealA));
+            var o = r.Outcome;
+
+            Assert.AreEqual(6, o.InheritedStatMutations);              // dmg 1 + dr 2 + crit 0 + vit 3
+            Assert.AreEqual(0.2 / (1.0 + 0.35 * 6), o.StatChance, 1e-12);
+            Assert.IsTrue(o.StatMutated);                               // 0.219428 >= 0.0645 but force_mutation is on
+            Assert.AreEqual(BreedingMath.MutationLine.Damage, o.StatLine);   // floor(0.17697 * 4) = 0
+            Assert.AreEqual(10, o.StatStep);
+            Assert.IsTrue(o.PotencyMutated && o.PotencyApplied);        // 0.386064 < 0.5
+            Assert.AreEqual(25, o.PotencyStep);
+            Assert.IsTrue(o.GuardianSpawned && o.GuardianKilled);
+            Assert.AreEqual(BreedingMath.MutationLine.Potency, o.BlessingLine); // floor(0.98874 * 5) = 4
+            Assert.AreEqual(25, o.BlessingStep);
+            Assert.AreEqual(BreedingMath.MutationLine.Potency, o.LastMutatedStat);
+            Assert.IsTrue(o.HasMutation && o.PaletteRolled);
+        }
+
+        [TestMethod]
+        public void Replay_LiveTwoPhasePath_EqualsOneShotSimulate()
+        {
+            // The live breed calls Simulate with GuardianKilled = false (draws 1-11) and rolls the
+            // blessing later in OnGuardianSlain through RollAwakenedBlessing (draw 12). Chaining the
+            // two must land on exactly the baby the one-shot Simulate (and the website) produce.
+            foreach (var blobText in new[] { RealA, RealB, RealC, SoftCap, MaxStoredCap, PerLineCap })
+            {
+                var blob = BreedingReplay.Parse(blobText);
+                Assert.IsTrue(blob.Inputs.Options.GuardianKilled);
+
+                // The blessing is always the LAST draw; the breed itself took 10 or 11 (the stat line
+                // pick is skipped when the stat roll misses).
+                var breedDraws = blob.RngDraws.Length - 1;
+                Assert.IsTrue(breedDraws == 10 || breedDraws == 11, $"unexpected draw count {blob.RngDraws.Length}");
+
+                var liveInputs = blob.Inputs;
+                liveInputs.Options.GuardianKilled = false;
+                var breedRng = new BreedingReplay.ScriptedRng(blob.RngDraws.Take(breedDraws).ToArray());
+                var phase1 = BreedingMath.Simulate(liveInputs, breedRng.Next);
+                Assert.AreEqual(breedDraws, breedRng.Consumed);
+                Assert.IsTrue(phase1.GuardianSpawned);
+                Assert.IsFalse(phase1.GuardianKilled);
+                Assert.AreEqual(BreedingMath.MutationLine.None, phase1.BlessingLine);
+
+                var baby = phase1.Baby;
+                var blessRng = new BreedingReplay.ScriptedRng(new[] { blob.RngDraws[breedDraws] });
+                var blessing = BreedingMath.RollAwakenedBlessing(ref baby, liveInputs.Config, blessRng.Next);
+                Assert.IsTrue(blessing.Drew);
+                Assert.AreEqual(1, blessRng.Consumed);
+
+                var oneShot = BreedingReplay.Run(blob).Outcome;
+                Assert.IsTrue(baby.SameAs(oneShot.Baby), $"two-phase {baby} vs one-shot {oneShot.Baby}");
+                Assert.AreEqual(oneShot.BlessingLine, blessing.Line);
+                Assert.AreEqual(oneShot.BlessingStep, blessing.Step);
+                Assert.IsTrue(baby.SameAs(blob.ExpectedBaby.Value));
+            }
+        }
+
+        [TestMethod]
+        public void Replay_SkipsTheBlessingDrawWhenNothingIsEligible()
+        {
+            // Stat lines all capped and potency at its cap: the blessing must not consume a draw.
+            var baby = new BreedingMath.BreedingGenetics { Dmg = 1, Dr = 1, Crit = 1, Vit = 1, PotencyStored = 300 };
+            var config = BreedingReplay.Parse(AllCapped).Inputs.Config;
+            var rng = new BreedingReplay.ScriptedRng(new[] { 0.5 });
+            var blessing = BreedingMath.RollAwakenedBlessing(ref baby, config, rng.Next);
+
+            Assert.IsFalse(blessing.Drew);
+            Assert.IsTrue(blessing.AllLinesCapped);
+            Assert.AreEqual(BreedingMath.MutationLine.None, blessing.Line);
+            Assert.AreEqual(0, rng.Consumed);
+        }
+
+        [TestMethod]
+        public void Replay_IsDeterministic()
+        {
+            var blob = BreedingReplay.Parse(RealB);
+            var first = BreedingReplay.Run(blob).Outcome;
+            var second = BreedingReplay.Run(blob).Outcome;
+            Assert.IsTrue(first.Baby.SameAs(second.Baby));
+            CollectionAssert.AreEqual(first.RngDraws, second.RngDraws);
+            CollectionAssert.AreEqual(blob.RngDraws, first.RngDraws.ToArray());
+        }
+
+        [TestMethod]
+        public void Replay_ReportsAWrongBaby_AsFail()
+        {
+            var tampered = RealA.Replace("\"potencyStored\":72}}", "\"potencyStored\":97}}");
+            Assert.AreNotEqual(RealA, tampered);
+
+            var pass = BreedingReplay.TryRunText(tampered, out var report);
+            Assert.IsFalse(pass);
+            StringAssert.Contains(report, "RESULT: FAIL");
+            StringAssert.Contains(report, "potencyStored: expected 97, got 72");
+        }
+
+        [TestMethod]
+        public void Replay_ReportsLeftoverDraws_AsFail()
+        {
+            // An extra trailing draw means the web model consumed one more than the server did.
+            var extra = RealA.Replace("0.98874]", "0.98874,0.5]");
+            var result = BreedingReplay.Run(BreedingReplay.Parse(extra));
+            Assert.IsFalse(result.Pass);
+            Assert.IsTrue(result.Mismatches.Any(m => m.Contains("never consumed")), string.Join("; ", result.Mismatches));
+        }
+
+        [TestMethod]
+        public void Replay_ReportsRunningOutOfDraws_AsFail()
+        {
+            var truncated = RealA.Replace(",0.98874]", "]");
+            var result = BreedingReplay.Run(BreedingReplay.Parse(truncated));
+            Assert.IsFalse(result.Pass);
+            Assert.IsTrue(result.Mismatches.Any(m => m.Contains("ran out of rng draws")), string.Join("; ", result.Mismatches));
+        }
+
+        [TestMethod]
+        public void Replay_ParsesABlobWithChatStrippedQuotes()
+        {
+            // CommandManager.ParseCommand removes every double quote from a command line, so this is
+            // what @breed-replay actually receives when a player pastes a blob in game.
+            var stripped = RealC.Replace("\"", "");
+            Assert.IsFalse(stripped.Contains('"'));
+
+            var blob = BreedingReplay.Parse(stripped);
+            Assert.AreEqual("2026-09-18.1", blob.Model);
+            Assert.AreEqual(12, blob.RngDraws.Length);
+            Assert.IsTrue(blob.Inputs.Config.ForceMutation);
+            Assert.IsTrue(blob.Inputs.Options.GuardianKilled);
+            Assert.AreEqual(158, blob.Inputs.ParentB.PotencyStored);
+
+            var pass = BreedingReplay.TryRunText("[REPLAY] " + stripped, out var report);
+            Assert.IsTrue(pass, report);
+            StringAssert.Contains(report, "RESULT: PASS");
+        }
+
+        [TestMethod]
+        public void Replay_ParsesALogLineWithAPrefix()
+        {
+            var pass = BreedingReplay.TryRunText("2026-09-18 12:00:00,000 INFO [PetBreeding] [REPLAY] " + RealB, out var report);
+            Assert.IsTrue(pass, report);
+        }
+
+        [TestMethod]
+        public void Replay_ReportIsClientSafeAscii()
+        {
+            BreedingReplay.TryRunText(RealA, out var report);
+            Assert.IsFalse(report.Contains('\r'), "report must use \\n only");
+            Assert.IsTrue(report.All(c => c < 128), "report must be 7-bit ASCII");
+        }
+
+        [TestMethod]
+        public void Replay_ToJson_RoundTripsThroughParse()
+        {
+            var blob = BreedingReplay.Parse(RealA);
+            var outcome = BreedingReplay.Run(blob).Outcome;
+            var json = BreedingReplay.ToJson(blob.Inputs, outcome.RngDraws, outcome.Baby, "roundtrip");
+
+            var again = BreedingReplay.Parse(json);
+            Assert.AreEqual("roundtrip", again.Model);
+            Assert.IsTrue(again.Inputs.ParentA.SameAs(blob.Inputs.ParentA));
+            Assert.IsTrue(again.Inputs.ParentB.SameAs(blob.Inputs.ParentB));
+            CollectionAssert.AreEqual(blob.RngDraws, again.RngDraws);
+            Assert.IsTrue(again.ExpectedBaby.Value.SameAs(blob.ExpectedBaby.Value));
+            Assert.IsTrue(BreedingReplay.Run(again).Pass);
+        }
+
+        // ------------------------------------------------------------------------------------
+        // Summon maths (summonedStats in breedingModel.ts vs BreedingMath.SummonedStats)
+        // ------------------------------------------------------------------------------------
+
+        private static readonly BreedingMath.BreedingConfig SummonConfig = new()
+        {
+            DamageMutationStep = 10, DrMutationStep = 10, CritMutationStep = 5, VitalityMutationStep = 50, PotencyMutationStep = 25,
+        };
+
+        /// <summary>Chosen so every stage lands at least one rating on an exact .5.</summary>
+        private static readonly BreedingMath.BreedingGenetics SummonPet = new()
+        {
+            GearDamage = 9, GearCrit = 5, GearCritDamage = 3, GearCritResist = 2, GearCritDamageResist = 1,
+            Dmg = 2, Dr = 1, Crit = 0, Vit = 1, Pot = 0, PotencyStored = 72,
+        };
+
+        [TestMethod]
+        public void SummonedStats_Adult_MatchesWebFormula()
+        {
+            var s = BreedingMath.SummonedStats(SummonPet, SummonConfig);
+            Assert.AreEqual(29, s.DamageRating);            // 9 + 2 x 10
+            Assert.AreEqual(10, s.DamageResistRating);      // 0 + 1 x 10
+            Assert.AreEqual(5, s.CritRating);               // 5 + 0
+            Assert.AreEqual(19, s.CritDamageRating);        // 3 + round(0.8 x 20)
+            Assert.AreEqual(10, s.CritResistRating);        // 2 + round(0.8 x 10)
+            Assert.AreEqual(7, s.CritDamageResistRating);   // 1 + round(0.6 x 10)
+            Assert.AreEqual(50, s.BonusHp);                 // 1 x 50
+            Assert.AreEqual(72, s.PotencyStored);
+        }
+
+        [TestMethod]
+        [DataRow(1, 15, 5, 3, 10, 5, 4, 25)]   // x0.5: 14.5 -> 15, 2.5 -> 3, 9.5 -> 10, 3.5 -> 4 (JS Math.round)
+        [DataRow(2, 17, 6, 3, 11, 6, 4, 30)]   // x0.6
+        [DataRow(3, 20, 7, 4, 13, 7, 5, 35)]   // x0.7: 3.5 -> 4, 4.9 -> 5
+        [DataRow(4, 23, 8, 4, 15, 8, 6, 40)]   // x0.8
+        [DataRow(5, 26, 9, 5, 17, 9, 6, 45)]   // x0.9: 4.5 -> 5
+        public void SummonedStats_Juvenile_MatchesWebRoundingAtHalves(int stage, int dr, int drr, int crit, int cd, int cr, int cdr, int hp)
+        {
+            // Expected values were produced by summonedStats() in breedingModel.ts for the same pet.
+            var s = BreedingMath.SummonedStats(SummonPet, SummonConfig, stage);
+            Assert.AreEqual(dr, s.DamageRating, "damageRating");
+            Assert.AreEqual(drr, s.DamageResistRating, "damageResistRating");
+            Assert.AreEqual(crit, s.CritRating, "critRating");
+            Assert.AreEqual(cd, s.CritDamageRating, "critDamageRating");
+            Assert.AreEqual(cr, s.CritResistRating, "critResistRating");
+            Assert.AreEqual(cdr, s.CritDamageResistRating, "critDamageResistRating");
+            Assert.AreEqual(hp, s.BonusHp, "bonusHp");
+        }
+
+        [TestMethod]
+        public void RoundHalfUp_AgreesWithJavaScriptMathRound()
+        {
+            // JavaScript: Math.round(2.5) = 3, Math.round(4.5) = 5. C# default Math.Round gives 2 and 4.
+            Assert.AreEqual(3, BreedingMath.RoundHalfUp(2.5));
+            Assert.AreEqual(5, BreedingMath.RoundHalfUp(4.5));
+            Assert.AreEqual(8, BreedingMath.RoundHalfUp(15 * 0.5));
+            Assert.AreEqual(13, BreedingMath.RoundHalfUp(25 * 0.5));
+            Assert.AreEqual(4, BreedingMath.RoundHalfUp(5 * 0.7));
+            Assert.AreEqual(11, BreedingMath.RoundHalfUp(15 * 0.7));
+            Assert.AreEqual(31, BreedingMath.RoundHalfUp(45 * 0.7));   // 31.499999999999996 in IEEE doubles on both sides
+            Assert.AreEqual(59, BreedingMath.RoundHalfUp(85 * 0.7));   // 59.49999999999999
+            Assert.AreEqual(5, BreedingMath.RoundHalfUp(5 * 0.9));
+            Assert.AreEqual(14, BreedingMath.RoundHalfUp(15 * 0.9));
+            Assert.AreEqual(4, (int)Math.Round(4.5));                  // the banker's trap this guards against
+        }
+
+        [TestMethod]
+        public void MaturityMultiplier_DefaultsAreBitIdenticalToTheWebTable()
+        {
+            for (var stage = 1; stage <= 5; stage++)
+                Assert.AreEqual(BreedingMath.DefaultMaturityMultipliers[stage - 1], BreedingMath.MaturityMultiplier(stage), $"stage {stage}");
+            Assert.AreEqual(1.0, BreedingMath.MaturityMultiplier(0));
+            Assert.AreEqual(1.0, BreedingMath.MaturityMultiplier(6));
+            // Same lerp as PetDevice.MaturityStrengthMult with pet_maturity_juvenile_strength / pet_maturity_stages.
+            Assert.AreEqual(0.7, BreedingMath.MaturityMultiplier(3, 5, 0.5));
+            Assert.AreEqual(0.25, BreedingMath.MaturityMultiplier(1, 4, 0.25));
+        }
+
+        [TestMethod]
+        public void MutCritDerivations_UseHalfUpRounding()
+        {
+            // Values from Math.round(0.8 * x) / Math.round(0.6 * x) in JavaScript.
+            Assert.AreEqual(4, BreedingMath.MutCritDamage(5));
+            Assert.AreEqual(7, BreedingMath.MutCritDamage(9));
+            Assert.AreEqual(12, BreedingMath.MutCritResist(15));
+            Assert.AreEqual(3, BreedingMath.MutCritDamageResist(5));
+            Assert.AreEqual(9, BreedingMath.MutCritDamageResist(15));
+            Assert.AreEqual(21, BreedingMath.MutCritDamageResist(35));
+        }
+
+        // ------------------------------------------------------------------------------------
+        // Small helpers the sequence is built from
+        // ------------------------------------------------------------------------------------
+
+        [TestMethod]
+        public void PickIndex_IsFloorRollTimesCount_ClampedToLastEntry()
+        {
+            Assert.AreEqual(0, BreedingMath.PickIndex(0.0, 4));
+            Assert.AreEqual(0, BreedingMath.PickIndex(0.2499, 4));
+            Assert.AreEqual(1, BreedingMath.PickIndex(0.25, 4));
+            Assert.AreEqual(3, BreedingMath.PickIndex(0.99, 4));
+            Assert.AreEqual(3, BreedingMath.PickIndex(1.0, 4));   // never past the end
+            Assert.AreEqual(4, BreedingMath.PickIndex(0.98874, 5));
+        }
+
+        [TestMethod]
+        public void StatMutationChance_MatchesWebFormula()
+        {
+            var config = new BreedingMath.BreedingConfig { BaseMutationChance = 0.05, MutationDecayRate = 0.5, MutationMinFloor = 0.02 };
+            Assert.AreEqual(0.05, BreedingMath.StatMutationChance(2, config, 0.05), 1e-12);    // (0.05 + 0.05) / 2: incense decays too
+            Assert.AreEqual(0.02, BreedingMath.StatMutationChance(100, config, 0.0), 1e-12);   // floor
+            Assert.AreEqual(1.0, BreedingMath.StatMutationChance(0, new BreedingMath.BreedingConfig { BaseMutationChance = 0.8 }, 0.5)); // clamp
+            Assert.AreEqual(0.5, BreedingMath.CombinedIncenseBonus(0.4, 0.3));
+        }
+
+        [TestMethod]
+        public void StatMutationChance_IncenseDecaysWithTheLine()
+        {
+            // prod settings: base 5%, decay 0.1, floor 2%; Exquisite incense on one parent (+10%)
+            var config = new BreedingMath.BreedingConfig { BaseMutationChance = 0.05, MutationDecayRate = 0.1, MutationMinFloor = 0.02 };
+            Assert.AreEqual(0.15, BreedingMath.StatMutationChance(0, config, 0.10), 1e-12);    // a fresh line gets the full bonus
+            Assert.AreEqual(0.075, BreedingMath.StatMutationChance(10, config, 0.10), 1e-12);  // 0.15 / 2
+            Assert.AreEqual(0.025, BreedingMath.StatMutationChance(50, config, 0.10), 1e-12);  // 0.15 / 6
+            Assert.AreEqual(0.02, BreedingMath.StatMutationChance(100, config, 0.10), 1e-12);  // 0.15 / 11 is under the floor
+            Assert.AreEqual(0.025, BreedingMath.StatMutationChance(10, config, 0.0), 1e-12);   // no incense: unchanged from before
+        }
+    }
+}

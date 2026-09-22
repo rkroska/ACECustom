@@ -27,7 +27,22 @@ namespace ACE.Server.WorldObjects
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        public static int GetFlooredPetLevel(int level)
+        {
+            var validLevels = new[] { 50, 80, 100, 125, 150, 180, 200, 250, 300 };
+            var result = 50;
+            foreach (var v in validLevels)
+            {
+                if (level >= v)
+                    result = v;
+                else
+                    break;
+            }
+            return result;
+        }
+
         public int? PetClass
+
         {
             get => GetProperty(PropertyInt.PetClass);
             set { if (value.HasValue) SetProperty(PropertyInt.PetClass, value.Value); else RemoveProperty(PropertyInt.PetClass); }
@@ -205,6 +220,9 @@ namespace ACE.Server.WorldObjects
 
             if (ServerConfig.pet_potency_enabled.Value)
                 owner.UpdateProperty(this, PropertyInt.PetPotencyStored, PetPotencyStored ?? 0, broadcast);
+
+            if (ServerConfig.pet_breeding_enabled.Value)
+                owner.UpdateProperty(this, PropertyFloat.PetNextBreedingTime, GetProperty(PropertyFloat.PetNextBreedingTime) ?? 0.0, broadcast);
         }
 
         public bool TryAwardBondXp(Player owner, long amount, out bool leveledUp)
@@ -347,6 +365,9 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.CapturedCreatureType); else SetProperty(PropertyInt.CapturedCreatureType, value.Value); }
         }
 
+        /// <summary>True for an essence captured from a shiny creature.</summary>
+        public bool IsShiny => VisualOverrideCreatureVariant == (int)ACE.Server.Entity.CreatureVariant.Shiny;
+
         public int? VisualOverrideCreatureVariant
         {
             get => GetProperty(PropertyInt.CapturedCreatureVariant);
@@ -368,6 +389,32 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Returns true if any captured ObjDesc data exists (AnimParts, Palettes, or Textures).
         /// </summary>
+        /// <summary>
+        /// Breeding sex. Derived from the device GUID so every essence - including ones that already
+        /// exist in the database - has a stable, evenly split value with nothing stored. The raw GUID is
+        /// bit-mixed first because dynamic GUIDs are allocated sequentially and the low bit alone would
+        /// simply alternate. PropertyBool.PetIsMaleOverride acts as a three-state admin override:
+        /// unset = derive, true = force male, false = force female.
+        /// </summary>
+        public bool IsMale
+        {
+            get
+            {
+                var over = GetProperty(PropertyBool.PetIsMaleOverride);
+                if (over.HasValue)
+                    return over.Value;
+
+                // murmur3 fmix32 - cheap, deterministic, well-distributed
+                uint h = Guid.Full;
+                h ^= h >> 16; h *= 0x7feb352d;
+                h ^= h >> 15; h *= 0x846ca68b;
+                h ^= h >> 16;
+                return (h & 1) == 0;
+            }
+        }
+
+        public string SexName => IsMale ? "Male" : "Female";
+
         public bool HasCapturedObjDesc => 
             !string.IsNullOrEmpty(CapturedObjDescAnimParts) ||
             !string.IsNullOrEmpty(CapturedObjDescPalettes) ||
@@ -394,6 +441,69 @@ namespace ACE.Server.WorldObjects
 
         private void SetEphemeralValues()
         {
+            ApplySexIconUnderlay();
+        }
+
+        /// <summary>
+        /// The sex-coloured square this essence shows behind its inventory icon: the configured male or
+        /// female underlay for a combat pet essence, or null when it is not one or the feature is off.
+        /// Sex comes from the GUID (or the admin override), so every combat essence always has one.
+        /// </summary>
+        public uint? SexIconUnderlay
+        {
+            get
+            {
+                if (!ServerConfig.pet_sex_icon_underlay_enabled.Value)
+                    return null;
+
+                try
+                {
+                    // Only combat pet essences breed, so only they carry a sex. IsCombatPetDevice reads
+                    // the cached summon weenie; a world database that is not up yet must not throw out
+                    // of a property read.
+                    if (!IsCombatPetDevice())
+                        return null;
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+
+                var configured = IsMale
+                    ? ServerConfig.pet_sex_icon_underlay_male.Value
+                    : ServerConfig.pet_sex_icon_underlay_female.Value;
+
+                if (configured <= 0 || configured > uint.MaxValue)
+                    return null;
+
+                return (uint)configured;
+            }
+        }
+
+        /// <summary>
+        /// On a combat pet essence the sex square always wins, whatever was written to the stored
+        /// property. It used to be painted once, in the constructor, so anything that wrote the
+        /// underlay afterwards lost it until the next load: siphoning copies the template's underlay,
+        /// and no combat-pet template ships one, so every capture blanked the square. Deriving it on
+        /// read covers the wire serialiser, every UpdateProperty push, and any writer added later.
+        /// Non-combat devices, and a disabled feature, fall through to the stored value.
+        /// </summary>
+        public override uint? IconUnderlayId
+        {
+            get => SexIconUnderlay ?? base.IconUnderlayId;
+            set => base.IconUnderlayId = value;
+        }
+
+        /// <summary>
+        /// Writes the derived square into the stored property as well, so readers that bypass
+        /// <see cref="IconUnderlayId"/> and go straight to the biota (the web portal) see it too.
+        /// Display never depends on this: the getter derives the square either way.
+        /// </summary>
+        public void ApplySexIconUnderlay()
+        {
+            var underlay = SexIconUnderlay;
+            if (underlay.HasValue && base.IconUnderlayId != underlay)
+                base.IconUnderlayId = underlay;
         }
 
         /// <summary>
@@ -493,7 +603,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (rotSeconds.Value == lifeSeconds.Value)
                     return $"Summon duration (for you): ~{rotSeconds.Value}s (decay timer matches innate lifespan).";
-                return $"Summon duration (for you): whichever expires first — decay ~{rotSeconds.Value}s (includes luminance summon/duration aug bonuses when configured); innate lifespan ~{lifeSeconds.Value}s.";
+                return $"Summon duration (for you): whichever expires first - decay ~{rotSeconds.Value}s (includes luminance summon/duration aug bonuses when configured); innate lifespan ~{lifeSeconds.Value}s.";
             }
 
             if (rotSeconds.HasValue)
@@ -530,6 +640,28 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// The base name a summoned pet is given, before <see cref="Pet"/> prepends "Owner's ".
+        ///
+        /// An approved <see cref="PropertyString.PetCustomName"/> wins and is used verbatim. The owner chose
+        /// it and staff approved it, so it is not a capture-derived name and must not be run through the
+        /// owner-prefix cleanup: that cleanup cannot tell "Owner's " from a possessive inside the name
+        /// itself, and would turn "Bob's Burgers" into "Burgers".
+        ///
+        /// With no custom name the capture-derived <paramref name="visualOverrideName"/> is used, with its
+        /// chained "Owner's " prefixes stripped as before - legacy devices carry them baked in.
+        /// </summary>
+        public static string ResolveSummonedPetBaseName(string customName, string visualOverrideName)
+        {
+            if (!string.IsNullOrWhiteSpace(customName))
+                return customName.Trim();
+
+            if (string.IsNullOrEmpty(visualOverrideName))
+                return null;
+
+            return StripCapturedCreatureNamePrefixes(visualOverrideName);
+        }
+
+        /// <summary>
         /// Strips chained "Owner's " style prefixes from a stored capture name (same rules as summon naming).
         /// </summary>
         public static string StripCapturedCreatureNamePrefixes(string name)
@@ -545,10 +677,10 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Rebuilds pet device inventory name after applying a new capture skin: keeps the prefix before the
-        /// creature token and the " Essence..." suffix (e.g. "Lightning Maiden Essence" → "Lightning Floeshark Essence").
-        /// When a previous <see cref="VisualOverrideName"/> exists, it is stripped from the head for a reliable prefix;
-        /// otherwise the last word of the head is treated as the template creature token (works for "Lightning Maiden").
+        /// Rebuilds a pet device inventory name after a new capture skin: composes
+        /// "&lt;damage word&gt; &lt;creature&gt; Essence (tier)" from the leading damage word and the new creature,
+        /// keeping the " Essence..." suffix. Everything else in the old head belonged to the PREVIOUS look and
+        /// is dropped, so the result is idempotent - rebuilding an already-correct name returns it unchanged.
         /// </summary>
         public static string BuildDisplayNameAfterCaptureApply(string currentDeviceName, string previousCapturedCreatureName, string newCapturedCreatureName)
         {
@@ -565,18 +697,22 @@ namespace ACE.Server.WorldObjects
 
             var tail = currentDeviceName.Substring(idx);
             var head = currentDeviceName.Substring(0, idx);
-            var oldMid = StripCapturedCreatureNamePrefixes(previousCapturedCreatureName ?? "");
 
-            string prefix;
-            if (!string.IsNullOrEmpty(oldMid) && head.EndsWith(oldMid, StringComparison.OrdinalIgnoreCase))
-                prefix = head.Substring(0, head.Length - oldMid.Length).TrimEnd();
-            else
+            // Only a leading damage word survives. The rest of the head names the PREVIOUS look
+            // ("Phyntos Swarm", "Skeleton", "K'nath"), and carrying it forward is what produced names like
+            // "Lightning Skeleton Brown Bunny Essence": every re-skin kept the old creature's words and
+            // appended the new one. previousCapturedCreatureName is no longer needed to find the boundary,
+            // and is kept only so existing call sites compile unchanged.
+            var headParts = head.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var prefix = headParts.Length > 0 && IsEssenceDamageLeadWord(headParts[0]) ? headParts[0] : "";
+
+            // "Fire" + "Fire Wisp" reads as one creature, not two words. Only collapse when the creature has
+            // another word left over, so a creature actually named "Fire" keeps its name.
+            if (prefix.Length > 0)
             {
-                var parts = head.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length >= 2)
-                    prefix = string.Join(" ", parts, 0, parts.Length - 1);
-                else
-                    prefix = "";
+                var midParts = newMid.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (midParts.Length > 1 && midParts[0].Equals(prefix, StringComparison.OrdinalIgnoreCase))
+                    newMid = string.Join(" ", midParts, 1, midParts.Length - 1);
             }
 
             if (string.IsNullOrEmpty(prefix))
@@ -596,12 +732,13 @@ namespace ACE.Server.WorldObjects
             var essenceIdx = Name.LastIndexOf(" Essence", StringComparison.OrdinalIgnoreCase);
             var tail = essenceIdx >= 0 ? Name.Substring(essenceIdx) : "";
 
-            var baseName = StripCapturedCreatureNamePrefixes(VisualOverrideName);
+            // Same rule as summon naming: an owner-chosen name is used verbatim, because the prefix cleanup
+            // cannot tell "Owner's " from a possessive inside the name and would call "Bob's Burgers" "Burgers".
+            var baseName = ResolveSummonedPetBaseName(GetProperty(PropertyString.PetCustomName), VisualOverrideName);
 
             return string.IsNullOrEmpty(tail) ? baseName : baseName + tail;
         }
 
-        // Monster Capture System - Handle captured appearance application
         public override void HandleActionUseOnTarget(Player player, WorldObject target)
         {
             if (MonsterCapture.IsCapturedAppearance(target))
@@ -631,7 +768,7 @@ namespace ACE.Server.WorldObjects
                 return;
 
             // Pet Bonding System - character-bound combat pet devices
-            if (ServerConfig.pet_bond_enabled.Value && IsCombatPetDevice() && IsPetBondAttuned)
+            if ((ServerConfig.pet_bond_enabled.Value || WasBredJuvenile) && IsCombatPetDevice() && IsPetBondAttuned)
             {
                 var bondedCharacterId = PetBondAttunedCharacterId;
                 if (bondedCharacterId.HasValue && bondedCharacterId.Value != (long)player.Character.Id)
@@ -990,54 +1127,191 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// If the name begins with a known damage-type label (<see cref="EssenceNameDamageLeadWords"/> or
-        /// <see cref="TryMatchEssenceDamageLeadWordToDamageType"/>), replace that word with
-        /// <paramref name="weaponDt"/>'s display label. If the first word is not a known damage lead-in,
-        /// returns <paramref name="name"/> unchanged (no insertion).
+        /// True when <paramref name="word"/> is a recognised essence damage lead-in: a <see cref="DamageType"/>
+        /// spelling (Fire, Lightning, Slash) or a matrix flavour word (Caustic, Volcanic, Frost, Excited).
         /// </summary>
-        private static string ReplaceLeadingEssenceDamageLabel(string name, DamageType weaponDt)
+        private static bool IsEssenceDamageLeadWord(string word)
         {
-            var n = name.TrimStart();
-            var sp = n.IndexOf(' ');
-            if (sp <= 0)
-                return name;
-
-            var lead = n[..sp];
-            if (!EssenceNameDamageLeadWords.Contains(lead)
-                && !TryMatchEssenceDamageLeadWordToDamageType(lead).HasValue)
-                return name;
-
-            var tail = n[sp..];
-            return weaponDt.DisplayName() + tail;
+            return !string.IsNullOrEmpty(word)
+                   && (EssenceNameDamageLeadWords.Contains(word)
+                       || TryMatchEssenceDamageLeadWordToDamageType(word).HasValue);
         }
 
         /// <summary>
-        /// Updates this combat pet essence's <see cref="WorldObject.Name"/> from the summoned pet's weapons: strips
-        /// any legacy <c> [Slash]</c> suffix, then replaces a leading elemental/physical word (Acid, Fire, …) with the
-        /// weapon's damage label (Slash, Bludgeon, Lightning, …).
+        /// Puts <paramref name="damageType"/> at the front of an essence name. A wrong damage word is replaced;
+        /// a flavour spelling that already means this type is kept, so "Volcanic Moar Essence" stays Volcanic on
+        /// a Fire pet; and a name with no damage word at all (K'nath, Iron Golem, Holiday Bosh) gains one rather
+        /// than staying silent about its element.
+        /// </summary>
+        private static string ApplyEssenceDamageLabel(string name, DamageType damageType)
+        {
+            var n = (name ?? "").TrimStart();
+            if (n.Length == 0)
+                return name;
+
+            var label = damageType.DisplayName();
+            var sp = n.IndexOf(' ');
+            var lead = sp > 0 ? n[..sp] : n;
+
+            string leadOut, body;
+            if (IsEssenceDamageLeadWord(lead))
+            {
+                // Keep the author's flavour wording when it already means this damage type.
+                leadOut = TryMatchEssenceDamageLeadWordToDamageType(lead) == damageType ? lead : label;
+                body = sp > 0 ? n[(sp + 1)..] : "";
+            }
+            else
+            {
+                leadOut = label;
+                body = n;
+            }
+
+            // "Fire" + "Fire Wisp Essence" reads as one creature, not two words. Only collapse when the
+            // creature keeps a word, so a creature actually named "Fire" is not erased.
+            var bodyParts = body.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (bodyParts.Length > 1 && bodyParts[0].Equals(leadOut, StringComparison.OrdinalIgnoreCase))
+                body = string.Join(" ", bodyParts, 1, bodyParts.Length - 1);
+
+            return body.Length == 0 ? leadOut : leadOut + " " + body;
+        }
+
+        /// <summary>
+        /// The damage type an unarmed creature really attacks with: its most common body-part DType. Used for
+        /// NAMING only, and only when neither a weapon nor a stored capture type resolves, so essences whose
+        /// template carries no damage word still show the element their pet deals.
+        /// </summary>
+        private static DamageType? TryGetDominantBodyPartDamageType(Creature pet)
+        {
+            if (pet?.Biota?.PropertiesBodyPart == null)
+                return null;
+
+            var counts = new Dictionary<DamageType, int>();
+            foreach (var part in pet.Biota.PropertiesBodyPart.Values)
+            {
+                var dt = part.DType;
+                if (dt == DamageType.Undef || dt == DamageType.Base || dt.IsMultiDamage())
+                    continue;
+
+                counts.TryGetValue(dt, out var seen);
+                counts[dt] = seen + 1;
+            }
+
+            var best = DamageType.Undef;
+            var bestCount = 0;
+            foreach (var kvp in counts)
+            {
+                // Ties break on the lower enum value so the same creature always names itself the same way.
+                if (kvp.Value > bestCount || (kvp.Value == bestCount && (int)kvp.Key < (int)best))
+                {
+                    best = kvp.Key;
+                    bestCount = kvp.Value;
+                }
+            }
+
+            return best == DamageType.Undef ? null : best;
+        }
+
+        /// <summary>
+        /// Recomposes this essence's name from its stored look, so a name that drifted - leftover words from an
+        /// earlier skin, or a " Essence (tier)" suffix an older rename dropped - repairs itself the next time the
+        /// pet is summoned. An owner-approved <see cref="PropertyString.PetCustomName"/> is used verbatim.
+        /// Returns <paramref name="current"/> untouched when the look cannot be resolved, so an unfamiliar name
+        /// is never rewritten into something partial.
+        /// </summary>
+        private string RebuildEssenceNameFromStoredLook(string current)
+        {
+            var creature = ResolveSummonedPetBaseName(GetProperty(PropertyString.PetCustomName), VisualOverrideName);
+            if (string.IsNullOrWhiteSpace(creature) || string.IsNullOrEmpty(current))
+                return current;
+
+            var working = current;
+            if (working.LastIndexOf(" Essence", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                // Take the suffix back from the template weenie, which always carries one. If the template has
+                // none either (e.g. "Baby Yanga"), there is no suffix to restore and the name is left alone.
+                var templateName = DatabaseManager.World.GetCachedWeenie(WeenieClassId)?.GetProperty(PropertyString.Name);
+                var tplIdx = templateName?.LastIndexOf(" Essence", StringComparison.OrdinalIgnoreCase) ?? -1;
+                if (tplIdx < 0)
+                    return current;
+
+                working += templateName.Substring(tplIdx);
+            }
+
+            // The builder strips "Owner's " prefixes from a capture name, which would also eat a possessive
+            // inside an owner-chosen name. Build around a placeholder and substitute afterwards.
+            const string placeholder = "\u0001";
+            var built = BuildDisplayNameAfterCaptureApply(working, null, placeholder);
+            if (string.IsNullOrEmpty(built) || !built.Contains(placeholder))
+                return current;
+
+            return built.Replace(placeholder, creature);
+        }
+
+        /// <summary>
+        /// Rebuilds <see cref="PropertyString.Use"/> from the template weenie's, swapping the template's creature
+        /// for this essence's current one, so the description always names what the pet actually looks like.
+        /// Recomposed from the template rather than patched, which means a Use line that already drifted is
+        /// repaired instead of carried forward, and a wrong result cannot accumulate across summons.
+        /// </summary>
+        private void RefreshUseStringFromStoredLook(Player owner)
+        {
+            var weenie = DatabaseManager.World.GetCachedWeenie(WeenieClassId);
+            var templateUse = weenie?.GetProperty(PropertyString.Use);
+            var templateName = weenie?.GetProperty(PropertyString.Name);
+            if (string.IsNullOrEmpty(templateUse) || string.IsNullOrEmpty(templateName))
+                return;
+
+            static string HeadBeforeEssence(string n)
+            {
+                var idx = (n ?? "").LastIndexOf(" Essence", StringComparison.OrdinalIgnoreCase);
+                return idx < 0 ? (n ?? "") : n.Substring(0, idx);
+            }
+
+            var templateHead = HeadBeforeEssence(templateName);
+            var currentHead = HeadBeforeEssence(Name);
+            if (string.IsNullOrEmpty(templateHead) || string.IsNullOrEmpty(currentHead))
+                return;
+
+            var rebuilt = templateUse.Replace(templateHead, currentHead, StringComparison.OrdinalIgnoreCase);
+            if (string.Equals(rebuilt, GetProperty(PropertyString.Use), StringComparison.Ordinal))
+                return;
+
+            SetProperty(PropertyString.Use, rebuilt);
+            owner?.UpdateProperty(this, PropertyString.Use, rebuilt);
+        }
+
+        /// <summary>
+        /// Updates this combat pet essence's <see cref="WorldObject.Name"/> at summon: strips any legacy
+        /// <c> [Slash]</c> suffix, recomposes the name from the stored look so a drifted name repairs itself,
+        /// then fronts it with the element the pet actually attacks with.
         /// </summary>
         private void RefreshCombatPetEssenceDisplayNameForSummonedPet(CombatPet pet, Player owner)
         {
             if (!IsCombatPetDevice() || pet == null || owner?.Session == null)
                 return;
 
-            var stripped = GetDisplayNameWithoutWeaponDamageSuffix(Name ?? "");
-            var weaponDt = TryGetPrimaryWeaponDamageTypeForDisplay(pet, this);
+            var stripped = RebuildEssenceNameFromStoredLook(GetDisplayNameWithoutWeaponDamageSuffix(Name ?? ""));
+
+            // Weapon, then stored capture type, then the creature's own body parts. The last covers templates
+            // that carry no damage word at all, so every summoned pet can name its element.
+            var weaponDt = TryGetPrimaryWeaponDamageTypeForDisplay(pet, this) ?? TryGetDominantBodyPartDamageType(pet);
             if (!weaponDt.HasValue)
             {
                 if (stripped != Name)
                     Name = stripped;
                 TryNotifySummonerNameProperty(owner);
+                RefreshUseStringFromStoredLook(owner);
                 return;
             }
 
-            var rebuilt = ReplaceLeadingEssenceDamageLabel(stripped, weaponDt.Value);
+            var rebuilt = ApplyEssenceDamageLabel(stripped, weaponDt.Value);
             if (stripped != rebuilt)
                 Name = rebuilt;
             else if (stripped != Name)
                 Name = stripped;
 
             TryNotifySummonerNameProperty(owner);
+            RefreshUseStringFromStoredLook(owner);
         }
 
         /// <summary>
@@ -1059,7 +1333,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var rebuilt = ReplaceLeadingEssenceDamageLabel(stripped, weaponDt.Value);
+            var rebuilt = ApplyEssenceDamageLabel(stripped, weaponDt.Value);
             if (stripped != rebuilt)
                 Name = rebuilt;
             else if (stripped != Name)
@@ -1088,185 +1362,17 @@ namespace ACE.Server.WorldObjects
 
             // Monster Capture System - Apply visual overrides if set
             if (VisualOverrideSetup.HasValue)
-            {
-                // Force-clear ALL existing visual properties to prevent base weenie appearance leaking through
-                pet.RemoveProperty(PropertyDataId.ClothingBase);
-                pet.RemoveProperty(PropertyDataId.PaletteBase);
-                pet.RemoveProperty(PropertyInt.PaletteTemplate);
-                pet.RemoveProperty(PropertyFloat.Shade);
-                
-                // Clear existing Biota visual data only if we have captured ObjDesc to apply
-                // This prevents visual emptiness if the captured data is missing
-                if (HasCapturedObjDesc)
-                {
-                    pet.Biota.PropertiesAnimPart?.Clear();
-                    pet.Biota.PropertiesPalette?.Clear();
-                    pet.Biota.PropertiesTextureMap?.Clear();
-                }
-                
-                // Remove ALL equipped items that affect visual appearance (weapons, armor, clothing)
-                // This prevents the base pet weenie's equipment from conflicting with captured appearance
-                var equipmentToRemove = pet.EquippedObjects.Values
-                    .Where(x => x.ItemType == ACE.Entity.Enum.ItemType.Armor || 
-                                x.ItemType == ACE.Entity.Enum.ItemType.Clothing ||
-                                x.ItemType == ACE.Entity.Enum.ItemType.MeleeWeapon ||
-                                x.ItemType == ACE.Entity.Enum.ItemType.MissileWeapon ||
-                                x.ItemType == ACE.Entity.Enum.ItemType.Caster ||
-                                x.ItemType == ACE.Entity.Enum.ItemType.Jewelry)  // Jewelry can have visual effects
-                    .ToList();
-                
-                foreach (var item in equipmentToRemove)
-                {
-                    // Directly remove from dictionaries and destroy
-                    pet.EquippedObjects.Remove(item.Guid);
-                    pet.Inventory.Remove(item.Guid);
-                    item.Destroy();
-                }
-                
-                pet.SetupTableId = VisualOverrideSetup.Value;
+                ApplyVisualOverridesTo(pet);
 
-                if (VisualOverrideMotionTable.HasValue)
-                    pet.MotionTableId = VisualOverrideMotionTable.Value;
+            // Solidifying / Fading Tincture: the essence's own translucency replaces the summon template's,
+            // before the pet enters the world. 0 means fully solid, so the property is removed.
+            var petTranslucency = GetProperty(PropertyFloat.PetTranslucency);
+            if (petTranslucency.HasValue)
+                pet.Translucency = petTranslucency.Value < 0.001 ? null : (float)petTranslucency.Value;
 
-                if (VisualOverrideCombatTable.HasValue)
-                {
-                    if (VisualOverrideCombatTable.Value > 0)
-                    {
-                        pet.CombatTableDID = VisualOverrideCombatTable.Value;
-                        pet.GetCombatTable();
-                    }
-                    else
-                        log.Warn($"{nameof(SummonCreature)}: {nameof(VisualOverrideCombatTable)} is 0 for device {Name} ({Guid}) — skipping combat table override.");
-                }
-
-                if (VisualOverrideSoundTable.HasValue)
-                    pet.SoundTableId = VisualOverrideSoundTable.Value;
-
-                if (VisualOverridePaletteBase.HasValue)
-                    pet.PaletteBaseId = VisualOverridePaletteBase.Value;
-
-                if (VisualOverrideClothingBase.HasValue)
-                {
-                    var clothingBaseId = VisualOverrideClothingBase.Value;
-                    if (DatLoader.DatDatabase.IsClothingBaseId(clothingBaseId))
-                        pet.ClothingBase = clothingBaseId;
-                    else
-                        log.Warn($"{nameof(SummonCreature)}: {nameof(VisualOverrideClothingBase)} {clothingBaseId:X8} on device {Name} ({Guid}) is not a clothing DID (0x10xxxxxx); skipping.");
-                }
-                else
-                    pet.RemoveProperty(PropertyDataId.ClothingBase); // Remove inherited ClothingBase if original had none
-
-                if (VisualOverrideIcon.HasValue)
-                    pet.IconId = VisualOverrideIcon.Value;
-
-                if (VisualOverridePaletteTemplate.HasValue)
-                    pet.PaletteTemplate = VisualOverridePaletteTemplate.Value;
-
-                if (VisualOverrideShade.HasValue)
-                    pet.Shade = (float)VisualOverrideShade.Value;
-
-                if (VisualOverrideScale.HasValue)
-                    pet.ObjScale = (float)VisualOverrideScale.Value;
-                
-                // Apply creature name override
-                if (!string.IsNullOrEmpty(VisualOverrideName))
-                {
-                    // Strip ALL existing "Player's" prefixes to get base creature name
-                    var baseName = VisualOverrideName;
-                    int apostropheIdx;
-                    while ((apostropheIdx = baseName.IndexOf("'s ")) > 0)
-                    {
-                        baseName = baseName.Substring(apostropheIdx + 3);
-                    }
-                    
-                    // Now add only the current owner's name
-                    var ownerName = player.Name;
-                    //pet.Name = $"{ownerName}'s {baseName}";
-                    pet.Name = $"{baseName}";
-                }
-                
-                // Apply creature type (species) override
-                if (VisualOverrideCreatureType.HasValue)
-                {
-                    pet.CreatureType = (ACE.Entity.Enum.CreatureType)VisualOverrideCreatureType.Value;
-                }
-
-                // Apply creature variant override (e.g. shiny)
-                if (VisualOverrideCreatureVariant.HasValue)
-                {
-                    pet.CreatureVariant = (ACE.Server.Entity.CreatureVariant)VisualOverrideCreatureVariant.Value;
-                }
-
-                // Apply captured ObjDesc (AnimParts, Palettes, Textures) for full humanoid appearance
-                // This restores the exact visual appearance captured from the original creature
-                if (HasCapturedObjDesc)
-                {
-                    ApplyCapturedObjDesc(pet);
-                }
-
-                // Equip Captured Items (Armor, Weapons, Shield)
-                if (!string.IsNullOrEmpty(VisualOverrideCapturedItems))
-                {
-                    // Calculate scale ratio: how much the pet was shrunk/grown
-                    var petScaleRatio = pet.ObjScale ?? 1.0f;
-                    
-                    var itemEntries = VisualOverrideCapturedItems.Split('|', StringSplitOptions.RemoveEmptyEntries);
-                    foreach (var entry in itemEntries)
-                    {
-                        // Format: WCID;Scale;Palette;Shade
-                        var parts = entry.Split(';');
-                        if (uint.TryParse(parts[0], out var itemWcid))
-                        {
-                            var item = WorldObjectFactory.CreateNewWorldObject(itemWcid);
-                            if (item != null)
-                            {
-                                CombatPet.StripVisualWeaponDamageStats(item);
-
-                                // Apply Visual Properties - scale items by pet's scale ratio
-                                if (parts.Length > 1 && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var itemScale))
-                                {
-                                    // Multiply original item scale by pet scale ratio
-                                    var adjustedScale = itemScale * petScaleRatio;
-                                    if (System.Math.Abs(adjustedScale - 1.0f) > 0.001f)
-                                        item.ObjScale = adjustedScale;
-                                }
-                                else
-                                {
-                                    // No original scale stored, just use pet's ratio
-                                    if (System.Math.Abs(petScaleRatio - 1.0f) > 0.001f)
-                                        item.ObjScale = petScaleRatio;
-                                }
-
-                                if (parts.Length > 2 && int.TryParse(parts[2], out var itemPalette) && itemPalette != 0)
-                                {
-                                    item.PaletteTemplate = itemPalette;
-                                }
-
-                                if (parts.Length > 3 && float.TryParse(parts[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var itemShade) && itemShade != 0.0f)
-                                {
-                                    item.Shade = itemShade;
-                                }
-
-                                // Add to pet's inventory first
-                                if (pet.TryAddToInventory(item))
-                                {
-                                    // Make item effectively worthless/bonded so it's not exploited
-                                    item.Value = 0; 
-                                    
-                                    // Try to wield/equip it
-                                    // We use TryWieldObject which handles slot logic
-                                    pet.TryWieldObject(item, (EquipMask)(item.ValidLocations ?? 0));
-                                }
-                                else
-                                {
-                                    item.Destroy();
-                                }
-                            }
-                        }
-                    }
-                }
-
-            }
+            // Juvenile size and name must be in place before Init enters the world.
+            if (pet is CombatPet juvenileCandidate)
+                juvenileCandidate.PrepareMaturityForSummon(this);
 
             var success = pet.Init(player, this);
 
@@ -1276,6 +1382,9 @@ namespace ACE.Server.WorldObjects
                     RefreshCombatPetEssenceDisplayNameForSummonedPet(combatPet, player);
                 else
                     TryNotifySummonerNameProperty(player);
+
+                // A bred essence binds itself to the first character who summons it.
+                TryImprintOnSummon(player);
             }
             else
                 wo.Destroy();
@@ -1287,6 +1396,198 @@ namespace ACE.Server.WorldObjects
         /// Applies captured ObjDesc data (AnimParts, Palettes, Textures) to the pet's Biota.
         /// This restores the exact visual appearance of humanoid creatures including clothing/armor.
         /// </summary>
+        /// <summary>
+        /// Dresses any creature in this device's captured appearance: setup, motion/combat/sound tables,
+        /// palette base/template/shade, clothing, scale, name, creature type/variant, the captured
+        /// ObjDesc recipe, and captured equipment. Used for the summoned pet, and reusable for anything
+        /// else that should look like this device's creature (e.g. a mating guardian).
+        /// </summary>
+        public void ApplyVisualOverridesTo(Creature pet)
+        {
+            // Force-clear ALL existing visual properties to prevent base weenie appearance leaking through
+            pet.RemoveProperty(PropertyDataId.ClothingBase);
+            pet.RemoveProperty(PropertyDataId.PaletteBase);
+            pet.RemoveProperty(PropertyInt.PaletteTemplate);
+            pet.RemoveProperty(PropertyFloat.Shade);
+            
+            // Clear existing Biota visual data only if we have captured ObjDesc to apply
+            // This prevents visual emptiness if the captured data is missing
+            if (HasCapturedObjDesc)
+            {
+                pet.Biota.PropertiesAnimPart?.Clear();
+                pet.Biota.PropertiesPalette?.Clear();
+                pet.Biota.PropertiesTextureMap?.Clear();
+            }
+            
+            // Remove ALL equipped items that affect visual appearance (weapons, armor, clothing)
+            // This prevents the base pet weenie's equipment from conflicting with captured appearance
+            var equipmentToRemove = pet.EquippedObjects.Values
+                .Where(x => x.ItemType == ACE.Entity.Enum.ItemType.Armor || 
+                            x.ItemType == ACE.Entity.Enum.ItemType.Clothing ||
+                            x.ItemType == ACE.Entity.Enum.ItemType.MeleeWeapon ||
+                            x.ItemType == ACE.Entity.Enum.ItemType.MissileWeapon ||
+                            x.ItemType == ACE.Entity.Enum.ItemType.Caster ||
+                            x.ItemType == ACE.Entity.Enum.ItemType.Jewelry)  // Jewelry can have visual effects
+                .ToList();
+            
+            foreach (var item in equipmentToRemove)
+            {
+                // Directly remove from dictionaries and destroy
+                pet.EquippedObjects.Remove(item.Guid);
+                pet.Inventory.Remove(item.Guid);
+                item.Destroy();
+            }
+            
+            pet.SetupTableId = VisualOverrideSetup.Value;
+
+            if (VisualOverrideMotionTable.HasValue)
+                pet.MotionTableId = VisualOverrideMotionTable.Value;
+
+            if (VisualOverrideCombatTable.HasValue)
+            {
+                if (VisualOverrideCombatTable.Value > 0)
+                {
+                    pet.CombatTableDID = VisualOverrideCombatTable.Value;
+                    pet.GetCombatTable();
+                }
+                else
+                    log.Warn($"{nameof(ApplyVisualOverridesTo)}: {nameof(VisualOverrideCombatTable)} is 0 for device {Name} ({Guid}) -- skipping combat table override.");
+            }
+
+            if (VisualOverrideSoundTable.HasValue)
+                pet.SoundTableId = VisualOverrideSoundTable.Value;
+
+            if (VisualOverridePaletteBase.HasValue)
+                pet.PaletteBaseId = VisualOverridePaletteBase.Value;
+
+            if (VisualOverrideClothingBase.HasValue)
+            {
+                var clothingBaseId = VisualOverrideClothingBase.Value;
+                if (DatLoader.DatDatabase.IsClothingBaseId(clothingBaseId))
+                    pet.ClothingBase = clothingBaseId;
+                else
+                    log.Warn($"{nameof(ApplyVisualOverridesTo)}: {nameof(VisualOverrideClothingBase)} {clothingBaseId:X8} on device {Name} ({Guid}) is not a clothing DID (0x10xxxxxx); skipping.");
+            }
+            else
+                pet.RemoveProperty(PropertyDataId.ClothingBase); // Remove inherited ClothingBase if original had none
+
+            if (VisualOverrideIcon.HasValue)
+                pet.IconId = VisualOverrideIcon.Value;
+
+            if (VisualOverridePaletteTemplate.HasValue)
+            {
+                // A full 0x04 palette override only reaches the client through the PaletteTemplate
+                // branch of Creature.CalculateObjDesc, and that branch is unreachable while the pet's
+                // biota still holds palette rows: with no equipped items, CalculateObjDesc copies
+                // those rows out and returns early. Species whose weenie ships palette rows (Niffis,
+                // for one) therefore rendered in their weenie colours and every mutation looked like
+                // it had failed. The rows are cleared above only when captured ObjDesc replaces them,
+                // so clear them here too when a palette override is what we are applying.
+                if ((VisualOverridePaletteTemplate.Value & unchecked((int)0xFF000000)) == 0x04000000)
+                    pet.Biota.PropertiesPalette?.Clear();
+
+                pet.PaletteTemplate = VisualOverridePaletteTemplate.Value;
+            }
+
+            if (VisualOverrideShade.HasValue)
+                pet.Shade = (float)VisualOverrideShade.Value;
+
+            if (VisualOverrideScale.HasValue)
+                pet.ObjScale = (float)VisualOverrideScale.Value;
+            
+            // Apply creature name override. An approved PetCustomName is authoritative and is used
+            // verbatim; otherwise the capture-derived name has its chained "Owner's " prefixes stripped.
+            // Pet.Init prepends "Owner's " afterwards, so "Bob's Burgers" summons as "Owner's Bob's Burgers".
+            var resolvedName = ResolveSummonedPetBaseName(GetProperty(PropertyString.PetCustomName), VisualOverrideName);
+            if (!string.IsNullOrEmpty(resolvedName))
+                pet.Name = resolvedName;
+            
+            // Apply creature type (species) override
+            if (VisualOverrideCreatureType.HasValue)
+            {
+                pet.CreatureType = (ACE.Entity.Enum.CreatureType)VisualOverrideCreatureType.Value;
+            }
+
+            // Apply creature variant override (e.g. shiny)
+            if (VisualOverrideCreatureVariant.HasValue)
+            {
+                pet.CreatureVariant = (ACE.Server.Entity.CreatureVariant)VisualOverrideCreatureVariant.Value;
+            }
+
+            // Apply captured ObjDesc (AnimParts, Palettes, Textures) for full humanoid appearance
+            // This restores the exact visual appearance captured from the original creature
+            if (HasCapturedObjDesc)
+            {
+                ApplyCapturedObjDesc(pet);
+            }
+
+            // Equip Captured Items (Armor, Weapons, Shield)
+            if (!string.IsNullOrEmpty(VisualOverrideCapturedItems))
+            {
+                // Calculate scale ratio: how much the pet was shrunk/grown
+                var petScaleRatio = pet.ObjScale ?? 1.0f;
+                
+                var itemEntries = VisualOverrideCapturedItems.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                foreach (var entry in itemEntries)
+                {
+                    // Format: WCID;Scale;Palette;Shade
+                    var parts = entry.Split(';');
+                    if (uint.TryParse(parts[0], out var itemWcid))
+                    {
+                        var item = WorldObjectFactory.CreateNewWorldObject(itemWcid);
+                        if (item != null)
+                        {
+                            CombatPet.StripVisualWeaponDamageStats(item);
+
+                            // Apply Visual Properties - scale items by pet's scale ratio
+                            if (parts.Length > 1 && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var itemScale))
+                            {
+                                // Multiply original item scale by pet scale ratio
+                                var adjustedScale = itemScale * petScaleRatio;
+                                if (System.Math.Abs(adjustedScale - 1.0f) > 0.001f)
+                                    item.ObjScale = adjustedScale;
+                            }
+                            else
+                            {
+                                // No original scale stored, just use pet's ratio
+                                if (System.Math.Abs(petScaleRatio - 1.0f) > 0.001f)
+                                    item.ObjScale = petScaleRatio;
+                            }
+
+                            if (parts.Length > 2 && int.TryParse(parts[2], out var itemPalette) && itemPalette != 0)
+                            {
+                                item.PaletteTemplate = itemPalette;
+                            }
+
+                            if (parts.Length > 3 && float.TryParse(parts[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var itemShade) && itemShade != 0.0f)
+                            {
+                                item.Shade = itemShade;
+                            }
+
+                            // Add to pet's inventory first
+                            if (pet.TryAddToInventory(item))
+                            {
+                                // Make item effectively worthless/bonded and visual-only so it's not exploited
+                                item.Value = 0;
+                                item.Biota.PropertiesSpellBook?.Clear();
+                                item.RemoveProperty(PropertyInt.ImbuedEffect);
+                                item.RemoveProperty(PropertyInt.ArmorLevel);
+                                
+                                // Try to wield/equip it
+                                // We use TryWieldObject which handles slot logic
+                                pet.TryWieldObject(item, (EquipMask)(item.ValidLocations ?? 0));
+                            }
+                            else
+                            {
+                                item.Destroy();
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+
         private void ApplyCapturedObjDesc(Creature pet)
         {
             // Parse and apply AnimPartChanges: Index:AnimationId,Index:AnimationId,...

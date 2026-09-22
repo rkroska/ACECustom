@@ -138,6 +138,10 @@ namespace ACE.Server.WorldObjects
 
                     Biota.PropertiesTextureMap.CopyTo(objDesc.TextureChanges, BiotaDatabaseLock);
 
+                    // A captured or bred pet returns here (its body parts are biota anim-part rows), so
+                    // the recolour at the end of this method would never run for it.
+                    ApplyPaletteTemplateOverride(objDesc, thisSetupId);
+
                     return objDesc;
                 }
             }
@@ -210,12 +214,22 @@ namespace ACE.Server.WorldObjects
                                 itemSubPal = item.ClothingSubPalEffects[item.ClothingSubPalEffects.Keys.ElementAt(0)];
                             }
 
-                            float shade = 0;
+                            // Equipped items resolve their colour exactly as master does: the item's
+                            // PaletteTemplate selects a CloSubPalEffect, and each CloSubPalette's
+                            // PaletteSet is read and indexed by shade. A PaletteTemplate that is not a
+                            // key in the table is an ordinal the table does not define, NOT a palette
+                            // id, so it must fall through to the table's first effect rather than being
+                            // used directly - doing the latter handed the client palette 0x040000NN and
+                            // repainted whatever the garment covered (Flame Coat, Mattekar robes).
+                            float shade = 0.0f;
                             if (w.Shade.HasValue)
-                                shade = (float)w.Shade;
+                                shade = (float)w.Shade.Value;
                             for (int i = 0; i < itemSubPal.CloSubPalettes.Count; i++)
                             {
                                 var itemPalSet = DatManager.PortalDat.ReadFromDat<PaletteSet>(itemSubPal.CloSubPalettes[i].PaletteSet);
+                                if (itemPalSet == null)
+                                    continue;
+
                                 ushort itemPal = (ushort)itemPalSet.GetPaletteID(shade);
 
                                 for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
@@ -230,17 +244,143 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            if (coverage.Count == 0 && ClothingBase.HasValue)
+            // An ordinary creature (no full 0x04 mutation palette) renders EXACTLY as master does. The block
+            // below exists for the 0x04 override (showcase NPCs, a guardian or pet without biota parts); letting
+            // ordinary creatures through it changed their look. Example: master writes a 2048-colour clothing
+            // sub-palette as Length 256, which goes out as byte 0, so the client ignores that layer. Clothing mods
+            // were tuned against that - Vile Remoran 71600059, ClothingBase 0x10000636 template 85, lays a
+            // full-range grey layer under a red one and shows red on prod. The block below splits the range into
+            // 255 + 1, the grey layer is really applied, and the Remoran turned grey.
+            if (coverage.Count == 0 && ClothingBase.HasValue && !HasFullPaletteOverride(PaletteTemplate))
             {
-                // Even with no armor coverage, apply shiny variant textures before falling back
+                // Same as master: shiny textures, then the base clothing path, then biota part overrides.
                 if (CreatureVariant.HasValue)
                 {
                     var baseObjDesc = base.CalculateObjDesc();
                     baseObjDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
                     return ApplyBiotaPartOverrides(baseObjDesc);
                 }
-                // base.CalculateObjDesc only copies biota parts for players: overlay ours here too
                 return ApplyBiotaPartOverrides(base.CalculateObjDesc());
+            }
+
+            if (coverage.Count == 0 && ClothingBase.HasValue)
+            {
+                if (DatManager.PortalDat.TryReadClothingTable((uint)ClothingBase.Value, out var creatureCloTable))
+                {
+                    if (creatureCloTable.ClothingBaseEffects.TryGetValue(thisSetupId, out var cloEffect))
+                    {
+                        foreach (CloObjectEffect t in cloEffect.CloObjectEffects)
+                        {
+                            byte partNum = (byte)t.Index;
+                            coverage.Add(partNum);
+                            objDesc.AddAnimPartChange(new PropertiesAnimPart { Index = (byte)t.Index, AnimationId = t.ModelId });
+                            foreach (CloTextureEffect t1 in t.CloTextureEffects)
+                                objDesc.AddTextureChange(new PropertiesTextureMap { PartIndex = (byte)t.Index, OldTexture = t1.OldTexture, NewTexture = t1.NewTexture });
+                        }
+                    }
+
+                    int palOption = PaletteTemplate.HasValue ? (int)PaletteTemplate.Value : 0;
+                    bool hasFullPaletteOverride = (palOption & 0xFF000000) == 0x04000000;
+
+                    // Resolving a native base palette is ONLY for a full 0x04 override (a bred or mutated
+                    // pet): that colour has nothing to overlay onto unless a base is set. An ordinary
+                    // creature must keep whatever AddBaseModelData gave it - which for the 313 creatures
+                    // with no PaletteBase is 0. Master sends 0, the client cannot resolve it and falls back
+                    // to the model's own colours, and that fallback is the intended look. Forcing the
+                    // setup's texture palette here gave the Undead Custodian 0x04000742 in place of 0 and
+                    // its robe lost the brown trim.
+                    if (hasFullPaletteOverride)
+                    {
+                        uint setupTexPal = GetSetupDefaultPaletteId(thisSetupId);
+                        if (setupTexPal > 0 && (objDesc.PaletteID == 0 || objDesc.PaletteID == 0x040002AB || objDesc.PaletteID == 0x0400007E || ClothingBase.Value == 0x100000AF))
+                        {
+                            objDesc.PaletteID = setupTexPal;
+                        }
+                    }
+
+                    if (hasFullPaletteOverride)
+                    {
+                        ushort itemPal = (ushort)(palOption & 0xFFFF);
+
+                        // Subpalettes overlay the base PaletteID. If the base is unset the client has nothing
+                        // to overlay onto and discards the whole palette block, rendering the model default.
+                        // That is what we want for an ordinary creature, but not for a pet's mutation colour.
+                        if (objDesc.PaletteID == 0)
+                            objDesc.PaletteID = (uint)(0x04000000 | itemPal);
+
+                        objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 0, Length = 255 });
+                        objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 255, Length = 1 });
+                    }
+                    else if (creatureCloTable != null && creatureCloTable.ClothingSubPalEffects != null && creatureCloTable.ClothingSubPalEffects.Count > 0)
+                    {
+                        CloSubPalEffect itemSubPal = null;
+                        if (creatureCloTable.ClothingSubPalEffects.ContainsKey((uint)palOption))
+                        {
+                            itemSubPal = creatureCloTable.ClothingSubPalEffects[(uint)palOption];
+                        }
+                        else if (creatureCloTable.ClothingSubPalEffects.Count > 0)
+                        {
+                            itemSubPal = creatureCloTable.ClothingSubPalEffects[creatureCloTable.ClothingSubPalEffects.Keys.ElementAt(0)];
+                        }
+
+                        if (itemSubPal != null)
+                        {
+                            // Default shade 0, as master does and as the equipped-item loop above does.
+                            // GetPaletteID indexes the PaletteSet by shade, so a 0.5 default silently picks
+                            // a different entry on any set with 3+ palettes: the Undead Custodian's set has
+                            // 10, and 0.5 gave it 0x04000FF8 where master gives 0x04000FFA.
+                            float shade = Shade.HasValue ? (float)Shade.Value : 0.0f;
+                            for (int i = 0; i < itemSubPal.CloSubPalettes.Count; i++)
+                            {
+                                // As on the equipped-item path above: a PaletteTemplate that is not a
+                                // key in this table is an ordinal, not a palette id. Read the real
+                                // PaletteSet. A full 0x04 override never reaches here - it is handled
+                                // by the branch above and by ApplyPaletteTemplateOverride.
+                                ushort itemPal = 0;
+                                var itemPalSet = DatManager.PortalDat.ReadFromDat<PaletteSet>(itemSubPal.CloSubPalettes[i].PaletteSet);
+                                if (itemPalSet != null)
+                                    itemPal = (ushort)itemPalSet.GetPaletteID(shade);
+
+                                if (itemPal != 0)
+                                {
+                                    // No PaletteID assignment here: master leaves it as AddBaseModelData set
+                                    // it, and a 0 base is what makes the client render the model's own
+                                    // colours. Writing 0x04000000|itemPal instead rebased the whole creature.
+
+                                    for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
+                                    {
+                                        ushort rawOffset = (ushort)itemSubPal.CloSubPalettes[i].Ranges[j].Offset;
+                                        if (rawOffset == 320 && j == 0 && i == 0)
+                                        {
+                                            // Map chunk 40 (Offset 320 body colors) into low-index body parts (like Olthoi legs [0..319]) in-game!
+                                            objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 40, Length = 40 });
+                                        }
+
+                                        ushort palOffset = (ushort)(rawOffset / 8);
+                                        ushort numColors = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].NumColors / 8);
+                                        while (numColors > 0)
+                                        {
+                                            ushort chunkLength = numColors > 255 ? (ushort)255 : numColors;
+                                            objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = palOffset, Length = chunkLength });
+                                            palOffset += chunkLength;
+                                            numColors -= chunkLength;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // Only a full 0x04 override reaches here (ordinary creatures returned above), so the
+                    // mutation palette must still be painted on when the clothing table cannot be read.
+                    var baseObjDesc = base.CalculateObjDesc();
+                    if (CreatureVariant.HasValue)
+                        baseObjDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
+                    ApplyPaletteTemplateOverride(baseObjDesc, thisSetupId);
+                    return ApplyBiotaPartOverrides(baseObjDesc);
+                }
             }
 
             // Add the "naked" body parts. These are the ones not already covered.
@@ -260,7 +400,56 @@ namespace ACE.Server.WorldObjects
                 objDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
             }
 
+            ApplyPaletteTemplateOverride(objDesc, thisSetupId);
+
+            if (ServerConfig.pet_visual_packet_debug.Value)
+            {
+                log.Info($"[CREATURE PACKET DEBUG] {Name} (WCID {WeenieClassId}): Setup=0x{SetupTableId:X8}, ClothingBase=0x{(ClothingBase ?? 0):X8}, PaletteID=0x{objDesc.PaletteID:X8}, PaletteTemplate=0x{(PaletteTemplate ?? 0):X8}, Shade={(Shade?.ToString("F2") ?? "null")}, SubPalettes={objDesc.SubPalettes.Count}, AnimParts={objDesc.AnimPartChanges.Count}, Textures={objDesc.TextureChanges.Count}");
+                foreach (var sp in objDesc.SubPalettes)
+                {
+                    log.Info($"   -> SubPalette: Id=0x{sp.SubPaletteId:X4}, Offset={sp.Offset}, Length={sp.Length}");
+                }
+            }
+
             return ApplyBiotaPartOverrides(objDesc);
+        }
+
+        /// <summary>
+        /// Paints a full 0x04 PaletteTemplate onto an ObjDesc: pick a base PaletteID the client can
+        /// overlay onto, then cover the whole 2048-colour palette with two sub-palette ranges. The
+        /// client ignores a PaletteID with no sub-palettes, so both halves matter.
+        ///
+        /// Called from the end of CalculateObjDesc and from its biota early-return. That early return
+        /// fires whenever a creature carries ANY biota anim-part, palette or texture rows and has
+        /// nothing equipped - which is every captured or bred pet, since its body parts live in those
+        /// anim-part rows. Without this call such a pet kept its weenie colours and every bred palette,
+        /// @mutate_pet roll and tailored look was silently dropped.
+        /// </summary>
+        /// <summary>True when a PaletteTemplate is a full 0x04 DAT palette id (a mutation colour), not a retail template ordinal.</summary>
+        private static bool HasFullPaletteOverride(int? paletteTemplate) =>
+            paletteTemplate.HasValue && (paletteTemplate.Value & 0xFF000000) == 0x04000000;
+
+        private void ApplyPaletteTemplateOverride(ACE.Entity.ObjDesc objDesc, uint thisSetupId)
+        {
+            int directPalOption = PaletteTemplate.HasValue ? (int)PaletteTemplate.Value : 0;
+            if ((directPalOption & 0xFF000000) != 0x04000000)
+                return;
+
+            uint setupTexPal = GetSetupDefaultPaletteId(thisSetupId);
+            if (setupTexPal > 0 && (objDesc.PaletteID == 0 || objDesc.PaletteID == 0x040002AB || objDesc.PaletteID == 0x0400007E || (ClothingBase.HasValue && ClothingBase.Value == 0x100000AF)))
+                objDesc.PaletteID = setupTexPal;
+            else if (objDesc.PaletteID == 0)
+                objDesc.PaletteID = setupTexPal > 0 ? setupTexPal : (uint)directPalOption;
+
+            ushort itemPal = (ushort)(directPalOption & 0xFFFF);
+            foreach (var sp in objDesc.SubPalettes)
+            {
+                if (sp.SubPaletteId == itemPal)
+                    return;
+            }
+
+            objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 0, Length = 255 });
+            objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = itemPal, Offset = 255, Length = 1 });
         }
 
         /// <summary>Overlay the biota anim-part + texture overrides (zone appearance, baked looks) onto an ObjDesc,
@@ -291,6 +480,57 @@ namespace ACE.Server.WorldObjects
                 }
 
             return objDesc;
+        }
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, uint> _setupDefaultPaletteCache = new();
+
+        /// <summary>
+        /// The native base palette of a creature model: the DefaultPaletteId baked into its textures.
+        /// Creature texture data lives in client_highres.dat; the portal copies are stubs whose
+        /// DefaultPaletteId is 0, so reading only the portal DAT (as this used to) returned 0 for
+        /// every creature and silently disabled the native-base fallback in CalculateObjDesc.
+        /// Cached per setup: this runs on every creature ObjDesc build.
+        /// </summary>
+        internal static uint GetSetupDefaultPaletteId(uint setupId)
+        {
+            if (setupId == 0) return 0;
+            return _setupDefaultPaletteCache.GetOrAdd(setupId, ResolveSetupDefaultPaletteId);
+        }
+
+        private static uint ResolveSetupDefaultPaletteId(uint setupId)
+        {
+            var setupModel = DatManager.PortalDat.ReadFromDat<SetupModel>(setupId);
+            if (setupModel?.Parts == null) return 0;
+
+            foreach (var partId in setupModel.Parts)
+            {
+                var gfx = DatManager.PortalDat.ReadFromDat<GfxObj>(partId);
+                if (gfx?.Surfaces == null) continue;
+
+                foreach (var sId in gfx.Surfaces)
+                {
+                    var surf = DatManager.PortalDat.ReadFromDat<Surface>(sId);
+                    uint tex = surf?.OrigTextureId ?? 0;
+                    if (tex == 0) continue;
+
+                    // 0x05 SurfaceTexture -> its first 0x06 Texture; 0x06 is usable directly.
+                    if ((tex & 0xFF000000) == 0x05000000)
+                    {
+                        var st = DatManager.PortalDat.ReadFromDat<SurfaceTexture>(tex)
+                                 ?? DatManager.HighResDat?.ReadFromDat<SurfaceTexture>(tex);
+                        if (st?.Textures == null || st.Textures.Count == 0) continue;
+                        tex = st.Textures[0];
+                    }
+
+                    var t = DatManager.PortalDat.ReadFromDat<ACE.DatLoader.FileTypes.Texture>(tex);
+                    if ((t?.DefaultPaletteId ?? 0) == 0)
+                        t = DatManager.HighResDat?.ReadFromDat<ACE.DatLoader.FileTypes.Texture>(tex);
+
+                    if (t?.DefaultPaletteId is uint pal && pal > 0)
+                        return pal;
+                }
+            }
+            return 0;
         }
 
         /// <summary>

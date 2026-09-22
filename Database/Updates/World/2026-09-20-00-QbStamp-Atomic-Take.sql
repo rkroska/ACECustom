@@ -1,7 +1,7 @@
 -- ===========================================================================
 -- GrantRandomQuestStamp: fold TakeItems into the grant  -  2026-09-20
 --
--- 🔴 DEPLOY THE SERVER BUILD FIRST, THEN THIS SCRIPT. 🔴
+-- [WARNING] DEPLOY THE SERVER BUILD FIRST, THEN THIS SCRIPT. [WARNING]
 -- This script REQUIRES a build that understands the "TAKE:" prefix. Applied to
 -- an older build it is destructive: the old parser does not recognise TAKE:,
 -- so the whole message - prefix and all - becomes the stamp list, the separate
@@ -114,7 +114,7 @@ COMMIT;
 -- ROLLBACK. Restores the TakeItems action and strips the prefix.
 -- Valid ONLY against a build WITHOUT TAKE support - on a TAKE build the NPC
 -- would then take the item twice.
--- 🔴 RUN BOTH STATEMENTS OR NEITHER, IN A TRANSACTION. The second statement on
+-- [WARNING] RUN BOTH STATEMENTS OR NEITHER, IN A TRANSACTION. The second statement on
 -- its own strips the prefix without restoring the TakeItems row, which leaves the
 -- NPC handing out stamps FOR FREE, forever, on any build.
 -- order 2 is free because statement 2 above vacated it (orders run 0,1,3,4,5);

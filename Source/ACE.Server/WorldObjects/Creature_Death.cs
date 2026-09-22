@@ -46,6 +46,10 @@ namespace ACE.Server.WorldObjects
 
             onDeathEntered = true;
 
+            // [PetTrace] once per death, before the history is consumed by XP / maturity credit.
+            if (PetTrace.Enabled)
+                PetTrace.CombatDeath(this, lastDamager, damageType, criticalHit);
+
             IsTurning = false;
             IsMoving = false;
 
@@ -75,6 +79,9 @@ namespace ACE.Server.WorldObjects
                 OnDeath_HandleKillTask(KillQuest2);
             if (KillQuest3 != null)
                 OnDeath_HandleKillTask(KillQuest3);
+
+            // Pet maturity credit is independent of XP: it only cares who did the damage.
+            PetDevice.CreditMaturityKills(this);
 
             if (!IsOnNoDeathXPLandblock)
                 OnDeath_GrantXP();
@@ -359,6 +366,19 @@ namespace ACE.Server.WorldObjects
 
                     if (device == null)
                         continue;
+
+                    // A juvenile earns bond only on the kills that also grow it. Otherwise a newborn
+                    // farms trivial mobs for bond, and bond is what unlocks its inherited potency
+                    // (active potency = ceil(bond / divisor)), so it would arrive at full strength
+                    // without ever meeting the tier the growth counter demands. Same rule as
+                    // PetDevice.CreditMaturityKills: share at or above the minimum, victim at or
+                    // above the essence's tier. Adults and captured essences are unaffected.
+                    if (device.IsJuvenile)
+                    {
+                        var maturityMinShare = Math.Clamp(ServerConfig.pet_maturity_min_damage_share.Value, 0.0, 1.0);
+                        if (PetDevice.MaturityCreditRefusal(device, damagePercent, Level ?? 0, maturityMinShare, out _) != null)
+                            continue;
+                    }
 
                     var key = device.Guid.Full;
                     if (bondXpByDevice.TryGetValue(key, out var acc))

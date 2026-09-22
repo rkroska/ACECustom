@@ -67,6 +67,27 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// A new biota be created taking all of its values from weenie.
         /// </summary>
+        /// <summary>
+        /// Source-aware damage gate. Melee, missile, spell projectiles and life magic all consult this
+        /// before applying health damage, so a creature can refuse damage from everything but chosen
+        /// attackers (the mating guardian only takes damage from the two parent pets).
+        /// </summary>
+        public virtual bool CanBeDamagedBy(WorldObject source)
+            => GetProperty(PropertyBool.OnlyCombatPetsCanDamage) != true || ResolveAttacker(source) is CombatPet;
+
+        /// <summary>The creature behind a hit: projectiles and spell projectiles carry their launcher in ProjectileSource.</summary>
+        protected static WorldObject ResolveAttacker(WorldObject source)
+        {
+            var current = source;
+            for (var i = 0; i < 4 && current != null; i++)
+            {
+                if (current is Creature)
+                    return current;
+                current = current.ProjectileSource;
+            }
+            return source;
+        }
+
         public Creature(Weenie weenie, ObjectGuid guid) : base(weenie, guid)
         {
             InitializePropertyDictionaries();

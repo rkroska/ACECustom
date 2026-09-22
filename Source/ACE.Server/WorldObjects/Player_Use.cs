@@ -1,6 +1,7 @@
 using System;
 using ACE.Entity;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
@@ -10,6 +11,12 @@ namespace ACE.Server.WorldObjects
 {
     partial class Player
     {
+        /// <summary>Tinctures sold by Ivo that step a combat pet's translucency down / up (docs/WCID_ALLOCATION_7878.md).</summary>
+        public const uint SolidifyingTinctureWcid = 78780262;
+        public const uint FadingTinctureWcid = 78780263;
+        private const double TranslucencyStep = 0.1;
+        private const double MaxPetTranslucency = 0.5;
+
         /// <summary>
         /// This is set by HandleActionUseItem / TryUseItem
         /// </summary>
@@ -139,11 +146,24 @@ namespace ACE.Server.WorldObjects
 
             // re-verify client checks
             // Potency tools have non-standard source/target ItemType combinations, so we skip the
-            // generic type check only for confirmed valid pairings — not for any potency tool on any target.
+            // generic type check only for confirmed valid pairings -- not for any potency tool on any target.
             var skipTargetTypeCheck = false;
             if (sourceItem.WeenieClassId == PetPotency.EssenceResidueWcid && target is PetDevice)
                 skipTargetTypeCheck = true;
             else if (sourceItem.WeenieClassId == PetPotency.EssenceResonatorWcid && PetPotency.IsSalvageableCapturedEssence(target))
+                skipTargetTypeCheck = true;
+            else if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.NeuteringKitWcid && target is PetDevice)
+                skipTargetTypeCheck = true;
+            else if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.TailoringKitWcid && target is PetDevice)
+                skipTargetTypeCheck = true;
+            else if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.FilledTailoringKitWcid && target is PetDevice)
+                skipTargetTypeCheck = true;
+            else if ((sourceItem.WeenieClassId >= 78780250 && sourceItem.WeenieClassId <= 78780255) && target is PetDevice)
+                skipTargetTypeCheck = true;
+            // 78780256 (Ancestral Gene Re-roller) is reserved and unbuilt, so the serum is matched on its own.
+            else if (sourceItem.WeenieClassId == ACE.Server.Services.PetMutationService.MutagenicSerumWcid && target is PetDevice)
+                skipTargetTypeCheck = true;
+            else if ((sourceItem.WeenieClassId == SolidifyingTinctureWcid || sourceItem.WeenieClassId == FadingTinctureWcid) && target is PetDevice)
                 skipTargetTypeCheck = true;
 
             var sourceTargetType = sourceItem.TargetType ?? ItemType.None;
@@ -154,6 +174,416 @@ namespace ACE.Server.WorldObjects
             {
                 // ItemHolder::TargetCompatibleWithObject
                 SendTransientError($"Cannot use the {sourceItem.Name} with the {target.Name}");
+                SendUseDoneEvent();
+                return;
+            }
+
+            if (target is PetDevice && target.CurrentLandblock != null)
+            {
+                SendTransientError("The pet device must be in your inventory.");
+                SendUseDoneEvent();
+                return;
+            }
+
+            if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.NeuteringKitWcid) // Neutering Kit
+            {
+                if (target is not PetDevice petDevice)
+                {
+                    if (PetTrace.Enabled) PetTrace.Neuter(this, sourceItem, target, false, false, "target is not a pet device");
+                    SendTransientError("This tool can only be used on combat pet devices.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (petDevice.GetProperty(global::ACE.Entity.Enum.Properties.PropertyBool.PetNeutered) == true)
+                {
+                    if (PetTrace.Enabled) PetTrace.Neuter(this, sourceItem, target, true, false, "already neutered");
+                    SendTransientError("This pet is already spayed/neutered.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    if (PetTrace.Enabled) PetTrace.Neuter(this, sourceItem, target, false, false, "consume failed");
+                    SendTransientError("Failed to consume neutering kit tool.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                petDevice.SetProperty(global::ACE.Entity.Enum.Properties.PropertyBool.PetNeutered, true);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+                if (PetTrace.Enabled) PetTrace.Neuter(this, sourceItem, target, false, true, null);
+
+                PlayParticleEffect(PlayScript.AttribDownRed, target.Guid);
+                SendMessage($"You have permanently spayed/neutered {petDevice.Name}. It can no longer be used for breeding!");
+                SendUseDoneEvent();
+                return;
+            }
+
+            if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.TailoringKitWcid)
+            {
+                ACE.Server.Entity.PetTailoring.HandleExtract(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
+            if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.FilledTailoringKitWcid)
+            {
+                ACE.Server.Entity.PetTailoring.HandleApply(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Courtship Incense (78780250 - 78780252)
+            if (sourceItem.WeenieClassId >= 78780250 && sourceItem.WeenieClassId <= 78780252)
+            {
+                if (target is not PetDevice petDevice)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetIncenseBonus", null, null, false, "target is not a pet device");
+                    SendTransientError("Courtship Incense can only be used on combat pet devices.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (petDevice.GetProperty(PropertyBool.PetNeutered) == true)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetIncenseBonus", petDevice.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0, null, false, "neutered");
+                    SendTransientError("A spayed or neutered pet cannot be anointed with Courtship Incense.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                var bonus = sourceItem.WeenieClassId switch
+                {
+                    78780250 => 0.025f, // Lesser: +2.5%
+                    78780251 => 0.050f, // Refined: +5.0%
+                    78780252 => 0.100f, // Exquisite: +10.0%
+                    _ => 0.025f
+                };
+
+                var currentBonus = petDevice.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0f;
+                if (currentBonus >= bonus)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetIncenseBonus", currentBonus, bonus, false, "existing bonus is equal or stronger");
+                    SendTransientError($"{petDevice.Name} is already primed with equal or stronger Courtship Incense (+{currentBonus * 100:0.#}%).");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetIncenseBonus", currentBonus, bonus, false, "consume failed");
+                    SendTransientError("Failed to consume Courtship Incense.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                petDevice.SetProperty(PropertyFloat.PetIncenseBonus, bonus);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+                if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetIncenseBonus", currentBonus, bonus, true, null);
+
+                PlayParticleEffect(PlayScript.HealthUpRed, target.Guid);
+                SendMessage($"You have anointed {petDevice.Name} with {sourceItem.Name}! Its next breeding will grant up to +{bonus * 100:0.#}% mutation bonus.");
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Chromatic Catalyst (78780254)
+            if (sourceItem.WeenieClassId == 78780254)
+            {
+                if (target is not PetDevice petDevice)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetChromaticCatalystActive", null, null, false, "target is not a pet device");
+                    SendTransientError("The Chromatic Catalyst can only be used on combat pet devices.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (petDevice.GetProperty(PropertyBool.PetChromaticCatalystActive) == true)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetChromaticCatalystActive", true, true, false, "already active");
+                    SendTransientError($"{petDevice.Name} is already infused with a Chromatic Catalyst.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetChromaticCatalystActive", false, true, false, "consume failed");
+                    SendTransientError("Failed to consume Chromatic Catalyst.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                petDevice.SetProperty(PropertyBool.PetChromaticCatalystActive, true);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+                if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetChromaticCatalystActive", false, true, true, null);
+
+                PlayParticleEffect(PlayScript.EnchantUpBlue, target.Guid);
+                SendMessage($"You infuse {petDevice.Name} with the Chromatic Catalyst! If a palette mutation occurs on its next breed, it will roll vibrant, high-saturation colors.");
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Nurturing Draught (78780253)
+            if (sourceItem.WeenieClassId == 78780253)
+            {
+                if (target is not PetDevice petDevice)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetMaturityXpMultiplier", null, null, false, "target is not a pet device");
+                    SendTransientError("Nurturing Draughts can only be given to combat pet devices.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (petDevice.GetProperty(PropertyBool.PetIsJuvenile) != true)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetMaturityXpMultiplier", petDevice.GetProperty(PropertyFloat.PetMaturityXpMultiplier) ?? 1.0, null, false, "not juvenile");
+                    SendTransientError("Nurturing Draughts can only be given to juvenile combat pets that have not yet reached adulthood.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if ((petDevice.GetProperty(PropertyFloat.PetMaturityXpMultiplier) ?? 1.0f) >= 2.0f)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetMaturityXpMultiplier", petDevice.GetProperty(PropertyFloat.PetMaturityXpMultiplier) ?? 1.0, 2.0, false, "already at 2.0 or more");
+                    SendTransientError($"{petDevice.Name} is already under the effects of a Nurturing Draught.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                var xpMultBefore = petDevice.GetProperty(PropertyFloat.PetMaturityXpMultiplier) ?? 1.0;
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetMaturityXpMultiplier", xpMultBefore, 2.0, false, "consume failed");
+                    SendTransientError("Failed to consume Nurturing Draught.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                petDevice.SetProperty(PropertyFloat.PetMaturityXpMultiplier, 2.0f);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+                if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetMaturityXpMultiplier", xpMultBefore, 2.0, true, null);
+
+                PlayParticleEffect(PlayScript.HealthUpYellow, target.Guid);
+                SendMessage($"You administer the Nurturing Draught to {petDevice.Name}. It now earns 2x maturity kill credit until adulthood!");
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Offering of Subjugation (78780255)
+            if (sourceItem.WeenieClassId == 78780255)
+            {
+                if (target is not PetDevice petDevice)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetGuardianWeakened", null, null, false, "target is not a pet device");
+                    SendTransientError("The Offering of Subjugation can only be used on combat pet devices.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (!ServerConfig.pet_breeding_guardian_enabled.Value)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetGuardianWeakened", petDevice.GetProperty(PropertyBool.PetGuardianWeakened) == true, null, false, "pet_breeding_guardian_enabled is false");
+                    SendTransientError("Mating guardians are not enabled on this server, so the Offering of Subjugation would have no effect. It was not consumed.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (petDevice.GetProperty(PropertyBool.PetGuardianWeakened) == true)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetGuardianWeakened", true, true, false, "already active");
+                    SendTransientError($"{petDevice.Name} is already under the effects of an Offering of Subjugation.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetGuardianWeakened", false, true, false, "consume failed");
+                    SendTransientError("Failed to consume Offering of Subjugation.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                petDevice.SetProperty(PropertyBool.PetGuardianWeakened, true);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+                if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, "PetGuardianWeakened", false, true, true, null);
+
+                PlayParticleEffect(PlayScript.EnchantUpRed, target.Guid);
+                SendMessage($"You consecrate {petDevice.Name} with the Offering of Subjugation. Its next mating guardian will be swiftly overcome!");
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Solidifying (78780262) and Fading (78780263) Tinctures: step the pet's translucency down or up by a
+            // tenth, between 0 (solid) and 0.5. The level lives on the essence and replaces the summon template's.
+            if (sourceItem.WeenieClassId == SolidifyingTinctureWcid || sourceItem.WeenieClassId == FadingTinctureWcid)
+            {
+                const string tinctureProperty = "PetTranslucency";
+                var fading = sourceItem.WeenieClassId == FadingTinctureWcid;
+
+                if (target is not PetDevice petDevice || !petDevice.IsCombatPetDevice())
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, tinctureProperty, null, null, false, "target is not a combat pet essence");
+                    SendTransientError($"The {sourceItem.Name} can only be used on combat pet essences.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                // Where the pet is now: its own level if a tincture has set one, else its summon template's.
+                var current = petDevice.GetProperty(PropertyFloat.PetTranslucency);
+                if (!current.HasValue)
+                {
+                    var template = petDevice.PetClass.HasValue ? ACE.Database.DatabaseManager.World.GetCachedWeenie((uint)petDevice.PetClass.Value) : null;
+                    current = template != null ? ACE.Entity.Models.WeenieExtensions.GetProperty(template, PropertyFloat.Translucency) ?? 0.0 : 0.0;
+                }
+                var currentLevel = Math.Round(Math.Clamp(current.Value, 0.0, MaxPetTranslucency), 1);
+                var nextLevel = Math.Round(currentLevel + (fading ? TranslucencyStep : -TranslucencyStep), 1);
+
+                if (nextLevel < -0.001 || nextLevel > MaxPetTranslucency + 0.001)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, tinctureProperty, currentLevel, currentLevel, false, fading ? "already at the limit" : "already solid");
+                    SendTransientError(fading
+                        ? $"{petDevice.Name} is already as see-through as a pet can be ({MaxPetTranslucency * 100:0}%). The tincture was not used."
+                        : $"{petDevice.Name} is already fully solid. The tincture was not used.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, tinctureProperty, currentLevel, nextLevel, false, "consume failed");
+                    SendTransientError($"Failed to consume the {sourceItem.Name}.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                petDevice.SetProperty(PropertyFloat.PetTranslucency, nextLevel);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+                if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, tinctureProperty, currentLevel, nextLevel, true, null);
+
+                PlayParticleEffect(PlayScript.EnchantUpPurple, target.Guid);
+                SendMessage(nextLevel < 0.001
+                    ? $"{petDevice.Name} is now fully solid. Summon it again to see the change."
+                    : $"{petDevice.Name} is now {nextLevel * 100:0}% see-through. Summon it again to see the change.");
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Mutagenic Serum (78780257): re-rolls a combat pet essence's colour from the master
+            // palette pool. Appearance only - stats, mutation counts and potency are untouched.
+            if (sourceItem.WeenieClassId == ACE.Server.Services.PetMutationService.MutagenicSerumWcid)
+            {
+                const string serumProperty = "VisualOverridePaletteTemplate";
+
+                // Any combat pet essence qualifies: captured, looted or bred, juvenile or adult.
+                if (target is not PetDevice petDevice || !petDevice.IsCombatPetDevice())
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, null, null, false, "target is not a combat pet essence");
+                    SendTransientError("The Mutagenic Serum can only be used on combat pet essences.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                // A capture that retextured essentially the whole body hides any palette underneath it,
+                // so the serum would roll a colour nobody can see. Refuse before consuming it - but only
+                // when the textures really do cover the body. A few replacements leave the rest of the
+                // parts tinting normally, and refusing those blocked the serum on most captured essences.
+                var visibility = ACE.Server.Services.PetMutationService.GetColourChangeVisibility(petDevice);
+                if (visibility.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.FixedColour)
+                {
+                    // Most of the model uses full-colour textures that ignore palettes, so the serum would change
+                    // the stored colour and nothing would look different. Same refusal, different reason.
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, null, null, false,
+                        $"colour fixed: {visibility.FixedColourPercent}% of the model uses full-colour textures");
+                    SendTransientError($"{petDevice.Name} cannot visibly change colour: most of its body is drawn with full-colour textures that ignore palettes. The serum was not used.");
+                    SendUseDoneEvent();
+                    return;
+                }
+                if (visibility.BlocksColour)
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, null, null, false,
+                        $"colour hidden: {visibility.TexturedParts}/{visibility.TotalParts} parts retextured by {visibility.TextureCount} captured textures");
+                    SendTransientError($"{petDevice.Name} cannot have its colour changed: its captured appearance retextures {visibility.TexturedParts} of its {visibility.TotalParts} body parts, which cover any colour underneath. The serum was not used.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                var paletteBefore = petDevice.VisualOverridePaletteTemplate.HasValue
+                    ? PetTrace.Hex((uint)petDevice.VisualOverridePaletteTemplate.Value)
+                    : "none";
+
+                // Roll before consuming: an empty pool must refuse without eating the serum.
+                if (!ACE.Server.Services.PetMutationService.TryRollMasterPalette(out var newPalette, out var poolIndex, out var poolCount))
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, paletteBefore, null, false, "palette pool is empty");
+                    SendTransientError("The Mutagenic Serum has nothing to draw from: the mutation palette pool is empty. It was not consumed.");
+                    SendUseDoneEvent();
+                    return;
+                }
+                var paletteAfter = PetTrace.Hex(newPalette);
+
+                if (!TryConsumeFromInventoryWithNetworking(sourceItem, 1))
+                {
+                    if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, paletteBefore, paletteAfter, false, "consume failed");
+                    SendTransientError("Failed to consume Mutagenic Serum.");
+                    SendUseDoneEvent();
+                    return;
+                }
+
+                // Same base/template/captured-palette write a bred mutation makes; the device keeps its own setup.
+                var recolour = ACE.Server.Services.PetMutationService.ApplyMutationPalette(petDevice, null, newPalette);
+                petDevice.ChangesDetected = true;
+                petDevice.SaveBiotaToDatabase();
+
+                // If this essence's pet is out, repaint it in place the way @mutate_pet does - but only
+                // while it is ticking on this thread's landblock group. World objects belong to their
+                // landblock thread; a pet that has strayed into another group waits for the next summon.
+                var liveRecoloured = false;
+                var pet = CurrentActivePet as CombatPet;
+                var liveSummoned = pet != null && !pet.IsDestroyed && pet.SummoningDeviceGuid == petDevice.Guid;
+                if (liveSummoned)
+                {
+                    var petLandblock = pet.CurrentLandblock;
+                    var sameGroup = petLandblock != null && CurrentLandblock != null
+                        && (!LandblockManager.CurrentlyTickingLandblockGroupsMultiThreaded
+                            || petLandblock.CurrentLandblockGroup == CurrentLandblock.CurrentLandblockGroup);
+                    if (sameGroup)
+                    {
+                        ACE.Server.Services.PetMutationService.ApplyMutationPalette(pet, pet.SetupTableId, newPalette);
+                        ACE.Server.Services.PetMutationService.ForceClientRedraw(pet);
+                        liveRecoloured = true;
+                    }
+                }
+
+                if (PetTrace.Enabled) PetTrace.ConsumableUse(this, sourceItem, target, serumProperty, paletteBefore, paletteAfter, true, null);
+                log.Info($"[MutagenicSerum] {Name} recoloured {petDevice.Name} (0x{petDevice.Guid.Full:X8}): palette {paletteBefore} -> {paletteAfter} " +
+                         $"(pool {poolIndex}/{poolCount}), base 0x{recolour.OldPaletteBase:X8} -> 0x{recolour.NewPaletteBase:X8} " +
+                         $"(native={recolour.NativeBaseApplied}), capturedPalettesCleared={recolour.CapturedPalettesCleared}, " +
+                         $"summoned={liveSummoned}, liveRecoloured={liveRecoloured}.");
+
+                PlayParticleEffect(PlayScript.EnchantUpPurple, target.Guid);
+
+                // Textures present but the capture stored no part list, so whether the colour shows
+                // could not be measured. Say so rather than silently taking the serum.
+                if (visibility.Coverage == ACE.Server.Services.PetMutationService.ColourCoverage.Unknown)
+                    SendMessage($"[WARNING] {petDevice.Name} carries {visibility.TextureCount} captured textures and no part list, so the new colour may be covered where they sit.");
+
+                if (liveRecoloured)
+                    SendMessage($"You inject {petDevice.Name} with the Mutagenic Serum. Its colour has changed and your summoned pet has been recoloured.");
+                else if (liveSummoned)
+                    SendMessage($"You inject {petDevice.Name} with the Mutagenic Serum. Its colour has changed; dismiss and re-summon it to see the new look.");
+                else
+                    SendMessage($"You inject {petDevice.Name} with the Mutagenic Serum. Its colour has changed; summon it to see the new look.");
                 SendUseDoneEvent();
                 return;
             }

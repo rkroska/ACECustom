@@ -51,7 +51,7 @@ namespace ACE.Server.Web
                 return configured;
             }
 
-            log.Warn("[WEB PORTAL] WebPortal.JwtSecret is not set in Config.js — a new secret is generated every restart and all portal logins expire on restart.");
+            log.Warn("[WEB PORTAL] WebPortal.JwtSecret is not set in Config.js -- a new secret is generated every restart and all portal logins expire on restart.");
             return GenerateDynamicSecret();
         }
 
@@ -148,6 +148,7 @@ namespace ACE.Server.Web
                 });
 
                 builder.Services.AddAuthorization();
+                builder.Services.AddHostedService<ACE.Server.Services.VisualizerCacheEvictionService>();
 
                 // IMPORTANT: We must tell MVC to look for controllers in THIS assembly
                 builder.Services.AddControllers()

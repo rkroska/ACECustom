@@ -467,7 +467,7 @@ On **combat essence** (identify / assess):
 ```text
 Potency: 100 stored (75 active, 25 dormant)
 Bond: 750
-Body Training: +150% damage from potency (active)
+Potency Bonus: +150% damage (from active potency)
 Bond Strain: −25 damage rating while pet summoned   [if strain enabled and active]
 ```
 

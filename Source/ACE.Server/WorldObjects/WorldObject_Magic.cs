@@ -557,6 +557,8 @@ namespace ACE.Server.WorldObjects
             if (!useHarmCap)
                 tryBoost = (int)Math.Round(tryBoost * resistanceMod);
 
+            var traceAfterResist = tryBoost;
+
             if (player != null && minBoostValue < 0 && spell.VitalDamageType == DamageType.Health)
                 log.Debug($"[HARM_CAP] {player.Name} cast {spell.Name} | range: {minBoostValue} to {maxBoostValue} | roll: {rawRoll} | resistanceMod: {resistanceMod:F4} ({resistanceType}) | useHarmCap: {useHarmCap} | tryBoost: {tryBoost}");
 
@@ -583,6 +585,18 @@ namespace ACE.Server.WorldObjects
             if (!useHarmCap && player != null && tryBoost > 0)
             {
                 tryBoost += (int)player.EffectiveLifeAugCount;
+
+                // Scale heal proportionally to pet max health so player heals remain effective on 3000+ HP pets
+                if (spell.VitalDamageType == DamageType.Health && targetCreature is CombatPet targetPet && targetPet.IsInMotelOrEncounter())
+                {
+                    var casterHp = player.Health?.MaxValue ?? 0;
+                    var petHp = targetPet.Health?.MaxValue ?? 0;
+                    if (casterHp > 0 && petHp > casterHp)
+                    {
+                        var scale = Math.Clamp((float)petHp / casterHp, 1.0f, 8.0f);
+                        tryBoost = (int)Math.Round(tryBoost * scale);
+                    }
+                }
             }
             if (!useHarmCap && player != null && tryBoost < 0)
             {
@@ -606,6 +620,15 @@ namespace ACE.Server.WorldObjects
                 tryBoost = -(int)Math.Round(fDamage);
             }
             // ─────────────────────────────────────────────────────────────────────
+
+            // A creature that refuses damage from this caster takes no harm/drain (heals still apply).
+            if (tryBoost < 0 && !targetCreature.CanBeDamagedBy(this))
+            {
+                tryBoost = 0;
+                (this as Player)?.NotifyPetsOnlyTarget(targetCreature);
+            }
+
+            var traceBefore = PetTrace.Enabled ? PetTrace.VitalCurrent(targetCreature, spell.VitalDamageType) : 0u;
 
             switch (spell.VitalDamageType)
             {
@@ -631,6 +654,10 @@ namespace ACE.Server.WorldObjects
 
                     break;
             }
+
+            if (PetTrace.Enabled)
+                PetTrace.CombatBoost(this, targetCreature, spell, minBoostValue, maxBoostValue, rawRoll, resistanceType, resistanceMod, useHarmCap,
+                    traceAfterResist, tryBoostAfterAugment, tryBoost, boost, mbResult.AmountAbsorbed, traceBefore);
 
             // Beneficial boost self-cast: apply healing that did not fit on the player (e.g. at full HP) to their active combat pet.
             if (ServerConfig.pet_self_boost_overflow_to_combat_pet.Value
@@ -670,6 +697,8 @@ namespace ACE.Server.WorldObjects
                         };
                         player.SendChatMessage(player, $"{overflowPet.Name} receives {petApplied} excess {vitalLabel} from {spell.Name}.", ChatMessageType.Magic);
                     }
+                    if (PetTrace.Enabled)
+                        PetTrace.CombatBoostOverflow(player, overflowPet, spell, overflow, petApplied);
                 }
             }
 
@@ -863,6 +892,17 @@ namespace ACE.Server.WorldObjects
 
             // Drain Resistances - allows one to partially resist drain health/stamina/mana and harm attacks (not including other life transfer spells).
             var isDrain = spell.TransferFlags.HasFlag(TransferFlags.TargetSource | TransferFlags.CasterDestination);
+
+            // A drain takes from a source that must accept damage from this caster - a mating guardian only
+            // from its parent pets. Harm spells get the same rule in HandleCastSpell_Boost; a drain changes
+            // vitals directly and never passes TakeDamage, so without this a bystander could drain a guardian
+            // to death. Non-drain transfers are unaffected.
+            if (isDrain && !transferSource.CanBeDamagedBy(this))
+            {
+                (this as Player)?.NotifyPetsOnlyTarget(transferSource);
+                return;
+            }
+
             var drainMod = isDrain ? (float)transferSource.GetResistanceMod(GetDrainResistanceType(spell.Source)) : 1.0f;
 
             srcVitalChange = (uint)Math.Round(transferSource.GetCreatureVital(spell.Source).Current * spell.Proportion * drainMod);
@@ -938,6 +978,16 @@ namespace ACE.Server.WorldObjects
 
             string srcVital, destVital;
 
+            // [PetTrace] requested amounts and the vitals before the transfer lands.
+            var traceSrcRequested = srcVitalChange;
+            var traceDstRequested = destVitalChange;
+            uint traceSrcBefore = 0, traceDstBefore = 0;
+            if (PetTrace.Enabled)
+            {
+                traceSrcBefore = transferSource.GetCreatureVital(spell.Source)?.Current ?? 0;
+                traceDstBefore = destination.GetCreatureVital(spell.Destination)?.Current ?? 0;
+            }
+
             // Apply the change in vitals to the source
             switch (spell.Source)
             {
@@ -985,6 +1035,12 @@ namespace ACE.Server.WorldObjects
 
                     break;
             }
+
+            if (PetTrace.Enabled)
+                PetTrace.CombatTransfer(this, targetCreature, spell, transferSource, destination, isDrain, drainMod, boostMod,
+                    traceSrcRequested, traceDstRequested, mbResult.AmountAbsorbed, srcVitalChange, destVitalChange,
+                    traceSrcBefore, traceDstBefore,
+                    transferSource.GetCreatureVital(spell.Source)?.Current ?? 0, destination.GetCreatureVital(spell.Destination)?.Current ?? 0);
 
             // You gain 52 points of health due to casting Drain Health Other I on Olthoi Warrior
             // You lose 22 points of mana due to casting Incantation of Infuse Mana Other on High-Voltage VI
@@ -1084,22 +1140,28 @@ namespace ACE.Server.WorldObjects
             {
                 if (spell.Name.Contains("Blight"))
                 {
+                    var traceBefore = PetTrace.Enabled ? caster.Mana.Current : 0u;
                     var tryDamage = (int)Math.Round(caster.GetCreatureVital(PropertyAttribute2nd.Mana).Current * spell.DrainPercentage);
                     damage = (uint)-caster.UpdateVitalDelta(caster.Mana, -tryDamage);
                     damageType = DamageType.Mana;
+                    if (PetTrace.Enabled) PetTrace.CombatLifeCost(caster, spell, DamageType.Mana, tryDamage, damage, traceBefore);
                 }
                 else if (spell.Name.Contains("Tenacity"))
                 {
+                    var traceBefore = PetTrace.Enabled ? caster.Stamina.Current : 0u;
                     var tryDamage = (int)Math.Round(caster.GetCreatureVital(PropertyAttribute2nd.Stamina).Current * spell.DrainPercentage);
                     damage = (uint)-caster.UpdateVitalDelta(caster.Stamina, -tryDamage);
                     damageType = DamageType.Stamina;
+                    if (PetTrace.Enabled) PetTrace.CombatLifeCost(caster, spell, DamageType.Stamina, tryDamage, damage, traceBefore);
                 }
                 else
                 {
+                    var traceBefore = PetTrace.Enabled ? caster.Health.Current : 0u;
                     var tryDamage = (int)Math.Round(caster.GetCreatureVital(PropertyAttribute2nd.Health).Current * spell.DrainPercentage);
                     damage = (uint)-caster.UpdateVitalDelta(caster.Health, -tryDamage);
                     caster.DamageHistory.Add(this, DamageType.Health, damage);
                     damageType = DamageType.Health;
+                    if (PetTrace.Enabled) PetTrace.CombatLifeCost(caster, spell, DamageType.Health, tryDamage, damage, traceBefore);
 
                     //if (player != null && player.Fellowship != null)
                     //player.Fellowship.OnVitalUpdate(player);

@@ -230,7 +230,7 @@ Then GM-grant WCID **78780013** for spend/balance testing.
 
 ```
 Potency: 25 stored (10 active, 15 dormant)
-Body Training: +20% damage from potency (active)
+Potency Bonus: +20% damage (from active potency)
 ```
 
 ---

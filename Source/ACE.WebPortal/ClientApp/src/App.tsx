@@ -29,6 +29,7 @@ import { useAuthStore } from './store/useAuthStore'
 import PlayerList from './components/PlayerList'
 
 import CombatCalculator from './components/CombatCalculator'
+import PetBreedingCalculator from './components/PetBreedingCalculator'
 
 import QuestBuilder from './components/quest-builder/QuestBuilder'
 
@@ -36,6 +37,7 @@ import PortalSecurity from './components/PortalSecurity'
 
 import AuditLog from './components/AuditLog'
 import CorpseFinder from './components/CorpseFinder'
+import PetNameApprovals from './components/admin/PetNameApprovals'
 
 import MainLayout from './layouts/MainLayout'
 
@@ -117,10 +119,24 @@ function App() {
 
 
 
+  const normalizedPath = location.pathname.replace(/\/+$/, '') || '/';
+
+  if (!isAuthenticated && (normalizedPath === '/map' || normalizedPath === '/pet-breeding')) {
+    return (
+      <MainLayout>
+        <Routes>
+          <Route path="/map" element={
+            <div className="w-full h-full bg-neutral-950"><WorldViewer /></div>
+          } />
+          <Route path="/pet-breeding" element={<PetBreedingCalculator />} />
+          <Route path="*" element={<Navigate to="/map" replace />} />
+        </Routes>
+      </MainLayout>
+    );
+  }
+
   if (!isAuthenticated) {
-
     return <LoginPage />
-
   }
 
 
@@ -223,6 +239,16 @@ function App() {
 
         } />
 
+        <Route path="/pet-names" element={
+
+          <ProtectedRoute pageKey="pet-naming">
+
+            <PetNameApprovals />
+
+          </ProtectedRoute>
+
+        } />
+
 
 
         <Route path="/map" element={
@@ -314,6 +340,16 @@ function App() {
           <ProtectedRoute pageKey="combat-calculator">
 
             <CombatCalculator />
+
+          </ProtectedRoute>
+
+        } />
+
+        <Route path="/pet-breeding" element={
+
+          <ProtectedRoute pageKey="pet-breeding">
+
+            <PetBreedingCalculator />
 
           </ProtectedRoute>
 

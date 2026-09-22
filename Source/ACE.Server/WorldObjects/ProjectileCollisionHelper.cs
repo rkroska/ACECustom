@@ -98,12 +98,16 @@ namespace ACE.Server.WorldObjects
 
                         damageEvent = DamageEvent.CalculateDamage(sourceCreature, targetCreature, worldObject);
 
+                        var traceBefore = PetTrace.Enabled && damageEvent.HasDamage ? PetTrace.VitalCurrent(targetCreature, damageEvent.DamageType) : 0u;
+
                         if (targetPlayer != null)
                         {
                             // monster damage player
                             if (damageEvent.HasDamage)
                             {
-                                targetPlayer.TakeDamage(sourceCreature, damageEvent);
+                                var dealtToPlayer = targetPlayer.TakeDamage(sourceCreature, damageEvent);
+                                if (PetTrace.Enabled)
+                                    PetTrace.CombatDamage(damageEvent, traceBefore, (uint)Math.Max(0, dealtToPlayer));
 
                                 if (sourceCreature is CombatPet combatPetVsPlayer)
                                     CombatPet.TryNotifyOwnerOutgoingPhysical(combatPetVsPlayer, targetPlayer, damageEvent.Damage, damageEvent.DamageType, "Missile");
@@ -133,7 +137,9 @@ namespace ACE.Server.WorldObjects
                             // creature-vs-creature (includes combat pet as attacker or defender)
                             if (damageEvent.HasDamage)
                             {
-                                targetCreature.TakeDamage(sourceCreature, damageEvent.DamageType, damageEvent.Damage, damageEvent.IsCritical);
+                                var dealt = targetCreature.TakeDamage(sourceCreature, damageEvent.DamageType, damageEvent.Damage, damageEvent.IsCritical);
+                                if (PetTrace.Enabled)
+                                    PetTrace.CombatDamage(damageEvent, traceBefore, dealt);
 
                                 if (sourceCreature is CombatPet combatPetVsCreature)
                                 {
