@@ -845,6 +845,93 @@ namespace ACE.Server.Tests
             StringAssert.Contains(reply, "WCID_ALLOCATION_7878.md");
         }
 
+        // ------------------------------------------------------------------------------------------------
+        // Layered ObjDesc (a dressed player)
+        // ------------------------------------------------------------------------------------------------
+
+        private static TemplateExport.Snapshot LayeredSnapshot()
+        {
+            var s = PetSnapshot(withWielded: false);
+            s.IsPet = false;
+            // base body, then a shirt, then armour over both slots
+            s.AnimParts = new List<PropertiesAnimPart>
+            {
+                new PropertiesAnimPart { Index = 1, AnimationId = 0x01000001 },
+                new PropertiesAnimPart { Index = 2, AnimationId = 0x01000002 },
+                new PropertiesAnimPart { Index = 1, AnimationId = 0x01000011 },
+                new PropertiesAnimPart { Index = 1, AnimationId = 0x01000021 },
+            };
+            s.TextureChanges = new List<PropertiesTextureMap>
+            {
+                new PropertiesTextureMap { PartIndex = 0, OldTexture = 0x05000001, NewTexture = 0x05000001 },
+                new PropertiesTextureMap { PartIndex = 1, OldTexture = 0x05000002, NewTexture = 0x05000003 },
+                new PropertiesTextureMap { PartIndex = 0, OldTexture = 0x05000001, NewTexture = 0x05000009 },
+            };
+            s.SubPalettes = new List<PropertiesPalette>
+            {
+                new PropertiesPalette { SubPaletteId = 0x0100, Offset = 0, Length = 24 },  // skin
+                new PropertiesPalette { SubPaletteId = 0x0200, Offset = 10, Length = 4 },  // shirt
+                new PropertiesPalette { SubPaletteId = 0x0300, Offset = 12, Length = 16 }, // armour over the shirt
+                new PropertiesPalette { SubPaletteId = 0x0100, Offset = 26, Length = 2 },  // lower id, drawn last over the armour
+            };
+            return s;
+        }
+
+        [TestMethod]
+        public void BuildWeenie_LayeredLook_OneRowPerUniqueKey_TopLayerWins()
+        {
+            var w = TemplateExport.BuildWeenie(LayeredSnapshot(), 78790000, "tmpl78790000_x", "X", TemplateExport.Flavour.Npc, DateTime.UtcNow, out _);
+
+            // the ace_world unique keys
+            Assert.AreEqual(w.WeeniePropertiesAnimPart.Count, w.WeeniePropertiesAnimPart.Select(r => r.Index).Distinct().Count());
+            Assert.AreEqual(w.WeeniePropertiesTextureMap.Count, w.WeeniePropertiesTextureMap.Select(r => (r.Index, r.OldId)).Distinct().Count());
+            Assert.AreEqual(w.WeeniePropertiesPalette.Count, w.WeeniePropertiesPalette.Select(r => (r.SubPaletteId, r.Offset, r.Length)).Distinct().Count());
+
+            Assert.AreEqual(0x01000021u, w.WeeniePropertiesAnimPart.Single(r => r.Index == 1).AnimationId);
+            Assert.AreEqual(0x01000002u, w.WeeniePropertiesAnimPart.Single(r => r.Index == 2).AnimationId);
+            Assert.AreEqual(0x05000009u, w.WeeniePropertiesTextureMap.Single(r => r.Index == 0).NewId);
+            Assert.AreEqual(2, w.WeeniePropertiesTextureMap.Count);
+        }
+
+        [TestMethod]
+        public void FlattenSubPalettes_ResolvesOverlapsInListOrder_IntoDisjointRuns()
+        {
+            var runs = TemplateExport.FlattenSubPalettes(LayeredSnapshot().SubPalettes);
+
+            // owner of each block, as the client would paint it
+            var owner = new Dictionary<int, uint>();
+            foreach (var r in runs)
+                for (var i = r.Offset; i < r.Offset + r.Length; i++)
+                {
+                    Assert.IsFalse(owner.ContainsKey(i), $"block {i} emitted twice");
+                    owner[i] = r.SubPaletteId;
+                }
+
+            Assert.AreEqual(0x0100u, owner[0]);
+            Assert.AreEqual(0x0200u, owner[10]);
+            Assert.AreEqual(0x0200u, owner[11]);
+            Assert.AreEqual(0x0300u, owner[12]);
+            Assert.AreEqual(0x0300u, owner[25]);
+            Assert.AreEqual(0x0100u, owner[26]);
+            Assert.AreEqual(0x0100u, owner[27]);
+            Assert.AreEqual(28, owner.Count);
+        }
+
+        [TestMethod]
+        public void FlattenSubPalettes_FullPaletteOverride_SplitsAt255()
+        {
+            var runs = TemplateExport.FlattenSubPalettes(new List<PropertiesPalette>
+            {
+                new PropertiesPalette { SubPaletteId = 0x1234, Offset = 0, Length = 255 },
+                new PropertiesPalette { SubPaletteId = 0x1234, Offset = 255, Length = 1 },
+            });
+
+            Assert.AreEqual(2, runs.Count);
+            Assert.AreEqual(255, runs[0].Length);
+            Assert.AreEqual(255, runs[1].Offset);
+            Assert.AreEqual(1, runs[1].Length);
+        }
+
         private static void AssertAscii(string text)
         {
             foreach (var c in text)

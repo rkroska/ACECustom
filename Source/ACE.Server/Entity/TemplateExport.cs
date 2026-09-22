@@ -624,6 +624,76 @@ namespace ACE.Server.Entity
             }
         }
 
+        // A rendered ObjDesc is layered: every worn piece appends its own rows for the slots it covers, and the
+        // client applies them in order, so the last row for a slot is the one drawn. A dressed player carries
+        // several anim parts per index and several swaps per (index, old texture). ace_world holds one of each
+        // (object_Id_index_uidx, object_Id_index_oldId_uidx), so the raw lists failed the import part way through
+        // and the template loaded with palettes only: a bare base body with the default head. The helpers below
+        // reduce the layers to what the client ends up drawing.
+
+        /// <summary>One anim part per index, the last one listed (the top layer).</summary>
+        public static List<PropertiesAnimPart> CollapseAnimParts(IEnumerable<PropertiesAnimPart> parts)
+        {
+            var byIndex = new SortedDictionary<byte, PropertiesAnimPart>();
+            foreach (var ap in parts ?? Array.Empty<PropertiesAnimPart>())
+                byIndex[ap.Index] = ap;
+            return byIndex.Values.ToList();
+        }
+
+        /// <summary>One swap per (part, old texture), the last one listed, in the order of those last occurrences.</summary>
+        public static List<PropertiesTextureMap> CollapseTextureChanges(IEnumerable<PropertiesTextureMap> changes)
+        {
+            var list = (changes ?? Array.Empty<PropertiesTextureMap>()).ToList();
+            var result = new List<PropertiesTextureMap>();
+            var seen = new HashSet<(byte, uint)>();
+            for (var i = list.Count - 1; i >= 0; i--)
+            {
+                if (seen.Add((list[i].PartIndex, list[i].OldTexture)))
+                    result.Add(list[i]);
+            }
+            result.Reverse();
+            return result;
+        }
+
+        /// <summary>
+        /// Sub palettes overwrite each other in order over the ranges they cover (offset and length are in blocks of
+        /// 8 colours). The writer sorts palette rows by id, which would reorder overlapping layers, so the list is
+        /// resolved here to the owner of each block and re-emitted as non-overlapping runs, where order is moot.
+        /// Runs are capped at 255 blocks because the client reads the length as a byte.
+        /// </summary>
+        public static List<PropertiesPalette> FlattenSubPalettes(IEnumerable<PropertiesPalette> palettes)
+        {
+            var list = (palettes ?? Array.Empty<PropertiesPalette>()).Where(p => p.Length > 0).ToList();
+            var result = new List<PropertiesPalette>();
+            if (list.Count == 0)
+                return result;
+
+            var size = list.Max(p => p.Offset + p.Length);
+            var owner = new uint?[size];
+            foreach (var p in list)
+                for (var i = p.Offset; i < p.Offset + p.Length; i++)
+                    owner[i] = p.SubPaletteId;
+
+            var start = 0;
+            while (start < size)
+            {
+                if (owner[start] == null)
+                {
+                    start++;
+                    continue;
+                }
+
+                var id = owner[start].Value;
+                var end = start + 1;
+                while (end < size && owner[end] == id && end - start < 255)
+                    end++;
+
+                result.Add(new PropertiesPalette { SubPaletteId = id, Offset = (ushort)start, Length = (ushort)(end - start) });
+                start = end;
+            }
+            return result;
+        }
+
         /// <summary>
         /// Builds the database weenie for the snapshot. The caller holds the source's BiotaDatabaseLock (read) while
         /// this runs, because the biota dictionaries are read directly.
@@ -703,13 +773,13 @@ namespace ACE.Server.Entity
             if (s.ObjDescPaletteId != 0)
                 SetDid(w, PropertyDataId.PaletteBase, s.ObjDescPaletteId);
 
-            foreach (var ap in s.AnimParts ?? Array.Empty<PropertiesAnimPart>())
+            foreach (var ap in CollapseAnimParts(s.AnimParts))
                 w.WeeniePropertiesAnimPart.Add(new WeeniePropertiesAnimPart { ObjectId = newWcid, Index = ap.Index, AnimationId = ap.AnimationId });
 
-            foreach (var pal in s.SubPalettes ?? Array.Empty<PropertiesPalette>())
+            foreach (var pal in FlattenSubPalettes(s.SubPalettes))
                 w.WeeniePropertiesPalette.Add(new WeeniePropertiesPalette { ObjectId = newWcid, SubPaletteId = pal.SubPaletteId, Offset = pal.Offset, Length = pal.Length });
 
-            foreach (var tm in s.TextureChanges ?? Array.Empty<PropertiesTextureMap>())
+            foreach (var tm in CollapseTextureChanges(s.TextureChanges))
                 w.WeeniePropertiesTextureMap.Add(new WeeniePropertiesTextureMap { ObjectId = newWcid, Index = tm.PartIndex, OldId = tm.OldTexture, NewId = tm.NewTexture });
 
             // --- creature tables --------------------------------------------------------------------
