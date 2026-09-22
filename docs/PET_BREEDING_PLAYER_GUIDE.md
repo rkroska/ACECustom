@@ -442,6 +442,14 @@ item, then click the essence.
 | `@breed-debug` | Checks where you are and what you have out. See below. |
 | `@pet-name <name>` | Asks staff to rename a pet. |
 | `@pets` | Your Pet Registry: essences you have shown to Professor Ruggan. |
+| `@top mutations` | Leaderboard: most mutations on a single pet. |
+| `@top summutations` | Leaderboard: most mutations across all your pets. |
+| `@top litters` | Leaderboard: most litters bred. |
+
+The three breeding boards are also on the web portal, under Leaderboards > Pets. They count **per
+account**, so pets on your alts count toward your total, and the row is shown under your main
+character's name. Litters are counted for **both** owners of every litter, and stay on your character
+even if the pets are traded away or destroyed.
 
 `@breed-debug` shows something like:
 

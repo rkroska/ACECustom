@@ -612,4 +612,334 @@ public static class LeaderboardInlineSql
         ORDER BY ranked.Score DESC
         LIMIT 1
         """);
+
+    /// <summary>
+    /// Pet breeding boards, all three per ACCOUNT so an alt's pets count toward its owner and the row is
+    /// shown under the account's main character (its highest-augmentation character, the one /top augs
+    /// lists; mules rank last and are only used when the account has nothing else). Staff and banned
+    /// accounts are excluded by the account join, and an account with any character that has
+    /// ExcludeFromLeaderboards is left out entirely, the same rule the quest bonus board uses.
+    ///
+    /// Mutations are the five per-essence counters PropertyInt 9070-9074 (damage, damage resist, crit,
+    /// vitality, potency), the same ones the essence appraisal adds up as "Total Mutations". An essence
+    /// counts once it is attuned to a character (PropertyInt64 9052), which for a bred baby means after
+    /// its first summon.
+    /// </summary>
+    public static readonly string TopPetMutations = ResolveSql("""
+        SELECT src.Score AS Score,
+               src.Account AS Account,
+               main.name AS `Character`,
+               main.id AS LeaderboardID
+        FROM (
+          SELECT c.account_Id AS Account, MAX(pet.Total) AS Score
+          FROM (
+            SELECT CAST(att.value AS UNSIGNED) AS CharacterId,
+                   COALESCE(md.value, 0) + COALESCE(mr.value, 0) + COALESCE(mc.value, 0) + COALESCE(mv.value, 0) + COALESCE(mp.value, 0) AS Total
+            FROM ace_shard.biota_properties_int64 att
+            LEFT JOIN ace_shard.biota_properties_int md ON md.object_id = att.object_id AND md.type = 9070
+            LEFT JOIN ace_shard.biota_properties_int mr ON mr.object_id = att.object_id AND mr.type = 9071
+            LEFT JOIN ace_shard.biota_properties_int mc ON mc.object_id = att.object_id AND mc.type = 9072
+            LEFT JOIN ace_shard.biota_properties_int mv ON mv.object_id = att.object_id AND mv.type = 9073
+            LEFT JOIN ace_shard.biota_properties_int mp ON mp.object_id = att.object_id AND mp.type = 9074
+            WHERE att.type = 9052
+          ) pet
+          INNER JOIN ace_shard.character c ON c.id = pet.CharacterId AND c.is_Deleted = 0
+          GROUP BY c.account_Id
+        ) src
+        INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN (
+          SELECT r.account_Id, r.name, r.id
+          FROM (
+            SELECT c.account_Id, c.name, c.id,
+                   ROW_NUMBER() OVER (PARTITION BY c.account_Id
+                                      ORDER BY (mule.value IS NOT NULL AND mule.value <> 0) ASC,
+                                               COALESCE(ag.Augs, 0) DESC, c.total_Logins DESC, c.id DESC) AS rn
+            FROM ace_shard.character c
+            LEFT JOIN ace_shard.biota_properties_bool mule ON mule.object_id = c.id AND mule.type = 131
+            LEFT JOIN (
+              SELECT object_id, SUM(value) AS Augs
+              FROM ace_shard.biota_properties_int64
+              WHERE type IN (9007, 9008, 9009, 9010, 9011, 9016, 9017, 9018, 9022, 9023, 9024, 9025, 9026)
+              GROUP BY object_id
+            ) ag ON ag.object_id = c.id
+            WHERE c.is_Deleted = 0
+          ) r
+          WHERE r.rn = 1
+        ) main ON main.account_Id = src.Account
+        WHERE src.Score > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM ace_shard.character cex
+            INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
+            WHERE cex.account_Id = src.Account AND cex.is_Deleted = 0
+          )
+        ORDER BY Score DESC, `Character` ASC, LeaderboardID DESC
+        LIMIT 25
+        """);
+
+    /// <summary>Every mutation on every essence the account owns (see <see cref="TopPetMutations"/>).</summary>
+    public static readonly string TopSumPetMutations = ResolveSql("""
+        SELECT src.Score AS Score,
+               src.Account AS Account,
+               main.name AS `Character`,
+               main.id AS LeaderboardID
+        FROM (
+          SELECT c.account_Id AS Account, SUM(pet.Total) AS Score
+          FROM (
+            SELECT CAST(att.value AS UNSIGNED) AS CharacterId,
+                   COALESCE(md.value, 0) + COALESCE(mr.value, 0) + COALESCE(mc.value, 0) + COALESCE(mv.value, 0) + COALESCE(mp.value, 0) AS Total
+            FROM ace_shard.biota_properties_int64 att
+            LEFT JOIN ace_shard.biota_properties_int md ON md.object_id = att.object_id AND md.type = 9070
+            LEFT JOIN ace_shard.biota_properties_int mr ON mr.object_id = att.object_id AND mr.type = 9071
+            LEFT JOIN ace_shard.biota_properties_int mc ON mc.object_id = att.object_id AND mc.type = 9072
+            LEFT JOIN ace_shard.biota_properties_int mv ON mv.object_id = att.object_id AND mv.type = 9073
+            LEFT JOIN ace_shard.biota_properties_int mp ON mp.object_id = att.object_id AND mp.type = 9074
+            WHERE att.type = 9052
+          ) pet
+          INNER JOIN ace_shard.character c ON c.id = pet.CharacterId AND c.is_Deleted = 0
+          GROUP BY c.account_Id
+        ) src
+        INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN (
+          SELECT r.account_Id, r.name, r.id
+          FROM (
+            SELECT c.account_Id, c.name, c.id,
+                   ROW_NUMBER() OVER (PARTITION BY c.account_Id
+                                      ORDER BY (mule.value IS NOT NULL AND mule.value <> 0) ASC,
+                                               COALESCE(ag.Augs, 0) DESC, c.total_Logins DESC, c.id DESC) AS rn
+            FROM ace_shard.character c
+            LEFT JOIN ace_shard.biota_properties_bool mule ON mule.object_id = c.id AND mule.type = 131
+            LEFT JOIN (
+              SELECT object_id, SUM(value) AS Augs
+              FROM ace_shard.biota_properties_int64
+              WHERE type IN (9007, 9008, 9009, 9010, 9011, 9016, 9017, 9018, 9022, 9023, 9024, 9025, 9026)
+              GROUP BY object_id
+            ) ag ON ag.object_id = c.id
+            WHERE c.is_Deleted = 0
+          ) r
+          WHERE r.rn = 1
+        ) main ON main.account_Id = src.Account
+        WHERE src.Score > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM ace_shard.character cex
+            INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
+            WHERE cex.account_Id = src.Account AND cex.is_Deleted = 0
+          )
+        ORDER BY Score DESC, `Character` ASC, LeaderboardID DESC
+        LIMIT 25
+        """);
+
+    /// <summary>
+    /// Litters bred per account: PropertyInt 9079 (PetLittersBred) on each character, counted once per
+    /// character that took part in a committed breed. It lives on the character, so it survives the pets
+    /// being traded, tailored away or destroyed.
+    /// </summary>
+    public static readonly string TopLittersBred = ResolveSql("""
+        SELECT src.Score AS Score,
+               src.Account AS Account,
+               main.name AS `Character`,
+               main.id AS LeaderboardID
+        FROM (
+          SELECT c.account_Id AS Account, SUM(lit.value) AS Score
+          FROM ace_shard.biota_properties_int lit
+          INNER JOIN ace_shard.character c ON c.id = lit.object_id AND c.is_Deleted = 0
+          WHERE lit.type = 9079
+          GROUP BY c.account_Id
+        ) src
+        INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN (
+          SELECT r.account_Id, r.name, r.id
+          FROM (
+            SELECT c.account_Id, c.name, c.id,
+                   ROW_NUMBER() OVER (PARTITION BY c.account_Id
+                                      ORDER BY (mule.value IS NOT NULL AND mule.value <> 0) ASC,
+                                               COALESCE(ag.Augs, 0) DESC, c.total_Logins DESC, c.id DESC) AS rn
+            FROM ace_shard.character c
+            LEFT JOIN ace_shard.biota_properties_bool mule ON mule.object_id = c.id AND mule.type = 131
+            LEFT JOIN (
+              SELECT object_id, SUM(value) AS Augs
+              FROM ace_shard.biota_properties_int64
+              WHERE type IN (9007, 9008, 9009, 9010, 9011, 9016, 9017, 9018, 9022, 9023, 9024, 9025, 9026)
+              GROUP BY object_id
+            ) ag ON ag.object_id = c.id
+            WHERE c.is_Deleted = 0
+          ) r
+          WHERE r.rn = 1
+        ) main ON main.account_Id = src.Account
+        WHERE src.Score > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM ace_shard.character cex
+            INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
+            WHERE cex.account_Id = src.Account AND cex.is_Deleted = 0
+          )
+        ORDER BY Score DESC, `Character` ASC, LeaderboardID DESC
+        LIMIT 25
+        """);
+
+    public static FormattableString SelfPlacementPetMutations(uint accountId) => ResolveFormattableSql($"""
+        SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
+        FROM (
+          SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
+                 ROW_NUMBER() OVER (ORDER BY innerq.Score DESC, innerq.Character ASC, innerq.LeaderboardID DESC) AS PlacementRank
+          FROM (
+            SELECT src.Score AS Score,
+                   src.Account AS Account,
+                   main.name AS `Character`,
+                   main.id AS LeaderboardID
+            FROM (
+              SELECT c.account_Id AS Account, MAX(pet.Total) AS Score
+              FROM (
+                SELECT CAST(att.value AS UNSIGNED) AS CharacterId,
+                       COALESCE(md.value, 0) + COALESCE(mr.value, 0) + COALESCE(mc.value, 0) + COALESCE(mv.value, 0) + COALESCE(mp.value, 0) AS Total
+                FROM ace_shard.biota_properties_int64 att
+                LEFT JOIN ace_shard.biota_properties_int md ON md.object_id = att.object_id AND md.type = 9070
+                LEFT JOIN ace_shard.biota_properties_int mr ON mr.object_id = att.object_id AND mr.type = 9071
+                LEFT JOIN ace_shard.biota_properties_int mc ON mc.object_id = att.object_id AND mc.type = 9072
+                LEFT JOIN ace_shard.biota_properties_int mv ON mv.object_id = att.object_id AND mv.type = 9073
+                LEFT JOIN ace_shard.biota_properties_int mp ON mp.object_id = att.object_id AND mp.type = 9074
+                WHERE att.type = 9052
+              ) pet
+              INNER JOIN ace_shard.character c ON c.id = pet.CharacterId AND c.is_Deleted = 0
+              GROUP BY c.account_Id
+            ) src
+            INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN (
+              SELECT r.account_Id, r.name, r.id
+              FROM (
+                SELECT c.account_Id, c.name, c.id,
+                       ROW_NUMBER() OVER (PARTITION BY c.account_Id
+                                          ORDER BY (mule.value IS NOT NULL AND mule.value <> 0) ASC,
+                                                   COALESCE(ag.Augs, 0) DESC, c.total_Logins DESC, c.id DESC) AS rn
+                FROM ace_shard.character c
+                LEFT JOIN ace_shard.biota_properties_bool mule ON mule.object_id = c.id AND mule.type = 131
+                LEFT JOIN (
+                  SELECT object_id, SUM(value) AS Augs
+                  FROM ace_shard.biota_properties_int64
+                  WHERE type IN (9007, 9008, 9009, 9010, 9011, 9016, 9017, 9018, 9022, 9023, 9024, 9025, 9026)
+                  GROUP BY object_id
+                ) ag ON ag.object_id = c.id
+                WHERE c.is_Deleted = 0
+              ) r
+              WHERE r.rn = 1
+            ) main ON main.account_Id = src.Account
+            WHERE src.Score > 0
+              AND NOT EXISTS (
+                SELECT 1 FROM ace_shard.character cex
+                INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
+                WHERE cex.account_Id = src.Account AND cex.is_Deleted = 0
+              )
+          ) innerq
+        ) ranked
+        WHERE ranked.Account = {accountId}
+        ORDER BY ranked.Score DESC
+        LIMIT 1
+        """);
+
+    public static FormattableString SelfPlacementSumPetMutations(uint accountId) => ResolveFormattableSql($"""
+        SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
+        FROM (
+          SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
+                 ROW_NUMBER() OVER (ORDER BY innerq.Score DESC, innerq.Character ASC, innerq.LeaderboardID DESC) AS PlacementRank
+          FROM (
+            SELECT src.Score AS Score,
+                   src.Account AS Account,
+                   main.name AS `Character`,
+                   main.id AS LeaderboardID
+            FROM (
+              SELECT c.account_Id AS Account, SUM(pet.Total) AS Score
+              FROM (
+                SELECT CAST(att.value AS UNSIGNED) AS CharacterId,
+                       COALESCE(md.value, 0) + COALESCE(mr.value, 0) + COALESCE(mc.value, 0) + COALESCE(mv.value, 0) + COALESCE(mp.value, 0) AS Total
+                FROM ace_shard.biota_properties_int64 att
+                LEFT JOIN ace_shard.biota_properties_int md ON md.object_id = att.object_id AND md.type = 9070
+                LEFT JOIN ace_shard.biota_properties_int mr ON mr.object_id = att.object_id AND mr.type = 9071
+                LEFT JOIN ace_shard.biota_properties_int mc ON mc.object_id = att.object_id AND mc.type = 9072
+                LEFT JOIN ace_shard.biota_properties_int mv ON mv.object_id = att.object_id AND mv.type = 9073
+                LEFT JOIN ace_shard.biota_properties_int mp ON mp.object_id = att.object_id AND mp.type = 9074
+                WHERE att.type = 9052
+              ) pet
+              INNER JOIN ace_shard.character c ON c.id = pet.CharacterId AND c.is_Deleted = 0
+              GROUP BY c.account_Id
+            ) src
+            INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN (
+              SELECT r.account_Id, r.name, r.id
+              FROM (
+                SELECT c.account_Id, c.name, c.id,
+                       ROW_NUMBER() OVER (PARTITION BY c.account_Id
+                                          ORDER BY (mule.value IS NOT NULL AND mule.value <> 0) ASC,
+                                                   COALESCE(ag.Augs, 0) DESC, c.total_Logins DESC, c.id DESC) AS rn
+                FROM ace_shard.character c
+                LEFT JOIN ace_shard.biota_properties_bool mule ON mule.object_id = c.id AND mule.type = 131
+                LEFT JOIN (
+                  SELECT object_id, SUM(value) AS Augs
+                  FROM ace_shard.biota_properties_int64
+                  WHERE type IN (9007, 9008, 9009, 9010, 9011, 9016, 9017, 9018, 9022, 9023, 9024, 9025, 9026)
+                  GROUP BY object_id
+                ) ag ON ag.object_id = c.id
+                WHERE c.is_Deleted = 0
+              ) r
+              WHERE r.rn = 1
+            ) main ON main.account_Id = src.Account
+            WHERE src.Score > 0
+              AND NOT EXISTS (
+                SELECT 1 FROM ace_shard.character cex
+                INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
+                WHERE cex.account_Id = src.Account AND cex.is_Deleted = 0
+              )
+          ) innerq
+        ) ranked
+        WHERE ranked.Account = {accountId}
+        ORDER BY ranked.Score DESC
+        LIMIT 1
+        """);
+
+    public static FormattableString SelfPlacementLittersBred(uint accountId) => ResolveFormattableSql($"""
+        SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
+        FROM (
+          SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
+                 ROW_NUMBER() OVER (ORDER BY innerq.Score DESC, innerq.Character ASC, innerq.LeaderboardID DESC) AS PlacementRank
+          FROM (
+            SELECT src.Score AS Score,
+                   src.Account AS Account,
+                   main.name AS `Character`,
+                   main.id AS LeaderboardID
+            FROM (
+              SELECT c.account_Id AS Account, SUM(lit.value) AS Score
+              FROM ace_shard.biota_properties_int lit
+              INNER JOIN ace_shard.character c ON c.id = lit.object_id AND c.is_Deleted = 0
+              WHERE lit.type = 9079
+              GROUP BY c.account_Id
+            ) src
+            INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN (
+              SELECT r.account_Id, r.name, r.id
+              FROM (
+                SELECT c.account_Id, c.name, c.id,
+                       ROW_NUMBER() OVER (PARTITION BY c.account_Id
+                                          ORDER BY (mule.value IS NOT NULL AND mule.value <> 0) ASC,
+                                                   COALESCE(ag.Augs, 0) DESC, c.total_Logins DESC, c.id DESC) AS rn
+                FROM ace_shard.character c
+                LEFT JOIN ace_shard.biota_properties_bool mule ON mule.object_id = c.id AND mule.type = 131
+                LEFT JOIN (
+                  SELECT object_id, SUM(value) AS Augs
+                  FROM ace_shard.biota_properties_int64
+                  WHERE type IN (9007, 9008, 9009, 9010, 9011, 9016, 9017, 9018, 9022, 9023, 9024, 9025, 9026)
+                  GROUP BY object_id
+                ) ag ON ag.object_id = c.id
+                WHERE c.is_Deleted = 0
+              ) r
+              WHERE r.rn = 1
+            ) main ON main.account_Id = src.Account
+            WHERE src.Score > 0
+              AND NOT EXISTS (
+                SELECT 1 FROM ace_shard.character cex
+                INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
+                WHERE cex.account_Id = src.Account AND cex.is_Deleted = 0
+              )
+          ) innerq
+        ) ranked
+        WHERE ranked.Account = {accountId}
+        ORDER BY ranked.Score DESC
+        LIMIT 1
+        """);
 }

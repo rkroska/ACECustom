@@ -815,6 +815,14 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         PetLastMutatedStat                      = 9078,
 
+        /// <summary>
+        /// On a PLAYER: how many committed breeds this character has taken part in, counted for both
+        /// owners at the moment the breed goes through (admin-forced breeds are not counted). It lives on
+        /// the character, so it survives the pets themselves being traded away or destroyed, and the
+        /// "Litters bred" leaderboard sums it across an account's characters (server/custom).
+        /// </summary>
+        PetLittersBred                          = 9079,
+
         // -- Weapon aug-scaling (T11 weapon relevance; server/custom) ----------------
         /// <summary>On a T11+ weapon: the quality percentile roll (0-1000). The server-wide
         /// weaponscaling_data config maps quality -> the k coefficient at swing time, so config

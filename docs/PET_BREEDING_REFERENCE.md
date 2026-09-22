@@ -242,6 +242,7 @@ the tailoring kit copies it (`Entity/PetTailoring.cs:245-274`).
 |---|---|---|
 | `OnlyCombatPetsCanDamage` | Bool 50057 | On a creature: only combat pets can damage it. Players, other monsters and damage over time from anyone else do nothing. On a generator: copied to everything it spawns, so nested generators pass it down. Enforced in `Creature.CanBeDamagedBy`, `Creature.TakeDamage` and `EnchantmentManager.ApplyDamageTick`. |
 | `SpawnColourMutationChance` | Float 9061 | On a generator: each creature it spawns has this chance (0.01 = 1%) of a random vivid mutation colour. Nested generators inherit it. Models drawn mostly with full-colour textures are skipped. A captured coloured spawn keeps its colour. `GeneratorProfile.ApplySpawnColour`. |
+| `PetLittersBred` | Int 9079 | On a **player**: committed breeds this character took part in, counted for both owners in `PetDevice_Breeding` (admin-forced breeds excluded). Feeds the "Litters bred" leaderboard. Lives on the character, so it survives the essences being traded or destroyed. |
 | `PetTranslucency` | Float 9062 | On a combat pet essence: the translucency its pet summons with, 0 (solid) to 0.5, stepped a tenth at a time by the Solidifying (78780262) and Fading (78780263) Tinctures. Replaces the summon template's value (Maiden and K'nath templates carry 0.5). Unset = the template's value. Shown on appraisal. `PetDevice` summon, `Player_Use` handler. |
 
 **How to test:** set one on a generator (`INSERT INTO weenie_properties_bool (object_Id, type, value) VALUES (<wcid>, 50057, 1);` or float 9061 at 1.0 for a sure hit), `@clearcache`, and let it respawn. Live, on one object: appraise it, then `@setproperty PropertyBool.OnlyCombatPetsCanDamage true`.
@@ -374,6 +375,22 @@ commands act on the last appraised essence, or on the summoned pet's device if n
 | `@pet-name <name>` | Rename request for staff approval. See section 7.1. |
 | `@pets` | The account's Pet Registry. |
 | `@petdesc` / `@pet-desc` | Dumps the look actually sent for **your own** summoned pet: model, palette base and template, every sub-palette, and which render path ran. Player-level since 2026-09-21 for troubleshooting with staff. |
+
+**Leaderboards** (`LeaderboardInlineSql.cs`, `/top <board>` and portal Leaderboards > Pets). Three
+breeding boards, all **per account**, cached like every other board:
+
+| Board | id | Score |
+|---|---|---|
+| Most mutated pet | `mutations` | MAX over the account's attuned essences of the five mutation counters (Int 9070-9074) |
+| Total pet mutations | `summutations` | SUM of the same counters across the account's essences |
+| Litters bred | `litters` | SUM of `PetLittersBred` (Int 9079) over the account's characters |
+
+- **Naming:** the account's highest-augmentation character (the one `/top augs` lists), mules last,
+  deleted characters never. Clicking the name opens that character in the portal.
+- **Exclusions:** staff and banned accounts (`accessLevel = 0`), and any account with a character
+  carrying `ExcludeFromLeaderboards` is left out entirely - the quest bonus board's rule.
+- **What counts:** an essence counts once it is attuned to a character (Int64 9052), so a bred baby
+  counts after its first summon. Only accounts with a score above zero appear.
 
 ### 5.2 Developer
 

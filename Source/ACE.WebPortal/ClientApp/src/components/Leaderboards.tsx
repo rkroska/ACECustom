@@ -51,7 +51,7 @@ const BOARD_GROUPS: BoardGroup[] = [
   { title: 'Progression', ids: ['level', 'enl', 'attr', 'augs', 'title', 'deaths'] },
   { title: 'Wealth', ids: ['bank', 'lum', 'enlcoins', 'wenlcoins', 'mkeys', 'lkeys'] },
   { title: 'Account', ids: ['qb'] },
-  { title: 'Pets', ids: ['pets', 'shinies', 'bond', 'sumbond', 'potency'] },
+  { title: 'Pets', ids: ['pets', 'shinies', 'bond', 'sumbond', 'potency', 'mutations', 'summutations', 'litters'] },
   { title: 'Discipline', ids: ['jails', 'notguilty'] },
 ]
 

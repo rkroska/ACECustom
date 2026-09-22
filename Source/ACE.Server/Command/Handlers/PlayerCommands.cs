@@ -1422,7 +1422,7 @@ namespace ACE.Server.Command.Handlers
 
         }
 
-        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "top qb|level|enl|title|augs|deaths|bank|lum|attr|bond(s)|sumbond(s)|enlcoins|wenlcoins|mkeys|lkeys|jails|notguilty|pets|shinies|potency")]
+        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "top qb|level|enl|title|augs|deaths|bank|lum|attr|bond(s)|sumbond(s)|enlcoins|wenlcoins|mkeys|lkeys|jails|notguilty|pets|shinies|potency|mutations|summutations|litters")]
         public static async void DisplayTop(Session session, params string[] parameters)
         {
             try
@@ -1546,6 +1546,27 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Highest Pet Potency Level:", ChatMessageType.Broadcast));
                         }
                     }
+                    else if (key == "mutations")
+                    {
+                        sqlLeaderboardRequested = true;
+                        list = await cache.GetTopBankedInt64Async(context, "mutations", LeaderboardInlineSql.TopPetMutations);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Most Mutated Pet:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "summutations")
+                    {
+                        sqlLeaderboardRequested = true;
+                        list = await cache.GetTopBankedInt64Async(context, "summutations", LeaderboardInlineSql.TopSumPetMutations);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Total Pet Mutations:", ChatMessageType.Broadcast));
+                    }
+                    else if (key == "litters")
+                    {
+                        sqlLeaderboardRequested = true;
+                        list = await cache.GetTopBankedInt64Async(context, "litters", LeaderboardInlineSql.TopLittersBred);
+                        if (list.Count > 0)
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Accounts by Litters Bred:", ChatMessageType.Broadcast));
+                    }
                     else if (key == "enlcoins")
                     {
                         list = await cache.GetTopBankedInt64Async(context, "enlcoins", LeaderboardInlineSql.TopBankedEnlightenedCoins);
@@ -1624,7 +1645,7 @@ namespace ACE.Server.Command.Handlers
                     }
                     else
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies, potency", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies, potency, mutations, summutations, litters", ChatMessageType.Broadcast));
                         return;
                     }
 
