@@ -375,8 +375,13 @@ namespace ACE.Server.WorldObjects
 
             var allowJump = MotionInterp.motion_allows_jump(minterp.InterpretedState.ForwardCommand) == WeenieError.None;
 
+            // The CAST matters: the network RawMotionState.ForwardCommand is a MotionCommand ENUM (the physics
+            // one beside it is a uint), and "X8" is a valid numeric format but NOT a valid enum format - enums
+            // take only G/g/X/x/F/f/D/d. Without it this line threw FormatException on EVERY standing long jump,
+            // the exception escaped through GameActionMoveToState.Handle, and apply_raw_movement below never ran -
+            // so the jump was silently dropped server-side. Seen on LIVE 2026-09-22.
             ApplyTeleportJumpGate(ref allowJump, "MoveToState",
-                $"StandingLongJump={moveToState.StandingLongJump} rawFwd=0x{moveToState.RawMotionState.ForwardCommand:X8} rawFlags={moveToState.RawMotionState.Flags} interpFwd=0x{minterp.InterpretedState.ForwardCommand:X8}",
+                $"StandingLongJump={moveToState.StandingLongJump} rawFwd=0x{(uint)moveToState.RawMotionState.ForwardCommand:X8} rawFlags={moveToState.RawMotionState.Flags} interpFwd=0x{minterp.InterpretedState.ForwardCommand:X8}",
                 throttleMotionLog: true);
 
             //PhysicsObj.cancel_moveto();
