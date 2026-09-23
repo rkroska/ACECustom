@@ -278,10 +278,9 @@ namespace ACE.Server.Managers.ZoneScaling
         // ZoneModifiers.LineChanceStat + ZoneLootMutator.TryExtraModifier. Weapons no longer roll
         // armor-style lines at all. Zones that authored the old keys keep dead store rows until
         // cleared with `/zonecontrol default <var> clearstat <key>`. ──
-        // Guaranteed core four anchors (SET totals at T25; per piece = anchor/18 x f(t)); see
-        // LootGenerationFactory.ApplyT11GearStats
-        public const string CoreAnchorDr = "core_anchor_dr";               // Damage Resist worn-set anchor (ladder 1250, authored on Default 11; ZoneFallback.AnchorDr 92 when off)
-        public const string CoreAnchorCdr = "core_anchor_cdr";             // CritDmgResist / CritResist / NetherResist worn-set anchor (ladder 750, authored on Default 11; ZoneFallback.AnchorCdr 73 when off)
+        // core_anchor_dr / core_anchor_cdr RETIRED 2026-09-14 with the core four (owner): the four resists
+        // are Always Rolled catalog lines 50-53 with their own band and modifier_chance_5x. Authored store
+        // rows are dead - clear with `/zonecontrol default <var> clearstat core_anchor_dr` (and _cdr).
         // Slot specials: ONE roll per KILL (retail-rare model), 1-in-odds; boss/leader divide the odds
         public const string SpecialOdds = "special_odds";                  // denominator (default 750000). Per rank via the Ranks rows (2026-09-02, owner D4: absolute per rank - special_boss_mult / special_leader_mult divisors RETIRED)
         // Special behaviour knobs (read by the combat side)
@@ -508,7 +507,6 @@ namespace ACE.Server.Managers.ZoneScaling
             // ([[ZC]] sync, [[ZCD]] Default reply) emits "<name>=<defined>,<value>" pairs, so the plugin
             // matches by NAME - adding, reordering or REMOVING an entry mid-list is safe. (The genuinely
             // positional lists are the bare comma payloads combatdefs= / diagdefs= in ZoneControlCommands.)
-            CoreAnchorDr, CoreAnchorCdr,
             SpecialOdds,
             BattleMendThreshold, BattleMendCooldown, PctHpCooldown, CheatDeathCooldown, CheatDeathImmunity,
             LifeOnHitCap, LifeOnHitCooldown,
@@ -557,6 +555,10 @@ namespace ACE.Server.Managers.ZoneScaling
             "modifier_chance_47", "modifier_chance_47_t25",   // Max Health Pct
             "modifier_chance_48", "modifier_chance_48_t25",   // Life on Hit
             "modifier_chance_49", "modifier_chance_49_t25",   // Reinforced
+            "modifier_chance_50", "modifier_chance_50_t25",   // Damage Resist (Always Rolled)
+            "modifier_chance_51", "modifier_chance_51_t25",   // Crit Damage Resist (Always Rolled)
+            "modifier_chance_52", "modifier_chance_52_t25",   // Crit Resist (Always Rolled)
+            "modifier_chance_53", "modifier_chance_53_t25",   // Nether Resist (Always Rolled)
             // Modifier caps (2026-08-30) - APPEND-ONLY, name-matched wire as above. Anchored pair;
             // unset = uncapped. (Not weapon_*_chance shaped, so BuildWeaponCardChances skips them.)
             WeaponModifierCap, "weapon_modifier_cap_t25",

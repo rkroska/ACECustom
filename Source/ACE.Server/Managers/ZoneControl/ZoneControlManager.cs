@@ -1108,7 +1108,7 @@ namespace ACE.Server.Managers.ZoneControl
         //
         // 🔴 SCOPE, corrected after review - do NOT read this as "the whole fallback set is gone".
         // With the toggle OFF, ZoneStatResolver STILL applies the rest of ZoneFallback to ZC-stamped
-        // ITEMS: Band (:257), AnchorDr / AnchorCdr 92/73 (:413) and ArmorLevel 732 (:456, :469). That
+        // ITEMS: Band (which also covers the Always Rolled resists) and ArmorLevel 732 (:456, :469). That
         // is item re-pricing, which is the fallback's actual job and is deliberately untouched here.
         // Only the CAP half went inert. The two are easy to conflate and an earlier version of this
         // comment did exactly that.

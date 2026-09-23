@@ -1109,7 +1109,7 @@ namespace ACE.Server.WorldObjects
                 // (1 in special_odds; IsZcBoss divides by special_boss_mult, IsZcLeader by
                 // special_leader_mult). On a hit pick one launch special at random and stamp the
                 // dropped piece of its slot (spawn one if the set has none). That piece becomes a
-                // PERFECT piece: core four + every line at band MAX (forceMax below). The flag is a
+                // PERFECT piece: every line it rolls at band MAX (forceMax below). The flag is a
                 // LOCAL, never a prop - a 50200+ marker would be summed into the worn cache.
                 WorldObject specialPiece = null;
                 ACE.Server.Managers.ZoneControl.ZoneModifiers.Def specialDef = null;
@@ -1195,7 +1195,7 @@ namespace ACE.Server.WorldObjects
                     // stamps layer ON TOP of it rather than being clobbered.
                     var isSpecial = specialPiece != null && ReferenceEquals(wo, specialPiece);
                     if (effectiveTreasure.Tier >= LootGenerationFactory.ZoneLootSetMinTier)
-                        LootGenerationFactory.ApplyT11GearStats(wo, effectiveTreasure.Tier, forceMax: isSpecial, p: zoneLoot);
+                        LootGenerationFactory.ApplyT11GearStats(wo, effectiveTreasure.Tier, p: zoneLoot);
 
                     // Zone Control loot: post-roll per-item mutations (weapon stats, AL, workmanship, coins,
                     // value, and the low-chance special-property rolls)

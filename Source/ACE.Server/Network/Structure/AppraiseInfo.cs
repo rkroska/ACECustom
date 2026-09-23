@@ -948,7 +948,7 @@ namespace ACE.Server.Network.Structure
         /// </summary>
         private void SubstituteZoneResolvedInts(WorldObject wo, ZoneStatResolver.Resolved r)
         {
-            // Core four -> Ratings (resolved). A Gear* prop that a CANTRIP LINE produced is REMOVED from the
+            // Resolved Gear* -> Ratings. A Gear* prop that a CANTRIP LINE produced is REMOVED from the
             // Ratings copy instead (owner 2026-08-23: it showed twice - once in the client's Ratings, once
             // under Cantrips). Display only: the prop stays on the item, combat and character totals read it
             // as before. Gated on the record, so pre-T11 gear never enters this path.
@@ -975,8 +975,8 @@ namespace ACE.Server.Network.Structure
         private const string ReinforcedLineName = "Reinforced";
 
         /// <param name="resolved">Live Stat Resolution record (null = legacy piece / weapon): when present
-        /// the bullets come from the record (record order, specials and Armor Level included, the core
-        /// four excluded - they are ratings, not cantrip lines) plus any baked Reinforced text line
+        /// the bullets come from the record (record order, specials, Armor Level and the Always Rolled
+        /// resists included - owner 2026-09-14) plus any baked Reinforced text line
         /// (earned + frozen, never in the record). The baked "Zone Cantrip:" text is stripped either way.</param>
         private void PromoteZoneModifierLines(ZoneStatResolver.Resolved resolved = null, WorldObject wo = null, Player examiner = null)
         {
@@ -1008,11 +1008,7 @@ namespace ACE.Server.Network.Structure
             if (resolved != null)
             {
                 foreach (var line in resolved.Lines)
-                {
-                    if (ZoneStatResolver.IsCoreKey(line.Record.Key))
-                        continue;
                     cantrips.Add("- " + line.Text);
-                }
                 cantrips.AddRange(reinforced);
             }
 

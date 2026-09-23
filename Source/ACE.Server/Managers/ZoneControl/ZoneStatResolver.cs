@@ -15,11 +15,11 @@ namespace ACE.Server.Managers.ZoneControl
     /// a GRADE per Zone Control line (0-1000 = where in the band it rolled) plus the loot tier; the numbers
     /// retail code reads (Gear* ratings, Armor Level, the 502xx cantrip props) are a CACHE resolved from the
     /// grades against the LIVE ladder. Weapon scaling already works this way (quality 0-1000); this is the
-    /// same model for armor / jewelry lines, the core four, Armor Level and the slot specials.
+    /// same model for armor / jewelry lines, Armor Level and the slot specials.
     ///
-    /// Record format, PropertyString.ZcModifiers: "28:490;19:1000;c1:900;c2:850;c3:900;c4:880;25:500;41:650"
+    /// Record format, PropertyString.ZcModifiers: "28:490;19:1000;50:900;51:850;52:900;53:880;25:500;41:650"
     ///   - positive key  = ZoneModifiers catalog key (lines AND specials), value = grade 0-1000
-    ///   - c1..c4        = the core four (DamageResist / CritDamageResist / CritResist / NetherResist)
+    ///   - c1..c4        = LEGACY: the retired core four, read as the Always Rolled keys 50-53 (never written)
     ///   - -11..-30      = the reserved WEAPON block (2026-08-25): the six continuous weapon cards,
     ///                     which are PropertyFloats and resolve through ZoneModifiers.WeaponBand rather
     ///                     than the armour catalog. See the block comment at WeaponBiteKey.
@@ -37,31 +37,13 @@ namespace ACE.Server.Managers.ZoneControl
     {
         public const int GradeMax = 1000;
 
-        /// <summary>Core-four pseudo keys inside the record (negative so they never collide with catalog keys).</summary>
-        public const int CoreDamageResist = -1;
-        public const int CoreCritDamageResist = -2;
-        public const int CoreCritResist = -3;
-        public const int CoreNetherResist = -4;
-
-        public static readonly int[] CoreKeys = { CoreDamageResist, CoreCritDamageResist, CoreCritResist, CoreNetherResist };
-
-        public static PropertyInt CoreProp(int coreKey) => coreKey switch
-        {
-            CoreDamageResist => PropertyInt.GearDamageResist,
-            CoreCritDamageResist => PropertyInt.GearCritDamageResist,
-            CoreCritResist => PropertyInt.GearCritResist,
-            _ => PropertyInt.GearNetherResist,
-        };
-
-        public static string CoreName(int coreKey) => coreKey switch
-        {
-            CoreDamageResist => "Damage Resist",
-            CoreCritDamageResist => "Crit Damage Resist",
-            CoreCritResist => "Crit Resist",
-            _ => "Nether Resist",
-        };
-
-        public static bool IsCoreKey(int key) => key <= CoreDamageResist && key >= CoreNetherResist;
+        /// <summary>
+        /// Records written before 2026-09-14 carry the retired core four as c1..c4. <see cref="Read"/> maps
+        /// them onto the Always Rolled catalog lines that replaced them - c1 Damage Resist = 50, c2 Crit
+        /// Damage Resist = 51, c3 Crit Resist = 52, c4 Nether Resist = 53 - so an existing piece keeps its
+        /// grades and resolves against the new bands on its next equip / login.
+        /// </summary>
+        private const int LegacyCoreKeyBase = 49;
 
         // ── weapon-special pseudo keys (2026-08-25, weapon/armour parity) ────────
         //
@@ -74,7 +56,7 @@ namespace ACE.Server.Managers.ZoneControl
         // Cantrips tab, and into the [[ZC]] wire - for six values that never travel the wire at all.
         // That crossing is the thing this design deliberately avoided when the WeaponBand table was
         // added (see the long comment above ZoneModifiers.WeaponBand). So: a reserved key block that
-        // lives ONLY in the item's own ZcModifiers record, exactly the way the core four do.
+        // lives ONLY in the item's own ZcModifiers record, exactly the way the armour lines do.
         //
         // WHY NEGATIVE. The record's key token is parsed by Read(): 'cN' is a core key, anything else
         // goes through int.TryParse with NumberStyles.Integer, which accepts a leading '-'. So "-16:640"
@@ -252,7 +234,7 @@ namespace ACE.Server.Managers.ZoneControl
             if (!ZoneModifiers.TryGet(key, out var def))
                 return (0, 0);
             // Zone Control off: the shrunk fallback band, and nothing authored is consulted (same rule
-            // as CoreWindow). owner 2026-08-23.
+            // as BaseArmorLevel). owner 2026-08-23.
             if (!ServerConfig.zonecontrol_enabled.Value)
                 return ZoneFallback.Band(def);
             var anchored = ZoneControlManager.GetAnchoredDefaultProfile(tier);
@@ -268,7 +250,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// and it must be read the same way:
         ///
         ///   1. Zone Control OFF -> the card's own T11 rung, TIER-BLIND, and nothing authored is consulted.
-        ///      Same rule as EffectiveBand / CoreWindow / BaseArmorLevel: off the switch nothing climbs
+        ///      Same rule as EffectiveBand / BaseArmorLevel: off the switch nothing climbs
         ///      with tier and no authored layer is read (owner 2026-08-23).
         ///      🔴 NOTE this is deliberately NOT the armour SLOT-SPECIAL treatment (Compute zeroes those
         ///      when the switch is off). Zeroing works for a slot special because its props are additive
@@ -393,41 +375,6 @@ namespace ACE.Server.Managers.ZoneControl
             return null;
         }
 
-        /// <summary>A core_anchor_* knob from the tier's Default layer, else the C# default.</summary>
-        private static double DefaultLayerStat(int tier, string stat, double fallback)
-            => DefaultLayerValue(tier, stat) ?? fallback;
-
-        /// <summary>
-        /// The core-four window at a tier - THE SAME formula as LootGenerationFactory.ApplyT11GearStats.RollCore
-        /// (cap = anchor/18 x (1+(t-11)/14), fixed T11 step = anchor/18/14, floor = cap - 1.5 step, T11 - 0.5 step,
-        /// rounded at the end). Anchors: the tier's Default-layer core_anchor_dr / core_anchor_cdr, else the LADDER
-        /// constants 1250 / 750. anchorOverride lets a drop-time caller pass the ZONE's evaluated anchors instead.
-        /// With zonecontrol_enabled OFF nothing authored is consulted at all - the T10 FALLBACK anchors win
-        /// outright, including over anchorOverride (owner 2026-08-23).
-        /// </summary>
-        public static (int Min, int Max) CoreWindow(int coreKey, int tier, double? anchorOverride = null)
-        {
-            var isDr = coreKey == CoreDamageResist;
-            var zcOn = ServerConfig.zonecontrol_enabled.Value;
-            var anchor = !zcOn
-                ? (isDr ? ZoneFallback.AnchorDr : ZoneFallback.AnchorCdr)
-                : anchorOverride ?? DefaultLayerStat(tier, isDr ? ZoneStat.CoreAnchorDr : ZoneStat.CoreAnchorCdr,
-                                                    isDr ? LadderAnchorDr : LadderAnchorCdr);
-            // The fallback is FLAT - nothing climbs with tier off the switch, matching the flat armour base
-            // and the tier-blind fallback line bands (owner 2026-08-23). Only the ladder scales.
-            var scale = zcOn ? 1.0 + (tier - 11) / 14.0 : 1.0;
-            var cap = anchor / 18.0 * scale;
-            var step = anchor / 18.0 / 14.0;
-            var lo = cap - (tier == 11 ? 0.5 : 1.5) * step;
-            var min = (int)Math.Round(lo);
-            var max = (int)Math.Round(cap);
-            if (min > max) min = max;
-            return (min, max);
-        }
-
-        /// <summary>The LADDER core anchors - the worn-set totals a maxed T25 suit lands on (18 pieces).</summary>
-        public const double LadderAnchorDr = 1250.0, LadderAnchorCdr = 750.0;
-
         /// <summary>The per-tier armor base when nothing is authored: 1100 + 100/tier above 11 on the ladder.</summary>
         public static int LadderArmorLevel(int tier) => 1100 + 100 * (tier - 11);
 
@@ -435,7 +382,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// The per-tier armor base (ApplyT11GearStats + Compute). Three-step chain, owner 2026-08-24
         /// (Armor_Base_Values_Plan_2026-08-24.md section 2.1):
         ///   zonecontrol_enabled OFF          -> the flat T10 fallback, and NOTHING authored is consulted
-        ///                                       (same rule as EffectiveBand / CoreWindow, owner 2026-08-23)
+        ///                                       (same rule as EffectiveBand, owner 2026-08-23)
         ///   Default[tier] armor_base_level   -> that value
         ///   otherwise                        -> 1100 + 100 x (tier - 11), the historical formula
         /// Unset therefore reproduces the pre-2026-08-24 numbers EXACTLY - nothing moves until authored.
@@ -548,8 +495,8 @@ namespace ACE.Server.Managers.ZoneControl
         /// deliberately a raw character scan, because it sits on the ApplyIfStale early-out - the
         /// no-op path every login takes for every worn piece.
         ///
-        /// It is exact, not a heuristic: Format writes core keys as 'cN', catalog keys as positive
-        /// integers and grades as 0..1000, so the ONLY '-' a well-formed record can contain is the
+        /// It is exact, not a heuristic: Format writes catalog keys as positive integers and grades
+        /// as 0..1000 (a legacy 'cN' key carries no sign either), so the ONLY '-' a well-formed record can contain is the
         /// sign of a weapon key. Keep that true if you ever extend the format.
         /// </summary>
         public static bool HasWeaponKey(WorldObject wo)
@@ -574,7 +521,7 @@ namespace ACE.Server.Managers.ZoneControl
                     continue;
                 int key;
                 if (keyTok.Length == 2 && (keyTok[0] == 'c' || keyTok[0] == 'C') && keyTok[1] >= '1' && keyTok[1] <= '4')
-                    key = -(keyTok[1] - '0');
+                    key = LegacyCoreKeyBase + (keyTok[1] - '0');   // retired core four -> Always Rolled 50-53
                 else if (!int.TryParse(keyTok, NumberStyles.Integer, CultureInfo.InvariantCulture, out key))
                     continue;
                 list.Add(new LineRecord { Key = key, Grade = Math.Clamp(grade, 0, GradeMax) });
@@ -588,8 +535,7 @@ namespace ACE.Server.Managers.ZoneControl
             foreach (var l in lines)
             {
                 if (sb.Length > 0) sb.Append(';');
-                if (IsCoreKey(l.Key)) sb.Append('c').Append(-l.Key);
-                else sb.Append(l.Key.ToString(CultureInfo.InvariantCulture));
+                sb.Append(l.Key.ToString(CultureInfo.InvariantCulture));
                 sb.Append(':').Append(Math.Clamp(l.Grade, 0, GradeMax).ToString(CultureInfo.InvariantCulture));
             }
             return sb.ToString();
@@ -626,8 +572,8 @@ namespace ACE.Server.Managers.ZoneControl
         /// As above, plus the WEAPON PIN FINGERPRINT when <paramref name="withWeaponPins"/> is set.
         ///
         /// WHY THIS EXISTS (2026-08-25). `ladder apply` is the only thing that bumps
-        /// ZoneControlManager.GetLadderVersion, and the only Default-layer edits wired to auto-apply are
-        /// core_anchor_dr / core_anchor_cdr and the cantrip band editor (ZoneControlCommands
+        /// ZoneControlManager.GetLadderVersion, and the only Default-layer edit wired to auto-apply is
+        /// the cantrip band editor (ZoneControlCommands
         /// .AutoApplyForDefault). Authoring or clearing a weapon_&lt;card&gt;_min/max on a tier Default
         /// changes what <see cref="WeaponResolveBand"/> returns, so without something in the identity
         /// moving, every weapon already in the world would keep its old number FOREVER and the edit
@@ -726,9 +672,9 @@ namespace ACE.Server.Managers.ZoneControl
         public class ResolvedLine
         {
             public LineRecord Record;
-            public ZoneModifiers.Def Def;     // null for a core key
+            public ZoneModifiers.Def Def;
             public int Min, Max, Value;
-            public string Name => Def?.Name ?? CoreName(Record.Key);
+            public string Name => Def?.Name ?? $"Modifier {Record.Key}";
             /// <summary>The appraisal text for this line, in the stamp format ("Damage Rating +41 [14-69]").</summary>
             public string Text
             {
@@ -763,7 +709,7 @@ namespace ACE.Server.Managers.ZoneControl
 
         /// <summary>
         /// PURE: grades -> resolved values against the live ladder. Never touches the item. Returns null when
-        /// the piece carries no record. Core keys resolve through <see cref="CoreWindow"/>; catalog keys
+        /// the piece carries no record. Catalog keys resolve
         /// through <see cref="EffectiveBand"/>; key 25 adds to the tier's base AL; every Ints prop of a def
         /// gets the value (All Attributes = six props, same number); Reinforced is skipped (frozen).
         /// </summary>
@@ -808,14 +754,6 @@ namespace ACE.Server.Managers.ZoneControl
                     // and weapon cards have never had appraisal lines - adding them here would silently
                     // change the examine panel of every Zone Control weapon on the shard, which is a
                     // GUI change and needs its own plan + go. Floats alone is the mechanical parity.
-                    continue;
-                }
-                if (IsCoreKey(rec.Key))
-                {
-                    var (cmin, cmax) = CoreWindow(rec.Key, tier);
-                    var cval = ValueFor(cmin, cmax, rec.Grade);
-                    r.Lines.Add(new ResolvedLine { Record = rec, Def = null, Min = cmin, Max = cmax, Value = cval });
-                    r.Ints[CoreProp(rec.Key)] = cval;
                     continue;
                 }
                 if (!ZoneModifiers.TryGet(rec.Key, out var def) || def.SetsProtection)
