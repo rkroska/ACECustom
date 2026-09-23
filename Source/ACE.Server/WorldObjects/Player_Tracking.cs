@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
 using ACE.Entity;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
@@ -367,16 +368,55 @@ namespace ACE.Server.WorldObjects
                 Ethereal = false;
                 NoDraw = false;
                 ReportCollisions = true;
+                Translucency = null;
                 EnqueueBroadcastPhysicsState();
             });
 
             actionChain.EnqueueChain();
         }
 
+        /// <summary>
+        /// The self-only half of the Ghost cloak (owner 2026-09-22). Everyone else has already been sent a
+        /// DeleteObject, so nothing here can reach them: it only changes what YOUR client draws. Call it after
+        /// CloakStatus changes, including when stepping between On and Ghost while already cloaked.
+        /// </summary>
+        public void ApplyCloakSelfView()
+        {
+            Translucency = CloakStatus == CloakStatus.Ghost ? (float?)0.5f : null;
+
+            // *** DO NOT SEND GameMessageUpdateObject TO THE PLAYER ABOUT THEMSELF. *** Tried 2026-09-22 to push
+            // translucency (which really does live in the physics description, WorldObject_Networking.cs:295/
+            // 368/372, and really is not carried by a property update). It BROKE THE CHARACTER: UpdateObject
+            // serializes the PUBLIC object description, and the client keeps its own player state from the
+            // PRIVATE one (GameEventPlayerDescription, sent at login). Handing it a public description for its
+            // own guid overwrote that cache - health, stamina and mana all read 0, so the client's own movement
+            // gate refused to let the player run - and the description's position snapped them in place. The
+            // server never wrote a vital; a relog resynced it. Whatever pushes the opacity, it is not this.
+            //
+            // So for now the self-view only corrects the physics state: the ghost draws, at full opacity.
+            if (PhysicsObj != null)
+            {
+                var ps = PhysicsObj.State;
+                if (CloakStatus == CloakStatus.Ghost)
+                {
+                    ps &= ~PhysicsState.Cloaked;
+                    ps &= ~PhysicsState.NoDraw;
+                }
+                Session.Network.EnqueueSend(new GameMessageSetState(this, ps));
+            }
+        }
+
         public void HandleCloak()
         {
-            if (CloakStatus == CloakStatus.On)
+            // Ghost is physically the same cloak as On - ethereal, no collisions, deleted from everyone else's
+            // client - so stepping between them only has to redo the self-side view. Guarded on the PHYSICS flag,
+            // not on CloakStatus: the caller sets the status BEFORE calling this, so that the chain below and
+            // EnqueueBroadcastPhysicsState both see the state being moved into.
+            if (Cloaked ?? false)
+            {
+                ApplyCloakSelfView();
                 return;
+            }
 
             var actionChain = new ActionChain();
 
@@ -401,6 +441,10 @@ namespace ACE.Server.WorldObjects
             actionChain.AddAction(this, ActionType.PlayerTracking_CloakStep4, () =>
             {
                 EnqueueBroadcast(false, new GameMessageCreateObject(this, true, true));
+
+                // Last, after the chain's own steps have all been sent: whatever they told your client, this is
+                // what you should actually be drawing.
+                ApplyCloakSelfView();
             });
 
             actionChain.EnqueueChain();

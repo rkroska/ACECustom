@@ -1,4 +1,4 @@
-using ACE.Common;
+﻿using ACE.Common;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -11,7 +11,7 @@ namespace ACE.Server.WorldObjects
     {
         public override string Name
         {
-            get => IsPlussed && CloakStatus < CloakStatus.Player ? "+" + base.Name : base.Name;
+            get => IsPlussed && !CloakIsDisguise ? "+" + base.Name : base.Name;
 
             set => base.Name = value.TrimStart('+');
         }
