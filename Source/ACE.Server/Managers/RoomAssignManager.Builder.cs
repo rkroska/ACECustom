@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -43,9 +43,218 @@ namespace ACE.Server.Managers
         }
 
 
+        // ---------------------------------------------------------------------------------------------------------
+        // Which dungeon (owner 2026-09-21): the tab has a Dungeon dropdown, so a builder can be pointed at a dungeon the
+        // admin is NOT standing in. The pick is per character, in memory, gone on a restart or with "select here".
+        // ---------------------------------------------------------------------------------------------------------
+
+        public const string BuilderListTag = "[[ZCDGL]]";
+        public const string BuilderDoorsTag = "[[ZCDGD]]";
+
+        /// <summary>The owner's custom item range (7777xxxxx) - where every barrier weenie lives.</summary>
+        private const uint BuilderCustomLow = 777700000;
+        private const uint BuilderCustomHigh = 777799999;
+
         /// <summary>
-        /// The dungeon a builder command is about: the one the player stands in a room of, else the room source placed in the
-        /// player's variation and landblock (a portal before a plate), else any placed source.
+        /// Every door this shard can put in a doorway: the Door weenies in the owner's custom range, by name, so the
+        /// tab can offer a choice instead of always taking the dungeon's most-placed one (owner 2026-09-22).
+        /// Discovered, not hardcoded - a barrier added to the DB later shows up with no code change.
+        ///   [[ZCDGD]]i=3|n=12|wcid=777704004|name=Legion Door|auto=1
+        /// auto=1 marks the one the Door pin would pick by itself in the dungeon being worked on.
+        /// </summary>
+        public static List<string> BuilderDoorList(Player player)
+        {
+            var lines = new List<string>();
+
+            List<uint> wcids;
+            using (var context = new WorldDbContext())
+                wcids = context.Weenie
+                    .Where(w => w.Type == (int)WeenieType.Door && w.ClassId >= BuilderCustomLow && w.ClassId <= BuilderCustomHigh)
+                    .Select(w => w.ClassId)
+                    .ToList();
+
+            uint auto = 0;
+            if (BuilderResolve(player, out _, out var rooms, out var variation, out _) && rooms.Count > 0)
+                auto = BuilderMostPlaced(rooms[0].LandingCell >> 16, variation, w => w.WeenieType == WeenieType.Door);
+            if (auto == 0)
+                auto = BuilderDefaultWallWcid;
+
+            var found = wcids.OrderBy(w => w).Select(w => new { Wcid = w, Weenie = DatabaseManager.World.GetCachedWeenie(w) })
+                             .Where(x => x.Weenie != null).ToList();
+
+            for (var i = 0; i < found.Count; i++)
+            {
+                // The wire is pipe-and-equals delimited, so a name carrying either would split the line.
+                var name = (ACE.Entity.Models.WeenieExtensions.GetName(found[i].Weenie) ?? ("Door " + found[i].Wcid))
+                           .Replace('|', ' ').Replace('=', ' ');
+                lines.Add($"{BuilderDoorsTag}i={i}|n={found.Count}|wcid={found[i].Wcid}|name={name}|auto={(found[i].Wcid == auto ? 1 : 0)}");
+            }
+
+            if (lines.Count == 0)
+                lines.Add($"No door weenie found in {BuilderCustomLow}-{BuilderCustomHigh}. The Door pin will use {BuilderDefaultWallWcid}.");
+
+            return lines;
+        }
+
+        /// <summary>Character guid -> the dungeon picked in the tab's dropdown. Behind its own lock.</summary>
+        private static readonly Dictionary<uint, (uint Wcid, int? Variation)> _builderSelected = new Dictionary<uint, (uint, int?)>();
+
+        /// <summary>Every room dungeon the server knows: a source with a parsed room list, in a variation it is placed in.</summary>
+        private static List<(uint Wcid, int? Variation)> BuilderKnownDungeons()
+        {
+            var seen = new List<(uint Wcid, int? Variation)>();
+            lock (_lock)
+                foreach (var key in _sourceSeen)
+                {
+                    var bar = key.IndexOf('|');
+                    var text = key.Substring(bar + 1);
+                    seen.Add((uint.Parse(key.Substring(0, bar), CultureInfo.InvariantCulture),
+                        text.Length == 0 ? (int?)null : int.Parse(text, CultureInfo.InvariantCulture)));
+                }
+
+            return seen.Where(s => (GetRooms(s.Wcid)?.Count ?? 0) > 0).OrderBy(s => s.Variation ?? 0).ThenBy(s => s.Wcid).ToList();
+        }
+
+        private static bool BuilderHasPick(Player player)
+        {
+            if (player == null) return false;
+            lock (_builderSelected) return _builderSelected.ContainsKey(player.Guid.Full);
+        }
+
+        /// <summary>True when the player stands in this dungeon: its landblock, its variation.</summary>
+        private static bool BuilderStandsIn(Player player, List<Room> rooms, int? variation)
+        {
+            var location = player?.Location;
+            return location != null && rooms != null && rooms.Count > 0
+                && location.Cell >> 16 == rooms[0].LandingCell >> 16
+                && VariationManager.NormalizeBase(location.Variation) == VariationManager.NormalizeBase(variation);
+        }
+
+        /// <summary>Added to lines, and false, when a command that acts WHERE THE ADMIN STANDS is used from outside the dungeon.</summary>
+        private static bool BuilderMustStandIn(Player player, List<Room> rooms, int? variation, List<string> lines)
+        {
+            if (BuilderStandsIn(player, rooms, variation))
+                return true;
+
+            lines.Add($"You are not standing in that dungeon (0x{rooms[0].LandingCell >> 16:X4} v:{variation ?? 0}). This command acts where you stand - go there first, or use a map pin. Nothing changed.");
+            return false;
+        }
+
+        /// <summary>
+        /// One [[ZCDGL]] line per known dungeon, for the tab's dropdown:
+        ///   [[ZCDGL]]i=0|n=3|src=777704023|v=3|kind=Portal|name=The Tyrant's Quarry|lb=01F7|rooms=29
+        /// i = 0 starts a new list on the plugin side. n = 0 (one line) when there are none.
+        /// </summary>
+        public static List<string> BuilderList()
+        {
+            var known = BuilderKnownDungeons();
+            if (known.Count == 0)
+                return new List<string> { $"{BuilderListTag}i=0|n=0" };
+
+            var lines = new List<string>();
+            for (var i = 0; i < known.Count; i++)
+            {
+                string name = null;
+                DatabaseManager.World.GetCachedWeenie(known[i].Wcid)?.PropertiesString?.TryGetValue(PropertyString.Name, out name);
+                var rooms = GetRooms(known[i].Wcid);
+
+                lines.Add($"{BuilderListTag}i={i}|n={known.Count}|src={known[i].Wcid}|v={known[i].Variation ?? 0}|kind={BuilderWeenieType(known[i].Wcid)}"
+                    + $"|name={BuilderWireName(name)}|lb={rooms[0].LandingCell >> 16:X4}|rooms={rooms.Count}");
+            }
+            return lines;
+        }
+
+        /// <summary>"here" = back to the dungeon the admin stands in; else a source wcid and its variation.</summary>
+        public static List<string> BuilderSelect(Player player, string wcidText, string variationText)
+        {
+            var lines = new List<string>();
+            if (player == null)
+                return lines;
+
+            if (wcidText == null || wcidText.Equals("here", StringComparison.OrdinalIgnoreCase))
+            {
+                lock (_builderSelected)
+                    _builderSelected.Remove(player.Guid.Full);
+                lines.Add("Dungeon tools follow the dungeon you stand in.");
+                return lines;
+            }
+
+            if (!uint.TryParse(wcidText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var wcid)
+                || !int.TryParse(variationText ?? "", NumberStyles.Integer, CultureInfo.InvariantCulture, out var variation))
+            {
+                lines.Add("/zonecontrol dungeon select here | <source wcid> <variation>   (see /zonecontrol dungeon list)");
+                return lines;
+            }
+
+            var pick = BuilderKnownDungeons().FirstOrDefault(d => d.Wcid == wcid && (d.Variation ?? 0) == variation);
+            if (pick.Wcid == 0)
+            {
+                lines.Add($"No room dungeon {wcid} is known in v:{variation}. See /zonecontrol dungeon list.");
+                return lines;
+            }
+
+            lock (_builderSelected)
+                _builderSelected[player.Guid.Full] = pick;
+
+            string name = null;
+            DatabaseManager.World.GetCachedWeenie(wcid)?.PropertiesString?.TryGetValue(PropertyString.Name, out name);
+            lines.Add($"Dungeon tools now work on {name ?? wcid.ToString(CultureInfo.InvariantCulture)} ({wcid}, v:{variation}), wherever you stand. Commands that act where you stand still need you inside it.");
+            return lines;
+        }
+
+        /// <summary>
+        /// Teleports the admin to the dungeon's ENTRANCE: where the source weenie is placed in the world - or, for a plate
+        /// that a portal points at, that portal - a few steps in front of it so the arrival does not set it off.
+        /// </summary>
+        public static List<string> BuilderEntrance(Player player)
+        {
+            var lines = new List<string>();
+
+            if (!BuilderResolve(player, out var sourceWcid, out _, out _, out var error))
+            {
+                lines.Add(error);
+                return lines;
+            }
+
+            List<LandblockInstance> placed;
+            using (var context = new WorldDbContext())
+            {
+                var pointing = context.WeeniePropertiesDID
+                    .Where(d => d.Type == (ushort)PropertyDataId.RoomAssignPlate && d.Value == sourceWcid)
+                    .Select(d => d.ObjectId).ToList();
+
+                placed = context.LandblockInstance
+                    .Where(i => i.WeenieClassId == sourceWcid || pointing.Contains(i.WeenieClassId)).ToList();
+            }
+
+            // A portal before a plate: the portal is what a player walks into.
+            var entrance = placed
+                .OrderBy(i => BuilderWeenieType(i.WeenieClassId) == WeenieType.Portal ? 0 : 1)
+                .ThenBy(i => i.Guid)
+                .FirstOrDefault();
+
+            if (entrance == null)
+            {
+                lines.Add($"Source {sourceWcid} is not placed anywhere in the world database - it has no entrance to go to.");
+                return lines;
+            }
+
+            // 3 units along the way the entrance faces, so the admin lands in front of it rather than inside it.
+            BuilderDirection(entrance.AnglesW, entrance.AnglesZ, out var dx, out var dy);
+            var at = new ACE.Entity.Position(entrance.ObjCellId, entrance.OriginX + dx * 3f, entrance.OriginY + dy * 3f, entrance.OriginZ + 0.05f,
+                entrance.AnglesX, entrance.AnglesY, entrance.AnglesZ, entrance.AnglesW, false, entrance.VariationId);
+
+            WorldManager.ThreadSafeTeleport(player, at);
+
+            lines.Add($"Entrance of {sourceWcid}: 0x{entrance.Guid:X8} at 0x{entrance.ObjCellId:X8} v:{entrance.VariationId ?? 0}"
+                + (placed.Count > 1 ? $" (the first of {placed.Count} placements)." : "."));
+            return lines;
+        }
+
+        /// <summary>
+        /// The dungeon a builder command is about: the one picked in the tab's dropdown (BuilderSelect), else the one the
+        /// player stands in a room of, else the room source placed in the player's variation and landblock (a portal before
+        /// a plate), else any placed source.
         /// </summary>
         private static bool BuilderResolve(Player player, out uint sourceWcid, out List<Room> rooms, out int? variation, out string error)
         {
@@ -57,22 +266,24 @@ namespace ACE.Server.Managers
             var location = player?.Location;
             var found = location != null ? FindRoomAt(location.Cell, location.Variation) : null;
 
-            if (found != null)
+            (uint Wcid, int? Variation) picked = default;
+            if (player != null)
+                lock (_builderSelected)
+                    _builderSelected.TryGetValue(player.Guid.Full, out picked);
+
+            if (picked.Wcid != 0)
+            {
+                sourceWcid = picked.Wcid;
+                variation = picked.Variation;
+            }
+            else if (found != null)
             {
                 sourceWcid = found.SourceWcid;
                 variation = location.Variation;
             }
             else
             {
-                var seen = new List<(uint Wcid, int? Variation)>();
-                lock (_lock)
-                    foreach (var key in _sourceSeen)
-                    {
-                        var bar = key.IndexOf('|');
-                        var text = key.Substring(bar + 1);
-                        seen.Add((uint.Parse(key.Substring(0, bar), CultureInfo.InvariantCulture),
-                            text.Length == 0 ? (int?)null : int.Parse(text, CultureInfo.InvariantCulture)));
-                    }
+                var seen = BuilderKnownDungeons();
 
                 if (seen.Count == 0)
                 {
@@ -106,6 +317,70 @@ namespace ACE.Server.Managers
             return true;
         }
 
+        /// <summary>
+        /// Nudge (owner 2026-09-21): a placed wall or generator moved by a small step along an axis, or turned, after a
+        /// pin put it in place. dx/dy in game units (north = +y), turn in degrees (clockwise seen from above). The move is
+        /// refused when the spot would leave every indoor cell of the dungeon - a wall cannot be nudged into rock.
+        /// </summary>
+        public static List<string> BuilderNudge(Player player, uint guid, float dx, float dy, float turn)
+        {
+            var lines = new List<string>();
+
+            if (!BuilderResolve(player, out _, out var rooms, out var variation, out var error))
+            {
+                lines.Add(error);
+                return lines;
+            }
+
+            if (!BuilderMayWrite(variation, lines))
+                return lines;
+
+            LandblockInstance row;
+            using (var context = new WorldDbContext())
+                row = context.LandblockInstance.FirstOrDefault(i => i.Guid == guid);
+
+            var landblock = rooms[0].LandingCell >> 16;
+            if (row == null || row.ObjCellId >> 16 != landblock || VariationManager.NormalizeBase(row.VariationId) != VariationManager.NormalizeBase(variation))
+            {
+                lines.Add($"0x{guid:X8} is not a placed object of this dungeon (0x{landblock:X4} v:{variation ?? 0}). Nothing moved.");
+                return lines;
+            }
+
+            var x = row.OriginX + dx;
+            var y = row.OriginY + dy;
+            var z = row.OriginZ;
+
+            // Which indoor cell the new spot is in: the same one first, then any cell of the dungeon at this height.
+            var dat = BuilderDatCells(landblock);
+            uint cell = 0;
+            if (BuilderInsideCell(row.ObjCellId, variation, x, y, z))
+                cell = row.ObjCellId;
+            else
+                foreach (var candidate in dat.Where(kv => Math.Abs(kv.Value.Centre.Z - z) < 4f).OrderBy(kv => (kv.Value.Centre.X - x) * (kv.Value.Centre.X - x) + (kv.Value.Centre.Y - y) * (kv.Value.Centre.Y - y)).Take(6))
+                    if (BuilderInsideCell(candidate.Key, variation, x, y, z)) { cell = candidate.Key; break; }
+
+            if (cell == 0)
+            {
+                lines.Add($"That step would put 0x{guid:X8} outside every cell of the dungeon ({x:0.##}, {y:0.##}). Nothing moved.");
+                return lines;
+            }
+
+            var rotation = new System.Numerics.Quaternion(row.AnglesX, row.AnglesY, row.AnglesZ, row.AnglesW);
+            if (Math.Abs(turn) > 0.01f)
+                rotation = System.Numerics.Quaternion.Normalize(rotation * System.Numerics.Quaternion.CreateFromYawPitchRoll(0, 0, (float)(-turn * Math.PI / 180.0)));
+
+            var to = new ACE.Entity.Position(cell, x, y, z, rotation.X, rotation.Y, rotation.Z, rotation.W, false, variation);
+            if (!BuilderMoveInstance(player, guid, to, lines))
+                return lines;
+
+            string name = null;
+            DatabaseManager.World.GetCachedWeenie(row.WeenieClassId)?.PropertiesString?.TryGetValue(PropertyString.Name, out name);
+            lines.Add($"{name ?? row.WeenieClassId.ToString(CultureInfo.InvariantCulture)} 0x{guid:X8} nudged"
+                + (Math.Abs(dx) > 0.001f || Math.Abs(dy) > 0.001f ? $" by {dx:0.##} east, {dy:0.##} north" : "")
+                + (Math.Abs(turn) > 0.01f ? $" and turned {turn:0.#} degrees" : "") + $" - now at [{x:0.##} {y:0.##}] in cell 0x{cell & 0xFFFF:X4}.");
+            return lines;
+        }
+
         /// <summary>The landblock a source's rooms are on, 0 when it has no parsed list.</summary>
         private static uint BuilderLandblock(uint wcid)
         {
@@ -130,7 +405,7 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// One machine-readable line for the Zone Control plugin's Dungeons tab, in the [[ZC*]] wire shape:
-        ///   [[ZCDG]]src=777704023|kind=Portal|name=The Tyrant's Quarry|v=3|lb=01F7|write=1|tools=0|admin=0|rooms=1:-,2:F,3:PH|who=3:Some Player
+        ///   [[ZCDG]]src=777704023|kind=Portal|name=The Tyrant's Quarry|v=3|lb=01F7|write=1|tools=0|admin=0|rooms=1:-,2:F,3:PH|who=3:Some Player|markers=0
         /// write = the builder may write here (variation 3 or up); tools = the test tools are allowed on this server;
         /// admin = admins currently count as players. Per room: P a counted player stands in it, F fake player,
         /// R reserved, H actively held, - free. who = the names behind P. src=0 when no room dungeon is found.
@@ -142,7 +417,7 @@ namespace ACE.Server.Managers
             var admin = TestAdminCounts ? 1 : 0;
 
             if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out _))
-                return $"{BuilderStateTag}src=0|kind=|name=|v=|lb=0000|write=0|tools={tools}|admin={admin}|rooms=|who=";
+                return $"{BuilderStateTag}src=0|kind=|name=|v=|lb=0000|write=0|tools={tools}|admin={admin}|rooms=|who=|markers={TestMarkerCount}|sel={(BuilderHasPick(player) ? 1 : 0)}|in=0";
 
             var now = DateTime.UtcNow;
 
@@ -179,7 +454,8 @@ namespace ACE.Server.Managers
 
             return $"{BuilderStateTag}src={sourceWcid}|kind={BuilderWeenieType(sourceWcid)}|name={BuilderWireName(sourceName)}|v={variation}"
                 + $"|lb={rooms[0].LandingCell >> 16:X4}|write={((variation ?? 0) >= BuilderMinVariation ? 1 : 0)}|tools={tools}|admin={admin}"
-                + $"|rooms={string.Join(",", parts)}|who={string.Join(",", who.OrderBy(w => w.Key).Select(w => w.Key + ":" + string.Join("+", w.Value)))}";
+                + $"|rooms={string.Join(",", parts)}|who={string.Join(",", who.OrderBy(w => w.Key).Select(w => w.Key + ":" + string.Join("+", w.Value)))}"
+                + $"|markers={TestMarkerCount}|sel={(BuilderHasPick(player) ? 1 : 0)}|in={(BuilderStandsIn(player, rooms, variation) ? 1 : 0)}";   // appended 2026-09-21: how many landing markers stand, so the tab's switch shows the truth
         }
 
         /// <summary>
@@ -199,6 +475,9 @@ namespace ACE.Server.Managers
             }
 
             if (!BuilderMayWrite(variation, lines))
+                return lines;
+
+            if (!BuilderMustStandIn(player, rooms, variation, lines))
                 return lines;
 
             var location = player.Location;
@@ -471,7 +750,7 @@ namespace ACE.Server.Managers
                 return null;
 
             cells.Add(joined);
-            foreach (var extra in BuilderDeadEndCells(dat, cells).ToList())
+            foreach (var extra in BuilderDeadEndCells(dat, cells, rooms, room).ToList())
                 cells.Add(extra);
 
             lines.Add($"Cell 0x{joined & 0xFFFF:X4} joined the room: it is connected to it and holds generator 0x{generator.Guid:X8}.");
@@ -558,6 +837,9 @@ namespace ACE.Server.Managers
             if (!BuilderMayWrite(variation, lines))
                 return lines;
 
+            if (!BuilderMustStandIn(player, rooms, variation, lines))
+                return lines;
+
             var location = player.Location;
             var landblock = rooms[0].LandingCell >> 16;
 
@@ -580,7 +862,7 @@ namespace ACE.Server.Managers
 
             var cells = new HashSet<uint>(room != null ? room.Cells : new HashSet<uint>());
             cells.Add(cell);
-            foreach (var extra in BuilderDeadEndCells(dat, cells).ToList())
+            foreach (var extra in BuilderDeadEndCells(dat, cells, rooms, room).ToList())
                 cells.Add(extra);
 
             var generator = BuilderFindOrJoinGenerator(dat, cells, rooms, room, variation, location, lines);
@@ -638,7 +920,7 @@ namespace ACE.Server.Managers
         /// Everything the plugin's dungeon map draws on top of the DAT floor plan, as [[ZCDGM]] lines it reads and hides:
         ///   [[ZCDGM]]begin=src,variation,landblock
         ///   [[ZCDGM]]rooms=number,landingCell,x,y,z,dx,dy,cell+cell+...;...
-        ///   [[ZCDGM]]objs=kind,guid,cell,x,y,z,dx,dy,name;...      kind: g generator, d door, p portal, o other
+        ///   [[ZCDGM]]objs=kind,guid,cell,x,y,z,dx,dy,name,wcid;...      kind: g generator, d door, p portal, o other
         ///   [[ZCDGM]]end=1
         /// Cells are 4 hex digits (the landblock is in begin), positions are landblock-local like the room list, and dx,dy is
         /// the unit direction the landing or object faces. Records are packed several to a line, each line its own short
@@ -703,7 +985,8 @@ namespace ACE.Server.Managers
                 name = BuilderWireName(name ?? i.WeenieClassId.ToString(CultureInfo.InvariantCulture));
 
                 BuilderDirection(i.AnglesW, i.AnglesZ, out var dx, out var dy);
-                return $"{kind},{i.Guid:X8},{i.ObjCellId & 0xFFFF:X4},{F(i.OriginX)},{F(i.OriginY)},{F(i.OriginZ)},{F(dx)},{F(dy)},{name}";
+                // wcid appended 2026-09-21: the Nudge window's Remove sends /removeinst <wcid> (nearest instance of that weenie).
+                return $"{kind},{i.Guid:X8},{i.ObjCellId & 0xFFFF:X4},{F(i.OriginX)},{F(i.OriginY)},{F(i.OriginZ)},{F(dx)},{F(dy)},{name},{i.WeenieClassId}";
             }));
 
             lines.Add(BuilderMapTag + "end=1");
@@ -949,15 +1232,18 @@ namespace ACE.Server.Managers
         /// <summary>
         /// The cells above or below these that lead nowhere else: reached through an opening in a floor or ceiling, with
         /// every opening of their own coming straight back. 23 of the 25 rooms of 0x01F7 have one; it belongs to its room.
+        /// A cell that ANOTHER room already holds is never taken (2026-09-21: a new room next to room 16 picked up 16's
+        /// cell 01F8 this way, and the save was refused for the overlap).
         /// </summary>
-        private static List<uint> BuilderDeadEndCells(Dictionary<uint, BuilderCellInfo> dat, HashSet<uint> cells)
+        private static List<uint> BuilderDeadEndCells(Dictionary<uint, BuilderCellInfo> dat, HashSet<uint> cells, List<Room> rooms, Room mine)
         {
+            var taken = new HashSet<uint>(rooms.Where(r => r != mine).SelectMany(r => r.Cells));
             var found = new List<uint>();
 
             foreach (var cell in cells)
                 if (dat.TryGetValue(cell, out var info))
                     foreach (var opening in info.Openings.Where(o => o.Vertical))
-                        if (!cells.Contains(opening.Other) && !found.Contains(opening.Other)
+                        if (!cells.Contains(opening.Other) && !found.Contains(opening.Other) && !taken.Contains(opening.Other)
                             && dat.TryGetValue(opening.Other, out var other) && other.Openings.All(o => cells.Contains(o.Other)))
                             found.Add(opening.Other);
 
@@ -1268,7 +1554,7 @@ namespace ACE.Server.Managers
         /// Afterwards the player faces the generator and the generator faces the landing, and the room's dead-end cell
         /// above or below is part of the room.
         /// </summary>
-        public static List<string> BuilderPlace(Player player, string what, string cellText, float pinX, float pinY, string mode = "room", float? hereZ = null)
+        public static List<string> BuilderPlace(Player player, string what, string cellText, float pinX, float pinY, string mode = "room", float? hereZ = null, uint doorWcid = 0)
         {
             var lines = new List<string>();
 
@@ -1385,7 +1671,20 @@ namespace ACE.Server.Managers
                         return lines;
                     }
 
-                    var wallWcid = BuilderMostPlaced(landblock, variation, w => w.WeenieType == WeenieType.Door);
+                    // The tab's door picker wins; with no pick, the dungeon's own most-placed door; with neither, the
+                    // Magic Wall (owner 2026-09-22).
+                    var wallWcid = doorWcid;
+                    if (wallWcid != 0)
+                    {
+                        var picked = DatabaseManager.World.GetCachedWeenie(wallWcid);
+                        if (picked == null || picked.WeenieType != WeenieType.Door)
+                        {
+                            lines.Add($"{wallWcid} is not a door weenie - placing this dungeon's usual door instead.");
+                            wallWcid = 0;
+                        }
+                    }
+                    if (wallWcid == 0)
+                        wallWcid = BuilderMostPlaced(landblock, variation, w => w.WeenieType == WeenieType.Door);
                     if (wallWcid == 0)
                         wallWcid = BuilderDefaultWallWcid;
 
@@ -1466,7 +1765,7 @@ namespace ACE.Server.Managers
                     if (room != null && ((room.X - middle.X) * (room.X - middle.X) + (room.Y - middle.Y) * (room.Y - middle.Y)) > 0.25f)
                     {
                         var withDeadEnds = new HashSet<uint>(room.Cells);
-                        foreach (var extra in BuilderDeadEndCells(dat, withDeadEnds).ToList())
+                        foreach (var extra in BuilderDeadEndCells(dat, withDeadEnds, rooms, room).ToList())
                             withDeadEnds.Add(extra);
 
                         if (BuilderSaveRoom(player, sourceWcid, room.Number, room.LandingCell, room.X, room.Y, room.Z, BuilderFacing(middle.X - room.X, middle.Y - room.Y), withDeadEnds, lines))
@@ -1480,32 +1779,58 @@ namespace ACE.Server.Managers
 
                 case "player":
                 {
-                    // The corner of the pinned cell nearest the pin, in from the walls.
+                    float landX = 0, landY = 0;
                     var signX = pinX >= pinned.Centre.X ? 1f : -1f;
                     var signY = pinY >= pinned.Centre.Y ? 1f : -1f;
-                    float landX = 0, landY = 0;
-                    var found = false;
+                    var where = "";
 
-                    foreach (var offset in BuilderCornerOffsets)
+                    if (mode == "middle")
                     {
-                        landX = pinned.Centre.X + signX * offset;
-                        landY = pinned.Centre.Y + signY * offset;
-                        if (BuilderInsideCell(cell, variation, landX, landY, floorZ))
+                        // Player Middle (owner 2026-09-21): the landing at the middle of the room's cells on this level - for
+                        // the usual one-cell room, the cell's own centre - like Monster Middle.
+                        var cellsHere = room != null ? room.Cells : new HashSet<uint> { cell };
+                        var level = cellsHere.Where(c => dat.TryGetValue(c, out var i) && Math.Abs(i.Centre.Z - floorZ) < 0.5f).Select(c => dat[c].Centre).ToList();
+                        var average = level.Count > 0 ? level.Aggregate(System.Numerics.Vector3.Zero, (a, b) => a + b) / level.Count : pinned.Centre;
+                        var averageCell = cellsHere.FirstOrDefault(c => BuilderInsideCell(c, variation, average.X, average.Y, floorZ));
+                        if (averageCell != 0)
                         {
-                            found = true;
-                            break;
+                            cell = averageCell;
+                            pinned = dat[cell];
                         }
-                    }
+                        else
+                            average = pinned.Centre;
 
-                    if (!found)
+                        landX = average.X;
+                        landY = average.Y;
+                        where = "at the middle of " + (room != null ? $"room {room.Number}" : $"cell 0x{cell & 0xFFFF:X4}");
+                    }
+                    else
                     {
-                        lines.Add($"No spot in that corner of cell 0x{cell:X8} is inside the cell. Drop the pin toward another corner.");
-                        return lines;
+                        // The corner of the pinned cell nearest the pin, in from the walls.
+                        var found = false;
+                        foreach (var offset in BuilderCornerOffsets)
+                        {
+                            landX = pinned.Centre.X + signX * offset;
+                            landY = pinned.Centre.Y + signY * offset;
+                            if (BuilderInsideCell(cell, variation, landX, landY, floorZ))
+                            {
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        if (!found)
+                        {
+                            lines.Add($"No spot in that corner of cell 0x{cell:X8} is inside the cell. Drop the pin toward another corner.");
+                            return lines;
+                        }
+
+                        where = $"in the {(signY > 0 ? "north" : "south")}-{(signX > 0 ? "east" : "west")} corner of cell 0x{cell & 0xFFFF:X4}";
                     }
 
                     var cells = new HashSet<uint>(room != null ? room.Cells : new HashSet<uint>());
                     cells.Add(cell);
-                    foreach (var extra in BuilderDeadEndCells(dat, cells).ToList())
+                    foreach (var extra in BuilderDeadEndCells(dat, cells, rooms, room).ToList())
                         cells.Add(extra);
 
                     // Face the room's generator; with none yet, the middle of the cell, where the monster will stand.
@@ -1513,7 +1838,9 @@ namespace ACE.Server.Managers
                     var generator = BuilderFindOrJoinGenerator(dat, cells, rooms, room, variation, landing, lines);
                     var targetX = generator != null ? generator.X : pinned.Centre.X;
                     var targetY = generator != null ? generator.Y : pinned.Centre.Y;
-                    var rotation = BuilderFacing(targetX - landX, targetY - landY);
+                    // On the very spot it would face (Player Middle over Monster Middle): keep north rather than a random turn.
+                    var onSpot = (targetX - landX) * (targetX - landX) + (targetY - landY) * (targetY - landY) < 0.25f;
+                    var rotation = onSpot ? System.Numerics.Quaternion.Identity : BuilderFacing(targetX - landX, targetY - landY);
 
                     var number = room?.Number ?? 0;
                     if (number == 0)
@@ -1522,9 +1849,9 @@ namespace ACE.Server.Managers
                     if (!BuilderSaveRoom(player, sourceWcid, number, cell, landX, landY, floorZ + 0.005f, rotation, cells, lines))
                         return lines;
 
-                    lines.Add($"Room {number} (v:{variation}): {(room != null ? "landing moved" : "new room, landing set")} in the {(signY > 0 ? "north" : "south")}-{(signX > 0 ? "east" : "west")} corner of cell 0x{cell & 0xFFFF:X4}, facing {(generator != null ? "the generator" : "the middle of the room")}. {cells.Count} cell(s).");
+                    lines.Add($"Room {number} (v:{variation}): {(room != null ? "landing moved" : "new room, landing set")} {where}, facing {(onSpot ? "north (it stands on the spot it would face)" : generator != null ? "the generator" : "the middle of the room")}. {cells.Count} cell(s).");
 
-                    if (generator != null)
+                    if (generator != null && !onSpot)
                         BuilderTurnGenerator(player, generator, variation, BuilderFacing(landX - generator.X, landY - generator.Y), lines);
 
                     var saved = GetRooms(sourceWcid)?.FirstOrDefault(r => r.Number == number);

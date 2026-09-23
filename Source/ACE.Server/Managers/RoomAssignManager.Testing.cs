@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -209,6 +209,9 @@ namespace ACE.Server.Managers
         /// <summary>Room key -> the marker standing on its landing. Temporary objects: never saved, gone on a restart. Behind _lock.</summary>
         private static readonly Dictionary<string, WorldObject> _testMarkers = new Dictionary<string, WorldObject>();
 
+        /// <summary>How many landing markers stand right now, for the state line.</summary>
+        public static int TestMarkerCount { get { lock (_lock) return _testMarkers.Count; } }
+
         /// <summary>
         /// Puts a marker on a room's landing - exactly where and how a player arrives (the AdjustDungeon-corrected spot, the
         /// arrival facing) - replacing the room's previous marker. It is a plain spawned object with a dynamic guid: no
@@ -241,6 +244,15 @@ namespace ACE.Server.Managers
             }
 
             wo.Name = $"Chamber {room.Number} landing";
+
+            // Never saved to the shard. Without this a marker standing at shutdown was written as a biota and came
+            // back with the landblock after the restart, no longer tracked by anything here (found 2026-09-21).
+            wo.SuppressShardPersistence = true;
+
+            // A spawned object with no rot time is decayed by its landblock after 5 minutes (WorldObject_Decay,
+            // DefaultTimeToRot) - every marker vanished 5 minutes after Show, whatever the switch said (found 2026-09-21).
+            // -1 = never rot, the same value the boundary lanterns use.
+            wo.TimeToRot = -1;
             wo.Location = new ACE.Entity.Position(landing);
 
             if (wo is Creature creature)
@@ -265,6 +277,136 @@ namespace ACE.Server.Managers
 
         /// <summary>Bumped by every Show and Clear, so a timed clear only removes the markers of the Show that started it. Behind _lock.</summary>
         private static int _testMarkerRun;
+
+        // -----------------------------------------------------------------------------------------------------
+        // Door preview (owner 2026-09-22: "a button to display the doors for 5 seconds so i can see what they
+        // look like"). Every door in the owner's range, side by side in front of the player, facing them, then
+        // gone. Nothing is saved and nothing is placed in a doorway - this only shows the models.
+        // -----------------------------------------------------------------------------------------------------
+
+        private static readonly List<WorldObject> _testDoors = new List<WorldObject>();
+
+        /// <summary>Bumped by every Show and Clear, so a timed clear only removes the doors of the Show that started it. Behind _lock.</summary>
+        private static int _testDoorRun;
+
+        private const float TestDoorSpacing = 3.5f;
+        private const float TestDoorAhead = 6f;
+
+        /// <summary>
+        /// Spawns one of every door weenie in a row in front of the player for <paramref name="seconds"/>, each named,
+        /// each turned to face them. "clear" takes them away early.
+        /// </summary>
+        public static List<string> TestDoorShow(Player player, string what, int seconds)
+        {
+            var lines = new List<string>();
+
+            List<WorldObject> standing;
+            lock (_lock)
+            {
+                _testDoorRun++;
+                standing = _testDoors.ToList();
+                _testDoors.Clear();
+            }
+            foreach (var wo in standing)
+                wo.Destroy();
+
+            if (what == "clear")
+            {
+                lines.Add($"Removed {standing.Count} preview door(s).");
+                return lines;
+            }
+
+            if (player?.Location == null)
+            {
+                lines.Add("You have to be in the world to see the doors.");
+                return lines;
+            }
+
+            var wcids = new List<uint>();
+            using (var context = new WorldDbContext())
+                wcids = context.Weenie
+                    .Where(w => w.Type == (int)WeenieType.Door && w.ClassId >= 777700000 && w.ClassId <= 777799999)
+                    .Select(w => w.ClassId)
+                    .OrderBy(w => w)
+                    .ToList();
+
+            if (wcids.Count == 0)
+            {
+                lines.Add("No door weenie found in 777700000-777799999.");
+                return lines;
+            }
+
+            // The player's own heading: forward is where they look, right is ninety degrees off it, so the row runs
+            // across their view with the middle door straight ahead.
+            var at = player.Location;
+            var heading = Math.Atan2(2.0 * at.RotationW * at.RotationZ, 1.0 - 2.0 * at.RotationZ * at.RotationZ);
+            var fx = (float)(-Math.Sin(heading));
+            var fy = (float)Math.Cos(heading);
+            var rx = fy;
+            var ry = -fx;
+            var facing = BuilderFacing(-fx, -fy);          // the doors look back at the player
+
+            var spawned = 0;
+            for (var i = 0; i < wcids.Count; i++)
+            {
+                var offset = (i - (wcids.Count - 1) / 2f) * TestDoorSpacing;
+                var x = at.PositionX + fx * TestDoorAhead + rx * offset;
+                var y = at.PositionY + fy * TestDoorAhead + ry * offset;
+
+                var wo = ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject(wcids[i]);
+                if (wo == null)
+                    continue;
+
+                // Same three rules the landing markers learned the hard way: never written to the shard, never
+                // decayed by the landblock, and ethereal so physics cannot slide it off the spot it is meant to show.
+                wo.SuppressShardPersistence = true;
+                wo.TimeToRot = -1;
+                wo.Ethereal = true;
+                wo.Name = (wo.Name ?? "Door") + " (" + wcids[i] + ")";
+                wo.Location = new ACE.Entity.Position(at.Cell, x, y, at.PositionZ + 0.05f,
+                                                      facing.X, facing.Y, facing.Z, facing.W, false, at.Variation);
+
+                if (!wo.EnterWorld())
+                    continue;
+
+                lock (_lock)
+                    _testDoors.Add(wo);
+                spawned++;
+            }
+
+            if (spawned == 0)
+            {
+                lines.Add("None of the doors could be spawned here - stand in an open space and try again.");
+                return lines;
+            }
+
+            int run;
+            lock (_lock)
+                run = _testDoorRun;
+
+            // On the world thread when the time is up, and only if no later Show or Clear has taken over.
+            System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(seconds)).ContinueWith(_ =>
+                WorldManager.EnqueueAction(new ACE.Server.Entity.Actions.ActionEventDelegate(ACE.Server.Entity.Actions.ActionType.EmoteManager_DebugDelay, () =>
+                {
+                    List<WorldObject> expired;
+                    lock (_lock)
+                    {
+                        if (run != _testDoorRun)
+                            return;
+
+                        expired = _testDoors.ToList();
+                        _testDoors.Clear();
+                    }
+
+                    foreach (var wo in expired)
+                        wo.Destroy();
+
+                    log.Info($"[RoomAssign][DUNGEON] {expired.Count} preview door(s) removed after {seconds} second(s).");
+                })));
+
+            lines.Add($"{spawned} door(s) in front of you for {seconds} second(s), named, facing you. Nothing is saved.");
+            return lines;
+        }
 
         /// <summary>
         /// all: a marker on every room's landing - for minutes, when given (owner 2026-09-20: show them for a walk through
@@ -292,7 +434,18 @@ namespace ACE.Server.Managers
                 foreach (var wo in markers)
                     wo.Destroy();
 
-                lines.Add($"Removed {markers.Count} landing marker(s).");
+                // Strays: markers a build before 2026-09-21 let the shard save, reloaded with the landblock and tracked by
+                // nothing. Only this tool makes a WCID 1 object named "Chamber N landing", so the name is the test.
+                // Destroy also removes a saved one from the shard.
+                var strays = player?.CurrentLandblock?.GetAllWorldObjectsForDiagnostics()
+                    .Where(o => o.WeenieClassId == TestMarkerWcid && !markers.Contains(o) && o.Name != null
+                        && o.Name.StartsWith("Chamber ", StringComparison.Ordinal) && o.Name.EndsWith(" landing", StringComparison.Ordinal))
+                    .ToList() ?? new List<WorldObject>();
+
+                foreach (var wo in strays)
+                    wo.Destroy();
+
+                lines.Add($"Removed {markers.Count} landing marker(s)" + (strays.Count > 0 ? $", and {strays.Count} left over from before a restart." : "."));
                 return lines;
             }
 

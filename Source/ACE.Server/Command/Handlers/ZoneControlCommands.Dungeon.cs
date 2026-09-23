@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 
@@ -51,9 +51,15 @@ namespace ACE.Server.Command.Handlers
             var verb = (Arg(1) ?? "help").ToLowerInvariant();
             var arg = Arg(2)?.ToLowerInvariant();
 
+            // A verb that can change the map (rooms, cells, landings, placed objects, or which dungeon) answers with the
+            // fresh map lines after its reply (owner 2026-09-21: the plugin used to wait 0.7 s and ask - the delay you
+            // felt on every click). The plugin reads whatever map lines arrive, asked for or not.
+            var mapChanges = verb == "add" || verb == "remove" || verb == "land" || verb == "cell" || verb == "place"
+                || verb == "monster" || verb == "select" || verb == "nudge";
+
             try
             {
-                if (verb != "state" && verb != "map")
+                if (verb != "state" && verb != "map" && verb != "list")
                     dungeonLog.Info($"[RoomAssign][DUNGEON] {player.Name}: /zonecontrol {string.Join(" ", args)}  (at 0x{player.Location?.Cell:X8} v:{player.Location?.Variation})");
 
                 switch (verb)
@@ -69,6 +75,19 @@ namespace ACE.Server.Command.Handlers
                         // Only the map lines: no state line after them, the plugin asks for that separately.
                         All(RoomAssignManager.BuilderMap(player));
                         return;
+
+                    case "list":
+                        // Only the [[ZCDGL]] lines: the tab's Dungeon dropdown.
+                        All(RoomAssignManager.BuilderList());
+                        return;
+
+                    case "select":
+                        All(RoomAssignManager.BuilderSelect(player, Arg(2), Arg(3)));
+                        break;
+
+                    case "entrance":
+                        All(RoomAssignManager.BuilderEntrance(player));
+                        break;
 
                     case "goto":
                         if (arg == null || !int.TryParse(arg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var gotoNumber) || gotoNumber < 1)
@@ -126,9 +145,36 @@ namespace ACE.Server.Command.Handlers
                             break;
                         }
 
-                        // Monster pin only: "cell" = the centre of the pinned cell, anything else = the middle of the room.
-                        var pinMode = args.Count > 6 && args[6].Equals("cell", StringComparison.OrdinalIgnoreCase) ? "cell" : "room";
-                        All(RoomAssignManager.BuilderPlace(player, arg, args[3], pinX, pinY, pinMode));
+                        // Monster pin: "cell" = the centre of the pinned cell, else the middle of the room. Player pin: "middle" =
+                        // the middle of the room instead of the nearest corner.
+                        var pinMode = args.Count > 6 ? args[6].ToLowerInvariant() : "room";
+                        uint pinDoor = 0;
+                        if (pinMode != "cell" && pinMode != "middle")
+                        {
+                            // A door pick rides in the same slot as the mode - "place door <cell> <x> <y> <wcid>".
+                            if (args.Count > 6)
+                                uint.TryParse(args[6], NumberStyles.Integer, CultureInfo.InvariantCulture, out pinDoor);
+                            pinMode = "room";
+                        }
+                        All(RoomAssignManager.BuilderPlace(player, arg, args[3], pinX, pinY, pinMode, null, pinDoor));
+                        break;
+
+                    case "nudge":
+                        // nudge <guid hex> <dx> <dy> [turn degrees] - the tab's Nudge pop-out, on a wall or generator picked on the map.
+                        if (args.Count < 5
+                            || !uint.TryParse((Arg(2) ?? "").Replace("0x", "").Replace("0X", ""), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var nudgeGuid)
+                            || !float.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var nudgeX)
+                            || !float.TryParse(args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var nudgeY))
+                        {
+                            Msg("/zonecontrol dungeon nudge <guid> <east> <north> [turn degrees] - move a placed wall or generator a little.");
+                            break;
+                        }
+
+                        var nudgeTurn = 0f;
+                        if (args.Count > 5 && !float.TryParse(args[5], NumberStyles.Float, CultureInfo.InvariantCulture, out nudgeTurn))
+                            nudgeTurn = 0f;
+
+                        All(RoomAssignManager.BuilderNudge(player, nudgeGuid, nudgeX, nudgeY, nudgeTurn));
                         break;
 
                     case "monster":
@@ -196,6 +242,23 @@ namespace ACE.Server.Command.Handlers
                         All(RoomAssignManager.TestClear(player, number));
                         break;
 
+                    case "doors":
+                        if (arg == "show" || arg == "clear")
+                        {
+                            var doorSeconds = 5;
+                            if (args.Count > 3 && (!int.TryParse(args[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out doorSeconds) || doorSeconds < 1 || doorSeconds > 120))
+                            {
+                                Msg("The seconds must be a number from 1 to 120.");
+                                break;
+                            }
+
+                            All(RoomAssignManager.TestDoorShow(player, arg, doorSeconds));
+                            break;
+                        }
+
+                        All(RoomAssignManager.BuilderDoorList(player));
+                        break;
+
                     case "markers":
                         if (arg != "all" && arg != "clear")
                         {
@@ -216,13 +279,19 @@ namespace ACE.Server.Command.Handlers
                     default:
                         Msg("Dungeon builder - one-player room dungeons (writes only to variation 3 and up)");
                         Msg("  /zonecontrol dungeon status                - every room: who, reservation, hold");
+                        Msg("  /zonecontrol dungeon list                  - every room dungeon the server knows");
+                        Msg("  /zonecontrol dungeon select here|<wcid> <v> - work on that dungeon from anywhere; here = follow me again");
+                        Msg("  /zonecontrol dungeon entrance              - teleport to the dungeon's entrance portal or plate");
                         Msg("  /zonecontrol dungeon goto <room>           - teleport to a room's landing (no claim)");
+                        Msg("  /zonecontrol dungeon doors                 - every door weenie the Door pin can use");
+                        Msg("  /zonecontrol dungeon doors show [seconds]  - one of each in a row in front of you, 5s by default");
                         Msg("  /zonecontrol dungeon add [room]            - new room here; lowest free number, or that one");
                         Msg("  /zonecontrol dungeon remove <room>         - take a room out of the list");
                         Msg("  /zonecontrol dungeon land                  - landing of this room = here, facing its generator");
                         Msg("  /zonecontrol dungeon cell <room> <cell>    - add a cell to a room, or take it out");
-                        Msg("  /zonecontrol dungeon place <what> <cell> <x> <y> [cell] - player | monster | door at a map pin");
+                        Msg("  /zonecontrol dungeon place <what> <cell> <x> <y> [cell|middle] - player | monster | door at a map pin");
                         Msg("  /zonecontrol dungeon monster here          - the room's generator exactly where you stand");
+                        Msg("  /zonecontrol dungeon nudge <guid> <east> <north> [turn] - move a placed wall or generator a little");
                         Msg("  /zonecontrol dungeon state | map           - data lines for the plugin's Dungeons tab");
                         Msg("Test tools (need server property room_assign_test_tools = true; memory only):");
                         Msg("  /zonecontrol dungeon admin on|off          - admins count as players");
@@ -234,6 +303,9 @@ namespace ACE.Server.Command.Handlers
 
                 // One machine-readable line after every command: the plugin tab colours its rooms from it.
                 Msg(RoomAssignManager.BuilderState(player));
+
+                if (mapChanges)
+                    All(RoomAssignManager.BuilderMap(player));
             }
             catch (Exception ex)
             {

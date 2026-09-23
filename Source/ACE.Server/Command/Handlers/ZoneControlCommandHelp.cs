@@ -120,6 +120,9 @@ namespace ACE.Server.Command.Handlers
 
             // ── Dungeons (one-player room dungeons) ─────────────────────────
             E("Dungeons", "/zonecontrol dungeon status", "", "Every room of the dungeon you are in: who stands in it, reservation, hold."),
+            E("Dungeons", "/zonecontrol dungeon list", "", "Every room dungeon the server knows ([[ZCDGL]] lines for the plugin's Dungeon dropdown)."),
+            E("Dungeons", "/zonecontrol dungeon select", "here | <source wcid> <variation>", "Point the dungeon tools at a dungeon you are not standing in; here = follow where you stand again."),
+            E("Dungeons", "/zonecontrol dungeon entrance", "", "Teleport to the dungeon's entrance: its portal or plate, as placed in the world."),
             E("Dungeons", "/zonecontrol dungeon goto", "<room>", "Teleport to a room's landing. A plain teleport, no room is claimed."),
             E("Dungeons", "/zonecontrol dungeon add", "[room]", "New room where you stand; lowest free number, or that one. Variation 3 and up only."),
             E("Dungeons", "/zonecontrol dungeon remove", "<room>", "Take a room out of the room list. Variation 3 and up only."),
@@ -127,6 +130,7 @@ namespace ACE.Server.Command.Handlers
             E("Dungeons", "/zonecontrol dungeon cell", "<room> <cell>", "Add a cell to a room, or take it out - how a room of several cells is built."),
             E("Dungeons", "/zonecontrol dungeon place", "player|monster|door <cell> <x> <y> [cell]", "Place by map pin: landing in the nearest corner, generator at the room middle (or the pinned cell's centre), wall in the nearest doorway."),
             E("Dungeons", "/zonecontrol dungeon monster here", "", "The room's generator is placed, or moved, exactly where you stand."),
+            E("Dungeons", "/zonecontrol dungeon nudge", "<guid> <east> <north> [turn degrees]", "Move a placed wall or generator by a small step, or turn it - the Nudge pop-out in the plugin."),
             E("Dungeons", "/zonecontrol dungeon state", "", "The [[ZCDG]] data line for the plugin's Dungeons tab."),
             E("Dungeons", "/zonecontrol dungeon map", "", "The [[ZCDGM]] map lines for the plugin's Dungeons tab."),
             E("Dungeons", "/zonecontrol dungeon admin", "on|off", "TEST TOOL: admins count as players. Needs room_assign_test_tools."),
