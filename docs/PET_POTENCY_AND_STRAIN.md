@@ -135,6 +135,7 @@ Map tier from creature `DeathTreasureType` / level band — exact mapping in imp
 - **Hollow essence** (78780006): same, **~75%** of normal salvage value.
 - Cannot salvage an essence already applied to a device.
 - Does **not** replace farming for serious potency goals.
+- **Bred pet essences** can also be salvaged, as a disposal bin rather than income: a flat `pet_bred_essence_salvage_yield` (**1**). Each female breeds again every `pet_breeding_cooldown_hours` (4), so a herd is an unlimited baby source: at 5 echo a 20-female herd would make ~600 echo/day (~9 hr of the farm above); at 1 it is ~120.
 
 ---
 
@@ -293,6 +294,8 @@ Implementation rule: **read ServerConfig at point of use**, not cached on item a
 | `pet_residue_salvage_mult` | double | **1.0** | **Instant.** Global salvage yield multiplier. 1.0 = no reduction. |
 | `pet_residue_hollow_mult` | double | **0.75** | **Instant.** Hollow (78780006) × this vs normal salvage. |
 | `pet_residue_salvage_shiny_mult` | double | **5.0** | **Instant.** From `CapturedCreatureVariant` on essence. |
+| `pet_bred_essence_salvage_enabled` | bool | **true** | **Instant.** The Essence Resonator also takes bred pet essences (any `PetMaturityKills` device). Refused while that pet is summoned; asks first if it has mutations or potency. |
+| `pet_bred_essence_salvage_yield` | long | **1** | **Instant.** Flat Savage Echo per bred essence. Shiny, creature override and the pet's potency/mutations are all ignored: breeding copies those, so any scaling would mint echo. 0 = taken for nothing. |
 
 ### Bond Strain (player penalty)
 

@@ -801,10 +801,18 @@ namespace ACE.Entity.Enum.Properties
         PetMutVitality                          = 9066,
         PetMutPotency                           = 9067,
 
+        // Sent on identify like PetMutationCount, PetMaleBreedingCharges and PetMaturityKills beside them:
+        // the total alone cannot say WHICH lines a pet mutated, and a plugin should not have to scrape the
+        // appraisal text for the breakdown.
+        [AssessmentProperty]
         PetMutDamageCount                       = 9070,
+        [AssessmentProperty]
         PetMutDamageResistCount                 = 9071,
+        [AssessmentProperty]
         PetMutCritCount                         = 9072,
+        [AssessmentProperty]
         PetMutVitalityCount                     = 9073,
+        [AssessmentProperty]
         PetMutPotencyCount                      = 9074,
 
         /// <summary>Kills credited toward a bred pet's maturity (server/custom). Present only on essences born from a breed.</summary>
