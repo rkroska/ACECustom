@@ -405,7 +405,7 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// One machine-readable line for the Zone Control plugin's Dungeons tab, in the [[ZC*]] wire shape:
-        ///   [[ZCDG]]src=777704023|kind=Portal|name=The Tyrant's Quarry|v=3|lb=01F7|write=1|tools=0|admin=0|rooms=1:-,2:F,3:PH|who=3:Some Player|markers=0
+        ///   [[ZCDG]]src=777704023|kind=Portal|name=The Tyrant's Quarry|v=3|lb=01F7|write=1|tools=0|admin=0|rooms=1:-,2:F,3:PH|who=3:Some Player|markers=0|holds=15,60,1,15|expires=3:43
         /// write = the builder may write here (variation 3 or up); tools = the test tools are allowed on this server;
         /// admin = admins currently count as players. Per room: P a counted player stands in it, F fake player,
         /// R reserved, H actively held, - free. who = the names behind P. src=0 when no room dungeon is found.
@@ -415,9 +415,10 @@ namespace ACE.Server.Managers
         {
             var tools = TestToolsOn ? 1 : 0;
             var admin = TestAdminCounts ? 1 : 0;
+            var holds = BuilderHolds();
 
             if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out _))
-                return $"{BuilderStateTag}src=0|kind=|name=|v=|lb=0000|write=0|tools={tools}|admin={admin}|rooms=|who=|markers={TestMarkerCount}|sel={(BuilderHasPick(player) ? 1 : 0)}|in=0";
+                return $"{BuilderStateTag}src=0|kind=|name=|v=|lb=0000|write=0|tools={tools}|admin={admin}|rooms=|who=|markers={TestMarkerCount}|sel={(BuilderHasPick(player) ? 1 : 0)}|in=0|holds={holds}";
 
             var now = DateTime.UtcNow;
 
@@ -437,6 +438,8 @@ namespace ACE.Server.Managers
             }
 
             var parts = new List<string>();
+            var expires = new List<string>();   // room:seconds left, for the claims that run out on their own
+            var held = new List<string>();      // room:seconds the owning account has had it (the tenure clock)
             lock (_lock)
                 foreach (var room in rooms)
                 {
@@ -447,6 +450,21 @@ namespace ACE.Server.Managers
                     if (_reservations.ContainsKey(key)) flags += "R";
                     if (_holds.TryGetValue(key, out var hold) && IsHoldActive(hold, now)) flags += "H";
                     parts.Add($"{room.Number}:{(flags.Length == 0 ? "-" : flags)}");
+
+                    // A hold and a reservation both end by themselves, and how long is left is the thing you watch while
+                    // testing. The reservation is the shorter of the two, so it wins when a room somehow carries both.
+                    var left = TimeSpan.MinValue;
+                    if (hold != null && IsHoldActive(hold, now))
+                        left = hold.Until - now;
+                    if (_reservations.TryGetValue(key, out var res) && res.Until > now && (left == TimeSpan.MinValue || res.Until - now < left))
+                        left = res.Until - now;
+                    if (left > TimeSpan.Zero)
+                        expires.Add($"{room.Number}:{(int)Math.Ceiling(left.TotalSeconds)}");
+
+                    // How long the account that owns this room has had it. It survives a trip out and back, so a player
+                    // standing in a room shows a tenure, not a stopwatch restarted by every teleport.
+                    if (_roomOwnerSince.TryGetValue(key, out var ownedSince) && ownedSince <= now)
+                        held.Add($"{room.Number}:{(int)(now - ownedSince).TotalSeconds}");
                 }
 
             string sourceName = null;
@@ -455,7 +473,24 @@ namespace ACE.Server.Managers
             return $"{BuilderStateTag}src={sourceWcid}|kind={BuilderWeenieType(sourceWcid)}|name={BuilderWireName(sourceName)}|v={variation}"
                 + $"|lb={rooms[0].LandingCell >> 16:X4}|write={((variation ?? 0) >= BuilderMinVariation ? 1 : 0)}|tools={tools}|admin={admin}"
                 + $"|rooms={string.Join(",", parts)}|who={string.Join(",", who.OrderBy(w => w.Key).Select(w => w.Key + ":" + string.Join("+", w.Value)))}"
-                + $"|markers={TestMarkerCount}|sel={(BuilderHasPick(player) ? 1 : 0)}|in={(BuilderStandsIn(player, rooms, variation) ? 1 : 0)}";   // appended 2026-09-21: how many landing markers stand, so the tab's switch shows the truth
+                + $"|markers={TestMarkerCount}|sel={(BuilderHasPick(player) ? 1 : 0)}|in={(BuilderStandsIn(player, rooms, variation) ? 1 : 0)}"   // appended 2026-09-21: how many landing markers stand, so the tab's switch shows the truth
+                + $"|holds={holds}"   // appended 2026-09-22: the four hold settings, so the tab can show what a hold test is actually running against
+                + $"|expires={string.Join(",", expires)}"   // appended 2026-09-22: seconds left on each timed claim, so a hold can be watched running out
+                + $"|since={string.Join(",", held)}";   // appended 2026-09-22: how long the owning account has had each room
+        }
+
+        /// <summary>
+        /// The four room_assign_* hold settings for the state line: logout minutes, leave seconds, renewals, startup grace
+        /// minutes - in that order. These are the CLAMPED values the manager really uses, not the raw properties, so what
+        /// the plugin shows is what a hold will actually do.
+        /// </summary>
+        private static string BuilderHolds()
+        {
+            var logout = (long)LogoutHoldTime.TotalMinutes;
+            var leave = (long)LeaveHoldTime.TotalSeconds;
+            var renewals = Math.Clamp(ServerConfig.room_assign_logout_hold_renewals.Value, 0, MaxLogoutHoldRenewals);
+            var grace = (long)StartupGraceTime.TotalMinutes;
+            return $"{logout},{leave},{renewals},{grace}";
         }
 
         /// <summary>

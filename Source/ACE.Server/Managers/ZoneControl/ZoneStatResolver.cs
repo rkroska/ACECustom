@@ -736,9 +736,14 @@ namespace ACE.Server.Managers.ZoneControl
                 {
                     if (Def == null)
                         return $"{Name} +{Value} [{Min}-{Max}]";
+                    // Both args, always: key 44 (Pct HP Damage, the Gauntlets special) is the one ValFmt with a
+                    // SECOND placeholder - "{0} ({1:0.#} pct of max HP per hit)" - and string.Format throws
+                    // FormatException on a missing index, which killed the whole appraisal packet. The four call
+                    // sites in ZoneModifiers (641, 643, 673, 704) always passed both; this one did not.
+                    // Extra args are ignored by string.Format, so every other ValFmt is unaffected.
                     if (Def.SlotSpecial)
-                        return string.IsNullOrEmpty(Def.ValFmt) ? Name : $"{Name} {string.Format(Def.ValFmt, Value)}";
-                    return $"{Name} {string.Format(Def.ValFmt ?? "+{0}", Value)} [{Min}-{Max}]";
+                        return string.IsNullOrEmpty(Def.ValFmt) ? Name : $"{Name} {string.Format(Def.ValFmt, Value, Value / 10.0)}";
+                    return $"{Name} {string.Format(Def.ValFmt ?? "+{0}", Value, Value / 10.0)} [{Min}-{Max}]";
                 }
             }
         }

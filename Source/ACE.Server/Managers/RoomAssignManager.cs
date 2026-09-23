@@ -615,6 +615,8 @@ namespace ACE.Server.Managers
         private static readonly Dictionary<uint, string> _reservedBy = new Dictionary<uint, string>();                   // player guid -> room key
         private static readonly Dictionary<string, Hold> _holds = new Dictionary<string, Hold>();                        // room key -> account it is held for
         private static readonly Dictionary<string, uint> _roomOwner = new Dictionary<string, uint>();                     // room key -> the account it was last handed to
+        private static readonly Dictionary<string, DateTime> _roomOwnerSince = new Dictionary<string, DateTime>();       // room key -> when THAT account's tenure began
+        private static readonly Dictionary<uint, string> _announcedRoom = new Dictionary<uint, string>();                // player guid -> the room key their arrival line last named
         private static readonly Dictionary<uint, DateTime> _lastFullMessage = new Dictionary<uint, DateTime>();
         private static readonly Dictionary<uint, List<RoomRef>> _roomByCell = new Dictionary<uint, List<RoomRef>>();     // cell -> rooms + source WCID
         private static readonly Dictionary<ushort, HashSet<uint>> _sourcesByLandblock = new Dictionary<ushort, HashSet<uint>>();   // landblock -> source WCIDs
@@ -754,6 +756,13 @@ namespace ACE.Server.Managers
                     {
                         _roomOwner.Remove(oldKey);
                         _roomOwner[newKey] = owner;
+                    }
+
+                    // The tenure clock follows its room: a re-keyed room is the same room, so the clock must not restart.
+                    if (_roomOwnerSince.TryGetValue(oldKey, out var since))
+                    {
+                        _roomOwnerSince.Remove(oldKey);
+                        _roomOwnerSince[newKey] = since;
                     }
                 }
             }
@@ -974,6 +983,13 @@ namespace ACE.Server.Managers
                 return;
 
             // The room is theirs from here: only this account may hold it when it is left or logged out of.
+            // The tenure clock starts only when the room changes hands. The same account coming back to the same room -
+            // a recall out and back inside its leave hold, a relog inside its logout hold - keeps the clock it already
+            // had, so "how long have they had this room" survives the trip out. A DIFFERENT room is a new hand-out and
+            // gets its own clock (2026-09-22).
+            if (!_roomOwner.TryGetValue(key, out var previousOwner) || previousOwner != account)
+                _roomOwnerSince[key] = now;
+
             _roomOwner[key] = account;
 
             // IsFreeFor let them have it, so another account's hold here is not counting (its setting is 0): it must not
@@ -1708,7 +1724,20 @@ namespace ACE.Server.Managers
                 lock (_lock)
                     RememberSource(SourceKey(sourceWcid, variation));
 
-                roomNumber = room.Number;
+                // roomNumber is ONLY the number to ANNOUNCE - both callers use it for nothing but the arrival line. It stays
+                // 0 when the player is being put back in the room they already had, so spamming a gateway into your own
+                // chamber does not repeat "opens Chamber 5 to you" on every use (owner 2026-09-22). A room that is new to
+                // this account still announces, including a re-entry after their hold lapsed and they were handed another.
+                lock (_lock)
+                {
+                    var key = room.Key(variation);
+                    if (!_announcedRoom.TryGetValue(guid, out var announced) || announced != key)
+                    {
+                        _announcedRoom[guid] = key;
+                        roomNumber = room.Number;
+                    }
+                }
+
                 log.Debug($"[RoomAssign] {player.Name} (0x{player.Guid}) sent by portal {portalWcid} to room {room.Number}.");
                 return PortalAssign.Assigned;
             }
@@ -1764,6 +1793,13 @@ namespace ACE.Server.Managers
 
                 var guid = player.Guid.Full;
                 var key = found.Room.Key(location.Variation);
+
+                // Past the guard above, this teleport really does LEAVE the room, so the next arrival is worth announcing
+                // again. A trip that lands back in the same room - spamming a gateway from inside your own chamber - takes
+                // the early return and keeps the announcement, which is what stops it repeating (owner 2026-09-22).
+                lock (_lock)
+                    _announcedRoom.Remove(guid);
+
                 var now = DateTime.UtcNow;
                 bool held;
 
@@ -1819,6 +1855,10 @@ namespace ACE.Server.Managers
                 {
                     PurgeExpired(now);
                     RemoveOwnReservation(guid);
+
+                    // Logging out ends the visit: coming back in is a real arrival and says so, whatever room they get.
+                    // It also keeps this from holding a guid for a character who is gone.
+                    _announcedRoom.Remove(guid);
 
                     if (found == null)
                     {

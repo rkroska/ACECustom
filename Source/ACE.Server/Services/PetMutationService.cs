@@ -121,6 +121,12 @@ namespace ACE.Server.Services
                         // Cache common palettes in 0x04000000 - 0x04002500 range
                         for (uint p = 0x04000001; p <= 0x04002500; p++)
                         {
+                            // Ask only for ids the dat actually holds. Most of this range is empty, and ReadFromDat
+                            // logs every miss at INFO - roughly 4,700 lines in one second at startup, enough to
+                            // overflow the async log appender and drop real entries with them.
+                            if (!portalDb.AllFiles.ContainsKey(p))
+                                continue;
+
                             var pal = portalDb.ReadFromDat<Palette>(p);
                             if (IsUsableCreaturePalette(pal))
                             {
