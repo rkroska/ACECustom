@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
@@ -2640,6 +2640,14 @@ namespace ACE.Server.WorldObjects
             get => (CloakStatus)(GetProperty(PropertyInt.CloakStatus) ?? 0);
             set { if (value == 0) RemoveProperty(PropertyInt.CloakStatus); else SetProperty(PropertyInt.CloakStatus, (int)value); }
         }
+
+        /// <summary>
+        /// True when the cloak makes you LOOK like something else - Player, Creature or Hybrid - which is what hides
+        /// the admin "+" and the admin object flag. Off, On and Ghost are not disguises. Ghost has to be asked for by
+        /// name because it was appended to the enum, so a plain "CloakStatus &lt; CloakStatus.Player" puts it on the
+        /// wrong side (owner 2026-09-22).
+        /// </summary>
+        public bool CloakIsDisguise => CloakStatus >= CloakStatus.Player && CloakStatus != CloakStatus.Ghost;
 
         public bool IgnorePortalRestrictions
         {

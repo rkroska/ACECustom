@@ -1,4 +1,4 @@
-using ACE.DatLoader;
+﻿using ACE.DatLoader;
 using ACE.DatLoader.Entity;
 using ACE.DatLoader.FileTypes;
 using ACE.Entity;
@@ -290,7 +290,7 @@ namespace ACE.Server.WorldObjects
         {
             var physicsDescriptionFlag = CalculatedPhysicsDescriptionFlag();
 
-            if (adminvision && this is Player && CloakStatus == CloakStatus.On)
+            if (adminvision && this is Player && (CloakStatus == CloakStatus.On || CloakStatus == CloakStatus.Ghost))
             {
                 physicsDescriptionFlag |= PhysicsDescriptionFlag.Translucency;
             }
@@ -366,8 +366,8 @@ namespace ACE.Server.WorldObjects
                 writer.Write(Elasticity ?? 0f);
 
             if ((physicsDescriptionFlag & PhysicsDescriptionFlag.Translucency) != 0)
-                if (adminvision && this is Player && CloakStatus == CloakStatus.On)
-                    writer.Write(0.5f);
+                if (adminvision && this is Player && (CloakStatus == CloakStatus.On || CloakStatus == CloakStatus.Ghost))
+                    writer.Write(0.5f);      // Ghost reuses the half-opacity an admin with adminvision already sees
                 else
                     writer.Write(Translucency ?? 0f);
 
@@ -852,7 +852,7 @@ namespace ACE.Server.WorldObjects
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.UiHidden, UiHidden);
 
             if (WeenieType == WeenieType.Admin || WeenieType == WeenieType.Sentinel)
-                UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Admin, CloakStatus < CloakStatus.Player); 
+                UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Admin, !CloakIsDisguise);
 
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.FreePkStatus, PlayerKillerStatus == PlayerKillerStatus.Free);
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.ImmuneCellRestrictions, IgnoreHouseBarriers);
