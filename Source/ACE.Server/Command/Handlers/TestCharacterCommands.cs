@@ -773,9 +773,9 @@ namespace ACE.Server.Command.Handlers
         // /asforge premade <tier> <avg|bis>: the 18-piece `all` roster with the
         // cantrip lines written EXPLICITLY instead of rolled, so a tester can wear "the average
         // T-whatever suit" or "the best possible one" without farming. Two presets:
-        //   BiS     = core four at window cap, the tier's MAX line count, every line at band MAX,
+        //   BiS     = Always Rolled resists at band MAX, the tier's MAX line count, every line at band MAX,
         //             lines in the fixed order below.
-        //   Average = core four at window midpoint, floor(expected) lines per piece dealt
+        //   Average = Always Rolled resists at band midpoint, floor(expected) lines per piece dealt
         //             round-robin from the class-weight mix (trash 10 / mid 6 / chase 1), every
         //             line at band MIDPOINT.
         // Line count ladder (max / guaranteed): T11 2/0, T12-14 3/1, T15-17 4/2, T18-20 5/3,
@@ -879,6 +879,20 @@ namespace ACE.Server.Command.Handlers
                 return (cmin, cmax);
             }
             return (1, 1);
+        }
+
+        /// <summary>Every Always Rolled line (keys 50-53) this piece can carry, at a fixed grade. Premades write
+        /// them unconditionally - what a drop gets with the tier's chance at 100 pct (owner 2026-09-14).</summary>
+        private static void StampPremadeAlwaysRolled(WorldObject wo, int tier, int grade)
+        {
+            foreach (var def in ACE.Server.Managers.ZoneControl.ZoneModifiers.AllDefs)
+            {
+                if (def.Class != ACE.Server.Managers.ZoneControl.ZoneModifiers.ModifierClass.Always || !PremadeKeyAllowed(def.Key, wo, tier))
+                    continue;
+                var (bMin, bMax) = PremadeBand(def.Key, tier);
+                ACE.Server.Managers.ZoneControl.ZoneModifiers.StampGraded(wo, def, grade,
+                    ((int)Math.Round(bMin), (int)Math.Round(bMax)));
+            }
         }
 
         /// <summary>Deal the Average suit's lines: per-piece count = guaranteed (max - 2) plus one
@@ -1542,7 +1556,10 @@ namespace ACE.Server.Command.Handlers
                 // yardstick/rating cards so cards still win. Also stamps AL (doubling ladder)
                 // and the gear Creature Augs gate base. Tier 10 keeps the legacy path below.
                 if (tier >= 11)
-                    ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(wo, tier, forceMax: true);   // forge = core four at window cap
+                {
+                    ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(wo, tier);
+                    StampPremadeAlwaysRolled(wo, tier, ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax);   // forge = Always Rolled resists at band max
+                }
 
                 // Rating cards (dresist/cdresist/maxhp/drating/cdrating) and the yardstick card were DELETED
                 // 2026-08-23: Live Stat Resolution overwrites those props from the record on equip/login.
@@ -1732,10 +1749,10 @@ namespace ACE.Server.Command.Handlers
                     wo.RemoveProperty(ratingProp);
                 wo.RemoveProperty(PropertyInt.EquipmentSetId);
 
-                // core four: bis = window cap (forceMax), avg = window midpoint (coreFrac 0.5);
-                // also AL ladder + the gear Creature Augs base
-                ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(wo, tier,
-                    forceMax: bis, p: null, coreFrac: bis ? null : 0.5);
+                // AL ladder, then the Always Rolled resists: bis = band max, avg = band midpoint
+                ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(wo, tier);
+                StampPremadeAlwaysRolled(wo, tier, bis ? ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax
+                                                       : ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax / 2);
 
                 // the explicit lines - graded (live stat resolution 2026-08-22): bis = grade 1000, avg = 500,
                 // stamped through the ZcModifiers record; each key at most once per piece

@@ -2673,8 +2673,6 @@ namespace ACE.Server.Command.Handlers
                             Msg($"Default v{dvar}{RankTag(rank)} {dstat} = {FmtStatEcho(dval)}. " + (rank == ZcRank.None
                                 ? $"Every zone at v{dvar} that doesn't set it inherits this."
                                 : $"Every {ZoneRank.Label(rank)} at v{dvar} reads this instead of the Default row."));
-                            if (dstat == ZoneStat.CoreAnchorDr || dstat == ZoneStat.CoreAnchorCdr)
-                                AutoApplyForDefault(session, true, dvar, Msg);
                             return;
                         }
 
@@ -2695,8 +2693,6 @@ namespace ACE.Server.Command.Handlers
                                 if (row != null) dremoved = row.Stats.Remove(dstat);
                             });
                             Msg(dremoved ? $"Default v{dvar}{RankTag(rank)} {dstat} cleared." : $"That stat wasn't set on the Default{RankTag(rank)}.");
-                            if (dremoved && (dstat == ZoneStat.CoreAnchorDr || dstat == ZoneStat.CoreAnchorCdr))
-                                AutoApplyForDefault(session, true, dvar, Msg);
                             return;
                         }
 
@@ -2988,7 +2984,7 @@ namespace ACE.Server.Command.Handlers
 
             try
             {
-                ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(armor, 11, forceMax: false, p: p);
+                ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(armor, 11, p: p);
                 if (p != null) ZoneLootMutator.MutateLootItem(armor, p, null, 11);
                 // guarantee at least one graded line on the piece regardless of the zone's roll
                 if (ZoneModifiers.TryGet(28, out var dr))
@@ -4569,15 +4565,18 @@ namespace ACE.Server.Command.Handlers
                     detail.Add($"{def.Name} {v.Value} in [{band.Min}-{band.Max}] -> {grade}");
                 }
 
-                // core four from the stamped Gear* props against the tier's window
-                foreach (var coreKey in ZoneStatResolver.CoreKeys)
+                // Always Rolled resists (keys 50-53, the retired core four) carry no "Zone Cantrip:" line on a
+                // pre-grade piece - grade them from the stamped Gear* props against the tier's live band
+                foreach (var adef in ZoneModifiers.AllDefs)
                 {
-                    var pv = wo.GetProperty(ZoneStatResolver.CoreProp(coreKey));
+                    if (adef.Class != ZoneModifiers.ModifierClass.Always || adef.Ints == null || adef.Ints.Length == 0) continue;
+                    if (records.Exists(r => r.Key == adef.Key)) continue;
+                    var pv = wo.GetProperty((PropertyInt)adef.Ints[0].PropId);
                     if (!pv.HasValue) continue;
-                    var (cmin, cmax) = ZoneStatResolver.CoreWindow(coreKey, tier);
+                    var (cmin, cmax) = ZoneStatResolver.EffectiveBand(adef.Key, tier);
                     var grade = ZoneStatResolver.GradeFor(cmin, cmax, pv.Value);
-                    Put(coreKey, grade);
-                    detail.Add($"{ZoneStatResolver.CoreName(coreKey)} {pv.Value} in [{cmin}-{cmax}] -> {grade}");
+                    Put(adef.Key, grade);
+                    detail.Add($"{adef.Name} {pv.Value} in [{cmin}-{cmax}] -> {grade}");
                 }
 
                 // key 25 Armor Level: only an Armor piece above the tier base, and only when the line exists
