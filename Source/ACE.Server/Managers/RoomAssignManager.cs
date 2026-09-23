@@ -57,7 +57,7 @@ namespace ACE.Server.Managers
     /// player's own property read locks. Lock order _scanLock -> _parseLock -> _lock, never reversed.
     /// PlayerManager.GetAllOnline takes its own lock, so occupancy is built BEFORE _lock.
     /// </summary>
-    public static class RoomAssignManager
+    public static partial class RoomAssignManager   // the dungeon builder and the test tools are partials of this class
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -1136,7 +1136,7 @@ namespace ACE.Server.Managers
             => IsStaff(player.Session?.AccessLevel ?? AccessLevel.Player, player.IsAdmin);
 
         private static bool IsStaff(AccessLevel accessLevel, bool isAdmin)
-            => isAdmin || accessLevel >= AccessLevel.Admin;
+            => !TestAdminCounts && (isAdmin || accessLevel >= AccessLevel.Admin);   // TestAdminCounts: a test tool, false unless room_assign_test_tools is on
 
         private static uint AccountOf(Player player) => player.Account?.AccountId ?? player.Session?.AccountId ?? 0;
 
@@ -1202,6 +1202,8 @@ namespace ACE.Server.Managers
                     }
                 }
             }
+
+            TestAddFakes(occupancy);   // test tool: no-op unless room_assign_test_tools is on
 
             return occupancy;
         }

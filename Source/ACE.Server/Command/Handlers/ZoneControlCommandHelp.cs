@@ -118,6 +118,22 @@ namespace ACE.Server.Command.Handlers
             E("Readiness", "/zonecontrol mobcheck", "[<zone>] [<wcid>]", "Is this monster ready in this zone? No wcid = the creature you have selected."),
             E("Readiness", "/zonecontrol mobcheckget", "[<zone>] [--wcid <id>]", "Machine twin of mobcheck ([[ZCMC]]) for the Readiness tab."),
 
+            // ── Dungeons (one-player room dungeons) ─────────────────────────
+            E("Dungeons", "/zonecontrol dungeon status", "", "Every room of the dungeon you are in: who stands in it, reservation, hold."),
+            E("Dungeons", "/zonecontrol dungeon goto", "<room>", "Teleport to a room's landing. A plain teleport, no room is claimed."),
+            E("Dungeons", "/zonecontrol dungeon add", "[room]", "New room where you stand; lowest free number, or that one. Variation 3 and up only."),
+            E("Dungeons", "/zonecontrol dungeon remove", "<room>", "Take a room out of the room list. Variation 3 and up only."),
+            E("Dungeons", "/zonecontrol dungeon land", "", "The landing of the room you stand in = exactly here, facing its generator. Makes the room if the cell is none."),
+            E("Dungeons", "/zonecontrol dungeon cell", "<room> <cell>", "Add a cell to a room, or take it out - how a room of several cells is built."),
+            E("Dungeons", "/zonecontrol dungeon place", "player|monster|door <cell> <x> <y> [cell]", "Place by map pin: landing in the nearest corner, generator at the room middle (or the pinned cell's centre), wall in the nearest doorway."),
+            E("Dungeons", "/zonecontrol dungeon monster here", "", "The room's generator is placed, or moved, exactly where you stand."),
+            E("Dungeons", "/zonecontrol dungeon state", "", "The [[ZCDG]] data line for the plugin's Dungeons tab."),
+            E("Dungeons", "/zonecontrol dungeon map", "", "The [[ZCDGM]] map lines for the plugin's Dungeons tab."),
+            E("Dungeons", "/zonecontrol dungeon admin", "on|off", "TEST TOOL: admins count as players. Needs room_assign_test_tools."),
+            E("Dungeons", "/zonecontrol dungeon fill", "here|<room>|random [count]|random leave <n>", "TEST TOOL: fake players that make rooms count as taken. Memory only."),
+            E("Dungeons", "/zonecontrol dungeon clear", "[room]", "TEST TOOL: remove one fake player, or all of them."),
+            E("Dungeons", "/zonecontrol dungeon markers", "all [minutes] | clear", "TEST TOOL: a WCID 1 marker on every landing, temporary, never saved."),
+
             // ── Weapon scaling ────────────────────────────────────────────────
             E("Weapon Scaling", "/weaponscale", "show | enable on|off | tier <t> cap|minwield|minwieldtriune|minwieldskillcharm <n> | tier add|remove <t> | script <name> kmin|kmax|variance <v> | script <name> ladder <anchorS>|clear | script <name> grade <S..F-> <k> | script add|remove <name> | grade ... | kc min|max <v> | sync on|off | reset | reload | tighten", "Weapon aug-scaling config (the plugin's Weapons > Scaling panel)."),
 

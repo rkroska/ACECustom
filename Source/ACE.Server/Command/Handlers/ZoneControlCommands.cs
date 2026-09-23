@@ -27,7 +27,7 @@ namespace ACE.Server.Command.Handlers
     /// stat set for all its monsters, and optional per-monster (WCID) overrides. No prestige/tier/boss concepts.
     /// Disable reverts monsters to baseline (live stats instantly, HP on respawn).
     /// </summary>
-    public static class ZoneControlCommands
+    public static partial class ZoneControlCommands   // /zonecontrol dungeon lives in ZoneControlCommands.Dungeon.cs
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -203,6 +203,7 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /zonecontrol craft enabled true|false | craft mintier <tier>   (master switch; the tier the gate starts applying at, default 11)");
                 Msg("  /zonecontrol craft components [true|false | add <wcid> | remove <wcid> | reset]   (layer 0: salvage barred from T"
                     + ZoneCraftGateStore.MinTier + "+ items outright, e.g. the Fine Bandit Blade Hilt)");
+                Msg("  /zonecontrol dungeon   (the one-player room dungeon builder - bare verb lists its commands; writes only to variation 3 and up)");
                 Msg("  parts = " + string.Join(", ", Enum.GetNames(typeof(CombatBodyPart)).Where(n => n != "Undefined")));
                 Msg("  stats = " + string.Join(", ", ZoneStat.All));
                 return;
@@ -228,7 +229,7 @@ namespace ACE.Server.Command.Handlers
             // instead (the zone doesn't exist yet); sync's name sits at args[2].
             if (sub == "sync")
                 CollapseZoneNameTokens(args, 2);
-            else if (sub != "create" && sub != "default" && sub != "ladder" && sub != "craft")
+            else if (sub != "create" && sub != "default" && sub != "ladder" && sub != "craft" && sub != "dungeon")
                 // 'default' takes a VARIATION at args[1], not a zone name â€” collapsing would mangle it.
                 // 'ladder' takes a verb / tier / player name, never a zone.
                 // 'craft' takes a MATERIAL NAME at args[1] (possibly two words, "Black Opal") â€” never a zone.
@@ -2828,6 +2829,12 @@ namespace ACE.Server.Command.Handlers
                         HandleCraft(session, args, Msg);
                         return;
                     }
+
+                    case "dungeon":
+                        // The dungeon builder + Room Assign test tools (ZoneControlCommands.Dungeon.cs). Its args are a
+                        // verb, a room number, a cell - never a zone name, so they are not collapsed above.
+                        HandleDungeon(session, args);
+                        return;
 
                     default:
                         Msg($"Unknown subcommand '{sub}'. See /zonecontrol help.");
