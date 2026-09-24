@@ -613,6 +613,36 @@ namespace ACE.Server.Factories.Tables.Wcids
             return null;
         }
 
+        /// <summary>Essence tiers in ascending order (50 ... 300). Read by the web portal's pet guide.</summary>
+        public static List<int> GetTierLevels()
+        {
+            var levels = new List<int>(petLevelIndexes.Keys);
+            levels.Sort();
+            return levels;
+        }
+
+        /// <summary>
+        /// Copies of the essence families a mastery can summon, each family's wcids in tier order.
+        /// Read by the web portal's pet guide.
+        /// </summary>
+        public static List<List<WeenieClassName>> GetFamilies(global::ACE.Entity.Enum.SummoningMastery mastery)
+        {
+            List<List<WeenieClassName>> masteriesList;
+            if (mastery == global::ACE.Entity.Enum.SummoningMastery.Necromancer)
+                masteriesList = Necromancer_PetDevices;
+            else if (mastery == global::ACE.Entity.Enum.SummoningMastery.Primalist)
+                masteriesList = Primalist_PetDevices;
+            else if (mastery == global::ACE.Entity.Enum.SummoningMastery.Naturalist)
+                masteriesList = Naturalist_PetDevices;
+            else
+                return new List<List<WeenieClassName>>();
+
+            var copy = new List<List<WeenieClassName>>(masteriesList.Count);
+            foreach (var family in masteriesList)
+                copy.Add(new List<WeenieClassName>(family));
+            return copy;
+        }
+
         public static WeenieClassName RollBaby(global::ACE.Entity.Enum.SummoningMastery mastery, int level)
         {
             List<List<WeenieClassName>> masteriesList;

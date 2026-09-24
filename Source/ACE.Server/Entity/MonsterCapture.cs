@@ -47,6 +47,45 @@ namespace ACE.Server.Entity
         private const float CapturedAppearancePassiveTargetHeightM = 0.75f;
 
         private const float CapturedAppearanceCombatTargetHeightM = 1.5f;
+
+        // Capture rules. Public so the web portal's pet guide (PetGuideController) shows the values the
+        // game actually uses instead of a copy that can drift.
+
+        /// <summary>A lens targets the nearest attackable creature within this many meters.</summary>
+        public const float CaptureRangeM = 5.0f;
+        /// <summary>A creature can be siphoned once at or below this fraction of its max health...</summary>
+        public const float CaptureMaxHealthFraction = 0.20f;
+        /// <summary>...or below this many hit points, whichever comes first.</summary>
+        public const int CaptureMaxHealthPoints = 20;
+
+        public const float FlawedLensBaseRate = 0.05f;
+        public const float FlawedLensRateCap = 0.10f;
+        public const float PristineLensBaseRate = 0.10f;
+        public const float PristineLensRateCap = 0.20f;
+        public const float PerfectLensBaseRate = 0.15f;
+        public const float PerfectLensRateCap = 0.30f;
+        /// <summary>No capture attempt is ever below this chance.</summary>
+        public const float CaptureMinRate = 0.01f;
+
+        /// <summary>Assess Creature skill adds skill / divisor, up to the max.</summary>
+        public const float AssessSkillBonusDivisor = 10000f;
+        public const float AssessSkillBonusMax = 0.10f;
+        public const float AssessSpecializedBonus = 0.05f;
+        /// <summary>Scales with missing health: the full bonus at 0% health.</summary>
+        public const float LowHealthBonusMax = 0.05f;
+        /// <summary>Each level the creature has above the player costs 1/divisor, up to the max.</summary>
+        public const float LevelPenaltyDivisor = 400f;
+        public const float LevelPenaltyMax = 0.25f;
+
+        /// <summary>Resonance Lens: the Pristine chance plus this bonus, capped.</summary>
+        public const float ResonanceLensBonus = 0.25f;
+        public const float ResonanceLensRateCap = 0.60f;
+
+        /// <summary>A failed capture enrages the creature: healed to full, this much damage...</summary>
+        public const float EnrageDamageMultiplier = 2.0f;
+        /// <summary>...and this much damage reduction.</summary>
+        public const float EnrageDamageReduction = 0.67f;
+
         /// <summary>
         /// Siphon Lens System - Capture creature appearance
         /// Handles all lens tiers including Resonance (second-chance) and Asheron's (guaranteed)
@@ -89,7 +128,7 @@ namespace ACE.Server.Entity
             
             // Find nearest creature within 5 units - must be attackable (hostile mobs only)
             var nearbyCreatures = player.PhysicsObj.ObjMaint.GetVisibleObjectsValuesOfTypeCreature()
-                .Where(c => c != null && c != player && !(c is Player) && c.Attackable && c.Location != null && c.Location.DistanceTo(player.Location) <= 5.0f)
+                .Where(c => c != null && c != player && !(c is Player) && c.Attackable && c.Location != null && c.Location.DistanceTo(player.Location) <= CaptureRangeM)
                 .OrderBy(c => c.Location.DistanceTo(player.Location))
                 .ToList();
             
@@ -124,7 +163,7 @@ namespace ACE.Server.Entity
             
             // Health threshold check - Debug and Asheron's Lenses bypass this
             var healthPercent = (float)targetCreature.Health.Current / targetCreature.Health.MaxValue;
-            if (!isDebugLens && !isAsheronsLens && healthPercent > 0.20f && targetCreature.Health.Current >= 20)
+            if (!isDebugLens && !isAsheronsLens && healthPercent > CaptureMaxHealthFraction && targetCreature.Health.Current >= CaptureMaxHealthPoints)
             {
                 player.SendTransientError($"The creature is too strong! Weaken it below 20% health or 20 HP first. (Currently {healthPercent:P0})");
                 return;
@@ -240,7 +279,7 @@ namespace ACE.Server.Entity
 
             var nearbyCreatures = player.PhysicsObj.ObjMaint.GetVisibleObjectsValuesOfTypeCreature()
                 .Where(c => c != null && c != player && !(c is Player) && c.Attackable && c.Location != null
-                    && c.Location.DistanceTo(player.Location) <= 5.0f
+                    && c.Location.DistanceTo(player.Location) <= CaptureRangeM
                     && c.WeenieClassId == storedWcid
                     && c.Guid.Full == targetGuidFull)
                 .OrderBy(c => c.Location.DistanceTo(player.Location))
@@ -282,7 +321,7 @@ namespace ACE.Server.Entity
             }
 
             var healthPercent = (float)targetCreature.Health.Current / targetCreature.Health.MaxValue;
-            if (healthPercent > 0.20f && targetCreature.Health.Current >= 20)
+            if (healthPercent > CaptureMaxHealthFraction && targetCreature.Health.Current >= CaptureMaxHealthPoints)
             {
                 errorMessage = $"The creature is too strong! Weaken it below 20% health or 20 HP first. (Currently {healthPercent:P0})";
                 return false;
@@ -309,8 +348,8 @@ namespace ACE.Server.Entity
             
             // Calculate success rate with resonance bonus
             var baseRate = CalculateSuccessRate(player, crystal, targetCreature, healthPercent);
-            var resonanceBonus = 0.25f; // +25% bonus for resonance lens
-            var finalRate = Math.Min(baseRate + resonanceBonus, 0.60f); // Cap at 60%
+            var resonanceBonus = ResonanceLensBonus; // +25% bonus for resonance lens
+            var finalRate = Math.Min(baseRate + resonanceBonus, ResonanceLensRateCap); // Cap at 60%
 
             var roll = ThreadSafeRandom.Next(0.0f, 1.0f);
             var success = roll < finalRate;
@@ -438,8 +477,8 @@ namespace ACE.Server.Entity
             if (!targetCreature.IsEnraged)
             {
                 // Apply "Hardcore" stats: 2x Damage, ~3x Effective Health (0.67 reduction)
-                targetCreature.SetProperty(PropertyFloat.EnrageDamageMultiplier, 2.0f);
-                targetCreature.SetProperty(PropertyFloat.EnrageDamageReduction, 0.67f);
+                targetCreature.SetProperty(PropertyFloat.EnrageDamageMultiplier, EnrageDamageMultiplier);
+                targetCreature.SetProperty(PropertyFloat.EnrageDamageReduction, EnrageDamageReduction);
                 
                 // Random Enrage Visual
                 var visualOptions = new[] { 
@@ -486,38 +525,38 @@ namespace ACE.Server.Entity
             // Base rate and cap by tier
             // Resonance lens (tier 5) uses Pristine (tier 2) base rates
             var (baseRate, tierCap) = crystalTier switch {
-                TIER_FLAWED => (0.05f, 0.10f),
-                TIER_PRISTINE => (0.10f, 0.20f),
-                TIER_PERFECT => (0.15f, 0.30f),
+                TIER_FLAWED => (FlawedLensBaseRate, FlawedLensRateCap),
+                TIER_PRISTINE => (PristineLensBaseRate, PristineLensRateCap),
+                TIER_PERFECT => (PerfectLensBaseRate, PerfectLensRateCap),
                 TIER_DEBUG => (1.00f, 1.00f),
-                TIER_RESONANCE => (0.10f, 0.20f), // Uses Pristine base for calculation
+                TIER_RESONANCE => (PristineLensBaseRate, PristineLensRateCap), // Uses Pristine base for calculation
                 TIER_ASHERONS => (1.00f, 1.00f),
-                _ => (0.10f, 0.20f)
+                _ => (PristineLensBaseRate, PristineLensRateCap)
             };
-            
+
             // Skill bonus (max +10%)
             var playerSkill = player.GetCreatureSkill(Skill.AssessCreature).Current;
-            var skillBonus = Math.Min(playerSkill / 10000f, 0.10f);
-            
+            var skillBonus = Math.Min(playerSkill / AssessSkillBonusDivisor, AssessSkillBonusMax);
+
             // Specialization bonus (+5% if specialized)
             var isSpecialized = player.GetCreatureSkill(Skill.AssessCreature).AdvancementClass == SkillAdvancementClass.Specialized;
-            var specializationBonus = isSpecialized ? 0.05f : 0f;
-            
+            var specializationBonus = isSpecialized ? AssessSpecializedBonus : 0f;
+
             // Health bonus (max +5% at 0% health)
-            var healthBonus = (1f - healthPercent) * 0.05f;
-            
+            var healthBonus = (1f - healthPercent) * LowHealthBonusMax;
+
             // Creature difficulty penalty based on level DIFFERENCE (max -25% for 100+ levels higher)
             var creatureLevel = creature.Level ?? 1;
             var playerLevel = player.Level ?? 1;
             var levelDiff = Math.Max(0, creatureLevel - playerLevel);
-            var difficultyPenalty = Math.Min(levelDiff / 400f, 0.25f);
+            var difficultyPenalty = Math.Min(levelDiff / LevelPenaltyDivisor, LevelPenaltyMax);
             
             // Capture Difficulty Multiplier (default 1.0)
             var difficultyMultiplier = (float)(creature.GetProperty(PropertyFloat.CaptureDifficulty) ?? 1.0f);
             
             // Calculate final rate with tier cap
             var rawRate = (baseRate + skillBonus + specializationBonus + healthBonus - difficultyPenalty) * difficultyMultiplier;
-            var finalRate = Math.Clamp(rawRate, 0.01f, tierCap);
+            var finalRate = Math.Clamp(rawRate, CaptureMinRate, tierCap);
 
             return finalRate;
         }

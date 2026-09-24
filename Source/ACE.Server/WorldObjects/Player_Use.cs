@@ -237,7 +237,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Courtship Incense (78780250 - 78780252)
-            if (sourceItem.WeenieClassId >= 78780250 && sourceItem.WeenieClassId <= 78780252)
+            if (sourceItem.WeenieClassId >= PetDevice.BreedingMath.LesserIncenseWcid && sourceItem.WeenieClassId <= PetDevice.BreedingMath.ExquisiteIncenseWcid)
             {
                 if (target is not PetDevice petDevice)
                 {
@@ -257,10 +257,10 @@ namespace ACE.Server.WorldObjects
 
                 var bonus = sourceItem.WeenieClassId switch
                 {
-                    78780250 => 0.025f, // Lesser: +2.5%
-                    78780251 => 0.050f, // Refined: +5.0%
-                    78780252 => 0.100f, // Exquisite: +10.0%
-                    _ => 0.025f
+                    PetDevice.BreedingMath.LesserIncenseWcid => PetDevice.BreedingMath.LesserIncenseBonus, // Lesser: +2.5%
+                    PetDevice.BreedingMath.RefinedIncenseWcid => PetDevice.BreedingMath.RefinedIncenseBonus, // Refined: +5.0%
+                    PetDevice.BreedingMath.ExquisiteIncenseWcid => PetDevice.BreedingMath.ExquisiteIncenseBonus, // Exquisite: +10.0%
+                    _ => PetDevice.BreedingMath.LesserIncenseBonus
                 };
 
                 var currentBonus = petDevice.GetProperty(PropertyFloat.PetIncenseBonus) ?? 0.0f;

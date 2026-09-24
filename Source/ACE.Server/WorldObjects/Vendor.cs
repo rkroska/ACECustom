@@ -606,9 +606,16 @@ namespace ACE.Server.WorldObjects
         /// The sell price without narrowing to uint. Same float arithmetic as before, so normal prices are
         /// unchanged; a negative Value still prices at 1.
         /// </summary>
-        private long GetSellCostWide(int? value, ItemType? itemType)
+        private long GetSellCostWide(int? value, ItemType? itemType) => SellCostFor(SellPrice, value, itemType);
+
+        /// <summary>
+        /// The sell price for a vendor with the given SellPrice rate, without a live Vendor object. The web
+        /// portal's pet guide prices a vendor's shop from its weenie with this, so the page and the vendor
+        /// can never disagree.
+        /// </summary>
+        public static long SellCostFor(double? vendorSellPrice, int? value, ItemType? itemType)
         {
-            var sellRate = SellPrice ?? 1.0;
+            var sellRate = vendorSellPrice ?? 1.0;
             if (itemType == ItemType.PromissoryNote)
                 sellRate = 1.15;
 

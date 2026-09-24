@@ -291,6 +291,18 @@ namespace ACE.Server.Factories
             return null;
         }
 
+        // Siphon lens level gates. Public so the web portal's pet guide (PetGuideController) shows the
+        // values the drop roll actually uses.
+
+        /// <summary>Pristine lenses start dropping from creatures of this level...</summary>
+        public const uint SiphonLensPristineMinCreatureLevel = 50;
+        /// <summary>...Perfect lenses from this level.</summary>
+        public const uint SiphonLensPerfectMinCreatureLevel = 100;
+        /// <summary>Each unlocked lens reaches its full rate this many levels after it unlocks.</summary>
+        public const float SiphonLensRampLevels = 50.0f;
+        /// <summary>Every lens rate is multiplied by 1 + creature level / this.</summary>
+        public const float SiphonLensLevelBonusDivisor = 300.0f;
+
         /// <summary>
         /// Rolls for a siphon lens drop for ANY creature death (works without DeathTreasureType).
         /// Uses creature level to scale tier probabilities - higher level creatures have better lens drop chances.
@@ -320,23 +332,23 @@ namespace ACE.Server.Factories
             // - High levels (100-149): Perfect unlocked at reduced rate
             // - Endgame (150+): Full rates for all tiers
             // Additionally, higher levels get a slight boost to overall drop chance
-            float levelMultiplier = 1.0f + (creatureLevel / 300.0f); // Up to 50% boost at level 150
-            
+            float levelMultiplier = 1.0f + (creatureLevel / SiphonLensLevelBonusDivisor); // Up to 50% boost at level 150
+
             float effectiveFlawedRate = flawedRate * levelMultiplier;
             float effectivePristineRate = 0.0f;
             float effectivePerfectRate = 0.0f;
-            
-            if (creatureLevel >= 50)
+
+            if (creatureLevel >= SiphonLensPristineMinCreatureLevel)
             {
                 // Pristine unlocks at level 50, scales up to full at level 100
-                float pristineScale = Math.Min(1.0f, (creatureLevel - 50) / 50.0f);
+                float pristineScale = Math.Min(1.0f, (creatureLevel - SiphonLensPristineMinCreatureLevel) / SiphonLensRampLevels);
                 effectivePristineRate = pristineRate * pristineScale * levelMultiplier;
             }
-            
-            if (creatureLevel >= 100)
+
+            if (creatureLevel >= SiphonLensPerfectMinCreatureLevel)
             {
                 // Perfect unlocks at level 100, scales up to full at level 150
-                float perfectScale = Math.Min(1.0f, (creatureLevel - 100) / 50.0f);
+                float perfectScale = Math.Min(1.0f, (creatureLevel - SiphonLensPerfectMinCreatureLevel) / SiphonLensRampLevels);
                 effectivePerfectRate = perfectRate * perfectScale * levelMultiplier;
             }
             
