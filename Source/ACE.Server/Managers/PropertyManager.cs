@@ -540,6 +540,8 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> pet_potency_enabled { get; private set; } = new(false, "If TRUE, enables potency spend, body-part scaling, residue drops, and bond strain hooks.");
         public static ConfigProperty<bool> pet_residue_drops_enabled { get; private set; } = new(true, "If TRUE, combat pets can award Essence Residue on kills (requires pet_potency_enabled).");
         public static ConfigProperty<bool> pet_residue_salvage_enabled { get; private set; } = new(true, "If TRUE, spare captured essences can be salvaged for residue (requires pet_potency_enabled).");
+        public static ConfigProperty<bool> pet_bred_essence_salvage_enabled { get; private set; } = new(true, "If TRUE, the Essence Resonator also salvages BRED pet essences, so an owner can bin a pet they are finished with. Pays pet_bred_essence_salvage_yield whatever the pet's quality (requires pet_residue_salvage_enabled).");
+        public static ConfigProperty<long> pet_bred_essence_salvage_yield { get; private set; } = new(1, "Flat Savage Echo paid for salvaging a bred pet essence, whatever its quality. Kept a token because a herd of females breeds babies indefinitely: 5 would let a 20-female herd make ~600 echo a day without hunting. 0 = the essence is taken and nothing is paid. Capped at 10,000 per salvage (one stack).");
         public static ConfigProperty<bool> pet_strain_enabled { get; private set; } = new(false, "If TRUE, player damage rating is reduced while a combat pet is summoned based on active potency.");
         public static ConfigProperty<double> pet_potency_damage_per_level { get; private set; } = new(0.02, "Fraction of body-part DVal added per active potency level (0.02 = +2%/level). Resummon pet after change.");
         public static ConfigProperty<long> pet_potency_active_cap { get; private set; } = new(0, "Hard cap on active potency (0 = unlimited). Resummon pet after change.");
@@ -558,7 +560,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> pet_residue_shiny_mult { get; private set; } = new(5.0, "Multiplies residue drop amount for shiny creatures.");
         public static ConfigProperty<double> pet_residue_global_mult { get; private set; } = new(1.0, "Multiplies final residue drop amount.");
         public static ConfigProperty<bool> pet_residue_require_bond_attuned { get; private set; } = new(true, "Only award kill drops for bond-attuned combat essences.");
-        public static ConfigProperty<long> pet_residue_salvage_base { get; private set; } = new(5, "Flat Savage Echo yield per salvage (Siphoned and Hollow give this amount; shiny multiplier still applies on top).");
+        public static ConfigProperty<long> pet_residue_salvage_base { get; private set; } = new(5, "Flat Savage Echo yield per salvage (Siphoned and Hollow give this amount; shiny multiplier still applies on top). The final yield is capped at 10,000 per salvage (one stack).");
         public static ConfigProperty<double> pet_residue_salvage_per_creature_level { get; private set; } = new(0.0, "Legacy: per-level scaling added to salvage base. 0 = disabled (flat yield).");
         public static ConfigProperty<double> pet_residue_salvage_mult { get; private set; } = new(1.0, "Legacy: global salvage yield multiplier. 1.0 = no reduction.");
         public static ConfigProperty<double> pet_residue_hollow_mult { get; private set; } = new(0.75, "Hollow essence salvage multiplier vs Siphoned. 1.0 = same yield.");
