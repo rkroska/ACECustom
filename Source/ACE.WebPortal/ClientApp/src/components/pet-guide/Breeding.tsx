@@ -58,7 +58,7 @@ export default function Breeding({ data }: { data: PetGuideData }) {
               <>The baby essence goes straight into the <strong>female's owner's</strong> pack, every time. Agree on who keeps it before you dance.</>,
             ]}
           />
-          <Tip>A baby can be traded until someone summons it. {m.imprintOnSummon && 'The first character to summon it owns it for good.'}</Tip>
+          {m.imprintOnSummon && <Tip>A baby can be traded until someone summons it. The first character to summon it owns it for good.</Tip>}
         </Card>
       </div>
 

@@ -17,6 +17,7 @@ import {
   totalMutations,
   normalizeBreedingCadence,
   femaleBreedsPerDay,
+  maturityMultiplier,
   DEFAULT_BREEDING_CONFIG,
   DEFAULT_BREEDING_CADENCE,
   EMPTY_GENETICS,
@@ -915,10 +916,16 @@ export default function PetBreedingCalculator() {
   }
 
   // Throughput: each stud gives its charges once per refill period; each female breeds once per recovery.
-  const studRefillsPerDay = cadence.maleRefillHours > 0 ? 24 / cadence.maleRefillHours : 0
-  const studBreedsPerDay = PROFILE_STUDS[calcProfile] * cadence.maleChargesPerRefill * studRefillsPerDay
-  const donorBreedsPerDay = calcDonors * femaleBreedsPerDay(cadence)
-  const breedsPerDay = Math.max(1, Math.min(studBreedsPerDay, donorBreedsPerDay))
+  // A refill time of 0 means stud charges never come back: the studs' first charges are all there will ever be.
+  const studsOwned = PROFILE_STUDS[calcProfile]
+  const studsRefill = cadence.maleRefillHours > 0
+  const studBreedsPerDay = studsRefill ? studsOwned * cadence.maleChargesPerRefill * (24 / cadence.maleRefillHours) : Infinity
+  const studLifetimeBreeds = studsRefill ? Infinity : studsOwned * cadence.maleChargesPerRefill
+  const femaleRate = femaleBreedsPerDay(cadence)
+  const donorBreedsPerDay = calcDonors * femaleRate
+  const breedsPerDay = Math.max(1, Math.min(studBreedsPerDay, donorBreedsPerDay, studLifetimeBreeds))
+  /** Breeds the studs can ever supply within the projection window. */
+  const breedsWithin = (dayCount: number) => Math.floor(Math.min(breedsPerDay * dayCount, studLifetimeBreeds))
 
   // Monte Carlo projections through the shared model: keep-the-best-baby campaign against a fixed donor.
   const est = useMemo(() => {
@@ -932,7 +939,7 @@ export default function PetBreedingCalculator() {
     }
     toTarget.sort((a, b) => a - b)
 
-    const ninetyDayBreeds = breedsPerDay * PROJECTION_DAYS
+    const ninetyDayBreeds = breedsWithin(PROJECTION_DAYS)
     const statMuts: number[] = []
     const potMuts: number[] = []
     const paletteRolls: number[] = []
@@ -963,9 +970,12 @@ export default function PetBreedingCalculator() {
       blessingsMedian: percentile(blessings, 0.5),
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alphaGenetics, betaGenetics, config, alphaIncense, betaIncense, alphaCatalyst, betaCatalyst, guardianKilled, calcTargetMuts, breedsPerDay, calcSeed])
+  }, [alphaGenetics, betaGenetics, config, alphaIncense, betaIncense, alphaCatalyst, betaCatalyst, guardianKilled, calcTargetMuts, breedsPerDay, studLifetimeBreeds, calcSeed])
 
-  const days = (breeds: number) => (breeds / breedsPerDay).toFixed(1)
+  /** Whether the studs can supply this many breeds at all (they cannot past their charges when refills are off). */
+  const reachable = (breeds: number) => breeds <= studLifetimeBreeds
+  const days = (breeds: number) => (reachable(breeds) ? `${(breeds / breedsPerDay).toFixed(1)} d` : 'never')
+  const stageMultipliers = config.maturityMultipliers
   const potencyCapValue = potencyCap(config)
   const shownStats = activeSelectedBaby ? (showNewborn ? activeSelectedBaby.newborn : activeSelectedBaby.adult) : null
 
@@ -1535,7 +1545,7 @@ export default function PetBreedingCalculator() {
                   <div className="lg:col-span-2 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-neutral-500">
-                        Summoned Ratings ({showNewborn ? 'Newborn, stage 1: x0.5' : 'Adult: x1.0'})
+                        Summoned Ratings ({showNewborn ? (stageMultipliers.length > 0 ? `Newborn, stage 1: x${maturityMultiplier(1, config)}` : 'Born adult: x1.0') : 'Adult: x1.0'})
                       </span>
                       <label className="flex items-center gap-1.5 text-[11px] font-bold text-neutral-300 cursor-pointer">
                         <input type="checkbox" checked={showNewborn} onChange={(e) => setShowNewborn(e.target.checked)} className="accent-rose-500" />
@@ -1612,8 +1622,8 @@ export default function PetBreedingCalculator() {
 
                       <div className="bg-neutral-950/80 border border-neutral-800 p-3 rounded-xl space-y-1">
                         <div className="text-[10px] font-black text-neutral-500 uppercase tracking-wider">Growth</div>
-                        <div className="text-lg font-black text-amber-300">5 Stages</div>
-                        <div className="text-[10px] text-neutral-400">x0.5 / 0.6 / 0.7 / 0.8 / 0.9, adult x1.0</div>
+                        <div className="text-lg font-black text-amber-300">{stageMultipliers.length} Stages</div>
+                        <div className="text-[10px] text-neutral-400">{stageMultipliers.length > 0 ? `x${stageMultipliers.join(' / ')}, adult x1.0` : 'Born adult, x1.0'}</div>
                       </div>
                     </div>
                   </div>
@@ -1688,7 +1698,7 @@ export default function PetBreedingCalculator() {
             </div>
 
             <div className="text-[11px] text-neutral-500">
-              Throughput: {breedsPerDay} breeds/day = min(studs {PROFILE_STUDS[calcProfile]} x {cadence.maleChargesPerRefill} charges per {cadence.maleRefillHours}h, dams {calcDonors} x {femaleBreedsPerDay(cadence)} per day at a {cadence.femaleRecoveryHours}h recovery).
+              Throughput: {+breedsPerDay.toFixed(2)} breeds/day = min(studs {studsOwned} x {cadence.maleChargesPerRefill} charges {studsRefill ? `per ${cadence.maleRefillHours}h` : '(they never refill, so these are all there are)'}, dams {calcDonors} x {Number.isFinite(femaleRate) ? `${+femaleRate.toFixed(2)} per day at a ${cadence.femaleRecoveryHours}h recovery` : 'unlimited (no recovery)'}).
               Campaigns are capped at {PROJECTION_MAX_BREEDS} breeds; {est.reachedPct.toFixed(0)}% of runs reached the target within that cap.
             </div>
 
@@ -1696,8 +1706,8 @@ export default function PetBreedingCalculator() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-neutral-800">
               <div className="bg-neutral-950 border border-neutral-800 p-4 rounded-xl space-y-1">
                 <div className="text-[10px] font-black text-neutral-500 uppercase tracking-wider">Median Time to Target</div>
-                <div className="text-2xl font-black text-emerald-400">{days(est.breedsMedian)} Days</div>
-                <div className="text-[10px] text-neutral-400">~{(est.breedsMedian / breedsPerDay / 7.0).toFixed(1)} weeks; lucky (p20) {days(est.breedsFast)} d, unlucky (p80) {days(est.breedsSlow)} d</div>
+                <div className="text-2xl font-black text-emerald-400">{reachable(est.breedsMedian) ? `${(est.breedsMedian / breedsPerDay).toFixed(1)} Days` : 'Never'}</div>
+                <div className="text-[10px] text-neutral-400">{reachable(est.breedsMedian) ? `~${(est.breedsMedian / breedsPerDay / 7.0).toFixed(1)} weeks` : 'the studs run out of charges first'}; lucky (p20) {days(est.breedsFast)}, unlucky (p80) {days(est.breedsSlow)}</div>
               </div>
 
               <div className="bg-neutral-950 border border-neutral-800 p-4 rounded-xl space-y-1">
@@ -1789,7 +1799,9 @@ export default function PetBreedingCalculator() {
                   Growth, Cosmetic Tailoring & Neutering
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  Newborns summon at x0.5 of their ratings and HP and grow through five stages (0.5, 0.6, 0.7, 0.8, 0.9) to adult x1.0. <strong>Pet Tailoring Kits</strong> extract and apply a pet's cosmetic appearance. <strong>Pet Neutering Kits</strong> permanently prevent a pet from breeding.
+                  {stageMultipliers.length > 0
+                    ? `Newborns summon at x${maturityMultiplier(1, config)} of their ratings and HP and grow through ${stageMultipliers.length} stages (${stageMultipliers.join(', ')}) to adult x1.0.`
+                    : 'Babies are born adult (x1.0): growing up is turned off on this server.'} <strong>Pet Tailoring Kits</strong> extract and apply a pet's cosmetic appearance. <strong>Pet Neutering Kits</strong> permanently prevent a pet from breeding.
                 </p>
               </div>
             </div>

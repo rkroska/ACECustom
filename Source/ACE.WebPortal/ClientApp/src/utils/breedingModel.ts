@@ -729,9 +729,9 @@ export function normalizeBreedingCadence(raw: unknown): BreedingCadence {
   }
 }
 
-/** Breeds per day a single female can physically supply (24h / her recovery). */
+/** Average breeds per day one female can supply (24h / her recovery); Infinity when she needs no rest. */
 export function femaleBreedsPerDay(cadence: BreedingCadence): number {
-  return cadence.femaleRecoveryHours > 0 ? Math.floor(24 / cadence.femaleRecoveryHours) : 0
+  return cadence.femaleRecoveryHours > 0 ? 24 / cadence.femaleRecoveryHours : Infinity
 }
 
 export interface CampaignOptions extends BreedOptions {

@@ -14,7 +14,10 @@ export const oneIn = (chance: number) => (chance > 0 ? `about 1 in ${num(Math.ro
 /** Seconds as the largest sensible unit: "20 hours", "27 days". */
 export function duration(seconds: number | null | undefined): string {
   if (seconds == null) return 'a while'
-  const plural = (n: number, unit: string) => `${+n.toFixed(1)} ${unit}${n === 1 ? '' : 's'}`
+  const plural = (n: number, unit: string) => {
+    const shown = +n.toFixed(1)
+    return `${shown} ${unit}${shown === 1 ? '' : 's'}`
+  }
   if (seconds >= 86400 * 2) return plural(seconds / 86400, 'day')
   if (seconds >= 3600) return plural(seconds / 3600, 'hour')
   if (seconds >= 60) return plural(seconds / 60, 'minute')

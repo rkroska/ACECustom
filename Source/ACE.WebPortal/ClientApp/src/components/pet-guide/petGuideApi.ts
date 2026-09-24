@@ -157,12 +157,38 @@ export function usePetGuide() {
         if (!res.ok) throw new Error(`The server answered ${res.status}.`)
         return res.json()
       })
-      .then(json => { if (!cancelled) setData(json) })
+      .then(json => {
+        if (!isPetGuideData(json)) throw new Error('The server sent incomplete pet guide data. It may need a restart after an update.')
+        if (!cancelled) setData(json)
+      })
       .catch(err => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)) })
     return () => { cancelled = true }
   }, [])
 
   return { data, error }
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
+
+/** Checks the parts of /api/pet-guide the pages index into, so a partial payload fails loudly instead of crashing a page. */
+function isPetGuideData(v: unknown): v is PetGuideData {
+  if (!isObject(v)) return false
+  const { features, capture, registry, charms, bond, potency, breeding, world } = v
+  if (![features, capture, registry, charms, bond, potency, breeding, world].every(isObject)) return false
+  const c = capture as Record<string, unknown>
+  const b = breeding as Record<string, unknown>
+  const w = world as Record<string, unknown>
+  const essences = w.essences as Record<string, unknown> | undefined
+  const shops = w.shops
+  return Array.isArray(c.lenses)
+    && isObject(c.resonance) && isObject(c.enrage) && isObject(c.lensDrops)
+    && Array.isArray((registry as Record<string, unknown>).milestones)
+    && Array.isArray((charms as Record<string, unknown>).refillDiscountByTier)
+    && isObject(b.mutationSteps) && isObject(b.maturity) && Array.isArray((b.maturity as Record<string, unknown>).stages)
+    && isObject(w.items) && isObject(w.npcs) && isObject(shops)
+    && isObject(essences) && Array.isArray(essences.tiers) && Array.isArray(essences.tierRequirements) && Array.isArray(essences.masteries)
+    && (essences.tierRequirements as unknown[]).every(t => isObject(t) && typeof t.summoningSpecialized === 'boolean')
+    && Object.values(shops as Record<string, unknown>).every(s => s === null || (isObject(s) && Array.isArray(s.stock) && (s.currency === null || isObject(s.currency))))
 }
 
 export async function fetchPotencyPlan(bond: number, stored: number, target: number): Promise<PotencyPlan> {
