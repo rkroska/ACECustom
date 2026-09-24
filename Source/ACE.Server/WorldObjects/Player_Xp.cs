@@ -191,28 +191,50 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void BatchXpUpdate(long amount, XpType xpType)
         {
-            var batchWindow = ServerConfig.xp_batch_window_seconds.Value;
-
             lock (xpBatchLock)
             {
                 pendingXpUpdate += amount;
-
-                // If no batch chain exists, create one
-                if (xpBatchChain == null)
-                {
-                    xpBatchChain = new ActionChain();
-                    xpBatchChain.AddDelaySeconds(batchWindow);
-                    xpBatchChain.AddAction(this, ActionType.PlayerXp_FlushBatchedUpdate, () =>
-                    {
-                        FlushBatchedXpUpdate();
-                    });
-                    xpBatchChain.EnqueueChain();
-                }
+                EnsureXpBatchChain();
             }
         }
 
+        /// <summary>Call with xpBatchLock held. Starts the batch window if none is running.</summary>
+        private void EnsureXpBatchChain()
+        {
+            if (xpBatchChain != null)
+                return;
+
+            xpBatchChain = new ActionChain();
+            xpBatchChain.AddDelaySeconds(ServerConfig.xp_batch_window_seconds.Value);
+            xpBatchChain.AddAction(this, ActionType.PlayerXp_FlushBatchedUpdate, () =>
+            {
+                FlushBatchedXpUpdate();
+            });
+            xpBatchChain.EnqueueChain();
+        }
+
         /// <summary>
-        /// Sends the accumulated XP update to the client
+        /// The bank's luminance changed (owner 2026-09-23): send it to the client with the XP batch. It rides a batch that is
+        /// already running - no timer of its own - and starts the same batch when none is (a transfer, a card table, a
+        /// character that no longer gains XP). Only the luminance value is sent, never the rest of the bank, and at most once
+        /// per batch window however fast it changes. Called from the BankedLuminance setter (Player_Bank.cs).
+        /// </summary>
+        private void QueueBankedLuminanceUpdate()
+        {
+            if (Session == null)
+                return;
+
+            lock (xpBatchLock)
+            {
+                bankedLumChanged = true;
+                EnsureXpBatchChain();
+            }
+        }
+
+        private bool bankedLumChanged;
+
+        /// <summary>
+        /// Sends the accumulated XP update to the client, and the banked luminance when it changed in the same window.
         /// </summary>
         private void FlushBatchedXpUpdate()
         {
@@ -224,6 +246,11 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0));
                     pendingXpUpdate = 0;
                     CheckForLevelup();
+                }
+                if (bankedLumChanged)
+                {
+                    Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, BankedLuminance ?? 0));
+                    bankedLumChanged = false;
                 }
                 xpBatchChain = null;
             }

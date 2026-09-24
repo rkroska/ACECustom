@@ -2288,8 +2288,18 @@ namespace ACE.Server.WorldObjects
         public long? BankedLuminance
         {
             get => GetProperty(PropertyInt64.BankedLuminance) ?? 0;
-            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLuminance); else SetProperty(PropertyInt64.BankedLuminance, value.Value); }
+            set
+            {
+                if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLuminance); else SetProperty(PropertyInt64.BankedLuminance, value.Value);
+                QueueBankedLuminanceUpdate();
+            }
         }
+
+        // Banked luminance to the client (owner 2026-09-23). Every luminance award is banked (Player_Luminance.AddLuminance)
+        // and the client was never told the bank changed - ILT turned the update off on 2025-02-03 as spam - so a plugin
+        // meter only saw a fellowship / Zone Share payment at its next once-a-minute /b. Every change now rides the XP batch
+        // (Player_Xp.QueueBankedLuminanceUpdate): the luminance value only, once per batch window at most. Set in the one
+        // setter, so kills, shares, quests, transfers, spending and the card tables are all covered.
 
         public long? BankedPyreals
         {
