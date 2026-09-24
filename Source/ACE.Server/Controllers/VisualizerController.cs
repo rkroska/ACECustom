@@ -1,9 +1,14 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using ACE.Database;
+using ACE.Entity.Enum.Properties;
+using ACE.Entity.Models;
+using ACE.Server.Factories.Tables.Wcids;
 using ACE.Server.Managers;
 using ACE.Server.Services;
 using ACE.Server.Web.Controllers;
+using ACE.Server.WorldObjects;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -103,9 +108,49 @@ namespace ACE.Server.Controllers
                 potencyMaxStored = ServerConfig.pet_potency_max_stored.Value,
                 maxStatMutations = ServerConfig.pet_breeding_max_stat_mutations.Value,
                 forceMutation = ServerConfig.pet_breeding_force_mutation.Value,
-                guardianEnabled = ServerConfig.pet_breeding_guardian_enabled.Value
+                guardianEnabled = ServerConfig.pet_breeding_guardian_enabled.Value,
+
+                // Rules the game code applies as constants, and the live breeding limits, so the simulator
+                // carries no copies of its own.
+                higherParentChance = PetDevice.BreedingMath.HigherParentChance,
+                incenseBonusMax = PetDevice.BreedingMath.IncenseBonusMax,
+                // Juvenile strength per growth stage (empty when babies are born adult).
+                maturityMultipliers = ServerConfig.pet_maturity_enabled.Value
+                    ? Enumerable.Range(1, PetDevice.MaturityStages)
+                        .Select(stage => PetDevice.BreedingMath.MaturityMultiplier(stage, PetDevice.MaturityStages, ServerConfig.pet_maturity_juvenile_strength.Value))
+                        .ToArray()
+                    : Array.Empty<double>(),
+                maleChargesPerRefill = ServerConfig.pet_breeding_male_max_charges.Value,
+                maleRefillHours = ServerConfig.pet_breeding_male_charge_reset_hours.Value,
+                femaleRecoveryHours = ServerConfig.pet_breeding_cooldown_hours.Value,
+                danceWindowSeconds = ServerConfig.pet_breeding_dance_sync_seconds.Value,
+                tiers = PetDeviceWcids.GetTierLevels(),
+                minParentTier = ServerConfig.pet_breeding_min_parent_level.Value,
+                incense = new[]
+                {
+                    (Wcid: PetDevice.BreedingMath.LesserIncenseWcid, Bonus: PetDevice.BreedingMath.LesserIncenseBonus),
+                    (Wcid: PetDevice.BreedingMath.RefinedIncenseWcid, Bonus: PetDevice.BreedingMath.RefinedIncenseBonus),
+                    (Wcid: PetDevice.BreedingMath.ExquisiteIncenseWcid, Bonus: PetDevice.BreedingMath.ExquisiteIncenseBonus),
+                }.Select(i => new
+                {
+                    wcid = i.Wcid,
+                    name = DatabaseManager.World.GetCachedWeenie(i.Wcid)?.GetProperty(PropertyString.Name),
+                    bonus = (double)(decimal)i.Bonus,
+                }).ToArray(),
             };
             return Ok(config);
+        }
+
+        /// <summary>
+        /// The palette pool a mutation rolls from when a Chromatic Catalyst is active - the same list the
+        /// server's breeding uses (it falls back to the master pool when no vibrant palettes were found).
+        /// </summary>
+        [HttpGet("vibrant-mutation-pool")]
+        [AllowAnonymous]
+        public IActionResult GetVibrantMutationPool()
+        {
+            var pool = PetMutationService.GetVibrantPalettePool();
+            return Ok(pool);
         }
 
         [HttpGet("surfaces/{wcid}")]

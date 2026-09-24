@@ -40,9 +40,18 @@ export interface BreedingConfig {
   maxStatMutations: number
   forceMutation: boolean
   guardianEnabled: boolean
+  /** Chance a line comes from the parent with the higher effective value (BreedingMath.HigherParentChance). */
+  higherParentChance: number
+  /** Both parents' incense bonuses are summed, then capped at this (BreedingMath.IncenseBonusMax). */
+  incenseBonusMax: number
+  /** Juvenile strength per growth stage 1..N from the server's maturity settings; empty = born adult. */
+  maturityMultipliers: number[]
 }
 
-/** Server fallback defaults (PropertyManager). Stored shard values override these live. */
+/**
+ * Offline fallback only (PropertyManager code defaults), used when /api/visualizer/breeding-config cannot be
+ * reached; the page flags that. Also the fixed fixture for runSelfCheck. Live values always come from the server.
+ */
 export const DEFAULT_BREEDING_CONFIG: BreedingConfig = {
   baseMutationChance: 0.05,
   potencyMutationChance: 0.03,
@@ -59,6 +68,9 @@ export const DEFAULT_BREEDING_CONFIG: BreedingConfig = {
   maxStatMutations: 0,
   forceMutation: false,
   guardianEnabled: false,
+  higherParentChance: 0.55,
+  incenseBonusMax: 0.5,
+  maturityMultipliers: [0.5, 0.6, 0.7, 0.8, 0.9],
 }
 
 /** Merge a (possibly partial / untyped) /api/visualizer/breeding-config payload over the defaults. */
@@ -88,7 +100,14 @@ export function normalizeBreedingConfig(raw: unknown): BreedingConfig {
     maxStatMutations: Math.trunc(num('maxStatMutations')),
     forceMutation: bool('forceMutation'),
     guardianEnabled: bool('guardianEnabled'),
+    higherParentChance: num('higherParentChance'),
+    incenseBonusMax: num('incenseBonusMax'),
+    maturityMultipliers: numArray(src.maturityMultipliers) ?? DEFAULT_BREEDING_CONFIG.maturityMultipliers,
   }
+}
+
+function numArray(v: unknown): number[] | null {
+  return Array.isArray(v) && v.every(x => typeof x === 'number' && Number.isFinite(x)) ? (v as number[]) : null
 }
 
 /** The heritable state of one pet, exactly as the server stores it on the pet device. */
@@ -147,16 +166,9 @@ export function totalMutations(pet: PetGenetics): number {
   return totalStatMutations(pet) + pet.pot
 }
 
-/** Courtship Incense tiers as stored on a device. Both parents' bonuses are summed and clamped to +50%. */
-export const INCENSE_TIERS: { label: string; bonus: number }[] = [
-  { label: 'None', bonus: 0 },
-  { label: 'Minor (+2.5%)', bonus: 0.025 },
-  { label: 'Major (+5%)', bonus: 0.05 },
-  { label: 'Grand (+10%)', bonus: 0.10 },
-]
-
-export function combinedIncenseBonus(incenseA: number, incenseB: number): number {
-  return clamp01((incenseA || 0) + (incenseB || 0), 0.5)
+/** Both parents' incense bonuses summed and capped (matches BreedingMath.CombinedIncenseBonus). */
+export function combinedIncenseBonus(incenseA: number, incenseB: number, config: BreedingConfig): number {
+  return clamp01((incenseA || 0) + (incenseB || 0), config.incenseBonusMax)
 }
 
 function clamp01(v: number, max = 1): number {
@@ -271,9 +283,6 @@ function copyLine(target: PetGenetics, source: PetGenetics, line: InheritLine): 
     case 'potency': target.potencyStored = source.potencyStored; target.pot = source.pot; break
   }
 }
-
-/** Pick higher parent if r < 0.55 else lower; ties count parent A as higher. */
-export const HIGHER_PARENT_CHANCE = 0.55
 
 /** "gear 20 + count 2 x step 10 = 40": the effective value with its arithmetic shown. */
 function describeLineMath(pet: PetGenetics, line: InheritLine, config: BreedingConfig): string {
@@ -434,12 +443,12 @@ export function breed(
     v(`[PARENT B] ${describeGenetics(parentB)}`)
     v(`[OPTIONS] incenseA ${options.incenseA ?? 0}, incenseB ${options.incenseB ?? 0}, ` +
       `catalystA ${!!options.catalystA}, catalystB ${!!options.catalystB}, guardianKilled ${options.guardianKilled ?? true}`)
-    v(`[RULES] per line: roll < 0.55 takes the HIGHER effective parent, else the LOWER; ties favour A. ` +
+    v(`[RULES] per line: roll < ${config.higherParentChance} takes the HIGHER effective parent, else the LOWER; ties favour A. ` +
       `Damage/DmgResist/Crit carry gear AND count together; CritDmg/CritRes/CritDmgRes are gear only; ` +
       `Vitality is count only; Potency carries stored AND count.`)
   }
 
-  // 1. Inheritance: independent 55/45 roll per line, higher effective value favoured.
+  // 1. Inheritance: independent roll per line (config.higherParentChance), higher effective value favoured.
   const inheritance: InheritanceRoll[] = []
   for (const line of INHERIT_LINES) {
     const effectiveA = effectiveLineValue(parentA, line, config)
@@ -447,16 +456,16 @@ export function breed(
     const higher: ParentSlot = effectiveA >= effectiveB ? 'A' : 'B'
     const lower: ParentSlot = higher === 'A' ? 'B' : 'A'
     const lineRoll = roll()
-    const chosen: ParentSlot = lineRoll < HIGHER_PARENT_CHANCE ? higher : lower
+    const chosen: ParentSlot = lineRoll < config.higherParentChance ? higher : lower
     copyLine(baby, chosen === 'A' ? parentA : parentB, line)
     inheritance.push({ line, roll: lineRoll, higher, chosen, effectiveA, effectiveB })
-    log.push(`[INHERIT ${INHERIT_LINE_LABELS[line]}] A=${effectiveA} B=${effectiveB} higher=${higher} roll ${fmt(lineRoll)} ${lineRoll < HIGHER_PARENT_CHANCE ? '<' : '>='} 0.55 -> took parent ${chosen}`)
+    log.push(`[INHERIT ${INHERIT_LINE_LABELS[line]}] A=${effectiveA} B=${effectiveB} higher=${higher} roll ${fmt(lineRoll)} ${lineRoll < config.higherParentChance ? '<' : '>='} ${config.higherParentChance} -> took parent ${chosen}`)
     v(`    effective: ${describeLineMath(parentA, line, config)} (A) vs ${describeLineMath(parentB, line, config)} (B)` +
       ` -> baby now carries ${describeLineCarry(baby, line)}`)
   }
 
   const inheritedStatMutations = totalStatMutations(baby)
-  const incenseBonus = combinedIncenseBonus(options.incenseA ?? 0, options.incenseB ?? 0)
+  const incenseBonus = combinedIncenseBonus(options.incenseA ?? 0, options.incenseB ?? 0, config)
 
   // 2. Stat mutation roll (decay is driven by the BABY's inherited counts).
   const statChance = statMutationChance(inheritedStatMutations, config, incenseBonus)
@@ -582,7 +591,7 @@ export function breed(
     const adult = summonedStats(baby, config)
     v(`[BABY SUMMONED] adult: DR ${adult.damageRating} / DRR ${adult.damageResistRating} / Crit ${adult.critRating} / ` +
       `CD ${adult.critDamageRating} / CR ${adult.critResistRating} / CDR ${adult.critDamageResistRating} / HP +${adult.bonusHp}`)
-    v(`[BABY SUMMONED] newborn (stage 1, x${MATURITY_MULTIPLIERS[0]}): DR ${newborn.damageRating} / DRR ${newborn.damageResistRating} / ` +
+    v(`[BABY SUMMONED] newborn (stage 1, x${maturityMultiplier(1, config)}): DR ${newborn.damageRating} / DRR ${newborn.damageResistRating} / ` +
       `Crit ${newborn.critRating} / CD ${newborn.critDamageRating} / CR ${newborn.critResistRating} / CDR ${newborn.critDamageResistRating} / HP +${newborn.bonusHp}`)
     v(`[TOTALS] stat mutations ${totalStatMutations(baby)} (inherited ${inheritedStatMutations}), potency mutations ${baby.pot}, ` +
       `all mutations ${totalMutations(baby)}`)
@@ -634,20 +643,19 @@ export interface SummonedStats {
   potencyStored: number
 }
 
-/** Juvenile growth multipliers by stage 1..5; adults (stage >= 6 or 0) are 1.0. */
-export const MATURITY_MULTIPLIERS = [0.5, 0.6, 0.7, 0.8, 0.9]
-
-export function maturityMultiplier(stage: number): number {
-  if (stage >= 1 && stage <= MATURITY_MULTIPLIERS.length) return MATURITY_MULTIPLIERS[stage - 1]
+/** Juvenile growth multiplier for stage 1..N from the server's settings; adults (0 or past the last stage) are 1.0. */
+export function maturityMultiplier(stage: number, config: BreedingConfig): number {
+  const multipliers = config.maturityMultipliers
+  if (stage >= 1 && stage <= multipliers.length) return multipliers[stage - 1]
   return 1.0
 }
 
 /**
- * Ratings the pet shows when summoned. `stage` 1..5 applies the juvenile multiplier;
+ * Ratings the pet shows when summoned. `stage` 1..N applies the juvenile multiplier;
  * anything else is adult (x1.0).
  */
 export function summonedStats(pet: PetGenetics, config: BreedingConfig, stage = 0): SummonedStats {
-  const m = maturityMultiplier(stage)
+  const m = maturityMultiplier(stage, config)
   const dmgBonus = pet.dmg * config.damageMutationStep
   const drBonus = pet.dr * config.drMutationStep
   const scale = (v: number) => Math.round(v * m)
@@ -667,15 +675,64 @@ export function summonedStats(pet: PetGenetics, config: BreedingConfig, stage = 
 // Multi-breed projections
 // ---------------------------------------------------------------------------
 
-/** Breeding cadence facts used for throughput projections. */
-export const BREEDING_CADENCE = {
+/** Breeding limits, tiers and incense options, from the same /api/visualizer/breeding-config payload. */
+export interface BreedingCadence {
+  maleChargesPerRefill: number
+  maleRefillHours: number
+  femaleRecoveryHours: number
+  danceWindowSeconds: number
+  /** Essence tiers in ascending order. */
+  tiers: number[]
+  /** Lowest tier that can breed. */
+  minParentTier: number
+  /** Courtship Incense items, weakest first; 'None' is added by the page. */
+  incense: { label: string; bonus: number }[]
+}
+
+/** Offline fallback only (PropertyManager code defaults); the page flags when these are in use. */
+export const DEFAULT_BREEDING_CADENCE: BreedingCadence = {
   maleChargesPerRefill: 10,
   maleRefillHours: 24,
   femaleRecoveryHours: 4,
+  danceWindowSeconds: 5,
+  tiers: [50, 80, 100, 125, 150, 180, 200, 250, 300],
+  minParentTier: 100,
+  incense: [
+    { label: 'Lesser Courtship Incense', bonus: 0.025 },
+    { label: 'Refined Courtship Incense', bonus: 0.05 },
+    { label: 'Exquisite Courtship Incense', bonus: 0.10 },
+  ],
 }
 
-/** Breeds per day a single female can physically supply (24h / 4h recovery). */
-export const FEMALE_BREEDS_PER_DAY = Math.floor(24 / BREEDING_CADENCE.femaleRecoveryHours)
+export function normalizeBreedingCadence(raw: unknown): BreedingCadence {
+  const src = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const d = DEFAULT_BREEDING_CADENCE
+  const num = (key: string, fallback: number) => {
+    const v = src[key]
+    return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+  }
+  const tiers = numArray(src.tiers)
+  const incense = Array.isArray(src.incense)
+    ? (src.incense as unknown[])
+        .map(i => i as Record<string, unknown>)
+        .filter(i => typeof i.bonus === 'number' && Number.isFinite(i.bonus))
+        .map(i => ({ label: typeof i.name === 'string' && i.name ? i.name : `Incense +${((i.bonus as number) * 100).toFixed(1)}%`, bonus: i.bonus as number }))
+    : null
+  return {
+    maleChargesPerRefill: Math.trunc(num('maleChargesPerRefill', d.maleChargesPerRefill)),
+    maleRefillHours: num('maleRefillHours', d.maleRefillHours),
+    femaleRecoveryHours: num('femaleRecoveryHours', d.femaleRecoveryHours),
+    danceWindowSeconds: num('danceWindowSeconds', d.danceWindowSeconds),
+    tiers: tiers && tiers.length > 0 ? tiers : d.tiers,
+    minParentTier: Math.trunc(num('minParentTier', d.minParentTier)),
+    incense: incense && incense.length > 0 ? incense : d.incense,
+  }
+}
+
+/** Breeds per day a single female can physically supply (24h / her recovery). */
+export function femaleBreedsPerDay(cadence: BreedingCadence): number {
+  return cadence.femaleRecoveryHours > 0 ? Math.floor(24 / cadence.femaleRecoveryHours) : 0
+}
 
 export interface CampaignOptions extends BreedOptions {
   /** Stop after this many breeds (safety bound). */
@@ -787,15 +844,15 @@ export function runSelfCheck(): SelfCheckResult {
     0.70, // vitality: lower (B): vit 0
     0.01, // potency: higher (B): stored 110, pot 3
     // baby stat mutations after inheritance = dmg 2 + dr 0 + crit 0 + vit 0 = 2
-    // chance = max(0.02, 0.05 / (1 + 0.5*2)) + incense 0.05 = 0.025 + 0.05 = 0.075
-    0.070, // stat roll < 0.075 -> mutated
+    // chance = max(0.02, (0.05 + incense 0.05) / (1 + 0.5*2)) = 0.05 (incense decays with the line, as on the server)
+    0.040, // stat roll < 0.05 -> mutated
     0.99,  // line pick over [dmg, dr, crit, vit] -> index 3 -> vit
     0.02,  // potency roll < 0.03 -> mutated; stored 110 >= soft cap 100 -> step 6; cap 120 -> min(6, 10) = 6
     // guardian disabled in this config -> no blessing draw
   ]
   const r1 = breed(a, b, config, { incenseA: 0.025, incenseB: 0.025, catalystB: true }, scriptedRng(draws))
   check('inheritedStatMutations', r1.inheritedStatMutations, 2)
-  check('statRoll.chance', Number(r1.statRoll.chance.toFixed(6)), 0.075)
+  check('statRoll.chance', Number(r1.statRoll.chance.toFixed(6)), 0.05)
   check('statRoll.line', r1.statRoll.line, 'vit')
   check('potencyRoll.step', r1.potencyRoll.step, 6)
   check('baby', r1.baby, {
@@ -836,7 +893,7 @@ export function runSelfCheck(): SelfCheckResult {
     Array.from({ length: 6 }, () => seedB()))
 
   // Incense clamp and chance floor.
-  check('incense clamp', combinedIncenseBonus(0.4, 0.3), 0.5)
+  check('incense clamp', combinedIncenseBonus(0.4, 0.3, config), 0.5)
   check('chance floor', statMutationChance(100, { ...config, mutationDecayRate: 1 }), 0.02)
   check('chance clamp to 1', statMutationChance(0, { ...config, baseMutationChance: 0.8 }, 0.5), 1)
   check('potency cap picks smallest positive', potencyCap({ ...config, potencyHardCap: 500, potencyMaxStored: 300 }), 300)
