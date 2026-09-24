@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
@@ -140,7 +140,7 @@ namespace ACE.Server.Command.Handlers
             + "appearance <name> <palette|shade|scale|translucency|shiny|setup|clothing|palettebase|motion|sound|icon> <value> [--wcid <id>] | clearappearance <name> [field] [--wcid <id>] | copylook <name> <donorWcid> [--wcid <id>] | draftslot <name> [release] | copydraft <name> <destWcid> | becomemob <donorWcid> --wcid <id> | seticon <wcid> <iconDid|clear> [layer] | "
             + "modifier <name> <add|remove|list|catalog|band|slots|special|chance> [args] [--wcid <id>] | "
             + "currency <name> <add|remove|list> [itemWcid] [amount] [chance] [direct|corpse] [--wcid <id>] | "
-            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
+            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | killreward <name> <show|on|off|add|set|remove> | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
             + "mobinfo <wcid> | geninfo <wcid> | genlist [zone] | genedit <wcid> delay|radius|stagger|init|max <value> | "
             + "craft <material> <itemtype> auto|allow|deny | craft list|get|test|enabled|mintier|components | "
             + "effect <name> [dot on|off | dmg <amount> | type <name|percent> | interval <secs>] | reload")]
@@ -190,6 +190,8 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /zonecontrol currency <name> add <itemWcid> <amount> [chance 0..1] [direct|corpse] | remove <itemWcid> | list   [--wcid <id>]   (per-kill bonus-currency drop table; direct = into the killer's inventory)");
                 Msg("  /zonecontrol boundary <name> <on|off|show>   (bounded: players at the zone's variation may only roam bounded-zone landblocks; variation 11+ only)");
                 Msg("  /zonecontrol zoneshare <name> <on|off|show>   (Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship; only while the zone is enabled)");
+                Msg("  /zonecontrol fillpack [wcid] | fillpack clear   (TEST: fill your own pack with tagged junk; clear removes only that junk)");
+                Msg("  /zonecontrol killreward <name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <n> <wcid> <amount> <kills> <minutes> | remove <n>   (Kill Reward: items every N kills per player, at most once per cooldown)");
                 Msg("  /zonecontrol survey <name> [lbHex]   (per-landblock content: generator + creature summary; lbHex = full detail for one landblock)");
                 Msg("  /zonecontrol quests <name>   (quest registry for the plugin Quests tab; throttled to one pull per 60s)");
                 Msg("  /zonecontrol terrain <name> <hex> <type|clear>   (override the map terrain color for one landblock; type = " + string.Join("/", ZoneControlManager.TerrainTags) + "; display-only)");
@@ -285,6 +287,12 @@ namespace ACE.Server.Command.Handlers
                               .Append(z.Bounded ? 1 : 0).Append(',')
                               .Append(z.ZoneShare ? 1 : 0).Append(',')
                               .Append(z.ZoneShare && z.Enabled ? ZoneShareManager.CountInZone(z.Name) : 0);
+
+                            // Kill Reward (appended 2026-09-23): on, then every reward as "wcid:amount:kills:minutes:name"
+                            // joined by '+' (KillRewardManager.Wire - names carry none of the separators)
+                            var kr = z.KillReward ?? new KillRewardConfig();
+                            sb.Append(',').Append(kr.Enabled ? 1 : 0)
+                              .Append(',').Append(KillRewardManager.Wire(kr));
                         }
                         Msg(sb.ToString());
                         return;
@@ -2293,6 +2301,82 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
+                    case "killreward":
+                    {
+                        // Kill Reward (owner 2026-09-23): items every N kills per player, at most once per cooldown - several per zone.
+                        if (args.Count < 3) { Msg("Usage: killreward <name> show | " + KillRewardManager.EditUsage); return; }
+                        var name = args[1];
+                        var area = ZoneControlManager.GetArea(name);
+                        if (area == null) { Msg($"No zone '{name}' (create it first)."); return; }
+                        var op = args[2].ToLowerInvariant();
+                        var edited = (area.KillReward ?? new KillRewardConfig()).Clone();
+
+                        if (op != "show")
+                        {
+                            // One locked read-change-write on the zone's current settings: last save to a reward wins.
+                            edited = ZoneControlManager.EditKillReward(name, c => KillRewardManager.Edit(c, op, args, 3), out var err);
+                            if (err != null) { Msg($"'{name}': {err}"); return; }
+                        }
+
+                        Msg($"'{name}' Kill Reward {KillRewardManager.Describe(edited)}"
+                            + (edited.Enabled && !area.Enabled ? " - inactive while the zone is disabled." : "."));
+                        return;
+                    }
+
+                    case "fillpack":
+                    {
+                        // Test tool (owner 2026-09-23): fill your own pack - main pack and every side pack - with tagged junk, to
+                        // test what happens when a reward meets a full pack (Kill Reward holds it). "clear" removes the junk
+                        // again: ONLY items this tool made (PropertyBool.IsTestFiller), never a real item.
+                        var me = session.Player;
+                        if (me == null) return;
+
+                        if (args.Count > 1 && args[1].Equals("clear", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var junk = me.GetAllPossessions().Where(i => i.GetProperty(PropertyBool.IsTestFiller) == true).ToList();
+                            var removed = 0;
+                            foreach (var item in junk)
+                                if (me.TryConsumeFromInventoryWithNetworking(item))
+                                    removed++;
+                            Msg($"fillpack: removed {removed} filler item(s). Nothing else was touched.");
+                            return;
+                        }
+
+                        uint fillWcid = 40879;   // Scrap of Paper: light, not stackable
+                        if (args.Count > 1 && !uint.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out fillWcid))
+                        {
+                            Msg("Usage: fillpack [wcid]  |  fillpack clear   (default filler: 40879 Scrap of Paper)");
+                            return;
+                        }
+
+                        // Sized from the free slots the server counts (main pack + side packs), not a fixed number - 500 did not
+                        // fill an ILT character (owner 2026-09-23). The loop still stops at the first item that does not fit;
+                        // the cap is only a runaway guard.
+                        var made = 0;
+                        var free = me.GetFreeInventorySlots(true);
+                        var cap = Math.Min(Math.Max(free, 0) + 10, 20000);
+                        for (var guard = 0; guard < cap; guard++)
+                        {
+                            var filler = ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject(fillWcid);
+                            if (filler == null) { Msg($"fillpack: WCID {fillWcid} could not be created."); break; }
+                            if (filler.MaxStackSize.HasValue && filler.MaxStackSize > 1) { filler.Destroy(); Msg($"fillpack: WCID {fillWcid} stacks - use an item that takes a slot of its own."); return; }
+
+                            filler.SetProperty(PropertyBool.IsTestFiller, true);
+                            if (!me.TryCreateInInventoryWithNetworking(filler))
+                            {
+                                filler.Destroy();
+                                break;
+                            }
+                            made++;
+                        }
+
+                        var left = me.GetFreeInventorySlots(true);
+                        Msg(left == 0
+                            ? $"fillpack: added {made} filler item(s) - every slot is full. /zonecontrol fillpack clear takes them away again."
+                            : $"fillpack: added {made} filler item(s), but {left} slot(s) are still free (the item stopped fitting - burden?). /zonecontrol fillpack clear takes them away.");
+                        return;
+                    }
+
                     case "zoneshare":
                     {
                         // Zone Share (owner 2026-09-23): everyone in the zone shares kill XP, luminance and kill tasks as one
@@ -2482,6 +2566,7 @@ namespace ACE.Server.Command.Handlers
                                 Enabled = false,
                                 Bounded = czSrc.Bounded,
                                 ZoneShare = czSrc.ZoneShare,
+                                KillReward = czSrc.KillReward?.Clone() ?? new KillRewardConfig(),
                                 Notes = $"cloned from '{czSrc.Name}' (v{czSrc.Variation})",
                                 Landblocks = new HashSet<ushort>(czSrc.Landblocks),
                                 TerrainOverrides = new Dictionary<ushort, string>(czSrc.TerrainOverrides ?? new Dictionary<ushort, string>()),

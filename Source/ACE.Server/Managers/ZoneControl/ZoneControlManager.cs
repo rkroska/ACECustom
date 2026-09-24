@@ -110,6 +110,7 @@ namespace ACE.Server.Managers.ZoneControl
             public HashSet<uint> ExemptGenerators;           // master switch per generator (2026-09-03): nor anything these spawn
             public ZoneEffects Effects;                      // immutable copy (readers never touch the live zone)
             public bool ZoneShare;                           // Zone Share (2026-09-23): the whole zone shares kills as one fellowship
+            public KillRewardConfig KillReward;              // Kill Reward (2026-09-23): immutable copy
             public ZoneAppearance AppearanceDefault;         // cosmetic default (separate from stats)
             public Dictionary<uint, ZoneAppearance> AppearanceByWcid; // per-WCID cosmetic overlays
         }
@@ -662,6 +663,7 @@ namespace ACE.Server.Managers.ZoneControl
                 ExemptGenerators = area.Profile.ExemptGenerators != null ? new HashSet<uint>(area.Profile.ExemptGenerators) : new HashSet<uint>(),
                 Effects = ZoneEffects.Merge(def?.Effects, area.Effects),
                 ZoneShare = area.ZoneShare,
+                KillReward = area.KillReward?.Clone(),
                 AppearanceDefault = apZone,
                 AppearanceByWcid = apWcid,
             };
@@ -1991,6 +1993,62 @@ namespace ACE.Server.Managers.ZoneControl
                 Save();
                 return true;
             }
+        }
+
+        /// <summary>
+        /// Kill Reward for a zone (owner 2026-09-23): applies one edit to the zone's CURRENT settings under the store lock and
+        /// saves - read, change and write in one step, so two admins' edits each touch only their own reward and neither
+        /// writes back an old copy over the other. <paramref name="edit"/> returns why it refused (nothing is saved then), or
+        /// null. Returns the settings as they now are (null for no such zone), and the refusal.
+        /// </summary>
+        public static KillRewardConfig EditKillReward(string name, Func<KillRewardConfig, string> edit, out string refused)
+        {
+            refused = null;
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var a = FindArea(name);
+                if (a == null) return null;
+                var cfg = (a.KillReward ?? new KillRewardConfig()).Clone();
+                refused = edit(cfg);
+                if (refused != null)
+                    return (a.KillReward ?? new KillRewardConfig()).Clone();
+                a.KillReward = cfg;
+                Save();
+                return cfg.Clone();
+            }
+        }
+
+        /// <summary>
+        /// Kill Reward (owner 2026-09-23): the governing zone's reward where this player stands - its name and settings - or
+        /// null. Same rules as Zone Share: the most specific zone decides, enabled zones only, nothing while the master switch
+        /// is off. Lock-free snapshot read, once per kill.
+        /// </summary>
+        public static (string Name, KillRewardConfig Reward)? ResolveKillReward(Player player)
+        {
+            if (player == null || !ServerConfig.zonecontrol_enabled.Value)
+                return null;
+
+            var snap = _snapshot;
+            var landblock = player.Location?.LandblockId.Landblock ?? 0;
+            if (!snap.EnabledLandblocks.Contains(landblock) || !snap.ByLandblock.TryGetValue(landblock, out var list))
+                return null;
+
+            var effVar = GetEffectiveVariation(player);
+
+            ZoneRef best = null;
+            foreach (var zr in list)
+            {
+                if (zr.Variation != effVar)
+                    continue;
+                if (best == null || zr.LandblockCount < best.LandblockCount)
+                    best = zr;
+            }
+
+            if (best?.KillReward == null || !best.KillReward.Active)
+                return null;
+
+            return (best.Name, best.KillReward);
         }
 
         /// <summary>Zone Share on/off for a zone (owner 2026-09-23). Save() rebuilds the snapshot the kill hooks read.</summary>

@@ -173,6 +173,9 @@ namespace ACE.Server.WorldObjects
         {
             NotifyLandblocks();
 
+            // Kill Reward (owner 2026-09-23): anything held while the pack was full is handed over once there is room.
+            KillRewardManager.TryDeliverOwed(this);
+
             ValidateCurrentLandblockTick();
 
             ManaConsumersTick();

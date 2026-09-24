@@ -841,7 +841,24 @@ namespace ACE.Server.Managers
         /// (PropertyBool.RoomAssignZoneShare on its weenie), or 0. The dungeon is the source's landblock in a variation it is
         /// placed at - rooms, corridors and all, indoor cells only. Portal and plate sources alike.
         /// </summary>
-        public static uint ZoneShareSourceAt(uint cell, int? variation)
+        public static uint ZoneShareSourceAt(uint cell, int? variation) => SourceAt(cell, variation, IsZoneShareSource);
+
+        /// <summary>Kill Reward (owner 2026-09-23): the room source whose dungeon this spot is in AND that has an active Kill Reward, or 0.</summary>
+        public static uint KillRewardSourceAt(uint cell, int? variation) => SourceAt(cell, variation, wcid => KillRewardOf(wcid).Active);
+
+        /// <summary>Kill Reward settings on a room source's weenie (PropertyString.RoomAssignKillReward); off when it has none.</summary>
+        public static ACE.Server.Managers.ZoneControl.KillRewardConfig KillRewardOf(uint wcid)
+        {
+            string raw = null;
+            DatabaseManager.World.GetCachedWeenie(wcid)?.PropertiesString?.TryGetValue(PropertyString.RoomAssignKillReward, out raw);
+            return ACE.Server.Managers.ZoneControl.KillRewardConfig.Parse(raw);
+        }
+
+        /// <summary>
+        /// The room source whose dungeon this spot is in - its landblock, in a variation it is placed at, indoor cells only -
+        /// and that <paramref name="accept"/> takes, or 0. Portal and plate sources alike. Zone Share and Kill Reward.
+        /// </summary>
+        private static uint SourceAt(uint cell, int? variation, Func<uint, bool> accept)
         {
             EnsureRoomSourcesLoaded();
             if (_roomSourceCount == 0 || !IsRoomVariation(variation))
@@ -859,7 +876,7 @@ namespace ACE.Server.Managers
             }
 
             foreach (var wcid in sources)
-                if (IsZoneShareSource(wcid))
+                if (accept(wcid))
                     return wcid;
 
             return 0;

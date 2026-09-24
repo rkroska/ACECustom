@@ -483,6 +483,7 @@ namespace ACE.Server.Managers
             string sourceName = null;
             DatabaseManager.World.GetCachedWeenie(sourceWcid)?.PropertiesString?.TryGetValue(PropertyString.Name, out sourceName);
             var zoneShare = IsZoneShareSource(sourceWcid);
+            var kr = KillRewardOf(sourceWcid);
 
             return $"{BuilderStateTag}src={sourceWcid}|kind={BuilderWeenieType(sourceWcid)}|name={BuilderWireName(sourceName)}|v={variation}"
                 + $"|lb={rooms[0].LandingCell >> 16:X4}|write={((variation ?? 0) >= BuilderMinVariation ? 1 : 0)}|tools={tools}|admin={admin}"
@@ -492,7 +493,8 @@ namespace ACE.Server.Managers
                 + $"|expires={string.Join(",", expires)}"   // appended 2026-09-22: seconds left on each timed claim, so a hold can be watched running out
                 + $"|since={string.Join(",", held)}"   // appended 2026-09-22: how long the owning account has had each room
                 + $"|heldby={string.Join(",", heldBy)}"   // appended 2026-09-23: the character each hold is waiting for
-                + $"|zshare={(zoneShare ? 1 : 0)}|zsharen={(zoneShare ? ZoneShareManager.CountInDungeon(sourceWcid) : 0)}";   // appended 2026-09-23: Zone Share switch + players sharing now
+                + $"|zshare={(zoneShare ? 1 : 0)}|zsharen={(zoneShare ? ZoneShareManager.CountInDungeon(sourceWcid) : 0)}"   // appended 2026-09-23: Zone Share switch + players sharing now
+                + $"|kr={(kr.Enabled ? 1 : 0)}|krlist={KillRewardManager.Wire(kr)}";   // appended 2026-09-23: Kill Reward - on, and every reward
         }
 
         /// <summary>
@@ -549,6 +551,73 @@ namespace ACE.Server.Managers
                 : $"Zone Share off for {sourceName ?? sourceWcid.ToString()}: normal fellowship rules.");
 
             return lines;
+        }
+
+        /// <summary>
+        /// Kill Reward for the selected dungeon (owner 2026-09-23): edits its settings - PropertyString.RoomAssignKillReward on
+        /// the room source's weenie in the world database, beside its room list, so it ships with the source's SQL - then drops
+        /// the weenie cache so the kill hook reads the new value. The edit (KillRewardManager.Edit, shared with zones) refuses
+        /// what it cannot do - turning on with no reward, an unknown WCID - and then nothing is written. The SQL is logged, as
+        /// every builder write is.
+        /// </summary>
+        public static List<string> BuilderSetKillReward(Player player, Func<ACE.Server.Managers.ZoneControl.KillRewardConfig, string> edit)
+        {
+            var lines = new List<string>();
+
+            if (!BuilderResolve(player, out var sourceWcid, out _, out var variation, out var error))
+            {
+                lines.Add(error);
+                return lines;
+            }
+
+            if (!BuilderMayWrite(variation, lines))
+                return lines;
+
+            // One locked read-change-write (owner 2026-09-23: two admins at once): read the CURRENT settings from the database,
+            // apply this one edit, write - so each admin's edit touches only its own reward, and the last save to it wins.
+            ACE.Server.Managers.ZoneControl.KillRewardConfig cfg;
+            string raw;
+            lock (_killRewardWriteLock)
+            {
+                using (var context = new WorldDbContext())
+                {
+                    var row = context.WeeniePropertiesString.FirstOrDefault(r => r.ObjectId == sourceWcid && r.Type == (ushort)PropertyString.RoomAssignKillReward);
+                    cfg = ACE.Server.Managers.ZoneControl.KillRewardConfig.Parse(row?.Value);
+
+                    var refused = edit(cfg);
+                    if (refused != null)
+                    {
+                        lines.Add(refused + " Nothing changed.");
+                        return lines;
+                    }
+
+                    raw = cfg.Format();
+                    if (row == null)
+                        context.WeeniePropertiesString.Add(new WeeniePropertiesString { ObjectId = sourceWcid, Type = (ushort)PropertyString.RoomAssignKillReward, Value = raw });
+                    else
+                        row.Value = raw;
+                    context.SaveChanges();
+                }
+
+                DatabaseManager.World.ClearCachedWeenie(sourceWcid);
+            }
+            GetRooms(sourceWcid);   // re-warm the cache the room code reads
+
+            log.Info($"[RoomAssign][DUNGEON] {player.Name} set Kill Reward '{raw}' on wcid {sourceWcid}. SQL: INSERT INTO weenie_properties_string (object_Id, type, value) VALUES ({sourceWcid}, {(ushort)PropertyString.RoomAssignKillReward}, '{raw}') ON DUPLICATE KEY UPDATE value = '{raw}';");
+
+            lines.Add("Kill Reward " + KillRewardManager.Describe(cfg) + ".");
+            return lines;
+        }
+
+        private static readonly object _killRewardWriteLock = new object();
+
+        /// <summary>An item's name for messages and the wire, or "WCID n" when it has none.</summary>
+        internal static string ItemName(uint wcid)
+        {
+            if (wcid == 0) return "no item";
+            string name = null;
+            DatabaseManager.World.GetCachedWeenie(wcid)?.PropertiesString?.TryGetValue(PropertyString.Name, out name);
+            return string.IsNullOrWhiteSpace(name) ? "WCID " + wcid : name.Trim();
         }
 
         /// <summary>

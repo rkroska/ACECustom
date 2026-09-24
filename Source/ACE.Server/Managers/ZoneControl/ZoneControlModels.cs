@@ -36,6 +36,10 @@ namespace ACE.Server.Managers.ZoneControl
         /// Control master switch is on. Missing on deserialize of older stores = off.</summary>
         public bool ZoneShare { get; set; }
 
+        /// <summary>Kill Reward (owner 2026-09-23): an item every N kills per player, at most once per cooldown. Only while the
+        /// zone is Enabled and the Zone Control master switch is on. Missing on deserialize of older stores = off.</summary>
+        public KillRewardConfig KillReward { get; set; } = new();
+
         public string Notes { get; set; }
 
         /// <summary>Manual terrain overrides for the Territory map, keyed by landblock → terrain tag
@@ -67,6 +71,134 @@ namespace ACE.Server.Managers.ZoneControl
             if (!create) return null;
             AppearanceByWcid[wcid.Value] = ap = new ZoneAppearance();
             return ap;
+        }
+    }
+
+    /// <summary>
+    /// Kill Reward settings (owner 2026-09-23), for a Zone Control zone (ControlledArea.KillReward) or a room dungeon (its
+    /// source weenie's PropertyString.RoomAssignKillReward, via <see cref="Format"/> / <see cref="Parse"/>). Each player's
+    /// own kills in the area count; every <see cref="Kills"/> of them earn <see cref="Amount"/> x <see cref="Wcid"/>, but
+    /// never more often than once per <see cref="CooldownMinutes"/> - a reward due during the cooldown is held for the first
+    /// kill after it. See KillRewardManager.
+    /// </summary>
+    public class KillRewardConfig
+    {
+        public bool Enabled { get; set; }
+
+        /// <summary>Several rewards per area (owner 2026-09-23: "may use multiple rewards in some zones"). Each counts on its own.</summary>
+        public List<KillRewardEntry> Entries { get; set; } = new();
+
+        /// <summary>On, with at least one complete reward - the only state that awards anything.</summary>
+        public bool Active => Enabled && Entries != null && Entries.Exists(e => e != null && e.Valid);
+
+        public bool HasItem => Entries != null && Entries.Exists(e => e != null && e.Wcid != 0);
+
+        /// <summary>
+        /// The next reward ID (owner 2026-09-23: two admins editing at once). Edits name a reward by its ID, never by its
+        /// place in the list, so a row removed by one admin can never turn another admin's edit onto a different row. IDs are
+        /// never reused - a stale edit for a removed reward is refused, it cannot land on a new one.
+        /// </summary>
+        public int NextId { get; set; } = 1;
+
+        /// <summary>Gives every reward without an ID (older data) one, and keeps NextId past them all.</summary>
+        public void EnsureIds()
+        {
+            Entries ??= new List<KillRewardEntry>();
+            foreach (var e in Entries)
+                if (e != null && e.Id >= NextId) NextId = e.Id + 1;
+            foreach (var e in Entries)
+                if (e != null && e.Id <= 0) e.Id = NextId++;
+        }
+
+        public KillRewardEntry Find(int id) => Entries?.Find(e => e != null && e.Id == id);
+
+        public KillRewardConfig Clone() => new KillRewardConfig
+        {
+            Enabled = Enabled,
+            NextId = NextId,
+            Entries = Entries?.ConvertAll(e => e?.Clone()) ?? new List<KillRewardEntry>(),
+        };
+
+        /// <summary>For a dungeon source's weenie: "on;#nextId;wcid|amount|kills|minutes|id;...".</summary>
+        public string Format()
+        {
+            var sb = new System.Text.StringBuilder(Enabled ? "1" : "0");
+            sb.Append(";#").Append(NextId);
+            if (Entries != null)
+                foreach (var e in Entries)
+                    if (e != null) sb.Append(';').Append(e.Format());
+            return sb.ToString();
+        }
+
+        /// <summary>The dungeon form. Also reads the first build's single "on|wcid|amount|kills|minutes" (2026-09-23, test only).</summary>
+        public static KillRewardConfig Parse(string raw)
+        {
+            var c = new KillRewardConfig();
+            if (string.IsNullOrWhiteSpace(raw)) return c;
+
+            if (raw.IndexOf(';') < 0 && raw.Split('|').Length >= 5)
+            {
+                var f = raw.Split('|');
+                c.Enabled = f[0].Trim() == "1";
+                var one = KillRewardEntry.Parse(string.Join("|", f, 1, f.Length - 1));
+                if (one != null) c.Entries.Add(one);
+                c.EnsureIds();
+                return c;
+            }
+
+            var parts = raw.Split(';');
+            c.Enabled = parts[0].Trim() == "1";
+            for (int i = 1; i < parts.Length; i++)
+            {
+                var part = parts[i].Trim();
+                if (part.StartsWith("#"))
+                {
+                    if (int.TryParse(part.Substring(1), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var next) && next > 0)
+                        c.NextId = next;
+                    continue;
+                }
+                var e = KillRewardEntry.Parse(part);
+                if (e != null) c.Entries.Add(e);
+            }
+            c.EnsureIds();
+            return c;
+        }
+    }
+
+    /// <summary>One Kill Reward: <see cref="Amount"/> x <see cref="Wcid"/> every <see cref="Kills"/> of a player's kills, at most once per <see cref="CooldownMinutes"/>.</summary>
+    public class KillRewardEntry
+    {
+        /// <summary>Permanent within its area (KillRewardConfig.NextId): what edits address. 0 = not given one yet.</summary>
+        public int Id { get; set; }
+
+        public uint Wcid { get; set; }
+        public int Amount { get; set; } = 1;
+        public int Kills { get; set; } = 100;
+        public double CooldownMinutes { get; set; } = 5;
+
+        public bool Valid => Wcid != 0 && Amount > 0 && Kills > 0;
+
+        public KillRewardEntry Clone() => new KillRewardEntry { Id = Id, Wcid = Wcid, Amount = Amount, Kills = Kills, CooldownMinutes = CooldownMinutes };
+
+        /// <summary>Its own progress on a character: two rewards for the same item at different counts keep separate counts.</summary>
+        public string ProgressKey => Wcid + "x" + Kills;
+
+        public string Format()
+            => Wcid + "|" + Amount + "|" + Kills + "|" + CooldownMinutes.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "|" + Id;
+
+        public static KillRewardEntry Parse(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            var f = raw.Split('|');
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var e = new KillRewardEntry();
+            if (f.Length < 1 || !uint.TryParse(f[0], System.Globalization.NumberStyles.Integer, inv, out var w)) return null;
+            e.Wcid = w;
+            if (f.Length > 1 && int.TryParse(f[1], System.Globalization.NumberStyles.Integer, inv, out var a) && a > 0) e.Amount = a;
+            if (f.Length > 2 && int.TryParse(f[2], System.Globalization.NumberStyles.Integer, inv, out var k) && k > 0) e.Kills = k;
+            if (f.Length > 3 && double.TryParse(f[3], System.Globalization.NumberStyles.Float, inv, out var m) && m >= 0) e.CooldownMinutes = m;
+            if (f.Length > 4 && int.TryParse(f[4], System.Globalization.NumberStyles.Integer, inv, out var id) && id > 0) e.Id = id;
+            return e;
         }
     }
 

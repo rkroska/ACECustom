@@ -200,6 +200,18 @@ namespace ACE.Server.Command.Handlers
                         All(RoomAssignManager.BuilderSetZoneShare(player, arg == "on"));
                         break;
 
+                    case "killreward":
+                        // Kill Reward (owner 2026-09-23): items every N kills per player, at most once per cooldown - several per
+                        // dungeon. Stored on the room source's weenie, like its room list. The edit itself is shared with zones.
+                        if (arg == null)
+                        {
+                            Msg("/zonecontrol dungeon killreward " + KillRewardManager.EditUsage + " - items every N kills per player, at most once per cooldown.");
+                            break;
+                        }
+
+                        All(RoomAssignManager.BuilderSetKillReward(player, c => KillRewardManager.Edit(c, arg, args, 3)));
+                        break;
+
                     // ---- test tools: every one of these answers "off" unless room_assign_test_tools is true
 
                     case "admin":
@@ -305,6 +317,7 @@ namespace ACE.Server.Command.Handlers
                         Msg("  /zonecontrol dungeon monster here          - the room's generator exactly where you stand");
                         Msg("  /zonecontrol dungeon nudge <guid> <east> <north> [turn] - move a placed wall or generator a little");
                         Msg("  /zonecontrol dungeon zoneshare on|off      - everyone in the dungeon shares kills as one fellowship");
+                        Msg("  /zonecontrol dungeon killreward on|off|add|set <n>|remove <n> - items every N kills per player");
                         Msg("  /zonecontrol dungeon state | map           - data lines for the plugin's Dungeons tab");
                         Msg("Test tools (need server property room_assign_test_tools = true; memory only):");
                         Msg("  /zonecontrol dungeon admin on|off          - admins count as players");

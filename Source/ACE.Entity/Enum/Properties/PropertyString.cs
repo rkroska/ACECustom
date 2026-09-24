@@ -133,5 +133,17 @@
         /// weenie a room source. Server-only - not an assessment property, so it is never sent to a player.
         /// Owner range 50000+ (moved off 9018 - upstream took that id for PetCustomName).</summary>
         RoomAssignRooms = 50500,
+
+        /// <summary>Kill Reward (owner 2026-09-23), on a room-source WEENIE: the dungeon's reward - "on|wcid|amount|kills|minutes"
+        /// (on = 1/0). Server-only. See KillRewardManager.</summary>
+        RoomAssignKillReward = 50504,
+
+        /// <summary>Kill Reward, on a CHARACTER: kills counted and the last award, per area - "area|kills|lastUnix;...". Kept on the
+        /// character so a relog or a restart can neither reset the cooldown nor lose progress. Server-only.</summary>
+        KillRewardProgress = 50505,
+
+        /// <summary>Kill Reward, on a CHARACTER: rewards earned while the pack was full - "wcid:amount;..." - handed over as soon as
+        /// there is room (checked on the player heartbeat). Never dropped. Server-only.</summary>
+        KillRewardOwed = 50506,
     }
 }

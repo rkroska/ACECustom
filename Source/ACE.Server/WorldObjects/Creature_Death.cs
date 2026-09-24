@@ -86,6 +86,10 @@ namespace ACE.Server.WorldObjects
             if (!IsOnNoDeathXPLandblock)
                 OnDeath_GrantXP();
 
+            // Kill Reward (owner 2026-09-23): an item every N kills in a zone or dungeon that has one - credited to the top
+            // damager, the player the corpse and its loot belong to.
+            KillRewardManager.OnCreatureKilled(this, DamageHistory.TopDamager);
+
             return GetDeathMessage(lastDamager, damageType, criticalHit);
         }
 
