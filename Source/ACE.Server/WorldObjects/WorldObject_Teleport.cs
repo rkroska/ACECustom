@@ -165,8 +165,8 @@ namespace ACE.Server.WorldObjects
 
             // set materialize physics state
             // this takes the player from pink bubbles -> fully materialized
-            // Only re-enable collisions if not cloaked (admin/GM)
-            if (CloakStatus != CloakStatus.On)
+            // Only re-enable collisions if not cloaked (admin/GM) - Ghost is cloaked too
+            if (CloakStatus != CloakStatus.On && CloakStatus != CloakStatus.Ghost)
                 ReportCollisions = true;
 
             IgnoreCollisions = false;
@@ -263,6 +263,17 @@ namespace ACE.Server.WorldObjects
             if (player != null && !(Teleporting && forceUpdate) && !player.ValidateMovement(newPosition))
             {
                 log.Warn($"{Name}.UpdatePosition() - movement pre-validation failed from {Location} to {newPosition}, t: {Teleporting}");
+                return false;
+            }
+
+            // Vaulted Dungeons (review 2026-09-24): a chamber is only for the account it belongs to. Walking, jumping or a crafted
+            // position into someone else's chamber is refused like a wall - the client is sent back where it was.
+            if (player != null && !Teleporting && newPosition.Cell != Location.Cell && RoomAssignManager.IsTrespass(player, newPosition))
+            {
+                // Force the position on the player's OWN client too: it ignores an update for itself unless this sequence moved
+                // on (the same bump the PK Lite relocation uses to force its broadcast).
+                Sequences.GetNextSequence(ACE.Server.Network.Sequence.SequenceType.ObjectForcePosition);
+                SendUpdatePosition();
                 return false;
             }
 

@@ -58,6 +58,7 @@ namespace ACE.Server.WorldObjects
                 case CloakStatus.Off:
                     goto default;
                 case CloakStatus.On:
+                case CloakStatus.Ghost:   // invisible and ethereal to everyone else exactly like On; only your own view differs (ApplyCloakSelfView, re-sent at login)
                     //Translucency = 0.5f;
                     Cloaked = true;
                     Ethereal = true;

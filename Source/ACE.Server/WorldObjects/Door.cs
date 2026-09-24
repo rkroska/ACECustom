@@ -87,6 +87,11 @@ namespace ACE.Server.WorldObjects
         {
             if (IsBusy) return;
 
+            // A door inside a Vaulted Dungeon is a chamber wall (owner 2026-09-24: the dungeons are built with doors that are
+            // never opened). Nothing opens it - not a player's use from either side, not a monster bumping it, not a key.
+            if (RoomAssignManager.IsInRoomDungeon(Location))
+                return;
+
             var player = worldObject as Player;
             var behind = player != null && player.GetRelativeDir(this).HasFlag(Quadrant.Back);
 
@@ -119,6 +124,10 @@ namespace ACE.Server.WorldObjects
         public void Open(ObjectGuid opener = new ObjectGuid())
         {
             if (CurrentMotionState == motionOpen)
+                return;
+
+            // Chamber walls never open (see ActOnUse) - this also covers an emote's OpenMe, which calls Open directly.
+            if (RoomAssignManager.IsInRoomDungeon(Location))
                 return;
 
             EnqueueBroadcastMotion(motionOpen);
@@ -233,6 +242,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public UnlockResults Unlock(uint unlockerGuid, uint playerLockpickSkillLvl, ref int difficulty)
         {
+            // A chamber wall never opens, so it cannot be picked either - refused before the attempt is spent.
+            if (RoomAssignManager.IsInRoomDungeon(Location))
+                return UnlockResults.CannotBePicked;
+
             return LockHelper.Unlock(this, playerLockpickSkillLvl, ref difficulty);
         }
 
@@ -241,6 +254,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public UnlockResults Unlock(uint unlockerGuid, Key key, string keyCode = null)
         {
+            // A chamber wall never opens: no key fits it, and no key use is spent on it.
+            if (RoomAssignManager.IsInRoomDungeon(Location))
+                return UnlockResults.IncorrectKey;
+
             return LockHelper.Unlock(this, key, keyCode);
         }
 

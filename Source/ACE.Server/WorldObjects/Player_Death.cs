@@ -516,7 +516,10 @@ namespace ACE.Server.WorldObjects
             // if player dies on a No Drop landblock,
             // they don't drop any items
 
-            if (corpse.IsOnNoDropLandblock || IsPKLiteDeath(corpse.KillerId)) return [];
+            // A Vaulted Dungeon is no-drop too, like the Marketplace (owner 2026-09-24): a corpse there could be sealed in a
+            // chamber that is someone else's by the time its owner gets back. By its room sources (v3+ only), never by
+            // landblock - the NoDrop list is every variation, and these landblocks are retail dungeons in the base world.
+            if (corpse.IsOnNoDropLandblock || RoomAssignManager.IsInRoomDungeon(corpse.Location) || IsPKLiteDeath(corpse.KillerId)) return [];
 
             var numItemsDropped = GetNumItemsDropped(corpse);
 

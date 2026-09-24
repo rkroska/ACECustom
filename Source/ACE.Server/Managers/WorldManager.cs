@@ -229,6 +229,11 @@ namespace ACE.Server.Managers
                 player.SafeSpellComponents = false;
                 player.ReportCollisions = true;
 
+                // A cloak (On or Ghost) saved on the character: walk-through, hidden and half-see-through go with it.
+                player.Ethereal = false;
+                player.NoDraw = false;
+                player.Visibility = false;
+                player.Translucency = null;
 
                 player.ChangesDetected = true;
                 player.CharacterChangesDetected = true;

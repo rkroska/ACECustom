@@ -1,4 +1,4 @@
-﻿namespace ACE.Entity.Enum.Properties
+namespace ACE.Entity.Enum.Properties
 {
     // No properties are sent to the client unless they featured an attribute.
     // SendOnLogin gets sent to players in the PlayerDescription event
@@ -134,11 +134,12 @@
         /// Owner range 50000+ (moved off 9018 - upstream took that id for PetCustomName).</summary>
         RoomAssignRooms = 50500,
 
-        /// <summary>Kill Reward (owner 2026-09-23), on a room-source WEENIE: the dungeon's reward - "on|wcid|amount|kills|minutes"
-        /// (on = 1/0). Server-only. See KillRewardManager.</summary>
+        /// <summary>Kill Reward (owner 2026-09-23), on a room-source WEENIE: the dungeon's rewards -
+        /// "on;#nextId;wcid|amount|kills|minutes|id;..." (on = 1/0). Server-only. See KillRewardConfig.Format.</summary>
         RoomAssignKillReward = 50504,
 
-        /// <summary>Kill Reward, on a CHARACTER: kills counted and the last award, per area - "area|kills|lastUnix;...". Kept on the
+        /// <summary>Kill Reward, on a CHARACTER: kills counted and the last award, per area and reward - "area#rId|kills|lastUnix;..."
+        /// (area = "zone:name" or "dungeon:WCIDvVARIATION", rId = the reward's permanent ID). Kept on the
         /// character so a relog or a restart can neither reset the cooldown nor lose progress. Server-only.</summary>
         KillRewardProgress = 50505,
 

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using ACE.Server.Managers.ZoneScaling;
 
@@ -77,9 +78,9 @@ namespace ACE.Server.Managers.ZoneControl
     /// <summary>
     /// Kill Reward settings (owner 2026-09-23), for a Zone Control zone (ControlledArea.KillReward) or a room dungeon (its
     /// source weenie's PropertyString.RoomAssignKillReward, via <see cref="Format"/> / <see cref="Parse"/>). Each player's
-    /// own kills in the area count; every <see cref="Kills"/> of them earn <see cref="Amount"/> x <see cref="Wcid"/>, but
-    /// never more often than once per <see cref="CooldownMinutes"/> - a reward due during the cooldown is held for the first
-    /// kill after it. See KillRewardManager.
+    /// own kills in the area count; every <see cref="KillRewardEntry.Kills"/> of them earn <see cref="KillRewardEntry.Amount"/>
+    /// x <see cref="KillRewardEntry.Wcid"/>, but never more often than once per <see cref="KillRewardEntry.CooldownMinutes"/> -
+    /// kills during the cooldown do not count at all (no pre-hunting). See KillRewardManager.
     /// </summary>
     public class KillRewardConfig
     {
@@ -112,12 +113,44 @@ namespace ACE.Server.Managers.ZoneControl
 
         public KillRewardEntry Find(int id) => Entries?.Find(e => e != null && e.Id == id);
 
-        public KillRewardConfig Clone() => new KillRewardConfig
+        /// <summary>
+        /// A copy, made SAFE (review 2026-09-24): every reward within the edit command's bounds, IDs given to rows that have none,
+        /// and a duplicated ID moved to a new one - so a zone store edited by hand cannot hand out 2 billion items, or count one
+        /// kill twice through two rows sharing a progress key. The kill hook only ever reads copies made here (the zone snapshot,
+        /// every edit), and Parse does the same for a dungeon's string.
+        /// </summary>
+        public KillRewardConfig Clone()
         {
-            Enabled = Enabled,
-            NextId = NextId,
-            Entries = Entries?.ConvertAll(e => e?.Clone()) ?? new List<KillRewardEntry>(),
-        };
+            var copy = new KillRewardConfig
+            {
+                Enabled = Enabled,
+                NextId = NextId,
+                Entries = Entries?.ConvertAll(e => e?.Clone()) ?? new List<KillRewardEntry>(),
+            };
+            copy.Sanitize();
+            return copy;
+        }
+
+        /// <summary>Clamps every reward to the command's bounds and makes every ID present and unique. See Clone.</summary>
+        public void Sanitize()
+        {
+            Entries ??= new List<KillRewardEntry>();
+            Entries.RemoveAll(e => e == null);
+
+            foreach (var e in Entries)
+            {
+                e.Amount = Math.Clamp(e.Amount, 1, KillRewardManager.MaxAmount);
+                e.Kills = Math.Clamp(e.Kills, 1, KillRewardManager.MaxKills);
+                e.CooldownMinutes = double.IsFinite(e.CooldownMinutes) ? Math.Clamp(e.CooldownMinutes, 0, KillRewardManager.MaxCooldownMinutes) : 5;
+            }
+
+            var seen = new HashSet<int>();
+            foreach (var e in Entries)
+                if (e.Id > 0 && !seen.Add(e.Id))
+                    e.Id = 0;   // a duplicate: EnsureIds gives it a new one
+
+            EnsureIds();
+        }
 
         /// <summary>For a dungeon source's weenie: "on;#nextId;wcid|amount|kills|minutes|id;...".</summary>
         public string Format()
@@ -142,7 +175,7 @@ namespace ACE.Server.Managers.ZoneControl
                 c.Enabled = f[0].Trim() == "1";
                 var one = KillRewardEntry.Parse(string.Join("|", f, 1, f.Length - 1));
                 if (one != null) c.Entries.Add(one);
-                c.EnsureIds();
+                c.Sanitize();
                 return c;
             }
 
@@ -160,7 +193,7 @@ namespace ACE.Server.Managers.ZoneControl
                 var e = KillRewardEntry.Parse(part);
                 if (e != null) c.Entries.Add(e);
             }
-            c.EnsureIds();
+            c.Sanitize();
             return c;
         }
     }
@@ -178,10 +211,21 @@ namespace ACE.Server.Managers.ZoneControl
 
         public bool Valid => Wcid != 0 && Amount > 0 && Kills > 0;
 
+        /// <summary>
+        /// The cooldown as the kill hook uses it, in seconds: never negative, never past a year, and the 5-minute default
+        /// when the stored value is not a number (a zone store is JSON anyone can edit). Review 2026-09-24.
+        /// </summary>
+        public double CooldownSeconds
+            => (double.IsNaN(CooldownMinutes) ? 5 : Math.Clamp(CooldownMinutes, 0, KillRewardManager.MaxCooldownMinutes)) * 60.0;
+
         public KillRewardEntry Clone() => new KillRewardEntry { Id = Id, Wcid = Wcid, Amount = Amount, Kills = Kills, CooldownMinutes = CooldownMinutes };
 
-        /// <summary>Its own progress on a character: two rewards for the same item at different counts keep separate counts.</summary>
-        public string ProgressKey => Wcid + "x" + Kills;
+        /// <summary>
+        /// Its own progress on a character, by its permanent ID (review 2026-09-24): two rows for the same item and count keep
+        /// separate counts, an edited row keeps its progress, and a removed-then-re-added row starts fresh. A row from old
+        /// data with no ID yet falls back to item and count.
+        /// </summary>
+        public string ProgressKey => Id > 0 ? "r" + Id : Wcid + "x" + Kills;
 
         public string Format()
             => Wcid + "|" + Amount + "|" + Kills + "|" + CooldownMinutes.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "|" + Id;
@@ -194,9 +238,10 @@ namespace ACE.Server.Managers.ZoneControl
             var e = new KillRewardEntry();
             if (f.Length < 1 || !uint.TryParse(f[0], System.Globalization.NumberStyles.Integer, inv, out var w)) return null;
             e.Wcid = w;
-            if (f.Length > 1 && int.TryParse(f[1], System.Globalization.NumberStyles.Integer, inv, out var a) && a > 0) e.Amount = a;
-            if (f.Length > 2 && int.TryParse(f[2], System.Globalization.NumberStyles.Integer, inv, out var k) && k > 0) e.Kills = k;
-            if (f.Length > 3 && double.TryParse(f[3], System.Globalization.NumberStyles.Float, inv, out var m) && m >= 0) e.CooldownMinutes = m;
+            // The same bounds as the edit command (review 2026-09-24): a hand-edited string cannot store what no admin could type.
+            if (f.Length > 1 && int.TryParse(f[1], System.Globalization.NumberStyles.Integer, inv, out var a) && a > 0) e.Amount = Math.Min(a, KillRewardManager.MaxAmount);
+            if (f.Length > 2 && int.TryParse(f[2], System.Globalization.NumberStyles.Integer, inv, out var k) && k > 0) e.Kills = Math.Min(k, KillRewardManager.MaxKills);
+            if (f.Length > 3 && double.TryParse(f[3], System.Globalization.NumberStyles.Float, inv, out var m) && double.IsFinite(m) && m >= 0) e.CooldownMinutes = Math.Min(m, KillRewardManager.MaxCooldownMinutes);
             if (f.Length > 4 && int.TryParse(f[4], System.Globalization.NumberStyles.Integer, inv, out var id) && id > 0) e.Id = id;
             return e;
         }

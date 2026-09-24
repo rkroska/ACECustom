@@ -1,4 +1,4 @@
-﻿using ACE.DatLoader;
+using ACE.DatLoader;
 using ACE.DatLoader.Entity;
 using ACE.DatLoader.FileTypes;
 using ACE.Entity;

@@ -153,5 +153,23 @@ namespace ACE.Server.Tests
             Assert.IsFalse(RoomAssignManager.TryParseRooms("1|0x01F701D3 [1 1 1] 1 0 0 0|0x001F701D3", out _, out _), "9 hex digits");
             Assert.IsFalse(RoomAssignManager.TryParseRooms("1|0x01F701D3 [1 1 1] 1 0 0 0|0x01F701D3,", out _, out _), "trailing comma");
         }
+
+        [TestMethod]
+        public void LandingCell_TakesTheSameDigitCountsAsACell()
+        {
+            // 0x1F701D3 is 0x01F701D3 without its leading zero: accepted in the cell list, so accepted as a landing too.
+            Assert.IsTrue(RoomAssignManager.TryParseRooms("1|0x1F701D3 [1 1 1] 1 0 0 0|0x1F701D3", out var rooms, out var error), error);
+            Assert.AreEqual(0x01F701D3u, rooms[0].LandingCell);
+            Assert.IsFalse(RoomAssignManager.TryParseRooms("1|0x001F701D3 [1 1 1] 1 0 0 0|0x01F701D3", out _, out _), "9 hex digits");
+        }
+
+        [TestMethod]
+        public void LandingPositionOutOfRange_IsRefused()
+        {
+            Assert.IsFalse(RoomAssignManager.TryParseRooms("1|0x01F701D3 [4e30 1 1] 1 0 0 0|0x01F701D3", out _, out var error), "huge x");
+            StringAssert.Contains(error, "out of range");
+            Assert.IsFalse(RoomAssignManager.TryParseRooms("1|0x01F701D3 [1 1 -20000] 1 0 0 0|0x01F701D3", out _, out _), "far below");
+            Assert.IsTrue(RoomAssignManager.TryParseRooms("1|0x01F701D3 [9999 -9999 -12] 1 0 0 0|0x01F701D3", out _, out error), error);
+        }
     }
 }

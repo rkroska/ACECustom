@@ -24,7 +24,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Flat armour level per piece - no tier ladder off the switch.</summary>
         public const int ArmorLevel = 732;
 
-        /// <summary>Worn-gear hard caps, matching the anchors so a full set lands on the T10 total.</summary>
+        /// <summary>Worn-gear hard caps, so a full set lands on the T10 total.</summary>
         public const int CapDr = 92, CapCdr = 73, CapLine = 211;
 
         /// <summary>

@@ -1,8 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Threading;
 
 using ACE.Database;
 using ACE.Database.Models.World;
@@ -84,9 +83,8 @@ namespace ACE.Server.Managers
 
             for (var i = 0; i < found.Count; i++)
             {
-                // The wire is pipe-and-equals delimited, so a name carrying either would split the line.
-                var name = (ACE.Entity.Models.WeenieExtensions.GetName(found[i].Weenie) ?? ("Door " + found[i].Wcid))
-                           .Replace('|', ' ').Replace('=', ' ');
+                // The wire has its own separators: the same cleaning as every other name on it.
+                var name = BuilderWireName(ACE.Entity.Models.WeenieExtensions.GetName(found[i].Weenie) ?? ("Door " + found[i].Wcid));
                 lines.Add($"{BuilderDoorsTag}i={i}|n={found.Count}|wcid={found[i].Wcid}|name={name}|auto={(found[i].Wcid == auto ? 1 : 0)}");
             }
 
@@ -210,7 +208,7 @@ namespace ACE.Server.Managers
         {
             var lines = new List<string>();
 
-            if (!BuilderResolve(player, out var sourceWcid, out _, out _, out var error))
+            if (!BuilderResolve(player, out var sourceWcid, out _, out var variation, out var error))
             {
                 lines.Add(error);
                 return lines;
@@ -227,9 +225,12 @@ namespace ACE.Server.Managers
                     .Where(i => i.WeenieClassId == sourceWcid || pointing.Contains(i.WeenieClassId)).ToList();
             }
 
-            // A portal before a plate: the portal is what a player walks into.
+            // One placed in the picked dungeon's own variation first (a v3 pick never lands you at a v5 copy), then a portal
+            // before a plate: the portal is what a player walks into.
+            var wanted = VariationManager.NormalizeBase(variation);
             var entrance = placed
-                .OrderBy(i => BuilderWeenieType(i.WeenieClassId) == WeenieType.Portal ? 0 : 1)
+                .OrderBy(i => VariationManager.NormalizeBase(i.VariationId) == wanted ? 0 : 1)
+                .ThenBy(i => BuilderWeenieType(i.WeenieClassId) == WeenieType.Portal ? 0 : 1)
                 .ThenBy(i => i.Guid)
                 .FirstOrDefault();
 
@@ -254,9 +255,11 @@ namespace ACE.Server.Managers
         /// <summary>
         /// The dungeon a builder command is about: the one picked in the tab's dropdown (BuilderSelect), else the one the
         /// player stands in a room of, else the room source placed in the player's variation and landblock (a portal before
-        /// a plate), else any placed source.
+        /// a plate), else - for looking only - any placed source. A WRITE (<paramref name="forWrite"/>) never acts on a guess
+        /// (review 2026-09-24): with nothing picked it needs the dungeon around the player, so a command typed in town cannot
+        /// edit whichever dungeon happens to sort first.
         /// </summary>
-        private static bool BuilderResolve(Player player, out uint sourceWcid, out List<Room> rooms, out int? variation, out string error)
+        private static bool BuilderResolve(Player player, out uint sourceWcid, out List<Room> rooms, out int? variation, out string error, bool forWrite = false)
         {
             sourceWcid = 0;
             rooms = null;
@@ -303,6 +306,12 @@ namespace ACE.Server.Managers
                     .ThenBy(s => s.Wcid)
                     .First();
 
+                if (forWrite && (location == null || VariationManager.NormalizeBase(pick.Variation) != here || BuilderLandblock(pick.Wcid) != block))
+                {
+                    error = "You are not in a dungeon and none is picked. Pick one in the Dungeon dropdown (/zonecontrol dungeon select <wcid> <variation>), or go there. Nothing changed.";
+                    return false;
+                }
+
                 sourceWcid = pick.Wcid;
                 variation = pick.Variation;
             }
@@ -326,7 +335,7 @@ namespace ACE.Server.Managers
         {
             var lines = new List<string>();
 
-            if (!BuilderResolve(player, out _, out var rooms, out var variation, out var error))
+            if (!BuilderResolve(player, out _, out var rooms, out var variation, out var error, forWrite: true))
             {
                 lines.Add(error);
                 return lines;
@@ -394,8 +403,9 @@ namespace ACE.Server.Managers
         public const string BuilderStateTag = "[[ZCDG]]";
         public const string BuilderMapTag = "[[ZCDGM]]";
 
-        /// <summary>Zone Control's wire uses | , = ~ as separators, and this payload also : and + - none may ride in a name.</summary>
-        private static string BuilderWireName(string name)
+        /// <summary>Zone Control's wire uses | , = ~ as separators, and this payload also : and + - none may ride in a name.
+        /// The one name cleaner for the wire: Kill Reward's reward lines use it too.</summary>
+        internal static string BuilderWireName(string name)
         {
             var text = new System.Text.StringBuilder(name ?? "");
             foreach (var c in new[] { '|', ',', '=', '~', ':', '+', ';' })
@@ -493,22 +503,22 @@ namespace ACE.Server.Managers
                 + $"|expires={string.Join(",", expires)}"   // appended 2026-09-22: seconds left on each timed claim, so a hold can be watched running out
                 + $"|since={string.Join(",", held)}"   // appended 2026-09-22: how long the owning account has had each room
                 + $"|heldby={string.Join(",", heldBy)}"   // appended 2026-09-23: the character each hold is waiting for
-                + $"|zshare={(zoneShare ? 1 : 0)}|zsharen={(zoneShare ? ZoneShareManager.CountInDungeon(sourceWcid) : 0)}"   // appended 2026-09-23: Zone Share switch + players sharing now
+                + $"|zshare={(zoneShare ? 1 : 0)}|zsharen={(zoneShare ? ZoneShareManager.CountInDungeon(sourceWcid, variation) : 0)}"   // appended 2026-09-23: Zone Share switch + players sharing now
                 + $"|kr={(kr.Enabled ? 1 : 0)}|krlist={KillRewardManager.Wire(kr)}";   // appended 2026-09-23: Kill Reward - on, and every reward
         }
 
         /// <summary>
-        /// The four room_assign_* hold settings for the state line: logout minutes, leave seconds, renewals, startup grace
-        /// minutes - in that order. These are the CLAMPED values the manager really uses, not the raw properties, so what
-        /// the plugin shows is what a hold will actually do.
+        /// The room_assign_* hold settings for the state line: logout minutes, leave seconds, renewals, and a fourth field that
+        /// is always 0 - it was the startup grace (retired 2026-09-24) and stays so the field order never moves (the wire is
+        /// append-only). These are the CLAMPED values the manager really uses, not the raw properties, so what the plugin shows
+        /// is what a hold will actually do.
         /// </summary>
         private static string BuilderHolds()
         {
             var logout = (long)LogoutHoldTime.TotalMinutes;
             var leave = (long)LeaveHoldTime.TotalSeconds;
             var renewals = Math.Clamp(ServerConfig.room_assign_logout_hold_renewals.Value, 0, MaxLogoutHoldRenewals);
-            var grace = (long)StartupGraceTime.TotalMinutes;
-            return $"{logout},{leave},{renewals},{grace}";
+            return $"{logout},{leave},{renewals},0";
         }
 
         /// <summary>
@@ -520,7 +530,7 @@ namespace ACE.Server.Managers
         {
             var lines = new List<string>();
 
-            if (!BuilderResolve(player, out var sourceWcid, out _, out var variation, out var error))
+            if (!BuilderResolve(player, out var sourceWcid, out _, out var variation, out var error, forWrite: true))
             {
                 lines.Add(error);
                 return lines;
@@ -564,7 +574,7 @@ namespace ACE.Server.Managers
         {
             var lines = new List<string>();
 
-            if (!BuilderResolve(player, out var sourceWcid, out _, out var variation, out var error))
+            if (!BuilderResolve(player, out var sourceWcid, out _, out var variation, out var error, forWrite: true))
             {
                 lines.Add(error);
                 return lines;
@@ -620,6 +630,69 @@ namespace ACE.Server.Managers
             return string.IsNullOrWhiteSpace(name) ? "WCID " + wcid : name.Trim();
         }
 
+        private static readonly object _roomListWriteLock = new object();
+
+        /// <summary>A float as the room list writes it: invariant, up to 6 decimals.</summary>
+        private static string BuilderF(float value) => value.ToString("0.######", CultureInfo.InvariantCulture);
+
+        /// <summary>One room-list entry: "number|0xLANDING [x y z] qw qx qy qz|0xCELL,0xCELL".</summary>
+        private static string BuilderRoomEntry(int number, uint landingCell, float x, float y, float z, float qw, float qx, float qy, float qz, IEnumerable<uint> cells)
+            => $"{number}|0x{landingCell:X8} [{BuilderF(x)} {BuilderF(y)} {BuilderF(z)}] {BuilderF(qw)} {BuilderF(qx)} {BuilderF(qy)} {BuilderF(qz)}|"
+                + string.Join(",", cells.OrderBy(c => c).Select(c => $"0x{c:X8}"));
+
+        /// <summary>The number an entry starts with, or null.</summary>
+        private static int? BuilderEntryNumber(string entry)
+            => int.TryParse(entry.Split('|')[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : (int?)null;
+
+        /// <summary>
+        /// The ONE way the builder changes a source's room list (review 2026-09-24): under one lock, read the list from the
+        /// world DATABASE row (never the weenie cache, which may be older than a hand edit), apply <paramref name="change"/>,
+        /// check the result parses, write it, drop the cache. Two admins editing at once each apply their change to the
+        /// other's result instead of overwriting it. <paramref name="change"/> returns the new list, or null after adding
+        /// its own reason to <paramref name="lines"/>. The SQL is logged, so any edit can be replayed to live by hand.
+        /// </summary>
+        private static bool BuilderSaveRoomList(Player player, uint sourceWcid, string what, Func<string, string> change, List<string> lines, out string newRaw)
+        {
+            newRaw = null;
+
+            lock (_roomListWriteLock)
+            {
+                using (var context = new WorldDbContext())
+                {
+                    var row = context.WeeniePropertiesString.FirstOrDefault(r => r.ObjectId == sourceWcid && r.Type == (ushort)PropertyString.RoomAssignRooms);
+                    if (row == null)
+                    {
+                        lines.Add($"Source {sourceWcid} has no RoomAssignRooms row in the world database.");
+                        return false;
+                    }
+
+                    var changed = change(row.Value ?? "");
+                    if (changed == null)
+                        return false;
+
+                    // Same parser the live list goes through: wrong landblock, outdoor cell, zero rotation, a cell in two
+                    // rooms are all refused here, before anything is written.
+                    if (!TryParseRooms(changed, out _, out var parseError))
+                    {
+                        lines.Add($"Nothing changed - the new list does not parse: {parseError}.");
+                        return false;
+                    }
+
+                    log.Info($"[RoomAssign][DUNGEON] {player.Name}: {what} on wcid {sourceWcid}. List BEFORE: {row.Value}");
+
+                    row.Value = changed;
+                    context.SaveChanges();
+                    newRaw = changed;
+                }
+
+                DatabaseManager.World.ClearCachedWeenie(sourceWcid);
+            }
+
+            log.Info($"[RoomAssign][DUNGEON] {player.Name}: {what} on wcid {sourceWcid}. SQL: UPDATE weenie_properties_string SET value = '{newRaw}' WHERE object_Id = {sourceWcid} AND type = {(ushort)PropertyString.RoomAssignRooms};");
+            return true;
+        }
+
+
         /// <summary>
         /// Adds a room to the source's REAL list: the weenie's RoomAssignRooms string in the world database, then the weenie
         /// cache is dropped so the next use re-parses it. The landing is where the player stands, facing as they face; the
@@ -630,7 +703,7 @@ namespace ACE.Server.Managers
         {
             var lines = new List<string>();
 
-            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error))
+            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error, forWrite: true))
             {
                 lines.Add(error);
                 return lines;
@@ -639,22 +712,11 @@ namespace ACE.Server.Managers
             if (!BuilderMayWrite(variation, lines))
                 return lines;
 
+            // Standing in the dungeon also means standing in its variation - BuilderStandsIn checks both.
             if (!BuilderMustStandIn(player, rooms, variation, lines))
                 return lines;
 
             var location = player.Location;
-            if (location == null)
-            {
-                lines.Add("You have no location.");
-                return lines;
-            }
-
-            if (VariationManager.NormalizeBase(location.Variation) != VariationManager.NormalizeBase(variation))
-            {
-                lines.Add($"You are in v:{location.Variation}, but the rooms of source {sourceWcid} are in v:{variation}. Nothing added.");
-                return lines;
-            }
-
             var cell = location.Cell;
             var owner = rooms.FirstOrDefault(r => r.Cells.Contains(cell));
             if (owner != null)
@@ -662,15 +724,6 @@ namespace ACE.Server.Managers
                 lines.Add($"Cell 0x{cell:X8} is already part of room {owner.Number}. Nothing added.");
                 return lines;
             }
-
-            var weenie = DatabaseManager.World.GetCachedWeenie(sourceWcid);
-            if (weenie?.PropertiesString == null || !weenie.PropertiesString.TryGetValue(PropertyString.RoomAssignRooms, out var raw))
-            {
-                lines.Add($"Source {sourceWcid} carries no room list.");
-                return lines;
-            }
-
-            string F(float value) => value.ToString("0.######", CultureInfo.InvariantCulture);
 
             // The lowest number not in use, so a removed room 1 comes back as room 1 - or the number asked for.
             var number = wanted;
@@ -682,38 +735,27 @@ namespace ACE.Server.Managers
                 return lines;
             }
 
-            var entry = $"{number}|0x{cell:X8} [{F(location.PositionX)} {F(location.PositionY)} {F(location.PositionZ)}] "
-                + $"{F(location.RotationW)} {F(location.RotationX)} {F(location.RotationY)} {F(location.RotationZ)}|0x{cell:X8}";
-            // Kept in room-number order, so the stored list reads the way the rooms are numbered.
-            var entries = raw.Split(';').Select(e => e.Trim()).Where(e => e.Length > 0).ToList();
-            entries.Add(entry);
-            var newRaw = string.Join(";", entries.OrderBy(e =>
-                int.TryParse(e.Split('|')[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : int.MaxValue));
+            var entry = BuilderRoomEntry(number, cell, location.PositionX, location.PositionY, location.PositionZ,
+                location.RotationW, location.RotationX, location.RotationY, location.RotationZ, new[] { cell });
 
-            // Same parser the live list goes through: wrong landblock, outdoor cell, zero rotation are all refused here.
-            if (!TryParseRooms(newRaw, out _, out var parseError))
+            var saved = BuilderSaveRoomList(player, sourceWcid, $"add room {number}", raw =>
             {
-                lines.Add($"Not added - the new list does not parse: {parseError}.");
-                return lines;
-            }
-
-            using (var context = new WorldDbContext())
-            {
-                var row = context.WeeniePropertiesString.FirstOrDefault(r => r.ObjectId == sourceWcid && r.Type == (ushort)PropertyString.RoomAssignRooms);
-                if (row == null)
+                var entries = raw.Split(';').Select(e => e.Trim()).Where(e => e.Length > 0).ToList();
+                if (entries.Any(e => BuilderEntryNumber(e) == number))
                 {
-                    lines.Add($"Source {sourceWcid} has no RoomAssignRooms row in the world database.");
-                    return lines;
+                    lines.Add($"Room {number} was just added by someone else. Nothing added.");
+                    return null;
                 }
 
-                row.Value = newRaw;
-                context.SaveChanges();
-            }
+                // Kept in room-number order, so the stored list reads the way the rooms are numbered.
+                entries.Add(entry);
+                return string.Join(";", entries.OrderBy(e => BuilderEntryNumber(e) ?? int.MaxValue));
+            }, lines, out _);
 
-            DatabaseManager.World.ClearCachedWeenie(sourceWcid);
+            if (!saved)
+                return lines;
+
             var reparsed = GetRooms(sourceWcid);
-
-            log.Info($"[RoomAssign][DUNGEON] {player.Name} added room {number} to wcid {sourceWcid}. SQL: UPDATE weenie_properties_string SET value = '{newRaw}' WHERE object_Id = {sourceWcid} AND type = {(ushort)PropertyString.RoomAssignRooms};");
 
             lines.Add($"Room {number} added to source {sourceWcid} (v:{variation}): {entry}");
 
@@ -735,7 +777,7 @@ namespace ACE.Server.Managers
         {
             var lines = new List<string>();
 
-            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error))
+            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error, forWrite: true))
             {
                 lines.Add(error);
                 return lines;
@@ -757,73 +799,102 @@ namespace ACE.Server.Managers
                 return lines;
             }
 
+            // One room list serves every variation the source is placed in, so the room goes from all of them: every copy is
+            // checked and cleaned, not only the one picked (review 2026-09-24).
+            List<int?> variations;
+            lock (_lock)
+                variations = SourceVariations(sourceWcid);
+            if (!variations.Any(v => VariationManager.NormalizeBase(v) == VariationManager.NormalizeBase(variation)))
+                variations.Add(variation);
+            var keys = variations.Select(v => room.Key(v)).ToList();
+
             // Anyone else standing in it blocks the removal. Not the caller: a lone tester is nearly always in the room they
             // want gone, and is simply outside every room afterwards, until they portal or relog.
             foreach (var online in PlayerManager.GetAllOnline())
-                if (online.Guid != player.Guid && !IsStaff(online) && InRoom(online.Location, room, variation))
+                if (online.Guid != player.Guid && !IsStaff(online) && variations.Any(v => InRoom(online.Location, room, v)))
                 {
                     lines.Add($"{online.Name} is standing in room {number}. Nothing removed.");
                     return lines;
                 }
 
-            var weenie = DatabaseManager.World.GetCachedWeenie(sourceWcid);
-            if (weenie?.PropertiesString == null || !weenie.PropertiesString.TryGetValue(PropertyString.RoomAssignRooms, out var raw))
-            {
-                lines.Add($"Source {sourceWcid} carries no room list.");
-                return lines;
-            }
-
-            // Drop the one entry whose first field is this number; every other entry is kept exactly as authored.
-            var kept = new List<string>();
-            var dropped = 0;
-            foreach (var entryRaw in raw.Split(';'))
-            {
-                var entry = entryRaw.Trim();
-                if (entry.Length == 0)
-                    continue;
-
-                var first = entry.Split('|')[0].Trim();
-                if (int.TryParse(first, NumberStyles.Integer, CultureInfo.InvariantCulture, out var entryNumber) && entryNumber == number)
-                {
-                    dropped++;
-                    continue;
-                }
-
-                kept.Add(entry);
-            }
-
-            var newRaw = string.Join(";", kept);
-
-            if (dropped != 1 || !TryParseRooms(newRaw, out _, out var parseError))
-            {
-                lines.Add($"Not removed - could not take exactly room {number} out of the list and keep it valid.");
-                return lines;
-            }
-
-            log.Info($"[RoomAssign][DUNGEON] {player.Name} is removing room {number} from wcid {sourceWcid}. List BEFORE: {raw}");
-
-            using (var context = new WorldDbContext())
-            {
-                var row = context.WeeniePropertiesString.FirstOrDefault(r => r.ObjectId == sourceWcid && r.Type == (ushort)PropertyString.RoomAssignRooms);
-                if (row == null)
-                {
-                    lines.Add($"Source {sourceWcid} has no RoomAssignRooms row in the world database.");
-                    return lines;
-                }
-
-                row.Value = newRaw;
-                context.SaveChanges();
-            }
-
-            DatabaseManager.World.ClearCachedWeenie(sourceWcid);
-
-            // The room is gone, so its fake player goes with it (its key would otherwise linger until a restart).
+            // A hold or a reservation on it blocks the removal too (review 2026-09-24): its owner is at their lifestone, or on
+            // the way in. Removing it anyway would leave the claim behind for a new room in the same spot to inherit, and send
+            // a player mid-portal into a cell that is no longer a room.
+            var now = DateTime.UtcNow;
             lock (_lock)
-                _testFakes.Remove(room.Key(variation));
+            {
+                PurgeExpired(now);
+
+                foreach (var key in keys)
+                {
+                    if (_reservations.TryGetValue(key, out var reservation))
+                    {
+                        lines.Add($"Room {number} is reserved for {reservation.Name ?? "a player"} on their way in. Nothing removed - try again in a few seconds.");
+                        return lines;
+                    }
+
+                    if (_holds.TryGetValue(key, out var hold) && IsHoldActive(hold, now))
+                    {
+                        lines.Add($"Room {number} is held for {hold.Name ?? "a player"} for {Math.Ceiling((hold.Until - now).TotalSeconds):0} more second(s). Nothing removed.");
+                        return lines;
+                    }
+                }
+            }
+
+            var saved = BuilderSaveRoomList(player, sourceWcid, $"remove room {number}", raw =>
+            {
+                // Drop the one entry whose first field is this number; every other entry is kept exactly as authored.
+                var entries = raw.Split(';').Select(e => e.Trim()).Where(e => e.Length > 0).ToList();
+                var kept = entries.Where(e => BuilderEntryNumber(e) != number).ToList();
+
+                if (entries.Count - kept.Count != 1)
+                {
+                    lines.Add($"Not removed - room {number} is not in the stored list exactly once.");
+                    return null;
+                }
+
+                if (kept.Count == 0)
+                {
+                    lines.Add("That is the last room - a room source must keep at least one. Nothing removed.");
+                    return null;
+                }
+
+                return string.Join(";", kept);
+            }, lines, out _);
+
+            if (!saved)
+                return lines;
+
+            // The room is gone: whatever still names it goes with it, in every copy, so a new room in the same spot starts clean.
+            var markers = new List<WorldObject>();
+            lock (_lock)
+            {
+                foreach (var key in keys)
+                {
+                    // A hand-out that slipped in between the check above and the write: its reservation goes too (the player
+                    // lands in a cell that is no longer a room and is outside every room, as any login there would be).
+                    RemoveReservation(key);
+
+                    _testFakes.Remove(key);
+                    _holds.Remove(key);
+                    _roomOwner.Remove(key);
+                    _roomOwnerSince.Remove(key);
+
+                    if (_testMarkers.Remove(key, out var marker))
+                        markers.Add(marker);
+
+                    foreach (var guid in _leftRoom.Where(kv => kv.Value == key).Select(kv => kv.Key).ToList())
+                        _leftRoom.Remove(guid);
+                    foreach (var guid in _announcedRoom.Where(kv => kv.Value == key).Select(kv => kv.Key).ToList())
+                        _announcedRoom.Remove(guid);
+                }
+            }
+
+            // Its landing marker (a test tool) would otherwise stand on a spot that is no longer a room. Outside _lock.
+            foreach (var marker in markers)
+                marker.Destroy();
 
             var reparsed = GetRooms(sourceWcid);
-
-            log.Info($"[RoomAssign][DUNGEON] {player.Name} removed room {number} from wcid {sourceWcid}. SQL: UPDATE weenie_properties_string SET value = '{newRaw}' WHERE object_Id = {sourceWcid} AND type = {(ushort)PropertyString.RoomAssignRooms};");
 
             lines.Add($"Room {number} removed from source {sourceWcid} (v:{variation}). {reparsed?.Count ?? 0} room(s) left. The old list is in the server log.");
             return lines;
@@ -874,7 +945,6 @@ namespace ACE.Server.Managers
             return best;
         }
 
-        /// <summary>The rotation that looks along (dx, dy) on the floor - the same formula as ACE.Entity.Position.Rotate.</summary>
         /// <summary>
         /// The room's generator; when its own cells hold none, the nearest one in a cell directly connected to them that
         /// belongs to no other room - that cell (with its dead-end cell) then JOINS the room. Owner 2026-09-21: the
@@ -919,6 +989,7 @@ namespace ACE.Server.Managers
             return generator;
         }
 
+        /// <summary>The rotation that looks along (dx, dy) on the floor - the same formula as ACE.Entity.Position.Rotate.</summary>
         private static System.Numerics.Quaternion BuilderFacing(float dx, float dy)
             => System.Numerics.Quaternion.CreateFromYawPitchRoll(0, 0, (float)Math.Atan2(-dx, dy));
 
@@ -950,12 +1021,14 @@ namespace ACE.Server.Managers
         /// </summary>
         private static void BuilderTurnGenerator(Player player, BuilderGenerator generator, int? variation, System.Numerics.Quaternion facing, List<string> lines)
         {
+            uint cell;
             using (var context = new WorldDbContext())
             {
                 var row = context.LandblockInstance.FirstOrDefault(i => i.Guid == generator.Guid);
                 if (row == null)
                     return;
 
+                cell = row.ObjCellId;
                 row.AnglesW = facing.W;
                 row.AnglesX = facing.X;
                 row.AnglesY = facing.Y;
@@ -964,18 +1037,20 @@ namespace ACE.Server.Managers
                 context.SaveChanges();
             }
 
-            DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)(player.Location.Cell >> 16), variation);
+            // The GENERATOR's landblock, not the admin's: with a dungeon picked in the dropdown they may be anywhere.
+            DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)(cell >> 16), variation);
 
-            var live = player.CurrentLandblock?.GetObject(generator.Guid);
-            if (live?.Location != null)
-            {
-                live.Location.Rotation = facing;
-                BuilderShowLive(live);
-            }
+            var live = BuilderLiveObject(generator.Guid, cell, variation);
+            if (live != null)
+                LandblockManager.RunOnThreadFor(live, ACE.Server.Entity.Actions.ActionType.DungeonBuilder_LiveEdit, () =>
+                {
+                    if (live.Location == null)
+                        return;
+                    live.Location.Rotation = facing;
+                    BuilderShowLive(live);
+                });
 
-            string F(float value) => value.ToString("0.######", CultureInfo.InvariantCulture);
-
-            log.Info($"[RoomAssign][DUNGEON] {player.Name} turned generator 0x{generator.Guid:X8} to face the landing. SQL: UPDATE landblock_instance SET angles_W = {F(facing.W)}, angles_X = {F(facing.X)}, angles_Y = {F(facing.Y)}, angles_Z = {F(facing.Z)} WHERE guid = 0x{generator.Guid:X8};");
+            log.Info($"[RoomAssign][DUNGEON] {player.Name} turned generator 0x{generator.Guid:X8} to face the landing. SQL: UPDATE landblock_instance SET angles_W = {BuilderF(facing.W)}, angles_X = {BuilderF(facing.X)}, angles_Y = {BuilderF(facing.Y)}, angles_Z = {BuilderF(facing.Z)} WHERE guid = 0x{generator.Guid:X8};");
             lines.Add($"Generator 0x{generator.Guid:X8} now faces the landing{(live != null ? "" : " (not loaded right now - applies when the landblock loads)")}. The monster standing there turns when it next respawns.");
         }
 
@@ -990,7 +1065,7 @@ namespace ACE.Server.Managers
         {
             var lines = new List<string>();
 
-            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error))
+            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error, forWrite: true))
             {
                 lines.Add(error);
                 return lines;
@@ -1002,15 +1077,9 @@ namespace ACE.Server.Managers
             if (!BuilderMustStandIn(player, rooms, variation, lines))
                 return lines;
 
+            // BuilderMustStandIn has checked the landblock and the variation.
             var location = player.Location;
             var landblock = rooms[0].LandingCell >> 16;
-
-            if (location == null || VariationManager.NormalizeBase(location.Variation) != VariationManager.NormalizeBase(variation))
-            {
-                lines.Add($"You are in v:{location?.Variation}, but the rooms of source {sourceWcid} are in v:{variation}. Nothing changed.");
-                return lines;
-            }
-
             var cell = location.Cell;
             var dat = BuilderDatCells(landblock);
 
@@ -1045,7 +1114,7 @@ namespace ACE.Server.Managers
             if (number == 0)
                 for (number = 1; rooms.Any(r => r.Number == number); number++) { }
 
-            if (!BuilderSaveRoom(player, sourceWcid, number, cell, location.PositionX, location.PositionY, location.PositionZ, rotation, cells, lines))
+            if (!BuilderSaveRoom(player, sourceWcid, number, cell, location.PositionX, location.PositionY, location.PositionZ, rotation, cells, lines, isNew: room == null))
                 return lines;
 
             lines.Add($"Room {number} (v:{variation}): {(room != null ? "landing moved" : "new room, landing set")} to exactly where you stand, facing {(onTheSpot ? "the way you face now (you stand on the spot it would look at)" : generator != null ? "the generator" : "the middle of the cell")}. {cells.Count} cell(s).");
@@ -1193,7 +1262,7 @@ namespace ACE.Server.Managers
         {
             var lines = new List<string>();
 
-            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error))
+            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error, forWrite: true))
             {
                 lines.Add(error);
                 return lines;
@@ -1219,91 +1288,96 @@ namespace ACE.Server.Managers
                 return lines;
             }
 
+            var landblock = room.LandingCell >> 16;
             if (cell <= 0xFFFF)
-                cell |= (room.LandingCell >> 16) << 16;
+                cell |= landblock << 16;
 
-            var cells = new HashSet<uint>(room.Cells);
-            bool added;
-
-            if (cells.Contains(cell))
+            // The cell must really exist (review 2026-09-24): the parser only checks "indoor, same landblock", so a typo
+            // like FFFF would otherwise be stored as part of the room.
+            if (cell >> 16 != landblock || !BuilderDatCells(landblock).ContainsKey(cell))
             {
-                if (cell == room.LandingCell)
-                {
-                    lines.Add($"Cell 0x{cell:X8} holds room {number}'s landing - move the landing first.");
-                    return lines;
-                }
-
-                cells.Remove(cell);
-                added = false;
-            }
-            else
-            {
-                cells.Add(cell);
-                added = true;
-            }
-
-            var weenie = DatabaseManager.World.GetCachedWeenie(sourceWcid);
-            if (weenie?.PropertiesString == null || !weenie.PropertiesString.TryGetValue(PropertyString.RoomAssignRooms, out var raw))
-            {
-                lines.Add($"Source {sourceWcid} carries no room list.");
+                lines.Add($"Cell 0x{cell:X8} is not an indoor cell of this dungeon (0x{landblock:X4}). Nothing changed.");
                 return lines;
             }
 
-            string F(float value) => value.ToString("0.######", CultureInfo.InvariantCulture);
-
-            var entry = $"{room.Number}|0x{room.LandingCell:X8} [{F(room.X)} {F(room.Y)} {F(room.Z)}] {F(room.QW)} {F(room.QX)} {F(room.QY)} {F(room.QZ)}|"
-                + string.Join(",", cells.OrderBy(c => c).Select(c => $"0x{c:X8}"));
-
-            var entries = new List<string>();
-            var swapped = 0;
-            foreach (var entryRaw in raw.Split(';'))
+            // Taking out a cell someone else stands in would make them stop counting, and the room could look free to the next
+            // arrival (review 2026-09-24). Refused, like removing a room someone stands in.
+            if (room.Cells.Contains(cell))
             {
-                var old = entryRaw.Trim();
-                if (old.Length == 0)
-                    continue;
+                List<int?> variations;
+                lock (_lock)
+                    variations = SourceVariations(sourceWcid);
 
-                if (int.TryParse(old.Split('|')[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n == number)
+                foreach (var online in PlayerManager.GetAllOnline())
                 {
-                    entries.Add(entry);
-                    swapped++;
+                    var at = online.Location;
+                    if (online.Guid != player.Guid && !IsStaff(online) && at != null && at.Cell == cell
+                        && (variations.Count == 0 || variations.Any(v => VariationManager.NormalizeBase(v) == VariationManager.NormalizeBase(at.Variation))))
+                    {
+                        lines.Add($"{online.Name} is standing in cell 0x{cell:X8}. Nothing changed.");
+                        return lines;
+                    }
+                }
+            }
+
+            // The new entry is built from the DATABASE row, inside the save's lock (review 2026-09-24) - never from the cached
+            // room, which a hand edit not yet reloaded would make older than what it overwrites.
+            var added = false;
+            var cellCount = 0;
+            var saved = BuilderSaveRoomList(player, sourceWcid, $"toggle cell 0x{cell:X8} in room {number}", raw =>
+            {
+                if (!TryParseRooms(raw, out var stored, out var storedError))
+                {
+                    lines.Add($"Nothing changed - the stored list does not parse: {storedError}.");
+                    return null;
+                }
+
+                var current = stored.FirstOrDefault(r => r.Number == number);
+                if (current == null)
+                {
+                    lines.Add($"Nothing changed - room {number} is no longer in the stored list.");
+                    return null;
+                }
+
+                var cells = new HashSet<uint>(current.Cells);
+                if (cells.Contains(cell))
+                {
+                    if (cell == current.LandingCell)
+                    {
+                        lines.Add($"Cell 0x{cell:X8} holds room {number}'s landing - move the landing first.");
+                        return null;
+                    }
+
+                    cells.Remove(cell);
+                    added = false;
                 }
                 else
-                    entries.Add(old);
-            }
-
-            var newRaw = string.Join(";", entries);
-
-            if (swapped != 1)
-            {
-                lines.Add($"Nothing changed - room {number} was not found exactly once in the stored list.");
-                return lines;
-            }
-
-            if (!TryParseRooms(newRaw, out _, out var parseError))
-            {
-                lines.Add($"Nothing changed: {parseError}.");
-                return lines;
-            }
-
-            using (var context = new WorldDbContext())
-            {
-                var row = context.WeeniePropertiesString.FirstOrDefault(r => r.ObjectId == sourceWcid && r.Type == (ushort)PropertyString.RoomAssignRooms);
-                if (row == null)
                 {
-                    lines.Add($"Source {sourceWcid} has no RoomAssignRooms row in the world database.");
-                    return lines;
+                    cells.Add(cell);
+                    added = true;
                 }
 
-                row.Value = newRaw;
-                context.SaveChanges();
-            }
+                cellCount = cells.Count;
+                var entry = BuilderRoomEntry(current.Number, current.LandingCell, current.X, current.Y, current.Z, current.QW, current.QX, current.QY, current.QZ, cells);
 
-            DatabaseManager.World.ClearCachedWeenie(sourceWcid);
+                var entries = raw.Split(';').Select(e => e.Trim()).Where(e => e.Length > 0).ToList();
+                var index = entries.FindIndex(e => BuilderEntryNumber(e) == number);
+                if (index < 0 || entries.FindLastIndex(e => BuilderEntryNumber(e) == number) != index)
+                {
+                    lines.Add($"Nothing changed - room {number} is not in the stored list exactly once.");
+                    return null;
+                }
+
+                entries[index] = entry;
+                return string.Join(";", entries);
+            }, lines, out _);
+
+            if (!saved)
+                return lines;
+
             GetRooms(sourceWcid);
 
-            log.Info($"[RoomAssign][DUNGEON] {player.Name} {(added ? "added cell" : "removed cell")} 0x{cell:X8} {(added ? "to" : "from")} room {number} of wcid {sourceWcid}. SQL: UPDATE weenie_properties_string SET value = '{newRaw}' WHERE object_Id = {sourceWcid} AND type = {(ushort)PropertyString.RoomAssignRooms};");
-
-            lines.Add($"Room {number} (v:{variation}): cell 0x{cell:X8} {(added ? "added" : "removed")}. It now has {cells.Count} cell(s).");
+            lines.Add($"Room {number} (v:{variation}): cell 0x{cell:X8} {(added ? "added" : "removed")}. It now has {cellCount} cell(s).");
             return lines;
         }
 
@@ -1467,7 +1541,7 @@ namespace ACE.Server.Managers
             var instances = DatabaseManager.World.GetLandblockInstancesByLandblockBypassCache(landblock);
             var guid = ACE.Server.Command.Handlers.Processors.DeveloperContentCommands.GetNextStaticGuid(landblock, instances);
 
-            if (guid > ((0x70000000u | ((uint)landblock << 12)) | 0xFFF))
+            if (guid > ((ACE.Entity.ObjectGuid.LandblockInstanceGuidBase | ((uint)landblock << 12)) | 0xFFF))
             {
                 lines.Add($"Landblock {landblock:X4} has no static guid left.");
                 return 0;
@@ -1508,7 +1582,11 @@ namespace ACE.Server.Managers
 
             DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, variation);
 
-            log.Info($"[RoomAssign][DUNGEON] {player.Name} placed {wo.Name} ({wcid}) as 0x{guid:X8} at 0x{at.Cell:X8} [{at.PositionX:0.###} {at.PositionY:0.###} {at.PositionZ:0.###}] v:{variation}.");
+            // The row as SQL, like every other builder write, so a placement can be replayed to live from the log.
+            log.Info($"[RoomAssign][DUNGEON] {player.Name} placed {wo.Name} ({wcid}) as 0x{guid:X8} at 0x{at.Cell:X8} v:{variation}. SQL: "
+                + "INSERT INTO landblock_instance (guid, weenie_Class_Id, obj_Cell_Id, origin_X, origin_Y, origin_Z, angles_W, angles_X, angles_Y, angles_Z, is_Link_Child, variation_Id) "
+                + $"VALUES (0x{instance.Guid:X8}, {instance.WeenieClassId}, 0x{instance.ObjCellId:X8}, {BuilderF(instance.OriginX)}, {BuilderF(instance.OriginY)}, {BuilderF(instance.OriginZ)}, "
+                + $"{BuilderF(instance.AnglesW)}, {BuilderF(instance.AnglesX)}, {BuilderF(instance.AnglesY)}, {BuilderF(instance.AnglesZ)}, {(instance.IsLinkChild ? 1 : 0)}, {(instance.VariationId.HasValue ? instance.VariationId.Value.ToString(CultureInfo.InvariantCulture) : "NULL")});");
             return guid;
         }
 
@@ -1543,50 +1621,58 @@ namespace ACE.Server.Managers
 
             DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)(to.Cell >> 16), to.Variation);
 
-            string F(float value) => value.ToString("0.######", CultureInfo.InvariantCulture);
-            log.Info($"[RoomAssign][DUNGEON] {player.Name} moved 0x{guid:X8} to 0x{to.Cell:X8} [{F(to.PositionX)} {F(to.PositionY)} {F(to.PositionZ)}]. SQL: UPDATE landblock_instance SET obj_Cell_Id = 0x{to.Cell:X8}, origin_X = {F(to.PositionX)}, origin_Y = {F(to.PositionY)}, origin_Z = {F(to.PositionZ)}, angles_W = {F(to.RotationW)}, angles_X = {F(to.RotationX)}, angles_Y = {F(to.RotationY)}, angles_Z = {F(to.RotationZ)} WHERE guid = 0x{guid:X8};");
+            log.Info($"[RoomAssign][DUNGEON] {player.Name} moved 0x{guid:X8} to 0x{to.Cell:X8} [{BuilderF(to.PositionX)} {BuilderF(to.PositionY)} {BuilderF(to.PositionZ)}]. SQL: UPDATE landblock_instance SET obj_Cell_Id = 0x{to.Cell:X8}, origin_X = {BuilderF(to.PositionX)}, origin_Y = {BuilderF(to.PositionY)}, origin_Z = {BuilderF(to.PositionZ)}, angles_W = {BuilderF(to.RotationW)}, angles_X = {BuilderF(to.RotationX)}, angles_Y = {BuilderF(to.RotationY)}, angles_Z = {BuilderF(to.RotationZ)} WHERE guid = 0x{guid:X8};");
 
-            var live = player.CurrentLandblock?.GetObject(guid);
+            // The loaded landblock the object is in, whichever it is - not the admin's own (they may have the dungeon picked
+            // from elsewhere). Its physics are touched on that landblock's own thread.
+            var live = BuilderLiveObject(guid, to.Cell, to.Variation);
             if (live == null)
             {
                 lines.Add("It is not loaded right now - the move applies when the landblock loads.");
                 return true;
             }
 
-            try
+            LandblockManager.RunOnThreadFor(live, ACE.Server.Entity.Actions.ActionType.DungeonBuilder_LiveEdit, () =>
             {
-                var walked = false;
-
-                if (live.PhysicsObj != null)
+                try
                 {
-                    var target = new ACE.Server.Physics.Common.Position(to);
-                    var transit = live.PhysicsObj.transition(live.PhysicsObj.Position, target, true);
+                    var walked = false;
 
-                    if (transit != null && (transit.SpherePath.CurPos.ObjCellID >> 16) == (to.Cell >> 16))
+                    if (live.PhysicsObj != null)
                     {
-                        live.PhysicsObj.SetPositionInternal(transit);
-                        live.PhysicsObj.Position.Frame.Orientation = to.Rotation;
-                        walked = true;
+                        var target = new ACE.Server.Physics.Common.Position(to);
+                        var transit = live.PhysicsObj.transition(live.PhysicsObj.Position, target, true);
+
+                        if (transit != null && (transit.SpherePath.CurPos.ObjCellID >> 16) == (to.Cell >> 16))
+                        {
+                            live.PhysicsObj.SetPositionInternal(transit);
+                            live.PhysicsObj.Position.Frame.Orientation = to.Rotation;
+                            walked = true;
+                        }
+                        else
+                            live.PhysicsObj.Position = target;
                     }
-                    else
-                        live.PhysicsObj.Position = target;
+
+                    live.Location = walked ? ACE.Server.Entity.PositionExtensions.ACEPosition(live.PhysicsObj.Position) : new ACE.Entity.Position(to);
+                    live.Location.Rotation = to.Rotation;
+                    if (live.Location.Variation == null)
+                        live.Location.Variation = to.Variation;
+
+                    live.SendUpdatePosition(true);
                 }
-
-                live.Location = walked ? ACE.Server.Entity.PositionExtensions.ACEPosition(live.PhysicsObj.Position) : new ACE.Entity.Position(to);
-                live.Location.Rotation = to.Rotation;
-                if (live.Location.Variation == null)
-                    live.Location.Variation = to.Variation;
-
-                live.SendUpdatePosition(true);
-            }
-            catch (Exception ex)
-            {
-                log.Warn($"[RoomAssign][DUNGEON] moving live 0x{guid:X8}: {ex.Message}");
-                lines.Add("The database row is moved, but the live object could not be - it is right after the landblock reloads.");
-            }
+                catch (Exception ex)
+                {
+                    // The row is already moved: the object is right after the landblock reloads.
+                    log.Warn($"[RoomAssign][DUNGEON] moving live 0x{guid:X8}: {ex.Message}");
+                }
+            });
 
             return true;
         }
+
+        /// <summary>The live object of a placed instance, in the LOADED landblock that holds this cell and variation - or null.</summary>
+        private static WorldObject BuilderLiveObject(uint guid, uint cell, int? variation)
+            => LandblockManager.GetLoadedLandblock(new ACE.Entity.LandblockId(cell), variation)?.GetObject(guid);
 
         /// <summary>
         /// Moves a placed generator: its landblock_instance row (cell, position, facing), the cached instances, and the live
@@ -1618,17 +1704,17 @@ namespace ACE.Server.Managers
 
             DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)(to.Cell >> 16), to.Variation);
 
-            var live = player.CurrentLandblock?.GetObject(generator.Guid);
+            // The generator's own loaded landblock, on its own thread - not the admin's (see BuilderMoveInstance).
+            var live = BuilderLiveObject(generator.Guid, to.Cell, to.Variation);
             if (live != null)
-            {
-                live.Location = new ACE.Entity.Position(to);
-                BuilderShowLive(live);
-                live.ResetGenerator();
-            }
+                LandblockManager.RunOnThreadFor(live, ACE.Server.Entity.Actions.ActionType.DungeonBuilder_LiveEdit, () =>
+                {
+                    live.Location = new ACE.Entity.Position(to);
+                    BuilderShowLive(live);
+                    live.ResetGenerator();
+                });
 
-            string F(float value) => value.ToString("0.######", CultureInfo.InvariantCulture);
-
-            log.Info($"[RoomAssign][DUNGEON] {player.Name} moved generator 0x{generator.Guid:X8} to 0x{to.Cell:X8} [{F(to.PositionX)} {F(to.PositionY)} {F(to.PositionZ)}]. SQL: UPDATE landblock_instance SET obj_Cell_Id = 0x{to.Cell:X8}, origin_X = {F(to.PositionX)}, origin_Y = {F(to.PositionY)}, origin_Z = {F(to.PositionZ)}, angles_W = {F(to.RotationW)}, angles_X = {F(to.RotationX)}, angles_Y = {F(to.RotationY)}, angles_Z = {F(to.RotationZ)} WHERE guid = 0x{generator.Guid:X8};");
+            log.Info($"[RoomAssign][DUNGEON] {player.Name} moved generator 0x{generator.Guid:X8} to 0x{to.Cell:X8} [{BuilderF(to.PositionX)} {BuilderF(to.PositionY)} {BuilderF(to.PositionZ)}]. SQL: UPDATE landblock_instance SET obj_Cell_Id = 0x{to.Cell:X8}, origin_X = {BuilderF(to.PositionX)}, origin_Y = {BuilderF(to.PositionY)}, origin_Z = {BuilderF(to.PositionZ)}, angles_W = {BuilderF(to.RotationW)}, angles_X = {BuilderF(to.RotationX)}, angles_Y = {BuilderF(to.RotationY)}, angles_Z = {BuilderF(to.RotationZ)} WHERE guid = 0x{generator.Guid:X8};");
 
             if (live == null)
                 lines.Add("The generator is not loaded right now - the move applies when the landblock loads.");
@@ -1640,71 +1726,58 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Writes one room into the source's stored list - replacing the entry with its number, or adding it - after the
-        /// whole list has parsed. False (said in lines) when nothing was written.
+        /// whole list has parsed. False (said in lines) when nothing was written. <paramref name="isNew"/>: the caller picked
+        /// this number as a free one from the cached list - if the stored list already has it (added by hand, not reloaded
+        /// yet), nothing is written rather than overwriting that room (review 2026-09-24).
         /// </summary>
         private static bool BuilderSaveRoom(Player player, uint sourceWcid, int number, uint landingCell, float x, float y, float z,
-            System.Numerics.Quaternion rotation, IEnumerable<uint> cells, List<string> lines)
+            System.Numerics.Quaternion rotation, IEnumerable<uint> cells, List<string> lines, bool isNew = false)
         {
-            var weenie = DatabaseManager.World.GetCachedWeenie(sourceWcid);
-            if (weenie?.PropertiesString == null || !weenie.PropertiesString.TryGetValue(PropertyString.RoomAssignRooms, out var raw))
+            var saved = BuilderSaveRoomList(player, sourceWcid, $"set room {number}", raw =>
             {
-                lines.Add($"Source {sourceWcid} carries no room list.");
-                return false;
-            }
-
-            string F(float value) => value.ToString("0.######", CultureInfo.InvariantCulture);
-
-            var entry = $"{number}|0x{landingCell:X8} [{F(x)} {F(y)} {F(z)}] {F(rotation.W)} {F(rotation.X)} {F(rotation.Y)} {F(rotation.Z)}|"
-                + string.Join(",", cells.Distinct().OrderBy(c => c).Select(c => $"0x{c:X8}"));
-
-            var entries = new List<string>();
-            var swapped = false;
-            foreach (var entryRaw in raw.Split(';'))
-            {
-                var old = entryRaw.Trim();
-                if (old.Length == 0)
-                    continue;
-
-                if (int.TryParse(old.Split('|')[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n == number)
+                if (isNew && raw.Split(';').Any(e => BuilderEntryNumber(e.Trim()) == number))
                 {
-                    if (!swapped)
-                        entries.Add(entry);
-                    swapped = true;
-                }
-                else
-                    entries.Add(old);
-            }
-
-            if (!swapped)
-                entries.Add(entry);
-
-            var newRaw = string.Join(";", entries.OrderBy(e =>
-                int.TryParse(e.Split('|')[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : int.MaxValue));
-
-            if (!TryParseRooms(newRaw, out _, out var parseError))
-            {
-                lines.Add($"Nothing written: {parseError}.");
-                return false;
-            }
-
-            using (var context = new WorldDbContext())
-            {
-                var row = context.WeeniePropertiesString.FirstOrDefault(r => r.ObjectId == sourceWcid && r.Type == (ushort)PropertyString.RoomAssignRooms);
-                if (row == null)
-                {
-                    lines.Add($"Source {sourceWcid} has no RoomAssignRooms row in the world database.");
-                    return false;
+                    lines.Add($"Room {number} was just added to the stored list by someone else. Nothing changed - try again.");
+                    return null;
                 }
 
-                row.Value = newRaw;
-                context.SaveChanges();
-            }
+                // An existing room keeps every cell the DATABASE row has for it (review 2026-09-24): the caller worked from the
+                // cached room, and a cell added to the row by hand but not reloaded yet must not be dropped by this write.
+                var allCells = new HashSet<uint>(cells);
+                if (!isNew && TryParseRooms(raw, out var stored, out _))
+                {
+                    var current = stored.FirstOrDefault(r => r.Number == number);
+                    if (current != null)
+                        allCells.UnionWith(current.Cells);
+                }
 
-            DatabaseManager.World.ClearCachedWeenie(sourceWcid);
-            GetRooms(sourceWcid);
+                var entry = BuilderRoomEntry(number, landingCell, x, y, z, rotation.W, rotation.X, rotation.Y, rotation.Z, allCells);
 
-            log.Info($"[RoomAssign][DUNGEON] {player.Name} {(swapped ? "changed" : "added")} room {number} of wcid {sourceWcid}. SQL: UPDATE weenie_properties_string SET value = '{newRaw}' WHERE object_Id = {sourceWcid} AND type = {(ushort)PropertyString.RoomAssignRooms};");
-            return true;
+                // Replace the entry with this number (the first, dropping any duplicate), or add it; keep number order.
+                var entries = new List<string>();
+                var swapped = false;
+                foreach (var old in raw.Split(';').Select(e => e.Trim()).Where(e => e.Length > 0))
+                {
+                    if (BuilderEntryNumber(old) == number)
+                    {
+                        if (!swapped)
+                            entries.Add(entry);
+                        swapped = true;
+                    }
+                    else
+                        entries.Add(old);
+                }
+
+                if (!swapped)
+                    entries.Add(entry);
+
+                return string.Join(";", entries.OrderBy(e => BuilderEntryNumber(e) ?? int.MaxValue));
+            }, lines, out _);
+
+            if (saved)
+                GetRooms(sourceWcid);
+
+            return saved;
         }
 
         /// <summary>
@@ -1720,13 +1793,18 @@ namespace ACE.Server.Managers
         {
             var lines = new List<string>();
 
-            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error))
+            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error, forWrite: true))
             {
                 lines.Add(error);
                 return lines;
             }
 
             if (!BuilderMayWrite(variation, lines))
+                return lines;
+
+            // "Monster Here" uses where the admin stands, so they must stand in this dungeon - its landblock AND variation
+            // (review 2026-09-24: from the same landblock at another variation it placed at their coordinates anyway).
+            if (mode == "here" && !BuilderMustStandIn(player, rooms, variation, lines))
                 return lines;
 
             var landblock = rooms[0].LandingCell >> 16;
@@ -2008,7 +2086,7 @@ namespace ACE.Server.Managers
                     if (number == 0)
                         for (number = 1; rooms.Any(r => r.Number == number); number++) { }
 
-                    if (!BuilderSaveRoom(player, sourceWcid, number, cell, landX, landY, floorZ + 0.005f, rotation, cells, lines))
+                    if (!BuilderSaveRoom(player, sourceWcid, number, cell, landX, landY, floorZ + 0.005f, rotation, cells, lines, isNew: room == null))
                         return lines;
 
                     lines.Add($"Room {number} (v:{variation}): {(room != null ? "landing moved" : "new room, landing set")} {where}, facing {(onSpot ? "north (it stands on the spot it would face)" : generator != null ? "the generator" : "the middle of the room")}. {cells.Count} cell(s).");

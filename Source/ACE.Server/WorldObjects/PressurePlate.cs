@@ -67,12 +67,10 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// The arming window in seconds as it is used: unset or not a finite number = the 2 s retail default, negative = 0,
-        /// capped at one year. A value authored in SQL never goes through the setter, and TimeSpan.FromSeconds or the
-        /// DateTime add would throw on a huge one - on every collision (review 2026-09-16).
+        /// The arming window in seconds as it is used: unset or not a finite number = the given default (else the 2 s retail
+        /// default), negative = 0, capped at one year. A value authored in SQL never goes through the setter, and
+        /// TimeSpan.FromSeconds or the DateTime add would throw on a huge one - on every collision (review 2026-09-16).
         /// </summary>
-        public double EffectivePressurePlateCooldown => CooldownOr(null);
-
         private double CooldownOr(double? defaultCooldown)
         {
             var cooldown = PressurePlateCooldown ?? defaultCooldown ?? DefaultPressurePlateCooldown;
@@ -105,7 +103,7 @@ namespace ACE.Server.WorldObjects
 
             // Room Assign plate (2026-09-16): the WEENIE carries a room list (string 50500), re-read from the cache on
             // every step so an /id upload applies live. It replaces the stock activation entirely - see RoomAssignManager.
-            // Rooms never exist in the base world: a plate placed there acts as a normal plate.
+            // Rooms never exist below variation 3 (retail layers): a plate placed there acts as a normal plate.
             // The stock Active gate lives in base.OnActivate, which a room plate never reaches - and it is cheaper than the
             // room-list lookup this fires on every step.
             var rooms = Active && RoomAssignManager.IsRoomVariation(Location?.Variation) ? RoomAssignManager.GetRooms(WeenieClassId) : null;

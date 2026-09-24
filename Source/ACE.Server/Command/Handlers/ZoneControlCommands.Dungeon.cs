@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 
@@ -17,7 +17,8 @@ namespace ACE.Server.Command.Handlers
     /// </summary>
     public static partial class ZoneControlCommands
     {
-        private static readonly log4net.ILog dungeonLog = log4net.LogManager.GetLogger(typeof(ZoneControlCommands));
+        /// <summary>The largest step one nudge may move a placed wall or generator, each way (review 2026-09-24).</summary>
+        private const float MaxNudgeMeters = 10f;
 
         /// <param name="args">The re-tokenized /zonecontrol arguments: args[0] is "dungeon", args[1] the verb.</param>
         private static void HandleDungeon(Session session, List<string> args)
@@ -35,7 +36,7 @@ namespace ACE.Server.Command.Handlers
                 }
 
                 ChatPacket.SendServerMessage(session, s, ACE.Entity.Enum.ChatMessageType.Broadcast);
-                dungeonLog.Info($"[RoomAssign][DUNGEON] > {s}");
+                log.Info($"[RoomAssign][DUNGEON] > {s}");
             }
             void All(List<string> lines) { foreach (var line in lines) Msg(line); }
 
@@ -57,10 +58,23 @@ namespace ACE.Server.Command.Handlers
             var mapChanges = verb == "add" || verb == "remove" || verb == "land" || verb == "cell" || verb == "place"
                 || verb == "monster" || verb == "select" || verb == "nudge";
 
+            // Verbs that write the world database or change who gets a room are Admin-only (review 2026-09-24): /zonecontrol
+            // itself is Developer, and Room Assign's staff rule is Admin, so a Developer building would count as a player.
+            // goto and entrance too: a teleport into any chamber with no claim is a staff tool.
+            var adminVerb = verb == "goto" || verb == "entrance"
+                || verb == "add" || verb == "remove" || verb == "land" || verb == "cell" || verb == "place"
+                || verb == "monster" || verb == "nudge" || verb == "zoneshare" || verb == "killreward"
+                || verb == "admin" || verb == "fill" || verb == "clear" || verb == "markers" || (verb == "doors" && arg == "show");
+            if (adminVerb && session.AccessLevel < ACE.Entity.Enum.AccessLevel.Admin)
+            {
+                Msg($"/zonecontrol dungeon {verb} needs Admin access.");
+                return;
+            }
+
             try
             {
                 if (verb != "state" && verb != "map" && verb != "list")
-                    dungeonLog.Info($"[RoomAssign][DUNGEON] {player.Name}: /zonecontrol {string.Join(" ", args)}  (at 0x{player.Location?.Cell:X8} v:{player.Location?.Variation})");
+                    log.Info($"[RoomAssign][DUNGEON] {player.Name}: /zonecontrol {string.Join(" ", args)}  (at 0x{player.Location?.Cell:X8} v:{player.Location?.Variation})");
 
                 switch (verb)
                 {
@@ -139,9 +153,11 @@ namespace ACE.Server.Command.Handlers
                     case "place":
                         if (args.Count < 6
                             || !float.TryParse(args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var pinX)
-                            || !float.TryParse(args[5], NumberStyles.Float, CultureInfo.InvariantCulture, out var pinY))
+                            || !float.TryParse(args[5], NumberStyles.Float, CultureInfo.InvariantCulture, out var pinY)
+                            || !float.IsFinite(pinX) || !float.IsFinite(pinY)
+                            || Math.Abs(pinX) > RoomAssignManager.MaxLandingCoordinate || Math.Abs(pinY) > RoomAssignManager.MaxLandingCoordinate)
                         {
-                            Msg("/zonecontrol dungeon place player|monster|door <cell> <x> <y> [cell] - the map sends this when a pin is dropped.");
+                            Msg("/zonecontrol dungeon place player|monster|door <cell> <x> <y> [cell|middle|<door wcid>] - the map sends this when a pin is dropped.");
                             break;
                         }
 
@@ -161,18 +177,26 @@ namespace ACE.Server.Command.Handlers
 
                     case "nudge":
                         // nudge <guid hex> <dx> <dy> [turn degrees] - the tab's Nudge pop-out, on a wall or generator picked on the map.
+                        // A nudge is a small step (review 2026-09-24): finite, at most MaxNudgeMeters each way, a turn of at most
+                        // a full circle - a NaN or Infinity would be written into the placement's position or rotation.
                         if (args.Count < 5
                             || !uint.TryParse((Arg(2) ?? "").Replace("0x", "").Replace("0X", ""), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var nudgeGuid)
                             || !float.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var nudgeX)
-                            || !float.TryParse(args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var nudgeY))
+                            || !float.TryParse(args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var nudgeY)
+                            || !float.IsFinite(nudgeX) || !float.IsFinite(nudgeY)
+                            || Math.Abs(nudgeX) > MaxNudgeMeters || Math.Abs(nudgeY) > MaxNudgeMeters)
                         {
-                            Msg("/zonecontrol dungeon nudge <guid> <east> <north> [turn degrees] - move a placed wall or generator a little.");
+                            Msg($"/zonecontrol dungeon nudge <guid> <east> <north> [turn degrees] - move a placed wall or generator a little (at most {MaxNudgeMeters} m each way).");
                             break;
                         }
 
                         var nudgeTurn = 0f;
-                        if (args.Count > 5 && !float.TryParse(args[5], NumberStyles.Float, CultureInfo.InvariantCulture, out nudgeTurn))
-                            nudgeTurn = 0f;
+                        if (args.Count > 5 && (!float.TryParse(args[5], NumberStyles.Float, CultureInfo.InvariantCulture, out nudgeTurn) || !float.IsFinite(nudgeTurn)))
+                        {
+                            Msg("The turn must be a number of degrees, -360 to 360.");
+                            break;
+                        }
+                        nudgeTurn = Math.Clamp(nudgeTurn, -360f, 360f);
 
                         All(RoomAssignManager.BuilderNudge(player, nudgeGuid, nudgeX, nudgeY, nudgeTurn));
                         break;
@@ -308,22 +332,22 @@ namespace ACE.Server.Command.Handlers
                         Msg("  /zonecontrol dungeon entrance              - teleport to the dungeon's entrance portal or plate");
                         Msg("  /zonecontrol dungeon goto <room>           - teleport to a room's landing (no claim)");
                         Msg("  /zonecontrol dungeon doors                 - every door weenie the Door pin can use");
-                        Msg("  /zonecontrol dungeon doors show [seconds]  - one of each in a row in front of you, 5s by default");
                         Msg("  /zonecontrol dungeon add [room]            - new room here; lowest free number, or that one");
                         Msg("  /zonecontrol dungeon remove <room>         - take a room out of the list");
                         Msg("  /zonecontrol dungeon land                  - landing of this room = here, facing its generator");
                         Msg("  /zonecontrol dungeon cell <room> <cell>    - add a cell to a room, or take it out");
-                        Msg("  /zonecontrol dungeon place <what> <cell> <x> <y> [cell|middle] - player | monster | door at a map pin");
+                        Msg("  /zonecontrol dungeon place <what> <cell> <x> <y> [cell|middle|<door wcid>] - player | monster | door at a map pin");
                         Msg("  /zonecontrol dungeon monster here          - the room's generator exactly where you stand");
                         Msg("  /zonecontrol dungeon nudge <guid> <east> <north> [turn] - move a placed wall or generator a little");
                         Msg("  /zonecontrol dungeon zoneshare on|off      - everyone in the dungeon shares kills as one fellowship");
-                        Msg("  /zonecontrol dungeon killreward on|off|add|set <n>|remove <n> - items every N kills per player");
+                        Msg("  /zonecontrol dungeon killreward on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id> - items every N kills per player");
                         Msg("  /zonecontrol dungeon state | map           - data lines for the plugin's Dungeons tab");
-                        Msg("Test tools (need server property room_assign_test_tools = true; memory only):");
+                        Msg("Writes and test tools need Admin. Test tools (need server property room_assign_test_tools = true; memory only):");
                         Msg("  /zonecontrol dungeon admin on|off          - admins count as players");
                         Msg("  /zonecontrol dungeon fill here|<room>|random [count]|random leave <n> - fake players");
                         Msg("  /zonecontrol dungeon clear [room]          - remove one, or every fake player");
-                        Msg("  /zonecontrol dungeon markers all [min]|clear - WCID 1 on every landing");
+                        Msg("  /zonecontrol dungeon markers all [min]|clear - WCID 1 on every landing (clear works with the tools off)");
+                        Msg("  /zonecontrol dungeon doors show [seconds]  - one of each door in a row in front of you, 5s by default");
                         return;
                 }
 
@@ -336,7 +360,7 @@ namespace ACE.Server.Command.Handlers
             catch (Exception ex)
             {
                 Msg($"/zonecontrol dungeon failed: {ex.Message}");
-                dungeonLog.Error($"[RoomAssign][DUNGEON] /zonecontrol {string.Join(" ", args)} failed: {ex}");
+                log.Error($"[RoomAssign][DUNGEON] /zonecontrol {string.Join(" ", args)} failed: {ex}");
             }
         }
     }

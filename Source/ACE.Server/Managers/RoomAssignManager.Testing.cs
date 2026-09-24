@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -68,7 +68,7 @@ namespace ACE.Server.Managers
 
             var lines = new List<string>();
 
-            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error))
+            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error, forWrite: true))
             {
                 lines.Add(error);
                 return lines;
@@ -160,7 +160,7 @@ namespace ACE.Server.Managers
                 return lines;
             }
 
-            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error))
+            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error, forWrite: true))
             {
                 lines.Add(error);
                 return lines;
@@ -187,7 +187,7 @@ namespace ACE.Server.Managers
             if (!TestToolsOn)
                 return new List<string> { TestToolsOffMessage };
 
-            if (!BuilderResolve(player, out _, out var rooms, out var variation, out var error))
+            if (!BuilderResolve(player, out _, out var rooms, out var variation, out var error, forWrite: true))
                 return new List<string> { error };
 
             var occupancy = BuildOccupancy(rooms, variation, 0);
@@ -298,6 +298,11 @@ namespace ACE.Server.Managers
         /// </summary>
         public static List<string> TestDoorShow(Player player, string what, int seconds)
         {
+            // A test tool like the rest of this file (review 2026-09-24): it spawns objects wherever the admin stands.
+            // "clear" still works with the tools off.
+            if (!TestToolsOn && what != "clear")
+                return new List<string> { TestToolsOffMessage };
+
             var lines = new List<string>();
 
             List<WorldObject> standing;
@@ -414,7 +419,8 @@ namespace ACE.Server.Managers
         /// </summary>
         public static List<string> TestMarkers(Player player, string what, int minutes = 0)
         {
-            if (!TestToolsOn)
+            // Clearing always works: markers never rot, so ones placed before the tools were turned off must still go.
+            if (!TestToolsOn && what != "clear")
                 return new List<string> { TestToolsOffMessage };
 
             var lines = new List<string>();
@@ -449,7 +455,7 @@ namespace ACE.Server.Managers
                 return lines;
             }
 
-            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error))
+            if (!BuilderResolve(player, out var sourceWcid, out var rooms, out var variation, out var error, forWrite: true))
             {
                 lines.Add(error);
                 return lines;
@@ -524,7 +530,7 @@ namespace ACE.Server.Managers
                 names.Add(IsStaff(online) ? $"{online.Name} (staff, NOT counted)" : online.Name);
             }
 
-            lines.Add($"Room Assign - source {sourceWcid}, v:{variation}, {rooms.Count} room(s). Admins count: {(_testAdminCounts ? "ON" : "off")}.");
+            lines.Add($"Room Assign - source {sourceWcid}, v:{variation}, {rooms.Count} room(s). Admins count: {(TestAdminCounts ? "ON" : "off")}.");
 
             lock (_lock)
             {
@@ -551,13 +557,11 @@ namespace ACE.Server.Managers
                     lines.Add($"  Room {room.Number} (0x{room.Anchor:X8}): {(parts.Count == 0 ? "free" : string.Join("; ", parts))}");
                 }
 
-                _logoutHoldCredit.TryGetValue(account, out var credit);
-                lines.Add($"You are acct {account}: {credit} logout hold(s) left.");
+                var hasCredit = _logoutHoldCredit.TryGetValue(CreditKey(account, rooms[0], variation), out var credit);
+                lines.Add($"You are acct {account}: {(hasCredit ? $"{credit} logout hold(s) left in this dungeon" : "no logout-hold record in this dungeon (the next hand-out refills it)")}.");
             }
 
-            var graceTime = StartupGraceTime;
-            var graceLeft = graceTime.Ticks - (now.Ticks - Interlocked.Read(ref _graceStartTicks));
-            lines.Add($"Leave hold {LeaveHoldTime.TotalSeconds:0} s, logout hold {LogoutHoldTime.TotalMinutes.ToString("0.##", CultureInfo.InvariantCulture)} min, startup grace {(graceLeft > 0 ? $"{TimeSpan.FromTicks(graceLeft).TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture)} min left" : "over")}.");
+            lines.Add($"Leave hold {LeaveHoldTime.TotalSeconds:0} s, logout hold {LogoutHoldTime.TotalMinutes.ToString("0.##", CultureInfo.InvariantCulture)} min.");
 
             return lines;
         }

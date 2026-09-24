@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 
 using ACE.Common;
@@ -79,15 +79,15 @@ namespace ACE.Server.WorldObjects
             SendSelf();
             MarkPortalSpaceEntered();
 
-            // A cloak survives a relog and a server boot on its own: Cloaked, Ethereal, NoDraw, Visibility and
-            // Translucency are all persisted properties, so the physics side and the hiding from other people come
-            // back with the biota. What does NOT come back is what YOUR client was told to draw - so Ghost returned
-            // fully invisible to itself (owner 2026-09-22). Re-send that, once the client has settled.
+            // A cloak survives a relog and a server boot: Sentinel.InitPhysicsObj rebuilds the hiding from other people
+            // from CloakStatus (On and Ghost alike) when the character enters the world. What does NOT come back is what
+            // YOUR client was told to draw - so Ghost returned fully invisible to itself (owner 2026-09-22). Re-send that,
+            // once the client has settled.
             if (CloakStatus == CloakStatus.On || CloakStatus == CloakStatus.Ghost)
             {
                 var cloakChain = new ActionChain();
                 cloakChain.AddDelaySeconds(1.0);
-                cloakChain.AddAction(this, ActionType.PlayerTracking_CloakStep4, ApplyCloakSelfView);
+                cloakChain.AddAction(this, ActionType.Player_CloakSelfViewAtLogin, ApplyCloakSelfView);
                 cloakChain.EnqueueChain();
             }
 

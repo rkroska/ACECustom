@@ -998,16 +998,24 @@ namespace ACE.Server.Managers.ZoneControl
         /// everywhere and a zone merely re-tunes it. Lock-free snapshot read; safe on the rating hot path.
         /// </summary>
         public static EvaluatedProfile ResolveZoneDefaultForPlayer(Player player)
+            => GoverningZoneRef(player)?.Default;
+
+        /// <summary>
+        /// The enabled zone that governs where this object stands, at its effective variation: most-specific wins (the zone
+        /// with the fewest landblocks), as everywhere else. Null when no enabled zone covers the spot. Lock-free snapshot read.
+        /// The one copy of the "governing zone" walk - the player gear caps, Zone Share and Kill Reward all go through it.
+        /// </summary>
+        private static ZoneRef GoverningZoneRef(WorldObject wo)
         {
-            if (player == null)
+            if (wo == null)
                 return null;
 
             var snap = _snapshot;
-            var landblock = player.Location?.LandblockId.Landblock ?? 0;
+            var landblock = wo.Location?.LandblockId.Landblock ?? 0;
             if (!snap.EnabledLandblocks.Contains(landblock) || !snap.ByLandblock.TryGetValue(landblock, out var list))
                 return null;
 
-            var effVar = GetEffectiveVariation(player);
+            var effVar = GetEffectiveVariation(wo);
 
             ZoneRef best = null;
             foreach (var zr in list)
@@ -1018,37 +1026,34 @@ namespace ACE.Server.Managers.ZoneControl
                     best = zr;
             }
 
-            return best?.Default;
+            return best;
+        }
+
+        /// <summary>
+        /// The zone that governs this spot for Zone Share / Kill Reward: as <see cref="GoverningZoneRef"/>, but never below the
+        /// endgame floor (v11) and never while the Zone Control master switch is off. Retail - every variation under 11 - is
+        /// out of reach by construction, however a zone was authored (review 2026-09-24: the owner's never-touch-retail rule).
+        /// </summary>
+        private static ZoneRef EndgameZoneRef(WorldObject wo)
+        {
+            if (wo == null || !ServerConfig.zonecontrol_enabled.Value)
+                return null;
+
+            if (GetEffectiveVariation(wo) < VariationManager.EndgameMinVariation)
+                return null;
+
+            return GoverningZoneRef(wo);
         }
 
         /// <summary>
         /// Zone Share (owner 2026-09-23): the name of the Zone Share zone this player stands in, or null. The zone that
         /// governs the spot decides - most-specific wins, as everywhere else - so a small zone inside a bigger one shares only
-        /// when the small one has Zone Share on. Enabled zones only (the snapshot holds nothing else), and nothing while the
-        /// Zone Control master switch is off. Lock-free snapshot read: ZoneShareManager calls this for every online player on
-        /// every kill in a sharing zone.
+        /// when the small one has Zone Share on. Enabled zones at v11+ only, and nothing while the Zone Control master switch
+        /// is off. Lock-free snapshot read.
         /// </summary>
         public static string ResolveZoneShareZone(Player player)
         {
-            if (player == null || !ServerConfig.zonecontrol_enabled.Value)
-                return null;
-
-            var snap = _snapshot;
-            var landblock = player.Location?.LandblockId.Landblock ?? 0;
-            if (!snap.EnabledLandblocks.Contains(landblock) || !snap.ByLandblock.TryGetValue(landblock, out var list))
-                return null;
-
-            var effVar = GetEffectiveVariation(player);
-
-            ZoneRef best = null;
-            foreach (var zr in list)
-            {
-                if (zr.Variation != effVar)
-                    continue;
-                if (best == null || zr.LandblockCount < best.LandblockCount)
-                    best = zr;
-            }
-
+            var best = EndgameZoneRef(player);
             return best != null && best.ZoneShare ? best.Name : null;
         }
 
@@ -2020,31 +2025,13 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// Kill Reward (owner 2026-09-23): the governing zone's reward where this player stands - its name and settings - or
-        /// null. Same rules as Zone Share: the most specific zone decides, enabled zones only, nothing while the master switch
-        /// is off. Lock-free snapshot read, once per kill.
+        /// Kill Reward (owner 2026-09-23): the governing zone's reward where this object stands - its name and settings - or
+        /// null. Same rules as Zone Share: the most specific zone decides, enabled zones at v11+ only, nothing while the master
+        /// switch is off. Asked for both the killer and the victim (they must be in the same area). Lock-free snapshot read.
         /// </summary>
-        public static (string Name, KillRewardConfig Reward)? ResolveKillReward(Player player)
+        public static (string Name, KillRewardConfig Reward)? ResolveKillReward(WorldObject wo)
         {
-            if (player == null || !ServerConfig.zonecontrol_enabled.Value)
-                return null;
-
-            var snap = _snapshot;
-            var landblock = player.Location?.LandblockId.Landblock ?? 0;
-            if (!snap.EnabledLandblocks.Contains(landblock) || !snap.ByLandblock.TryGetValue(landblock, out var list))
-                return null;
-
-            var effVar = GetEffectiveVariation(player);
-
-            ZoneRef best = null;
-            foreach (var zr in list)
-            {
-                if (zr.Variation != effVar)
-                    continue;
-                if (best == null || zr.LandblockCount < best.LandblockCount)
-                    best = zr;
-            }
-
+            var best = EndgameZoneRef(wo);
             if (best?.KillReward == null || !best.KillReward.Active)
                 return null;
 

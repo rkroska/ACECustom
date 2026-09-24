@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -31,8 +31,8 @@ namespace ACE.Server.Command.Handlers
             "Sets your cloaking state.",
             "< on / ghost / off / player / creature / hybrid >\n" +
             "This command sets your current cloaking state\n" +
-            "< ghost > Invisible to everyone else and able to pass through doors, but you still see yourself at\n" +
-            "          half opacity. On its own it TOGGLES; < ghost on > and < ghost off > are explicit.\n" +
+            "< ghost > Invisible to everyone else and able to pass through doors, but you still see yourself.\n" +
+            "          On its own it TOGGLES; < ghost on > and < ghost off > are explicit.\n" +
             "          Other admins see you only if they have adminvision on, same as < on >.\n" +
             "< on > You will be completely invisible to players.\n" +
             "< off > You will show up as a normal.\n" +
@@ -51,17 +51,26 @@ namespace ACE.Server.Command.Handlers
 
             // TODO: investigate translucensy/visbility of other cloaked admins.
 
-            var arg = parameters[0].ToLower();
-            var sub = parameters.Length > 1 ? parameters[1].ToLower() : null;
+            var arg = parameters[0].ToLowerInvariant();
+            var sub = parameters.Length > 1 ? parameters[1].ToLowerInvariant() : null;
 
             // "/cloak ghost" on its own TOGGLES, and "/cloak ghost on|off" says which (owner 2026-09-22).
             // Turning it off is the ordinary decloak, so it just becomes "off" and falls into that case.
             // Note CloakStatus is Undef, not Off, until the first cloak of a session - WorldManager sets it
             // that way on login - so the test is "am I ghost", never "am I off".
             if (arg == "ghost")
-                arg = sub == "on" || (sub != "off" && session.Player.CloakStatus != CloakStatus.Ghost)
-                    ? "ghost"
-                    : "off";
+            {
+                var isGhost = session.Player.CloakStatus == CloakStatus.Ghost;
+
+                // "ghost off" only ends a ghost: a full cloak (On) is left alone, not decloaked.
+                if (sub == "off" && !isGhost)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "You are not a ghost. Nothing changed.", ChatMessageType.Broadcast);
+                    return;
+                }
+
+                arg = sub == "on" || (sub != "off" && !isGhost) ? "ghost" : "off";
+            }
 
             switch (arg)
             {
@@ -94,7 +103,7 @@ namespace ACE.Server.Command.Handlers
                     session.Player.SetProperty(PropertyInt.CloakStatus, (int)CloakStatus.Ghost);
                     session.Player.HandleCloak();
 
-                    CommandHandlerHelper.WriteOutputInfo(session, $"You are now a ghost: invisible to everyone else and able to pass through doors, but you can still see yourself at half opacity.", ChatMessageType.Broadcast);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"You are now a ghost: invisible to everyone else and able to pass through doors, but you can still see yourself.", ChatMessageType.Broadcast);
                     break;
                 case "player":
                     if (session.AccessLevel > AccessLevel.Envoy)

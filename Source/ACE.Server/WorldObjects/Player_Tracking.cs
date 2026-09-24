@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -355,6 +355,10 @@ namespace ACE.Server.WorldObjects
                 NoDraw = true;
                 EnqueueBroadcastPhysicsState();
                 Visibility = false;
+
+                // Ghost keeps a translucency for its own view; it must be gone BEFORE step 3 re-creates the object for
+                // everyone else, or they see a half-transparent character (the state update in step 4 does not carry it).
+                Translucency = null;
             });
             actionChain.AddDelaySeconds(.5);
             actionChain.AddAction(this, ActionType.PlayerTracking_DeCloakStep3, () =>
@@ -394,7 +398,7 @@ namespace ACE.Server.WorldObjects
             // server never wrote a vital; a relog resynced it. Whatever pushes the opacity, it is not this.
             //
             // So for now the self-view only corrects the physics state: the ghost draws, at full opacity.
-            if (PhysicsObj != null)
+            if (PhysicsObj != null && Session != null)
             {
                 var ps = PhysicsObj.State;
                 if (CloakStatus == CloakStatus.Ghost)

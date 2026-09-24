@@ -396,10 +396,6 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         OnlyCombatPetsCanDamage = 50057,
 
-        /// <summary>Test tool (owner 2026-09-23): junk made by /zonecontrol fillpack to fill an admin's pack. /zonecontrol fillpack clear
-        /// removes items carrying this, and only those - a real item is never touched. Server-only.</summary>
-        IsTestFiller = 50058,
-
         /// <summary>Room Assign, Zone Share (owner 2026-09-23): on a room-source WEENIE (the one carrying RoomAssignRooms), everyone
         /// standing in that dungeon shares kill XP, kill luminance and kill-task credit as if they were all in one fellowship.
         /// Server-only - not an assessment property. Numbered beside the other Room Assign properties (50500-50502).</summary>

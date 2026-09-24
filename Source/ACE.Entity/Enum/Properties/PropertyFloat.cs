@@ -1,4 +1,4 @@
-﻿namespace ACE.Entity.Enum.Properties
+namespace ACE.Entity.Enum.Properties
 {
     public enum PropertyFloat : ushort
     {
