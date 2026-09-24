@@ -440,6 +440,7 @@ namespace ACE.Server.Managers
             var parts = new List<string>();
             var expires = new List<string>();   // room:seconds left, for the claims that run out on their own
             var held = new List<string>();      // room:seconds the owning account has had it (the tenure clock)
+            var heldBy = new List<string>();    // room:name - the character a hold is waiting for
             lock (_lock)
                 foreach (var room in rooms)
                 {
@@ -447,7 +448,12 @@ namespace ACE.Server.Managers
                     var flags = "";
                     if (real.Contains(key)) flags += "P";
                     if (_testFakes.ContainsKey(key)) flags += "F";
-                    if (_reservations.ContainsKey(key)) flags += "R";
+                    // Only a LIVE reservation: ContainsKey alone kept showing "Reserved" on a room whose reservation
+                    // had already run out but had not been purged yet - with no time beside it, because the time is only
+                    // sent while it is still in the future. The row then sat there until something else purged it
+                    // (owner 2026-09-23).
+                    var reservedNow = _reservations.TryGetValue(key, out var resv) && resv.Until > now;
+                    if (reservedNow) flags += "R";
                     if (_holds.TryGetValue(key, out var hold) && IsHoldActive(hold, now)) flags += "H";
                     parts.Add($"{room.Number}:{(flags.Length == 0 ? "-" : flags)}");
 
@@ -456,8 +462,8 @@ namespace ACE.Server.Managers
                     var left = TimeSpan.MinValue;
                     if (hold != null && IsHoldActive(hold, now))
                         left = hold.Until - now;
-                    if (_reservations.TryGetValue(key, out var res) && res.Until > now && (left == TimeSpan.MinValue || res.Until - now < left))
-                        left = res.Until - now;
+                    if (reservedNow && (left == TimeSpan.MinValue || resv.Until - now < left))
+                        left = resv.Until - now;
                     if (left > TimeSpan.Zero)
                         expires.Add($"{room.Number}:{(int)Math.Ceiling(left.TotalSeconds)}");
 
@@ -465,10 +471,18 @@ namespace ACE.Server.Managers
                     // standing in a room shows a tenure, not a stopwatch restarted by every teleport.
                     if (_roomOwnerSince.TryGetValue(key, out var ownedSince) && ownedSince <= now)
                         held.Add($"{room.Number}:{(int)(now - ownedSince).TotalSeconds}");
+
+                    // Who a HOLD is waiting for. "Hold" alone says nothing about whose it is, and a hold for your own
+                    // account behaves the opposite way to someone else's - you walk straight back in (owner 2026-09-23).
+                    if (hold != null && IsHoldActive(hold, now) && !string.IsNullOrWhiteSpace(hold.Name))
+                        heldBy.Add($"{room.Number}:{BuilderWireName(hold.Name)}");
+                    else if (reservedNow && !string.IsNullOrWhiteSpace(resv.Name))
+                        heldBy.Add($"{room.Number}:{BuilderWireName(resv.Name)}");
                 }
 
             string sourceName = null;
             DatabaseManager.World.GetCachedWeenie(sourceWcid)?.PropertiesString?.TryGetValue(PropertyString.Name, out sourceName);
+            var zoneShare = IsZoneShareSource(sourceWcid);
 
             return $"{BuilderStateTag}src={sourceWcid}|kind={BuilderWeenieType(sourceWcid)}|name={BuilderWireName(sourceName)}|v={variation}"
                 + $"|lb={rooms[0].LandingCell >> 16:X4}|write={((variation ?? 0) >= BuilderMinVariation ? 1 : 0)}|tools={tools}|admin={admin}"
@@ -476,7 +490,9 @@ namespace ACE.Server.Managers
                 + $"|markers={TestMarkerCount}|sel={(BuilderHasPick(player) ? 1 : 0)}|in={(BuilderStandsIn(player, rooms, variation) ? 1 : 0)}"   // appended 2026-09-21: how many landing markers stand, so the tab's switch shows the truth
                 + $"|holds={holds}"   // appended 2026-09-22: the four hold settings, so the tab can show what a hold test is actually running against
                 + $"|expires={string.Join(",", expires)}"   // appended 2026-09-22: seconds left on each timed claim, so a hold can be watched running out
-                + $"|since={string.Join(",", held)}";   // appended 2026-09-22: how long the owning account has had each room
+                + $"|since={string.Join(",", held)}"   // appended 2026-09-22: how long the owning account has had each room
+                + $"|heldby={string.Join(",", heldBy)}"   // appended 2026-09-23: the character each hold is waiting for
+                + $"|zshare={(zoneShare ? 1 : 0)}|zsharen={(zoneShare ? ZoneShareManager.CountInDungeon(sourceWcid) : 0)}";   // appended 2026-09-23: Zone Share switch + players sharing now
         }
 
         /// <summary>
@@ -491,6 +507,48 @@ namespace ACE.Server.Managers
             var renewals = Math.Clamp(ServerConfig.room_assign_logout_hold_renewals.Value, 0, MaxLogoutHoldRenewals);
             var grace = (long)StartupGraceTime.TotalMinutes;
             return $"{logout},{leave},{renewals},{grace}";
+        }
+
+        /// <summary>
+        /// Zone Share on/off for the selected dungeon (owner 2026-09-23): PropertyBool.RoomAssignZoneShare on the room
+        /// source's weenie in the world database - beside its room list, so it ships with the source's SQL - then the weenie
+        /// cache is dropped so the kill hooks read the new value. The SQL is logged, as every builder write is.
+        /// </summary>
+        public static List<string> BuilderSetZoneShare(Player player, bool on)
+        {
+            var lines = new List<string>();
+
+            if (!BuilderResolve(player, out var sourceWcid, out _, out var variation, out var error))
+            {
+                lines.Add(error);
+                return lines;
+            }
+
+            if (!BuilderMayWrite(variation, lines))
+                return lines;
+
+            using (var context = new WorldDbContext())
+            {
+                var row = context.WeeniePropertiesBool.FirstOrDefault(r => r.ObjectId == sourceWcid && r.Type == (ushort)PropertyBool.RoomAssignZoneShare);
+                if (row == null)
+                    context.WeeniePropertiesBool.Add(new WeeniePropertiesBool { ObjectId = sourceWcid, Type = (ushort)PropertyBool.RoomAssignZoneShare, Value = on });
+                else
+                    row.Value = on;
+                context.SaveChanges();
+            }
+
+            DatabaseManager.World.ClearCachedWeenie(sourceWcid);
+            GetRooms(sourceWcid);   // re-warm the cache the room code reads
+
+            log.Info($"[RoomAssign][DUNGEON] {player.Name} set Zone Share {(on ? "ON" : "off")} on wcid {sourceWcid}. SQL: INSERT INTO weenie_properties_bool (object_Id, type, value) VALUES ({sourceWcid}, {(ushort)PropertyBool.RoomAssignZoneShare}, {(on ? 1 : 0)}) ON DUPLICATE KEY UPDATE value = {(on ? 1 : 0)};");
+
+            string sourceName = null;
+            DatabaseManager.World.GetCachedWeenie(sourceWcid)?.PropertiesString?.TryGetValue(PropertyString.Name, out sourceName);
+            lines.Add(on
+                ? $"Zone Share ON for {sourceName ?? sourceWcid.ToString()}: everyone in the dungeon shares kill XP, luminance and kill tasks as one fellowship."
+                : $"Zone Share off for {sourceName ?? sourceWcid.ToString()}: normal fellowship rules.");
+
+            return lines;
         }
 
         /// <summary>

@@ -96,6 +96,18 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Zone Share (owner 2026-09-23): a kill inside a Zone Share area is shared with everyone standing in it, as one
+            // fellowship, in place of the player's own fellowship. Quest XP is not - it falls through to the rules below.
+            if (xpType == XpType.Kill && shareType.HasFlag(ShareType.Fellowship))
+            {
+                var zoneMembers = ZoneShareManager.MembersFor(this);
+                if (zoneMembers != null)
+                {
+                    ACE.Server.Entity.Fellowship.ShareXpAmong(zoneMembers, (ulong)amount, xpType, shareType & ~ShareType.Fellowship, this, monsterTier);
+                    return;
+                }
+            }
+
             if (Fellowship != null && Fellowship.ShareXP && shareType.HasFlag(ShareType.Fellowship))
             {
                 // this will divy up the XP, and re-call this function

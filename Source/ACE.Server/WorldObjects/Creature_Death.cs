@@ -486,16 +486,25 @@ namespace ACE.Server.WorldObjects
                     TryHandleKillTask(playerDamager, killQuest, killTaskCredits, cap);
                 }
                 // check option that requires killer to have killtask to pass to fellows
-                else if (!ServerConfig.fellow_kt_killer.Value)   
+                else if (!ServerConfig.fellow_kt_killer.Value)
                 {
                     continue;
                 }
 
-                if (playerDamager.Fellowship == null)
-                    continue;
+                // Zone Share (owner 2026-09-23): inside a Zone Share area the kill task goes to everyone standing in it, as one
+                // fellowship, in place of the damager's own fellows in range. The credit caps above still hold per player.
+                IEnumerable<Player> fellows;
+                var zoneMembers = ZoneShareManager.MembersFor(playerDamager);
+                if (zoneMembers != null)
+                    fellows = zoneMembers.Select(m => m.Member).Where(m => m != playerDamager);
+                else
+                {
+                    if (playerDamager.Fellowship == null)
+                        continue;
 
-                // share with fellows in kill task range
-                var fellows = playerDamager.Fellowship.WithinRange(playerDamager);
+                    // share with fellows in kill task range
+                    fellows = playerDamager.Fellowship.WithinRange(playerDamager);
+                }
 
                 foreach (var fellow in fellows)
                 {

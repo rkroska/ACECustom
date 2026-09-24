@@ -31,6 +31,11 @@ namespace ACE.Server.Managers.ZoneControl
         /// Only meaningful at variations 11+ (the command refuses retail variations); runtime zones never bound.</summary>
         public bool Bounded { get; set; }
 
+        /// <summary>Zone Share (owner 2026-09-23): everyone standing in the zone shares kill XP, kill luminance and kill-task
+        /// credit as if they were all in one fellowship (ZoneShareManager). Only while the zone is Enabled and the Zone
+        /// Control master switch is on. Missing on deserialize of older stores = off.</summary>
+        public bool ZoneShare { get; set; }
+
         public string Notes { get; set; }
 
         /// <summary>Manual terrain overrides for the Territory map, keyed by landblock → terrain tag

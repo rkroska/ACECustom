@@ -1477,7 +1477,7 @@ namespace ACE.Server.WorldObjects
                         // Room Assign portal (2026-09-16): Portal Recall and Primary/Secondary Portal Recall land straight
                         // in a room too - the one reserved at cast, confirmed here - or are REFUSED: no teleport, the player
                         // stays where they cast it.
-                        var assign = RoomAssignManager.AssignPortalRoom(targetPlayer, portal.RoomSourceWcid, teleportDest, out var roomDest, out var roomNumber);
+                        var assign = RoomAssignManager.AssignPortalRoom(targetPlayer, portal.RoomSourceWcid, teleportDest, out var roomDest, out var arrivalLine);
                         if (assign == RoomAssignManager.PortalAssign.Refused)
                         {
                             // The pre-teleport hide already played: show them again where they stand.
@@ -1492,8 +1492,8 @@ namespace ACE.Server.WorldObjects
 
                         targetPlayer.Teleport(teleportDest);
 
-                        if (roomNumber > 0)
-                            targetPlayer.Session?.Network.EnqueueSend(new GameMessageSystemChat(RoomAssignManager.MessageSentToRoom(portal.RoomSourceWcid, roomNumber), ChatMessageType.Broadcast));
+                        if (arrivalLine != null)
+                            targetPlayer.Session?.Network.EnqueueSend(new GameMessageSystemChat(arrivalLine, ChatMessageType.Broadcast));
                     });
                     portalRecall.EnqueueChain();
                 }

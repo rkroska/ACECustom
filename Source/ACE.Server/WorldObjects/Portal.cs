@@ -395,7 +395,7 @@ namespace ACE.Server.WorldObjects
             // Room Assign portal (2026-09-16): straight into a room (their own first), reserved, or REFUSED - the player
             // stays where they are and the use is given back. A summoned gateway resolves to its original portal. The room
             // landing is already corrected by AdjustDungeon.
-            var assign = RoomAssignManager.AssignPortalRoom(player, RoomSourceWcid, portalDest, out var roomDest, out var roomNumber);
+            var assign = RoomAssignManager.AssignPortalRoom(player, RoomSourceWcid, portalDest, out var roomDest, out var arrivalLine);
             if (assign == RoomAssignManager.PortalAssign.Refused)
             {
                 if (usedCount)
@@ -428,8 +428,8 @@ namespace ACE.Server.WorldObjects
 
                 player.SendWeenieError(WeenieError.ITeleported);
 
-                if (roomNumber > 0)
-                    player.Session?.Network.EnqueueSend(new GameMessageSystemChat(RoomAssignManager.MessageSentToRoom(RoomSourceWcid, roomNumber), ChatMessageType.Broadcast));
+                if (arrivalLine != null)
+                    player.Session?.Network.EnqueueSend(new GameMessageSystemChat(arrivalLine, ChatMessageType.Broadcast));
 
             }), true);
         }

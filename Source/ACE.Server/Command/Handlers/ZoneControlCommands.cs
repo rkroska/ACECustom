@@ -140,7 +140,7 @@ namespace ACE.Server.Command.Handlers
             + "appearance <name> <palette|shade|scale|translucency|shiny|setup|clothing|palettebase|motion|sound|icon> <value> [--wcid <id>] | clearappearance <name> [field] [--wcid <id>] | copylook <name> <donorWcid> [--wcid <id>] | draftslot <name> [release] | copydraft <name> <destWcid> | becomemob <donorWcid> --wcid <id> | seticon <wcid> <iconDid|clear> [layer] | "
             + "modifier <name> <add|remove|list|catalog|band|slots|special|chance> [args] [--wcid <id>] | "
             + "currency <name> <add|remove|list> [itemWcid] [amount] [chance] [direct|corpse] [--wcid <id>] | "
-            + "boundary <name> <on|off|show> | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
+            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
             + "mobinfo <wcid> | geninfo <wcid> | genlist [zone] | genedit <wcid> delay|radius|stagger|init|max <value> | "
             + "craft <material> <itemtype> auto|allow|deny | craft list|get|test|enabled|mintier|components | "
             + "effect <name> [dot on|off | dmg <amount> | type <name|percent> | interval <secs>] | reload")]
@@ -189,6 +189,7 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /zonecontrol default <var> weaponcard <chance_stat> <on|off|clear> | list   (the same switch on the tier Default; a zone can override it either way)");
                 Msg("  /zonecontrol currency <name> add <itemWcid> <amount> [chance 0..1] [direct|corpse] | remove <itemWcid> | list   [--wcid <id>]   (per-kill bonus-currency drop table; direct = into the killer's inventory)");
                 Msg("  /zonecontrol boundary <name> <on|off|show>   (bounded: players at the zone's variation may only roam bounded-zone landblocks; variation 11+ only)");
+                Msg("  /zonecontrol zoneshare <name> <on|off|show>   (Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship; only while the zone is enabled)");
                 Msg("  /zonecontrol survey <name> [lbHex]   (per-landblock content: generator + creature summary; lbHex = full detail for one landblock)");
                 Msg("  /zonecontrol quests <name>   (quest registry for the plugin Quests tab; throttled to one pull per 60s)");
                 Msg("  /zonecontrol terrain <name> <hex> <type|clear>   (override the map terrain color for one landblock; type = " + string.Join("/", ZoneControlManager.TerrainTags) + "; display-only)");
@@ -270,7 +271,9 @@ namespace ACE.Server.Command.Handlers
 
                     case "arealist":
                     {
-                        // Machine-parseable zone list for the plugin dropdown: name,enabled,variation,lbCount
+                        // Machine-parseable zone list for the plugin dropdown: name,enabled,variation,lbCount,bounded,zoneshare,zsharen
+                        // (zoneshare + zsharen appended 2026-09-23: the Zone Share switch and how many players share there now -
+                        // 0 unless it is active, i.e. on AND the zone enabled)
                         var sb = new StringBuilder("[[ZCA]]");
                         bool first = true;
                         foreach (var z in ZoneControlManager.ListAreas().OrderBy(z => z.Name))
@@ -279,7 +282,9 @@ namespace ACE.Server.Command.Handlers
                             first = false;
                             sb.Append(z.Name).Append(',').Append(z.Enabled ? 1 : 0).Append(',')
                               .Append(z.Variation).Append(',').Append(z.Landblocks.Count).Append(',')
-                              .Append(z.Bounded ? 1 : 0);
+                              .Append(z.Bounded ? 1 : 0).Append(',')
+                              .Append(z.ZoneShare ? 1 : 0).Append(',')
+                              .Append(z.ZoneShare && z.Enabled ? ZoneShareManager.CountInZone(z.Name) : 0);
                         }
                         Msg(sb.ToString());
                         return;
@@ -2288,6 +2293,35 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
+                    case "zoneshare":
+                    {
+                        // Zone Share (owner 2026-09-23): everyone in the zone shares kill XP, luminance and kill tasks as one
+                        // fellowship. No variation limit - it changes who shares a reward, never what a player can do.
+                        if (args.Count < 3) { Msg("Usage: zoneshare <name> <on|off|show>"); return; }
+                        var name = args[1];
+                        var area = ZoneControlManager.GetArea(name);
+                        if (area == null) { Msg($"No zone '{name}' (create it first)."); return; }
+                        var op = args[2].ToLowerInvariant();
+
+                        if (op == "show")
+                        {
+                            Msg($"'{name}' v{area.Variation}: Zone Share {(area.ZoneShare ? "ON" : "off")}"
+                                + (area.ZoneShare && !area.Enabled ? " - inactive while the zone is disabled." : ".")
+                                + (area.ZoneShare && area.Enabled ? $" {ZoneShareManager.CountInZone(area.Name)} player(s) sharing now." : ""));
+                            return;
+                        }
+
+                        if (op != "on" && op != "off") { Msg("op must be on | off | show"); return; }
+                        var zoneShare = op == "on";
+
+                        ZoneControlManager.SetZoneShare(name, zoneShare);
+                        Msg(zoneShare
+                            ? $"'{name}' Zone Share ON: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship"
+                              + (area.Enabled ? "." : " - once the zone is enabled.")
+                            : $"'{name}' Zone Share off: normal fellowship rules.");
+                        return;
+                    }
+
                     case "survey":
                     {
                         if (args.Count < 2) { Msg("Usage: survey <name> [lbHex]"); return; }
@@ -2447,6 +2481,7 @@ namespace ACE.Server.Command.Handlers
                                 // T11-strength monsters wearing a higher-tier label, silently.
                                 Enabled = false,
                                 Bounded = czSrc.Bounded,
+                                ZoneShare = czSrc.ZoneShare,
                                 Notes = $"cloned from '{czSrc.Name}' (v{czSrc.Variation})",
                                 Landblocks = new HashSet<ushort>(czSrc.Landblocks),
                                 TerrainOverrides = new Dictionary<ushort, string>(czSrc.TerrainOverrides ?? new Dictionary<ushort, string>()),

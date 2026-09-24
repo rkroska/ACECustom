@@ -188,6 +188,18 @@ namespace ACE.Server.Command.Handlers
                         All(RoomAssignManager.BuilderPlace(player, "monster", player.Location.Cell.ToString("X8"), player.Location.PositionX, player.Location.PositionY, "here", player.Location.PositionZ));
                         break;
 
+                    case "zoneshare":
+                        // Zone Share (owner 2026-09-23): everyone in the selected dungeon shares kill XP, luminance and kill
+                        // tasks as one fellowship. Stored on the room source's weenie, like its room list.
+                        if (arg != "on" && arg != "off")
+                        {
+                            Msg("/zonecontrol dungeon zoneshare on|off - everyone in this dungeon shares kill XP, luminance and kill tasks as one fellowship.");
+                            break;
+                        }
+
+                        All(RoomAssignManager.BuilderSetZoneShare(player, arg == "on"));
+                        break;
+
                     // ---- test tools: every one of these answers "off" unless room_assign_test_tools is true
 
                     case "admin":
@@ -292,6 +304,7 @@ namespace ACE.Server.Command.Handlers
                         Msg("  /zonecontrol dungeon place <what> <cell> <x> <y> [cell|middle] - player | monster | door at a map pin");
                         Msg("  /zonecontrol dungeon monster here          - the room's generator exactly where you stand");
                         Msg("  /zonecontrol dungeon nudge <guid> <east> <north> [turn] - move a placed wall or generator a little");
+                        Msg("  /zonecontrol dungeon zoneshare on|off      - everyone in the dungeon shares kills as one fellowship");
                         Msg("  /zonecontrol dungeon state | map           - data lines for the plugin's Dungeons tab");
                         Msg("Test tools (need server property room_assign_test_tools = true; memory only):");
                         Msg("  /zonecontrol dungeon admin on|off          - admins count as players");

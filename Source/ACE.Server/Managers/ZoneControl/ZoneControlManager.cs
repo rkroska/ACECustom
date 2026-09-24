@@ -109,6 +109,7 @@ namespace ACE.Server.Managers.ZoneControl
             public HashSet<uint> ExemptWcids;                // master switch (2026-09-03): the zone does not govern these at all
             public HashSet<uint> ExemptGenerators;           // master switch per generator (2026-09-03): nor anything these spawn
             public ZoneEffects Effects;                      // immutable copy (readers never touch the live zone)
+            public bool ZoneShare;                           // Zone Share (2026-09-23): the whole zone shares kills as one fellowship
             public ZoneAppearance AppearanceDefault;         // cosmetic default (separate from stats)
             public Dictionary<uint, ZoneAppearance> AppearanceByWcid; // per-WCID cosmetic overlays
         }
@@ -660,6 +661,7 @@ namespace ACE.Server.Managers.ZoneControl
                 ExemptWcids = area.Profile.ExemptWcids != null ? new HashSet<uint>(area.Profile.ExemptWcids) : new HashSet<uint>(),
                 ExemptGenerators = area.Profile.ExemptGenerators != null ? new HashSet<uint>(area.Profile.ExemptGenerators) : new HashSet<uint>(),
                 Effects = ZoneEffects.Merge(def?.Effects, area.Effects),
+                ZoneShare = area.ZoneShare,
                 AppearanceDefault = apZone,
                 AppearanceByWcid = apWcid,
             };
@@ -1015,6 +1017,37 @@ namespace ACE.Server.Managers.ZoneControl
             }
 
             return best?.Default;
+        }
+
+        /// <summary>
+        /// Zone Share (owner 2026-09-23): the name of the Zone Share zone this player stands in, or null. The zone that
+        /// governs the spot decides - most-specific wins, as everywhere else - so a small zone inside a bigger one shares only
+        /// when the small one has Zone Share on. Enabled zones only (the snapshot holds nothing else), and nothing while the
+        /// Zone Control master switch is off. Lock-free snapshot read: ZoneShareManager calls this for every online player on
+        /// every kill in a sharing zone.
+        /// </summary>
+        public static string ResolveZoneShareZone(Player player)
+        {
+            if (player == null || !ServerConfig.zonecontrol_enabled.Value)
+                return null;
+
+            var snap = _snapshot;
+            var landblock = player.Location?.LandblockId.Landblock ?? 0;
+            if (!snap.EnabledLandblocks.Contains(landblock) || !snap.ByLandblock.TryGetValue(landblock, out var list))
+                return null;
+
+            var effVar = GetEffectiveVariation(player);
+
+            ZoneRef best = null;
+            foreach (var zr in list)
+            {
+                if (zr.Variation != effVar)
+                    continue;
+                if (best == null || zr.LandblockCount < best.LandblockCount)
+                    best = zr;
+            }
+
+            return best != null && best.ZoneShare ? best.Name : null;
         }
 
         /// <summary>
@@ -1955,6 +1988,20 @@ namespace ACE.Server.Managers.ZoneControl
                 var a = FindArea(name);
                 if (a == null) return false;
                 a.Bounded = bounded;
+                Save();
+                return true;
+            }
+        }
+
+        /// <summary>Zone Share on/off for a zone (owner 2026-09-23). Save() rebuilds the snapshot the kill hooks read.</summary>
+        public static bool SetZoneShare(string name, bool zoneShare)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var a = FindArea(name);
+                if (a == null) return false;
+                a.ZoneShare = zoneShare;
                 Save();
                 return true;
             }
