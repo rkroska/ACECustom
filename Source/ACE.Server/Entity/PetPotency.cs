@@ -26,6 +26,7 @@ namespace ACE.Server.Entity
         private static readonly ConcurrentDictionary<uint, CachedStrain> _strainCache = new();
 
         public const uint EssenceResidueWcid = 78780013;
+        private const int EssenceResidueMaxStack = 10000; // matches the weenie MaxStackSize
         public const uint EssenceResonatorWcid = 78780014;
         /// <summary>Player-facing stack name (weenie string type 1). Code alias: Essence Residue.</summary>
         public const string CurrencyDisplayName = "Savage Echo";
@@ -39,10 +40,67 @@ namespace ACE.Server.Entity
 
         public static bool IsSalvageableCapturedEssence(WorldObject target)
         {
-            if (target == null || !MonsterCapture.IsCapturedAppearance(target))
+            if (target == null)
+                return false;
+
+            // A bred pet is the owner's own essence rather than a siphoned skin, so it never carries
+            // IsCapturedAppearance; it is recognised by having been born juvenile instead.
+            if (IsSalvageableBredEssence(target))
+                return true;
+
+            if (!MonsterCapture.IsCapturedAppearance(target))
                 return false;
 
             return target.WeenieClassId == SiphonedEssenceWcid || target.WeenieClassId == HollowEssenceWcid;
+        }
+
+        /// <summary>
+        /// A bred pet essence its owner is finished with. The pet's quality is deliberately NOT considered:
+        /// the yield is the flat <c>pet_bred_essence_salvage_yield</c>, because breeding COPIES potency and
+        /// mutation counts into the baby rather than moving them out of the parents. A yield that scaled with
+        /// either would let a breeder mint Savage Echo from nothing, and even a flat one is kept a token since
+        /// each female breeds again every few hours. Behind its own switch so the bin can be closed without a
+        /// build.
+        /// </summary>
+        public static bool IsSalvageableBredEssence(WorldObject target)
+        {
+            return ServerConfig.pet_bred_essence_salvage_enabled.Value
+                && target is PetDevice device
+                && device.IsCombatPetDevice()
+                && device.WasBredJuvenile;
+        }
+
+        /// <summary>
+        /// Salvaging is allowed whatever the pet is worth - this is a bin, not a trade-in - but it cannot be
+        /// undone, and "salvage" and "summon" are both a use on the same essence. A bred pet carrying
+        /// mutations or bought potency asks first; a plain one goes straight through.
+        /// </summary>
+        private static bool RequiresSalvageConfirmation(WorldObject essence, out string message)
+        {
+            message = null;
+
+            if (essence is not PetDevice device || !device.WasBredJuvenile)
+                return false;
+
+            // The per-line counts are what summon reads; the PetMutationCount total is only written when
+            // non-zero, so it is not trusted here.
+            var mutations = (device.GetProperty(PropertyInt.PetMutDamageCount) ?? 0)
+                          + (device.GetProperty(PropertyInt.PetMutDamageResistCount) ?? 0)
+                          + (device.GetProperty(PropertyInt.PetMutCritCount) ?? 0)
+                          + (device.GetProperty(PropertyInt.PetMutVitalityCount) ?? 0)
+                          + (device.GetProperty(PropertyInt.PetMutPotencyCount) ?? 0);
+            var potency = device.PetPotencyStored ?? 0;
+            if (mutations <= 0 && potency <= 0)
+                return false;
+
+            var mutationText = $"{mutations} mutation{(mutations == 1 ? "" : "s")}";
+            var detail = mutations > 0 && potency > 0 ? $"{mutationText} and {potency} potency"
+                       : mutations > 0 ? mutationText
+                       : $"{potency} potency";
+
+            // Client text: 7-bit ASCII, explicit \n line breaks (CLAUDE.md).
+            message = $"Salvage {device.Name}?\n\nIt has {detail}.\nThis cannot be undone.";
+            return true;
         }
 
         public static int GetActiveCapFromConfig()
@@ -248,9 +306,10 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Use Essence Resonator on spare Siphoned/Hollow captured essence: destroy gem, award Savage Echo.
+        /// Use Essence Resonator on a spare Siphoned/Hollow captured essence, or on a bred pet its owner is
+        /// finished with: destroy it, award Savage Echo. A bred pet with mutations or potency confirms first.
         /// </summary>
-        public static bool TrySalvageCapturedEssence(Player player, WorldObject tool, WorldObject essence)
+        public static bool TrySalvageCapturedEssence(Player player, WorldObject tool, WorldObject essence, bool confirmed = false)
         {
             if (player == null || tool == null || essence == null)
                 return false;
@@ -272,7 +331,12 @@ namespace ACE.Server.Entity
 
             if (!IsSalvageableCapturedEssence(essence))
             {
-                player.SendTransientError("You can only salvage spare Siphoned or Hollow captured essences.");
+                var bredButClosed = !ServerConfig.pet_bred_essence_salvage_enabled.Value
+                    && essence is PetDevice closedDevice && closedDevice.WasBredJuvenile;
+
+                player.SendTransientError(bredButClosed
+                    ? "Bred pet salvage is not enabled."
+                    : "You can only salvage spare captured essences, or a bred pet.");
                 return false;
             }
 
@@ -282,22 +346,72 @@ namespace ACE.Server.Entity
                 return false;
             }
 
+            // Re-checked on every pass, so a confirmed salvage cannot pay out for an essence that left the
+            // pack while the prompt was open (residue is awarded before the essence is consumed). Pack only:
+            // TryConsumeFromInventoryWithNetworking cannot take an equipped item, and a failed consume after
+            // the award would leave the player with both the echo and the essence.
+            if (player.FindObject(essence.Guid.Full, Player.SearchLocations.MyInventory) == null)
+            {
+                player.SendTransientError("The essence must be in your pack to salvage it.");
+                return false;
+            }
+
+            if (player.FindObject(tool.Guid.Full, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) == null)
+            {
+                player.SendTransientError("You no longer have the Essence Resonator.");
+                return false;
+            }
+
+            // A bred pet can be out, unlike a captured skin. Destroying the essence under it would leave the
+            // pet fighting with its potency applied and nothing to credit kills or residue to. Same rule as
+            // tailoring (PetTailoring.IsSummoned).
+            if (player.CurrentActivePet is CombatPet activePet && !activePet.IsDestroyed && activePet.SummoningDeviceGuid == essence.Guid)
+            {
+                player.SendTransientError($"Dismiss {essence.Name}'s pet before salvaging it.");
+                return false;
+            }
+
+            if (!confirmed && RequiresSalvageConfirmation(essence, out var confirmMessage))
+            {
+                void onResponse(bool response, bool _)
+                {
+                    if (response)
+                        TrySalvageCapturedEssence(player, tool, essence, true);
+                }
+
+                if (!player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, onResponse), confirmMessage))
+                    player.SendWeenieError(WeenieError.ConfirmationInProgress);
+
+                return true;
+            }
+
             // Snapshot all essence properties before any destructive operation.
             var isHollow = essence.WeenieClassId == HollowEssenceWcid;
             var isShiny = essence.GetProperty(PropertyInt.CapturedCreatureVariant) == (int)CreatureVariant.Shiny;
             var creatureName = essence.GetProperty(PropertyString.CapturedCreatureName) ?? essence.Name;
             var creatureOverride = GetCapturedCreatureSalvageOverride(essence);
 
+            // A bred baby inherits CapturedCreatureWCID and CapturedCreatureVariant, so the capture formula
+            // would hand it the creature override and the shiny multiplier. Breeding COPIES the parents'
+            // traits rather than moving them, so either would mint Savage Echo from nothing: the bred yield
+            // is its own flat setting in code, not flat by luck of the current settings and data.
+            var isBred = IsSalvageableBredEssence(essence);
+
             // TODO: pass isHollow to GetSalvageExpectedAmount once hollow_mult tuning is finalised.
             // Hollow and siphoned currently yield the same amount by design (pet_residue_hollow_mult reserved).
-            var expectedAmount = PetPotencyMath.GetSalvageExpectedAmount(
-                isShiny,
-                ServerConfig.pet_residue_salvage_base.Value,
-                ServerConfig.pet_residue_salvage_shiny_mult.Value,
-                creatureOverride);
+            var expectedAmount = isBred
+                ? Math.Max(0, (double)ServerConfig.pet_bred_essence_salvage_yield.Value)
+                : PetPotencyMath.GetSalvageExpectedAmount(
+                    isShiny,
+                    ServerConfig.pet_residue_salvage_base.Value,
+                    ServerConfig.pet_residue_salvage_shiny_mult.Value,
+                    creatureOverride);
 
-            var amount = PetPotencyMath.RoundResidueDropAmount(expectedAmount);
-            if (amount <= 0)
+            // A bred pet is still taken at a yield of 0 - the point of the bin is getting rid of it.
+            // Capped at one stack: a single stack is created whole or not at all, so the award below can
+            // never pay part of the yield and then consume the essence.
+            var amount = Math.Min(PetPotencyMath.RoundResidueDropAmount(expectedAmount), EssenceResidueMaxStack);
+            if (amount <= 0 && !isBred)
             {
                 player.SendTransientError("This essence has too little resonance to salvage.");
                 return false;
@@ -305,7 +419,8 @@ namespace ACE.Server.Entity
 
             // Award residue BEFORE consuming the essence so that a full-inventory failure
             // leaves the essence intact rather than silently destroying it.
-            if (!TryAwardResidueToPlayer(player, amount, out var awarded) || awarded <= 0)
+            var awarded = 0;
+            if (amount > 0 && (!TryAwardResidueToPlayer(player, amount, out awarded) || awarded <= 0))
             {
                 player.SendTransientError($"You do not have enough pack space for the {CurrencyDisplayName}.");
                 return false;
@@ -315,15 +430,19 @@ namespace ACE.Server.Entity
             {
                 // Extremely unlikely — items were already awarded. Log it but don't take back the echoes.
                 log.Error($"[Potency] Salvage consume failed for {player.Name} on {creatureName} after awarding {awarded} Savage Echo. Items kept by player.");
-                player.SendTransientError("Salvage failed (server error); your Savage Echo was kept.");
+                player.SendTransientError(awarded > 0
+                    ? "Salvage failed (server error); your Savage Echo was kept."
+                    : "Salvage failed (server error).");
                 return false;
             }
 
             var hollowLabel = isHollow ? " (hollow)" : string.Empty;
-            player.SendMessage($"You salvage {creatureName}{hollowLabel} into {awarded:N0} {CurrencyDisplayName}.");
+            player.SendMessage(awarded > 0
+                ? $"You salvage {creatureName}{hollowLabel} into {awarded:N0} {CurrencyDisplayName}."
+                : $"You salvage {creatureName}{hollowLabel}. It leaves no {CurrencyDisplayName} behind.");
 
             if (ServerConfig.pet_potency_debug_chat.Value)
-                player.SendMessage($"[Potency] Salvage expected {expectedAmount:F2}, awarded {awarded:N0} (hollow={isHollow}, shiny={isShiny}, override={creatureOverride}).");
+                player.SendMessage($"[Potency] Salvage expected {expectedAmount:F2}, awarded {awarded:N0} (bred={isBred}, hollow={isHollow}, shiny={isShiny}, override={creatureOverride}).");
 
             if (ServerConfig.pet_potency_debug_log.Value)
                 log.Info($"[Potency] {player.Name} salvaged {creatureName} -> {awarded} Savage Echo (expected {expectedAmount:F2}, override={creatureOverride}).");
@@ -505,7 +624,7 @@ namespace ACE.Server.Entity
                 // Chunk at 10,000 to match the weenie MaxStackSize, minimising the number of
                 // inventory slots consumed and reducing the chance of a partial-award on a
                 // nearly-full inventory.
-                var stackSize = Math.Min(remaining, 10000);
+                var stackSize = Math.Min(remaining, EssenceResidueMaxStack);
                 var item = WorldObjectFactory.CreateNewWorldObject(EssenceResidueWcid);
                 if (item == null)
                     return awarded > 0;
