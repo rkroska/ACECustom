@@ -26,6 +26,7 @@ namespace ACE.Server.Entity
         private static readonly ConcurrentDictionary<uint, CachedStrain> _strainCache = new();
 
         public const uint EssenceResidueWcid = 78780013;
+        private const int EssenceResidueMaxStack = 10000; // matches the weenie MaxStackSize
         public const uint EssenceResonatorWcid = 78780014;
         /// <summary>Player-facing stack name (weenie string type 1). Code alias: Essence Residue.</summary>
         public const string CurrencyDisplayName = "Savage Echo";
@@ -407,7 +408,9 @@ namespace ACE.Server.Entity
                     creatureOverride);
 
             // A bred pet is still taken at a yield of 0 - the point of the bin is getting rid of it.
-            var amount = PetPotencyMath.RoundResidueDropAmount(expectedAmount);
+            // Capped at one stack: a single stack is created whole or not at all, so the award below can
+            // never pay part of the yield and then consume the essence.
+            var amount = Math.Min(PetPotencyMath.RoundResidueDropAmount(expectedAmount), EssenceResidueMaxStack);
             if (amount <= 0 && !isBred)
             {
                 player.SendTransientError("This essence has too little resonance to salvage.");
@@ -621,7 +624,7 @@ namespace ACE.Server.Entity
                 // Chunk at 10,000 to match the weenie MaxStackSize, minimising the number of
                 // inventory slots consumed and reducing the chance of a partial-award on a
                 // nearly-full inventory.
-                var stackSize = Math.Min(remaining, 10000);
+                var stackSize = Math.Min(remaining, EssenceResidueMaxStack);
                 var item = WorldObjectFactory.CreateNewWorldObject(EssenceResidueWcid);
                 if (item == null)
                     return awarded > 0;
