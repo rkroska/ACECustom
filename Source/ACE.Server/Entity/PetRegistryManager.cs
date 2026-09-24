@@ -25,6 +25,13 @@ namespace ACE.Server.Entity
         private static volatile bool _tableCreated = false;
         private static readonly object _createLock = new object();
 
+        // Registry milestone quest-bonus counts: 1, 5, 10, then every 25. Public so the web portal's pet
+        // guide (PetGuideController) lists the milestones the registry actually awards.
+        public const int RegistryMilestoneFirst = 1;
+        public const int RegistryMilestoneSecond = 5;
+        public const int RegistryMilestoneThird = 10;
+        public const int RegistryMilestoneInterval = 25;
+
         /// <summary>
         /// Ensure the pet_registry table exists - call during server startup
         /// </summary>
@@ -192,7 +199,8 @@ namespace ACE.Server.Entity
                 }
                 
                 // Check milestone QB awards: 1, 5, 10, then every 25 (25, 50, 75, 100, 125, ...)
-                bool isMilestone = count == 1 || count == 5 || count == 10 || (count >= 25 && count % 25 == 0);
+                bool isMilestone = count == RegistryMilestoneFirst || count == RegistryMilestoneSecond || count == RegistryMilestoneThird
+                    || (count >= RegistryMilestoneInterval && count % RegistryMilestoneInterval == 0);
                 
                 if (isMilestone)
                 {

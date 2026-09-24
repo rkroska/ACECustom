@@ -87,6 +87,17 @@ namespace ACE.Server.WorldObjects
             /// <summary>Chance that a line is inherited from the parent with the higher effective value.</summary>
             public const double HigherParentChance = 0.55;
 
+            // Courtship Incense (Ivo's shop). Public so the website's breeding simulator reads the bonuses the
+            // game applies (VisualizerController breeding-config) instead of a copy.
+            public const uint LesserIncenseWcid = 78780250;
+            public const uint RefinedIncenseWcid = 78780251;
+            public const uint ExquisiteIncenseWcid = 78780252;
+            public const float LesserIncenseBonus = 0.025f;
+            public const float RefinedIncenseBonus = 0.050f;
+            public const float ExquisiteIncenseBonus = 0.100f;
+            /// <summary>Both parents' incense bonuses are summed, then capped at this.</summary>
+            public const double IncenseBonusMax = 0.50;
+
             /// <summary>Mutation line ids. The numeric values are what PetLastMutatedStat stores.</summary>
             public enum MutationLine
             {
@@ -427,7 +438,7 @@ namespace ACE.Server.WorldObjects
 
             /// <summary>Both parents' incense bonuses summed and clamped to +50%.</summary>
             public static double CombinedIncenseBonus(double incenseA, double incenseB)
-                => Math.Clamp(incenseA + incenseB, 0.0, 0.50);
+                => Math.Clamp(incenseA + incenseB, 0.0, IncenseBonusMax);
 
             /// <summary>
             /// clamp(max(floor, (base + incense) / (1 + decay * babyStatMutations)), 0, 1). Incense decays with the

@@ -30,6 +30,7 @@ import PlayerList from './components/PlayerList'
 
 import CombatCalculator from './components/CombatCalculator'
 import PetBreedingCalculator from './components/PetBreedingCalculator'
+import PetGuide from './components/pet-guide/PetGuide'
 
 import QuestBuilder from './components/quest-builder/QuestBuilder'
 
@@ -121,7 +122,9 @@ function App() {
 
   const normalizedPath = location.pathname.replace(/\/+$/, '') || '/';
 
-  if (!isAuthenticated && (normalizedPath === '/map' || normalizedPath === '/pet-breeding')) {
+  const isPetGuidePath = normalizedPath === '/pets' || normalizedPath.startsWith('/pets/');
+
+  if (!isAuthenticated && (normalizedPath === '/map' || normalizedPath === '/pet-breeding' || isPetGuidePath)) {
     return (
       <MainLayout>
         <Routes>
@@ -129,6 +132,7 @@ function App() {
             <div className="w-full h-full bg-neutral-950"><WorldViewer /></div>
           } />
           <Route path="/pet-breeding" element={<PetBreedingCalculator />} />
+          <Route path="/pets/:section?" element={<PetGuide />} />
           <Route path="*" element={<Navigate to="/map" replace />} />
         </Routes>
       </MainLayout>
@@ -343,6 +347,12 @@ function App() {
 
           </ProtectedRoute>
 
+        } />
+
+        <Route path="/pets/:section?" element={
+          <ProtectedRoute pageKey="pet-guide">
+            <PetGuide />
+          </ProtectedRoute>
         } />
 
         <Route path="/pet-breeding" element={

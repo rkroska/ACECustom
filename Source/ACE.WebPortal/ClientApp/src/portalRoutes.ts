@@ -20,6 +20,7 @@ import {
   Skull,
   Heart,
   Tag,
+  PawPrint,
 } from 'lucide-react'
 
 export interface PortalRouteDefinition {
@@ -35,6 +36,7 @@ export interface PortalRouteDefinition {
 export const PORTAL_ROUTES: PortalRouteDefinition[] = [
   { key: 'characters', path: '/characters', label: 'Characters', icon: User },
   { key: 'leaderboards', path: '/leaderboards', label: 'Leaderboards', section: 'Player', icon: Trophy },
+  { key: 'pet-guide', path: '/pets', label: 'Pet Guide', section: 'Player', icon: PawPrint },
   { key: 'patch-notes', path: '/patch-notes', label: 'Patch Notes', section: 'Player', icon: FileText },
   { key: 'players', path: '/players', label: 'Player List', section: 'Monitoring', icon: Users },
   { key: 'corpse-finder', path: '/corpse-finder', label: 'Corpse Finder', section: 'Monitoring', icon: Skull },

@@ -18,7 +18,9 @@ const Sidebar: React.FC = () => {
 
   const charactersRoute = visibleRoutes.find(r => r.key === 'characters');
   const leaderboardsRoute = visibleRoutes.find(r => r.key === 'leaderboards');
-  const adminRoutes = visibleRoutes.filter(r => r.key !== 'characters' && r.key !== 'leaderboards');
+  const petGuideRoute = visibleRoutes.find(r => r.key === 'pet-guide');
+  const topLevelKeys = ['characters', 'leaderboards', 'pet-guide'];
+  const adminRoutes = visibleRoutes.filter(r => !topLevelKeys.includes(r.key));
 
   const sections = useMemo(() => {
     const grouped = new Map<string, PortalRouteDefinition[]>();
@@ -48,6 +50,12 @@ const Sidebar: React.FC = () => {
             const Icon = leaderboardsRoute.icon;
             return Icon ? <Icon className="w-4 h-4" /> : null;
           })()} label={leaderboardsRoute.label} />
+        )}
+        {petGuideRoute && (
+          <SidebarItem to={petGuideRoute.path} icon={(() => {
+            const Icon = petGuideRoute.icon;
+            return Icon ? <Icon className="w-4 h-4" /> : null;
+          })()} label={petGuideRoute.label} />
         )}
 
         {sections.length > 0 && (

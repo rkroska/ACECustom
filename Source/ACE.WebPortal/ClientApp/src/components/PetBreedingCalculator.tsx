@@ -15,14 +15,15 @@ import {
   normalizeBreedingConfig,
   totalStatMutations,
   totalMutations,
+  normalizeBreedingCadence,
+  femaleBreedsPerDay,
+  maturityMultiplier,
   DEFAULT_BREEDING_CONFIG,
+  DEFAULT_BREEDING_CADENCE,
   EMPTY_GENETICS,
-  INCENSE_TIERS,
   STAT_LINE_LABELS,
-  BREEDING_CADENCE,
-  FEMALE_BREEDS_PER_DAY,
 } from '../utils/breedingModel'
-import type { BreedingConfig, BreedOptions, BreedResult, PetGenetics, StatLine, SummonedStats } from '../utils/breedingModel'
+import type { BreedingCadence, BreedingConfig, BreedOptions, BreedResult, PetGenetics, StatLine, SummonedStats } from '../utils/breedingModel'
 
 interface PetPalette {
 
@@ -468,7 +469,7 @@ export default function PetBreedingCalculator() {
   const [alphaGenetics, setAlphaGenetics] = useState<PetGenetics>({ ...EMPTY_GENETICS })
   const [alphaIncense, setAlphaIncense] = useState<number>(0)
   const [alphaCatalyst, setAlphaCatalyst] = useState<boolean>(false)
-  const [alphaCharges, setAlphaCharges] = useState<number>(BREEDING_CADENCE.maleChargesPerRefill)
+  const [alphaCharges, setAlphaCharges] = useState<number>(DEFAULT_BREEDING_CADENCE.maleChargesPerRefill)
   const [alphaPalette, setAlphaPalette] = useState<PetPalette>({
     name: 'Alpha Lineage (Royal Amber)',
     hex: '#F59E0B',
@@ -534,10 +535,13 @@ export default function PetBreedingCalculator() {
   const [calcProfile, setCalcProfile] = useState<ActivityProfile>('dedicated')
   const [calcSeed, setCalcSeed] = useState<number>(1)
 
-  const validLevels = [50, 80, 100, 125, 150, 180, 200, 250, 300]
-
   const [serverBreedingConfig, setServerBreedingConfig] = useState<BreedingConfig>(DEFAULT_BREEDING_CONFIG)
+  // Breeding limits, essence tiers and incense options: the server's live values, same payload as the config.
+  const [cadence, setCadence] = useState<BreedingCadence>(DEFAULT_BREEDING_CADENCE)
   const [configSource, setConfigSource] = useState<'fallback' | 'server'>('fallback')
+  const validLevels = cadence.tiers
+  const incenseOptions = [{ label: 'None', bonus: 0 }, ...cadence.incense]
+  const pctText = (fraction: number) => `${+(fraction * 100).toFixed(2)}%`
 
   useEffect(() => {
     fetch('/api/visualizer/breeding-config')
@@ -545,6 +549,9 @@ export default function PetBreedingCalculator() {
       .then(data => {
         if (data && typeof data.baseMutationChance === 'number') {
           setServerBreedingConfig(normalizeBreedingConfig(data))
+          const serverCadence = normalizeBreedingCadence(data)
+          setCadence(serverCadence)
+          setAlphaCharges(serverCadence.maleChargesPerRefill)
           setConfigSource('server')
         }
       })
@@ -567,8 +574,8 @@ export default function PetBreedingCalculator() {
    */
   const randomizeParent = (slot: 'alpha' | 'beta', profile: RandomProfile = randomProfile) => {
     const species = randomPick(speciesList).name
-    // Tier gate: only tier 100+ devices can breed, so do not generate parents that cannot.
-    const level = randomPick(validLevels.filter(l => l >= 100))
+    // Tier gate: only devices at or above the server's minimum tier can breed, so do not generate parents that cannot.
+    const level = randomPick(validLevels.filter(l => l >= cadence.minParentTier))
     const genetics = randomGenetics(profile, config)
     const label = slot === 'alpha' ? 'Alpha Lineage' : 'Beta Lineage'
     const palette = randomPaletteForSpecies(species, label)
@@ -594,7 +601,7 @@ export default function PetBreedingCalculator() {
   }
 
   // Stat mutation odds depend on the BABY's inherited counts, so show the reachable range.
-  const incenseBonus = combinedIncenseBonus(alphaIncense, betaIncense)
+  const incenseBonus = combinedIncenseBonus(alphaIncense, betaIncense, config)
   const statLines: StatLine[] = ['dmg', 'dr', 'crit', 'vit']
   const minInheritedMuts = statLines.reduce((s, l) => s + Math.min(alphaGenetics[l], betaGenetics[l]), 0)
   const maxInheritedMuts = statLines.reduce((s, l) => s + Math.max(alphaGenetics[l], betaGenetics[l]), 0)
@@ -672,8 +679,8 @@ export default function PetBreedingCalculator() {
     addDebugLog(`[CONFIG:${configSource}] base ${config.baseMutationChance} decay ${config.mutationDecayRate} floor ${config.mutationMinFloor} potChance ${config.potencyMutationChance} steps dmg/dr/crit/vit/pot ${config.damageMutationStep}/${config.drMutationStep}/${config.critMutationStep}/${config.vitalityMutationStep}/${config.potencyMutationStep} softCap ${config.potencySoftCap} hardCap ${config.potencyHardCap} maxStored ${config.potencyMaxStored} maxStatMuts ${config.maxStatMutations} force ${config.forceMutation} guardian ${config.guardianEnabled}`)
 
     if (alphaCharges <= 0) {
-      addDebugLog(`[ERROR] Alpha Stud is out of breeding charges (0/${BREEDING_CADENCE.maleChargesPerRefill})!`)
-      alert(`Alpha Stud is out of breeding charges (0/${BREEDING_CADENCE.maleChargesPerRefill})! Charges refill 24h after the last refill, or click 'Reset Alpha Charges'.`)
+      addDebugLog(`[ERROR] Alpha Stud is out of breeding charges (0/${cadence.maleChargesPerRefill})!`)
+      alert(`Alpha Stud is out of breeding charges (0/${cadence.maleChargesPerRefill})! Charges refill ${cadence.maleRefillHours}h after the last refill, or click 'Reset Alpha Charges'.`)
       return
     }
 
@@ -799,7 +806,7 @@ export default function PetBreedingCalculator() {
       mutationSummary,
       guardianNote,
       isColorMutated: result.paletteRolled,
-      cooldownHours: BREEDING_CADENCE.femaleRecoveryHours,
+      cooldownHours: cadence.femaleRecoveryHours,
       palette: babyPalette,
       paletteName: babyPalette.name,
       paletteHex: babyPalette.hex,
@@ -817,11 +824,11 @@ export default function PetBreedingCalculator() {
   }
 
   const resetSimulation = () => {
-    addDebugLog(`[RESET] Simulation reset to Generation 1 (${BREEDING_CADENCE.maleChargesPerRefill} Alpha Stud Charges restored)`)
+    addDebugLog(`[RESET] Simulation reset to Generation 1 (${cadence.maleChargesPerRefill} Alpha Stud Charges restored)`)
     setSimResults([])
     setSelectedBabyId(null)
     setCurrentGen(1)
-    setAlphaCharges(BREEDING_CADENCE.maleChargesPerRefill)
+    setAlphaCharges(cadence.maleChargesPerRefill)
   }
 
   const promoteToAlpha = (baby: SimulationResult) => {
@@ -908,10 +915,17 @@ export default function PetBreedingCalculator() {
     }
   }
 
-  // Throughput: each stud gives 10 charges per 24h refill; each female can breed once per 4h recovery.
-  const studBreedsPerDay = PROFILE_STUDS[calcProfile] * BREEDING_CADENCE.maleChargesPerRefill
-  const donorBreedsPerDay = calcDonors * FEMALE_BREEDS_PER_DAY
-  const breedsPerDay = Math.max(1, Math.min(studBreedsPerDay, donorBreedsPerDay))
+  // Throughput: each stud gives its charges once per refill period; each female breeds once per recovery.
+  // A refill time of 0 means stud charges never come back: the studs' first charges are all there will ever be.
+  const studsOwned = PROFILE_STUDS[calcProfile]
+  const studsRefill = cadence.maleRefillHours > 0
+  const studBreedsPerDay = studsRefill ? studsOwned * cadence.maleChargesPerRefill * (24 / cadence.maleRefillHours) : Infinity
+  const studLifetimeBreeds = studsRefill ? Infinity : studsOwned * cadence.maleChargesPerRefill
+  const femaleRate = femaleBreedsPerDay(cadence)
+  const donorBreedsPerDay = calcDonors * femaleRate
+  const breedsPerDay = Math.max(1, Math.min(studBreedsPerDay, donorBreedsPerDay, studLifetimeBreeds))
+  /** Breeds the studs can ever supply within the projection window. */
+  const breedsWithin = (dayCount: number) => Math.floor(Math.min(breedsPerDay * dayCount, studLifetimeBreeds))
 
   // Monte Carlo projections through the shared model: keep-the-best-baby campaign against a fixed donor.
   const est = useMemo(() => {
@@ -925,7 +939,7 @@ export default function PetBreedingCalculator() {
     }
     toTarget.sort((a, b) => a - b)
 
-    const ninetyDayBreeds = breedsPerDay * PROJECTION_DAYS
+    const ninetyDayBreeds = breedsWithin(PROJECTION_DAYS)
     const statMuts: number[] = []
     const potMuts: number[] = []
     const paletteRolls: number[] = []
@@ -956,9 +970,12 @@ export default function PetBreedingCalculator() {
       blessingsMedian: percentile(blessings, 0.5),
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alphaGenetics, betaGenetics, config, alphaIncense, betaIncense, alphaCatalyst, betaCatalyst, guardianKilled, calcTargetMuts, breedsPerDay, calcSeed])
+  }, [alphaGenetics, betaGenetics, config, alphaIncense, betaIncense, alphaCatalyst, betaCatalyst, guardianKilled, calcTargetMuts, breedsPerDay, studLifetimeBreeds, calcSeed])
 
-  const days = (breeds: number) => (breeds / breedsPerDay).toFixed(1)
+  /** Whether the studs can supply this many breeds at all (they cannot past their charges when refills are off). */
+  const reachable = (breeds: number) => breeds <= studLifetimeBreeds
+  const days = (breeds: number) => (reachable(breeds) ? `${(breeds / breedsPerDay).toFixed(1)} d` : 'never')
+  const stageMultipliers = config.maturityMultipliers
   const potencyCapValue = potencyCap(config)
   const shownStats = activeSelectedBaby ? (showNewborn ? activeSelectedBaby.newborn : activeSelectedBaby.adult) : null
 
@@ -1029,7 +1046,7 @@ export default function PetBreedingCalculator() {
             <div className="text-xs">
               <span className="font-extrabold text-white uppercase tracking-wider mr-2">Breeding Quick Guide:</span>
               <span className="text-neutral-300">
-                1. Bring a <strong>Male Stud</strong> (10 charges; refill 24h after the last refill) • 2. Bring a <strong>Female Dam</strong> (4h recovery after each breed) • 3. In the <strong>Seedy Motel</strong>, with both pets in the same landcell, both players perform <code>*dance*</code> (or <code>@dance</code>) within 5 seconds of each other. Boost results with <strong>Courtship Incense</strong> (up to +2.5%, +5%, or +10% stat mutation chance, decaying with the line like the base chance; potency is unaffected) and a <strong>Chromatic Catalyst</strong> (vibrant palette pool when a mutation rolls a new colour); use <strong>Pet Tailoring Kits</strong> for cosmetic appearances and <strong>Pet Neutering Kits</strong> to prevent breeding.
+                1. Bring a <strong>Male Stud</strong> ({cadence.maleChargesPerRefill} charges; refill {cadence.maleRefillHours}h after the last refill) • 2. Bring a <strong>Female Dam</strong> ({cadence.femaleRecoveryHours}h recovery after each breed) • 3. In the <strong>Seedy Motel</strong>, with both pets in the same landcell, both players perform <code>*dance*</code> (or <code>@dance</code>) within {cadence.danceWindowSeconds} seconds of each other. Boost results with <strong>Courtship Incense</strong> ({cadence.incense.map(i => `+${pctText(i.bonus)}`).join(', ')} stat mutation chance, decaying with the line like the base chance; potency is unaffected) and a <strong>Chromatic Catalyst</strong> (vibrant palette pool when a mutation rolls a new colour); use <strong>Pet Tailoring Kits</strong> for cosmetic appearances and <strong>Pet Neutering Kits</strong> to prevent breeding.
               </span>
             </div>
           </div>
@@ -1063,7 +1080,7 @@ export default function PetBreedingCalculator() {
                       <Dices className="w-3.5 h-3.5" />
                     </button>
                     <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/40 px-2 py-0.5 rounded font-black">
-                      {alphaCharges}/{BREEDING_CADENCE.maleChargesPerRefill} Charges
+                      {alphaCharges}/{cadence.maleChargesPerRefill} Charges
                     </span>
                   </div>
                 </div>
@@ -1102,7 +1119,7 @@ export default function PetBreedingCalculator() {
                       onChange={(e) => setAlphaIncense(Number(e.target.value))}
                       className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs font-bold text-pink-300"
                     >
-                      {INCENSE_TIERS.map(t => <option key={t.bonus} value={t.bonus}>{t.label}</option>)}
+                      {incenseOptions.map(t => <option key={t.bonus} value={t.bonus}>{t.bonus > 0 ? `${t.label} (+${pctText(t.bonus)})` : t.label}</option>)}
                     </select>
                   </div>
                   <label className="flex items-end gap-2 pb-1.5 text-xs font-semibold text-neutral-300 cursor-pointer">
@@ -1145,7 +1162,7 @@ export default function PetBreedingCalculator() {
                       <Dices className="w-3.5 h-3.5" />
                     </button>
                     <span className="text-[10px] bg-violet-500/20 text-violet-300 border border-violet-500/40 px-2 py-0.5 rounded font-black">
-                      Female ({BREEDING_CADENCE.femaleRecoveryHours}h Recovery)
+                      Female ({cadence.femaleRecoveryHours}h Recovery)
                     </span>
                   </div>
                 </div>
@@ -1184,7 +1201,7 @@ export default function PetBreedingCalculator() {
                       onChange={(e) => setBetaIncense(Number(e.target.value))}
                       className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs font-bold text-pink-300"
                     >
-                      {INCENSE_TIERS.map(t => <option key={t.bonus} value={t.bonus}>{t.label}</option>)}
+                      {incenseOptions.map(t => <option key={t.bonus} value={t.bonus}>{t.bonus > 0 ? `${t.label} (+${pctText(t.bonus)})` : t.label}</option>)}
                     </select>
                   </div>
                   <label className="flex items-end gap-2 pb-1.5 text-xs font-semibold text-neutral-300 cursor-pointer">
@@ -1258,7 +1275,7 @@ export default function PetBreedingCalculator() {
                     <div className="bg-neutral-950/70 border border-neutral-800 p-2.5 rounded-xl flex items-center justify-between">
                       <div className="text-[11px] font-bold text-neutral-400">Alpha Stud Energy:</div>
                       <div className="text-xs font-black text-blue-400">
-                        {alphaCharges} / {BREEDING_CADENCE.maleChargesPerRefill} Charges Remaining
+                        {alphaCharges} / {cadence.maleChargesPerRefill} Charges Remaining
                       </div>
                     </div>
 
@@ -1331,12 +1348,12 @@ export default function PetBreedingCalculator() {
                     }`}
                   >
                     <Heart className="w-4 h-4 fill-white" />
-                    {alphaCharges > 0 ? 'Perform *dance* Breeding Ritual' : `Alpha Charges Exhausted (0/${BREEDING_CADENCE.maleChargesPerRefill})`}
+                    {alphaCharges > 0 ? 'Perform *dance* Breeding Ritual' : `Alpha Charges Exhausted (0/${cadence.maleChargesPerRefill})`}
                   </button>
 
                   <div className="flex gap-2">
                     <button
-                      onClick={() => setAlphaCharges(BREEDING_CADENCE.maleChargesPerRefill)}
+                      onClick={() => setAlphaCharges(cadence.maleChargesPerRefill)}
                       className="flex-1 bg-neutral-950 border border-neutral-800 hover:border-neutral-700 text-neutral-400 hover:text-neutral-200 text-xs font-bold py-2 rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1"
                     >
                       <RotateCcw className="w-3.5 h-3.5 text-blue-400" /> Reset Alpha Charges
@@ -1528,7 +1545,7 @@ export default function PetBreedingCalculator() {
                   <div className="lg:col-span-2 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-neutral-500">
-                        Summoned Ratings ({showNewborn ? 'Newborn, stage 1: x0.5' : 'Adult: x1.0'})
+                        Summoned Ratings ({showNewborn ? (stageMultipliers.length > 0 ? `Newborn, stage 1: x${maturityMultiplier(1, config)}` : 'Born adult: x1.0') : 'Adult: x1.0'})
                       </span>
                       <label className="flex items-center gap-1.5 text-[11px] font-bold text-neutral-300 cursor-pointer">
                         <input type="checkbox" checked={showNewborn} onChange={(e) => setShowNewborn(e.target.checked)} className="accent-rose-500" />
@@ -1605,8 +1622,8 @@ export default function PetBreedingCalculator() {
 
                       <div className="bg-neutral-950/80 border border-neutral-800 p-3 rounded-xl space-y-1">
                         <div className="text-[10px] font-black text-neutral-500 uppercase tracking-wider">Growth</div>
-                        <div className="text-lg font-black text-amber-300">5 Stages</div>
-                        <div className="text-[10px] text-neutral-400">x0.5 / 0.6 / 0.7 / 0.8 / 0.9, adult x1.0</div>
+                        <div className="text-lg font-black text-amber-300">{stageMultipliers.length} Stages</div>
+                        <div className="text-[10px] text-neutral-400">{stageMultipliers.length > 0 ? `x${stageMultipliers.join(' / ')}, adult x1.0` : 'Born adult, x1.0'}</div>
                       </div>
                     </div>
                   </div>
@@ -1681,7 +1698,7 @@ export default function PetBreedingCalculator() {
             </div>
 
             <div className="text-[11px] text-neutral-500">
-              Throughput: {breedsPerDay} breeds/day = min(studs {PROFILE_STUDS[calcProfile]} x {BREEDING_CADENCE.maleChargesPerRefill} charges per 24h, dams {calcDonors} x {FEMALE_BREEDS_PER_DAY} per day at a {BREEDING_CADENCE.femaleRecoveryHours}h recovery).
+              Throughput: {+breedsPerDay.toFixed(2)} breeds/day = min(studs {studsOwned} x {cadence.maleChargesPerRefill} charges {studsRefill ? `per ${cadence.maleRefillHours}h` : '(they never refill, so these are all there are)'}, dams {calcDonors} x {Number.isFinite(femaleRate) ? `${+femaleRate.toFixed(2)} per day at a ${cadence.femaleRecoveryHours}h recovery` : 'unlimited (no recovery)'}).
               Campaigns are capped at {PROJECTION_MAX_BREEDS} breeds; {est.reachedPct.toFixed(0)}% of runs reached the target within that cap.
             </div>
 
@@ -1689,8 +1706,8 @@ export default function PetBreedingCalculator() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-neutral-800">
               <div className="bg-neutral-950 border border-neutral-800 p-4 rounded-xl space-y-1">
                 <div className="text-[10px] font-black text-neutral-500 uppercase tracking-wider">Median Time to Target</div>
-                <div className="text-2xl font-black text-emerald-400">{days(est.breedsMedian)} Days</div>
-                <div className="text-[10px] text-neutral-400">~{(est.breedsMedian / breedsPerDay / 7.0).toFixed(1)} weeks; lucky (p20) {days(est.breedsFast)} d, unlucky (p80) {days(est.breedsSlow)} d</div>
+                <div className="text-2xl font-black text-emerald-400">{reachable(est.breedsMedian) ? `${(est.breedsMedian / breedsPerDay).toFixed(1)} Days` : 'Never'}</div>
+                <div className="text-[10px] text-neutral-400">{reachable(est.breedsMedian) ? `~${(est.breedsMedian / breedsPerDay / 7.0).toFixed(1)} weeks` : 'the studs run out of charges first'}; lucky (p20) {days(est.breedsFast)}, unlucky (p80) {days(est.breedsSlow)}</div>
               </div>
 
               <div className="bg-neutral-950 border border-neutral-800 p-4 rounded-xl space-y-1">
@@ -1731,7 +1748,7 @@ export default function PetBreedingCalculator() {
                   Male Studs & Female Dams
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  Breeding requires one <strong>Male Stud</strong>, with 10 breeding charges that refill 24 hours after the last refill, and one <strong>Female Dam</strong>, who enters a 4-hour recovery after each breed.
+                  Breeding requires one <strong>Male Stud</strong>, with {cadence.maleChargesPerRefill} breeding charges that refill {cadence.maleRefillHours} hours after the last refill, and one <strong>Female Dam</strong>, who enters a {cadence.femaleRecoveryHours}-hour recovery after each breed.
                 </p>
               </div>
 
@@ -1741,7 +1758,7 @@ export default function PetBreedingCalculator() {
                   The Seedy Motel Dance Ritual (*dance*)
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  Two players stand in the <strong>Seedy Motel</strong> with their combat pets summoned in the same landcell, and both execute the <code>*dance*</code> emote (or type <code>@dance</code>) within 5 seconds of each other to initiate breeding. The species is a 50/50 coin flip between the parents.
+                  Two players stand in the <strong>Seedy Motel</strong> with their combat pets summoned in the same landcell, and both execute the <code>*dance*</code> emote (or type <code>@dance</code>) within {cadence.danceWindowSeconds} seconds of each other to initiate breeding. The species is a 50/50 coin flip between the parents.
                 </p>
               </div>
 
@@ -1751,7 +1768,7 @@ export default function PetBreedingCalculator() {
                   Inheritance & Mutation Rolls
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  Each stat line is inherited independently: 55% chance to take the higher parent's line (ties favour Alpha), 45% the lower. Damage, Damage Resist and Crit carry both the gear base and the mutation count; Vitality carries its count; Potency carries the stored value and its count.
+                  Each stat line is inherited independently: {pctText(config.higherParentChance)} chance to take the higher parent's line (ties favour Alpha), {pctText(1 - config.higherParentChance)} the lower. Damage, Damage Resist and Crit carry both the gear base and the mutation count; Vitality carries its count; Potency carries the stored value and its count.
                   Then two independent rolls: a <strong>stat mutation</strong> (base {config.baseMutationChance * 100}%, decaying with the baby's inherited stat-mutation count, floor {config.mutationMinFloor * 100}%) adds +1 to a random eligible line (+{config.damageMutationStep} damage, +{config.drMutationStep} DR, +{config.critMutationStep} crit or +{config.vitalityMutationStep} HP), and a <strong>potency mutation</strong> ({config.potencyMutationChance * 100}%) adds +{config.potencyMutationStep} stored potency (quarter step above the {config.potencySoftCap || 'n/a'} soft cap{potencyCapValue ? `, never past ${potencyCapValue}` : ''}). Any mutation also rolls a brand-new colour palette.
                 </p>
               </div>
@@ -1762,7 +1779,7 @@ export default function PetBreedingCalculator() {
                   Mutation Aids & Rare Color Palettes
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  <strong>Courtship Incense</strong> adds +2.5%, +5%, or +10% to the base before the decay, so it shrinks with the line like the base does (both parents' incense stacks, up to +50%); it does not affect the potency roll. A <strong>Chromatic Catalyst</strong> on either parent makes a rolled mutation palette come from the vibrant pool, and is only consumed when a palette is actually rolled.
+                  <strong>Courtship Incense</strong> adds {cadence.incense.map(i => `+${pctText(i.bonus)}`).join(', ')} to the base before the decay, so it shrinks with the line like the base does (both parents' incense stacks, up to +{pctText(config.incenseBonusMax)}); it does not affect the potency roll. A <strong>Chromatic Catalyst</strong> on either parent makes a rolled mutation palette come from the vibrant pool, and is only consumed when a palette is actually rolled.
                 </p>
               </div>
 
@@ -1782,7 +1799,9 @@ export default function PetBreedingCalculator() {
                   Growth, Cosmetic Tailoring & Neutering
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  Newborns summon at x0.5 of their ratings and HP and grow through five stages (0.5, 0.6, 0.7, 0.8, 0.9) to adult x1.0. <strong>Pet Tailoring Kits</strong> extract and apply a pet's cosmetic appearance. <strong>Pet Neutering Kits</strong> permanently prevent a pet from breeding.
+                  {stageMultipliers.length > 0
+                    ? `Newborns summon at x${maturityMultiplier(1, config)} of their ratings and HP and grow through ${stageMultipliers.length} stages (${stageMultipliers.join(', ')}) to adult x1.0.`
+                    : 'Babies are born adult (x1.0): growing up is turned off on this server.'} <strong>Pet Tailoring Kits</strong> extract and apply a pet's cosmetic appearance. <strong>Pet Neutering Kits</strong> permanently prevent a pet from breeding.
                 </p>
               </div>
             </div>
