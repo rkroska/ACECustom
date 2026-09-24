@@ -134,6 +134,7 @@ Map tier from creature `DeathTreasureType` / level band — exact mapping in imp
 - **Normal siphoned essence** (78780004): salvage action → residue, value from captured creature level + shiny; **target ~40–60%** of equivalent farm hour on T9/T10.
 - **Hollow essence** (78780006): same, **~75%** of normal salvage value.
 - Cannot salvage an essence already applied to a device.
+- Every salvage pays at most **10,000** Savage Echo (one stack), after shiny and creature overrides, so the award is all-or-nothing.
 - Does **not** replace farming for serious potency goals.
 - **Bred pet essences** can also be salvaged, as a disposal bin rather than income: a flat `pet_bred_essence_salvage_yield` (**1**). Each female breeds again every `pet_breeding_cooldown_hours` (4), so a herd is an unlimited baby source: at 5 echo a 20-female herd would make ~600 echo/day (~9 hr of the farm above); at 1 it is ~120.
 

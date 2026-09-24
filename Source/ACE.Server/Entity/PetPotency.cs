@@ -26,6 +26,7 @@ namespace ACE.Server.Entity
         private static readonly ConcurrentDictionary<uint, CachedStrain> _strainCache = new();
 
         public const uint EssenceResidueWcid = 78780013;
+        private const int EssenceResidueMaxStack = 10000; // matches the weenie MaxStackSize
         public const uint EssenceResonatorWcid = 78780014;
         /// <summary>Player-facing stack name (weenie string type 1). Code alias: Essence Residue.</summary>
         public const string CurrencyDisplayName = "Savage Echo";
@@ -346,10 +347,12 @@ namespace ACE.Server.Entity
             }
 
             // Re-checked on every pass, so a confirmed salvage cannot pay out for an essence that left the
-            // pack while the prompt was open (residue is awarded before the essence is consumed).
-            if (player.FindObject(essence.Guid.Full, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) == null)
+            // pack while the prompt was open (residue is awarded before the essence is consumed). Pack only:
+            // TryConsumeFromInventoryWithNetworking cannot take an equipped item, and a failed consume after
+            // the award would leave the player with both the echo and the essence.
+            if (player.FindObject(essence.Guid.Full, Player.SearchLocations.MyInventory) == null)
             {
-                player.SendTransientError("You no longer have that essence.");
+                player.SendTransientError("The essence must be in your pack to salvage it.");
                 return false;
             }
 
@@ -405,7 +408,9 @@ namespace ACE.Server.Entity
                     creatureOverride);
 
             // A bred pet is still taken at a yield of 0 - the point of the bin is getting rid of it.
-            var amount = PetPotencyMath.RoundResidueDropAmount(expectedAmount);
+            // Capped at one stack: a single stack is created whole or not at all, so the award below can
+            // never pay part of the yield and then consume the essence.
+            var amount = Math.Min(PetPotencyMath.RoundResidueDropAmount(expectedAmount), EssenceResidueMaxStack);
             if (amount <= 0 && !isBred)
             {
                 player.SendTransientError("This essence has too little resonance to salvage.");
@@ -619,7 +624,7 @@ namespace ACE.Server.Entity
                 // Chunk at 10,000 to match the weenie MaxStackSize, minimising the number of
                 // inventory slots consumed and reducing the chance of a partial-award on a
                 // nearly-full inventory.
-                var stackSize = Math.Min(remaining, 10000);
+                var stackSize = Math.Min(remaining, EssenceResidueMaxStack);
                 var item = WorldObjectFactory.CreateNewWorldObject(EssenceResidueWcid);
                 if (item == null)
                     return awarded > 0;
