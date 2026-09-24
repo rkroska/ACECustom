@@ -346,10 +346,12 @@ namespace ACE.Server.Entity
             }
 
             // Re-checked on every pass, so a confirmed salvage cannot pay out for an essence that left the
-            // pack while the prompt was open (residue is awarded before the essence is consumed).
-            if (player.FindObject(essence.Guid.Full, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) == null)
+            // pack while the prompt was open (residue is awarded before the essence is consumed). Pack only:
+            // TryConsumeFromInventoryWithNetworking cannot take an equipped item, and a failed consume after
+            // the award would leave the player with both the echo and the essence.
+            if (player.FindObject(essence.Guid.Full, Player.SearchLocations.MyInventory) == null)
             {
-                player.SendTransientError("You no longer have that essence.");
+                player.SendTransientError("The essence must be in your pack to salvage it.");
                 return false;
             }
 
