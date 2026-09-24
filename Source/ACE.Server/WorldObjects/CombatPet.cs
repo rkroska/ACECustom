@@ -1471,6 +1471,26 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// A capture-skin weapon is cosmetic, so it must not pick the attack skill. Most pet weenies only train
+        /// Light Weapons; the base lookup would attack with the skin's own skill (Heavy, Finesse, Two Handed,
+        /// Missile), which the summon-aug bonus creates as an untrained skill without the pet's weapon base.
+        /// With a skin weapon, use the same skill the pet uses unarmed. This also drives crit and imbue scaling.
+        /// </summary>
+        public override Skill GetCurrentWeaponSkill()
+        {
+            var weapon = GetEquippedWeapon();
+            if (weapon == null || !(weapon.GetProperty(PropertyBool.CombatPetCaptureSkinWeapon) ?? false))
+                return base.GetCurrentWeaponSkill();
+
+            // Same as the unarmed path in Creature.GetCurrentWeaponSkill
+            var skill = Skill.UnarmedCombat;
+            if (GetCreatureSkill(skill).InitLevel == 0)
+                skill = Skill.LightWeapons;
+
+            return skill;
+        }
+
+        /// <summary>
         /// Override GetEffectiveAttackSkill (no changes to attack modifier - item augs don't affect attack mod)
         /// </summary>
         public override uint GetEffectiveAttackSkill()
