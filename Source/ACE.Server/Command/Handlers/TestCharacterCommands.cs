@@ -882,16 +882,18 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>Every Always Rolled line (keys 50-53) this piece can carry, at a fixed grade. Premades write
-        /// them unconditionally - what a drop gets with the tier's chance at 100 pct (owner 2026-09-14).</summary>
+        /// them unconditionally - what a drop gets with the tier's chance at 100 pct (owner 2026-09-14). The band is the
+        /// RESOLVER's own (ZoneStatResolver.EffectiveBand: the anchored Default, or the flat core fallback with Zone Control
+        /// off), so the stamped value is exactly what the piece resolves to - the stamp marks it current, so a different
+        /// band here would never be corrected by a re-resolve (CodeRabbit #533).</summary>
         private static void StampPremadeAlwaysRolled(WorldObject wo, int tier, int grade)
         {
             foreach (var def in ACE.Server.Managers.ZoneControl.ZoneModifiers.AllDefs)
             {
                 if (def.Class != ACE.Server.Managers.ZoneControl.ZoneModifiers.ModifierClass.Always || !PremadeKeyAllowed(def.Key, wo, tier))
                     continue;
-                var (bMin, bMax) = PremadeBand(def.Key, tier);
-                ACE.Server.Managers.ZoneControl.ZoneModifiers.StampGraded(wo, def, grade,
-                    ((int)Math.Round(bMin), (int)Math.Round(bMax)));
+                var band = ACE.Server.Managers.ZoneControl.ZoneStatResolver.EffectiveBand(def.Key, tier);
+                ACE.Server.Managers.ZoneControl.ZoneModifiers.StampGraded(wo, def, grade, band);
             }
         }
 
