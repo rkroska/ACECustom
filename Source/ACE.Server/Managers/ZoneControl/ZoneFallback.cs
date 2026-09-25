@@ -24,7 +24,11 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Flat armour level per piece - no tier ladder off the switch.</summary>
         public const int ArmorLevel = 732;
 
-        /// <summary>Worn-gear hard caps, so a full set lands on the T10 total.</summary>
+        /// <summary>Core-four worn-set anchors (the CoreWindow divisor is 18 pieces): legacy core records and the Always Rolled
+        /// resists 50-53 resolve on these while Zone Control is off.</summary>
+        public const double AnchorDr = 92.0, AnchorCdr = 73.0;
+
+        /// <summary>Worn-gear hard caps, matching the anchors so a full set lands on the T10 total.</summary>
         public const int CapDr = 92, CapCdr = 73, CapLine = 211;
 
         /// <summary>

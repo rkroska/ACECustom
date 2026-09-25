@@ -367,7 +367,7 @@ namespace ACE.Server.WorldObjects
 
             if ((physicsDescriptionFlag & PhysicsDescriptionFlag.Translucency) != 0)
                 if (adminvision && this is Player && (CloakStatus == CloakStatus.On || CloakStatus == CloakStatus.Ghost))
-                    writer.Write(0.5f);      // Ghost reuses the half-opacity an admin with adminvision already sees
+                    writer.Write(0.5f);      // an admin with adminvision sees a cloaked player (On or Ghost) at half opacity
                 else
                     writer.Write(Translucency ?? 0f);
 

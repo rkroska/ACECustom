@@ -19,7 +19,8 @@ namespace ACE.Server.Managers.ZoneControl
     ///
     /// Record format, PropertyString.ZcModifiers: "28:490;19:1000;50:900;51:850;52:900;53:880;25:500;41:650"
     ///   - positive key  = ZoneModifiers catalog key (lines AND specials), value = grade 0-1000
-    ///   - c1..c4        = LEGACY: the retired core four, read as the Always Rolled keys 50-53 (never written)
+    ///   - c1..c4        = LEGACY: the retired core four (DamageResist / CritDamageResist / CritResist / NetherResist),
+    ///                     never written by a new drop, still resolved on its own window so an old piece keeps its value
     ///   - -11..-30      = the reserved WEAPON block (2026-08-25): the six continuous weapon cards,
     ///                     which are PropertyFloats and resolve through ZoneModifiers.WeaponBand rather
     ///                     than the armour catalog. See the block comment at WeaponBiteKey.
@@ -37,13 +38,81 @@ namespace ACE.Server.Managers.ZoneControl
     {
         public const int GradeMax = 1000;
 
+        // ── LEGACY core four ─────────────────────────────────────────────────────
+        //
+        // Records written before 2026-09-14 carry the retired core four as c1..c4. New drops never write them: the four
+        // resists are the Always Rolled catalog lines 50-53 now. But an EXISTING piece keeps the value it already has
+        // (owner 2026-09-24, CodeRabbit #533): its legacy grade resolves against the core window it was rolled on, exactly
+        // as before - never re-read as a 50-53 grade against the wider Always Rolled band, which would have moved every
+        // worn T11 piece (a mid-grade Damage Resist 68 -> ~52) the moment this shipped. Read keeps them as these negative
+        // pseudo keys, Format writes them back as c1..c4, Compute resolves them through CoreWindow.
+
+        /// <summary>Legacy core-four pseudo keys inside the record (negative so they never collide with catalog keys).</summary>
+        public const int CoreDamageResist = -1;
+        public const int CoreCritDamageResist = -2;
+        public const int CoreCritResist = -3;
+        public const int CoreNetherResist = -4;
+
+        public static PropertyInt CoreProp(int coreKey) => coreKey switch
+        {
+            CoreDamageResist => PropertyInt.GearDamageResist,
+            CoreCritDamageResist => PropertyInt.GearCritDamageResist,
+            CoreCritResist => PropertyInt.GearCritResist,
+            _ => PropertyInt.GearNetherResist,
+        };
+
+        public static string CoreName(int coreKey) => coreKey switch
+        {
+            CoreDamageResist => "Damage Resist",
+            CoreCritDamageResist => "Crit Damage Resist",
+            CoreCritResist => "Crit Resist",
+            _ => "Nether Resist",
+        };
+
+        public static bool IsCoreKey(int key) => key <= CoreDamageResist && key >= CoreNetherResist;
+
+        /// <summary>The Always Rolled line that replaced a core resist (50 DR, 51 CDR, 52 CR, 53 NR) -> its legacy core key; 0 for any other key.</summary>
+        private static int CoreKeyFor(int alwaysRolledKey) => alwaysRolledKey switch
+        {
+            50 => CoreDamageResist,
+            51 => CoreCritDamageResist,
+            52 => CoreCritResist,
+            53 => CoreNetherResist,
+            _ => 0,
+        };
+
         /// <summary>
-        /// Records written before 2026-09-14 carry the retired core four as c1..c4. <see cref="Read"/> maps
-        /// them onto the Always Rolled catalog lines that replaced them - c1 Damage Resist = 50, c2 Crit
-        /// Damage Resist = 51, c3 Crit Resist = 52, c4 Nether Resist = 53 - so an existing piece keeps its
-        /// grades and resolves against the new bands on its next equip / login.
+        /// The retired core_anchor_* knobs, still READ (never offered for editing): a tier Default that authored them keeps
+        /// its legacy pieces exactly where they were. Unset = the LADDER anchors, as before.
         /// </summary>
-        private const int LegacyCoreKeyBase = 49;
+        private const string LegacyCoreAnchorDr = "core_anchor_dr", LegacyCoreAnchorCdr = "core_anchor_cdr";
+
+        /// <summary>The LADDER core anchors - the worn-set totals a maxed T25 suit lands on (18 pieces).</summary>
+        public const double LadderAnchorDr = 1250.0, LadderAnchorCdr = 750.0;
+
+        /// <summary>
+        /// The core-four window at a tier, unchanged from before the Always Rolled lines (cap = anchor/18 x (1+(t-11)/14),
+        /// fixed T11 step = anchor/18/14, floor = cap - 1.5 step, T11 - 0.5 step, rounded at the end). Anchors: the tier
+        /// Default's authored core_anchor_dr / core_anchor_cdr, else the LADDER 1250 / 750. With zonecontrol_enabled OFF
+        /// nothing authored is consulted - the FLAT fallback anchors 92 / 73, nothing climbing with tier (owner 2026-08-23).
+        /// Used for legacy records, and as the off-switch fallback of the Always Rolled lines 50-53 (EffectiveBand).
+        /// </summary>
+        public static (int Min, int Max) CoreWindow(int coreKey, int tier)
+        {
+            var isDr = coreKey == CoreDamageResist;
+            var zcOn = ServerConfig.zonecontrol_enabled.Value;
+            var anchor = !zcOn
+                ? (isDr ? ZoneFallback.AnchorDr : ZoneFallback.AnchorCdr)
+                : DefaultLayerValue(tier, isDr ? LegacyCoreAnchorDr : LegacyCoreAnchorCdr) ?? (isDr ? LadderAnchorDr : LadderAnchorCdr);
+            var scale = zcOn ? 1.0 + (tier - 11) / 14.0 : 1.0;
+            var cap = anchor / 18.0 * scale;
+            var step = anchor / 18.0 / 14.0;
+            var lo = cap - (tier == 11 ? 0.5 : 1.5) * step;
+            var min = (int)Math.Round(lo);
+            var max = (int)Math.Round(cap);
+            if (min > max) min = max;
+            return (min, max);
+        }
 
         // ── weapon-special pseudo keys (2026-08-25, weapon/armour parity) ────────
         //
@@ -234,9 +303,14 @@ namespace ACE.Server.Managers.ZoneControl
             if (!ZoneModifiers.TryGet(key, out var def))
                 return (0, 0);
             // Zone Control off: the shrunk fallback band, and nothing authored is consulted (same rule
-            // as BaseArmorLevel). owner 2026-08-23.
+            // as BaseArmorLevel). owner 2026-08-23. The four Always Rolled resists keep the FLAT core fallback they
+            // had as the core four (CodeRabbit #533): the generic shrink scales their 35-69 band to ~6-12 per piece,
+            // a maxed set to ~216 Damage Resist instead of the ~92 the fallback is meant to land on.
             if (!ServerConfig.zonecontrol_enabled.Value)
-                return ZoneFallback.Band(def);
+            {
+                var core = CoreKeyFor(key);
+                return core != 0 ? CoreWindow(core, tier) : ZoneFallback.Band(def);
+            }
             var anchored = ZoneControlManager.GetAnchoredDefaultProfile(tier);
             if (anchored?.CustomModifierBands != null
                 && anchored.CustomModifierBands.TryGetValue(key, out var live)
@@ -521,7 +595,7 @@ namespace ACE.Server.Managers.ZoneControl
                     continue;
                 int key;
                 if (keyTok.Length == 2 && (keyTok[0] == 'c' || keyTok[0] == 'C') && keyTok[1] >= '1' && keyTok[1] <= '4')
-                    key = LegacyCoreKeyBase + (keyTok[1] - '0');   // retired core four -> Always Rolled 50-53
+                    key = -(keyTok[1] - '0');   // LEGACY core four: its own pseudo key, resolved through CoreWindow as before
                 else if (!int.TryParse(keyTok, NumberStyles.Integer, CultureInfo.InvariantCulture, out key))
                     continue;
                 list.Add(new LineRecord { Key = key, Grade = Math.Clamp(grade, 0, GradeMax) });
@@ -535,7 +609,8 @@ namespace ACE.Server.Managers.ZoneControl
             foreach (var l in lines)
             {
                 if (sb.Length > 0) sb.Append(';');
-                sb.Append(l.Key.ToString(CultureInfo.InvariantCulture));
+                if (IsCoreKey(l.Key)) sb.Append('c').Append(-l.Key);   // a legacy record written back keeps its legacy form
+                else sb.Append(l.Key.ToString(CultureInfo.InvariantCulture));
                 sb.Append(':').Append(Math.Clamp(l.Grade, 0, GradeMax).ToString(CultureInfo.InvariantCulture));
             }
             return sb.ToString();
@@ -672,9 +747,9 @@ namespace ACE.Server.Managers.ZoneControl
         public class ResolvedLine
         {
             public LineRecord Record;
-            public ZoneModifiers.Def Def;
+            public ZoneModifiers.Def Def;     // null for a legacy core key
             public int Min, Max, Value;
-            public string Name => Def?.Name ?? $"Modifier {Record.Key}";
+            public string Name => Def?.Name ?? (IsCoreKey(Record.Key) ? CoreName(Record.Key) : $"Modifier {Record.Key}");
             /// <summary>The appraisal text for this line, in the stamp format ("Damage Rating +41 [14-69]").</summary>
             public string Text
             {
@@ -714,7 +789,7 @@ namespace ACE.Server.Managers.ZoneControl
 
         /// <summary>
         /// PURE: grades -> resolved values against the live ladder. Never touches the item. Returns null when
-        /// the piece carries no record. Catalog keys resolve
+        /// the piece carries no record. Legacy core keys resolve through <see cref="CoreWindow"/>; catalog keys resolve
         /// through <see cref="EffectiveBand"/>; key 25 adds to the tier's base AL; every Ints prop of a def
         /// gets the value (All Attributes = six props, same number); Reinforced is skipped (frozen).
         /// </summary>
@@ -759,6 +834,15 @@ namespace ACE.Server.Managers.ZoneControl
                     // and weapon cards have never had appraisal lines - adding them here would silently
                     // change the examine panel of every Zone Control weapon on the shard, which is a
                     // GUI change and needs its own plan + go. Floats alone is the mechanical parity.
+                    continue;
+                }
+                if (IsCoreKey(rec.Key))
+                {
+                    // LEGACY core four (owner 2026-09-24): the window it was rolled on, exactly as before.
+                    var (cmin, cmax) = CoreWindow(rec.Key, tier);
+                    var cval = ValueFor(cmin, cmax, rec.Grade);
+                    r.Lines.Add(new ResolvedLine { Record = rec, Def = null, Min = cmin, Max = cmax, Value = cval });
+                    r.Ints[CoreProp(rec.Key)] = cval;
                     continue;
                 }
                 if (!ZoneModifiers.TryGet(rec.Key, out var def) || def.SetsProtection)

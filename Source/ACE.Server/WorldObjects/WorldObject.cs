@@ -746,8 +746,8 @@ namespace ACE.Server.WorldObjects
                         ps &= ~PhysicsState.NoDraw;
 
                         // Ghost is On for everyone else, but YOUR own client keeps drawing you (owner 2026-09-22):
-                        // send yourself the same stripped state the others get, so NoDraw never reaches you. The
-                        // half opacity is PropertyFloat.Translucency, set on your session alone in HandleCloak.
+                        // send yourself the same stripped state the others get, so NoDraw never reaches you. You draw at
+                        // full opacity (see Player.SendSelf / ApplyCloakSelfView).
                         var mine = player.CloakStatus == CloakStatus.Ghost ? ps : PhysicsObj.State;
 
                         player.Session.Network.EnqueueSend(new GameMessageSetState(this, mine));

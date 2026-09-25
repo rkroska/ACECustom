@@ -1897,6 +1897,22 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
+        /// This player's PENDING reservation as an opaque token, or null (none, or it is already committed). The token is the
+        /// reservation instance itself, compared by reference: every Reserve makes a new one, so a caller can tell "the
+        /// reservation this activation made" from an earlier one, even for the same room.
+        /// </summary>
+        public static object PendingReservationToken(Player player)
+        {
+            if (player == null || _roomSourceCount == 0)
+                return null;
+
+            var guid = player.Guid.Full;
+            lock (_lock)
+                return _reservedBy.TryGetValue(guid, out var key) && _reservations.TryGetValue(key, out var reservation)
+                    && reservation.Guid == guid && reservation.Pending ? reservation : null;
+        }
+
+        /// <summary>
         /// Drops a player's PENDING reservation (made by CheckPortalHasRoom with reserve) when the trip it was made for does
         /// not happen - a failed use requirement, a portal out of uses. A committed reservation is left alone.
         /// </summary>

@@ -865,10 +865,24 @@ namespace ACE.Server.WorldObjects
             var rotate = PhysicsObj.Position.Frame.Orientation;
             var variation = PhysicsObj.Position.Variation;
 
+            var target = new ACE.Entity.Position(blockcell, pos, rotate, variation);
+
+            // Vaulted Dungeons (review 2026-09-24, CodeRabbit #533): server-side physics movement reaches Location here, not
+            // through UpdatePosition, so the same chamber check guards it. A move into a chamber that is not theirs puts the
+            // physics body back where Location already is, forces that position on the player's own client, and commits
+            // nothing - the same wall the client-driven path meets.
+            if (!Teleporting && Location != null && blockcell != Location.Cell && RoomAssignManager.IsTrespass(this, target))
+            {
+                PhysicsObj.SetPositionSimple(new ACE.Server.Physics.Common.Position(Location), true);
+                Sequences.GetNextSequence(ACE.Server.Network.Sequence.SequenceType.ObjectForcePosition);
+                SendUpdatePosition();
+                return false;
+            }
+
             // CurrentLandblock can be null briefly during teleport/recall while physics has already updated
             var landblockUpdate = CurrentLandblock != null && (ushort)(blockcell >> 16) != CurrentLandblock.Id.Landblock;
 
-            Location = new ACE.Entity.Position(blockcell, pos, rotate, variation);
+            Location = target;
 
             return landblockUpdate;
         }

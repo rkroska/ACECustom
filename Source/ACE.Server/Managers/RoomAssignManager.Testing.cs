@@ -330,14 +330,14 @@ namespace ACE.Server.Managers
             var wcids = new List<uint>();
             using (var context = new WorldDbContext())
                 wcids = context.Weenie
-                    .Where(w => w.Type == (int)WeenieType.Door && w.ClassId >= 777700000 && w.ClassId <= 777799999)
+                    .Where(w => w.Type == (int)WeenieType.Door && w.ClassId >= BuilderCustomLow && w.ClassId <= BuilderCustomHigh)
                     .Select(w => w.ClassId)
                     .OrderBy(w => w)
                     .ToList();
 
             if (wcids.Count == 0)
             {
-                lines.Add("No door weenie found in 777700000-777799999.");
+                lines.Add($"No door weenie found in {BuilderCustomLow}-{BuilderCustomHigh}.");
                 return lines;
             }
 

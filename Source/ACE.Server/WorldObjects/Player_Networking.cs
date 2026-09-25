@@ -258,16 +258,16 @@ namespace ACE.Server.WorldObjects
 
             // Player objects don't get a placement
             Placement = null;
-            // A Ghost describes itself the way an admin with adminvision sees a cloaked player: changenodraw
-            // strips NoDraw and Cloaked from the serialized state so you DRAW, and adminvision forces the
-            // Translucency flag with 0.5f (WorldObject_Networking.cs, SerializePhysicsData). This is the only
-            // place the opacity can be set - it is baked into the physics description as the object is
-            // serialized, and no message can push it to an already-drawn object without also carrying the public
-            // game data that breaks the client's own player state (tried 2026-09-22). Nothing here changes what
-            // anyone ELSE receives: while cloaked, nobody else holds this object at all.
+            // A Ghost draws itself: changenodraw strips NoDraw and Cloaked from the serialized state so you DRAW.
+            // At FULL opacity, on purpose (review 2026-09-24, CodeRabbit #533): opacity is baked into the physics
+            // description here and nothing can change it on an already-drawn self without carrying the public game data
+            // that breaks the client's own player state (tried 2026-09-22). Half opacity at login therefore could not be
+            // matched when Ghost is turned on mid-session - and outlived a decloak until the next relog. Full opacity is
+            // the one state every path can keep. Nothing here changes what anyone ELSE receives: while cloaked, nobody
+            // else holds this object at all.
             var ghost = CloakStatus == CloakStatus.Ghost;
             Session.Network.EnqueueSend(new GameMessagePlayerCreate(Guid),
-                                        new GameMessageCreateObject(this, ghost, ghost));
+                                        new GameMessageCreateObject(this, adminvision: false, adminnodraw: ghost));
             try
             {
                 SendInventoryAndWieldedItems();

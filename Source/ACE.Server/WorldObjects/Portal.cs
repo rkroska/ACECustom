@@ -114,6 +114,34 @@ namespace ACE.Server.WorldObjects
         //    base.OnActivate(activator);
         //}
 
+        /// <summary>
+        /// A room portal reserves its room (pending) inside CheckUseRequirements, which base.OnActivate calls before its
+        /// cooldown, emotes and the ActOnUse that commits the trip. If that activation ends without committing - a portal
+        /// without the Use response, anything thrown on the way - the reservation it made would hold the room for its full
+        /// 10 s cap (review 2026-09-24, CodeRabbit #533). So a pending reservation that THIS activation created, and that is
+        /// still pending when it returns, is dropped. One the player already had before (a recall on its way) is left alone -
+        /// told apart by the reservation INSTANCE, not its room, so a new reservation for the same room still counts as new.
+        /// </summary>
+        public override void OnActivate(WorldObject activator)
+        {
+            var player = activator as Player;
+            var pendingBefore = player != null ? RoomAssignManager.PendingReservationToken(player) : null;
+
+            try
+            {
+                base.OnActivate(activator);
+            }
+            finally
+            {
+                if (player != null)
+                {
+                    var pendingAfter = RoomAssignManager.PendingReservationToken(player);
+                    if (pendingAfter != null && !ReferenceEquals(pendingAfter, pendingBefore))
+                        RoomAssignManager.CancelPendingReservation(player);
+                }
+            }
+        }
+
         public virtual void OnCollideObject(Player player)
         {
             // Don't fire portals that belong to a different variation than the player.

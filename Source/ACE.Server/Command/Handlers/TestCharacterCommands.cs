@@ -1557,7 +1557,7 @@ namespace ACE.Server.Command.Handlers
                 // and the gear Creature Augs gate base. Tier 10 keeps the legacy path below.
                 if (tier >= 11)
                 {
-                    ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(wo, tier);
+                    ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(wo, tier, alwaysRolledFollows: true);
                     StampPremadeAlwaysRolled(wo, tier, ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax);   // forge = Always Rolled resists at band max
                 }
 
@@ -1750,7 +1750,7 @@ namespace ACE.Server.Command.Handlers
                 wo.RemoveProperty(PropertyInt.EquipmentSetId);
 
                 // AL ladder, then the Always Rolled resists: bis = band max, avg = band midpoint
-                ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(wo, tier);
+                ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(wo, tier, alwaysRolledFollows: true);
                 StampPremadeAlwaysRolled(wo, tier, bis ? ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax
                                                        : ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax / 2);
 

@@ -290,7 +290,8 @@ namespace ACE.Server.Managers.ZoneControl
             // lines - own chance cell (authored at 100 pct), own band, graded like every line, but OUTSIDE
             // armor_modifier_min / _cap (ZoneLootMutator.TryExtraModifier). Bands keep the old T11 window tops
             // (69 / 42) with half of that as the floor, x TierScale. Records written before the change carry
-            // c1..c4 grades, which ZoneStatResolver.Read maps onto these keys.
+            // c1..c4 grades, which keep resolving on their old core window (ZoneStatResolver.CoreWindow) - an
+            // existing piece keeps its value; only new drops roll these keys.
             { 50, new Def { Key = 50, TierScaled = true, Class = ModifierClass.Always, Name = "Damage Resist", Effect = "+35-69 Damage Resist Rating", ValFmt = "+{0}", Min = 35, Max = 69, Ints = P((int)PropertyInt.GearDamageResist, 0) } },
             { 51, new Def { Key = 51, TierScaled = true, Class = ModifierClass.Always, Name = "Crit Damage Resist", Effect = "+21-42 Critical Damage Resist Rating", ValFmt = "+{0}", Min = 21, Max = 42, Ints = P((int)PropertyInt.GearCritDamageResist, 0) } },
             { 52, new Def { Key = 52, TierScaled = true, Class = ModifierClass.Always, Name = "Crit Resist", Effect = "+21-42 Critical Resist Rating", ValFmt = "+{0}", Min = 21, Max = 42, Ints = P((int)PropertyInt.GearCritResist, 0) } },

@@ -422,8 +422,10 @@ namespace ACE.Server.Factories
         /// AND shields; Clothing=4 is shirt/pants/cloak (never authored AL); Jewelry=8
         /// contributes no AL by engine rule (only WeenieType.Clothing is an armor layer).
         /// </summary>
+        /// <param name="alwaysRolledFollows">The caller stamps the Always Rolled resists itself right after this (the /testchar
+        /// forge), so the T10 resist rolls go even though no zone profile is passed.</param>
         public static void ApplyT11GearStats(WorldObject wo, int tier,
-            ACE.Server.Managers.ZoneScaling.EvaluatedProfile p = null)
+            ACE.Server.Managers.ZoneScaling.EvaluatedProfile p = null, bool alwaysRolledFollows = false)
         {
             if (wo == null || tier < ZoneLootSetMinTier)
                 return;
@@ -517,11 +519,17 @@ namespace ACE.Server.Factories
             wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearCritDamage);
             // 2026-09-14: the four resists are Always Rolled lines now (keys 50-53). Strip the T10 rolls
             // (TryMutateGearRatingT10 always writes Nether Resist plus one of each coin-flip pair) so a
-            // piece whose line chance is unset carries none, rather than a leaked 6-10.
-            wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearDamageResist);
-            wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearCritDamageResist);
-            wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearCritResist);
-            wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearNetherResist);
+            // piece whose line chance is unset carries none, rather than a leaked 6-10 - but ONLY when the lines
+            // that replace them can land: a zone profile is there to roll them (ZoneLootMutator), or the caller
+            // stamps them itself (review 2026-09-24, CodeRabbit #533). A T11+ drop with no matching profile gets
+            // no Always Rolled lines at all, so stripping its T10 rolls would leave it with no resists whatsoever.
+            if (p != null || alwaysRolledFollows)
+            {
+                wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearDamageResist);
+                wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearCritDamageResist);
+                wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearCritResist);
+                wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearNetherResist);
+            }
 
             // Gear Creature Augs used to get a fixed 30/20/12 x scale base here, written straight
             // into prop 50213 alongside its own "Creature Augmentation:" LongDesc line. DELETED

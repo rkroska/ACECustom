@@ -386,7 +386,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void ApplyCloakSelfView()
         {
-            Translucency = CloakStatus == CloakStatus.Ghost ? (float?)0.5f : null;
+            // No stored translucency for Ghost (review 2026-09-24, CodeRabbit #533). Opacity only reaches a client in an
+            // object description; the owner never gets one mid-session (see below), so a stored 0.5 only showed at the
+            // NEXT login - and then outlived the ghost, leaving the owner see-through to themselves until a relog after
+            // decloaking. Without it the owner always draws themselves at full opacity, consistently. Others never see a
+            // Ghost at all; admins with adminvision see it at half opacity from SerializePhysicsData, which reads
+            // CloakStatus, not this property.
+            Translucency = null;
 
             // *** DO NOT SEND GameMessageUpdateObject TO THE PLAYER ABOUT THEMSELF. *** Tried 2026-09-22 to push
             // translucency (which really does live in the physics description, WorldObject_Networking.cs:295/
