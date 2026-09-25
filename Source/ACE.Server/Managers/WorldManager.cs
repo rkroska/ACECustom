@@ -81,6 +81,7 @@ namespace ACE.Server.Managers
         internal static void Open(Player player)
         {
             WorldStatus = WorldStatusState.Open;
+            RoomAssignManager.OnWorldOpened();
             PlayerManager.BroadcastToAuditChannel(player, "World is now open");
         }
 
@@ -166,6 +167,10 @@ namespace ACE.Server.Managers
 
             Rifts.RiftManager.HandleLoginInRiftInstance(playerBiota);
 
+            // Room Assign (2026-09-16): logging in inside a one-player room keeps it only with a claim on it; otherwise the
+            // character goes to a free room or its lifestone - before the client ever loads the room.
+            var roomAssignLoginMessage = RoomAssignManager.HandleLogin(playerBiota, session.AccessLevel, session.AccountId);
+
             var stripAdminProperties = false;
             var addAdminProperties = false;
             var addSentinelProperties = false;
@@ -224,6 +229,11 @@ namespace ACE.Server.Managers
                 player.SafeSpellComponents = false;
                 player.ReportCollisions = true;
 
+                // A cloak (On or Ghost) saved on the character: walk-through, hidden and half-see-through go with it.
+                player.Ethereal = false;
+                player.NoDraw = false;
+                player.Visibility = false;
+                player.Translucency = null;
 
                 player.ChangesDetected = true;
                 player.CharacterChangesDetected = true;
@@ -345,6 +355,8 @@ namespace ACE.Server.Managers
 
             if (olthoiPlayerReturnedToLifestone)
                 session.Network.EnqueueSend(new GameMessageSystemChat("You have returned to the Olthoi Queen to serve the hive.", ChatMessageType.Broadcast));
+            else if (roomAssignLoginMessage != null)
+                session.Network.EnqueueSend(new GameMessageSystemChat(roomAssignLoginMessage, ChatMessageType.Broadcast));
             else if (playerLoggedInOnNoLogLandblock) // see http://acpedia.org/wiki/Mount_Elyrii_Hive
                 session.Network.EnqueueSend(new GameMessageSystemChat("The currents of portal space cannot return you from whence you came. Your previous location forbids login.", ChatMessageType.Broadcast));            
         }

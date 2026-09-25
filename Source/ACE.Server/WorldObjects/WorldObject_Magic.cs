@@ -1450,9 +1450,17 @@ namespace ACE.Server.WorldObjects
                         return;
                     }
 
+                    // Room Assign portal (2026-09-16): refuse the recall before its 2 s delay when every room is taken, and
+                    // RESERVE the room now (pending), so no one can take the last room during the delay. Before the use
+                    // requirements, which stamp the portal's quest - a full dungeon must not spend it.
+                    if (!RoomAssignManager.CheckPortalHasRoom(targetPlayer, portal.RoomSourceWcid, portal.Destination, throttle: false, reserve: true))
+                        return;
+
                     var result = portal.CheckUseRequirements(targetPlayer);
                     if (!result.Success)
                     {
+                        RoomAssignManager.CancelPendingReservation(targetPlayer);
+
                         if (result.Message != null)
                             targetPlayer.Session.Network.EnqueueSend(result.Message);
 
@@ -1465,9 +1473,27 @@ namespace ACE.Server.WorldObjects
                     portalRecall.AddAction(targetPlayer, ActionType.WorldObjectMagic_AdjustDungeonAndTeleportPlayer, () =>
                     {
                         var teleportDest = new Position(portal.Destination);
-                        AdjustDungeon(teleportDest);
+
+                        // Room Assign portal (2026-09-16): Portal Recall and Primary/Secondary Portal Recall land straight
+                        // in a room too - the one reserved at cast, confirmed here - or are REFUSED: no teleport, the player
+                        // stays where they cast it.
+                        var assign = RoomAssignManager.AssignPortalRoom(targetPlayer, portal.RoomSourceWcid, teleportDest, out var roomDest, out var arrivalLine);
+                        if (assign == RoomAssignManager.PortalAssign.Refused)
+                        {
+                            // The pre-teleport hide already played: show them again where they stand.
+                            targetPlayer.PlayParticleEffect(PlayScript.UnHide, targetPlayer.Guid);
+                            return;
+                        }
+
+                        if (assign == RoomAssignManager.PortalAssign.Assigned)
+                            teleportDest = roomDest;   // already corrected by AdjustDungeon
+                        else
+                            AdjustDungeon(teleportDest);
 
                         targetPlayer.Teleport(teleportDest);
+
+                        if (arrivalLine != null)
+                            targetPlayer.Session?.Network.EnqueueSend(new GameMessageSystemChat(arrivalLine, ChatMessageType.Broadcast));
                     });
                     portalRecall.EnqueueChain();
                 }

@@ -27,7 +27,7 @@ namespace ACE.Server.Command.Handlers
     /// stat set for all its monsters, and optional per-monster (WCID) overrides. No prestige/tier/boss concepts.
     /// Disable reverts monsters to baseline (live stats instantly, HP on respawn).
     /// </summary>
-    public static class ZoneControlCommands
+    public static partial class ZoneControlCommands   // /zonecontrol dungeon lives in ZoneControlCommands.Dungeon.cs
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -140,7 +140,7 @@ namespace ACE.Server.Command.Handlers
             + "appearance <name> <palette|shade|scale|translucency|shiny|setup|clothing|palettebase|motion|sound|icon> <value> [--wcid <id>] | clearappearance <name> [field] [--wcid <id>] | copylook <name> <donorWcid> [--wcid <id>] | draftslot <name> [release] | copydraft <name> <destWcid> | becomemob <donorWcid> --wcid <id> | seticon <wcid> <iconDid|clear> [layer] | "
             + "modifier <name> <add|remove|list|catalog|band|slots|special|chance> [args] [--wcid <id>] | "
             + "currency <name> <add|remove|list> [itemWcid] [amount] [chance] [direct|corpse] [--wcid <id>] | "
-            + "boundary <name> <on|off|show> | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
+            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | killreward <name> <show|on|off|add|set|remove> | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
             + "mobinfo <wcid> | geninfo <wcid> | genlist [zone] | genedit <wcid> delay|radius|stagger|init|max <value> | "
             + "craft <material> <itemtype> auto|allow|deny | craft list|get|test|enabled|mintier|components | "
             + "effect <name> [dot on|off | dmg <amount> | type <name|percent> | interval <secs>] | reload")]
@@ -189,6 +189,8 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /zonecontrol default <var> weaponcard <chance_stat> <on|off|clear> | list   (the same switch on the tier Default; a zone can override it either way)");
                 Msg("  /zonecontrol currency <name> add <itemWcid> <amount> [chance 0..1] [direct|corpse] | remove <itemWcid> | list   [--wcid <id>]   (per-kill bonus-currency drop table; direct = into the killer's inventory)");
                 Msg("  /zonecontrol boundary <name> <on|off|show>   (bounded: players at the zone's variation may only roam bounded-zone landblocks; variation 11+ only)");
+                Msg("  /zonecontrol zoneshare <name> <on|off|show>   (Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship; only while the zone is enabled)");
+                Msg("  /zonecontrol killreward <name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>   (Kill Reward: items every N kills per player, at most once per cooldown; v11+ only)");
                 Msg("  /zonecontrol survey <name> [lbHex]   (per-landblock content: generator + creature summary; lbHex = full detail for one landblock)");
                 Msg("  /zonecontrol quests <name>   (quest registry for the plugin Quests tab; throttled to one pull per 60s)");
                 Msg("  /zonecontrol terrain <name> <hex> <type|clear>   (override the map terrain color for one landblock; type = " + string.Join("/", ZoneControlManager.TerrainTags) + "; display-only)");
@@ -203,6 +205,7 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /zonecontrol craft enabled true|false | craft mintier <tier>   (master switch; the tier the gate starts applying at, default 11)");
                 Msg("  /zonecontrol craft components [true|false | add <wcid> | remove <wcid> | reset]   (layer 0: salvage barred from T"
                     + ZoneCraftGateStore.MinTier + "+ items outright, e.g. the Fine Bandit Blade Hilt)");
+                Msg("  /zonecontrol dungeon   (the one-player room dungeon builder - bare verb lists its commands; writes only to variation 3 and up)");
                 Msg("  parts = " + string.Join(", ", Enum.GetNames(typeof(CombatBodyPart)).Where(n => n != "Undefined")));
                 Msg("  stats = " + string.Join(", ", ZoneStat.All));
                 return;
@@ -228,7 +231,7 @@ namespace ACE.Server.Command.Handlers
             // instead (the zone doesn't exist yet); sync's name sits at args[2].
             if (sub == "sync")
                 CollapseZoneNameTokens(args, 2);
-            else if (sub != "create" && sub != "default" && sub != "ladder" && sub != "craft")
+            else if (sub != "create" && sub != "default" && sub != "ladder" && sub != "craft" && sub != "dungeon")
                 // 'default' takes a VARIATION at args[1], not a zone name â€” collapsing would mangle it.
                 // 'ladder' takes a verb / tier / player name, never a zone.
                 // 'craft' takes a MATERIAL NAME at args[1] (possibly two words, "Black Opal") â€” never a zone.
@@ -269,7 +272,9 @@ namespace ACE.Server.Command.Handlers
 
                     case "arealist":
                     {
-                        // Machine-parseable zone list for the plugin dropdown: name,enabled,variation,lbCount
+                        // Machine-parseable zone list for the plugin dropdown: name,enabled,variation,lbCount,bounded,zoneshare,zsharen
+                        // (zoneshare + zsharen appended 2026-09-23: the Zone Share switch and how many players share there now -
+                        // 0 unless it is active, i.e. on AND the zone enabled)
                         var sb = new StringBuilder("[[ZCA]]");
                         bool first = true;
                         foreach (var z in ZoneControlManager.ListAreas().OrderBy(z => z.Name))
@@ -278,9 +283,19 @@ namespace ACE.Server.Command.Handlers
                             first = false;
                             sb.Append(z.Name).Append(',').Append(z.Enabled ? 1 : 0).Append(',')
                               .Append(z.Variation).Append(',').Append(z.Landblocks.Count).Append(',')
-                              .Append(z.Bounded ? 1 : 0);
+                              .Append(z.Bounded ? 1 : 0).Append(',')
+                              .Append(z.ZoneShare ? 1 : 0).Append(',')
+                              .Append(z.ZoneShare && z.Enabled ? ZoneShareManager.CountInZone(z.Name) : 0);
+
+                            // Kill Reward (appended 2026-09-23): on, then every reward as "id:wcid:amount:kills:minutes:name"
+                            // joined by '+' (KillRewardManager.Wire - names carry none of the separators)
+                            var kr = z.KillReward ?? new KillRewardConfig();
+                            sb.Append(',').Append(kr.Enabled ? 1 : 0)
+                              .Append(',').Append(KillRewardManager.Wire(kr));
                         }
-                        Msg(sb.ToString());
+                        // Chunked (review 2026-09-24): with every zone's rewards on it the line can pass the chat-line size
+                        // that stalls the client; the plugin reassembles [[ZC+]] pieces into the one [[ZCA]] line.
+                        SendChunked(session, sb.ToString());
                         return;
                     }
 
@@ -2287,6 +2302,83 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
+                    case "killreward":
+                    {
+                        // Kill Reward (owner 2026-09-23): items every N kills per player, at most once per cooldown - several per zone.
+                        if (args.Count < 3) { Msg("Usage: killreward <name> show | " + KillRewardManager.EditUsage); return; }
+                        var name = args[1];
+                        var area = ZoneControlManager.GetArea(name);
+                        if (area == null) { Msg($"No zone '{name}' (create it first)."); return; }
+                        var op = args[2].ToLowerInvariant();
+                        var edited = (area.KillReward ?? new KillRewardConfig()).Clone();
+
+                        // Never on retail (review 2026-09-24): below v11 the kill hook ignores the zone anyway, so turning one
+                        // on or adding a reward there would only look like it worked. Off and remove stay allowed, to clean up.
+                        if (op != "show" && session.AccessLevel < AccessLevel.Admin)
+                        {
+                            Msg("Changing a Kill Reward needs Admin access (the same as a dungeon's).");
+                            return;
+                        }
+
+                        if ((op == "on" || op == "add" || op == "set") && area.Variation < VariationManager.EndgameMinVariation)
+                        {
+                            Msg($"Kill Reward needs variation 11+ - '{name}' is on v{area.Variation}, a retail layer. Nothing changed.");
+                            return;
+                        }
+
+                        if (op != "show")
+                        {
+                            // One locked read-change-write on the zone's current settings: last save to a reward wins.
+                            edited = ZoneControlManager.EditKillReward(name, c => KillRewardManager.Edit(c, op, args, 3), out var err);
+                            if (err != null) { Msg($"'{name}': {err}"); return; }
+                        }
+
+                        Msg($"'{name}' Kill Reward {KillRewardManager.Describe(edited)}"
+                            + (edited.Enabled && !area.Enabled ? " - inactive while the zone is disabled." : "."));
+                        return;
+                    }
+
+                    case "zoneshare":
+                    {
+                        // Zone Share (owner 2026-09-23): everyone in the zone shares kill XP, luminance and kill tasks as one
+                        // fellowship. v11+ only (review 2026-09-24): sharing retail kill XP would change retail - never.
+                        if (args.Count < 3) { Msg("Usage: zoneshare <name> <on|off|show>"); return; }
+                        var name = args[1];
+                        var area = ZoneControlManager.GetArea(name);
+                        if (area == null) { Msg($"No zone '{name}' (create it first)."); return; }
+                        var op = args[2].ToLowerInvariant();
+
+                        if (op == "show")
+                        {
+                            Msg($"'{name}' v{area.Variation}: Zone Share {(area.ZoneShare ? "ON" : "off")}"
+                                + (area.ZoneShare && !area.Enabled ? " - inactive while the zone is disabled." : ".")
+                                + (area.ZoneShare && area.Enabled ? $" {ZoneShareManager.CountInZone(area.Name)} player(s) sharing now." : ""));
+                            return;
+                        }
+
+                        if (op != "on" && op != "off") { Msg("op must be on | off | show"); return; }
+                        var zoneShare = op == "on";
+
+                        if (session.AccessLevel < AccessLevel.Admin)
+                        {
+                            Msg("Changing Zone Share needs Admin access (the same as a dungeon's).");
+                            return;
+                        }
+
+                        if (zoneShare && area.Variation < VariationManager.EndgameMinVariation)
+                        {
+                            Msg($"Zone Share needs variation 11+ - '{name}' is on v{area.Variation}, a retail layer. Nothing changed.");
+                            return;
+                        }
+
+                        ZoneControlManager.SetZoneShare(name, zoneShare);
+                        Msg(zoneShare
+                            ? $"'{name}' Zone Share ON: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship"
+                              + (area.Enabled ? "." : " - once the zone is enabled.")
+                            : $"'{name}' Zone Share off: normal fellowship rules.");
+                        return;
+                    }
+
                     case "survey":
                     {
                         if (args.Count < 2) { Msg("Usage: survey <name> [lbHex]"); return; }
@@ -2446,6 +2538,8 @@ namespace ACE.Server.Command.Handlers
                                 // T11-strength monsters wearing a higher-tier label, silently.
                                 Enabled = false,
                                 Bounded = czSrc.Bounded,
+                                ZoneShare = czSrc.ZoneShare,
+                                KillReward = czSrc.KillReward?.Clone() ?? new KillRewardConfig(),
                                 Notes = $"cloned from '{czSrc.Name}' (v{czSrc.Variation})",
                                 Landblocks = new HashSet<ushort>(czSrc.Landblocks),
                                 TerrainOverrides = new Dictionary<ushort, string>(czSrc.TerrainOverrides ?? new Dictionary<ushort, string>()),
@@ -2672,8 +2766,6 @@ namespace ACE.Server.Command.Handlers
                             Msg($"Default v{dvar}{RankTag(rank)} {dstat} = {FmtStatEcho(dval)}. " + (rank == ZcRank.None
                                 ? $"Every zone at v{dvar} that doesn't set it inherits this."
                                 : $"Every {ZoneRank.Label(rank)} at v{dvar} reads this instead of the Default row."));
-                            if (dstat == ZoneStat.CoreAnchorDr || dstat == ZoneStat.CoreAnchorCdr)
-                                AutoApplyForDefault(session, true, dvar, Msg);
                             return;
                         }
 
@@ -2694,8 +2786,6 @@ namespace ACE.Server.Command.Handlers
                                 if (row != null) dremoved = row.Stats.Remove(dstat);
                             });
                             Msg(dremoved ? $"Default v{dvar}{RankTag(rank)} {dstat} cleared." : $"That stat wasn't set on the Default{RankTag(rank)}.");
-                            if (dremoved && (dstat == ZoneStat.CoreAnchorDr || dstat == ZoneStat.CoreAnchorCdr))
-                                AutoApplyForDefault(session, true, dvar, Msg);
                             return;
                         }
 
@@ -2828,6 +2918,12 @@ namespace ACE.Server.Command.Handlers
                         HandleCraft(session, args, Msg);
                         return;
                     }
+
+                    case "dungeon":
+                        // The dungeon builder + Room Assign test tools (ZoneControlCommands.Dungeon.cs). Its args are a
+                        // verb, a room number, a cell - never a zone name, so they are not collapsed above.
+                        HandleDungeon(session, args);
+                        return;
 
                     default:
                         Msg($"Unknown subcommand '{sub}'. See /zonecontrol help.");
@@ -2981,7 +3077,7 @@ namespace ACE.Server.Command.Handlers
 
             try
             {
-                ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(armor, 11, forceMax: false, p: p);
+                ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(armor, 11, p: p);
                 if (p != null) ZoneLootMutator.MutateLootItem(armor, p, null, 11);
                 // guarantee at least one graded line on the piece regardless of the zone's roll
                 if (ZoneModifiers.TryGet(28, out var dr))
@@ -4562,15 +4658,18 @@ namespace ACE.Server.Command.Handlers
                     detail.Add($"{def.Name} {v.Value} in [{band.Min}-{band.Max}] -> {grade}");
                 }
 
-                // core four from the stamped Gear* props against the tier's window
-                foreach (var coreKey in ZoneStatResolver.CoreKeys)
+                // Always Rolled resists (keys 50-53, the retired core four) carry no "Zone Cantrip:" line on a
+                // pre-grade piece - grade them from the stamped Gear* props against the tier's live band
+                foreach (var adef in ZoneModifiers.AllDefs)
                 {
-                    var pv = wo.GetProperty(ZoneStatResolver.CoreProp(coreKey));
+                    if (adef.Class != ZoneModifiers.ModifierClass.Always || adef.Ints == null || adef.Ints.Length == 0) continue;
+                    if (records.Exists(r => r.Key == adef.Key)) continue;
+                    var pv = wo.GetProperty((PropertyInt)adef.Ints[0].PropId);
                     if (!pv.HasValue) continue;
-                    var (cmin, cmax) = ZoneStatResolver.CoreWindow(coreKey, tier);
+                    var (cmin, cmax) = ZoneStatResolver.EffectiveBand(adef.Key, tier);
                     var grade = ZoneStatResolver.GradeFor(cmin, cmax, pv.Value);
-                    Put(coreKey, grade);
-                    detail.Add($"{ZoneStatResolver.CoreName(coreKey)} {pv.Value} in [{cmin}-{cmax}] -> {grade}");
+                    Put(adef.Key, grade);
+                    detail.Add($"{adef.Name} {pv.Value} in [{cmin}-{cmax}] -> {grade}");
                 }
 
                 // key 25 Armor Level: only an Armor piece above the tier base, and only when the line exists

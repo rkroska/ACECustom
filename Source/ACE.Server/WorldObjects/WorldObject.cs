@@ -739,12 +739,18 @@ namespace ACE.Server.WorldObjects
                     EnqueueBroadcast(new GameMessageSetState(this, PhysicsObj.State));
                 else
                 {
-                    if (this is Player player && player.CloakStatus == CloakStatus.On)
+                    if (this is Player player && (player.CloakStatus == CloakStatus.On || player.CloakStatus == CloakStatus.Ghost))
                     {
                         var ps = PhysicsObj.State;
                         ps &= ~PhysicsState.Cloaked;
                         ps &= ~PhysicsState.NoDraw;
-                        player.Session.Network.EnqueueSend(new GameMessageSetState(this, PhysicsObj.State));
+
+                        // Ghost is On for everyone else, but YOUR own client keeps drawing you (owner 2026-09-22):
+                        // send yourself the same stripped state the others get, so NoDraw never reaches you. You draw at
+                        // full opacity (see Player.SendSelf / ApplyCloakSelfView).
+                        var mine = player.CloakStatus == CloakStatus.Ghost ? ps : PhysicsObj.State;
+
+                        player.Session.Network.EnqueueSend(new GameMessageSetState(this, mine));
                         EnqueueBroadcast(false, new GameMessageSetState(this, ps));
                     }
                     else

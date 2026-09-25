@@ -65,6 +65,11 @@ namespace ACE.Server.WorldObjects
                 UpdatePortalDestination(relativeDestination);
             }
 
+            // Room Assign: a SPAWNED room portal (generator, summon, /createinst) makes its rooms known in its destination's
+            // variation. Database placements never run EnterWorld - RoomAssignManager reads those at startup.
+            if (Destination != null)
+                RoomAssignManager.OnSourceEnteredWorld(RoomSourceWcid, Destination.Variation);
+
             return true;
         }
 
@@ -88,10 +93,18 @@ namespace ACE.Server.WorldObjects
         public override void SetLinkProperties(WorldObject wo)
         {
             if (wo.IsLinkSpot)
+            {
                 SetPosition(PositionType.Destination, new Position(wo.Location));
+
+                // Room Assign: a link-spot room portal's rooms exist in the link's variation.
+                RoomAssignManager.OnSourceEnteredWorld(RoomSourceWcid, wo.Location?.Variation);
+            }
         }
 
         public bool IsGateway { get => WeenieClassId == 1955; }
+
+        /// <summary>The WCID Room Assign looks a room list up by: a summoned gateway asks about the portal it was made from.</summary>
+        public uint RoomSourceWcid => OriginalPortal ?? WeenieClassId;
 
         //public override void OnActivate(WorldObject activator)
         //{
@@ -100,6 +113,34 @@ namespace ACE.Server.WorldObjects
 
         //    base.OnActivate(activator);
         //}
+
+        /// <summary>
+        /// A room portal reserves its room (pending) inside CheckUseRequirements, which base.OnActivate calls before its
+        /// cooldown, emotes and the ActOnUse that commits the trip. If that activation ends without committing - a portal
+        /// without the Use response, anything thrown on the way - the reservation it made would hold the room for its full
+        /// 10 s cap (review 2026-09-24, CodeRabbit #533). So a pending reservation that THIS activation created, and that is
+        /// still pending when it returns, is dropped. One the player already had before (a recall on its way) is left alone -
+        /// told apart by the reservation INSTANCE, not its room, so a new reservation for the same room still counts as new.
+        /// </summary>
+        public override void OnActivate(WorldObject activator)
+        {
+            var player = activator as Player;
+            var pendingBefore = player != null ? RoomAssignManager.PendingReservationToken(player) : null;
+
+            try
+            {
+                base.OnActivate(activator);
+            }
+            finally
+            {
+                if (player != null)
+                {
+                    var pendingAfter = RoomAssignManager.PendingReservationToken(player);
+                    if (pendingAfter != null && !ReferenceEquals(pendingAfter, pendingBefore))
+                        RoomAssignManager.CancelPendingReservation(player);
+                }
+            }
+        }
 
         public virtual void OnCollideObject(Player player)
         {
@@ -266,6 +307,16 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            // Room Assign portal (2026-09-16): refuse when every room is taken - before the quest stamp here, and before
+            // OnActivate's cooldown and emotes, which run after this check. The room is RESERVED here (pending), so it cannot
+            // be taken between this check and ActOnUse after the stamp and cooldown are spent. Only for a PLACED portal (use,
+            // walk-in, summoned gateway): Portal Tie, Summon and recall call this on an unplaced copy with no landblock, and a
+            // full dungeon must not stop a tie or summon. Recall does its own check before its delay.
+            // A portal with no uses left says so below instead ("The portal's energy has faded").
+            if (CurrentLandblock != null && !(PortalUseCount.HasValue && PortalUseCount.Value <= 0)
+                && !RoomAssignManager.CheckPortalHasRoom(player, RoomSourceWcid, Destination, throttle: true, reserve: true))
+                return new ActivationResult(false);
+
             if (Quest != null)
             {
                 EmoteManager.OnQuest(player);
@@ -348,6 +399,8 @@ namespace ACE.Server.WorldObjects
             var player = activator as Player;
             if (player == null) return;
 
+            var usedCount = false;
+
             lock (this)
             {
                 var useCount = PortalUseCount;
@@ -355,16 +408,34 @@ namespace ACE.Server.WorldObjects
                 {
                     if (useCount.Value <= 0)
                     {
+                        RoomAssignManager.CancelPendingReservation(player);
                         player.Session.Network.EnqueueSend(new GameMessageSystemChat("The portal's energy has faded.", ChatMessageType.System));
                         return;
                     }
 
                     PortalUseCount = useCount.Value - 1;
+                    usedCount = true;
                 }
             }
 
             var portalDest = new Position(Destination);
-            AdjustDungeon(portalDest);
+
+            // Room Assign portal (2026-09-16): straight into a room (their own first), reserved, or REFUSED - the player
+            // stays where they are and the use is given back. A summoned gateway resolves to its original portal. The room
+            // landing is already corrected by AdjustDungeon.
+            var assign = RoomAssignManager.AssignPortalRoom(player, RoomSourceWcid, portalDest, out var roomDest, out var arrivalLine);
+            if (assign == RoomAssignManager.PortalAssign.Refused)
+            {
+                if (usedCount)
+                    lock (this)
+                        PortalUseCount = (PortalUseCount ?? 0) + 1;
+                return;
+            }
+
+            if (assign == RoomAssignManager.PortalAssign.Assigned)
+                portalDest = roomDest;
+            else
+                AdjustDungeon(portalDest);
 
             // Do NOT pre-set player.Location.Variation to the destination here. Teleport() decides
             // variation-change handling (ghost-object sweep + landblock instance relocation) by
@@ -384,6 +455,9 @@ namespace ACE.Server.WorldObjects
                 EmoteManager.OnPortal(player);
 
                 player.SendWeenieError(WeenieError.ITeleported);
+
+                if (arrivalLine != null)
+                    player.Session?.Network.EnqueueSend(new GameMessageSystemChat(arrivalLine, ChatMessageType.Broadcast));
 
             }), true);
         }

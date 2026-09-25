@@ -2107,6 +2107,27 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Per-weenie cooldown in seconds between activations of a PressurePlate. The gate is per OBJECT,
+        /// not per player, so a shared plate catches only the first person through in each window.
+        /// Unset falls back to PressurePlate.DefaultPressurePlateCooldown (2 s, retail behaviour);
+        /// an explicit 0 disables the gate entirely. Note that 0 only has the intended effect if every
+        /// action in the plate's Activation emote set is also at delay 0 - see PressurePlate.OnActivate.
+        /// </summary>
+        public double? PressurePlateCooldown
+        {
+            get => GetProperty(PropertyFloat.PressurePlateCooldown);
+            set
+            {
+                // Deliberately keeps 0: unlike most of these, zero is a meaningful value here. A negative is
+                // stored as 0, not removed - removing it would silently restore the 2 s retail gate.
+                if (!value.HasValue || double.IsNaN(value.Value) || double.IsInfinity(value.Value))
+                    RemoveProperty(PropertyFloat.PressurePlateCooldown);
+                else
+                    SetProperty(PropertyFloat.PressurePlateCooldown, Math.Max(0, value.Value));
+            }
+        }
+
+        /// <summary>
         /// Optional suppression radius for this source. For creatures, unset or non-positive falls back to VisualAwarenessRange.
         /// </summary>
         public double? SpellSuppressionRadius
@@ -2619,6 +2640,14 @@ namespace ACE.Server.WorldObjects
             get => (CloakStatus)(GetProperty(PropertyInt.CloakStatus) ?? 0);
             set { if (value == 0) RemoveProperty(PropertyInt.CloakStatus); else SetProperty(PropertyInt.CloakStatus, (int)value); }
         }
+
+        /// <summary>
+        /// True when the cloak makes you LOOK like something else - Player, Creature or Hybrid - which is what hides
+        /// the admin "+" and the admin object flag. Off, On and Ghost are not disguises. Ghost has to be asked for by
+        /// name because it was appended to the enum, so a plain "CloakStatus &lt; CloakStatus.Player" puts it on the
+        /// wrong side (owner 2026-09-22).
+        /// </summary>
+        public bool CloakIsDisguise => CloakStatus >= CloakStatus.Player && CloakStatus != CloakStatus.Ghost;
 
         public bool IgnorePortalRestrictions
         {

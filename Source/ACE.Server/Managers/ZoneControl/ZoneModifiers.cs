@@ -219,7 +219,7 @@ namespace ACE.Server.Managers.ZoneControl
             public int Min25, Max25;                       // optional explicit T25 anchor: band lerps linearly T11 (Min/Max) -> T25 (Min25/Max25); 0 = unused
             public bool SetsProtection;                    // key 49 Reinforced - the rolled value is a RANK that SETS every ArmorModVs* on the piece
             public (int PropId, int Value)[] Ints;         // int props stamped on the item; PropId also = banded stamp target
-            public ModifierClass Class;                     // Armor v2 pick weight class (Trash/Mid/Chase); None = never in the line pool
+            public ModifierClass Class;                     // Armor v2 pick weight class (Trash/Mid/Chase/Always); None = never in the line pool
             public bool SlotSpecial;                       // Armor v2 slot special: rolls once per KILL outside the line count, MAX-wins when worn
             public CoverageMask SpecialSlot;               // the armor slot a SlotSpecial stamps onto (Head/OuterwearChest/Hands/Feet/OuterwearLowerArms)
         }
@@ -232,6 +232,7 @@ namespace ACE.Server.Managers.ZoneControl
             Trash,      // 32 Spell Duration, 25 Armor Level
             Mid,        // 28 Damage Rating, 29 Crit Damage Rating, 19 Max Health, 31 Healing Boost, 49 Reinforced
             Chase,      // 33 Crit Chance, 43 All Attributes, 47 Pct Max Health, 48 Life on Hit
+            Always,     // 50 Damage Resist, 51 Crit Damage Resist, 52 Crit Resist, 53 Nether Resist - own chance, outside the modifier min / cap
         }
 
         private static (int, int)[] P(int propId, int v) => new[] { (propId, v) };
@@ -285,6 +286,16 @@ namespace ACE.Server.Managers.ZoneControl
             { 43, new Def { Key = 43, TierScaled = true, Class = ModifierClass.Mid, Name = "All Attributes", Effect = "+14-69 to ALL six attributes", ValFmt = "+{0}", Min = 14, Max = 69,
                 Ints = new[] { (AttrBonusBase + (int)PropertyAttribute.Strength, 0), (AttrBonusBase + (int)PropertyAttribute.Endurance, 0), (AttrBonusBase + (int)PropertyAttribute.Coordination, 0),
                                (AttrBonusBase + (int)PropertyAttribute.Quickness, 0), (AttrBonusBase + (int)PropertyAttribute.Focus, 0), (AttrBonusBase + (int)PropertyAttribute.Self, 0) } } },
+            // ALWAYS ROLLED (owner 2026-09-14): the four resists that were the guaranteed "core four", now ordinary
+            // lines - own chance cell (authored at 100 pct), own band, graded like every line, but OUTSIDE
+            // armor_modifier_min / _cap (ZoneLootMutator.TryExtraModifier). Bands keep the old T11 window tops
+            // (69 / 42) with half of that as the floor, x TierScale. Records written before the change carry
+            // c1..c4 grades, which keep resolving on their old core window (ZoneStatResolver.CoreWindow) - an
+            // existing piece keeps its value; only new drops roll these keys.
+            { 50, new Def { Key = 50, TierScaled = true, Class = ModifierClass.Always, Name = "Damage Resist", Effect = "+35-69 Damage Resist Rating", ValFmt = "+{0}", Min = 35, Max = 69, Ints = P((int)PropertyInt.GearDamageResist, 0) } },
+            { 51, new Def { Key = 51, TierScaled = true, Class = ModifierClass.Always, Name = "Crit Damage Resist", Effect = "+21-42 Critical Damage Resist Rating", ValFmt = "+{0}", Min = 21, Max = 42, Ints = P((int)PropertyInt.GearCritDamageResist, 0) } },
+            { 52, new Def { Key = 52, TierScaled = true, Class = ModifierClass.Always, Name = "Crit Resist", Effect = "+21-42 Critical Resist Rating", ValFmt = "+{0}", Min = 21, Max = 42, Ints = P((int)PropertyInt.GearCritResist, 0) } },
+            { 53, new Def { Key = 53, TierScaled = true, Class = ModifierClass.Always, Name = "Nether Resist", Effect = "+21-42 Nether Resist Rating", ValFmt = "+{0}", Min = 21, Max = 42, Ints = P((int)PropertyInt.GearNetherResist, 0) } },
         };
 
         public static bool TryGet(int key, out Def def) => Catalog.TryGetValue(key, out def);
@@ -298,7 +309,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// its pair added there too, or the wire will not carry it.</summary>
         public static string LineChanceStat(int key) => "modifier_chance_" + key;
 
-        /// <summary>Tier scale of the anchored linear ladder: 1.0 at T11, 2.0 at T25 (same f as the core anchors).</summary>
+        /// <summary>Tier scale of the anchored linear ladder: 1.0 at T11, 2.0 at T25.</summary>
         public static double TierScale(int tier) => 1.0 + (Math.Clamp(tier, 11, 25) - 11) / 14.0;
 
         // LinesFallback REMOVED 2026-08-29 with the line-count ladder (one-row-per-Modifier design):

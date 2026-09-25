@@ -359,5 +359,12 @@ namespace ACE.Entity.Enum.Properties
         /// templates are 0.5). Unset = the template's value.
         /// </summary>
         PetTranslucency = 9062,
+
+        /// <summary>Per-weenie cooldown, in seconds, between activations of a PressurePlate. The plate ignores any
+        /// activation within this window of its OWN last use - per OBJECT, not per player - so in a crowd only the
+        /// first player through is caught. UNSET falls back to the 2 s retail default, leaving every existing plate
+        /// unchanged; an explicit 0 means no gate at all. Lower it on custom plates that need to catch a group.
+        /// Owner range 50000+ (moved off 9056 - that is ZoneLootMutator Rend Power, and upstream now uses it too).</summary>
+        PressurePlateCooldown = 50502,
     }
 }

@@ -86,6 +86,10 @@ namespace ACE.Server.WorldObjects
             if (!IsOnNoDeathXPLandblock)
                 OnDeath_GrantXP();
 
+            // Kill Reward (owner 2026-09-23): an item every N kills in a zone or dungeon that has one - credited to the top
+            // damager, the player the corpse and its loot belong to.
+            KillRewardManager.OnCreatureKilled(this);
+
             return GetDeathMessage(lastDamager, damageType, criticalHit);
         }
 
@@ -486,16 +490,25 @@ namespace ACE.Server.WorldObjects
                     TryHandleKillTask(playerDamager, killQuest, killTaskCredits, cap);
                 }
                 // check option that requires killer to have killtask to pass to fellows
-                else if (!ServerConfig.fellow_kt_killer.Value)   
+                else if (!ServerConfig.fellow_kt_killer.Value)
                 {
                     continue;
                 }
 
-                if (playerDamager.Fellowship == null)
-                    continue;
+                // Zone Share (owner 2026-09-23): inside a Zone Share area the kill task goes to everyone standing in it, as one
+                // fellowship, in place of the damager's own fellows in range. The credit caps above still hold per player.
+                IEnumerable<Player> fellows;
+                var zoneMembers = ZoneShareManager.MembersFor(playerDamager);
+                if (zoneMembers != null)
+                    fellows = zoneMembers.Select(m => m.Member).Where(m => m != playerDamager);
+                else
+                {
+                    if (playerDamager.Fellowship == null)
+                        continue;
 
-                // share with fellows in kill task range
-                var fellows = playerDamager.Fellowship.WithinRange(playerDamager);
+                    // share with fellows in kill task range
+                    fellows = playerDamager.Fellowship.WithinRange(playerDamager);
+                }
 
                 foreach (var fellow in fellows)
                 {
@@ -1109,7 +1122,7 @@ namespace ACE.Server.WorldObjects
                 // (1 in special_odds; IsZcBoss divides by special_boss_mult, IsZcLeader by
                 // special_leader_mult). On a hit pick one launch special at random and stamp the
                 // dropped piece of its slot (spawn one if the set has none). That piece becomes a
-                // PERFECT piece: core four + every line at band MAX (forceMax below). The flag is a
+                // PERFECT piece: every line it rolls at band MAX (forceMax below). The flag is a
                 // LOCAL, never a prop - a 50200+ marker would be summed into the worn cache.
                 WorldObject specialPiece = null;
                 ACE.Server.Managers.ZoneControl.ZoneModifiers.Def specialDef = null;
@@ -1195,7 +1208,7 @@ namespace ACE.Server.WorldObjects
                     // stamps layer ON TOP of it rather than being clobbered.
                     var isSpecial = specialPiece != null && ReferenceEquals(wo, specialPiece);
                     if (effectiveTreasure.Tier >= LootGenerationFactory.ZoneLootSetMinTier)
-                        LootGenerationFactory.ApplyT11GearStats(wo, effectiveTreasure.Tier, forceMax: isSpecial, p: zoneLoot);
+                        LootGenerationFactory.ApplyT11GearStats(wo, effectiveTreasure.Tier, p: zoneLoot);
 
                     // Zone Control loot: post-roll per-item mutations (weapon stats, AL, workmanship, coins,
                     // value, and the low-chance special-property rolls)

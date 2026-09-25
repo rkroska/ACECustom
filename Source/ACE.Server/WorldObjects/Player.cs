@@ -74,8 +74,8 @@ namespace ACE.Server.WorldObjects
 
             ClearPortalSpaceEntered();
 
-            if (CloakStatus != CloakStatus.On)
-                ReportCollisions = true;
+            if (CloakStatus != CloakStatus.On && CloakStatus != CloakStatus.Ghost)
+                ReportCollisions = true;   // Ghost passes through doors too (owner 2026-09-22)
             IgnoreCollisions = false;
             Hidden = false;
             Teleporting = false;
@@ -428,7 +428,7 @@ namespace ACE.Server.WorldObjects
                 if (difficulty == 0 || player == this || player != null && !player.GetCharacterOption(CharacterOption.AttemptToDeceiveOtherPlayers))
                     chance = 1.0f;
 
-                if ((this is Admin || this is Sentinel) && CloakStatus == CloakStatus.On)
+                if ((this is Admin || this is Sentinel) && (CloakStatus == CloakStatus.On || CloakStatus == CloakStatus.Ghost))
                     chance = 1.0f;
 
                 success = chance > ThreadSafeRandom.Next(0.0f, 1.0f);
@@ -742,6 +742,10 @@ namespace ACE.Server.WorldObjects
 
         private void FinalizeLogout()
         {
+            // Before leaving the landblock, while Location is still where the character is saved: a player logging out
+            // inside a Room Assign room keeps it for the logout hold (server setting room_assign_logout_hold_minutes).
+            RoomAssignManager.OnLogout(this);
+
             CurrentLandblock?.RemoveWorldObject(Guid, false);
             SetPropertiesAtLogOut();
             SavePlayerToDatabase(true);

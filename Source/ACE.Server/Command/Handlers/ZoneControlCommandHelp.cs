@@ -114,9 +114,38 @@ namespace ACE.Server.Command.Handlers
             E("Territory", "/zonecontrol terrain", "<name> <hex> <type|clear>", "Terrain override for a landblock (spawn redirection)."),
             E("Territory", "/zonecontrol quests", "<name>", "The zone's quest registry rows."),
 
+            // ── Sharing + rewards (zones at v11+; dungeons have their own below) ──
+            E("Rewards", "/zonecontrol zoneshare", "<name> on|off|show", "Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship (one character per account, a fellowship's size at most). v11+ only. Changing it needs Admin."),
+            E("Rewards", "/zonecontrol killreward", "<name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>", "Kill Reward (\"Bounty\" in chat): items every N of a player's own kills, at most once per cooldown. v11+ only. Changing it needs Admin."),
+            E("Rewards", "/bounty", "", "Any player: the bounties where you stand - kills so far, or how long until the next one unlocks - and anything held for you."),
+
             // ── Readiness ─────────────────────────────────────────────────────
             E("Readiness", "/zonecontrol mobcheck", "[<zone>] [<wcid>]", "Is this monster ready in this zone? No wcid = the creature you have selected."),
             E("Readiness", "/zonecontrol mobcheckget", "[<zone>] [--wcid <id>]", "Machine twin of mobcheck ([[ZCMC]]) for the Readiness tab."),
+
+            // ── Dungeons (one-player room dungeons) ─────────────────────────
+            E("Dungeons", "/zonecontrol dungeon status", "", "Every room of the dungeon you are in (or the one picked in the Dungeon dropdown): who stands in it, reservation, hold."),
+            E("Dungeons", "/zonecontrol dungeon list", "", "Every room dungeon the server knows ([[ZCDGL]] lines for the plugin's Dungeon dropdown)."),
+            E("Dungeons", "/zonecontrol dungeon select", "here | <source wcid> <variation>", "Point the dungeon tools at a dungeon you are not standing in; here = follow where you stand again."),
+            E("Dungeons", "/zonecontrol dungeon entrance", "", "Teleport to the dungeon's entrance: its portal or plate, as placed in the world. Admin."),
+            E("Dungeons", "/zonecontrol dungeon goto", "<room>", "Teleport to a room's landing. A plain teleport, no room is claimed. Admin."),
+            E("Dungeons", "/zonecontrol dungeon add", "[room]", "New room where you stand; lowest free number, or that one. Variation 3 and up only. Admin."),
+            E("Dungeons", "/zonecontrol dungeon remove", "<room>", "Take a room out of the room list - refused while anyone stands in it, holds it or is on the way in. Variation 3 and up only. Admin."),
+            E("Dungeons", "/zonecontrol dungeon land", "", "The landing of the room you stand in = exactly here, facing its generator. Makes the room if the cell is none. Admin."),
+            E("Dungeons", "/zonecontrol dungeon cell", "<room> <cell>", "Add a cell to a room, or take it out - how a room of several cells is built. Admin."),
+            E("Dungeons", "/zonecontrol dungeon place", "player|monster|door <cell> <x> <y> [cell|middle|<door wcid>]", "Place by map pin: landing in the nearest corner (middle = the room's middle), generator at the room middle (cell = the pinned cell's centre), wall in the nearest doorway (a door wcid picks which wall). Admin."),
+            E("Dungeons", "/zonecontrol dungeon monster here", "", "The room's generator is placed, or moved, exactly where you stand. Admin."),
+            E("Dungeons", "/zonecontrol dungeon nudge", "<guid> <east> <north> [turn degrees]", "Move a placed wall or generator by a small step, or turn it - the Nudge pop-out in the plugin. Admin."),
+            E("Dungeons", "/zonecontrol dungeon doors", "", "Every door weenie the Door pin can use ([[ZCDGD]] lines for the plugin's door picker)."),
+            E("Dungeons", "/zonecontrol dungeon zoneshare", "on|off", "Everyone in this dungeon shares kill XP, luminance and kill tasks as one fellowship (one character per account). Admin."),
+            E("Dungeons", "/zonecontrol dungeon killreward", "on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>", "Kill Reward for this dungeon: items every N of a player's own kills, at most once per cooldown. Admin."),
+            E("Dungeons", "/zonecontrol dungeon state", "", "The [[ZCDG]] data line for the plugin's Dungeons tab."),
+            E("Dungeons", "/zonecontrol dungeon map", "", "The [[ZCDGM]] map lines for the plugin's Dungeons tab."),
+            E("Dungeons", "/zonecontrol dungeon admin", "on|off", "TEST TOOL: admins count as players. Needs room_assign_test_tools. Admin."),
+            E("Dungeons", "/zonecontrol dungeon fill", "here|<room>|random [count]|random leave <n>", "TEST TOOL: fake players that make rooms count as taken. Memory only. Needs room_assign_test_tools. Admin."),
+            E("Dungeons", "/zonecontrol dungeon clear", "[room]", "TEST TOOL: remove one fake player, or all of them. Needs room_assign_test_tools. Admin."),
+            E("Dungeons", "/zonecontrol dungeon markers", "all [minutes] | clear", "TEST TOOL: a WCID 1 marker on every landing, temporary, never saved. Needs room_assign_test_tools (clear works without). Admin."),
+            E("Dungeons", "/zonecontrol dungeon doors show", "[seconds] | clear", "TEST TOOL: one of each door in a row in front of you, named, for a few seconds. Needs room_assign_test_tools (clear works without). Admin."),
 
             // ── Weapon scaling ────────────────────────────────────────────────
             E("Weapon Scaling", "/weaponscale", "show | enable on|off | tier <t> cap|minwield|minwieldtriune|minwieldskillcharm <n> | tier add|remove <t> | script <name> kmin|kmax|variance <v> | script <name> ladder <anchorS>|clear | script <name> grade <S..F-> <k> | script add|remove <name> | grade ... | kc min|max <v> | sync on|off | reset | reload | tighten", "Weapon aug-scaling config (the plugin's Weapons > Scaling panel)."),

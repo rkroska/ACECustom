@@ -738,6 +738,7 @@ namespace ACE.Server.Managers.ZoneControl
             // cards in TrySpecialRolls. The list holds every SLOT-ELIGIBLE line, winner or not
             // (2026-08-30 late, the modifier floor: the losers are the floor's top-up pool).
             var pieceMask = ZoneModifiers.PieceMask(wo);
+            var alwaysDefs = new List<ZoneModifiers.Def>();
             var lineDefs = new List<ZoneModifiers.Def>();
             foreach (var def in ZoneModifiers.AllDefs)
             {
@@ -746,8 +747,34 @@ namespace ACE.Server.Managers.ZoneControl
                 // per-line slot rule (owner 2026-08-22): zone / Default override per key, else the catalog's ArmorOnly / JewelryOnly
                 if (!ZoneModifiers.SlotAllowed(ZoneModifiers.EffectiveSlotMask(def, p.ModifierSlots), pieceMask))
                     continue;
-                lineDefs.Add(def);
+                // ALWAYS ROLLED (owner 2026-09-14): same chance cell, band and grade as any line, but they
+                // are not "a roll" - they never spend a cap slot and never count toward the floor.
+                if (def.Class == ZoneModifiers.ModifierClass.Always)
+                    alwaysDefs.Add(def);
+                else
+                    lineDefs.Add(def);
             }
+
+            void StampLine(ZoneModifiers.Def def)
+            {
+                var (min, max) = p.ModifierBands.TryGetValue(def.Key, out var band)
+                    ? (band.Min, band.Max) : ZoneModifiers.CatalogBandAt(def, lootTier);   // hardcoded fallback is tier-scaled (2026-08-23)
+
+                // insurance against hand-edited store bands - an inverted band must not throw mid-loot
+                if (min > max) (min, max) = (max, min);
+
+                // Live stat resolution (owner 2026-08-22): roll a GRADE 0-1000 (tier-weighted thirds,
+                // Option A: T11 uniform, climbing to 10/30/60 at T25) and stamp it through the record;
+                // the prop value is ValueFor(grade) inside the effective band. Key 49 Reinforced routes
+                // to the plain Stamp inside StampGraded (earned + frozen, never in the record).
+                var grade = ZoneStatResolver.RollGrade(lootTier, forceMax);
+                ZoneModifiers.StampGraded(wo, def, grade, (min, max));
+            }
+
+            // stamped first so they lead the line list, as they lead the plugin's Modifiers tab
+            foreach (var def in alwaysDefs)
+                if (WonT(p, ZoneModifiers.LineChanceStat(def.Key), lootTier))
+                    StampLine(def);
 
             // PHASE 2: armor_modifier_min / armor_modifier_cap (anchored, unset = no floor /
             // uncapped) - lines at >= 100 pct effective chance are always included and spend their
@@ -766,22 +793,8 @@ namespace ACE.Server.Managers.ZoneControl
 
             for (int i = 0; i < lineDefs.Count; i++)
             {
-                if (!lineWon[i])
-                    continue;
-                var def = lineDefs[i];
-
-                var (min, max) = p.ModifierBands.TryGetValue(def.Key, out var band)
-                    ? (band.Min, band.Max) : ZoneModifiers.CatalogBandAt(def, lootTier);   // hardcoded fallback is tier-scaled (2026-08-23)
-
-                // insurance against hand-edited store bands - an inverted band must not throw mid-loot
-                if (min > max) (min, max) = (max, min);
-
-                // Live stat resolution (owner 2026-08-22): roll a GRADE 0-1000 (tier-weighted thirds,
-                // Option A: T11 uniform, climbing to 10/30/60 at T25) and stamp it through the record;
-                // the prop value is ValueFor(grade) inside the effective band. Key 49 Reinforced routes
-                // to the plain Stamp inside StampGraded (earned + frozen, never in the record).
-                var grade = ZoneStatResolver.RollGrade(lootTier, forceMax);
-                ZoneModifiers.StampGraded(wo, def, grade, (min, max));
+                if (lineWon[i])
+                    StampLine(lineDefs[i]);
             }
         }
 

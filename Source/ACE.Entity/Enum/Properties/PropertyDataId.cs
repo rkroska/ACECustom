@@ -113,7 +113,11 @@ namespace ACE.Entity.Enum.Properties
         VisualOverrideClothingBase       = 9037,
         VisualOverrideIcon               = 9038,
         CapturedCombatTable              = 9039,
-        VisualOverrideCombatTable        = 9040
+        VisualOverrideCombatTable        = 9040,
+
+        /// <summary>Room Assign, plate mode (RoomAssignManager): on a Portal WEENIE, the WCID of the room plate whose rooms it
+        /// hands out. Optional - a portal that carries PropertyString.RoomAssignRooms itself ignores it.</summary>
+        RoomAssignPlate                  = 50501
 
         //[ServerOnly]
         //HairTexture                = 9001,

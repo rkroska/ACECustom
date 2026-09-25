@@ -147,7 +147,7 @@ namespace ACE.Server.Network.GameEvent.Events
                     Writer.Write((uint)property.Key);
                     if (property.Key == PropertyString.Name)
                     {
-                        if (Session.Player.IsPlussed && Session.Player.CloakStatus < CloakStatus.Player)
+                        if (Session.Player.IsPlussed && !Session.Player.CloakIsDisguise)
                             Writer.WriteString16L("+" + property.Value);
                         else
                             Writer.WriteString16L(property.Value);

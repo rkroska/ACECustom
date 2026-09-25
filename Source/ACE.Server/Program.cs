@@ -392,6 +392,10 @@ namespace ACE.Server
             log.Info("Initializing InboundMessageManager...");
             InboundMessageManager.Initialize();
 
+            // Before sockets open: room sources load here, not on the first login or teleport.
+            log.Info("Initializing RoomAssignManager...");
+            RoomAssignManager.Initialize();
+
             log.Info("Initializing SocketManager...");
             SocketManager.Initialize();
 

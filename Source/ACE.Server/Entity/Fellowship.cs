@@ -24,7 +24,7 @@ namespace ACE.Server.Entity
         /// <summary>
         /// The maximum # of fellowship members
         /// </summary>
-        private static readonly int MaxFellows = 29;
+        public static readonly int MaxFellows = 29;   // public for Zone Share, which caps an area's sharers at a fellowship's size
 
         public string FellowshipName;
         public uint FellowshipLeaderGuid;
@@ -523,30 +523,40 @@ namespace ACE.Server.Entity
                         eligibleMembers.Add((member, scalar));
                 }
 
-                var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent(eligibleMembers.Count));
+                ShareXpAmong(eligibleMembers, amount, xpType, shareType, player, monsterTier);
+            }
+        }
 
-                foreach (var (member, scalar) in eligibleMembers)
+        /// <summary>
+        /// Divides non-quest XP among an explicit list of sharers - the fellowship's eligible fellows, or everyone standing in
+        /// a Zone Share area (ZoneShareManager, 2026-09-23), so both share by the same numbers. shareType must already have
+        /// ShareType.Fellowship removed, which is what stops each member's GrantXP from splitting again.
+        /// </summary>
+        internal static void ShareXpAmong(List<(Player Member, double Scalar)> eligibleMembers, ulong amount, XpType xpType, ShareType shareType, Player player, int monsterTier)
+        {
+            var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent(eligibleMembers.Count));
+
+            foreach (var (member, scalar) in eligibleMembers)
+            {
+                if (member == player && ServerConfig.fellowship_additive.Value)
                 {
-                    if (member == player && ServerConfig.fellowship_additive.Value)
-                    {
-                        var additiveMember = member;
-                        GrantOnMemberThread(member, () => additiveMember.GrantXP((long)amount, xpType, shareType, monsterTier));
-                        continue;
-                    }
-                    var shareAmount = (double)totalAmount * scalar;
-
-                    if (xpType == XpType.Kill && monsterTier > 0)
-                    {
-                        var memberTier = member.GetProperty(PropertyInt.PrestigeLevel) ?? 0;
-                        shareAmount *= PrestigeManager.GetXPRewardModifier(monsterTier);
-                        shareAmount *= PrestigeManager.GetXPPenaltyMultiplier(memberTier, monsterTier);
-                    }
-
-                    var fellowXpType = player == member ? xpType : XpType.Fellowship;
-                    var killShare = (member.HasVitae && member.IsVPHardcore) ? 0 : (long)Math.Round(shareAmount);
-                    var killMember = member;
-                    GrantOnMemberThread(member, () => killMember.GrantXP(killShare, fellowXpType, shareType));
+                    var additiveMember = member;
+                    GrantOnMemberThread(member, () => additiveMember.GrantXP((long)amount, xpType, shareType, monsterTier));
+                    continue;
                 }
+                var shareAmount = (double)totalAmount * scalar;
+
+                if (xpType == XpType.Kill && monsterTier > 0)
+                {
+                    var memberTier = member.GetProperty(PropertyInt.PrestigeLevel) ?? 0;
+                    shareAmount *= PrestigeManager.GetXPRewardModifier(monsterTier);
+                    shareAmount *= PrestigeManager.GetXPPenaltyMultiplier(memberTier, monsterTier);
+                }
+
+                var fellowXpType = player == member ? xpType : XpType.Fellowship;
+                var killShare = (member.HasVitae && member.IsVPHardcore) ? 0 : (long)Math.Round(shareAmount);
+                var killMember = member;
+                GrantOnMemberThread(member, () => killMember.GrantXP(killShare, fellowXpType, shareType));
             }
         }
 
@@ -587,36 +597,45 @@ namespace ACE.Server.Entity
                         eligibleMembers.Add((member, scalar));
                 }
 
-                var totalAmount = amount * GetMemberSharePercent(eligibleMembers.Count);
-
-                // Iterate fellowship members directly without .ToList() allocation
-                foreach (var (member, scalar) in eligibleMembers)
-                {
-                    var fellowXpType = player == member ? xpType : XpType.Fellowship;
-                    if (member == player && ServerConfig.fellowship_additive.Value)
-                    {
-                        var additiveLumType = fellowXpType;
-                        GrantOnMemberThread(player, () => player.GrantLuminance((long)amount, additiveLumType, shareType, monsterTier));
-                        continue;
-                    }
-
-                    var playerTotal = totalAmount * scalar;
-
-                    if (xpType == XpType.Kill && monsterTier > 0)
-                    {
-                        var memberTier = member.GetProperty(PropertyInt.PrestigeLevel) ?? 0;
-                        playerTotal *= PrestigeManager.GetXPRewardModifier(monsterTier);
-                        playerTotal *= PrestigeManager.GetXPPenaltyMultiplier(memberTier, monsterTier);
-                    }
-
-                    var lumShare = (long)Math.Round(playerTotal);
-                    var lumMember = member;
-                    GrantOnMemberThread(member, () => lumMember.GrantLuminance(lumShare, fellowXpType, shareType));
-                }
+                ShareLuminanceAmong(eligibleMembers, amount, xpType, shareType, player, monsterTier);
             }
         }
 
-        internal double GetMemberSharePercent(int memberCount)
+        /// <summary>
+        /// The luminance twin of <see cref="ShareXpAmong"/>: the fellowship's eligible fellows, or everyone in a Zone Share area.
+        /// shareType must already have ShareType.Fellowship removed.
+        /// </summary>
+        internal static void ShareLuminanceAmong(List<(Player Member, double Scalar)> eligibleMembers, ulong amount, XpType xpType, ShareType shareType, Player player, int monsterTier)
+        {
+            var totalAmount = amount * GetMemberSharePercent(eligibleMembers.Count);
+
+            // Iterate fellowship members directly without .ToList() allocation
+            foreach (var (member, scalar) in eligibleMembers)
+            {
+                var fellowXpType = player == member ? xpType : XpType.Fellowship;
+                if (member == player && ServerConfig.fellowship_additive.Value)
+                {
+                    var additiveLumType = fellowXpType;
+                    GrantOnMemberThread(player, () => player.GrantLuminance((long)amount, additiveLumType, shareType, monsterTier));
+                    continue;
+                }
+
+                var playerTotal = totalAmount * scalar;
+
+                if (xpType == XpType.Kill && monsterTier > 0)
+                {
+                    var memberTier = member.GetProperty(PropertyInt.PrestigeLevel) ?? 0;
+                    playerTotal *= PrestigeManager.GetXPRewardModifier(monsterTier);
+                    playerTotal *= PrestigeManager.GetXPPenaltyMultiplier(memberTier, monsterTier);
+                }
+
+                var lumShare = (long)Math.Round(playerTotal);
+                var lumMember = member;
+                GrantOnMemberThread(member, () => lumMember.GrantLuminance(lumShare, fellowXpType, shareType));
+            }
+        }
+
+        internal static double GetMemberSharePercent(int memberCount)
         {
 
             switch (memberCount)

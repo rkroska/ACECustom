@@ -120,12 +120,31 @@ namespace ACE.Entity.Enum.Properties
         PetCustomName = 9018,
 
         /// <summary>Zone Control live stat resolution (2026-08-22): the GRADE record of every ZC line on the
-        /// piece - "key:grade;key:grade;..." with grade 0-1000 (where in the band it rolled), core four as
-        /// c1..c4. The retail Gear* / AL / 502xx props are a CACHE resolved from this against the live ladder.
+        /// piece - "key:grade;key:grade;..." with grade 0-1000 (where in the band it rolled); legacy c1..c4
+        /// entries are the retired core four, still resolved on their own window so an old piece keeps its value. The retail Gear* / AL / 502xx props are a CACHE resolved from this against the live ladder.
         /// See ZoneStatResolver.</summary>
         // Renamed from ZcLines 2026-08-24: the in-game appraisal calls this exact record "Cantrips:"
         // (AppraiseInfo.ModifierSectionHeader), so "lines" was internal vocabulary. The ID is what
         // persists - 50100 is unchanged, so the 19 already-stamped items are untouched.
         ZcModifiers = 50100,
+
+        /// <summary>Room Assign (RoomAssignManager): every one-player room, on one line -
+        /// "room|0xCELL [x y z] qw qx qy qz|0xCELL,0xCELL;room|...". On a Portal or PressurePlate WEENIE it makes that
+        /// weenie a room source. Server-only - not an assessment property, so it is never sent to a player.
+        /// Owner range 50000+ (moved off 9018 - upstream took that id for PetCustomName).</summary>
+        RoomAssignRooms = 50500,
+
+        /// <summary>Kill Reward (owner 2026-09-23), on a room-source WEENIE: the dungeon's rewards -
+        /// "on;#nextId;wcid|amount|kills|minutes|id;..." (on = 1/0). Server-only. See KillRewardConfig.Format.</summary>
+        RoomAssignKillReward = 50504,
+
+        /// <summary>Kill Reward, on a CHARACTER: kills counted and the last award, per area and reward - "area#rId|kills|lastUnix;..."
+        /// (area = "zone:name" or "dungeon:WCIDvVARIATION", rId = the reward's permanent ID). Kept on the
+        /// character so a relog or a restart can neither reset the cooldown nor lose progress. Server-only.</summary>
+        KillRewardProgress = 50505,
+
+        /// <summary>Kill Reward, on a CHARACTER: rewards earned while the pack was full - "wcid:amount;..." - handed over as soon as
+        /// there is room (checked on the player heartbeat). Never dropped. Server-only.</summary>
+        KillRewardOwed = 50506,
     }
 }

@@ -109,6 +109,8 @@ namespace ACE.Server.Managers.ZoneControl
             public HashSet<uint> ExemptWcids;                // master switch (2026-09-03): the zone does not govern these at all
             public HashSet<uint> ExemptGenerators;           // master switch per generator (2026-09-03): nor anything these spawn
             public ZoneEffects Effects;                      // immutable copy (readers never touch the live zone)
+            public bool ZoneShare;                           // Zone Share (2026-09-23): the whole zone shares kills as one fellowship
+            public KillRewardConfig KillReward;              // Kill Reward (2026-09-23): immutable copy
             public ZoneAppearance AppearanceDefault;         // cosmetic default (separate from stats)
             public Dictionary<uint, ZoneAppearance> AppearanceByWcid; // per-WCID cosmetic overlays
         }
@@ -660,6 +662,8 @@ namespace ACE.Server.Managers.ZoneControl
                 ExemptWcids = area.Profile.ExemptWcids != null ? new HashSet<uint>(area.Profile.ExemptWcids) : new HashSet<uint>(),
                 ExemptGenerators = area.Profile.ExemptGenerators != null ? new HashSet<uint>(area.Profile.ExemptGenerators) : new HashSet<uint>(),
                 Effects = ZoneEffects.Merge(def?.Effects, area.Effects),
+                ZoneShare = area.ZoneShare,
+                KillReward = area.KillReward?.Clone(),
                 AppearanceDefault = apZone,
                 AppearanceByWcid = apWcid,
             };
@@ -994,16 +998,24 @@ namespace ACE.Server.Managers.ZoneControl
         /// everywhere and a zone merely re-tunes it. Lock-free snapshot read; safe on the rating hot path.
         /// </summary>
         public static EvaluatedProfile ResolveZoneDefaultForPlayer(Player player)
+            => GoverningZoneRef(player)?.Default;
+
+        /// <summary>
+        /// The enabled zone that governs where this object stands, at its effective variation: most-specific wins (the zone
+        /// with the fewest landblocks), as everywhere else. Null when no enabled zone covers the spot. Lock-free snapshot read.
+        /// The one copy of the "governing zone" walk - the player gear caps, Zone Share and Kill Reward all go through it.
+        /// </summary>
+        private static ZoneRef GoverningZoneRef(WorldObject wo)
         {
-            if (player == null)
+            if (wo == null)
                 return null;
 
             var snap = _snapshot;
-            var landblock = player.Location?.LandblockId.Landblock ?? 0;
+            var landblock = wo.Location?.LandblockId.Landblock ?? 0;
             if (!snap.EnabledLandblocks.Contains(landblock) || !snap.ByLandblock.TryGetValue(landblock, out var list))
                 return null;
 
-            var effVar = GetEffectiveVariation(player);
+            var effVar = GetEffectiveVariation(wo);
 
             ZoneRef best = null;
             foreach (var zr in list)
@@ -1014,7 +1026,35 @@ namespace ACE.Server.Managers.ZoneControl
                     best = zr;
             }
 
-            return best?.Default;
+            return best;
+        }
+
+        /// <summary>
+        /// The zone that governs this spot for Zone Share / Kill Reward: as <see cref="GoverningZoneRef"/>, but never below the
+        /// endgame floor (v11) and never while the Zone Control master switch is off. Retail - every variation under 11 - is
+        /// out of reach by construction, however a zone was authored (review 2026-09-24: the owner's never-touch-retail rule).
+        /// </summary>
+        private static ZoneRef EndgameZoneRef(WorldObject wo)
+        {
+            if (wo == null || !ServerConfig.zonecontrol_enabled.Value)
+                return null;
+
+            if (GetEffectiveVariation(wo) < VariationManager.EndgameMinVariation)
+                return null;
+
+            return GoverningZoneRef(wo);
+        }
+
+        /// <summary>
+        /// Zone Share (owner 2026-09-23): the name of the Zone Share zone this player stands in, or null. The zone that
+        /// governs the spot decides - most-specific wins, as everywhere else - so a small zone inside a bigger one shares only
+        /// when the small one has Zone Share on. Enabled zones at v11+ only, and nothing while the Zone Control master switch
+        /// is off. Lock-free snapshot read.
+        /// </summary>
+        public static string ResolveZoneShareZone(Player player)
+        {
+            var best = EndgameZoneRef(player);
+            return best != null && best.ZoneShare ? best.Name : null;
         }
 
         /// <summary>
@@ -1108,7 +1148,7 @@ namespace ACE.Server.Managers.ZoneControl
         //
         // 🔴 SCOPE, corrected after review - do NOT read this as "the whole fallback set is gone".
         // With the toggle OFF, ZoneStatResolver STILL applies the rest of ZoneFallback to ZC-stamped
-        // ITEMS: Band (:257), AnchorDr / AnchorCdr 92/73 (:413) and ArmorLevel 732 (:456, :469). That
+        // ITEMS: Band (which also covers the Always Rolled resists) and ArmorLevel 732 (:456, :469). That
         // is item re-pricing, which is the fallback's actual job and is deliberately untouched here.
         // Only the CAP half went inert. The two are easy to conflate and an earlier version of this
         // comment did exactly that.
@@ -1955,6 +1995,58 @@ namespace ACE.Server.Managers.ZoneControl
                 var a = FindArea(name);
                 if (a == null) return false;
                 a.Bounded = bounded;
+                Save();
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Kill Reward for a zone (owner 2026-09-23): applies one edit to the zone's CURRENT settings under the store lock and
+        /// saves - read, change and write in one step, so two admins' edits each touch only their own reward and neither
+        /// writes back an old copy over the other. <paramref name="edit"/> returns why it refused (nothing is saved then), or
+        /// null. Returns the settings as they now are (null for no such zone), and the refusal.
+        /// </summary>
+        public static KillRewardConfig EditKillReward(string name, Func<KillRewardConfig, string> edit, out string refused)
+        {
+            refused = null;
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var a = FindArea(name);
+                if (a == null) return null;
+                var cfg = (a.KillReward ?? new KillRewardConfig()).Clone();
+                refused = edit(cfg);
+                if (refused != null)
+                    return (a.KillReward ?? new KillRewardConfig()).Clone();
+                a.KillReward = cfg;
+                Save();
+                return cfg.Clone();
+            }
+        }
+
+        /// <summary>
+        /// Kill Reward (owner 2026-09-23): the governing zone's reward where this object stands - its name and settings - or
+        /// null. Same rules as Zone Share: the most specific zone decides, enabled zones at v11+ only, nothing while the master
+        /// switch is off. Asked for both the killer and the victim (they must be in the same area). Lock-free snapshot read.
+        /// </summary>
+        public static (string Name, KillRewardConfig Reward)? ResolveKillReward(WorldObject wo)
+        {
+            var best = EndgameZoneRef(wo);
+            if (best?.KillReward == null || !best.KillReward.Active)
+                return null;
+
+            return (best.Name, best.KillReward);
+        }
+
+        /// <summary>Zone Share on/off for a zone (owner 2026-09-23). Save() rebuilds the snapshot the kill hooks read.</summary>
+        public static bool SetZoneShare(string name, bool zoneShare)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var a = FindArea(name);
+                if (a == null) return false;
+                a.ZoneShare = zoneShare;
                 Save();
                 return true;
             }

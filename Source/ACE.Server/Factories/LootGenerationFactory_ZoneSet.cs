@@ -422,52 +422,25 @@ namespace ACE.Server.Factories
         /// AND shields; Clothing=4 is shirt/pants/cloak (never authored AL); Jewelry=8
         /// contributes no AL by engine rule (only WeenieType.Clothing is an armor layer).
         /// </summary>
-        public static void ApplyT11GearStats(WorldObject wo, int tier, bool forceMax = false,
-            ACE.Server.Managers.ZoneScaling.EvaluatedProfile p = null, double? coreFrac = null)
+        /// <param name="alwaysRolledFollows">The caller stamps the Always Rolled resists itself right after this (the /testchar
+        /// forge), so the T10 resist rolls go even though no zone profile is passed.</param>
+        public static void ApplyT11GearStats(WorldObject wo, int tier,
+            ACE.Server.Managers.ZoneScaling.EvaluatedProfile p = null, bool alwaysRolledFollows = false)
         {
             if (wo == null || tier < ZoneLootSetMinTier)
                 return;
 
-            // THE ANCHORED LINEAR LADDER (owner 2026-08-21, supersedes the rejected doubling):
-            // T25 best-in-slot anchors - 2,500 armor PER PIECE; SET totals 2,500 Damage Resist /
-            // 1,500 CritDmgResist / CritResist / NetherResist. T11 BiS = half the anchor; per-tier
-            // value = base x (1 + (t-11)/14), so every stat exactly doubles across the T11->T25
-            // journey and armor steps a flat +100/tier.
+            // THE ANCHORED LINEAR LADDER (owner 2026-08-21, supersedes the rejected doubling): armor
+            // steps a flat +100/tier from 1100 at T11.
             //
-            // Armor v2 (owner 2026-08-21 afternoon, Cantrip_Band_Ladder v2 section 1): the
-            // GUARANTEED defensive core is the four resist ratings, ROLLED uniformly inside a
-            // per-tier window instead of written as a constant, FLAT across all 18 slots (the
-            // inherited 50/30/55 armor/clothing/jewelry weighting is dead). Per piece:
-            //   cap(t)  = anchor/18 x (1 + (t-11)/14)
-            //   step    = anchor/18/14            (FIXED T11 step, not per-tier cap/14)
-            //   floor   = cap - 1.5 step          (T11: cap - 0.5 step - no previous tier)
-            // Rounded at the END only: rounding the cap first breaks the 750-class T11 window
-            // (spec wants 40-42). Damage Rating and Max Health are NOT here any more - they are
-            // random chase lines (keys 28 / 19). Mobs are tuned against the FLOOR of the core.
+            // The guaranteed "core four" resists this method used to roll were RETIRED 2026-09-14 (owner):
+            // Damage Resist / Crit Damage Resist / Crit Resist / Nether Resist are catalog lines 50-53 in the
+            // ALWAYS ROLLED class, rolled by ZoneLootMutator.TryExtraModifier on their own chance and band,
+            // outside the modifier min / cap. The core_anchor_dr / core_anchor_cdr knobs went with them.
 
-            // zone override surface for the anchors (core_anchor_dr / core_anchor_cdr); C# is the default
-            var anchorDr = p?.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.CoreAnchorDr, 1250.0) ?? 1250.0;
-            var anchorCdr = p?.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.CoreAnchorCdr, 750.0) ?? 750.0;
-
-            // Live stat resolution (owner 2026-08-22): the core four are GRADED. Window = the same
-            // formula (ZoneStatResolver.CoreWindow, fed the ZONE's evaluated anchor so the drop is
-            // identical to before), grade = uniform 0-1000 inside it (the core is uniform today and
-            // stays so - RollGrade's tier thirds are for the cantrip lines only), value = ValueFor.
-            // The grade is recorded in ZcModifiers; the Gear* prop is its cache. A piece is authored from
-            // scratch here, so any pre-existing record is cleared first.
+            // Live stat resolution (owner 2026-08-22): a piece is authored from scratch here, so any
+            // pre-existing record is cleared first.
             ACE.Server.Managers.ZoneControl.ZoneStatResolver.Write(wo, null);
-            int RollCore(int coreKey, double anchor)
-            {
-                var (min, max) = ACE.Server.Managers.ZoneControl.ZoneStatResolver.CoreWindow(coreKey, tier, anchor);
-                int grade;
-                if (forceMax) grade = ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax;
-                // coreFrac: deterministic point inside the window (premade "Average" suits pass
-                // 0.5 = the midpoint). forceMax still wins above; null = the live random roll.
-                else if (coreFrac.HasValue) grade = (int)System.Math.Round(coreFrac.Value * ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax);
-                else grade = ThreadSafeRandom.Next(0, ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax);   // inclusive both ends
-                ACE.Server.Managers.ZoneControl.ZoneStatResolver.AddLine(wo, coreKey, grade);
-                return ACE.Server.Managers.ZoneControl.ZoneStatResolver.ValueFor(min, max, grade);
-            }
 
             switch (wo.ItemType)
             {
@@ -544,11 +517,19 @@ namespace ACE.Server.Factories
             wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearMaxHealth);
             wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearHealingBoost);
             wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearCritDamage);
-
-            wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.GearDamageResist, RollCore(ACE.Server.Managers.ZoneControl.ZoneStatResolver.CoreDamageResist, anchorDr));
-            wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.GearCritDamageResist, RollCore(ACE.Server.Managers.ZoneControl.ZoneStatResolver.CoreCritDamageResist, anchorCdr));
-            wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.GearCritResist, RollCore(ACE.Server.Managers.ZoneControl.ZoneStatResolver.CoreCritResist, anchorCdr));
-            wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.GearNetherResist, RollCore(ACE.Server.Managers.ZoneControl.ZoneStatResolver.CoreNetherResist, anchorCdr));
+            // 2026-09-14: the four resists are Always Rolled lines now (keys 50-53). Strip the T10 rolls
+            // (TryMutateGearRatingT10 always writes Nether Resist plus one of each coin-flip pair) so a
+            // piece whose line chance is unset carries none, rather than a leaked 6-10 - but ONLY when the lines
+            // that replace them can land: a zone profile is there to roll them (ZoneLootMutator), or the caller
+            // stamps them itself (review 2026-09-24, CodeRabbit #533). A T11+ drop with no matching profile gets
+            // no Always Rolled lines at all, so stripping its T10 rolls would leave it with no resists whatsoever.
+            if (p != null || alwaysRolledFollows)
+            {
+                wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearDamageResist);
+                wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearCritDamageResist);
+                wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearCritResist);
+                wo.RemoveProperty(ACE.Entity.Enum.Properties.PropertyInt.GearNetherResist);
+            }
 
             // Gear Creature Augs used to get a fixed 30/20/12 x scale base here, written straight
             // into prop 50213 alongside its own "Creature Augmentation:" LongDesc line. DELETED

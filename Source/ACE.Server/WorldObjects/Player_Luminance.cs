@@ -53,6 +53,18 @@ namespace ACE.Server.WorldObjects
             if (IsOlthoiPlayer)
                 return;
 
+            // Zone Share (owner 2026-09-23): kill luminance inside a Zone Share area goes to everyone standing in it, as one
+            // fellowship, in place of the player's own fellowship.
+            if (xpType == XpType.Kill && shareType.HasFlag(ShareType.Fellowship))
+            {
+                var zoneMembers = ZoneShareManager.MembersFor(this);
+                if (zoneMembers != null)
+                {
+                    ACE.Server.Entity.Fellowship.ShareLuminanceAmong(zoneMembers, (ulong)amount, xpType, shareType & ~ShareType.Fellowship, this, monsterTier);
+                    return;
+                }
+            }
+
             if (Fellowship != null && Fellowship.ShareXP && shareType.HasFlag(ShareType.Fellowship))
             {
                 // this will divy up the luminance, and re-call this function

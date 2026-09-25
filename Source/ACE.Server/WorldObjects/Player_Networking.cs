@@ -79,6 +79,18 @@ namespace ACE.Server.WorldObjects
             SendSelf();
             MarkPortalSpaceEntered();
 
+            // A cloak survives a relog and a server boot: Sentinel.InitPhysicsObj rebuilds the hiding from other people
+            // from CloakStatus (On and Ghost alike) when the character enters the world. What does NOT come back is what
+            // YOUR client was told to draw - so Ghost returned fully invisible to itself (owner 2026-09-22). Re-send that,
+            // once the client has settled.
+            if (CloakStatus == CloakStatus.On || CloakStatus == CloakStatus.Ghost)
+            {
+                var cloakChain = new ActionChain();
+                cloakChain.AddDelaySeconds(1.0);
+                cloakChain.AddAction(this, ActionType.Player_CloakSelfViewAtLogin, ApplyCloakSelfView);
+                cloakChain.EnqueueChain();
+            }
+
             // Update or override certain properties sent to client.
 
             // bugged: do not send this here, or else a freshly loaded acclient will overrwrite the values
@@ -246,7 +258,16 @@ namespace ACE.Server.WorldObjects
 
             // Player objects don't get a placement
             Placement = null;
-            Session.Network.EnqueueSend(new GameMessagePlayerCreate(Guid), new GameMessageCreateObject(this));
+            // A Ghost draws itself: changenodraw strips NoDraw and Cloaked from the serialized state so you DRAW.
+            // At FULL opacity, on purpose (review 2026-09-24, CodeRabbit #533): opacity is baked into the physics
+            // description here and nothing can change it on an already-drawn self without carrying the public game data
+            // that breaks the client's own player state (tried 2026-09-22). Half opacity at login therefore could not be
+            // matched when Ghost is turned on mid-session - and outlived a decloak until the next relog. Full opacity is
+            // the one state every path can keep. Nothing here changes what anyone ELSE receives: while cloaked, nobody
+            // else holds this object at all.
+            var ghost = CloakStatus == CloakStatus.Ghost;
+            Session.Network.EnqueueSend(new GameMessagePlayerCreate(Guid),
+                                        new GameMessageCreateObject(this, adminvision: false, adminnodraw: ghost));
             try
             {
                 SendInventoryAndWieldedItems();

@@ -173,6 +173,9 @@ namespace ACE.Server.WorldObjects
         {
             NotifyLandblocks();
 
+            // Kill Reward (owner 2026-09-23): anything held while the pack was full is handed over once there is room.
+            KillRewardManager.TryDeliverOwed(this);
+
             ValidateCurrentLandblockTick();
 
             ManaConsumersTick();
@@ -375,8 +378,13 @@ namespace ACE.Server.WorldObjects
 
             var allowJump = MotionInterp.motion_allows_jump(minterp.InterpretedState.ForwardCommand) == WeenieError.None;
 
+            // The CAST matters: the network RawMotionState.ForwardCommand is a MotionCommand ENUM (the physics
+            // one beside it is a uint), and "X8" is a valid numeric format but NOT a valid enum format - enums
+            // take only G/g/X/x/F/f/D/d. Without it this line threw FormatException on EVERY standing long jump,
+            // the exception escaped through GameActionMoveToState.Handle, and apply_raw_movement below never ran -
+            // so the jump was silently dropped server-side. Seen on LIVE 2026-09-22.
             ApplyTeleportJumpGate(ref allowJump, "MoveToState",
-                $"StandingLongJump={moveToState.StandingLongJump} rawFwd=0x{moveToState.RawMotionState.ForwardCommand:X8} rawFlags={moveToState.RawMotionState.Flags} interpFwd=0x{minterp.InterpretedState.ForwardCommand:X8}",
+                $"StandingLongJump={moveToState.StandingLongJump} rawFwd=0x{(uint)moveToState.RawMotionState.ForwardCommand:X8} rawFlags={moveToState.RawMotionState.Flags} interpFwd=0x{minterp.InterpretedState.ForwardCommand:X8}",
                 throttleMotionLog: true);
 
             //PhysicsObj.cancel_moveto();
@@ -857,10 +865,24 @@ namespace ACE.Server.WorldObjects
             var rotate = PhysicsObj.Position.Frame.Orientation;
             var variation = PhysicsObj.Position.Variation;
 
+            var target = new ACE.Entity.Position(blockcell, pos, rotate, variation);
+
+            // Vaulted Dungeons (review 2026-09-24, CodeRabbit #533): server-side physics movement reaches Location here, not
+            // through UpdatePosition, so the same chamber check guards it. A move into a chamber that is not theirs puts the
+            // physics body back where Location already is, forces that position on the player's own client, and commits
+            // nothing - the same wall the client-driven path meets.
+            if (!Teleporting && Location != null && blockcell != Location.Cell && RoomAssignManager.IsTrespass(this, target))
+            {
+                PhysicsObj.SetPositionSimple(new ACE.Server.Physics.Common.Position(Location), true);
+                Sequences.GetNextSequence(ACE.Server.Network.Sequence.SequenceType.ObjectForcePosition);
+                SendUpdatePosition();
+                return false;
+            }
+
             // CurrentLandblock can be null briefly during teleport/recall while physics has already updated
             var landblockUpdate = CurrentLandblock != null && (ushort)(blockcell >> 16) != CurrentLandblock.Id.Landblock;
 
-            Location = new ACE.Entity.Position(blockcell, pos, rotate, variation);
+            Location = target;
 
             return landblockUpdate;
         }
