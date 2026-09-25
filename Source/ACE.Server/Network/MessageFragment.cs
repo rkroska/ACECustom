@@ -34,7 +34,8 @@ namespace ACE.Server.Network
             }
         }
 
-        public int TailSize => PacketFragmentHeader.HeaderSize + (DataLength % PacketFragment.MaxFragmentDataSize);
+        // Size of the last chunk. Not DataLength % MaxFragmentDataSize: that is 0 when DataLength is an exact multiple, which let a full-size tail be packed into a packet without room for it.
+        public int TailSize => PacketFragmentHeader.HeaderSize + (DataLength - (Count - 1) * PacketFragment.MaxFragmentDataSize);
 
         public bool TailSent { get; private set; }
 
