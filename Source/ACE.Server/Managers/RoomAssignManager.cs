@@ -1203,7 +1203,6 @@ namespace ACE.Server.Managers
         /// <summary>Bounty (owner 2026-09-23): the room source whose dungeon this spot is in AND that has an active Bounty, or 0.</summary>
         public static uint BountySourceAt(uint cell, int? variation) => SourceAt(cell, variation, wcid => BountyOf(wcid).Active);
 
-        /// <summary>Bounty settings on a room source's weenie (PropertyString.RoomAssignBounty); off when it has none.</summary>
         /// <summary>
         /// Every Vaulted Dungeon with an active Bounty, once per layer it is placed in, sorted by name - /bounty list (owner
         /// 2026-09-27). Only layers Room Assign runs in (v3 and up). The names come from the weenie cache, read outside _lock.
@@ -1213,20 +1212,27 @@ namespace ACE.Server.Managers
             EnsureRoomSourcesLoaded();
             var list = new List<(uint SourceWcid, string Name, int? Variation, ACE.Server.Managers.ZoneControl.BountyConfig Bounty)>();
 
+            // The Bounty settings first, outside _lock (they read the weenie cache); then the layers of the active ones, in
+            // one _lock; then the names, outside it again.
+            var active = new List<(uint Wcid, ACE.Server.Managers.ZoneControl.BountyConfig Bounty)>();
             foreach (var wcid in _roomSourceWcids.Keys)
             {
                 var bounty = BountyOf(wcid);
-                if (!bounty.Active)
-                    continue;
+                if (bounty.Active)
+                    active.Add((wcid, bounty));
+            }
 
-                List<int?> variations;
-                lock (_lock)
-                    variations = SourceVariations(wcid);
+            var layers = new List<List<int?>>(active.Count);
+            lock (_lock)
+                foreach (var a in active)
+                    layers.Add(SourceVariations(a.Wcid));
 
-                var name = DungeonName(wcid);
-                foreach (var variation in variations)
+            for (var i = 0; i < active.Count; i++)
+            {
+                var name = DungeonName(active[i].Wcid);
+                foreach (var variation in layers[i])
                     if (IsRoomVariation(variation))
-                        list.Add((wcid, name, variation, bounty));
+                        list.Add((active[i].Wcid, name, variation, active[i].Bounty));
             }
 
             list.Sort((a, b) =>
@@ -1237,6 +1243,7 @@ namespace ACE.Server.Managers
             return list;
         }
 
+        /// <summary>Bounty settings on a room source's weenie (PropertyString.RoomAssignBounty); off when it has none.</summary>
         public static ACE.Server.Managers.ZoneControl.BountyConfig BountyOf(uint wcid)
         {
             string raw = null;

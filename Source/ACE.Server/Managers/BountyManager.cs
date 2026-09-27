@@ -294,8 +294,9 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// /bounty list (owner 2026-09-27): every bounty that can pay right now - each Vaulted Dungeon's, then each zone's -
-        /// with its rewards and this player's progress on each, so players can choose where to go. Read-only. Only places a
-        /// bounty can actually pay in (an active Bounty; a dungeon placed in a layer; a zone Bounty can resolve in).
+        /// with its rewards and this player's progress on each, so players can choose where to go. Read-only. Lists active
+        /// Bounties in dungeons placed in a v3+ layer and in zones at v11+ (see ZoneControlManager.ActiveZoneBounties for the
+        /// one case a listed zone might not pay).
         /// </summary>
         public static void ShowAllBounties(Player player)
         {
@@ -314,9 +315,13 @@ namespace ACE.Server.Managers
                     if (shown == 0) Tell(player, "Bounties:");
                     shown++;
                     foreach (var reward in rewards)
-                        Tell(player, $"  {where}: {RewardText(reward)} every {KillsText(reward.Kills)}"
-                            + $" (at most every {FormatWait((int)Math.Ceiling(Math.Min(reward.CooldownSeconds, int.MaxValue)))})"
+                    {
+                        // No cooldown (0 is allowed): no "at most every 0 sec".
+                        var cooldown = reward.CooldownSeconds > 0
+                            ? $" (at most every {FormatWait((int)Math.Ceiling(Math.Min(reward.CooldownSeconds, int.MaxValue)))})" : "";
+                        Tell(player, $"  {where}: {RewardText(reward)} every {KillsText(reward.Kills)}{cooldown}"
                             + $" - you: {StatusText(progress, areaKey, reward, now)}.");
+                    }
                 }
 
                 var dungeons = RoomAssignManager.ActiveDungeonBounties();
@@ -331,7 +336,7 @@ namespace ACE.Server.Managers
                 if (shown == 0)
                     Tell(player, "Bounty: there are no bounties anywhere right now.");
                 else
-                    Tell(player, "Bounty: /bounty where you stand shows the bounties there.");
+                    Tell(player, "Bounty: type /bounty to see the bounties where you stand.");
             }
             catch (Exception ex)
             {

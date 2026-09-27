@@ -2064,14 +2064,10 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// Bounty (owner 2026-09-23): the governing zone's reward where this object stands - its name and settings - or
-        /// null. Same rules as Zone Share: the most specific zone decides, enabled zones at v11+ only, nothing while the master
-        /// switch is off. Asked for both the killer and the victim (they must be in the same area). Lock-free snapshot read.
-        /// </summary>
-        /// <summary>
         /// Every enabled zone with an active Bounty, sorted by name - /bounty list (owner 2026-09-27). Lock-free snapshot read.
-        /// Only zones a Bounty can pay in: at the endgame layers (EndgameZoneRef's floor), and none while the Zone Control
-        /// master switch is off.
+        /// Zones at the endgame layers only (EndgameZoneRef's floor), and none while the Zone Control master switch is off. It
+        /// does not re-check where a zone would actually decide a kill: a zone wholly covered by smaller zones, or lying only
+        /// inside a Vaulted Dungeon (whose own setting wins), is still listed. No such zone exists today (2026-09-27).
         /// </summary>
         public static List<(string Name, BountyConfig Reward)> ActiveZoneBounties()
         {
@@ -2089,6 +2085,11 @@ namespace ACE.Server.Managers.ZoneControl
             return list;
         }
 
+        /// <summary>
+        /// Bounty (owner 2026-09-23): the governing zone's reward where this object stands - its name and settings - or
+        /// null. Same rules as Zone Share: the most specific zone decides, enabled zones at v11+ only, nothing while the master
+        /// switch is off. Asked for both the killer and the victim (they must be in the same area). Lock-free snapshot read.
+        /// </summary>
         public static (string Name, BountyConfig Reward)? ResolveBounty(WorldObject wo)
         {
             var best = EndgameZoneRef(wo);
