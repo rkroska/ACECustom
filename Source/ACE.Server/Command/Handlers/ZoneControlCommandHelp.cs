@@ -6,12 +6,13 @@ using System.Text;
 namespace ACE.Server.Command.Handlers
 {
     /// <summary>
-    /// THE registry of every chat command the ZoneControl plugin sends (owner 2026-09-03: a GM Tools >
-    /// Chat Commands tab "that we keep updated"). The plugin renders this list; it never carries its own.
+    /// THE registry of every chat command the ZoneControl plugin sends, plus the player commands this registry lists
+    /// (/bounty, /vault) (owner 2026-09-03: a GM Tools > Chat Commands tab "that we keep updated"). The plugin renders
+    /// this list; it never carries its own.
     /// `/zonecontrol help` prints it as prose, `/zonecontrol help --wire` emits one [[ZCHELP]] row per entry.
     ///
     /// KEEP IT UPDATED: when a verb is added, removed or re-shaped in ZoneControlCommands.cs (or any other
-    /// command the plugin sends), edit the matching row here in the same change. A row is
+    /// command the plugin sends, or a player command listed here), edit the matching row here in the same change. A row is
     /// (Group, Command, Usage, What it does) - one line each, plain ASCII, no '~' (the wire separator).
     /// </summary>
     // NOTE for the next audit: `cantrip` is a deliberate silent alias of `modifier` and is not listed.
@@ -125,6 +126,7 @@ namespace ACE.Server.Command.Handlers
             E("Readiness", "/zonecontrol mobcheckget", "[<zone>] [--wcid <id>]", "Machine twin of mobcheck ([[ZCMC]]) for the Readiness tab."),
 
             // ── Dungeons (one-player room dungeons) ─────────────────────────
+            E("Dungeons", "/vault", "", "Any player inside a Vaulted Dungeon: how many other players are in it, and who (at most 50 names). Your own name, staff and + characters are left out. One list every 30 seconds; being told you are not in one does not use it up."),
             E("Dungeons", "/zonecontrol dungeon status", "", "Every room of the dungeon you are in (or the one picked in the Dungeon dropdown): who stands in it, reservation, hold."),
             E("Dungeons", "/zonecontrol dungeon list", "", "Every room dungeon the server knows ([[ZCDGL]] lines for the plugin's Dungeon dropdown)."),
             E("Dungeons", "/zonecontrol dungeon select", "here | <source wcid> <variation>", "Point the dungeon tools at a dungeon you are not standing in; here = follow where you stand again."),
