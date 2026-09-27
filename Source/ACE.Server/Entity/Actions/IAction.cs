@@ -484,7 +484,7 @@ namespace ACE.Server.Entity.Actions
         PetNaming_ApproveRename,            // thread audit: portal approve renames the device on the world queue, never the HTTP thread
         DeveloperContent_ExportTemplate,    // thread audit: @export-template snapshots its target on the thread that owns it (world queue otherwise)
         PetNaming_RequestResult,            // thread audit: @pet-name background DB/Discord result delivered on the world queue
-        Bounty_Credit,                  // Bounty: a kill's bounty credit handed to the killer's own thread
+        Bounty_Credit,                      // Bounty: a kill's bounty credit handed to the killer's own thread
         Player_CloakSelfViewAtLogin,        // cloak: re-sends what a cloaked (On / Ghost) player's own client draws, a second after login
         DungeonBuilder_LiveEdit,            // dungeon builder: a placed wall / generator moved or turned on its own landblock's thread
     }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using log4net;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
@@ -33,6 +34,9 @@ namespace ACE.Server.Managers.ZoneControl
 
         private const string StoreKey = "zonecontrol_data";
 
+        /// <summary>"KillReward" as a JSON property name - the quoted token followed by optional whitespace and a colon.</summary>
+        private static readonly Regex LegacyBountyKey = new Regex("\"KillReward\"(\\s*):", RegexOptions.Compiled);
+
         /// <summary>The cantrip -> MODIFIER stat-key rename (2026-08-28). Stat keys are plain JSON
         /// dictionary keys inside the blob, so a stored blob written before the rename still carries
         /// cantrip_* keys; alias them to the modifier_* names before deserializing. The next save
@@ -42,9 +46,16 @@ namespace ACE.Server.Managers.ZoneControl
         /// ALSO aliases the SERIALIZED PROFILE MEMBER names renamed in the identifier sweep
         /// (ZoneVariantProfile.CustomModifiers / CustomModifierBands / CustomModifierSlots, formerly
         /// CustomCantrip*): those C# property names ARE the blob's JSON keys, so without the alias a
-        /// pre-rename blob's zone pools would silently deserialize to empty.</summary>
-        private static string UpgradeLegacyStoreKeys(string json)
+        /// pre-rename blob's zone pools would silently deserialize to empty.
+        ///
+        /// AND the ControlledArea "KillReward" block, renamed "Bounty" 2026-09-26 (same shape), so zone bounties saved before
+        /// the rename carry over. Only where "KillReward" is a KEY (followed by ':') - a zone or a note that happens to be
+        /// named KillReward is left alone (review 2026-09-26 round 2).</summary>
+        internal static string UpgradeLegacyStoreKeys(string json)   // internal: ZoneStoreCompatTests
         {
+            json = LegacyBountyKey.Replace(json, "\"Bounty\"$1:");
+
+
             if (json.IndexOf("cantrip", StringComparison.OrdinalIgnoreCase) < 0)
                 return json;
             return json
@@ -248,7 +259,12 @@ namespace ACE.Server.Managers.ZoneControl
             }
 
             if (!string.IsNullOrWhiteSpace(json))
+            {
+                // Neither build writes both keys; a hand edit can - one area's two blocks would then merge into one.
+                if (LegacyBountyKey.IsMatch(json) && json.Contains("\"Bounty\":"))
+                    log.Warn("[ZoneControl] the store has both \"KillReward\" and \"Bounty\" blocks - the old ones are renamed and merge into the new.");
                 json = UpgradeLegacyStoreKeys(json);
+            }
 
             var store = string.IsNullOrWhiteSpace(json)
                 ? new Store()

@@ -39,8 +39,8 @@ namespace ACE.Server.Managers.ZoneControl
 
         /// <summary>Bounty (owner 2026-09-23; called "KillReward" in code until 2026-09-26): an item every N kills per player, at most once
         /// per cooldown. Only while the zone is Enabled and the Zone Control master switch is on. Missing on deserialize of older
-        /// stores = off. Stored under the key "Bounty"; an old "KillReward" block is dropped on load (owner 2026-09-26: bounties
-        /// were never enabled, so nothing real is lost).</summary>
+        /// stores = off. Stored under the key "Bounty"; an old "KillReward" block is renamed to it on load
+        /// (ZoneControlManager.UpgradeLegacyStoreKeys), so settings made before 2026-09-26 carry over.</summary>
         public BountyConfig Bounty { get; set; } = new();
 
         public string Notes { get; set; }

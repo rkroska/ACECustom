@@ -18,7 +18,7 @@ using ACE.Server.WorldObjects;
 namespace ACE.Server.Managers
 {
     /// <summary>
-    /// KILL REWARD (owner 2026-09-23): an item every N kills, but never more often than once per cooldown - a per-area toggle
+    /// BOUNTY (owner 2026-09-23; called Kill Reward until 2026-09-26): an item every N kills, but never more often than once per cooldown - a per-area toggle
     /// on any Zone Control zone (ControlledArea.Bounty) and any room dungeon (PropertyString.RoomAssignBounty on its
     /// source weenie). The dungeon is checked first: it is the smaller, more specific area.
     ///

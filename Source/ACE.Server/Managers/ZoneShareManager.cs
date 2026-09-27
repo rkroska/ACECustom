@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
 
 using ACE.Entity.Enum;
-using ACE.Server.Entity;
 using ACE.Server.Managers.ZoneControl;
 using ACE.Server.WorldObjects;
 
@@ -27,8 +25,11 @@ namespace ACE.Server.Managers
     ///   - one character per ACCOUNT - an account's alts parked in the area add nothing;
     ///   - EVERYONE in the area, however many (owner 2026-09-25, replacing the 09-24 cap at a fellowship's size): 29 is the
     ///     client's limit for a REAL fellowship's window, and Zone Share is not one. Each member's cut comes from the stock
-    ///     share table (Fellowship.GetMemberSharePercent: 12.5% from 29 members up), exactly as a fellowship's would.
-    ///     Real fellowships keep Fellowship.MaxFellows - never raised here;
+    ///     share table (Fellowship.GetMemberSharePercent: 12.5% from 29 members up). That table gives EVERY member its cut -
+    ///     it is not one pot split N ways - so past 29 members a kill pays out more in total than a real fellowship's ever
+    ///     can: 1 + 0.125 x (N - 1) times the kill with fellowship_additive on (4.5x at 29, 13.4x at 100), 0.125 x N with it
+    ///     off - before prestige modifiers. Reviewed and kept
+    ///     by the owner 2026-09-26 (option A: no cap, no pool). Real fellowships keep Fellowship.MaxFellows;
     ///   - staff are left out - admins (unless the Room Assign Count Admin test switch is on), and any Sentinel-or-higher
     ///     account or cloaked character, so an invisible GM never dilutes anyone's share.
     ///

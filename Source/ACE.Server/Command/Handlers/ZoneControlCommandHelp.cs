@@ -116,7 +116,7 @@ namespace ACE.Server.Command.Handlers
             E("Territory", "/zonecontrol quests", "<name>", "The zone's quest registry rows."),
 
             // ── Sharing + rewards (zones at v11+; dungeons have their own below) ──
-            E("Rewards", "/zonecontrol zoneshare", "<name> on|off|show", "Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship (one character per account, a fellowship's size at most). v11+ only. Changing it needs Admin."),
+            E("Rewards", "/zonecontrol zoneshare", "<name> on|off|show", "Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship (one character per account, everyone in the zone except staff). v11+ only. Changing it needs Admin."),
             E("Rewards", "/zonecontrol bounty", "<name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>", "Bounty: items every N of a player's own kills, at most once per cooldown. v11+ only. Changing it needs Admin."),
             E("Rewards", "/bounty", "", "Any player: the bounties where you stand - kills so far, or how long until the next one unlocks - and anything held for you."),
 

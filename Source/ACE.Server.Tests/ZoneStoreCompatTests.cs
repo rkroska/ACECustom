@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 using ACE.Server.Managers.ZoneControl;
 using ACE.Server.Managers.ZoneScaling;
 
@@ -8,7 +10,7 @@ using Newtonsoft.Json;
 namespace ACE.Server.Tests
 {
     /// <summary>
-    /// Store round-trip compatibility for the 2026-07-30 Default-layer change.
+    /// Store round-trip compatibility for the 2026-07-30 Default-layer change (and, at the end, the 2026-09-26 Bounty rename).
     ///
     /// The zone store is a single JSON blob in shard config (`zonecontrol_data`). Two things in that change
     /// could silently destroy authored data on load rather than failing loudly:
@@ -196,11 +198,11 @@ namespace ACE.Server.Tests
         }
 
         /// <summary>
-        /// Bounty (renamed from KillReward 2026-09-26): stored under the key "Bounty". An old "KillReward" block is dropped on
-        /// load - accepted by the owner (bounties were never enabled on live, so nothing real is lost).
+        /// Bounty (renamed from KillReward 2026-09-26): stored under the key "Bounty". Bound directly, an old "KillReward"
+        /// block would be ignored - the load path renames it first (see the next test).
         /// </summary>
         [TestMethod]
-        public void Bounty_RoundTripsUnderBountyKey_OldKillRewardKeyDropped()
+        public void Bounty_RoundTripsUnderBountyKey_OldKeyNotBoundWithoutUpgrade()
         {
             const string json = @"{ ""Name"": ""Quarry"", ""Bounty"": { ""Enabled"": true, ""NextId"": 2,
                 ""Entries"": [ { ""Id"": 1, ""Wcid"": 273, ""Amount"": 50, ""Kills"": 96, ""CooldownMinutes"": 40 } ] } }";
@@ -214,7 +216,37 @@ namespace ACE.Server.Tests
             Assert.IsFalse(saved.Contains("\"KillReward\""));
 
             var legacy = JsonConvert.DeserializeObject<ControlledArea>(json.Replace("\"Bounty\"", "\"KillReward\""));
-            Assert.IsFalse(legacy.Bounty.Active, "an old KillReward block is not carried over");
+            Assert.IsFalse(legacy.Bounty.Active, "bound directly, the old key does not bind - the load path must rename it");
+        }
+
+        /// <summary>
+        /// The load path's key upgrade (UpgradeLegacyStoreKeys), read through Store's "Areas" shape: a store saved before the
+        /// rename keeps its zone bounties (review 2026-09-26: carried over, not silently dropped).
+        /// </summary>
+        [TestMethod]
+        public void Bounty_OldKillRewardKey_CarriedOverByTheLoadPath()
+        {
+            const string json = @"{ ""Areas"": [ { ""Name"": ""Quarry"", ""KillReward"": { ""Enabled"": true, ""NextId"": 2,
+                ""Entries"": [ { ""Id"": 1, ""Wcid"": 273, ""Amount"": 50, ""Kills"": 96, ""CooldownMinutes"": 40 } ] } } ] }";
+
+            // Store is private to ZoneControlManager: read the upgraded JSON through the same "Areas" shape.
+            var store = JsonConvert.DeserializeAnonymousType(ZoneControlManager.UpgradeLegacyStoreKeys(json), new { Areas = new List<ControlledArea>() });
+            var area = store.Areas[0];
+            Assert.IsTrue(area.Bounty.Active);
+            Assert.AreEqual(273u, area.Bounty.Entries[0].Wcid);
+            Assert.AreEqual(96, area.Bounty.Entries[0].Kills);
+        }
+
+        /// <summary>Only the KEY is renamed: a zone that happens to be NAMED KillReward keeps its name (review 2026-09-26 round 2).</summary>
+        [TestMethod]
+        public void Bounty_Upgrade_RenamesTheKeyOnly_NotAValue()
+        {
+            const string json = @"{ ""Areas"": [ { ""Name"": ""KillReward"", ""KillReward"" : { ""Enabled"": true } } ] }";
+
+            var upgraded = ZoneControlManager.UpgradeLegacyStoreKeys(json);
+            var store = JsonConvert.DeserializeAnonymousType(upgraded, new { Areas = new List<ControlledArea>() });
+            Assert.AreEqual("KillReward", store.Areas[0].Name);
+            Assert.IsTrue(store.Areas[0].Bounty.Enabled);
         }
     }
 }
