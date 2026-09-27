@@ -227,7 +227,7 @@ namespace ACE.Server.Managers
             if (zone == null)
                 return false;
 
-            areaKey = "zone:" + Clean(zone.Value.Name).ToLowerInvariant();
+            areaKey = ZoneAreaKey(zone.Value.Name);
             cfg = zone.Value.Reward;
             return cfg.Active;
         }
@@ -261,15 +261,7 @@ namespace ACE.Server.Managers
                 foreach (var reward in cfg.Entries)
                 {
                     if (reward == null || !reward.Valid) continue;
-
-                    progress.TryGetValue(areaKey + "#" + reward.ProgressKey, out var entry);
-                    var what = $"{reward.Amount:N0} {RoomAssignManager.ItemName(reward.Wcid)}";
-                    var unlockAt = entry.LastAward + reward.CooldownSeconds;
-                    var wait = (int)Math.Ceiling(Math.Min(unlockAt - now, int.MaxValue));
-
-                    Tell(player, wait > 0
-                        ? $"Bounty: {what} - unlocks in {FormatWait(wait)}, then {KillsText(reward.Kills)} required."
-                        : $"Bounty: {what} - {entry.Kills:N0} of {reward.Kills:N0} kills.");
+                    Tell(player, $"Bounty: {RewardText(reward)} - {StatusText(progress, areaKey, reward, now)}.");
                 }
 
                 if (heldLine != null) Tell(player, "Bounty: " + heldLine);
@@ -277,6 +269,73 @@ namespace ACE.Server.Managers
             catch (Exception ex)
             {
                 log.Error($"[Bounty] /bounty: {ex}");
+            }
+        }
+
+        /// <summary>"3 Pyreal Nugget" - one reward's item and amount.</summary>
+        private static string RewardText(BountyEntry reward) => $"{reward.Amount:N0} {RoomAssignManager.ItemName(reward.Wcid)}";
+
+        /// <summary>
+        /// Where the player stands on one reward of one area: "unlocks in 12 min, then 100 kills required" while its cooldown
+        /// runs, else "34 of 100 kills". /bounty and /bounty list both use it, so they always say the same thing.
+        /// </summary>
+        private static string StatusText(Dictionary<string, Entry> progress, string areaKey, BountyEntry reward, double now)
+        {
+            progress.TryGetValue(areaKey + "#" + reward.ProgressKey, out var entry);
+            var unlockAt = entry.LastAward + reward.CooldownSeconds;
+            var wait = (int)Math.Ceiling(Math.Min(unlockAt - now, int.MaxValue));
+            return wait > 0
+                ? $"unlocks in {FormatWait(wait)}, then {KillsText(reward.Kills)} required"
+                : $"{entry.Kills:N0} of {reward.Kills:N0} kills";
+        }
+
+        /// <summary>The same area key TryResolve builds for a zone (progress is saved under it).</summary>
+        private static string ZoneAreaKey(string zoneName) => "zone:" + Clean(zoneName).ToLowerInvariant();
+
+        /// <summary>
+        /// /bounty list (owner 2026-09-27): every bounty that can pay right now - each Vaulted Dungeon's, then each zone's -
+        /// with its rewards and this player's progress on each, so players can choose where to go. Read-only. Only places a
+        /// bounty can actually pay in (an active Bounty; a dungeon placed in a layer; a zone Bounty can resolve in).
+        /// </summary>
+        public static void ShowAllBounties(Player player)
+        {
+            if (player == null) return;
+
+            try
+            {
+                var now = Time.GetUnixTime();
+                var progress = LoadProgress(player);
+                var shown = 0;
+
+                void ShowArea(string where, string areaKey, BountyConfig cfg)
+                {
+                    var rewards = cfg.Entries.Where(e => e != null && e.Valid).ToList();
+                    if (rewards.Count == 0) return;
+                    if (shown == 0) Tell(player, "Bounties:");
+                    shown++;
+                    foreach (var reward in rewards)
+                        Tell(player, $"  {where}: {RewardText(reward)} every {KillsText(reward.Kills)}"
+                            + $" (at most every {FormatWait((int)Math.Ceiling(Math.Min(reward.CooldownSeconds, int.MaxValue)))})"
+                            + $" - you: {StatusText(progress, areaKey, reward, now)}.");
+                }
+
+                var dungeons = RoomAssignManager.ActiveDungeonBounties();
+                var multiLayer = new HashSet<uint>(dungeons.GroupBy(d => d.SourceWcid).Where(g => g.Count() > 1).Select(g => g.Key));
+                foreach (var d in dungeons)
+                    ShowArea(multiLayer.Contains(d.SourceWcid) ? $"{d.Name} (layer {d.Variation})" : d.Name,
+                        RoomAssignManager.DungeonAreaKey(d.SourceWcid, d.Variation), d.Bounty);
+
+                foreach (var z in ZoneControlManager.ActiveZoneBounties())
+                    ShowArea(z.Name, ZoneAreaKey(z.Name), z.Reward);
+
+                if (shown == 0)
+                    Tell(player, "Bounty: there are no bounties anywhere right now.");
+                else
+                    Tell(player, "Bounty: /bounty where you stand shows the bounties there.");
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[Bounty] /bounty list: {ex}");
             }
         }
 

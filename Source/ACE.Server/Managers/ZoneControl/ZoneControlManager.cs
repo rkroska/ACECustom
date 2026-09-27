@@ -37,6 +37,31 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>"KillReward" as a JSON property name - the quoted token followed by optional whitespace and a colon.</summary>
         private static readonly Regex LegacyBountyKey = new Regex("\"KillReward\"(\\s*):", RegexOptions.Compiled);
 
+        /// <summary>
+        /// Neither build writes both keys, but a hand edit can leave ONE zone with a "KillReward" and a "Bounty" block; the old
+        /// one is then renamed and its rewards merge into the new block's (Sanitize renumbers any clashing ids). Checked per
+        /// zone, so zones that each carry only one of the two names - a store part-way through the rename - say nothing.
+        /// </summary>
+        internal static int CountBothBountyKeys(string json)   // internal: ZoneStoreCompatTests
+        {
+            try
+            {
+                return Newtonsoft.Json.Linq.JToken.Parse(json).SelectTokens("$..*").OfType<Newtonsoft.Json.Linq.JObject>()
+                    .Count(o => o.Property("KillReward") != null && o.Property("Bounty") != null);
+            }
+            catch (JsonException)
+            {
+                return 0;   // the load itself reports a blob that does not parse
+            }
+        }
+
+        private static void WarnIfBothBountyKeys(string json)
+        {
+            var both = CountBothBountyKeys(json);
+            if (both > 0)
+                log.Warn($"[ZoneControl] {both} zone(s) in the store have both a \"KillReward\" and a \"Bounty\" block - the old block is renamed and its rewards merge into the new one.");
+        }
+
         /// <summary>The cantrip -> MODIFIER stat-key rename (2026-08-28). Stat keys are plain JSON
         /// dictionary keys inside the blob, so a stored blob written before the rename still carries
         /// cantrip_* keys; alias them to the modifier_* names before deserializing. The next save
@@ -54,7 +79,6 @@ namespace ACE.Server.Managers.ZoneControl
         internal static string UpgradeLegacyStoreKeys(string json)   // internal: ZoneStoreCompatTests
         {
             json = LegacyBountyKey.Replace(json, "\"Bounty\"$1:");
-
 
             if (json.IndexOf("cantrip", StringComparison.OrdinalIgnoreCase) < 0)
                 return json;
@@ -260,9 +284,8 @@ namespace ACE.Server.Managers.ZoneControl
 
             if (!string.IsNullOrWhiteSpace(json))
             {
-                // Neither build writes both keys; a hand edit can - one area's two blocks would then merge into one.
-                if (LegacyBountyKey.IsMatch(json) && json.Contains("\"Bounty\":"))
-                    log.Warn("[ZoneControl] the store has both \"KillReward\" and \"Bounty\" blocks - the old ones are renamed and merge into the new.");
+                if (LegacyBountyKey.IsMatch(json))
+                    WarnIfBothBountyKeys(json);
                 json = UpgradeLegacyStoreKeys(json);
             }
 
@@ -2045,6 +2068,27 @@ namespace ACE.Server.Managers.ZoneControl
         /// null. Same rules as Zone Share: the most specific zone decides, enabled zones at v11+ only, nothing while the master
         /// switch is off. Asked for both the killer and the victim (they must be in the same area). Lock-free snapshot read.
         /// </summary>
+        /// <summary>
+        /// Every enabled zone with an active Bounty, sorted by name - /bounty list (owner 2026-09-27). Lock-free snapshot read.
+        /// Only zones a Bounty can pay in: at the endgame layers (EndgameZoneRef's floor), and none while the Zone Control
+        /// master switch is off.
+        /// </summary>
+        public static List<(string Name, BountyConfig Reward)> ActiveZoneBounties()
+        {
+            var list = new List<(string Name, BountyConfig Reward)>();
+            if (!ServerConfig.zonecontrol_enabled.Value)
+                return list;
+
+            var seen = new HashSet<ZoneRef>();   // a zone is listed under each of its landblocks: once each
+            foreach (var refs in _snapshot.ByLandblock.Values)
+                foreach (var zone in refs)
+                    if (seen.Add(zone) && zone.Bounty != null && zone.Bounty.Active && zone.Variation >= VariationManager.EndgameMinVariation)
+                        list.Add((zone.Name, zone.Bounty));
+
+            list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            return list;
+        }
+
         public static (string Name, BountyConfig Reward)? ResolveBounty(WorldObject wo)
         {
             var best = EndgameZoneRef(wo);

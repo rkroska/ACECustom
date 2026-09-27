@@ -504,7 +504,8 @@ namespace ACE.Server.Managers
                 + $"|since={string.Join(",", held)}"   // appended 2026-09-22: how long the owning account has had each room
                 + $"|heldby={string.Join(",", heldBy)}"   // appended 2026-09-23: the character each hold is waiting for
                 + $"|zshare={(zoneShare ? 1 : 0)}|zsharen={(zoneShare ? ZoneShareManager.CountInDungeon(sourceWcid, variation) : 0)}"   // appended 2026-09-23: Zone Share switch + players sharing now
-                + $"|bounty={(bounty.Enabled ? 1 : 0)}|bountylist={BountyManager.Wire(bounty)}";   // appended 2026-09-23 as kr= / krlist=, renamed 2026-09-26 (owner): on, and every reward
+                + $"|kr={(bounty.Enabled ? 1 : 0)}|krlist={BountyManager.Wire(bounty)}"   // appended 2026-09-23: Bounty (then Kill Reward) on, and every reward
+                + $"|bounty={(bounty.Enabled ? 1 : 0)}|bountylist={BountyManager.Wire(bounty)}";   // appended 2026-09-27: the same under the Bounty name (owner rename 09-26). kr= / krlist= stay - the wire is append-only, and a plugin built before the rename reads only those
         }
 
         /// <summary>

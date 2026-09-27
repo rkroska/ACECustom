@@ -28,8 +28,8 @@ namespace ACE.Server.Managers
     ///     share table (Fellowship.GetMemberSharePercent: 12.5% from 29 members up). That table gives EVERY member its cut -
     ///     it is not one pot split N ways - so past 29 members a kill pays out more in total than a real fellowship's ever
     ///     can: 1 + 0.125 x (N - 1) times the kill with fellowship_additive on (4.5x at 29, 13.4x at 100), 0.125 x N with it
-    ///     off - before prestige modifiers. Reviewed and kept
-    ///     by the owner 2026-09-26 (option A: no cap, no pool). Real fellowships keep Fellowship.MaxFellows;
+    ///     off. Reviewed and kept by the owner 2026-09-26 (option A: no cap, no pool); kill-task credit shared to every
+    ///     member too, kept 2026-09-27. Real fellowships keep Fellowship.MaxFellows;
     ///   - staff are left out - admins (unless the Room Assign Count Admin test switch is on), and any Sentinel-or-higher
     ///     account or cloaked character, so an invisible GM never dilutes anyone's share.
     ///

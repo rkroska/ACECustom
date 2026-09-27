@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 using ACE.Server.Managers.ZoneControl;
 using ACE.Server.Managers.ZoneScaling;
@@ -213,7 +214,7 @@ namespace ACE.Server.Tests
 
             var saved = JsonConvert.SerializeObject(area);
             StringAssert.Contains(saved, "\"Bounty\":");
-            Assert.IsFalse(saved.Contains("\"KillReward\""));
+            StringAssert.DoesNotMatch(saved, new Regex("\"KillReward\""));
 
             var legacy = JsonConvert.DeserializeObject<ControlledArea>(json.Replace("\"Bounty\"", "\"KillReward\""));
             Assert.IsFalse(legacy.Bounty.Active, "bound directly, the old key does not bind - the load path must rename it");
@@ -247,6 +248,41 @@ namespace ACE.Server.Tests
             var store = JsonConvert.DeserializeAnonymousType(upgraded, new { Areas = new List<ControlledArea>() });
             Assert.AreEqual("KillReward", store.Areas[0].Name);
             Assert.IsTrue(store.Areas[0].Bounty.Enabled);
+        }
+
+        /// <summary>Running the upgrade on an already-upgraded store changes nothing.</summary>
+        [TestMethod]
+        public void Bounty_Upgrade_IsIdempotent()
+        {
+            const string json = @"{ ""Areas"": [ { ""Name"": ""Quarry"", ""KillReward"": { ""Enabled"": true } } ] }";
+
+            var once = ZoneControlManager.UpgradeLegacyStoreKeys(json);
+            Assert.AreEqual(once, ZoneControlManager.UpgradeLegacyStoreKeys(once));
+        }
+
+        /// <summary>An escaped "KillReward": inside a string value (a zone's notes) is not a key and is left alone.</summary>
+        [TestMethod]
+        public void Bounty_Upgrade_LeavesAnEscapedKeyInsideAStringAlone()
+        {
+            const string json = "{ \"Areas\": [ { \"Name\": \"Quarry\", \"Notes\": \"was \\\"KillReward\\\": on\" } ] }";
+
+            Assert.AreEqual(json, ZoneControlManager.UpgradeLegacyStoreKeys(json));
+        }
+
+        /// <summary>
+        /// The both-keys warning counts ZONES that carry both blocks (a hand edit), not a store where different zones carry
+        /// different names.
+        /// </summary>
+        [TestMethod]
+        public void Bounty_BothKeys_CountedPerZone()
+        {
+            const string split = @"{ ""Areas"": [ { ""Name"": ""A"", ""KillReward"": { ""Enabled"": true } },
+                                                  { ""Name"": ""B"", ""Bounty"": { ""Enabled"": true } } ] }";
+            const string both = @"{ ""Areas"": [ { ""Name"": ""A"", ""KillReward"": { ""Enabled"": true }, ""Bounty"": { ""Enabled"": false } } ] }";
+
+            Assert.AreEqual(0, ZoneControlManager.CountBothBountyKeys(split));
+            Assert.AreEqual(1, ZoneControlManager.CountBothBountyKeys(both));
+            Assert.AreEqual(0, ZoneControlManager.CountBothBountyKeys("{ not json"));
         }
     }
 }

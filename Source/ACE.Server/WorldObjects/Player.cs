@@ -598,6 +598,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool LogOut(bool clientSessionTerminatedAbruptly = false, bool forceImmediate = false)
         {
+            // The moment the logout is asked for, while the character still stands where it is: the Vaulted Dungeon switch
+            // lockout starts here, not after the logout animation (an alt could log in during it).
+            RoomAssignManager.OnLogoutStart(this);
+
             if (PKLogoutActive && !forceImmediate)
             {
                 //Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.YouHaveBeenInPKBattleTooRecently));
