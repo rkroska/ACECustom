@@ -110,7 +110,7 @@ namespace ACE.Server.Managers.ZoneControl
             public HashSet<uint> ExemptGenerators;           // master switch per generator (2026-09-03): nor anything these spawn
             public ZoneEffects Effects;                      // immutable copy (readers never touch the live zone)
             public bool ZoneShare;                           // Zone Share (2026-09-23): the whole zone shares kills as one fellowship
-            public KillRewardConfig KillReward;              // Kill Reward (2026-09-23): immutable copy
+            public BountyConfig Bounty;              // Bounty (2026-09-23): immutable copy
             public ZoneAppearance AppearanceDefault;         // cosmetic default (separate from stats)
             public Dictionary<uint, ZoneAppearance> AppearanceByWcid; // per-WCID cosmetic overlays
         }
@@ -663,7 +663,7 @@ namespace ACE.Server.Managers.ZoneControl
                 ExemptGenerators = area.Profile.ExemptGenerators != null ? new HashSet<uint>(area.Profile.ExemptGenerators) : new HashSet<uint>(),
                 Effects = ZoneEffects.Merge(def?.Effects, area.Effects),
                 ZoneShare = area.ZoneShare,
-                KillReward = area.KillReward?.Clone(),
+                Bounty = area.Bounty?.Clone(),
                 AppearanceDefault = apZone,
                 AppearanceByWcid = apWcid,
             };
@@ -1003,7 +1003,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>
         /// The enabled zone that governs where this object stands, at its effective variation: most-specific wins (the zone
         /// with the fewest landblocks), as everywhere else. Null when no enabled zone covers the spot. Lock-free snapshot read.
-        /// The one copy of the "governing zone" walk - the player gear caps, Zone Share and Kill Reward all go through it.
+        /// The one copy of the "governing zone" walk - the player gear caps, Zone Share and Bounty all go through it.
         /// </summary>
         private static ZoneRef GoverningZoneRef(WorldObject wo)
         {
@@ -1030,7 +1030,7 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// The zone that governs this spot for Zone Share / Kill Reward: as <see cref="GoverningZoneRef"/>, but never below the
+        /// The zone that governs this spot for Zone Share / Bounty: as <see cref="GoverningZoneRef"/>, but never below the
         /// endgame floor (v11) and never while the Zone Control master switch is off. Retail - every variation under 11 - is
         /// out of reach by construction, however a zone was authored (review 2026-09-24: the owner's never-touch-retail rule).
         /// </summary>
@@ -2001,12 +2001,12 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// Kill Reward for a zone (owner 2026-09-23): applies one edit to the zone's CURRENT settings under the store lock and
+        /// Bounty for a zone (owner 2026-09-23): applies one edit to the zone's CURRENT settings under the store lock and
         /// saves - read, change and write in one step, so two admins' edits each touch only their own reward and neither
         /// writes back an old copy over the other. <paramref name="edit"/> returns why it refused (nothing is saved then), or
         /// null. Returns the settings as they now are (null for no such zone), and the refusal.
         /// </summary>
-        public static KillRewardConfig EditKillReward(string name, Func<KillRewardConfig, string> edit, out string refused)
+        public static BountyConfig EditBounty(string name, Func<BountyConfig, string> edit, out string refused)
         {
             refused = null;
             EnsureInitialized();
@@ -2014,28 +2014,28 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 var a = FindArea(name);
                 if (a == null) return null;
-                var cfg = (a.KillReward ?? new KillRewardConfig()).Clone();
+                var cfg = (a.Bounty ?? new BountyConfig()).Clone();
                 refused = edit(cfg);
                 if (refused != null)
-                    return (a.KillReward ?? new KillRewardConfig()).Clone();
-                a.KillReward = cfg;
+                    return (a.Bounty ?? new BountyConfig()).Clone();
+                a.Bounty = cfg;
                 Save();
                 return cfg.Clone();
             }
         }
 
         /// <summary>
-        /// Kill Reward (owner 2026-09-23): the governing zone's reward where this object stands - its name and settings - or
+        /// Bounty (owner 2026-09-23): the governing zone's reward where this object stands - its name and settings - or
         /// null. Same rules as Zone Share: the most specific zone decides, enabled zones at v11+ only, nothing while the master
         /// switch is off. Asked for both the killer and the victim (they must be in the same area). Lock-free snapshot read.
         /// </summary>
-        public static (string Name, KillRewardConfig Reward)? ResolveKillReward(WorldObject wo)
+        public static (string Name, BountyConfig Reward)? ResolveBounty(WorldObject wo)
         {
             var best = EndgameZoneRef(wo);
-            if (best?.KillReward == null || !best.KillReward.Active)
+            if (best?.Bounty == null || !best.Bounty.Active)
                 return null;
 
-            return (best.Name, best.KillReward);
+            return (best.Name, best.Bounty);
         }
 
         /// <summary>Zone Share on/off for a zone (owner 2026-09-23). Save() rebuilds the snapshot the kill hooks read.</summary>

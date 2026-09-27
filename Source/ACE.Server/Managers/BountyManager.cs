@@ -19,7 +19,7 @@ namespace ACE.Server.Managers
 {
     /// <summary>
     /// KILL REWARD (owner 2026-09-23): an item every N kills, but never more often than once per cooldown - a per-area toggle
-    /// on any Zone Control zone (ControlledArea.KillReward) and any room dungeon (PropertyString.RoomAssignKillReward on its
+    /// on any Zone Control zone (ControlledArea.Bounty) and any room dungeon (PropertyString.RoomAssignBounty on its
     /// source weenie). The dungeon is checked first: it is the smaller, more specific area.
     ///
     /// Owner rules:
@@ -30,10 +30,10 @@ namespace ACE.Server.Managers
     ///   - NO PRE-HUNTING (owner 2026-09-23, replacing an earlier "held until the cooldown ends" rule): after a bounty, kills
     ///     do not count until its cooldown has run out; the next bounty is the full cooldown THEN N kills;
     ///   - delivered straight into the pack with one chat line;
-    ///   - count and last award are saved on the character (PropertyString.KillRewardProgress), so a relog or a restart can
+    ///   - count and last award are saved on the character (PropertyString.BountyProgress), so a relog or a restart can
     ///     neither reset the cooldown nor lose progress;
     ///   - a full pack never loses the item (the Invasion branch's pending-reward rule): it is HELD on the character
-    ///     (PropertyString.KillRewardOwed) and handed over as soon as there is room - retried on the player heartbeat, which
+    ///     (PropertyString.BountyOwed) and handed over as soon as there is room - retried on the player heartbeat, which
     ///     also covers login.
     ///
     /// Threading (review 2026-09-24): every read and write of a player's progress, held rewards and pack happens on that
@@ -41,7 +41,7 @@ namespace ACE.Server.Managers
     /// do, and the heartbeat already runs there. Nothing is shared between threads, so nothing can be delivered twice or lost
     /// between a kill and a delivery.
     /// </summary>
-    public static class KillRewardManager
+    public static class BountyManager
     {
         /// <summary>Command bounds (review 2026-09-24): an amount, a kill count and a cooldown an admin can actually mean.</summary>
         public const int MaxAmount = 10_000;
@@ -58,7 +58,7 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Creature death (Creature_Death.OnDeath), on the victim's thread. Cheap for the whole world: one area lookup for
-        /// the victim's spot, and nothing else unless it died in a Kill Reward area.
+        /// the victim's spot, and nothing else unless it died in a Bounty area.
         /// </summary>
         public static void OnCreatureKilled(Creature victim)
         {
@@ -71,7 +71,7 @@ namespace ACE.Server.Managers
                 if (!TryResolve(victim, out var victimArea, out _))
                     return;
 
-                if (!PaysKillReward(victim))
+                if (!PaysBounty(victim))
                     return;
 
                 // The ONLINE player, never the object the damage history remembers (review 2026-09-24): that is a weak
@@ -85,11 +85,11 @@ namespace ACE.Server.Managers
 
                 // The player may be ticked by another landblock group (a pet or a DoT finished the kill after a portal): the
                 // credit, the progress and the pack are the player's, so they are touched on the player's thread only.
-                LandblockManager.RunOnThreadFor(player, ActionType.KillReward_Credit, () => Credit(player, victimArea));
+                LandblockManager.RunOnThreadFor(player, ActionType.Bounty_Credit, () => Credit(player, victimArea));
             }
             catch (Exception ex)
             {
-                log.Error($"[KillReward] OnCreatureKilled: {ex}");
+                log.Error($"[Bounty] OnCreatureKilled: {ex}");
             }
         }
 
@@ -109,7 +109,7 @@ namespace ACE.Server.Managers
 
                 var now = Time.GetUnixTime();
                 var progress = LoadProgress(player);
-                var completed = new List<KillRewardEntry>();
+                var completed = new List<BountyEntry>();
 
                 // Each reward row counts on its own: its own kills and its own cooldown (owner 2026-09-23: several rewards).
                 foreach (var reward in cfg.Entries)
@@ -162,13 +162,13 @@ namespace ACE.Server.Managers
                     }
                     catch (Exception ex)
                     {
-                        log.Error($"[KillReward] Award of {reward.Wcid} to {player.Name}: {ex}");
+                        log.Error($"[Bounty] Award of {reward.Wcid} to {player.Name}: {ex}");
                     }
                 }
             }
             catch (Exception ex)
             {
-                log.Error($"[KillReward] Credit: {ex}");
+                log.Error($"[Bounty] Credit: {ex}");
             }
         }
 
@@ -176,7 +176,7 @@ namespace ACE.Server.Managers
         /// Only kills that pay kill XP or luminance count (review 2026-09-24): the same numbers OnDeath_GrantXP uses - the
         /// weenie's, or the governing zone's when it authors them - and nothing on a no-death-XP landblock.
         /// </summary>
-        private static bool PaysKillReward(Creature victim)
+        private static bool PaysBounty(Creature victim)
         {
             if (victim.IsOnNoDeathXPLandblock || victim.DamageHistory.TotalHealth == 0)
                 return false;
@@ -197,11 +197,11 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// The Kill Reward area this object stands in: a dungeon first, else the governing Zone Control zone. Asked for the
+        /// The Bounty area this object stands in: a dungeon first, else the governing Zone Control zone. Asked for the
         /// victim (on its thread) and for the killer (on theirs); the two keys must match. A dungeon's key carries its
         /// variation, so two copies of one dungeon are two areas.
         /// </summary>
-        private static bool TryResolve(WorldObject wo, out string areaKey, out KillRewardConfig cfg)
+        private static bool TryResolve(WorldObject wo, out string areaKey, out BountyConfig cfg)
         {
             areaKey = null;
             cfg = null;
@@ -210,20 +210,20 @@ namespace ACE.Server.Managers
             if (location == null)
                 return false;
 
-            var source = RoomAssignManager.KillRewardSourceAt(location.Cell, location.Variation);
+            var source = RoomAssignManager.BountySourceAt(location.Cell, location.Variation);
             if (source != 0)
             {
-                cfg = RoomAssignManager.KillRewardOf(source);
+                cfg = RoomAssignManager.BountyOf(source);
                 areaKey = RoomAssignManager.DungeonAreaKey(source, location.Variation);
                 return cfg.Active;
             }
 
-            // A dungeon's own setting wins, even when it is off (owner 2026-09-24): a dungeon with no Kill Reward inside a
+            // A dungeon's own setting wins, even when it is off (owner 2026-09-24): a dungeon with no Bounty inside a
             // zone that has one does not inherit the zone's.
             if (RoomAssignManager.IsInRoomDungeon(location))
                 return false;
 
-            var zone = ZoneControlManager.ResolveKillReward(wo);
+            var zone = ZoneControlManager.ResolveBounty(wo);
             if (zone == null)
                 return false;
 
@@ -244,7 +244,7 @@ namespace ACE.Server.Managers
 
             try
             {
-                var held = ParseOwed(player.GetProperty(PropertyString.KillRewardOwed));
+                var held = ParseOwed(player.GetProperty(PropertyString.BountyOwed));
                 var heldLine = held.Count == 0 ? null
                     : "Held for you until you have room: " + string.Join(", ", held.Select(h => $"{h.Amount:N0} {RoomAssignManager.ItemName(h.Wcid)}")) + ".";
 
@@ -276,7 +276,7 @@ namespace ACE.Server.Managers
             }
             catch (Exception ex)
             {
-                log.Error($"[KillReward] /bounty: {ex}");
+                log.Error($"[Bounty] /bounty: {ex}");
             }
         }
 
@@ -285,18 +285,18 @@ namespace ACE.Server.Managers
         public const string EditUsage = "on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>";
 
         /// <summary>
-        /// Applies one edit to a copy of an area's Kill Reward: on / off / add / set &lt;id&gt; / remove &lt;id&gt;. Rewards are named by
+        /// Applies one edit to a copy of an area's Bounty: on / off / add / set &lt;id&gt; / remove &lt;id&gt;. Rewards are named by
         /// their permanent ID (show lists them), never by list position (owner 2026-09-23: two admins at once). The last save
         /// to a reward wins; an edit for a reward someone else removed is refused, never turned onto another row. Returns why
         /// it was refused, or null. <paramref name="at"/> is where the op's own arguments start. Turning on needs a reward with
         /// an item; removing the last one turns it off.
         /// </summary>
-        public static string Edit(KillRewardConfig cfg, string op, IList<string> args, int at)
+        public static string Edit(BountyConfig cfg, string op, IList<string> args, int at)
         {
             var inv = CultureInfo.InvariantCulture;
             cfg.EnsureIds();
 
-            string ReadEntry(int from, out KillRewardEntry entry)
+            string ReadEntry(int from, out BountyEntry entry)
             {
                 entry = null;
                 if (args.Count < from + 4
@@ -313,7 +313,7 @@ namespace ACE.Server.Managers
                 if (!IsGivableItem(wcid))
                     return $"WCID {wcid} is a {weenie.WeenieType}, not an item a player can carry.";
 
-                entry = new KillRewardEntry { Wcid = wcid, Amount = amount, Kills = kills, CooldownMinutes = minutes };
+                entry = new BountyEntry { Wcid = wcid, Amount = amount, Kills = kills, CooldownMinutes = minutes };
                 return null;
             }
 
@@ -321,7 +321,7 @@ namespace ACE.Server.Managers
             {
                 index = -1;
                 if (args.Count <= from || !int.TryParse(args[from], NumberStyles.Integer, inv, out var id) || id < 1)
-                    return "Which reward? Give its ID (the Kill Reward list shows them: killreward <zone> show, or the dungeon's Settings).";
+                    return "Which reward? Give its ID (the Bounty list shows them: bounty <zone> show, or the dungeon's Settings).";
                 index = cfg.Entries.FindIndex(e => e != null && e.Id == id);
                 if (index < 0)
                     return $"Reward {id} is not there - it was removed (by you or another admin).";
@@ -369,7 +369,7 @@ namespace ACE.Server.Managers
                 }
 
                 default:
-                    return "Kill Reward: " + EditUsage;
+                    return "Bounty: " + EditUsage;
             }
         }
 
@@ -422,7 +422,7 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>One line for chat: "ON: 1x Pyreal every 100 kills (5 min); ...".</summary>
-        public static string Describe(KillRewardConfig cfg)
+        public static string Describe(BountyConfig cfg)
         {
             if (cfg == null || cfg.Entries.Count == 0)
                 return (cfg?.Enabled == true ? "ON" : "off") + ": no rewards";
@@ -437,7 +437,7 @@ namespace ACE.Server.Managers
         /// separator the zone list or the dungeon line uses taken out. The id is what the plugin's edits name. Works on a copy:
         /// reading the list never changes the live settings (IDs for old data are given the same way Edit gives them).
         /// </summary>
-        public static string Wire(KillRewardConfig cfg)
+        public static string Wire(BountyConfig cfg)
         {
             if (cfg?.Entries == null || cfg.Entries.Count == 0) return "";
             var copy = cfg.Clone();
@@ -461,7 +461,7 @@ namespace ACE.Server.Managers
         ///   completed: "Bounty complete! +1 Ascension Coin gained."  /  "Next bounty unlocks in 5 min - 100 kills required."
         ///   held:      "Bounty: Your inventory is full. +1 Ascension Coin gained (3 total). They're safe until you make room."
         /// </summary>
-        private static void Award(Player player, KillRewardEntry reward, double awardedUnix)
+        private static void Award(Player player, BountyEntry reward, double awardedUnix)
         {
             var given = 0;
             var names = new ItemNames(reward.Wcid);
@@ -584,7 +584,7 @@ namespace ACE.Server.Managers
         /// The wait is the REAL time until this player's next bounty can start (owner 2026-09-23): the cooldown's end, from when
         /// this bounty was awarded, to the second - never rounded (2.5 min is "2 min 30 sec", not "3 min").
         /// </summary>
-        private static string NextBountyLine(KillRewardEntry reward, double awardedUnix)
+        private static string NextBountyLine(BountyEntry reward, double awardedUnix)
         {
             var kills = KillsText(reward.Kills);
             var unlockAt = awardedUnix + reward.CooldownSeconds;
@@ -611,7 +611,7 @@ namespace ACE.Server.Managers
 
         /// <summary>How many of this item are held for the player now.</summary>
         private static long OwedOf(Player player, uint wcid)
-            => ParseOwed(player.GetProperty(PropertyString.KillRewardOwed)).Where(o => o.Wcid == wcid).Sum(o => (long)o.Amount);
+            => ParseOwed(player.GetProperty(PropertyString.BountyOwed)).Where(o => o.Wcid == wcid).Sum(o => (long)o.Amount);
 
         /// <summary>
         /// How long a delivery that handed nothing over waits before the next try, by why it stopped: room trouble is retried
@@ -634,7 +634,7 @@ namespace ACE.Server.Managers
                 if (player == null)
                     return;
 
-                var raw = player.GetProperty(PropertyString.KillRewardOwed);
+                var raw = player.GetProperty(PropertyString.BountyOwed);
                 if (string.IsNullOrEmpty(raw))
                 {
                     _nextDeliveryTry.TryRemove(player.Guid.Full, out _);
@@ -678,7 +678,7 @@ namespace ACE.Server.Managers
                             continue;
 
                         if (result == DeliverResult.Broken)
-                            log.Warn($"[KillReward] WCID {wcid} cannot be handed over to {player.Name} (cannot be made, or not a carryable item) - {amount - given} still held; next try in an hour.");
+                            log.Warn($"[Bounty] WCID {wcid} cannot be handed over to {player.Name} (cannot be made, or not a carryable item) - {amount - given} still held; next try in an hour.");
                         else if (result == DeliverResult.Refused && given == 0)
                             Tell(player, HeldLine(player, wcid, amount, names, result));
 
@@ -698,7 +698,7 @@ namespace ACE.Server.Managers
             }
             catch (Exception ex)
             {
-                log.Error($"[KillReward] TryDeliverOwed: {ex}");
+                log.Error($"[Bounty] TryDeliverOwed: {ex}");
             }
         }
 
@@ -715,7 +715,7 @@ namespace ACE.Server.Managers
 
         private static void AddOwed(Player player, uint wcid, int amount)
         {
-            var owed = ParseOwed(player.GetProperty(PropertyString.KillRewardOwed));
+            var owed = ParseOwed(player.GetProperty(PropertyString.BountyOwed));
             var at = owed.FindIndex(o => o.Wcid == wcid);
             if (at >= 0) owed[at] = (wcid, (int)Math.Min((long)owed[at].Amount + amount, int.MaxValue));
             else owed.Add((wcid, amount));
@@ -727,9 +727,9 @@ namespace ACE.Server.Managers
         {
             var left = owed.Where(o => o.Amount > 0).ToList();
             if (left.Count == 0)
-                player.RemoveProperty(PropertyString.KillRewardOwed);
+                player.RemoveProperty(PropertyString.BountyOwed);
             else
-                player.SetProperty(PropertyString.KillRewardOwed, string.Join(";", left.Select(o => o.Wcid + ":" + o.Amount)));
+                player.SetProperty(PropertyString.BountyOwed, string.Join(";", left.Select(o => o.Wcid + ":" + o.Amount)));
         }
 
         private static List<(uint Wcid, int Amount)> ParseOwed(string raw)
@@ -759,7 +759,7 @@ namespace ACE.Server.Managers
         private static Dictionary<string, Entry> LoadProgress(Player player)
         {
             var map = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
-            var raw = player.GetProperty(PropertyString.KillRewardProgress);
+            var raw = player.GetProperty(PropertyString.BountyProgress);
             if (string.IsNullOrWhiteSpace(raw)) return map;
 
             foreach (var part in raw.Split(';'))
@@ -785,8 +785,8 @@ namespace ACE.Server.Managers
             }
 
             var text = sb.ToString();
-            if (text != player.GetProperty(PropertyString.KillRewardProgress))
-                player.SetProperty(PropertyString.KillRewardProgress, text);
+            if (text != player.GetProperty(PropertyString.BountyProgress))
+                player.SetProperty(PropertyString.BountyProgress, text);
         }
 
         /// <summary>A zone name as a key: the separators the progress string uses are taken out.</summary>

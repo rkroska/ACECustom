@@ -25,7 +25,10 @@ namespace ACE.Server.Managers
     ///
     /// Who is in (review 2026-09-24, owner rulings):
     ///   - one character per ACCOUNT - an account's alts parked in the area add nothing;
-    ///   - at most a real fellowship's size (Fellowship.MaxFellows): past that, the earner and the members nearest to them;
+    ///   - EVERYONE in the area, however many (owner 2026-09-25, replacing the 09-24 cap at a fellowship's size): 29 is the
+    ///     client's limit for a REAL fellowship's window, and Zone Share is not one. Each member's cut comes from the stock
+    ///     share table (Fellowship.GetMemberSharePercent: 12.5% from 29 members up), exactly as a fellowship's would.
+    ///     Real fellowships keep Fellowship.MaxFellows - never raised here;
     ///   - staff are left out - admins (unless the Room Assign Count Admin test switch is on), and any Sentinel-or-higher
     ///     account or cloaked character, so an invisible GM never dilutes anyone's share.
     ///
@@ -93,7 +96,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Everyone who shares with this earner, the earner first - or null when the earner is not in a Zone Share area,
         /// which leaves the normal fellowship rules in charge. Every member shares in full (scalar 1.0): distance plays no
-        /// part inside an area, except in choosing who is in when the area holds more accounts than a fellowship can.
+        /// part inside an area, and nobody in it is left out for being far away (owner 2026-09-25: no cap).
         /// </summary>
         public static List<(Player Member, double Scalar)> MembersFor(Player earner)
         {
@@ -122,16 +125,6 @@ namespace ACE.Server.Managers
                 others.Add(player);
             }
 
-            var room = Fellowship.MaxFellows - 1;
-            if (others.Count > room)
-            {
-                var from = earner.Location;
-                others = others
-                    .OrderBy(p => from != null && p.Location != null ? from.SquaredDistanceTo(p.Location) : float.MaxValue)
-                    .Take(room)
-                    .ToList();
-            }
-
             var members = new List<(Player Member, double Scalar)>(others.Count + 1) { (earner, 1.0) };
             foreach (var player in others)
                 members.Add((player, 1.0));
@@ -148,8 +141,8 @@ namespace ACE.Server.Managers
             => sourceWcid == 0 ? 0 : CountSharing(RoomAssignManager.DungeonAreaKey(sourceWcid, variation));
 
         /// <summary>
-        /// The number that really shares, as MembersFor counts it (review 2026-09-24): one per account, at most a fellowship's
-        /// size - not every character standing there.
+        /// The number that really shares, as MembersFor counts it (review 2026-09-24): one per account - not every character
+        /// standing there. No cap (owner 2026-09-25).
         /// </summary>
         private static int CountSharing(string key)
         {
@@ -165,7 +158,7 @@ namespace ACE.Server.Managers
                 if (account == 0) noAccount++;
                 else accounts.Add(account);
             }
-            return Math.Min(accounts.Count + noAccount, Fellowship.MaxFellows);
+            return accounts.Count + noAccount;
         }
 
         /// <summary>Every online player in this area now, by guid - reused for <see cref="MemberCacheMs"/>. The list is never

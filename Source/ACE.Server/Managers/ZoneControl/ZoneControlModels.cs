@@ -37,9 +37,11 @@ namespace ACE.Server.Managers.ZoneControl
         /// Control master switch is on. Missing on deserialize of older stores = off.</summary>
         public bool ZoneShare { get; set; }
 
-        /// <summary>Kill Reward (owner 2026-09-23): an item every N kills per player, at most once per cooldown. Only while the
-        /// zone is Enabled and the Zone Control master switch is on. Missing on deserialize of older stores = off.</summary>
-        public KillRewardConfig KillReward { get; set; } = new();
+        /// <summary>Bounty (owner 2026-09-23; called "KillReward" in code until 2026-09-26): an item every N kills per player, at most once
+        /// per cooldown. Only while the zone is Enabled and the Zone Control master switch is on. Missing on deserialize of older
+        /// stores = off. Stored under the key "Bounty"; an old "KillReward" block is dropped on load (owner 2026-09-26: bounties
+        /// were never enabled, so nothing real is lost).</summary>
+        public BountyConfig Bounty { get; set; } = new();
 
         public string Notes { get; set; }
 
@@ -76,18 +78,18 @@ namespace ACE.Server.Managers.ZoneControl
     }
 
     /// <summary>
-    /// Kill Reward settings (owner 2026-09-23), for a Zone Control zone (ControlledArea.KillReward) or a room dungeon (its
-    /// source weenie's PropertyString.RoomAssignKillReward, via <see cref="Format"/> / <see cref="Parse"/>). Each player's
-    /// own kills in the area count; every <see cref="KillRewardEntry.Kills"/> of them earn <see cref="KillRewardEntry.Amount"/>
-    /// x <see cref="KillRewardEntry.Wcid"/>, but never more often than once per <see cref="KillRewardEntry.CooldownMinutes"/> -
-    /// kills during the cooldown do not count at all (no pre-hunting). See KillRewardManager.
+    /// Bounty settings (owner 2026-09-23), for a Zone Control zone (ControlledArea.Bounty) or a room dungeon (its
+    /// source weenie's PropertyString.RoomAssignBounty, via <see cref="Format"/> / <see cref="Parse"/>). Each player's
+    /// own kills in the area count; every <see cref="BountyEntry.Kills"/> of them earn <see cref="BountyEntry.Amount"/>
+    /// x <see cref="BountyEntry.Wcid"/>, but never more often than once per <see cref="BountyEntry.CooldownMinutes"/> -
+    /// kills during the cooldown do not count at all (no pre-hunting). See BountyManager.
     /// </summary>
-    public class KillRewardConfig
+    public class BountyConfig
     {
         public bool Enabled { get; set; }
 
         /// <summary>Several rewards per area (owner 2026-09-23: "may use multiple rewards in some zones"). Each counts on its own.</summary>
-        public List<KillRewardEntry> Entries { get; set; } = new();
+        public List<BountyEntry> Entries { get; set; } = new();
 
         /// <summary>On, with at least one complete reward - the only state that awards anything.</summary>
         public bool Active => Enabled && Entries != null && Entries.Exists(e => e != null && e.Valid);
@@ -104,14 +106,14 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Gives every reward without an ID (older data) one, and keeps NextId past them all.</summary>
         public void EnsureIds()
         {
-            Entries ??= new List<KillRewardEntry>();
+            Entries ??= new List<BountyEntry>();
             foreach (var e in Entries)
                 if (e != null && e.Id >= NextId) NextId = e.Id + 1;
             foreach (var e in Entries)
                 if (e != null && e.Id <= 0) e.Id = NextId++;
         }
 
-        public KillRewardEntry Find(int id) => Entries?.Find(e => e != null && e.Id == id);
+        public BountyEntry Find(int id) => Entries?.Find(e => e != null && e.Id == id);
 
         /// <summary>
         /// A copy, made SAFE (review 2026-09-24): every reward within the edit command's bounds, IDs given to rows that have none,
@@ -119,13 +121,13 @@ namespace ACE.Server.Managers.ZoneControl
         /// kill twice through two rows sharing a progress key. The kill hook only ever reads copies made here (the zone snapshot,
         /// every edit), and Parse does the same for a dungeon's string.
         /// </summary>
-        public KillRewardConfig Clone()
+        public BountyConfig Clone()
         {
-            var copy = new KillRewardConfig
+            var copy = new BountyConfig
             {
                 Enabled = Enabled,
                 NextId = NextId,
-                Entries = Entries?.ConvertAll(e => e?.Clone()) ?? new List<KillRewardEntry>(),
+                Entries = Entries?.ConvertAll(e => e?.Clone()) ?? new List<BountyEntry>(),
             };
             copy.Sanitize();
             return copy;
@@ -134,14 +136,14 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Clamps every reward to the command's bounds and makes every ID present and unique. See Clone.</summary>
         public void Sanitize()
         {
-            Entries ??= new List<KillRewardEntry>();
+            Entries ??= new List<BountyEntry>();
             Entries.RemoveAll(e => e == null);
 
             foreach (var e in Entries)
             {
-                e.Amount = Math.Clamp(e.Amount, 1, KillRewardManager.MaxAmount);
-                e.Kills = Math.Clamp(e.Kills, 1, KillRewardManager.MaxKills);
-                e.CooldownMinutes = double.IsFinite(e.CooldownMinutes) ? Math.Clamp(e.CooldownMinutes, 0, KillRewardManager.MaxCooldownMinutes) : 5;
+                e.Amount = Math.Clamp(e.Amount, 1, BountyManager.MaxAmount);
+                e.Kills = Math.Clamp(e.Kills, 1, BountyManager.MaxKills);
+                e.CooldownMinutes = double.IsFinite(e.CooldownMinutes) ? Math.Clamp(e.CooldownMinutes, 0, BountyManager.MaxCooldownMinutes) : 5;
             }
 
             var seen = new HashSet<int>();
@@ -164,16 +166,16 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>The dungeon form. Also reads the first build's single "on|wcid|amount|kills|minutes" (2026-09-23, test only).</summary>
-        public static KillRewardConfig Parse(string raw)
+        public static BountyConfig Parse(string raw)
         {
-            var c = new KillRewardConfig();
+            var c = new BountyConfig();
             if (string.IsNullOrWhiteSpace(raw)) return c;
 
             if (raw.IndexOf(';') < 0 && raw.Split('|').Length >= 5)
             {
                 var f = raw.Split('|');
                 c.Enabled = f[0].Trim() == "1";
-                var one = KillRewardEntry.Parse(string.Join("|", f, 1, f.Length - 1));
+                var one = BountyEntry.Parse(string.Join("|", f, 1, f.Length - 1));
                 if (one != null) c.Entries.Add(one);
                 c.Sanitize();
                 return c;
@@ -190,7 +192,7 @@ namespace ACE.Server.Managers.ZoneControl
                         c.NextId = next;
                     continue;
                 }
-                var e = KillRewardEntry.Parse(part);
+                var e = BountyEntry.Parse(part);
                 if (e != null) c.Entries.Add(e);
             }
             c.Sanitize();
@@ -198,10 +200,10 @@ namespace ACE.Server.Managers.ZoneControl
         }
     }
 
-    /// <summary>One Kill Reward: <see cref="Amount"/> x <see cref="Wcid"/> every <see cref="Kills"/> of a player's kills, at most once per <see cref="CooldownMinutes"/>.</summary>
-    public class KillRewardEntry
+    /// <summary>One Bounty: <see cref="Amount"/> x <see cref="Wcid"/> every <see cref="Kills"/> of a player's kills, at most once per <see cref="CooldownMinutes"/>.</summary>
+    public class BountyEntry
     {
-        /// <summary>Permanent within its area (KillRewardConfig.NextId): what edits address. 0 = not given one yet.</summary>
+        /// <summary>Permanent within its area (BountyConfig.NextId): what edits address. 0 = not given one yet.</summary>
         public int Id { get; set; }
 
         public uint Wcid { get; set; }
@@ -216,9 +218,9 @@ namespace ACE.Server.Managers.ZoneControl
         /// when the stored value is not a number (a zone store is JSON anyone can edit). Review 2026-09-24.
         /// </summary>
         public double CooldownSeconds
-            => (double.IsNaN(CooldownMinutes) ? 5 : Math.Clamp(CooldownMinutes, 0, KillRewardManager.MaxCooldownMinutes)) * 60.0;
+            => (double.IsNaN(CooldownMinutes) ? 5 : Math.Clamp(CooldownMinutes, 0, BountyManager.MaxCooldownMinutes)) * 60.0;
 
-        public KillRewardEntry Clone() => new KillRewardEntry { Id = Id, Wcid = Wcid, Amount = Amount, Kills = Kills, CooldownMinutes = CooldownMinutes };
+        public BountyEntry Clone() => new BountyEntry { Id = Id, Wcid = Wcid, Amount = Amount, Kills = Kills, CooldownMinutes = CooldownMinutes };
 
         /// <summary>
         /// Its own progress on a character, by its permanent ID (review 2026-09-24): two rows for the same item and count keep
@@ -230,18 +232,18 @@ namespace ACE.Server.Managers.ZoneControl
         public string Format()
             => Wcid + "|" + Amount + "|" + Kills + "|" + CooldownMinutes.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "|" + Id;
 
-        public static KillRewardEntry Parse(string raw)
+        public static BountyEntry Parse(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return null;
             var f = raw.Split('|');
             var inv = System.Globalization.CultureInfo.InvariantCulture;
-            var e = new KillRewardEntry();
+            var e = new BountyEntry();
             if (f.Length < 1 || !uint.TryParse(f[0], System.Globalization.NumberStyles.Integer, inv, out var w)) return null;
             e.Wcid = w;
             // The same bounds as the edit command (review 2026-09-24): a hand-edited string cannot store what no admin could type.
-            if (f.Length > 1 && int.TryParse(f[1], System.Globalization.NumberStyles.Integer, inv, out var a) && a > 0) e.Amount = Math.Min(a, KillRewardManager.MaxAmount);
-            if (f.Length > 2 && int.TryParse(f[2], System.Globalization.NumberStyles.Integer, inv, out var k) && k > 0) e.Kills = Math.Min(k, KillRewardManager.MaxKills);
-            if (f.Length > 3 && double.TryParse(f[3], System.Globalization.NumberStyles.Float, inv, out var m) && double.IsFinite(m) && m >= 0) e.CooldownMinutes = Math.Min(m, KillRewardManager.MaxCooldownMinutes);
+            if (f.Length > 1 && int.TryParse(f[1], System.Globalization.NumberStyles.Integer, inv, out var a) && a > 0) e.Amount = Math.Min(a, BountyManager.MaxAmount);
+            if (f.Length > 2 && int.TryParse(f[2], System.Globalization.NumberStyles.Integer, inv, out var k) && k > 0) e.Kills = Math.Min(k, BountyManager.MaxKills);
+            if (f.Length > 3 && double.TryParse(f[3], System.Globalization.NumberStyles.Float, inv, out var m) && double.IsFinite(m) && m >= 0) e.CooldownMinutes = Math.Min(m, BountyManager.MaxCooldownMinutes);
             if (f.Length > 4 && int.TryParse(f[4], System.Globalization.NumberStyles.Integer, inv, out var id) && id > 0) e.Id = id;
             return e;
         }

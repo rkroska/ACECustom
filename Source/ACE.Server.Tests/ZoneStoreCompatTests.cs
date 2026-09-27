@@ -194,5 +194,27 @@ namespace ACE.Server.Tests
             Assert.AreEqual(4.0, back.Effects.EffectiveDotDamage);
             Assert.IsFalse(back.IsEmpty);
         }
+
+        /// <summary>
+        /// Bounty (renamed from KillReward 2026-09-26): stored under the key "Bounty". An old "KillReward" block is dropped on
+        /// load - accepted by the owner (bounties were never enabled on live, so nothing real is lost).
+        /// </summary>
+        [TestMethod]
+        public void Bounty_RoundTripsUnderBountyKey_OldKillRewardKeyDropped()
+        {
+            const string json = @"{ ""Name"": ""Quarry"", ""Bounty"": { ""Enabled"": true, ""NextId"": 2,
+                ""Entries"": [ { ""Id"": 1, ""Wcid"": 273, ""Amount"": 50, ""Kills"": 96, ""CooldownMinutes"": 40 } ] } }";
+
+            var area = JsonConvert.DeserializeObject<ControlledArea>(json);
+            Assert.IsTrue(area.Bounty.Active);
+            Assert.AreEqual(96, area.Bounty.Entries[0].Kills);
+
+            var saved = JsonConvert.SerializeObject(area);
+            StringAssert.Contains(saved, "\"Bounty\":");
+            Assert.IsFalse(saved.Contains("\"KillReward\""));
+
+            var legacy = JsonConvert.DeserializeObject<ControlledArea>(json.Replace("\"Bounty\"", "\"KillReward\""));
+            Assert.IsFalse(legacy.Bounty.Active, "an old KillReward block is not carried over");
+        }
     }
 }

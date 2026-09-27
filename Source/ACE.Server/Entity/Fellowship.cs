@@ -24,7 +24,7 @@ namespace ACE.Server.Entity
         /// <summary>
         /// The maximum # of fellowship members
         /// </summary>
-        public static readonly int MaxFellows = 29;   // public for Zone Share, which caps an area's sharers at a fellowship's size
+        public static readonly int MaxFellows = 29;   // a REAL fellowship's cap - the client's fellowship window. Zone Share has no cap (owner 2026-09-25) and never raises this
 
         public string FellowshipName;
         public uint FellowshipLeaderGuid;

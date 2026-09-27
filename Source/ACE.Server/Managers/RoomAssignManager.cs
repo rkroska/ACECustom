@@ -41,6 +41,10 @@ namespace ACE.Server.Managers
     /// Claims belong to the ACCOUNT (owner 2026-09-16): one room per account at a time in a dungeon, across all its
     /// characters - an account whose character stands in, or is on the way to, a room of this dungeon gets no second one.
     /// (A trip anywhere counts; standing in a room of ANOTHER dungeon does not.)
+    /// SWITCH LOCKOUT (owner 2026-09-26, the two-dungeon hop): a character leaving a chamber - teleporting out (recall, portal,
+    /// death) or logging out inside it - bars its ACCOUNT from a chamber in any DIFFERENT dungeon for
+    /// room_assign_switch_lockout_seconds (60 s). The same dungeon is never barred. Without it an account kept a chamber in
+    /// two dungeons and cleared both spawns, each refilling while it was in the other.
     /// A room is TAKEN for a player when:
     ///  - a non-staff player of another account stands in it (dead and teleporting players count),
     ///  - another account holds a reservation on it (from the hand-out until that player has landed; 30 s cap), or
@@ -80,6 +84,7 @@ namespace ACE.Server.Managers
         // Setting caps: a huge /modifylong value must not overflow DateTime arithmetic in every check.
         private const long MaxLogoutHoldMinutes = 7 * 24 * 60;
         private const long MaxLeaveHoldSeconds = 24 * 60 * 60;
+        private const long MaxSwitchLockoutSeconds = 24 * 60 * 60;
         private const long MaxLogoutHoldRenewals = 100;
 
         /// <summary>Server setting room_assign_logout_hold_minutes (0 - 10080). 0 = no logout holds.</summary>
@@ -87,6 +92,9 @@ namespace ACE.Server.Managers
 
         /// <summary>Server setting room_assign_leave_hold_seconds (0 - 86400; owner 2026-09-23: 120, long enough to nip out for a trade). 0 = off.</summary>
         private static TimeSpan LeaveHoldTime => TimeSpan.FromSeconds(Math.Clamp(ServerConfig.room_assign_leave_hold_seconds.Value, 0, MaxLeaveHoldSeconds));
+
+        /// <summary>Server setting room_assign_switch_lockout_seconds (0 - 86400; owner 2026-09-26: 60). 0 = off. See _leftDungeon.</summary>
+        private static TimeSpan SwitchLockoutTime => TimeSpan.FromSeconds(Math.Clamp(ServerConfig.room_assign_switch_lockout_seconds.Value, 0, MaxSwitchLockoutSeconds));
 
         /// <summary>
         /// 1 + server setting room_assign_logout_hold_renewals (0 - 100; owner 2026-09-16: 1). A fresh hand-out allows one
@@ -107,6 +115,20 @@ namespace ACE.Server.Managers
         private const string MessagePortalAllTaken = "Every chamber is taken. Try again later.";
         private const string MessageOnTheWay = "You are already on your way to a chamber.";
         private const string MessageAccountHasRoom = "Another character on your account already has a chamber.";
+
+        /// <summary>
+        /// The switch lockout's refusal (owner 2026-09-26). stillInside: the player stands in a chamber of the other dungeon right
+        /// now - a recall or tie from inside it - so the whole lockout is still ahead of them. Built outside _lock: it reads the
+        /// weenie cache for the dungeon's name.
+        /// </summary>
+        private static string MessageSwitchLocked(uint leftWcid, TimeSpan wait, bool stillInside)
+        {
+            var seconds = Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds));
+            var name = ItemName(leftWcid);
+            return stillInside
+                ? $"You are still in {name}. Leave it and wait {seconds} seconds before entering a different Vaulted Dungeon."
+                : $"You left {name} too recently. You can enter a different Vaulted Dungeon in {seconds} seconds.";
+        }
         private const string MessageNotReady = "The chambers beyond this portal are not ready.";
         private const string MessageMovedOut = "Your chamber was taken while you were away. You have been returned to your lifestone.";
         private const string MessageNoClaim = "You no longer hold a chamber. You have been returned to your lifestone.";
@@ -172,14 +194,14 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Rooms only exist at variation 3 and up (owner 2026-09-21: every auto-assigned dungeon is v3+). The base world and
         /// v1/v2 are retail layers: a room list authored there by hand - past the builder's own v3 gate - is ignored, and so
-        /// is everything that hangs off a room source (Zone Share, Kill Reward). Review 2026-09-24: this used to admit v1/v2.
+        /// is everything that hangs off a room source (Zone Share, Bounty). Review 2026-09-24: this used to admit v1/v2.
         /// </summary>
         public static bool IsRoomVariation(int? variation) => (VariationManager.NormalizeBase(variation) ?? 0) >= BuilderMinVariation;
 
         /// <summary>
-        /// A dungeon's key for Zone Share and Kill Reward: its source AND variation, so two copies of one dungeon (a v3 and a
+        /// A dungeon's key for Zone Share and Bounty: its source AND variation, so two copies of one dungeon (a v3 and a
         /// v5, say) are two separate areas - never one share group, never one bounty count. "dungeon:777704023v3": no '|', ';'
-        /// or '#', which the Kill Reward progress string on the character uses as separators.
+        /// or '#', which the Bounty progress string on the character uses as separators.
         /// </summary>
         public static string DungeonAreaKey(uint sourceWcid, int? variation)
             => "dungeon:" + sourceWcid.ToString(CultureInfo.InvariantCulture) + "v" + (VariationManager.NormalizeBase(variation)?.ToString(CultureInfo.InvariantCulture) ?? "0");
@@ -657,6 +679,61 @@ namespace ACE.Server.Managers
         // only keeps its rooms recognised there (holds, login checks) until then.
         private static readonly HashSet<string> _sourceSeen = new HashSet<string>();
 
+        private sealed class LeftDungeon
+        {
+            public string Dungeon;      // DungeonKey of the dungeon left
+            public uint SourceWcid;     // its entrance, for the refusal's name
+            public DateTime At;
+        }
+
+        // Account -> the dungeon a character of it last LEFT (teleported out of a chamber, or logged out inside one) and when:
+        // the switch lockout (owner 2026-09-26). Per account, so an alt is no way round it. Pruned by PurgeExpired once the
+        // lockout has run; a restart clears it.
+        private static readonly Dictionary<uint, LeftDungeon> _leftDungeon = new Dictionary<uint, LeftDungeon>();
+
+        /// <summary>One dungeon: its rooms' landblock and variation (as CreditKey, without the account).</summary>
+        private static string DungeonKey(Room room, int? variation)
+            => $"{room.LandingCell >> 16:X4}|{VariationManager.NormalizeBase(variation)?.ToString(CultureInfo.InvariantCulture)}";
+
+        /// <summary>Call with _lock held. A character of the account left a chamber of this dungeon now: starts the switch lockout.</summary>
+        private static void NoteLeftDungeon(uint account, RoomRef found, int? variation, DateTime now)
+            => _leftDungeon[account] = new LeftDungeon { Dungeon = DungeonKey(found.Room, variation), SourceWcid = found.SourceWcid, At = now };
+
+        /// <summary>
+        /// Call with _lock held. True when the account may not have a chamber in <paramref name="dungeon"/> yet: a character of it
+        /// left a DIFFERENT dungeon less than the switch lockout ago. leftWcid and wait say which and for how much longer.
+        /// </summary>
+        private static bool IsSwitchLocked(uint account, string dungeon, DateTime now, out uint leftWcid, out TimeSpan wait)
+        {
+            leftWcid = 0;
+            wait = TimeSpan.Zero;
+
+            var lockout = SwitchLockoutTime;
+            if (lockout <= TimeSpan.Zero || !_leftDungeon.TryGetValue(account, out var left) || left.Dungeon == dungeon)
+                return false;
+
+            wait = left.At + lockout - now;
+            if (wait <= TimeSpan.Zero)
+                return false;
+
+            leftWcid = left.SourceWcid;
+            return true;
+        }
+
+        /// <summary>
+        /// NOT under _lock (FindRoomAt reads the weenie cache): the chamber of ANOTHER dungeon than <paramref name="dungeon"/>
+        /// the player stands in right now - a recall or tie from inside it - or null. That player has the whole switch lockout
+        /// ahead of them. Shared by the cast/use check and the hand-out, so the two never disagree.
+        /// </summary>
+        private static RoomRef InOtherDungeon(Player player, string dungeon)
+        {
+            if (dungeon == null || player?.Location == null || SwitchLockoutTime <= TimeSpan.Zero || IsStaff(player))
+                return null;
+
+            var here = FindRoomAt(player.Location.Cell, player.Location.Variation);
+            return here != null && DungeonKey(here.Room, player.Location.Variation) != dungeon ? here : null;
+        }
+
         /// <summary>Rooms already warned about a landing outside their cells (per parsed Room object; cleared when its list is re-parsed).</summary>
         private static readonly HashSet<Room> _badLandingWarned = new HashSet<Room>();
 
@@ -929,20 +1006,20 @@ namespace ACE.Server.Managers
         public static bool IsInRoomDungeon(Position position)
             => position != null && SourceAt(position.Cell, position.Variation, _ => true) != 0;
 
-        /// <summary>Kill Reward (owner 2026-09-23): the room source whose dungeon this spot is in AND that has an active Kill Reward, or 0.</summary>
-        public static uint KillRewardSourceAt(uint cell, int? variation) => SourceAt(cell, variation, wcid => KillRewardOf(wcid).Active);
+        /// <summary>Bounty (owner 2026-09-23): the room source whose dungeon this spot is in AND that has an active Bounty, or 0.</summary>
+        public static uint BountySourceAt(uint cell, int? variation) => SourceAt(cell, variation, wcid => BountyOf(wcid).Active);
 
-        /// <summary>Kill Reward settings on a room source's weenie (PropertyString.RoomAssignKillReward); off when it has none.</summary>
-        public static ACE.Server.Managers.ZoneControl.KillRewardConfig KillRewardOf(uint wcid)
+        /// <summary>Bounty settings on a room source's weenie (PropertyString.RoomAssignBounty); off when it has none.</summary>
+        public static ACE.Server.Managers.ZoneControl.BountyConfig BountyOf(uint wcid)
         {
             string raw = null;
-            DatabaseManager.World.GetCachedWeenie(wcid)?.PropertiesString?.TryGetValue(PropertyString.RoomAssignKillReward, out raw);
-            return ACE.Server.Managers.ZoneControl.KillRewardConfig.Parse(raw);
+            DatabaseManager.World.GetCachedWeenie(wcid)?.PropertiesString?.TryGetValue(PropertyString.RoomAssignBounty, out raw);
+            return ACE.Server.Managers.ZoneControl.BountyConfig.Parse(raw);
         }
 
         /// <summary>
         /// The room source whose dungeon this spot is in - its landblock, in a variation it is placed at, indoor cells only -
-        /// and that <paramref name="accept"/> takes, or 0. Portal and plate sources alike. Zone Share and Kill Reward.
+        /// and that <paramref name="accept"/> takes, or 0. Portal and plate sources alike. Zone Share and Bounty.
         /// </summary>
         private static uint SourceAt(uint cell, int? variation, Func<uint, bool> accept)
         {
@@ -973,7 +1050,7 @@ namespace ACE.Server.Managers
             => DatabaseManager.World.GetCachedWeenie(wcid)?.PropertiesBool is { } bools
                && bools.TryGetValue(PropertyBool.RoomAssignZoneShare, out var on) && on;
 
-        // Built for every source on a landblock on each door use, trespass check and Zone Share / Kill Reward lookup: cached
+        // Built for every source on a landblock on each door use, trespass check and Zone Share / Bounty lookup: cached
         // per (wcid, variation), like Room.KeyFor, rather than formatted every time (review 2026-09-24).
         private static readonly ConcurrentDictionary<(uint Wcid, int? Variation), string> _sourceKeys = new ConcurrentDictionary<(uint, int?), string>();
 
@@ -1202,6 +1279,14 @@ namespace ACE.Server.Managers
             if (expired != null)
                 foreach (var key in expired)
                     _holds.Remove(key);
+
+            // A switch-lockout record is only needed while its lockout runs (and not at all while the setting is 0).
+            if (_leftDungeon.Count > 0)
+            {
+                var lockout = SwitchLockoutTime;
+                foreach (var done in _leftDungeon.Where(kv => lockout <= TimeSpan.Zero || now - kv.Value.At >= lockout).Select(kv => kv.Key).ToList())
+                    _leftDungeon.Remove(done);
+            }
 
             if (_lastFullMessage.Count > FullMessagePruneThreshold)
             {
@@ -1504,21 +1589,30 @@ namespace ACE.Server.Managers
         }
 
 
-        private enum ClaimResult { Claimed, NoRoom, AccountBusy, OnTheWay }
+        private enum ClaimResult { Claimed, NoRoom, AccountBusy, OnTheWay, Switching }
 
         /// <summary>
         /// Picks and reserves a room in two steps, so nothing is reserved (and no hold or credit changed) until the landing
         /// has been computed: pick under _lock, compute the landing outside it, then reserve under _lock only if the room is
         /// still free for them. player is null for a login (no player object yet): <paramref name="loginName"/> then names the
-        /// character on the reservation, for the Rooms tab.
+        /// character on the reservation, for the Rooms tab. refusal is the message for Switching (null otherwise).
         /// </summary>
         private static ClaimResult ClaimRoom(Player player, uint guid, uint account, List<Room> rooms, int? variation, uint sourceWcid,
-            Occupancy occupancy, Room current, DateTime now, out Room room, out Position landing, string loginName = null)
+            Occupancy occupancy, Room current, DateTime now, out Room room, out Position landing, out string refusal, string loginName = null)
         {
             room = null;
             landing = null;
-            bool fresh;
+            refusal = null;
+            bool fresh = false;
             HashSet<Room> skip = null;
+
+            // The switch lockout (owner 2026-09-26). A player standing in a chamber of ANOTHER dungeon right now - a recall or a
+            // tie from inside it - has the whole lockout ahead of them. Read outside _lock: FindRoomAt reads the weenie cache.
+            var dungeon = rooms.Count > 0 ? DungeonKey(rooms[0], variation) : null;
+            var inOther = InOtherDungeon(player, dungeon);
+
+            uint lockedBy = 0;
+            var lockedFor = TimeSpan.Zero;
 
             lock (_lock)
             {
@@ -1532,9 +1626,29 @@ namespace ACE.Server.Managers
                 if (IsAccountBusy(guid, account, occupancy))
                     return ClaimResult.AccountBusy;
 
-                room = PickRoom(rooms, variation, guid, account, occupancy, current, now, out fresh);
-                if (room == null)
-                    return ClaimResult.NoRoom;
+                if (inOther != null)
+                {
+                    lockedBy = inOther.SourceWcid;
+                    lockedFor = SwitchLockoutTime;
+                }
+                else if (dungeon != null && IsSwitchLocked(account, dungeon, now, out var leftWcid, out var wait))
+                {
+                    lockedBy = leftWcid;
+                    lockedFor = wait;
+                }
+
+                if (lockedBy == 0)
+                {
+                    room = PickRoom(rooms, variation, guid, account, occupancy, current, now, out fresh);
+                    if (room == null)
+                        return ClaimResult.NoRoom;
+                }
+            }
+
+            if (lockedBy != 0)
+            {
+                refusal = MessageSwitchLocked(lockedBy, lockedFor, inOther != null);
+                return ClaimResult.Switching;
             }
 
             // Each pass computes the landing outside the lock, then reserves only if the room is still free for them. A room
@@ -1724,7 +1838,7 @@ namespace ACE.Server.Managers
                 }
 
                 var occupancy = BuildOccupancy(rooms, variation, guid);
-                var result = ClaimRoom(player, guid, account, rooms, variation, plate.WeenieClassId, occupancy, null, now, out var room, out var landing);
+                var result = ClaimRoom(player, guid, account, rooms, variation, plate.WeenieClassId, occupancy, null, now, out var room, out var landing, out var refusal);
 
                 if (result == ClaimResult.OnTheWay)
                     return;
@@ -1736,7 +1850,7 @@ namespace ACE.Server.Managers
                         say = ShouldSayFull(guid, now);
 
                     if (say)
-                        Say(player, result == ClaimResult.AccountBusy ? MessageAccountHasRoom : MessagePlateAllTaken);
+                        Say(player, result == ClaimResult.Switching ? refusal : result == ClaimResult.AccountBusy ? MessageAccountHasRoom : MessagePlateAllTaken);
                     return;
                 }
 
@@ -1852,12 +1966,32 @@ namespace ACE.Server.Managers
                     var occupancy = BuildOccupancy(rooms, variation, guid);
                     var current = CurrentRoom(player, rooms, variation);
 
+                    // The switch lockout (owner 2026-09-26) is checked HERE too, at the cast or use: checked only at the
+                    // landing, a refused recall still cast for 2 s, left a pending reservation, and a second click in that
+                    // window said "You are already on your way to a chamber." before the real refusal arrived.
+                    var dungeon = rooms.Count > 0 ? DungeonKey(rooms[0], variation) : null;
+                    var inOther = InOtherDungeon(player, dungeon);
+                    uint lockedBy = 0;
+                    var lockedFor = TimeSpan.Zero;
+
                     lock (_lock)
                     {
                         ReleaseDoneReservations(occupancy, guid);
 
                         if (IsAccountBusy(guid, account, occupancy))
                             refusal = MessageAccountHasRoom;
+                        else if (inOther != null)
+                        {
+                            refusal = null;
+                            lockedBy = inOther.SourceWcid;
+                            lockedFor = SwitchLockoutTime;
+                        }
+                        else if (dungeon != null && IsSwitchLocked(account, dungeon, now, out var leftWcid, out var wait))
+                        {
+                            refusal = null;
+                            lockedBy = leftWcid;
+                            lockedFor = wait;
+                        }
                         else
                         {
                             var room = PickRoom(rooms, variation, guid, account, occupancy, current, now, out var fresh);
@@ -1872,6 +2006,10 @@ namespace ACE.Server.Managers
                             refusal = MessagePortalAllTaken;
                         }
                     }
+
+                    // Built outside _lock: it reads the weenie cache for the dungeon's name.
+                    if (lockedBy != 0)
+                        refusal = MessageSwitchLocked(lockedBy, lockedFor, inOther != null);
                 }
 
                 var say = true;
@@ -1979,7 +2117,7 @@ namespace ACE.Server.Managers
                 var occupancy = BuildOccupancy(rooms, variation, guid);
                 var current = CurrentRoom(player, rooms, variation);
 
-                var result = ClaimRoom(player, guid, account, rooms, variation, sourceWcid, occupancy, current, now, out var room, out landing);
+                var result = ClaimRoom(player, guid, account, rooms, variation, sourceWcid, occupancy, current, now, out var room, out landing, out var refusal);
 
                 if (result != ClaimResult.Claimed)
                 {
@@ -1988,7 +2126,8 @@ namespace ACE.Server.Managers
                         lock (_lock)
                             RemoveOwnReservation(guid);
 
-                    Say(player, result == ClaimResult.AccountBusy ? MessageAccountHasRoom : result == ClaimResult.OnTheWay ? MessageOnTheWay : MessagePortalAllTaken);
+                    Say(player, result == ClaimResult.Switching ? refusal
+                        : result == ClaimResult.AccountBusy ? MessageAccountHasRoom : result == ClaimResult.OnTheWay ? MessageOnTheWay : MessagePortalAllTaken);
                     return PortalAssign.Refused;
                 }
 
@@ -2058,8 +2197,7 @@ namespace ACE.Server.Managers
                 if (location == null || !IsRoomVariation(location.Variation))
                     return;
 
-                var holdTime = LeaveHoldTime;
-                if (holdTime <= TimeSpan.Zero || IsStaff(player))
+                if (IsStaff(player))
                     return;
 
                 var found = FindRoomAt(location.Cell, location.Variation);
@@ -2068,6 +2206,14 @@ namespace ACE.Server.Managers
 
                 if (destination != null && found.Room.Cells.Contains(destination.Cell)
                     && VariationManager.NormalizeBase(destination.Variation) == VariationManager.NormalizeBase(location.Variation))
+                    return;
+
+                // Leaving a chamber starts the switch lockout (owner 2026-09-26), whatever the leave-hold setting.
+                lock (_lock)
+                    NoteLeftDungeon(AccountOf(player), found, location.Variation, DateTime.UtcNow);
+
+                var holdTime = LeaveHoldTime;
+                if (holdTime <= TimeSpan.Zero)
                     return;
 
                 var guid = player.Guid.Full;
@@ -2151,6 +2297,10 @@ namespace ACE.Server.Managers
                             DropCredit(account, now);
                         return;
                     }
+
+                    // Logging out inside a chamber starts the switch lockout too (owner 2026-09-26): logging an alt in inside
+                    // another dungeon's chamber is otherwise a way round it.
+                    NoteLeftDungeon(account, found, location.Variation, now);
 
                     if (holdTime <= TimeSpan.Zero)
                         return;
@@ -2319,6 +2469,8 @@ namespace ACE.Server.Managers
                 bool busy;
                 var stays = false;
                 var keptFree = false;
+                var switchLocked = false;
+                string switchRefusal = null;
 
                 // The character is not a Player yet at login - read the name off the biota for the Rooms tab.
                 string loginName = null;
@@ -2334,14 +2486,18 @@ namespace ACE.Server.Managers
 
                     busy = IsAccountBusy(guid, account, occupancy);
 
+                    // The switch lockout (owner 2026-09-26): a character logging in inside a chamber of a DIFFERENT dungeon than
+                    // the one its account just left - the alt route of the hop - does not keep that chamber.
+                    switchLocked = IsSwitchLocked(account, DungeonKey(room, variation), now, out _, out _);
+
                     var free = IsFreeFor(room, variation, account, occupancy, now);
 
                     // No claim, but nobody else has the room (a restart wiped the holds, or a hold ran out): they stay in it
                     // rather than being moved to the first free one (owner 2026-09-23). A new hand-out like any other - Reserve
                     // refills logout-hold credit only if the room was not already this account's.
-                    keptFree = !hadClaim && !busy && free;
+                    keptFree = !hadClaim && !busy && free && !switchLocked;
 
-                    if ((hadClaim || keptFree) && !busy && free)
+                    if ((hadClaim || keptFree) && !busy && free && !switchLocked)
                     {
                         stays = true;
                         Reserve(guid, account, room, variation, now, fresh: keptFree, name: loginName);
@@ -2373,7 +2529,9 @@ namespace ACE.Server.Managers
                 // full dungeon or an account that already has a room.
                 if (!busy)
                 {
-                    var result = ClaimRoom(null, guid, account, rooms, variation, found.SourceWcid, occupancy, null, now, out var newRoom, out var landing, loginName);
+                    var result = ClaimRoom(null, guid, account, rooms, variation, found.SourceWcid, occupancy, null, now, out var newRoom, out var landing, out var refusal, loginName);
+                    if (result == ClaimResult.Switching)
+                        switchRefusal = refusal;
                     if (result == ClaimResult.Claimed)
                     {
                         WriteLocation(location, landing, variation);
@@ -2400,9 +2558,10 @@ namespace ACE.Server.Managers
 
                 MoveToLifestone(biota, location);
 
-                var reason = busy ? "another character of the account has a room" : hadClaim ? "every room is taken" : "no claim and every room is taken";
+                var reason = switchRefusal != null ? "its account left a different dungeon too recently (switch lockout)"
+                    : busy ? "another character of the account has a room" : hadClaim ? "every room is taken" : "no claim and every room is taken";
                 log.Info($"[RoomAssign] Character 0x{guid:X8} logged in to room {room.Number} - {reason}, moved to the lifestone.");
-                return busy ? MessageAccountHasRoom : hadClaim ? MessageMovedOut : MessageNoClaim;
+                return switchRefusal ?? (busy ? MessageAccountHasRoom : hadClaim ? MessageMovedOut : MessageNoClaim);
             }
             catch (Exception ex)
             {
@@ -2436,7 +2595,7 @@ namespace ACE.Server.Managers
             string loginName = null;
             biota.PropertiesString?.TryGetValue(PropertyString.Name, out loginName);
 
-            var result = ClaimRoom(null, guid, account, rooms, variation, sourceWcid, occupancy, null, now, out var claimed, out var landing, loginName);
+            var result = ClaimRoom(null, guid, account, rooms, variation, sourceWcid, occupancy, null, now, out var claimed, out var landing, out var refusal, loginName);
 
             if (result == ClaimResult.Claimed)
             {
@@ -2457,8 +2616,8 @@ namespace ACE.Server.Managers
             }
 
             MoveToLifestone(biota, location);
-            log.Info($"[RoomAssign] Character 0x{guid:X8} logged in outside the rooms of portal {sourceWcid} (cell 0x{fromCell:X8}) - {(result == ClaimResult.AccountBusy ? "another character of the account has a room" : "every room is taken")}, moved to the lifestone.");
-            return result == ClaimResult.AccountBusy ? MessageAccountHasRoom : MessageCannotRemain;
+            log.Info($"[RoomAssign] Character 0x{guid:X8} logged in outside the rooms of portal {sourceWcid} (cell 0x{fromCell:X8}) - {(result == ClaimResult.Switching ? "its account left a different dungeon too recently (switch lockout)" : result == ClaimResult.AccountBusy ? "another character of the account has a room" : "every room is taken")}, moved to the lifestone.");
+            return result == ClaimResult.Switching ? refusal : result == ClaimResult.AccountBusy ? MessageAccountHasRoom : MessageCannotRemain;
         }
     }
 }
