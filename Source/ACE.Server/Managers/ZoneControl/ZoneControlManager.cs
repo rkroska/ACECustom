@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using log4net;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
@@ -33,6 +34,34 @@ namespace ACE.Server.Managers.ZoneControl
 
         private const string StoreKey = "zonecontrol_data";
 
+        /// <summary>"KillReward" as a JSON property name - the quoted token followed by optional whitespace and a colon.</summary>
+        private static readonly Regex LegacyBountyKey = new Regex("\"KillReward\"(\\s*):", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Neither build writes both keys, but a hand edit can leave ONE zone with a "KillReward" and a "Bounty" block; the old
+        /// one is then renamed and its rewards merge into the new block's (Sanitize renumbers any clashing ids). Checked per
+        /// zone, so zones that each carry only one of the two names - a store part-way through the rename - say nothing.
+        /// </summary>
+        internal static int CountBothBountyKeys(string json)   // internal: ZoneStoreCompatTests
+        {
+            try
+            {
+                return Newtonsoft.Json.Linq.JToken.Parse(json).SelectTokens("$..*").OfType<Newtonsoft.Json.Linq.JObject>()
+                    .Count(o => o.Property("KillReward") != null && o.Property("Bounty") != null);
+            }
+            catch (JsonException)
+            {
+                return 0;   // the load itself reports a blob that does not parse
+            }
+        }
+
+        private static void WarnIfBothBountyKeys(string json)
+        {
+            var both = CountBothBountyKeys(json);
+            if (both > 0)
+                log.Warn($"[ZoneControl] {both} zone(s) in the store have both a \"KillReward\" and a \"Bounty\" block - the old block is renamed and its rewards merge into the new one.");
+        }
+
         /// <summary>The cantrip -> MODIFIER stat-key rename (2026-08-28). Stat keys are plain JSON
         /// dictionary keys inside the blob, so a stored blob written before the rename still carries
         /// cantrip_* keys; alias them to the modifier_* names before deserializing. The next save
@@ -42,9 +71,15 @@ namespace ACE.Server.Managers.ZoneControl
         /// ALSO aliases the SERIALIZED PROFILE MEMBER names renamed in the identifier sweep
         /// (ZoneVariantProfile.CustomModifiers / CustomModifierBands / CustomModifierSlots, formerly
         /// CustomCantrip*): those C# property names ARE the blob's JSON keys, so without the alias a
-        /// pre-rename blob's zone pools would silently deserialize to empty.</summary>
-        private static string UpgradeLegacyStoreKeys(string json)
+        /// pre-rename blob's zone pools would silently deserialize to empty.
+        ///
+        /// AND the ControlledArea "KillReward" block, renamed "Bounty" 2026-09-26 (same shape), so zone bounties saved before
+        /// the rename carry over. Only where "KillReward" is a KEY (followed by ':') - a zone or a note that happens to be
+        /// named KillReward is left alone (review 2026-09-26 round 2).</summary>
+        internal static string UpgradeLegacyStoreKeys(string json)   // internal: ZoneStoreCompatTests
         {
+            json = LegacyBountyKey.Replace(json, "\"Bounty\"$1:");
+
             if (json.IndexOf("cantrip", StringComparison.OrdinalIgnoreCase) < 0)
                 return json;
             return json
@@ -110,7 +145,7 @@ namespace ACE.Server.Managers.ZoneControl
             public HashSet<uint> ExemptGenerators;           // master switch per generator (2026-09-03): nor anything these spawn
             public ZoneEffects Effects;                      // immutable copy (readers never touch the live zone)
             public bool ZoneShare;                           // Zone Share (2026-09-23): the whole zone shares kills as one fellowship
-            public KillRewardConfig KillReward;              // Kill Reward (2026-09-23): immutable copy
+            public BountyConfig Bounty;              // Bounty (2026-09-23): immutable copy
             public ZoneAppearance AppearanceDefault;         // cosmetic default (separate from stats)
             public Dictionary<uint, ZoneAppearance> AppearanceByWcid; // per-WCID cosmetic overlays
         }
@@ -248,7 +283,11 @@ namespace ACE.Server.Managers.ZoneControl
             }
 
             if (!string.IsNullOrWhiteSpace(json))
+            {
+                if (LegacyBountyKey.IsMatch(json))
+                    WarnIfBothBountyKeys(json);
                 json = UpgradeLegacyStoreKeys(json);
+            }
 
             var store = string.IsNullOrWhiteSpace(json)
                 ? new Store()
@@ -663,7 +702,7 @@ namespace ACE.Server.Managers.ZoneControl
                 ExemptGenerators = area.Profile.ExemptGenerators != null ? new HashSet<uint>(area.Profile.ExemptGenerators) : new HashSet<uint>(),
                 Effects = ZoneEffects.Merge(def?.Effects, area.Effects),
                 ZoneShare = area.ZoneShare,
-                KillReward = area.KillReward?.Clone(),
+                Bounty = area.Bounty?.Clone(),
                 AppearanceDefault = apZone,
                 AppearanceByWcid = apWcid,
             };
@@ -1003,7 +1042,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>
         /// The enabled zone that governs where this object stands, at its effective variation: most-specific wins (the zone
         /// with the fewest landblocks), as everywhere else. Null when no enabled zone covers the spot. Lock-free snapshot read.
-        /// The one copy of the "governing zone" walk - the player gear caps, Zone Share and Kill Reward all go through it.
+        /// The one copy of the "governing zone" walk - the player gear caps, Zone Share and Bounty all go through it.
         /// </summary>
         private static ZoneRef GoverningZoneRef(WorldObject wo)
         {
@@ -1030,7 +1069,7 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// The zone that governs this spot for Zone Share / Kill Reward: as <see cref="GoverningZoneRef"/>, but never below the
+        /// The zone that governs this spot for Zone Share / Bounty: as <see cref="GoverningZoneRef"/>, but never below the
         /// endgame floor (v11) and never while the Zone Control master switch is off. Retail - every variation under 11 - is
         /// out of reach by construction, however a zone was authored (review 2026-09-24: the owner's never-touch-retail rule).
         /// </summary>
@@ -2001,12 +2040,12 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// Kill Reward for a zone (owner 2026-09-23): applies one edit to the zone's CURRENT settings under the store lock and
+        /// Bounty for a zone (owner 2026-09-23): applies one edit to the zone's CURRENT settings under the store lock and
         /// saves - read, change and write in one step, so two admins' edits each touch only their own reward and neither
         /// writes back an old copy over the other. <paramref name="edit"/> returns why it refused (nothing is saved then), or
         /// null. Returns the settings as they now are (null for no such zone), and the refusal.
         /// </summary>
-        public static KillRewardConfig EditKillReward(string name, Func<KillRewardConfig, string> edit, out string refused)
+        public static BountyConfig EditBounty(string name, Func<BountyConfig, string> edit, out string refused)
         {
             refused = null;
             EnsureInitialized();
@@ -2014,28 +2053,50 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 var a = FindArea(name);
                 if (a == null) return null;
-                var cfg = (a.KillReward ?? new KillRewardConfig()).Clone();
+                var cfg = (a.Bounty ?? new BountyConfig()).Clone();
                 refused = edit(cfg);
                 if (refused != null)
-                    return (a.KillReward ?? new KillRewardConfig()).Clone();
-                a.KillReward = cfg;
+                    return (a.Bounty ?? new BountyConfig()).Clone();
+                a.Bounty = cfg;
                 Save();
                 return cfg.Clone();
             }
         }
 
         /// <summary>
-        /// Kill Reward (owner 2026-09-23): the governing zone's reward where this object stands - its name and settings - or
+        /// Every enabled zone with an active Bounty, sorted by name - /bounty list (owner 2026-09-27). Lock-free snapshot read.
+        /// Zones at the endgame layers only (EndgameZoneRef's floor), and none while the Zone Control master switch is off. It
+        /// does not re-check where a zone would actually decide a kill: a zone wholly covered by smaller zones, or lying only
+        /// inside a Vaulted Dungeon (whose own setting wins), is still listed. No such zone exists today (2026-09-27).
+        /// </summary>
+        public static List<(string Name, BountyConfig Reward)> ActiveZoneBounties()
+        {
+            var list = new List<(string Name, BountyConfig Reward)>();
+            if (!ServerConfig.zonecontrol_enabled.Value)
+                return list;
+
+            var seen = new HashSet<ZoneRef>();   // a zone is listed under each of its landblocks: once each
+            foreach (var refs in _snapshot.ByLandblock.Values)
+                foreach (var zone in refs)
+                    if (seen.Add(zone) && zone.Bounty != null && zone.Bounty.Active && zone.Variation >= VariationManager.EndgameMinVariation)
+                        list.Add((zone.Name, zone.Bounty));
+
+            list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            return list;
+        }
+
+        /// <summary>
+        /// Bounty (owner 2026-09-23): the governing zone's reward where this object stands - its name and settings - or
         /// null. Same rules as Zone Share: the most specific zone decides, enabled zones at v11+ only, nothing while the master
         /// switch is off. Asked for both the killer and the victim (they must be in the same area). Lock-free snapshot read.
         /// </summary>
-        public static (string Name, KillRewardConfig Reward)? ResolveKillReward(WorldObject wo)
+        public static (string Name, BountyConfig Reward)? ResolveBounty(WorldObject wo)
         {
             var best = EndgameZoneRef(wo);
-            if (best?.KillReward == null || !best.KillReward.Active)
+            if (best?.Bounty == null || !best.Bounty.Active)
                 return null;
 
-            return (best.Name, best.KillReward);
+            return (best.Name, best.Bounty);
         }
 
         /// <summary>Zone Share on/off for a zone (owner 2026-09-23). Save() rebuilds the snapshot the kill hooks read.</summary>

@@ -6,15 +6,17 @@ using System.Text;
 namespace ACE.Server.Command.Handlers
 {
     /// <summary>
-    /// THE registry of every chat command the ZoneControl plugin sends (owner 2026-09-03: a GM Tools >
-    /// Chat Commands tab "that we keep updated"). The plugin renders this list; it never carries its own.
+    /// THE registry of every chat command the ZoneControl plugin sends, plus the player commands this registry lists
+    /// (/bounty, /vault) (owner 2026-09-03: a GM Tools > Chat Commands tab "that we keep updated"). The plugin renders
+    /// this list; it never carries its own.
     /// `/zonecontrol help` prints it as prose, `/zonecontrol help --wire` emits one [[ZCHELP]] row per entry.
     ///
     /// KEEP IT UPDATED: when a verb is added, removed or re-shaped in ZoneControlCommands.cs (or any other
-    /// command the plugin sends), edit the matching row here in the same change. A row is
+    /// command the plugin sends, or a player command listed here), edit the matching row here in the same change. A row is
     /// (Group, Command, Usage, What it does) - one line each, plain ASCII, no '~' (the wire separator).
     /// </summary>
     // NOTE for the next audit: `cantrip` is a deliberate silent alias of `modifier` and is not listed.
+    // NOTE: `killreward` (zone and dungeon) is a deliberate silent alias of `bounty` (renamed 2026-09-26) and is not listed.
     public static class ZoneControlCommandHelp
     {
         public readonly struct Entry
@@ -115,15 +117,16 @@ namespace ACE.Server.Command.Handlers
             E("Territory", "/zonecontrol quests", "<name>", "The zone's quest registry rows."),
 
             // ── Sharing + rewards (zones at v11+; dungeons have their own below) ──
-            E("Rewards", "/zonecontrol zoneshare", "<name> on|off|show", "Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship (one character per account, a fellowship's size at most). v11+ only. Changing it needs Admin."),
-            E("Rewards", "/zonecontrol killreward", "<name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>", "Kill Reward (\"Bounty\" in chat): items every N of a player's own kills, at most once per cooldown. v11+ only. Changing it needs Admin."),
-            E("Rewards", "/bounty", "", "Any player: the bounties where you stand - kills so far, or how long until the next one unlocks - and anything held for you."),
+            E("Rewards", "/zonecontrol zoneshare", "<name> on|off|show", "Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship (one character per account, everyone in the zone except staff). v11+ only. Changing it needs Admin."),
+            E("Rewards", "/zonecontrol bounty", "<name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>", "Bounty: items every N of a player's own kills, at most once per cooldown. v11+ only. Changing it needs Admin."),
+            E("Rewards", "/bounty", "[list|all]", "Any player: the bounties where you stand - kills so far, or how long until the next one unlocks - and anything held for you. list/all: every bounty on the server and your progress on each."),
 
             // ── Readiness ─────────────────────────────────────────────────────
             E("Readiness", "/zonecontrol mobcheck", "[<zone>] [<wcid>]", "Is this monster ready in this zone? No wcid = the creature you have selected."),
             E("Readiness", "/zonecontrol mobcheckget", "[<zone>] [--wcid <id>]", "Machine twin of mobcheck ([[ZCMC]]) for the Readiness tab."),
 
             // ── Dungeons (one-player room dungeons) ─────────────────────────
+            E("Dungeons", "/vault", "", "Any player inside a Vaulted Dungeon: how many other players are in it, and who (at most 50 names). Your own name, staff and + characters are left out. One list every 30 seconds; being told you are not in one does not use it up."),
             E("Dungeons", "/zonecontrol dungeon status", "", "Every room of the dungeon you are in (or the one picked in the Dungeon dropdown): who stands in it, reservation, hold."),
             E("Dungeons", "/zonecontrol dungeon list", "", "Every room dungeon the server knows ([[ZCDGL]] lines for the plugin's Dungeon dropdown)."),
             E("Dungeons", "/zonecontrol dungeon select", "here | <source wcid> <variation>", "Point the dungeon tools at a dungeon you are not standing in; here = follow where you stand again."),
@@ -138,7 +141,7 @@ namespace ACE.Server.Command.Handlers
             E("Dungeons", "/zonecontrol dungeon nudge", "<guid> <east> <north> [turn degrees]", "Move a placed wall or generator by a small step, or turn it - the Nudge pop-out in the plugin. Admin."),
             E("Dungeons", "/zonecontrol dungeon doors", "", "Every door weenie the Door pin can use ([[ZCDGD]] lines for the plugin's door picker)."),
             E("Dungeons", "/zonecontrol dungeon zoneshare", "on|off", "Everyone in this dungeon shares kill XP, luminance and kill tasks as one fellowship (one character per account). Admin."),
-            E("Dungeons", "/zonecontrol dungeon killreward", "on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>", "Kill Reward for this dungeon: items every N of a player's own kills, at most once per cooldown. Admin."),
+            E("Dungeons", "/zonecontrol dungeon bounty", "on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>", "Bounty for this dungeon: items every N of a player's own kills, at most once per cooldown. Admin."),
             E("Dungeons", "/zonecontrol dungeon state", "", "The [[ZCDG]] data line for the plugin's Dungeons tab."),
             E("Dungeons", "/zonecontrol dungeon map", "", "The [[ZCDGM]] map lines for the plugin's Dungeons tab."),
             E("Dungeons", "/zonecontrol dungeon admin", "on|off", "TEST TOOL: admins count as players. Needs room_assign_test_tools. Admin."),

@@ -63,7 +63,7 @@ namespace ACE.Server.Command.Handlers
             // goto and entrance too: a teleport into any chamber with no claim is a staff tool.
             var adminVerb = verb == "goto" || verb == "entrance"
                 || verb == "add" || verb == "remove" || verb == "land" || verb == "cell" || verb == "place"
-                || verb == "monster" || verb == "nudge" || verb == "zoneshare" || verb == "killreward"
+                || verb == "monster" || verb == "nudge" || verb == "zoneshare" || verb == "bounty" || verb == "killreward"
                 || verb == "admin" || verb == "fill" || verb == "clear" || verb == "markers" || (verb == "doors" && arg == "show");
             if (adminVerb && session.AccessLevel < ACE.Entity.Enum.AccessLevel.Admin)
             {
@@ -224,16 +224,17 @@ namespace ACE.Server.Command.Handlers
                         All(RoomAssignManager.BuilderSetZoneShare(player, arg == "on"));
                         break;
 
-                    case "killreward":
-                        // Kill Reward (owner 2026-09-23): items every N kills per player, at most once per cooldown - several per
+                    case "bounty":
+                    case "killreward":   // silent alias (renamed 2026-09-26)
+                        // Bounty (owner 2026-09-23): items every N kills per player, at most once per cooldown - several per
                         // dungeon. Stored on the room source's weenie, like its room list. The edit itself is shared with zones.
                         if (arg == null)
                         {
-                            Msg("/zonecontrol dungeon killreward " + KillRewardManager.EditUsage + " - items every N kills per player, at most once per cooldown.");
+                            Msg("/zonecontrol dungeon bounty " + BountyManager.EditUsage + " - items every N kills per player, at most once per cooldown.");
                             break;
                         }
 
-                        All(RoomAssignManager.BuilderSetKillReward(player, c => KillRewardManager.Edit(c, arg, args, 3)));
+                        All(RoomAssignManager.BuilderSetBounty(player, c => BountyManager.Edit(c, arg, args, 3)));
                         break;
 
                     // ---- test tools: every one of these answers "off" unless room_assign_test_tools is true
@@ -340,7 +341,7 @@ namespace ACE.Server.Command.Handlers
                         Msg("  /zonecontrol dungeon monster here          - the room's generator exactly where you stand");
                         Msg("  /zonecontrol dungeon nudge <guid> <east> <north> [turn] - move a placed wall or generator a little");
                         Msg("  /zonecontrol dungeon zoneshare on|off      - everyone in the dungeon shares kills as one fellowship");
-                        Msg("  /zonecontrol dungeon killreward on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id> - items every N kills per player");
+                        Msg("  /zonecontrol dungeon bounty on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id> - items every N kills per player");
                         Msg("  /zonecontrol dungeon state | map           - data lines for the plugin's Dungeons tab");
                         Msg("Writes and test tools need Admin. Test tools (need server property room_assign_test_tools = true; memory only):");
                         Msg("  /zonecontrol dungeon admin on|off          - admins count as players");

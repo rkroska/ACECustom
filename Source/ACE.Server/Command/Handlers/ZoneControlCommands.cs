@@ -140,7 +140,7 @@ namespace ACE.Server.Command.Handlers
             + "appearance <name> <palette|shade|scale|translucency|shiny|setup|clothing|palettebase|motion|sound|icon> <value> [--wcid <id>] | clearappearance <name> [field] [--wcid <id>] | copylook <name> <donorWcid> [--wcid <id>] | draftslot <name> [release] | copydraft <name> <destWcid> | becomemob <donorWcid> --wcid <id> | seticon <wcid> <iconDid|clear> [layer] | "
             + "modifier <name> <add|remove|list|catalog|band|slots|special|chance> [args] [--wcid <id>] | "
             + "currency <name> <add|remove|list> [itemWcid] [amount] [chance] [direct|corpse] [--wcid <id>] | "
-            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | killreward <name> <show|on|off|add|set|remove> | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
+            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | bounty <name> <show|on|off|add|set|remove> | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
             + "mobinfo <wcid> | geninfo <wcid> | genlist [zone] | genedit <wcid> delay|radius|stagger|init|max <value> | "
             + "craft <material> <itemtype> auto|allow|deny | craft list|get|test|enabled|mintier|components | "
             + "effect <name> [dot on|off | dmg <amount> | type <name|percent> | interval <secs>] | reload")]
@@ -190,7 +190,7 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /zonecontrol currency <name> add <itemWcid> <amount> [chance 0..1] [direct|corpse] | remove <itemWcid> | list   [--wcid <id>]   (per-kill bonus-currency drop table; direct = into the killer's inventory)");
                 Msg("  /zonecontrol boundary <name> <on|off|show>   (bounded: players at the zone's variation may only roam bounded-zone landblocks; variation 11+ only)");
                 Msg("  /zonecontrol zoneshare <name> <on|off|show>   (Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship; only while the zone is enabled)");
-                Msg("  /zonecontrol killreward <name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>   (Kill Reward: items every N kills per player, at most once per cooldown; v11+ only)");
+                Msg("  /zonecontrol bounty <name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>   (Bounty: items every N kills per player, at most once per cooldown; v11+ only)");
                 Msg("  /zonecontrol survey <name> [lbHex]   (per-landblock content: generator + creature summary; lbHex = full detail for one landblock)");
                 Msg("  /zonecontrol quests <name>   (quest registry for the plugin Quests tab; throttled to one pull per 60s)");
                 Msg("  /zonecontrol terrain <name> <hex> <type|clear>   (override the map terrain color for one landblock; type = " + string.Join("/", ZoneControlManager.TerrainTags) + "; display-only)");
@@ -287,11 +287,11 @@ namespace ACE.Server.Command.Handlers
                               .Append(z.ZoneShare ? 1 : 0).Append(',')
                               .Append(z.ZoneShare && z.Enabled ? ZoneShareManager.CountInZone(z.Name) : 0);
 
-                            // Kill Reward (appended 2026-09-23): on, then every reward as "id:wcid:amount:kills:minutes:name"
-                            // joined by '+' (KillRewardManager.Wire - names carry none of the separators)
-                            var kr = z.KillReward ?? new KillRewardConfig();
-                            sb.Append(',').Append(kr.Enabled ? 1 : 0)
-                              .Append(',').Append(KillRewardManager.Wire(kr));
+                            // Bounty (appended 2026-09-23): on, then every reward as "id:wcid:amount:kills:minutes:name"
+                            // joined by '+' (BountyManager.Wire - names carry none of the separators)
+                            var bounty = z.Bounty ?? new BountyConfig();
+                            sb.Append(',').Append(bounty.Enabled ? 1 : 0)
+                              .Append(',').Append(BountyManager.Wire(bounty));
                         }
                         // Chunked (review 2026-09-24): with every zone's rewards on it the line can pass the chat-line size
                         // that stalls the client; the plugin reassembles [[ZC+]] pieces into the one [[ZCA]] line.
@@ -2302,38 +2302,39 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
-                    case "killreward":
+                    case "bounty":
+                    case "killreward":   // silent alias (renamed 2026-09-26, owner: players know it as Bounty)
                     {
-                        // Kill Reward (owner 2026-09-23): items every N kills per player, at most once per cooldown - several per zone.
-                        if (args.Count < 3) { Msg("Usage: killreward <name> show | " + KillRewardManager.EditUsage); return; }
+                        // Bounty (owner 2026-09-23): items every N kills per player, at most once per cooldown - several per zone.
+                        if (args.Count < 3) { Msg("Usage: bounty <name> show | " + BountyManager.EditUsage); return; }
                         var name = args[1];
                         var area = ZoneControlManager.GetArea(name);
                         if (area == null) { Msg($"No zone '{name}' (create it first)."); return; }
                         var op = args[2].ToLowerInvariant();
-                        var edited = (area.KillReward ?? new KillRewardConfig()).Clone();
+                        var edited = (area.Bounty ?? new BountyConfig()).Clone();
 
                         // Never on retail (review 2026-09-24): below v11 the kill hook ignores the zone anyway, so turning one
                         // on or adding a reward there would only look like it worked. Off and remove stay allowed, to clean up.
                         if (op != "show" && session.AccessLevel < AccessLevel.Admin)
                         {
-                            Msg("Changing a Kill Reward needs Admin access (the same as a dungeon's).");
+                            Msg("Changing a Bounty needs Admin access (the same as a dungeon's).");
                             return;
                         }
 
                         if ((op == "on" || op == "add" || op == "set") && area.Variation < VariationManager.EndgameMinVariation)
                         {
-                            Msg($"Kill Reward needs variation 11+ - '{name}' is on v{area.Variation}, a retail layer. Nothing changed.");
+                            Msg($"Bounty needs variation 11+ - '{name}' is on v{area.Variation}, a retail layer. Nothing changed.");
                             return;
                         }
 
                         if (op != "show")
                         {
                             // One locked read-change-write on the zone's current settings: last save to a reward wins.
-                            edited = ZoneControlManager.EditKillReward(name, c => KillRewardManager.Edit(c, op, args, 3), out var err);
+                            edited = ZoneControlManager.EditBounty(name, c => BountyManager.Edit(c, op, args, 3), out var err);
                             if (err != null) { Msg($"'{name}': {err}"); return; }
                         }
 
-                        Msg($"'{name}' Kill Reward {KillRewardManager.Describe(edited)}"
+                        Msg($"'{name}' Bounty {BountyManager.Describe(edited)}"
                             + (edited.Enabled && !area.Enabled ? " - inactive while the zone is disabled." : "."));
                         return;
                     }
@@ -2539,7 +2540,7 @@ namespace ACE.Server.Command.Handlers
                                 Enabled = false,
                                 Bounded = czSrc.Bounded,
                                 ZoneShare = czSrc.ZoneShare,
-                                KillReward = czSrc.KillReward?.Clone() ?? new KillRewardConfig(),
+                                Bounty = czSrc.Bounty?.Clone() ?? new BountyConfig(),
                                 Notes = $"cloned from '{czSrc.Name}' (v{czSrc.Variation})",
                                 Landblocks = new HashSet<ushort>(czSrc.Landblocks),
                                 TerrainOverrides = new Dictionary<ushort, string>(czSrc.TerrainOverrides ?? new Dictionary<ushort, string>()),
