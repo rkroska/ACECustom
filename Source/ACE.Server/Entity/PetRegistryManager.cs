@@ -128,13 +128,18 @@ namespace ACE.Server.Entity
             var accountId = player.Account.AccountId;
             var creatureWcid = (uint)wcid.Value;
             var isShiny = capturedVariant.HasValue && capturedVariant.Value == (int)CreatureVariant.Shiny;
+            var displayName = GetRegistryDisplayName(creatureName, isShiny);
+
+            // Creatures whose weenie has no CreatureType (walls, bone piles, ...) are filed under Unknown,
+            // so they still earn the species stamps and share the Monster-Dex's single Unknown page.
+            var speciesType = ResolveSpeciesType(creatureType);
 
             // Check if already registered (by creature name AND shiny status)
             if (isShiny)
             {
                 if (IsShinyPetRegistered(accountId, creatureName))
                 {
-                    player.SendMessage($"You've already registered a Shiny {creatureName} in your Pet Log.");
+                    player.SendMessage($"You've already registered a {displayName} in your Pet Log.");
                     return;
                 }
             }
@@ -142,62 +147,33 @@ namespace ACE.Server.Entity
             {
                 if (IsPetRegistered(accountId, creatureName))
                 {
-                    player.SendMessage($"You've already registered a {creatureName} in your Pet Log.");
+                    player.SendMessage($"You've already registered a {displayName} in your Pet Log.");
                     return;
                 }
             }
 
             // Register it with shiny flag
-            if (RegisterPet(accountId, creatureWcid, creatureName, creatureType.HasValue ? (uint?)creatureType.Value : null, isShiny))
+            if (RegisterPet(accountId, creatureWcid, creatureName, speciesType, isShiny))
             {
                 var count = GetPetRegistryCount(accountId);
-                
-                if (isShiny)
-                    player.SendMessage($"Registered: Shiny {creatureName}! Your Pet Log now has {count} unique species.");
-                else
-                    player.SendMessage($"Registered: {creatureName}! Your Pet Log now has {count} unique species.");
-                
+
+                player.SendMessage($"Registered: {displayName}! Your Pet Log now has {count} unique species.");
+
                 player.SendMessage("Use '/pets' anytime to review your collection.");
-                
-                log.Debug($"[PetRegistry] {player.Name} (Account: {accountId}) registered {(isShiny ? "Shiny " : "")}{creatureName} (WCID: {creatureWcid})");
-                
-                // Check if this is the first pet of this creature type - award QB
-                if (creatureType.HasValue)
-                {
-                    var typeValue = (uint)creatureType.Value;
-                    var typeName = ((CreatureType)typeValue).ToString();
-                    
-                    using (var context = new ShardDbContext())
-                    {
-                        // Check for first of this SPECIES (any, shiny or not)
-                        var typeCount = context.PetRegistry
-                            .Count(p => p.AccountId == accountId && p.CreatureType == typeValue);
-                        
-                        if (typeCount == 1) // This is the first of this species!
-                        {
-                            player.QuestManager.Stamp($"CapturedEssence{typeName}");
-                            player.SendMessage($"First {typeName} captured!", ChatMessageType.Broadcast);
-                            
-                            log.Debug($"[PetRegistry] {player.Name} captured their first {typeName} - QB awarded");
-                        }
-                        
-                        // Check for first SHINY of this SPECIES (additional QB)
-                        if (isShiny)
-                        {
-                            var shinyTypeCount = context.PetRegistry
-                                .Count(p => p.AccountId == accountId && p.CreatureType == typeValue && p.IsShiny);
-                            
-                            if (shinyTypeCount == 1) // This is the first SHINY of this species!
-                            {
-                                player.QuestManager.Stamp($"ShinyEssence{typeName}");
-                                player.SendMessage($"First Shiny {typeName} captured!", ChatMessageType.Broadcast);
-                                
-                                log.Debug($"[PetRegistry] {player.Name} captured their first Shiny {typeName} - QB awarded");
-                            }
-                        }
-                    }
-                }
-                
+
+                log.Debug($"[PetRegistry] {player.Name} (Account: {accountId}) registered {displayName} (WCID: {creatureWcid})");
+
+                // Species stamps. The account has just registered one of this species (and one shiny, if this is
+                // a shiny), so grant whichever stamp the account is still missing. Keying off the stamp rather
+                // than "is this the first registry row" means a stamp that was missed once is repaired the next
+                // time that species is registered.
+                var typeName = ((CreatureType)speciesType).ToString();
+
+                GrantSpeciesStamp(player, $"CapturedEssence{typeName}", $"First {typeName} captured!");
+
+                if (isShiny)
+                    GrantSpeciesStamp(player, $"ShinyEssence{typeName}", $"First Shiny {typeName} captured!");
+
                 // Check milestone QB awards: 1, 5, 10, then every 25 (25, 50, 75, 100, 125, ...)
                 bool isMilestone = count == RegistryMilestoneFirst || count == RegistryMilestoneSecond || count == RegistryMilestoneThird
                     || (count >= RegistryMilestoneInterval && count % RegistryMilestoneInterval == 0);
@@ -220,6 +196,51 @@ namespace ACE.Server.Entity
             {
                 player.SendMessage("Failed to register the essence. Please try again.");
             }
+        }
+
+        /// <summary>
+        /// The species a captured essence is registered under. Essences from creatures with no CreatureType
+        /// are filed under CreatureType.Unknown rather than left null.
+        /// </summary>
+        public static uint ResolveSpeciesType(int? capturedCreatureType)
+        {
+            return (uint)(capturedCreatureType ?? (int)CreatureType.Unknown);
+        }
+
+        /// <summary>
+        /// The name shown in registry messages. Shiny captures usually already carry the "Shiny " prefix in
+        /// their stored name, so only add it when it is missing.
+        /// </summary>
+        public static string GetRegistryDisplayName(string creatureName, bool isShiny)
+        {
+            if (!isShiny || creatureName.StartsWith("Shiny ", StringComparison.Ordinal))
+                return creatureName;
+
+            return $"Shiny {creatureName}";
+        }
+
+        /// <summary>
+        /// Grants a species stamp if the account does not already have it, and announces it only when the
+        /// account-level quest bonus row actually exists afterwards (mules never get one).
+        /// </summary>
+        private static void GrantSpeciesStamp(Player player, string questName, string announcement)
+        {
+            if (player.Account.HasQuestBonusAndCompletion(questName))
+                return;
+
+            // StampFirst keeps the character entry at 1 if this runs again for a character that already has it.
+            player.QuestManager.StampFirst(questName);
+
+            // Stamp only writes the account row when the character's count lands on exactly 1, so a character
+            // that already had the entry would otherwise get no quest bonus.
+            QuestManager.EnsureAccountQuestStamp(player, questName, out _);
+
+            if (!player.Account.HasQuestBonusAndCompletion(questName))
+                return;
+
+            player.SendMessage(announcement, ChatMessageType.Broadcast);
+
+            log.Debug($"[PetRegistry] {player.Name} earned {questName} - QB awarded");
         }
 
         /// <summary>
