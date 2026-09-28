@@ -2287,7 +2287,10 @@ namespace ACE.Server.Command.Handlers
                     message += $"Account created on {account.CreateTime.ToLocalTime()} by IP: {(account.CreateIP != null ? new IPAddress(account.CreateIP).ToString() : "N/A")} \n";
                     message += $"Account last logged on at {(account.LastLoginTime.HasValue ? account.LastLoginTime.Value.ToLocalTime().ToString() : "N/A")} by IP: {(account.LastLoginIP != null ? new IPAddress(account.LastLoginIP).ToString() : "N/A")}\n";
                     message += $"Account total times logged on {account.TotalTimesLoggedIn}\n";
-                    var characters = DatabaseManager.Shard.BaseDatabase.GetCharacters(account.AccountId, true);
+                    // Only the name, id, plussed and delete fields are printed, so use the lightweight stub query.
+                    // GetCharacters loads every child table per character, which stalled the world thread on
+                    // accounts with hundreds of deleted characters.
+                    var characters = DatabaseManager.Shard.BaseDatabase.GetCharacterListForLogin(account.AccountId, true);
                     message += $"{characters.Count} Character(s) owned by: {account.AccountName}\n";
                     message += "-------------------\n";
                     foreach (var character in characters.Where(x => !x.IsDeleted && x.DeleteTime == 0))
