@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ClipboardList, Search, Filter, ArrowRightLeft, LogIn, BarChart3 } from 'lucide-react'
 import { api } from '../services/api'
+import { formatAmount } from '../utils/shortNumber'
 import PageHeader from './common/PageHeader'
 import Pagination from './common/Pagination'
 import {
@@ -23,6 +24,17 @@ const MAX_DAYS_BY_TAB: Record<AuditTab, number> = {
 }
 
 const DAY_OPTIONS = [7, 14, 30, 60, 90, 180, 365] as const
+
+/** Per-browser memory of the Short numbers toggle (default ON). Storage can throw (private mode) - never fatal. */
+const SHORT_NUMBERS_KEY = 'ace_audit_short_numbers'
+
+function readShortNumbers(): boolean {
+  try {
+    return localStorage.getItem(SHORT_NUMBERS_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
 
 const EMPTY_FILTERS: AuditFilters = {
   ip: '',
@@ -77,6 +89,15 @@ export default function AuditLog() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
+  const [shortNumbers, setShortNumbers] = useState<boolean>(readShortNumbers)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SHORT_NUMBERS_KEY, String(shortNumbers))
+    } catch {
+      // storage blocked - the toggle still works for this visit
+    }
+  }, [shortNumbers])
 
   const maxDays = MAX_DAYS_BY_TAB[activeTab]
   const dayOptions = useMemo(
@@ -239,6 +260,18 @@ export default function AuditLog() {
           {activeTab === 'summaries' && (
             <span className="text-xs text-neutral-500">IP filter applies to Transfers and Logins only.</span>
           )}
+          <label
+            className="ml-auto inline-flex items-center gap-2 text-xs text-neutral-400 cursor-pointer select-none"
+            title="Show large amounts as 5B, 1.2M, 250K (K / M / B / T / Q). Off = full numbers. Hover a short number for the exact value."
+          >
+            <input
+              type="checkbox"
+              checked={shortNumbers}
+              onChange={e => setShortNumbers(e.target.checked)}
+              className="accent-blue-500"
+            />
+            Short numbers (5B)
+          </label>
         </div>
       </div>
 
@@ -286,13 +319,13 @@ export default function AuditLog() {
             </div>
             <div className="flex-1 min-h-0 overflow-auto">
               {activeTab === 'transfers' && (
-                <TransfersTable rows={transfers?.items ?? []} onChip={applyChip} />
+                <TransfersTable rows={transfers?.items ?? []} onChip={applyChip} shortNumbers={shortNumbers} />
               )}
               {activeTab === 'logins' && (
                 <LoginsTable rows={logins?.items ?? []} onChip={applyChip} />
               )}
               {activeTab === 'summaries' && (
-                <SummariesTable rows={summaries?.items ?? []} onChip={applyChip} />
+                <SummariesTable rows={summaries?.items ?? []} onChip={applyChip} shortNumbers={shortNumbers} />
               )}
             </div>
             <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
@@ -382,9 +415,11 @@ function Chip({ label, onClick }: { label: string; onClick: () => void }) {
 function TransfersTable({
   rows,
   onChip,
+  shortNumbers,
 }: {
   rows: TransferLogRow[]
   onChip: (field: FilterChipField, value: string) => void
+  shortNumbers: boolean
 }) {
   if (rows.length === 0) {
     return <EmptyTable message="No transfers match these filters." />
@@ -424,7 +459,7 @@ function TransfersTable({
               )}
             </td>
             <td className="px-3 py-2">
-              {row.itemName} <span className="text-neutral-500">×{row.quantity.toLocaleString()}</span>
+              {row.itemName} <span className="text-neutral-500">×<Amount value={row.quantity} short={shortNumbers} /></span>
             </td>
             <td className="px-3 py-2 text-neutral-500 font-mono text-[10px]">
               {row.fromPlayerIP && <div><Chip label={row.fromPlayerIP} onClick={() => onChip('ip', row.fromPlayerIP!)} /> (from)</div>}
@@ -492,9 +527,11 @@ function LoginsTable({
 function SummariesTable({
   rows,
   onChip,
+  shortNumbers,
 }: {
   rows: TransferSummaryRow[]
   onChip: (field: FilterChipField, value: string) => void
+  shortNumbers: boolean
 }) {
   if (rows.length === 0) {
     return <EmptyTable message="No transfer summaries match these filters." />
@@ -522,14 +559,19 @@ function SummariesTable({
               <span className="text-neutral-600 mx-1">→</span>
               <Chip label={row.toPlayerName} onClick={() => onChip('character', row.toPlayerName)} />
             </td>
-            <td className="px-3 py-2">{row.totalTransfers.toLocaleString()}</td>
-            <td className="px-3 py-2">{row.totalQuantity.toLocaleString()}</td>
-            <td className="px-3 py-2">{row.totalValue.toLocaleString()}</td>
+            <td className="px-3 py-2"><Amount value={row.totalTransfers} short={shortNumbers} /></td>
+            <td className="px-3 py-2"><Amount value={row.totalQuantity} short={shortNumbers} /></td>
+            <td className="px-3 py-2"><Amount value={row.totalValue} short={shortNumbers} /></td>
           </tr>
         ))}
       </tbody>
     </table>
   )
+}
+
+/** An amount: short or full per the toggle; the exact number is always on hover. */
+function Amount({ value, short }: { value: number; short: boolean }) {
+  return <span title={value.toLocaleString('en-US')}>{formatAmount(value, short)}</span>
 }
 
 function EmptyTable({ message }: { message: string }) {

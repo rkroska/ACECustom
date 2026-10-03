@@ -65,7 +65,12 @@ namespace ACE.Server.WorldObjects
 
             // additive enchantments:
             // imperil / armor
-            var enchantmentMod = ignoreMagicResist ? 0 : EnchantmentManager.GetBodyArmorMod();
+            // Debuff compression (owner 2026-10-04): on a T11+ monster Imperil no longer lowers armor (it went negative - the
+            // armor curve has no ceiling there, x312..x2,150 melee); it is a capped damage bonus in DamageEvent instead. Only
+            // POSITIVE armor enchantments count here for these monsters.
+            var enchantmentMod = ignoreMagicResist ? 0
+                : Creature.ZcDebuffCompressed ? EnchantmentManager.GetBodyArmorMod(true)
+                : EnchantmentManager.GetBodyArmorMod();
 
             var effectiveAL = armorVsType + enchantmentMod;
 

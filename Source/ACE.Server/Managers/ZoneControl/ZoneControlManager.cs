@@ -198,6 +198,11 @@ namespace ACE.Server.Managers.ZoneControl
             /// <summary>Live stat resolution (2026-08-22): per-TIER ladder apply state. Absent / empty =
             /// version 0 everywhere = no apply has ever run. See <see cref="GetLadderVersion"/>.</summary>
             public Dictionary<int, LadderApply> LadderApplies { get; set; } = new();
+
+            /// <summary>Per-MONSTER damage multipliers (owner 2026-10-03, "Damage Multiplier" in the Bestiary): wcid ->
+            /// factor on ALL the damage that monster deals to players (melee + spells, normal + True Damage), at every
+            /// tier and in every zone. Absent = 1.0. Evens out a slow swinger (the Kraken) or softens a monster.</summary>
+            public Dictionary<uint, double> DamageMults { get; set; } = new();
         }
 
         /// <summary>One `ladder apply` state for a tier. Version is a counter an item compares its
@@ -214,6 +219,11 @@ namespace ACE.Server.Managers.ZoneControl
         // tier -> ladder apply state. Guarded by _lock; read through the volatile copy below (hot equip path).
         private static readonly Dictionary<int, LadderApply> _ladderApplies = new();
         private static volatile Dictionary<int, LadderApply> _ladderSnapshot = new();
+
+        // wcid -> damage multiplier. Guarded by _lock; read through the volatile copy (every monster hit on a player).
+        private static readonly Dictionary<uint, double> _damageMults = new();
+        private static volatile Dictionary<uint, double> _damageMultSnapshot = new();
+        public const double DamageMultMin = 0.1, DamageMultMax = 10.0;
 
         // variation -> Default layer. Guarded by _lock; copied into the lock-free snapshot at rebuild.
         private static readonly Dictionary<int, VariationDefault> _variationDefaults = new();
@@ -329,6 +339,12 @@ namespace ACE.Server.Managers.ZoneControl
                     if (kv.Value != null)
                         ladderApplies[kv.Key] = kv.Value;
 
+            var damageMults = new Dictionary<uint, double>();
+            if (store.DamageMults != null)
+                foreach (var kv in store.DamageMults)
+                    if (kv.Value >= DamageMultMin && kv.Value <= DamageMultMax && kv.Value != 1.0)
+                        damageMults[kv.Key] = kv.Value;
+
             // ── commit: from here on nothing can throw ──
             _areas.Clear();
             foreach (var kv in areas) _areas[kv.Key] = kv.Value;
@@ -338,6 +354,9 @@ namespace ACE.Server.Managers.ZoneControl
             foreach (var kv in ladderApplies) _ladderApplies[kv.Key] = kv.Value;
             _evalCache.Clear();
             _ladderSnapshot = new Dictionary<int, LadderApply>(_ladderApplies);
+            _damageMults.Clear();
+            foreach (var kv in damageMults) _damageMults[kv.Key] = kv.Value;
+            _damageMultSnapshot = new Dictionary<uint, double>(_damageMults);
 
             RebuildIndexes();
         }
@@ -445,6 +464,7 @@ namespace ACE.Server.Managers.ZoneControl
                 Areas = _areas.Values.ToList(),
                 VariationDefaults = new Dictionary<int, VariationDefault>(_variationDefaults),
                 LadderApplies = new Dictionary<int, LadderApply>(_ladderApplies),
+                DamageMults = new Dictionary<uint, double>(_damageMults),
             };
             _ladderSnapshot = new Dictionary<int, LadderApply>(_ladderApplies);
             var jsonOut = JsonConvert.SerializeObject(store);
@@ -1905,6 +1925,46 @@ namespace ACE.Server.Managers.ZoneControl
                 Save();
             }
             return bumped;
+        }
+
+        // ── per-monster damage multipliers (owner 2026-10-03) ──
+
+        /// <summary>Lock-free: the damage multiplier for a monster wcid, 1.0 when none is set.</summary>
+        public static double GetDamageMult(uint wcid)
+        {
+            EnsureInitialized();
+            return _damageMultSnapshot.TryGetValue(wcid, out var m) ? m : 1.0;
+        }
+
+        /// <summary>The factor on a monster's damage to a PLAYER: its multiplier when the monster is governed by Zone
+        /// Control (an enabled zone resolves it - never retail), else 1.0. Called on every monster hit / spell on a
+        /// player, so the empty-map case returns before any resolve.</summary>
+        public static float MonsterDamageMultFor(Creature attacker, Creature defender)
+        {
+            if (attacker == null || attacker is Player || defender is not Player) return 1f;
+            var map = _damageMultSnapshot;
+            if (map.Count == 0 || !map.TryGetValue(attacker.WeenieClassId, out var m)) return 1f;
+            return ResolveForCreature(attacker) != null ? (float)m : 1f;
+        }
+
+        /// <summary>`/zonecontrol damagemult`: set (or clear with null / 1.0) one monster's multiplier. Persists.</summary>
+        public static void SetDamageMult(uint wcid, double? value)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                if (value == null || value.Value == 1.0) _damageMults.Remove(wcid);
+                else _damageMults[wcid] = value.Value;
+                _damageMultSnapshot = new Dictionary<uint, double>(_damageMults);
+                Save();
+            }
+        }
+
+        /// <summary>Every monster with a multiplier, by wcid.</summary>
+        public static List<KeyValuePair<uint, double>> ListDamageMults()
+        {
+            EnsureInitialized();
+            return _damageMultSnapshot.OrderBy(kv => kv.Key).ToList();
         }
 
         /// <summary>Variations that currently have an authored Default, ascending.</summary>

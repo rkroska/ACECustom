@@ -115,7 +115,23 @@ namespace ACE.Server.WorldObjects
             float protModNew = EnchantmentManager.GetProtectionResistanceModNew(damageType);
             float protMod = protModOld + ((protModNew - protModOld) * newCurvePct);
 
+            // Zone Control aug curves (owner 2026-10-02): a curves-on tier's monster (or its spell) hitting a player - the
+            // protection at each spell's base strength x (1 - the tier's life curve) replaces the game's aug bonus
+            if (this is Player curvePlayer && Creature.ZoneAugCurveProfile(attacker) is ACE.Server.Managers.ZoneScaling.EvaluatedProfile curveProfile)
+                protMod = Creature.ZoneProtectionMod(curvePlayer, damageType, curveProfile);
+
             var vulnMod = EnchantmentManager.GetVulnerabilityResistanceMod(damageType);
+
+            // Debuff compression (owner 2026-10-04, Creature_DebuffCompression.cs): on a T11+ monster the vuln leaves the resist
+            // slot - the weapon's rend runs alone below - and comes back as a capped, life-aug-ramped bonus (x (1 + vuln)) at the
+            // end, so it STACKS on rend. Replaces the retail-vuln compression block right below for these monsters.
+            var debuffCompressed = ZcDebuffCompressed;
+            var zcVulnBonus = 0f;
+            if (debuffCompressed)
+            {
+                zcVulnBonus = GetZcDebuffBonus(damageType, false).Vuln;
+                vulnMod = 1.0f;
+            }
 
             // Zone Scaler: resolve the winning zone profile for this monster once (null for players/exempt/non-endgame/
             // no-match). Consumers below prefer a profile-defined stat over the global v11_* knob. Global profile is
@@ -127,13 +143,13 @@ namespace ACE.Server.WorldObjects
             // weaponResistanceMod max below), so base damage, offensive augs, and weapon rending are unaffected.
             // Player defenders never hit this: Player overrides GetResistanceMod. Gate is the monster's instance
             // Variation (same convention as the v11+ percent-HP offense system) -> auto-applies to all v11+ mobs.
-            if (vulnMod > 1.0f && ServerConfig.v11_vuln_enabled.Value && !(this is Player)
+            if (vulnMod > 1.0f && ServerConfig.zc_vuln_enabled.Value && !(this is Player)
                 && ((zoneProfile != null && zoneProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.VulnCap))
-                    || (ACE.Server.Managers.PrestigeManager.SystemsEnabled
-                        && ACE.Server.Managers.VariationManager.GetEffectiveEndgameVariation(this) >= ServerConfig.v11_vuln_min_variation.Value)))
+                    || (ServerConfig.zc_combat_rules_enabled.Value
+                        && ACE.Server.Managers.VariationManager.GetEffectiveEndgameVariation(this) >= ServerConfig.zc_vuln_min_variation.Value)))
             {
-                var vulnEff = GetProperty(PropertyFloat.VulnEffectivenessOverride) ?? ServerConfig.v11_vuln_effectiveness.Value;
-                var vulnCap = GetProperty(PropertyFloat.VulnCapOverride) ?? ServerConfig.v11_vuln_cap.Value;
+                var vulnEff = GetProperty(PropertyFloat.VulnEffectivenessOverride) ?? ServerConfig.zc_vuln_effectiveness.Value;
+                var vulnCap = GetProperty(PropertyFloat.VulnCapOverride) ?? ServerConfig.zc_vuln_cap.Value;
                 if (zoneProfile != null && zoneProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.VulnCap))
                     vulnCap = zoneProfile.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.VulnCap);
 
@@ -184,21 +200,25 @@ namespace ACE.Server.WorldObjects
 
             var resistMod = protMod * vulnMod;
 
+            // debuff compression: the vuln's capped bonus, on top of rend (every damage path that reads this method)
+            if (debuffCompressed && zcVulnBonus > 0f)
+                resistMod *= 1.0f + zcVulnBonus;
+
             // v11+ monster damage-taken mitigation: scale ALL incoming damage against endgame mobs by a flat factor so they are
             // hard to kill via mitigation (not evasion). Applied after armor/resist, so it is rending-proof. Bosses (IsEmpowerSource)
             // take even less. Player defenders never hit this (Player overrides GetResistanceMod). Prestige-gated -> dormant while
             // prestige is off. The zone damage_taken_mult stat that used to override this was REMOVED 2026-08-03 (owner):
             // redundant with damage_resist_rating.
-            if (ServerConfig.v11_mob_dmg_taken_enabled.Value && !(this is Player)
-                && ACE.Server.Managers.PrestigeManager.SystemsEnabled
-                && ACE.Server.Managers.VariationManager.GetEffectiveEndgameVariation(this) >= ServerConfig.v11_mob_dmg_taken_min_variation.Value)
+            if (ServerConfig.zc_mob_dmg_taken_enabled.Value && !(this is Player)
+                && ServerConfig.zc_combat_rules_enabled.Value
+                && ACE.Server.Managers.VariationManager.GetEffectiveEndgameVariation(this) >= ServerConfig.zc_mob_dmg_taken_min_variation.Value)
             {
-                var dmgMult = GetProperty(PropertyFloat.MobDmgTakenOverride) ?? ServerConfig.v11_mob_dmg_taken_mult.Value;
+                var dmgMult = GetProperty(PropertyFloat.MobDmgTakenOverride) ?? ServerConfig.zc_mob_dmg_taken_mult.Value;
 
                 if (GetProperty(PropertyBool.IsEmpowerSource) == true)
-                    dmgMult *= ServerConfig.v11_mob_dmg_taken_boss_mult.Value;
+                    dmgMult *= ServerConfig.zc_mob_dmg_taken_boss_mult.Value;
 
-                dmgMult = Math.Clamp(dmgMult, ServerConfig.v11_mob_dmg_taken_floor.Value, 1.0);
+                dmgMult = Math.Clamp(dmgMult, ServerConfig.zc_mob_dmg_taken_floor.Value, 1.0);
 
                 resistMod *= (float)dmgMult;
             }

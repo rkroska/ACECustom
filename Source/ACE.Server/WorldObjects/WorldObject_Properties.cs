@@ -2715,6 +2715,17 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqMaxValue2); else SetProperty(PropertyInt.PortalReqMaxValue2, value.Value); }
         }
 
+        /// <summary>All five portal gates in order (owner 2026-10-02: 2 -> 5). Gates 1-2 are the 9019-9024 set,
+        /// 3-5 are ours (50112-50120). Unset gates come back as PortalRequirement.None.</summary>
+        public (PortalRequirement type, int? value, int? max)[] PortalRequirements => new[]
+        {
+            (PortalReqType, PortalReqValue, PortalReqMaxValue),
+            (PortalReqType2, PortalReqValue2, PortalReqMaxValue2),
+            ((PortalRequirement)(GetProperty(PropertyInt.PortalReqType3) ?? 0), GetProperty(PropertyInt.PortalReqValue3), GetProperty(PropertyInt.PortalReqMaxValue3)),
+            ((PortalRequirement)(GetProperty(PropertyInt.PortalReqType4) ?? 0), GetProperty(PropertyInt.PortalReqValue4), GetProperty(PropertyInt.PortalReqMaxValue4)),
+            ((PortalRequirement)(GetProperty(PropertyInt.PortalReqType5) ?? 0), GetProperty(PropertyInt.PortalReqValue5), GetProperty(PropertyInt.PortalReqMaxValue5)),
+        };
+
         public uint? CreatedByAccountId
         {
             get => GetProperty(PropertyDataId.CreatedByAccountId);

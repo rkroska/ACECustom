@@ -52,6 +52,8 @@ namespace ACE.Entity.Enum.Properties
         LumAugMissileDefenseCount = 9025,
         LumAugMagicDefenseCount = 9026,
         BankedWeaklyEnlightenedCoins = 9027,
+        // Prestige Coin (19860000) bank balance (owner 2026-10-04): deposit / withdraw only - Bonded + Attuned, never transferable
+        BankedPrestigeCoins = 9028,
 
         // 50000+ block (matches the PropertyInt/PropertyBool charm-system ids)
         /// <summary>Charm of the Triune Weave: each point grants +1 Creature, +1 Item, and +1 Life augmentation on top of the (capped) gem-bought counts.</summary>
@@ -68,6 +70,12 @@ namespace ACE.Entity.Enum.Properties
         CrashingSteelCharmCount = 50003,
         /// <summary>Charm of the True Shot (Missile).</summary>
         TrueShotCharmCount      = 50004,
+        /// <summary>
+        /// 64-bit flat kill XP (2026-09-27): XpOverride (PropertyInt 146) is int32 and tops out at 2,147,483,647,
+        /// below a T11 boss's 5B. When set it wins over XpOverride; a Zone Control xp_kill still wins over both.
+        /// 50600 is free in EVERY Property enum (50005 is PropertyInt.CharmLevel).
+        /// </summary>
+        XpOverride64           = 50600,
 
         // Pet Bonding System (Combat Pet Devices) — [AssessmentProperty] for identify + plugin PublicUpdateProperty*
         /// <summary>Current bond XP toward next level on a PetDevice.</summary>

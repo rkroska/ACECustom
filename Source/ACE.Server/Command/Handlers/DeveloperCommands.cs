@@ -812,6 +812,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("grantxp", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Give XP to yourself (or the specified character).", "ulong\n" + "@grantxp [name] 191226310247 is max level 275")]
         public static void HandleGrantXp(Session session, params string[] parameters)
         {
+            parameters = ShortNumber.ExpandLastAmount(parameters);   // accepts 5B / 1.5M / 250K / 5,000,000,000 too (owner 2026-09-27)
             if (parameters?.Length > 0)
             {
                 List<CommandParameterHelpers.ACECommandParameter> aceParams = new List<CommandParameterHelpers.ACECommandParameter>()
@@ -843,7 +844,7 @@ namespace ACE.Server.Command.Handlers
 
                         session.Network.EnqueueSend(new GameMessageSystemChat($"{amount:N0} experience granted.", ChatMessageType.Advancement));
 
-                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} granted {amount:N0} experience to {aceParams[0].AsPlayer.Name}.");
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} granted {ShortNumber.Audit(amount)} experience to {aceParams[0].AsPlayer.Name}.");
 
                         return;
                     }
@@ -854,12 +855,13 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            ChatPacket.SendServerMessage(session, "Usage: /grantxp [name] 1234 (max 999999999999)", ChatMessageType.Broadcast);
+            ChatPacket.SendServerMessage(session, "Usage: /grantxp [name] 1234 or 5B (K / M / B) (max 999999999999)", ChatMessageType.Broadcast);
         }
 
         [CommandHandler("grantluminance", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Give luminance to yourself (or the specified character).", "ulong\n" + "@grantluminance [name] 1500000 is max luminance")]
         public static void HandleGrantLuminance(Session session, params string[] parameters)
         {
+            parameters = ShortNumber.ExpandLastAmount(parameters);   // accepts 5B / 1.5M / 250K / 5,000,000,000 too (owner 2026-09-27)
             if (parameters?.Length > 0)
             {
                 List<CommandParameterHelpers.ACECommandParameter> aceParams = new List<CommandParameterHelpers.ACECommandParameter>()
@@ -891,7 +893,7 @@ namespace ACE.Server.Command.Handlers
 
                         session.Network.EnqueueSend(new GameMessageSystemChat($"{amount:N0} luminance granted.", ChatMessageType.Advancement));
 
-                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} granted {amount:N0} luminance to {aceParams[0].AsPlayer.Name}.");
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} granted {ShortNumber.Audit(amount)} luminance to {aceParams[0].AsPlayer.Name}.");
 
                         return;
                     }
@@ -902,7 +904,7 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            ChatPacket.SendServerMessage(session, "Usage: /grantluminance [name] 1234 (max 999999999999)", ChatMessageType.Broadcast);
+            ChatPacket.SendServerMessage(session, "Usage: /grantluminance [name] 1234 or 5B (K / M / B) (max 999999999999)", ChatMessageType.Broadcast);
         }
 
         [CommandHandler("grantitemxp", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Give item XP to the last appraised item.")]

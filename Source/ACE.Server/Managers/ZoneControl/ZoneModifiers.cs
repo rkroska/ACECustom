@@ -278,7 +278,7 @@ namespace ACE.Server.Managers.ZoneControl
             // worn cap lifeonhit_cap (25 pct), lifeonhit_cooldown (3 s). Read in Player.ZcTryLifeOnHit from both hit paths.
             { 48, new Def { Key = 48, Class = ModifierClass.Chase, JewelryOnly = true, Name = "Life on Hit", Effect = "heal 1-3 pct max HP per hit", ValFmt = "{0}% HP per hit", Min = 1, Max = 3, Ints = P(LifeOnHitPct, 0) } },
             // Reinforced - mid, ARMOR ONLY, the value is a protection RANK: +1 Superior 1.40 / +2 Excellent 1.60 /
-            // +3 Unparalleled 1.80. Stamp SETS every ArmorModVs* on the piece (after EqualizeT11ArmorResists), so it
+            // +3 Unparalleled 1.80. Stamp SETS every ArmorModVs* on the piece (after EqualizeZoneArmorResists), so it
             // is item data, not an enchantment - hollow mobs cannot strip it. Tier-weighted toward +3 via TierThirds.
             { 49, new Def { Key = 49, Class = ModifierClass.Mid, ArmorOnly = true, SetsProtection = true, Name = "Reinforced", Effect = "+1-3 protection rank (Superior / Excellent / Unparalleled)", ValFmt = "+{0}", Min = 1, Max = 3, Ints = P(ReinforcedRank, 0) } },
             // ── Armor v2 pool additions ─────────────────────────────────────────────────────────
@@ -432,7 +432,7 @@ namespace ACE.Server.Managers.ZoneControl
         // spread above it is what carries the card.
         // Hi LOWERED 10.0 -> 5.0 in the same edit. Rend Power substitutes into vulnMod AFTER the v11
         // vulnerability compression (Creature_Properties.cs:130-146 then :168-169), so it is the one
-        // channel that BYPASSES v11_vuln_cap entirely - at 10.0 the engine computes rendingMod = 11.0,
+        // channel that BYPASSES zc_vuln_cap entirely - at 10.0 the engine computes rendingMod = 11.0,
         // an 11x multiplier on the whole damage line before prots. 5.0 is still a 6x ceiling.
         public static readonly WeaponBand WeaponRendPower = new WeaponBand
         {
@@ -673,7 +673,7 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 // Armor v2 slot special: the value is written to every Ints prop (magnitude-less keys
                 // stamp 1 = "present"); the combat side reads it MAX-wins across worn pieces. The drop
-                // line MUST start with "Zone Cantrip:" or FinalizeT11LongDesc deletes it; magnitude-less
+                // line MUST start with "Zone Cantrip:" or FinalizeZoneLongDesc deletes it; magnitude-less
                 // keys (42/45) print bare, 41/44/46 print the rolled value.
                 if (def.Ints != null)
                     foreach (var (propId, _) in def.Ints)
@@ -689,7 +689,7 @@ namespace ACE.Server.Managers.ZoneControl
             if (def.SetsProtection)
             {
                 // key 49 Reinforced: the value is a RANK. SET every elemental armor mod on the piece to the
-                // rank's value (this runs after ApplyT11GearStats equalized them at ~1.30). Base mods are
+                // rank's value (this runs after ApplyZoneGearStats equalized them at ~1.30). Base mods are
                 // item data, so hollow mobs (IgnoreMagicArmor) cannot strip this the way they strip Banes.
                 var mod = ReinforcedMod(value);
                 if (wo.ArmorLevel.HasValue)

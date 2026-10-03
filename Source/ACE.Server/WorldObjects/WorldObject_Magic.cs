@@ -557,6 +557,15 @@ namespace ACE.Server.WorldObjects
             if (!useHarmCap)
                 tryBoost = (int)Math.Round(tryBoost * resistanceMod);
 
+            // per-monster DAMAGE MULTIPLIER (owner 2026-10-03: "cover harm, drain and DoTs too"): a monster's Harm on a
+            // player - health damage only, like True Damage
+            if (tryBoost < 0 && spell.VitalDamageType == DamageType.Health && player == null && creature != null && targetCreature is Player harmedPlayer)
+            {
+                var harmMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(creature, harmedPlayer);
+                if (harmMult != 1f)
+                    tryBoost = (int)Math.Round(tryBoost * (double)harmMult);
+            }
+
             var traceAfterResist = tryBoost;
 
             if (player != null && minBoostValue < 0 && spell.VitalDamageType == DamageType.Health)
@@ -912,6 +921,15 @@ namespace ACE.Server.WorldObjects
 
             if (spell.TransferCap != 0 && srcVitalChange > spell.TransferCap)
                 srcVitalChange = (uint)spell.TransferCap;
+
+            // per-monster DAMAGE MULTIPLIER (owner 2026-10-03: "cover harm, drain and DoTs too"): a monster's Drain Health on a
+            // player, after the spell's cap, never more than the player has
+            if (isDrain && spell.Source == PropertyAttribute2nd.Health && srcVitalChange > 0 && transferSource is Player drainedPlayer && this is Creature drainer)
+            {
+                var drainMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(drainer, drainedPlayer);
+                if (drainMult != 1f)
+                    srcVitalChange = (uint)Math.Min(Math.Round(srcVitalChange * (double)drainMult), drainedPlayer.Health.Current);
+            }
 
             // should healing resistances be applied here?
             var boostMod = isDrain ? (float)destination.GetResistanceMod(GetBoostResistanceType(spell.Destination)) : 1.0f;
@@ -1627,6 +1645,16 @@ namespace ACE.Server.WorldObjects
             gateway.PortalReqType = portal.PortalReqType;
             gateway.PortalReqValue = portal.PortalReqValue;
             gateway.PortalReqMaxValue = portal.PortalReqMaxValue;
+
+            // Gates 2-5 too (2026-10-02: gate 2 was never copied, so a summoned gateway skipped it)
+            foreach (var prop in new[] { PropertyInt.PortalReqType2, PropertyInt.PortalReqValue2, PropertyInt.PortalReqMaxValue2,
+                                         PropertyInt.PortalReqType3, PropertyInt.PortalReqValue3, PropertyInt.PortalReqMaxValue3,
+                                         PropertyInt.PortalReqType4, PropertyInt.PortalReqValue4, PropertyInt.PortalReqMaxValue4,
+                                         PropertyInt.PortalReqType5, PropertyInt.PortalReqValue5, PropertyInt.PortalReqMaxValue5 })
+            {
+                var v = portal.GetProperty(prop);
+                if (v.HasValue) gateway.SetProperty(prop, v.Value);
+            }
 
             gateway.EnterWorld();
 

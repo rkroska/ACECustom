@@ -631,7 +631,8 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// For generators flagged with VariationScaledSpawnBase, overrides the total spawn count to
-        /// base + (landblock variation - baseline). A v11 camp spawns its base count, v12 base+1, etc.
+        /// base + floor((landblock variation - baseline) / step) - step = VariationScaledSpawnStep, default 1 (a v11 camp
+        /// spawns its base count, v12 base+1, etc.).
         /// The count never drops below the base, so an unset/missing variation behaves like the baseline.
         /// </summary>
         private void ApplyVariationScaledSpawnCount()
@@ -642,8 +643,10 @@ namespace ACE.Server.WorldObjects
 
             var baseline = GetProperty(PropertyInt.VariationScaledSpawnBaseline) ?? 11;
             var variation = Location?.Variation ?? baseline;
+            // owner 2026-10-03: one extra spawn every <step> tiers (unset = every tier, the original rule)
+            var step = Math.Max(1, GetProperty(PropertyInt.VariationScaledSpawnStep) ?? 1);
 
-            var count = spawnBase.Value + Math.Max(0, variation - baseline);
+            var count = spawnBase.Value + Math.Max(0, variation - baseline) / step;
 
             InitCreate = count;
             MaxCreate = count;

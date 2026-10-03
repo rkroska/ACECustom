@@ -835,9 +835,13 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>On a T11+ weapon: the quality percentile roll (0-1000). The server-wide
         /// weaponscaling_data config maps quality -> the k coefficient at swing time, so config
         /// edits re-price every stamped weapon live. Absent = the weapon has no scaling term.</summary>
+        // [AssessmentProperty] (owner 2026-09-29): sent in appraisal so VTank loot rules can test it numerically
+        [AssessmentProperty]
         WeaponAugScaleQuality                   = 9060,
         /// <summary>On a T11+ weapon: the loot tier it was stamped at. Selects the tier row
         /// (scaling cap / min-wield augs) in the weaponscaling_data config.</summary>
+        // [AssessmentProperty] (owner 2026-09-29): sent in appraisal so VTank loot rules can test it numerically
+        [AssessmentProperty]
         WeaponAugScaleTier                      = 9061,
 
         /// <summary>
@@ -887,6 +891,14 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         VariationScaledSpawnBaseline = 50104,
 
+        /// <summary>
+        /// Owner 2026-10-03: how many tiers per extra spawn for a VariationScaledSpawnBase generator. Total =
+        /// base + floor((variation - baseline) / step), never below base. Unset = 1 (one extra per tier, as before).
+        /// The Tou Tou packs use base 4, baseline 10, step 5: T11-14 = 4, T15-19 = 5, T20-24 = 6, T25 = 7.
+        /// 50105-50110 are taken on other branches.
+        /// </summary>
+        VariationScaledSpawnStep = 50111,
+
         /// <summary>TEST HOOK (pairs with PropertyBool.ForceEndgameSystems): the ENDGAME CONTENT variation this
         /// creature should SIMULATE when force-enabled at a non-endgame variation. Drives percent-HP growth and
         /// the v11 combat gates. Unset — or any value below 11 — resolves to v11, i.e. the dummy behaves exactly
@@ -917,10 +929,24 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Zone Control live stat resolution (2026-08-22): the loot TIER a ZC-lined piece was
         /// stamped at. Picks the ladder row (per-variation Default bands / core anchors) that resolves
         /// its grades. Outside the 50200-50399 cantrip block on purpose - that block is summed on equip.</summary>
+        // [AssessmentProperty] (owner 2026-09-29): sent in appraisal so VTank loot rules can test it numerically
+        [AssessmentProperty]
         ZcTier = 50109,
         /// <summary>The per-tier ladder version this piece's retail props were last resolved against
         /// (ZoneControlManager.GetLadderVersion). A mismatch on equip re-resolves + re-stamps.</summary>
         ZcResolvedVersion = 50110,
+
+        /// <summary>Portal gates 3-5 (owner 2026-10-02: "bump up to 5 gates"). Same meaning as PortalReqType /
+        /// PortalReqValue / PortalReqMaxValue (9019-9021) and the *2 set (9022-9024); every set gate must pass.</summary>
+        PortalReqType3 = 50112,
+        PortalReqValue3 = 50113,
+        PortalReqMaxValue3 = 50114,
+        PortalReqType4 = 50115,
+        PortalReqValue4 = 50116,
+        PortalReqMaxValue4 = 50117,
+        PortalReqType5 = 50118,
+        PortalReqValue5 = 50119,
+        PortalReqMaxValue5 = 50120,
     }
 
     public static class PropertyIntExtensions

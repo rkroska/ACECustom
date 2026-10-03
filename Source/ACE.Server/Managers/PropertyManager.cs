@@ -56,8 +56,35 @@ namespace ACE.Server.Managers
         /// <summary>
         // Retrieve the property info by key.
         /// </summary>
+        /// <summary>
+        /// Old key name -> its current name (owner 2026-10-01: endgame settings named after a tier became Zone Control
+        /// "zc_" keys). An old name still works in /modify* and a row stored under it still loads - into the new key.
+        /// </summary>
+        private static readonly Dictionary<string, string> RenamedKeys = BuildRenamedKeys();
+
+        private static Dictionary<string, string> BuildRenamedKeys()
+        {
+            var d = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var s in new[]
+            {
+                "pcthp_enabled", "pcthp_min_variation", "pcthp_base", "pcthp_tier_growth", "pcthp_boss_mult", "pcthp_crit_mult",
+                "pcthp_variance", "pcthp_aug_threshold", "pcthp_reduction_cap", "pcthp_reduction_r", "min_attack_skill",
+                "relief_aug_start", "relief_aug_max", "relief_aug_cap", "relief_aug_bend",
+                "relief_dr_start", "relief_dr_max", "relief_dr_cap", "relief_dr_bend",
+                "relief_critdr_start", "relief_critdr_max", "relief_critdr_cap", "relief_critdr_bend",
+                "vuln_enabled", "vuln_min_variation", "vuln_effectiveness", "vuln_cap",
+                "mob_dmg_taken_enabled", "mob_dmg_taken_min_variation", "mob_dmg_taken_mult", "mob_dmg_taken_boss_mult", "mob_dmg_taken_floor",
+            })
+                d["v11_" + s] = "zc_" + s;
+            return d;
+        }
+
+        /// <summary>The current name of a key (an old renamed name maps to its new one).</summary>
+        private static string CanonicalKey(string key) => key != null && RenamedKeys.TryGetValue(key, out var renamed) ? renamed : key;
+
         private static PropertyInfo? GetPropertyInfo<T>(string key) where T : notnull
         {
+            key = CanonicalKey(key);
             var propInfo = typeof(ServerConfig).GetProperty(key, BindingFlags.Public | BindingFlags.Static);
             if (propInfo == null) return null;
             if (propInfo.PropertyType != typeof(ConfigProperty<T>)) return null;
@@ -81,6 +108,7 @@ namespace ACE.Server.Managers
         /// </summary>
         public static bool SetValue<T>(string key, T newValue, bool markModified = true) where T : notnull
         {
+            key = CanonicalKey(key);   // a change typed under an old name is stored under the new one
             var propInfo = GetPropertyInfo<T>(key);
             if (propInfo == null)
             {
@@ -124,28 +152,44 @@ namespace ACE.Server.Managers
         {
             // Skip any key with a write still pending: the database row is older than the live
             // value, and applying it here would revert the admin's change until the next drain.
-            foreach (ConfigPropertiesBoolean c in DatabaseManager.ShardConfig.GetAllBools())
+            // A row stored under an OLD key name (RenamedKeys) loads into the new key - unless a row under the new name
+            // exists too, which then wins.
+            var bools = DatabaseManager.ShardConfig.GetAllBools().ToList();
+            var longs = DatabaseManager.ShardConfig.GetAllLongs().ToList();
+            var doubles = DatabaseManager.ShardConfig.GetAllDoubles().ToList();
+            var strings = DatabaseManager.ShardConfig.GetAllStrings().ToList();
+            var storedKeys = new HashSet<string>(bools.Select(c => c.Key).Concat(longs.Select(c => c.Key))
+                .Concat(doubles.Select(c => c.Key)).Concat(strings.Select(c => c.Key)), StringComparer.Ordinal);
+            bool Shadowed(string key) => RenamedKeys.TryGetValue(key, out var renamed) && storedKeys.Contains(renamed);
+
+            foreach (ConfigPropertiesBoolean c in bools)
             {
-                if (_modifiedBoolProps.ContainsKey(c.Key)) continue;
+                if (_modifiedBoolProps.ContainsKey(CanonicalKey(c.Key)) || Shadowed(c.Key)) continue;
                 SetValue(c.Key, c.Value, markModified: false);
             }
+            // the endgame combat rules used to ride the retired system's switch (2026-10-01): a server that stored it
+            // OFF keeps those rules off until zc_combat_rules_enabled is set on its own
+            var legacySwitch = bools.FirstOrDefault(c => c.Key == nameof(prestige_systems_enabled));
+            if (legacySwitch != null && !storedKeys.Contains(nameof(zc_combat_rules_enabled)) && !_modifiedBoolProps.ContainsKey(nameof(zc_combat_rules_enabled)))
+                SetValue(nameof(zc_combat_rules_enabled), legacySwitch.Value, markModified: false);
 
-            foreach (ConfigPropertiesLong c in DatabaseManager.ShardConfig.GetAllLongs())
+            foreach (ConfigPropertiesLong c in longs)
             {
-                if (_modifiedLongProps.ContainsKey(c.Key) || _modifiedDoubleProps.ContainsKey(c.Key)) continue;
+                var key = CanonicalKey(c.Key);
+                if (_modifiedLongProps.ContainsKey(key) || _modifiedDoubleProps.ContainsKey(key) || Shadowed(c.Key)) continue;
                 if (!SetValue(c.Key, c.Value, markModified: false) && GetPropertyInfo<double>(c.Key) != null)
                     SetValue(c.Key, (double)c.Value, markModified: false);
             }
 
-            foreach (ConfigPropertiesDouble c in DatabaseManager.ShardConfig.GetAllDoubles())
+            foreach (ConfigPropertiesDouble c in doubles)
             {
-                if (_modifiedDoubleProps.ContainsKey(c.Key)) continue;
+                if (_modifiedDoubleProps.ContainsKey(CanonicalKey(c.Key)) || Shadowed(c.Key)) continue;
                 SetValue(c.Key, c.Value, markModified: false);
             }
 
-            foreach (ConfigPropertiesString c in DatabaseManager.ShardConfig.GetAllStrings())
+            foreach (ConfigPropertiesString c in strings)
             {
-                if (_modifiedStringProps.ContainsKey(c.Key)) continue;
+                if (_modifiedStringProps.ContainsKey(CanonicalKey(c.Key)) || Shadowed(c.Key)) continue;
                 SetValue(c.Key, c.Value, markModified: false);
             }
         }
@@ -431,6 +475,8 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> zc_weapon_zone_lock { get; private set; } = new(false, "if TRUE, ZC-stamped weapons (ZcTier 11+) only apply their CUSTOM power - aug-scaling damage, modifier cards, procs - while their PLAYER wielder stands inside an enabled Zone Control area; outside, the weapon performs at its base T11 stats (the fallback). FALSE (default) = full power everywhere. Applies live, no restart. Use /modifybool zc_weapon_zone_lock <true/false>. Surfaced as the GM Tools > Combat 'Only in Authored Areas' toggle.");
         public static ConfigProperty<bool> zc_armor_zone_lock { get; private set; } = new(false, "if TRUE, worn ZC-stamped gear (ZcTier 11+) only contributes its Modifier LINES - the 50200-block bonuses and the ZC portion of the Gear* rating sums - while the PLAYER wearing it stands inside an enabled Zone Control area; outside, the gear falls back to its base stats (AL/protections stay). FALSE (default) = full power everywhere. Applies live. Use /modifybool zc_armor_zone_lock <true/false>. GM Tools > Shard Combat 'Armor Zone Lock'.");
         public static ConfigProperty<bool> zc_pertier_authoring { get; private set; } = new(false, "AUTHORING-UX mode shared by every dev's ZoneControl plugin (it changes where the Modifiers tabs WRITE, not how combat resolves). FALSE (default) = Anchored banding: T11 and T25 anchor boxes on the v11 Default, tiers 12-24 derived on the line. TRUE = Per-Tier: every tier's boxes edit that tier's own VariationDefault directly; an authored per-tier value shadows the anchor lerp for that stat (the Merge shadow rule). Flip via /modifybool zc_pertier_authoring <true/false> or the Modifiers tab switch.");
+        public static ConfigProperty<bool> audit_short_numbers { get; private set; } = new(true, "if TRUE (default), large AMOUNTS in audit lines (in-game Audit channel + its Discord copy: /grantxp, /grantluminance) print short - 5B, 1.2M, 250K (K / M / B / T / Q). FALSE = full numbers with commas. Ids are never shortened (owner 2026-09-27). Applies live. Use /modifybool audit_short_numbers <true/false>. GM Tools > Shard Combat > Audit Log 'Short Numbers'.");
+        public static ConfigProperty<bool> present_bot_enabled { get; private set; } = new(false, "if TRUE, admins can run /presentbot: the server spam-uses Mine, Mine, Mine! presents on the admin's own character through the real use path (HandleActionUseItem) and reports uses vs actual prize rolls per 10 s. FALSE (default) = /presentbot refuses. A TEST-SHARD tool - leave it off on live. Use /modifybool present_bot_enabled <true/false>.");
         public static ConfigProperty<bool> zc_killxp_diag { get; private set; } = new(false, "if TRUE, every governed (Zone Control) monster kill writes a [KILLXP] line per rewarded player to the server log - the launch-day XP/luminance readout, since the client filters that chat. OFF by default; switch it on only while a shard is being tuned, never on a busy live shard. Use /modifybool zc_killxp_diag <true/false>.");
         public static ConfigProperty<bool> zc_proc_diag { get; private set; } = new(false, "if TRUE, every Zone Control Cast-on-Strike proc (arc and ring) writes a [ZCPROC] line with its damage terms to the server log. Bring-up diagnostic from 2026-08-27; OFF by default since 2026-09-04. Use /modifybool zc_proc_diag <true/false>.");
         public static ConfigProperty<bool> npc_hairstyle_fullrange { get; private set; } = new(false, "if TRUE, allows generated creatures to use full range of hairstyles. Retail only allowed first nine (0-8) out of 51");
@@ -788,45 +834,69 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> new_life_aug_curve_pct { get; private set; } = new(0.0, "a value between 0 and 1 representing the amount of the new curve to apply. 0 means the old curve will be used, 1 means the new curve will be used, and 0.5 means the midpoint between the curves will be used.");
         public static ConfigProperty<double> life_aug_prot_tuning_constant { get; private set; } = new(0.0034597, "the tuning constant r used in the  (1.0 - (1.0 - r)^a) life aug scaling formula - controls the size of step for each augmentation, relative to remaining cap (0.0034597 means every 200 augs halves the remaining bonus)");
         public static ConfigProperty<double> life_aug_prot_max_bonus { get; private set; } = new(0.32, "the maximum bonus that the life aug scaling can approach at infinite augs - T8 protection spells provide 68% base, so a bonus above 32% makes it possible to achieve full protection");
-        // v11+ Percent-HP floor damage system (punches through life-aug damage reduction on endgame content; see T10/V11_PercentHP_Damage_Plan.md)
-        public static ConfigProperty<bool> prestige_systems_enabled { get; private set; } = new(true, "MASTER kill-switch for the entire Prestige/v11 endgame stack: per-tier monster scaling (HP/DamageRating/defense/vuln per tier), tier boundaries (allowlist/punishment/wisp/markers), the %HP-floor damage + attack-skill floor, vuln compression, and mob damage-taken mitigation on their VARIATION-triggered paths, plus kill XP/luminance and loot tier scaling. false = none of it functions (GetTier reports 0 everywhere). Zone Control stays fully functional: zone-authored percent_hp_base / vuln_cap / damage_taken_mult and all zone profiles keep working. Flip back to true to restore prestige unchanged.");
+        // Retired system's switch: since 2026-10-01 it gates only that system's own leftover code (PrestigeManager and its
+        // callers). The endgame combat rules moved to zc_combat_rules_enabled.
+        public static ConfigProperty<bool> prestige_systems_enabled { get; private set; } = new(true, "retired system's switch: gates only its own leftover code (tier boundaries, wisp/markers, kill/loot tier scaling - all inert below variation 1000). Endgame combat is zc_combat_rules_enabled.");
 
-        public static ConfigProperty<bool> v11_pcthp_enabled { get; private set; } = new(true, "master switch for the v11+ percent-of-max-HP floor damage system. When on, variation>=v11_pcthp_min_variation monsters deal at least a %HP floor to player defenders.");
-        public static ConfigProperty<long> v11_pcthp_min_variation { get; private set; } = new(11, "minimum Location.Variation a monster must have for the percent-HP floor damage system to apply.");
-        public static ConfigProperty<double> v11_pcthp_base { get; private set; } = new(0.05, "base per-hit floor as a fraction of the player's max health, at variation == v11_pcthp_min_variation (0.05 = 5%).");
-        public static ConfigProperty<double> v11_pcthp_tier_growth { get; private set; } = new(1.22, "geometric growth of the base floor per variation tier above v11_pcthp_min_variation. P = base * growth^(variation-min). 1.22 = +22% per tier (rising endgame that outpaces aug reduction).");
-        public static ConfigProperty<double> v11_pcthp_boss_mult { get; private set; } = new(2.0, "multiplier applied to the %HP floor when the attacking monster is a boss (has PropertyBool.IsEmpowerSource).");
-        public static ConfigProperty<double> v11_pcthp_crit_mult { get; private set; } = new(2.0, "multiplier applied to the %HP floor on a critical hit, so crits deal more than normal hits even when the floor dominates.");
-        public static ConfigProperty<double> v11_pcthp_variance { get; private set; } = new(0.15, "random +/- spread applied to the %HP floor per hit so damage isn't identical every swing (0.15 = +/-15%). 0 = no variance (flat floor).");
-        public static ConfigProperty<long> v11_pcthp_aug_threshold { get; private set; } = new(2000, "life-aug threshold: only life augs ABOVE this count reduce the %HP floor (effectiveAugs = max(0, lifeAugs - threshold)). v11+ is a fresh defensive climb from this baseline. Set to 2000 so the climb begins at 2k life augs; augs at or below 2000 give no relief on the floor.");
-        public static ConfigProperty<double> v11_pcthp_reduction_cap { get; private set; } = new(0.95, "maximum fraction of the %HP floor that life augs can reduce, at infinite effective augs (0.95 = players always eat at least 5% of the floor).");
-        public static ConfigProperty<double> v11_pcthp_reduction_r { get; private set; } = new(0.0002878, "tuning constant r in the floor's life-aug reduction curve cap*(1-(1-r)^effAugs). 0.0002878 ~= 90% of the cap reached by 8000 effective augs (~10k total).");
-        public static ConfigProperty<long> v11_min_attack_skill { get; private set; } = new(75300, "attack-skill floor applied to variation>=v11_pcthp_min_variation monsters when they attack a player (melee/missile evade check). Ensures endgame mobs can land hits vs very high Effective Melee Defense. 75300 ~= reliably hits ~75k EMD. Set 0 to disable.");
+        // Zone Control endgame combat rules (owner 2026-10-01: moved off the retired system's switch, named for Zone
+        // Control - T11 through T25 all use them). Gates the VARIATION-triggered paths of the %HP floor, the
+        // attack-skill floor, vuln compression and monster damage-taken mitigation. Zone-authored stats
+        // (percent_hp_base, vuln_cap, true_damage ...) work regardless.
+        public static ConfigProperty<bool> zc_combat_rules_enabled { get; private set; } = new(true, "Zone Control endgame combat rules for monsters at variation 11+: the %HP floor (where it is the fallback), the attack-skill floor, vuln compression and damage-taken mitigation. Zone-authored stats work regardless.");
 
-        // v11+ relief curves (2026-07-27, owner design): player-progression damage reduction applied to
-        // AUTHORED endgame damage (the %HP floor and WYSIWYG spell_damage). Each axis is a straight line:
+        // Percent-HP floor (owner 2026-10-01: an OPTION now, True Damage is the main mechanic)
+
+        public static ConfigProperty<bool> zc_pcthp_enabled { get; private set; } = new(true, "master switch for the Zone Control percent-of-max-HP floor damage system. When on, variation>=zc_pcthp_min_variation monsters deal at least a %HP floor to player defenders.");
+        public static ConfigProperty<long> zc_pcthp_min_variation { get; private set; } = new(11, "minimum Location.Variation a monster must have for the percent-HP floor damage system to apply.");
+        public static ConfigProperty<double> zc_pcthp_base { get; private set; } = new(0.0, "server-wide %HP floor for monsters at variation >= zc_pcthp_min_variation with no zone percent_hp_base, as a fraction of the player's max health (0.05 = 5%). 0 = off (owner 2026-10-01: %HP is an option - True Damage is the main mechanic; a zone opts in with percent_hp_base).");
+
+        // True Damage defaults (owner 2026-10-01): a zone authors the amount (true_damage); these fill in what it leaves unset
+        public static ConfigProperty<double> zc_true_damage_crit_mult { get; private set; } = new(2.0, "True Damage crit multiplier when the zone authors no crit_damage_rating. Crit Damage Resist shrinks only the bonus part.");
+        public static ConfigProperty<double> zc_true_damage_variance { get; private set; } = new(0.15, "True Damage random +/- spread per hit when the zone authors no true_damage_variance (0.15 = +/-15%). 0 = the same amount every hit.");
+
+        // Aug curves defaults (owner 2026-10-02): what a tier with aug_curves = 1 uses for any curve stat it leaves unset
+        public static ConfigProperty<long> zc_aug_prot_start { get; private set; } = new(0, "aug curves: life augs where the protections curve starts (0 pct of the normal part removed).");
+        public static ConfigProperty<long> zc_aug_prot_max { get; private set; } = new(10000, "aug curves: life augs where the protections curve reaches its cap.");
+        public static ConfigProperty<double> zc_aug_prot_cap { get; private set; } = new(0.9, "aug curves: the most of the normal part life augs remove through protections (0.9 = 90 pct; never 1 - no immunity).");
+        public static ConfigProperty<double> zc_aug_prot_bend { get; private set; } = new(1.0, "aug curves: protections curve shape (1 = straight line, <1 strong early, >1 late ramp).");
+        public static ConfigProperty<long> zc_aug_armor_start { get; private set; } = new(0, "aug curves: item augs where the armor curve starts.");
+        public static ConfigProperty<long> zc_aug_armor_max { get; private set; } = new(10000, "aug curves: item augs where the armor curve reaches its cap.");
+        public static ConfigProperty<double> zc_aug_armor_cap { get; private set; } = new(0.9, "aug curves: the most of the normal part item augs remove through armor (0.9 = 90 pct; never 1).");
+        public static ConfigProperty<double> zc_aug_armor_bend { get; private set; } = new(1.0, "aug curves: armor curve shape (1 = straight line).");
+        public static ConfigProperty<double> zc_pcthp_tier_growth { get; private set; } = new(1.22, "geometric growth of the base floor per variation tier above zc_pcthp_min_variation. P = base * growth^(variation-min). 1.22 = +22% per tier (rising endgame that outpaces aug reduction).");
+        public static ConfigProperty<double> zc_pcthp_boss_mult { get; private set; } = new(2.0, "multiplier applied to the %HP floor when the attacking monster is a boss (has PropertyBool.IsEmpowerSource).");
+        public static ConfigProperty<double> zc_pcthp_crit_mult { get; private set; } = new(2.0, "multiplier applied to the %HP floor on a critical hit, so crits deal more than normal hits even when the floor dominates.");
+        public static ConfigProperty<double> zc_pcthp_variance { get; private set; } = new(0.15, "random +/- spread applied to the %HP floor per hit so damage isn't identical every swing (0.15 = +/-15%). 0 = no variance (flat floor).");
+        public static ConfigProperty<long> zc_pcthp_aug_threshold { get; private set; } = new(2000, "life-aug threshold: only life augs ABOVE this count reduce the %HP floor (effectiveAugs = max(0, lifeAugs - threshold)). the endgame is a fresh defensive climb from this baseline. Set to 2000 so the climb begins at 2k life augs; augs at or below 2000 give no relief on the floor.");
+        public static ConfigProperty<double> zc_pcthp_reduction_cap { get; private set; } = new(0.95, "maximum fraction of the %HP floor that life augs can reduce, at infinite effective augs (0.95 = players always eat at least 5% of the floor).");
+        public static ConfigProperty<double> zc_pcthp_reduction_r { get; private set; } = new(0.0002878, "tuning constant r in the floor's life-aug reduction curve cap*(1-(1-r)^effAugs). 0.0002878 ~= 90% of the cap reached by 8000 effective augs (~10k total).");
+        public static ConfigProperty<long> zc_min_attack_skill { get; private set; } = new(75300, "attack-skill floor applied to variation>=zc_pcthp_min_variation monsters when they attack a player (melee/missile evade check). Ensures endgame mobs can land hits vs very high Effective Melee Defense. 75300 ~= reliably hits ~75k EMD. Set 0 to disable.");
+
+        // Zone Control relief curves (2026-07-27, owner design): player-progression damage reduction applied to
+        // AUTHORED endgame damage: life augs (incl. Triune) cut True Damage and the %HP floor; Damage Resist cuts
+        // only the %HP floor; Crit Damage Resist cuts only the crit bonus. Each axis is a straight line:
         // 0% reduction at *_start, rising to *_cap (a fraction) at *_max, clamped at both ends; the axes
         // multiply. These are the server-wide defaults; zone stats relief_aug_*/relief_dr_*/relief_critdr_*
-        // override them per zone. Supersedes the exponential v11_pcthp_aug_threshold/reduction_r/
+        // override them per zone. Supersedes the exponential zc_pcthp_aug_threshold/reduction_r/
         // reduction_cap trio (left defined but no longer read by the floor).
-        public static ConfigProperty<long> v11_relief_aug_start { get; private set; } = new(2000, "life augs where relief begins on authored v11 damage (average T11 entrant sits here = 0% reduction).");
-        public static ConfigProperty<long> v11_relief_aug_max { get; private set; } = new(10000, "life augs where the aug relief line reaches its cap.");
-        public static ConfigProperty<double> v11_relief_aug_cap { get; private set; } = new(0.95, "maximum damage reduction from life augs (0.95 = 95% at v11_relief_aug_max; never immune).");
-        public static ConfigProperty<long> v11_relief_dr_start { get; private set; } = new(400, "player Damage Resist rating where gear relief begins (normal T11 entrant ~400-600 = 0-9%).");
-        public static ConfigProperty<long> v11_relief_dr_max { get; private set; } = new(1500, "player Damage Resist rating where the gear relief line reaches its cap.");
-        public static ConfigProperty<double> v11_relief_dr_cap { get; private set; } = new(0.50, "maximum damage reduction from Damage Resist (0.50 = 50% at v11_relief_dr_max).");
-        public static ConfigProperty<long> v11_relief_critdr_start { get; private set; } = new(50, "player Crit Damage Resist rating where crit-bonus relief begins (~50 = casual gear today).");
-        public static ConfigProperty<long> v11_relief_critdr_max { get; private set; } = new(1000, "player Crit Damage Resist rating where the crit relief line reaches its cap.");
-        public static ConfigProperty<double> v11_relief_critdr_cap { get; private set; } = new(0.50, "maximum reduction of the crit BONUS from Crit Damage Resist (at cap a 2x crit lands as 1.5x).");
-        public static ConfigProperty<double> v11_relief_aug_bend { get; private set; } = new(1.0, "shape of the aug relief curve: relief = cap * t^bend (t = progress start->max). 1 = straight line, <1 = strong early relief tapering off, >1 = slow start ramping late.");
-        public static ConfigProperty<double> v11_relief_dr_bend { get; private set; } = new(1.0, "shape of the Damage Resist relief curve (see v11_relief_aug_bend).");
-        public static ConfigProperty<double> v11_relief_critdr_bend { get; private set; } = new(1.0, "shape of the Crit Damage Resist relief curve (see v11_relief_aug_bend).");
+        public static ConfigProperty<long> zc_relief_aug_start { get; private set; } = new(2000, "life augs where relief begins on Zone Control monster damage (average T11 entrant sits here = 0% reduction).");
+        public static ConfigProperty<long> zc_relief_aug_max { get; private set; } = new(10000, "life augs where the aug relief line reaches its cap.");
+        public static ConfigProperty<double> zc_relief_aug_cap { get; private set; } = new(0.95, "maximum damage reduction from life augs (0.95 = 95% at zc_relief_aug_max; never immune).");
+        public static ConfigProperty<long> zc_relief_dr_start { get; private set; } = new(400, "player Damage Resist rating where gear relief begins (normal T11 entrant ~400-600 = 0-9%).");
+        public static ConfigProperty<long> zc_relief_dr_max { get; private set; } = new(1500, "player Damage Resist rating where the gear relief line reaches its cap.");
+        public static ConfigProperty<double> zc_relief_dr_cap { get; private set; } = new(0.50, "maximum damage reduction from Damage Resist (0.50 = 50% at zc_relief_dr_max).");
+        public static ConfigProperty<long> zc_relief_critdr_start { get; private set; } = new(50, "player Crit Damage Resist rating where crit-bonus relief begins (~50 = casual gear today).");
+        public static ConfigProperty<long> zc_relief_critdr_max { get; private set; } = new(1000, "player Crit Damage Resist rating where the crit relief line reaches its cap.");
+        public static ConfigProperty<double> zc_relief_critdr_cap { get; private set; } = new(0.50, "maximum reduction of the crit BONUS from Crit Damage Resist (at cap a 2x crit lands as 1.5x).");
+        public static ConfigProperty<double> zc_relief_aug_bend { get; private set; } = new(1.0, "shape of the aug relief curve: relief = cap * t^bend (t = progress start->max). 1 = straight line, <1 = strong early relief tapering off, >1 = slow start ramping late.");
+        public static ConfigProperty<double> zc_relief_dr_bend { get; private set; } = new(1.0, "shape of the Damage Resist relief curve (see zc_relief_aug_bend).");
+        public static ConfigProperty<double> zc_relief_critdr_bend { get; private set; } = new(1.0, "shape of the Crit Damage Resist relief curve (see zc_relief_aug_bend).");
 
-        // v11+ monster vuln-defense system: compresses the vulnerability (Imperil) enchantment multiplier against variation>=v11_vuln_min_variation monsters so stacked vulns can't produce absurd damage. Only the vuln bonus is compressed; base damage, offensive augs, and weapon rending are untouched.
-        public static ConfigProperty<bool> v11_vuln_enabled { get; private set; } = new(true, "master switch for the v11+ monster vuln-compression system. When on, vulnerability (Imperil) enchantment multipliers against variation>=v11_vuln_min_variation monsters are compressed via a diminishing curve + cap.");
-        public static ConfigProperty<long> v11_vuln_min_variation { get; private set; } = new(11, "minimum Location.Variation a monster must be spawned in for vuln compression to apply. Matches the v11 endgame convention.");
-        public static ConfigProperty<double> v11_vuln_effectiveness { get; private set; } = new(0.35, "fraction of the vuln BONUS that lands against v11+ monsters. effectiveVuln = 1 + (rawVuln - 1) * this. 0.35 = vulns are 35% as strong. 1.0 = uncompressed (vanilla). 0.0 = vulns do nothing.");
-        public static ConfigProperty<double> v11_vuln_cap { get; private set; } = new(1.5, "hard ceiling on the total vuln multiplier against v11+ monsters, applied after the effectiveness compression. 1.5 = a monster can never take more than 1.5x damage from stacked vulns.");
+        // Zone Control monster vuln-defense system: compresses the vulnerability (Imperil) enchantment multiplier against variation>=zc_vuln_min_variation monsters so stacked vulns can't produce absurd damage. Only the vuln bonus is compressed; base damage, offensive augs, and weapon rending are untouched.
+        public static ConfigProperty<bool> zc_vuln_enabled { get; private set; } = new(true, "master switch for the Zone Control monster vuln-compression system. When on, vulnerability (Imperil) enchantment multipliers against variation>=zc_vuln_min_variation monsters are compressed via a diminishing curve + cap.");
+        public static ConfigProperty<long> zc_vuln_min_variation { get; private set; } = new(11, "minimum Location.Variation a monster must be spawned in for vuln compression to apply. Matches the v11 endgame convention.");
+        public static ConfigProperty<double> zc_vuln_effectiveness { get; private set; } = new(0.35, "fraction of the vuln BONUS that lands against endgame monsters. effectiveVuln = 1 + (rawVuln - 1) * this. 0.35 = vulns are 35% as strong. 1.0 = uncompressed (vanilla). 0.0 = vulns do nothing.");
+        public static ConfigProperty<double> zc_vuln_cap { get; private set; } = new(1.5, "hard ceiling on the total vuln multiplier against endgame monsters, applied after the effectiveness compression. 1.5 = a monster can never take more than 1.5x damage from stacked vulns.");
 
         public static ConfigProperty<double> elemental_weakness_default_factor { get; private set; } = new(2.0, "default ELEMENTAL WEAKNESS multiplier used when a monster has PropertyInt.ElementalWeaknessMask set but no per-mob PropertyFloat.ElementalWeaknessFactor. 2.0 = the mob takes 2x damage from its weak element(s). Applied after mitigation as a relative reward for using the right element.");
 
@@ -840,13 +910,13 @@ namespace ACE.Server.Managers
         // every T11+ item on its next equip / login, both directions. Nothing authored in the zone store changes.
         public static ConfigProperty<bool> zonecontrol_enabled { get; private set; } = new(true, "master switch for Zone Control gear authoring. ON = the T11-T25 ladder (Defaults + ladder constants). OFF = the T10 max-rolled FALLBACK set for every zone-mutated item: armor level 732, core anchors 92/73, worn gear caps 92/73/211. Re-resolves existing items on equip/login.");
 
-        // v11+ monster damage-taken mitigation: multiplies ALL incoming damage (physical + magic) against variation>=min monsters by a
+        // Zone Control monster damage-taken mitigation: multiplies ALL incoming damage (physical + magic) against variation>=min monsters by a
         // flat factor so endgame mobs are hard to kill via mitigation (not evasion). Rending-proof (applied after armor/resist). Read live.
-        public static ConfigProperty<bool> v11_mob_dmg_taken_enabled { get; private set; } = new(true, "master switch for v11+ monster damage-taken mitigation. When on, incoming damage against variation>=v11_mob_dmg_taken_min_variation monsters is scaled by v11_mob_dmg_taken_mult (bosses further by the boss factor).");
-        public static ConfigProperty<long> v11_mob_dmg_taken_min_variation { get; private set; } = new(11, "minimum Location.Variation a monster must be spawned in for damage-taken mitigation to apply. Matches the v11 endgame convention.");
-        public static ConfigProperty<double> v11_mob_dmg_taken_mult { get; private set; } = new(0.25, "incoming-damage multiplier for v11+ MINIONS. 0.25 = they take 25% of normal damage (4x effective HP). 1.0 = no mitigation. Lower = tankier. Read live per hit.");
-        public static ConfigProperty<double> v11_mob_dmg_taken_boss_mult { get; private set; } = new(0.60, "EXTRA multiplier stacked on v11_mob_dmg_taken_mult for BOSSES (PropertyBool.IsEmpowerSource). 0.60 => boss takes mult*0.60 (e.g. 0.25*0.60 = 0.15 = ~6.7x effective HP). 1.0 = bosses same as minions.");
-        public static ConfigProperty<double> v11_mob_dmg_taken_floor { get; private set; } = new(0.02, "hard minimum for the incoming-damage multiplier after all reductions, so mobs are never fully damage-immune. 0.02 = they always take at least 2% of normal damage.");
+        public static ConfigProperty<bool> zc_mob_dmg_taken_enabled { get; private set; } = new(true, "master switch for Zone Control monster damage-taken mitigation. When on, incoming damage against variation>=zc_mob_dmg_taken_min_variation monsters is scaled by zc_mob_dmg_taken_mult (bosses further by the boss factor).");
+        public static ConfigProperty<long> zc_mob_dmg_taken_min_variation { get; private set; } = new(11, "minimum Location.Variation a monster must be spawned in for damage-taken mitigation to apply. Matches the v11 endgame convention.");
+        public static ConfigProperty<double> zc_mob_dmg_taken_mult { get; private set; } = new(0.25, "incoming-damage multiplier for endgame MINIONS. 0.25 = they take 25% of normal damage (4x effective HP). 1.0 = no mitigation. Lower = tankier. Read live per hit.");
+        public static ConfigProperty<double> zc_mob_dmg_taken_boss_mult { get; private set; } = new(0.60, "EXTRA multiplier stacked on zc_mob_dmg_taken_mult for BOSSES (PropertyBool.IsEmpowerSource). 0.60 => boss takes mult*0.60 (e.g. 0.25*0.60 = 0.15 = ~6.7x effective HP). 1.0 = bosses same as minions.");
+        public static ConfigProperty<double> zc_mob_dmg_taken_floor { get; private set; } = new(0.02, "hard minimum for the incoming-damage multiplier after all reductions, so mobs are never fully damage-immune. 0.02 = they always take at least 2% of normal damage.");
 
         // REMOVED 2026-07-30 (owner ruling): the v11_tier_* per-tier prestige scaling block
         // (v11_tier_enabled/_max/_hp_growth/_damage_rating_per_tier/_defense_per_tier/_attack_per_tier/

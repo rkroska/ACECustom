@@ -437,6 +437,7 @@ namespace ACE.Server.WorldObjects
         {
             NoCorpse = true;
             XpOverride = 0;
+            RemoveProperty(PropertyInt64.XpOverride64);   // wins over XpOverride on a kill (2026-09-27)
             RemoveProperty(PropertyDataId.DeathTreasureType);
             RemoveProperty(PropertyInt.LuminanceAward);
             // Retail templates can carry wielded/contained items that drop on death; the ritual drops nothing.

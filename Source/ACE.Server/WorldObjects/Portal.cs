@@ -281,16 +281,16 @@ namespace ACE.Server.WorldObjects
                     return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouMustBeAnAdvocateToUsePortal));
                 }
 
-                if (PortalReqType != PortalRequirement.None && (PortalReqValue.GetValueOrDefault() > 0 || (PortalReqMaxValue.GetValueOrDefault() > 0 && PortalReqMaxValue.GetValueOrDefault() != 999)))
+                // Up to five gates (owner 2026-10-02), every set one must pass
+                var gates = PortalRequirements;
+                for (var i = 0; i < gates.Length; i++)
                 {
-                    if (!CheckPortalRequirement(player, PortalReqType, PortalReqValue.GetValueOrDefault(), PortalReqMaxValue.GetValueOrDefault(), "Primary Requirement"))
-                        return new ActivationResult(false);
-                }
-
-                if (PortalReqType2 != PortalRequirement.None && (PortalReqValue2.GetValueOrDefault() > 0 || (PortalReqMaxValue2.GetValueOrDefault() > 0 && PortalReqMaxValue2.GetValueOrDefault() != 999)))
-                {
-                    if (!CheckPortalRequirement(player, PortalReqType2, PortalReqValue2.GetValueOrDefault(), PortalReqMaxValue2.GetValueOrDefault(), "Secondary Requirement"))
-                        return new ActivationResult(false);
+                    var (reqType, reqValue, reqMax) = gates[i];
+                    if (reqType != PortalRequirement.None && (reqValue.GetValueOrDefault() > 0 || (reqMax.GetValueOrDefault() > 0 && reqMax.GetValueOrDefault() != 999)))
+                    {
+                        if (!CheckPortalRequirement(player, reqType, reqValue.GetValueOrDefault(), reqMax.GetValueOrDefault(), $"Requirement {i + 1}"))
+                            return new ActivationResult(false);
+                    }
                 }
             }
 
@@ -378,6 +378,14 @@ namespace ACE.Server.WorldObjects
                         message = $"You must have a XP bonus multiplier of x{reqValue} to interact with that portal!";
                     else if (reqMaxValue > reqValue && reqMaxValue != 999 && bonusMultiplier > reqMaxValue)
                         message = $"Your XP bonus multiplier is too high to interact with this portal. x{reqMaxValue} is the highest allowable!";
+                    break;
+
+                case PortalRequirement.TriuneWeave:
+                    var triune = player.TriuneWeaveCount ?? 0;
+                    if (triune < reqValue)
+                        message = $"You must have {reqValue:N0} Triune Weave to interact with that portal!";
+                    else if (reqMaxValue > reqValue && reqMaxValue != 999 && triune > reqMaxValue)
+                        message = $"You have more than {reqMaxValue:N0} Triune Weave and cannot interact with that portal!";
                     break;
 
                 default:

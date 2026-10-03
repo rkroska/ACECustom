@@ -344,7 +344,7 @@ namespace ACE.Server.Command.Handlers
 
         /// <summary>Set all 10 luminance augs at once (plugin order: creature, item, life,
         /// war, void, duration, specialize, summon, melee, missile).</summary>
-        private static void SetChLumAugs(Player player, uint[] v)
+        internal static void SetChLumAugs(Player player, uint[] v)
         {
             player.LuminanceAugmentCreatureCount = v[0];
             player.LuminanceAugmentItemCount = v[1];
@@ -841,7 +841,8 @@ namespace ACE.Server.Command.Handlers
             // the tier's damage ceiling, never above what a player could actually buy
             const long ItemAugPurchaseCap = 4000;          // EmoteManager.AugmentationCaps["Item"]
             var itemTarget = Math.Min((long)row.Cap, ItemAugPurchaseCap);
-            if (itemTarget > 0 && (player.LuminanceAugmentItemCount ?? 0) != itemTarget)
+            var itemCur = player.LuminanceAugmentItemCount ?? 0;
+            if (itemTarget > 0 && itemCur != itemTarget)
             {
                 var cur = player.LuminanceAugmentItemCount ?? 0;
                 player.LuminanceAugmentItemCount = (uint)itemTarget;
@@ -1537,7 +1538,7 @@ namespace ACE.Server.Command.Handlers
                 if (tier >= 11)
                 {
                     ACE.Server.Factories.LootGenerationFactory.StripWieldRequirements(wo);
-                    ACE.Server.Factories.LootGenerationFactory.ApplyT11WieldRequirement(wo, tier);
+                    ACE.Server.Factories.LootGenerationFactory.ApplyZoneWieldRequirement(wo, tier);
                 }
 
                 wo.Attuned = AttunedStatus.Attuned;
@@ -1559,7 +1560,7 @@ namespace ACE.Server.Command.Handlers
                 // and the gear Creature Augs gate base. Tier 10 keeps the legacy path below.
                 if (tier >= 11)
                 {
-                    ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(wo, tier, alwaysRolledFollows: true);
+                    ACE.Server.Factories.LootGenerationFactory.ApplyZoneGearStats(wo, tier, alwaysRolledFollows: true);
                     StampPremadeAlwaysRolled(wo, tier, ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax);   // forge = Always Rolled resists at band max
                 }
 
@@ -1601,7 +1602,7 @@ namespace ACE.Server.Command.Handlers
                     else
                     {
                         wo.SetProperty(PropertyInt.ArmorLevel, tier * 100 + albonus);
-                        ACE.Server.Factories.LootGenerationFactory.EqualizeT11ArmorResists(wo);
+                        ACE.Server.Factories.LootGenerationFactory.EqualizeZoneArmorResists(wo);
                     }
                     if (protOverride.HasValue)
                         foreach (var modProp in ForgeArmorModVsProps)
@@ -1639,10 +1640,10 @@ namespace ACE.Server.Command.Handlers
         /// the 18-piece roster with the cantrip lines written from the preset tables above instead of
         /// rolled. Same bare-strip pipeline as the main verb (no cards), then the shared gear helper
         /// (bis = core at cap, avg = core at the window midpoint), then explicit ZoneModifiers.Stamp
-        /// per line, FinalizeT11LongDesc (asforge proper never runs it - the stamps would otherwise
+        /// per line, FinalizeZoneLongDesc (asforge proper never runs it - the stamps would otherwise
         /// sit under inherited flavor text), then the forge provenance. Minted into a dedicated bag:
         /// 18 items in one frame through the main-pack path is the silent-loss window.</summary>
-        private static void HandleAsForgePremade(Session session, Player player, string[] parameters)
+        internal static void HandleAsForgePremade(Session session, Player player, string[] parameters)
         {
             void Msg(string s) => ChatPacket.SendServerMessage(session, s, ChatMessageType.Broadcast);
 
@@ -1740,7 +1741,7 @@ namespace ACE.Server.Command.Handlers
 
                 // per-tier item-aug wield gate like real drops (the helper appends its own LongDesc line)
                 ACE.Server.Factories.LootGenerationFactory.StripWieldRequirements(wo);
-                ACE.Server.Factories.LootGenerationFactory.ApplyT11WieldRequirement(wo, tier);
+                ACE.Server.Factories.LootGenerationFactory.ApplyZoneWieldRequirement(wo, tier);
 
                 wo.Attuned = AttunedStatus.Attuned;
                 wo.Bonded = BondedStatus.Bonded;
@@ -1752,7 +1753,7 @@ namespace ACE.Server.Command.Handlers
                 wo.RemoveProperty(PropertyInt.EquipmentSetId);
 
                 // AL ladder, then the Always Rolled resists: bis = band max, avg = band midpoint
-                ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(wo, tier, alwaysRolledFollows: true);
+                ACE.Server.Factories.LootGenerationFactory.ApplyZoneGearStats(wo, tier, alwaysRolledFollows: true);
                 StampPremadeAlwaysRolled(wo, tier, bis ? ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax
                                                        : ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax / 2);
 
@@ -1810,7 +1811,7 @@ namespace ACE.Server.Command.Handlers
 
                 // drop-style description: known lines in stamp order, inherited flavor text gone.
                 // Provenance goes AFTER - Finalize's whitelist would discard it.
-                ACE.Server.Factories.LootGenerationFactory.FinalizeT11LongDesc(wo);
+                ACE.Server.Factories.LootGenerationFactory.FinalizeZoneLongDesc(wo);
                 var provenance = $"Created by: {player.Name}\nTier: {tier}\nPremade: {modeTag}";
                 wo.LongDesc = string.IsNullOrEmpty(wo.LongDesc) ? provenance : wo.LongDesc + "\n\n" + provenance;
 
@@ -1849,11 +1850,15 @@ namespace ACE.Server.Command.Handlers
             void Msg(string s) => ChatPacket.SendServerMessage(session, s, ChatMessageType.Broadcast);
             const string tierLabel = "T10";
             var modeTag = bis ? "BiS" : "Avg";
-            // per-piece values (18 pieces; AL on the 9 VoD armor pieces + shirt/pants count as 12 AL carriers
-            // in the measured sets, here the 9 armor pieces carry it at 12/9 the per-piece share)
-            int dmg = bis ? 12 : 8, critDmg = bis ? 11 : 8, dr = bis ? 5 : 3, cdr = bis ? 4 : 3,
-                crit = bis ? 2 : 1, critRes = bis ? 1 : 1, heal = bis ? 20 : 14;
-            int al = bis ? 690 : 560;   // 9 pieces x 690 = 6,210 (Nerd Parade 6,482 over 12 pcs); avg = GOM 5,021
+            // SET TOTALS, spread over the 18 pieces in roster order (armor first, so a small total lands on armor).
+            // BiS: the measured top T10 sets (per piece x 18, unchanged). Avg (owner 2026-09-28: "tune the premade to
+            // similar stats"): the T10 average set worn by Good Grief on the test shard - Dmg 104, CritDmg 110, DR 39,
+            // CritDR 17, Crit 9 on the armor (+12 from the 3 aetheria, which /testchar's T10 aetheria also carry),
+            // CritRes 0, Heal 50, Max Health +385, armor ~528 per armor piece.
+            int dmgT = bis ? 12 * 18 : 104, critDmgT = bis ? 11 * 18 : 110, drT = bis ? 5 * 18 : 39, cdrT = bis ? 4 * 18 : 17,
+                critT = bis ? 2 * 18 : 9, critResT = bis ? 1 * 18 : 0, healT = bis ? 20 * 18 : 50, maxHpT = bis ? 0 : 385;
+            int al = bis ? 690 : 528;   // 9 pieces x 690 = 6,210 (Nerd Parade 6,482 over 12 pcs); avg = Good Grief ~528/piece
+            static int Share(int total, int i) => total / 18 + (i < total % 18 ? 1 : 0);
 
             var roster = new List<(string Piece, WorldObject Wo)>();
             foreach (var p in VodArmorPieces)
@@ -1877,10 +1882,18 @@ namespace ACE.Server.Command.Handlers
 
             // owner 2026-09-03: premade pieces mint loose into the MAIN pack - no suit bag is ever created
             int minted = 0, skipped = 0, failed = 0;
-            foreach (var (piece, wo) in roster)
+            for (var idx = 0; idx < roster.Count; idx++)
             {
+                var (piece, wo) = roster[idx];
                 if (wo == null) { Msg($"asforge premade: {piece} failed to create (missing weenie?)"); failed++; continue; }
-                if (!force && HasItemNamed(player, wo.Name)) { skipped++; wo.Destroy(); continue; }
+                if (!force && HasItemNamed(player, wo.Name))
+                {
+                    skipped++;
+                    wo.Destroy();
+                    continue;
+                }
+                int dmg = Share(dmgT, idx), critDmg = Share(critDmgT, idx), dr = Share(drT, idx), cdr = Share(cdrT, idx),
+                    crit = Share(critT, idx), critRes = Share(critResT, idx), heal = Share(healT, idx), maxHp = Share(maxHpT, idx);
 
                 // T10 = the basic set: no item-aug wield gate at all (matches the main verb's tier-10 rule)
                 ACE.Server.Factories.LootGenerationFactory.StripWieldRequirements(wo);
@@ -1899,6 +1912,7 @@ namespace ACE.Server.Command.Handlers
                 wo.SetProperty(PropertyInt.GearCrit, crit);
                 wo.SetProperty(PropertyInt.GearCritResist, critRes);
                 wo.SetProperty(PropertyInt.GearHealingBoost, heal);
+                if (maxHp > 0) wo.SetProperty(PropertyInt.GearMaxHealth, maxHp);
                 if (wo.ItemType == ItemType.Armor && VodArmorPieces.Any(p => p.Wcid == wo.WeenieClassId))
                     wo.ArmorLevel = al;
 
@@ -1908,18 +1922,20 @@ namespace ACE.Server.Command.Handlers
                 if (wo.WeenieClassId == 27445)
                     AddForgeSpells(wo, NecklaceBuffSpells);
                 wo.ChangesDetected = true;
-                wo.LongDesc = $"T10 entry-case premade ({modeTag}): the measured top T10 set (2026-08-21) spread over 18 pieces.\n"
+                wo.LongDesc = (bis ? "T10 entry-case premade (BiS): the measured top T10 set (2026-08-21) spread over 18 pieces.\n"
+                                   : "T10 entry-case premade (Avg): Good Grief's average T10 set (2026-09-28) spread over 18 pieces.\n")
                             + $"Dmg +{dmg}  CritDmg +{critDmg}  DR +{dr}  CritDR +{cdr}  Crit +{crit}  CritRes +{critRes}  Heal +{heal}"
+                            + (maxHp > 0 ? $"  MaxHP +{maxHp}" : "")
                             + (wo.ItemType == ItemType.Armor ? $"  AL {al}" : "")
                             + $"\n\nCreated by: {player.Name}\nTier: 10\nPremade: {modeTag}";
 
-                if (player.TryCreateInInventoryWithNetworking(wo)) minted++;
+                if (player.TryCreateInInventoryWithNetworking(wo)) { minted++; }
                 else { Msg($"asforge premade: could not place {wo.Name} anywhere (inventory full) - destroyed."); wo.Destroy(); failed++; }
             }
             Msg($"Premade {tierLabel} {modeTag} suit: {minted} pieces created"
                 + (failed > 0 ? $", {failed} failed" : "")
                 + (skipped > 0 ? $", {skipped} skipped (already held - add 'force' to re-mint)" : "")
-                + (minted > 0 ? $" - in your main pack. Set totals: Dmg {dmg * 18} CritDmg {critDmg * 18} DR {dr * 18} CritDR {cdr * 18} Crit {crit * 18} CritRes {critRes * 18} Heal {heal * 18}, AL {al} x 9. Pair with /testchar T10 (aetheria surge) and /wsforge <weapon> 10." : "."));
+                + (minted > 0 ? $" - in your main pack. Set totals: Dmg {dmgT} CritDmg {critDmgT} DR {drT} CritDR {cdrT} Crit {critT} CritRes {critResT} Heal {healT}" + (maxHpT > 0 ? $" MaxHP {maxHpT}" : "") + $", AL {al} x 9. Pair with /testchar T10 (aetheria surge) and /wsforge <weapon> 10." : "."));
         }
 
         private static void SpawnCharms(Player player)

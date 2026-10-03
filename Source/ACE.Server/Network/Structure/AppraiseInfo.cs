@@ -217,13 +217,7 @@ namespace ACE.Server.Network.Structure
                         PropertiesString[PropertyString.LongDesc] = msg;
                 }
 
-                var reqs = new (PortalRequirement type, int? value, int? max)[]
-                {
-                    (portal.PortalReqType, portal.PortalReqValue, portal.PortalReqMaxValue),
-                    (portal.PortalReqType2, portal.PortalReqValue2, portal.PortalReqMaxValue2)
-                };
-
-                foreach (var req in reqs)
+                foreach (var req in portal.PortalRequirements)
                 {
                     if (req.type == PortalRequirement.None) continue;
                     if (req.value.GetValueOrDefault() <= 0 && (req.max.GetValueOrDefault() <= 0 || req.max.GetValueOrDefault() == 999)) continue;
@@ -239,6 +233,7 @@ namespace ACE.Server.Network.Structure
                         case PortalRequirement.Enlighten: typeName = "Enlightenment"; break;
                         case PortalRequirement.QuestBonus: typeName = "Quest Bonus"; break;
                         case PortalRequirement.XPMultiplier: typeName = "XP Multiplier"; isMultiplier = true; break;
+                        case PortalRequirement.TriuneWeave: typeName = "Triune Weave"; break;
                         default: continue;
                     }
 
@@ -930,7 +925,7 @@ namespace ACE.Server.Network.Structure
         /// is never touched, so nothing is re-rolled and existing drops re-render correctly on the
         /// next appraise. Bullets stay in STAMP ORDER (owner: no sorting - two identical pieces
         /// must read identically). The "Zone Cantrip:" prefix is a MARKER, not decoration -
-        /// FinalizeT11LongDesc's whitelist deletes any line that lacks it - so it stays in the
+        /// FinalizeZoneLongDesc's whitelist deletes any line that lacks it - so it stays in the
         /// stored text and is dropped from the render only.
         ///
         /// Weapons carry their own "Property Details:" block pinned to the top; the cantrip group

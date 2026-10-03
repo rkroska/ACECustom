@@ -39,7 +39,7 @@ namespace ACE.Server.Managers.ZoneControl
             // the creature's effective variation; killed = the dropping monster). Every non-coin drop gets it.
             if (!string.IsNullOrEmpty(p.ScopeKey))
             {
-                // Two-line provenance (owner 2026-08-01). FinalizeT11LongDesc and the AppraiseInfo
+                // Two-line provenance (owner 2026-08-01). FinalizeZoneLongDesc and the AppraiseInfo
                 // projection-insert anchor on the "Dropped by"/"Location:" prefixes - the three
                 // move together.
                 var variation = killed != null ? ZoneControlManager.GetEffectiveVariation(killed) : 0;
@@ -218,7 +218,7 @@ namespace ACE.Server.Managers.ZoneControl
             ZoneStatResolver.WeaponSpecial ws, int tier, bool forceMax)
         {
             var (lo, hi) = ZoneStatResolver.WeaponDropBand(p, ws, tier);
-            var grade = ZoneStatResolver.RollGrade(tier, forceMax);
+            var grade = ZoneStatResolver.RollGrade(tier, forceMax, ZoneStatResolver.GradeFloorOf(p));
             var display = Math.Clamp(ZoneStatResolver.ValueForD(lo, hi, grade), ws.Band.Lo, ws.Band.Hi);
             // EngineValue is the ONE display -> engine conversion in the server (Crushing Blow's
             // "- 1.0"). Do not subtract anything here and do not pre-convert before calling: the
@@ -691,7 +691,7 @@ namespace ACE.Server.Managers.ZoneControl
 
             // WEAPON RESOLVE IDENTITY, last, once the record is final (2026-08-25).
             //
-            // Armour gets this from LootGenerationFactory.ApplyT11GearStats -> StampIdentity, but that
+            // Armour gets this from LootGenerationFactory.ApplyZoneGearStats -> StampIdentity, but that
             // method returns at its `default:` case for weapons and casters, so nothing ever stamped a
             // weapon's ZcResolvedVersion. An unstamped weapon reads 0, which is a legitimate stamp
             // value (tier ladder v0, Zone Control on), so a weapon that dropped on a v0 tier would look
@@ -767,7 +767,7 @@ namespace ACE.Server.Managers.ZoneControl
                 // Option A: T11 uniform, climbing to 10/30/60 at T25) and stamp it through the record;
                 // the prop value is ValueFor(grade) inside the effective band. Key 49 Reinforced routes
                 // to the plain Stamp inside StampGraded (earned + frozen, never in the record).
-                var grade = ZoneStatResolver.RollGrade(lootTier, forceMax);
+                var grade = ZoneStatResolver.RollGrade(lootTier, forceMax, ZoneStatResolver.GradeFloorOf(p));
                 ZoneModifiers.StampGraded(wo, def, grade, (min, max));
             }
 

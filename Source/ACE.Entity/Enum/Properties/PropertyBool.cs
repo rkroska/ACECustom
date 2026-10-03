@@ -396,6 +396,12 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         OnlyCombatPetsCanDamage = 50057,
 
+        /// <summary>Zone Control (owner 2026-10-03): this creature takes NO damage from Rocky Shrapnel (6152) or Ring of
+        /// Unspeakable Agony (2673) - the two fast-casting bludgeon rings the Shrapnel / Agony charms give players. Works on
+        /// any monster anywhere (it is checked on the target itself); the zone stat immune_shrapnel_agony does the same per
+        /// zone / tier / rank / wcid. Server-only. 50058 is taken on test/integration (IsTestFiller).</summary>
+        ZcImmuneShrapnelAgony = 50059,
+
         /// <summary>Room Assign, Zone Share (owner 2026-09-23): on a room-source WEENIE (the one carrying RoomAssignRooms), everyone
         /// standing in that dungeon shares kill XP, kill luminance and kill-task credit as if they were all in one fellowship.
         /// Server-only - not an assessment property. Numbered beside the other Room Assign properties (50500-50502).</summary>

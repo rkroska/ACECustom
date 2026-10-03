@@ -2036,6 +2036,14 @@ namespace ACE.Server.WorldObjects
                 if (creature is not Player)
                     OnAttackMonster(creature, spell.IsHarmful);
 
+                // Shrapnel / Agony immunity (owner 2026-10-03, Creature_ShrapnelAgonyImmunity.cs): no damage, but the
+                // aggro above still happens - the monster knows it was attacked.
+                if (creature.IsImmuneToShrapnelAgony(spell.Id))
+                {
+                    NotifyShrapnelAgonyImmune(creature, spell.Name);
+                    continue;
+                }
+
                 // Run the loop for multi-procs
                 for (var procIdx = 0; procIdx < procCount; procIdx++)
                 {
@@ -2193,6 +2201,9 @@ namespace ACE.Server.WorldObjects
                     // rides in via weaponResistanceMod.
                     var weaponResistanceMod = GetWeaponResistanceModifier(weapon, this as Creature, attackSkill, spell.DamageType);
                     var resistanceMod = (float)Math.Max(0.0f, creature.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
+
+                    // Spell Armor (owner 2026-10-04): hand-cast rings only, procs keep their own tuning (Creature_SpellArmor.cs)
+                    resistanceMod *= creature.GetZcSpellArmorMod(this, fromProc);
 
                     // Void PvP modifier (matches SpellProjectile line ~602).
                     if (isPvP && spell.DamageType == DamageType.Nether)

@@ -44,7 +44,7 @@ namespace ACE.Server.Managers.ZoneScaling
         // B. live per-hit
         public const string AttackSkill = "attack_skill";
         // min_attack_skill REMOVED 2026-08-02 (owner): redundant with attack_skill's absolute replace.
-        // The prestige-gated v11_min_attack_skill server config floor still exists independently.
+        // The prestige-gated zc_min_attack_skill server config floor still exists independently.
         /// <summary>
         /// The monster's LEVEL (PropertyInt.Level, 25).
         ///
@@ -86,11 +86,48 @@ namespace ACE.Server.Managers.ZoneScaling
         // evening by RANK LAYERS - every stat now has Default / Regular / Leader / Boss rows via
         // ZoneVariantProfile.Ranks, so per-stat rank twins are gone. Migration SQL moved the values.
         public const string ArmorLevel = "armor_level";
+        // SPELL ARMOR (owner 2026-10-04): player hand-cast spells on the monster x 66.67 / (66.67 + level) - the spell counterpart
+        // to armor_level (spells skip armor). Unset / 0 = full damage. Creature_SpellArmor.cs.
+        public const string SpellArmor = "spell_armor";
         // damage_taken_mult REMOVED 2026-08-03 (owner): redundant with damage_resist_rating's
-        // replace (and server-clamped to <= 1.0 anyway). The prestige-gated v11_mob_dmg_taken_*
+        // replace (and server-clamped to <= 1.0 anyway). The variation-gated zc_mob_dmg_taken_*
         // config path still exists independently.
         public const string VulnCap = "vuln_cap";
+        // Debuff compression (owner 2026-10-04, ZoneControl\DebuffCompression_Plan_2026-10-04.md): on a T11+ monster a PLAYER's
+        // life vuln and Imperil stop working the retail way (vuln in the resist slot MAX'd with rend, Imperil subtracting armor -
+        // which went negative, x312..x2,150 melee) and become one capped damage BONUS each, scaled by the caster's life augs:
+        //   bonus = floor + (cap - floor) x clamp((lifeAugs - entry) / ramp, 0, 1), x the spell level's share.
+        // melee / missile x (1 + vuln + imperil), spells x (1 + vuln) - the vuln stacks on top of rend (owner 10-04).
+        // Unset = floor 0.25, cap 0.50, entry 2,000 + 500 x (tier - 11), ramp 500. vuln_cap no longer applies to these monsters.
+        public const string VulnBonusFloor = "vuln_bonus_floor";
+        public const string VulnBonusCap = "vuln_bonus_cap";
+        public const string ImperilBonusFloor = "imperil_bonus_floor";
+        public const string ImperilBonusCap = "imperil_bonus_cap";
+        public const string DebuffEntryLifeAugs = "debuff_entry_life_augs";
+        public const string DebuffRampAugs = "debuff_ramp_augs";
+        // owner 2026-10-03: 1 = the monster takes NO damage from Rocky Shrapnel (6152) / Ring of Unspeakable Agony (2673).
+        // Zone / Tier Default / rank / wcid like any stat; PropertyBool.ZcImmuneShrapnelAgony (50059) does the same per weenie.
+        public const string ImmuneShrapnelAgony = "immune_shrapnel_agony";
         public const string PercentHpBase = "percent_hp_base";
+        // True Damage (owner 2026-10-01, the main Zone Control monster damage): a fixed amount added to every LANDED
+        // monster hit on a player after all mitigation - only life augs (incl. Triune) reduce it. Per rank.
+        public const string TrueDamage = "true_damage";
+        public const string TrueDamageVariance = "true_damage_variance";   // +/- fraction per hit (unset = zc_true_damage_variance)
+        // Spells (owner 2026-10-02: a spell ~3x a melee hit with a wider spread) - their own True Damage; unset = true_damage
+        public const string TrueDamageSpell = "true_damage_spell";
+        public const string TrueDamageSpellVariance = "true_damage_spell_variance";   // unset = true_damage_variance
+        // Zone Control aug curves (owner 2026-10-02, ZoneAugCurves_Plan): aug_curves = 1 replaces the game's own aug parts of
+        // the player's protections (life augs) and armor (item augs) - for this tier's monsters' NORMAL hits only - with
+        // these curves (0 at start, cap at max; cap < 1 so never immune). Unset = the game's own aug math.
+        public const string AugCurves = "aug_curves";
+        public const string AugProtStart = "aug_prot_start";
+        public const string AugProtMax = "aug_prot_max";
+        public const string AugProtCap = "aug_prot_cap";
+        public const string AugProtBend = "aug_prot_bend";
+        public const string AugArmorStart = "aug_armor_start";
+        public const string AugArmorMax = "aug_armor_max";
+        public const string AugArmorCap = "aug_armor_cap";
+        public const string AugArmorBend = "aug_armor_bend";
 
         // B1b. crit ratings (REPLACE the creature's base rating props at spawn; engine reads them
         // generically - 313/314 shape the mob's outgoing crits, 315/316 blunt incoming player crits.
@@ -120,7 +157,7 @@ namespace ACE.Server.Managers.ZoneScaling
         // *_bend shapes the rise: relief = cap * t^bend where t = progress start->max; 1 = straight
         // line, <1 = strong early relief that tapers off, >1 = slow start that ramps late. aug and
         // dr axes MULTIPLY; critdr shrinks only the crit BONUS. Unset = server defaults
-        // (v11_relief_* config). aug = defender life augs; dr = defender aggregate Damage Resist
+        // (zc_relief_* config). aug = defender life augs; dr = defender aggregate Damage Resist
         // rating; critdr = defender Crit Damage Resist rating.
         public const string ReliefAugStart = "relief_aug_start";
         public const string ReliefAugMax = "relief_aug_max";
@@ -282,6 +319,11 @@ namespace ACE.Server.Managers.ZoneScaling
         // are Always Rolled catalog lines 50-53 with their own band and modifier_chance_5x. Authored store
         // rows are dead - clear with `/zonecontrol default <var> clearstat core_anchor_dr` (and _cdr).
         // Slot specials: ONE roll per KILL (retail-rare model), 1-in-odds; boss/leader divide the odds
+        // Rank loot (owner 2026-09-29), set on the Leader / Boss rank rows. LootGradeFloor 0-0.9: every drop roll
+        // (weapon quality, card + modifier values) is squeezed into the top (1 - floor) of its range, the top
+        // unchanged. GradeSOdds: 1 in N weapon drops is grade S (unset = the grade weights table, ~1 in 981).
+        public const string LootGradeFloor = "loot_grade_floor";
+        public const string GradeSOdds = "grade_s_odds";
         public const string SpecialOdds = "special_odds";                  // denominator (default 750000). Per rank via the Ranks rows (2026-09-02, owner D4: absolute per rank - special_boss_mult / special_leader_mult divisors RETIRED)
         // Special behaviour knobs (read by the combat side)
         public const string BattleMendThreshold = "battlemend_threshold";  // HP fraction below which Battle Mending fires (default .25)
@@ -465,7 +507,8 @@ namespace ACE.Server.Managers.ZoneScaling
         {
             Strength, Endurance, Coordination, Quickness, Focus, Self, MaxHealth, MaxStamina, MaxMana,
             MonsterLevel, MonsterCreatureType, AttackSkill, MagicSkill, MeleeDefense, MissileDefense, MagicDefense, DamageRating,
-            DamageResistRating, ArmorLevel, VulnCap, PercentHpBase,
+            DamageResistRating, ArmorLevel, SpellArmor, VulnCap, ImmuneShrapnelAgony, PercentHpBase,
+            VulnBonusFloor, VulnBonusCap, ImperilBonusFloor, ImperilBonusCap, DebuffEntryLifeAugs, DebuffRampAugs,
             CritRating, CritDamageRating, CritResistRating, CritDamageResistRating,
             AttackDamage, AttackVariance, AttackDamageType, SpellDamage, SpellVariance, SpellDamageMult,
             ReliefAugStart, ReliefAugMax, ReliefAugCap, ReliefAugBend,
@@ -567,6 +610,14 @@ namespace ACE.Server.Managers.ZoneScaling
             // unset = no floor. (Not weapon_*_chance shaped, so BuildWeaponCardChances skips them.)
             WeaponModifierMin, "weapon_modifier_min_t25",
             ArmorModifierMin, "armor_modifier_min_t25",
+            // Rank loot (2026-09-29) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            LootGradeFloor, GradeSOdds,
+            // True Damage (owner 2026-10-01) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            TrueDamage, TrueDamageVariance,
+            // Aug curves (owner 2026-10-02) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            AugCurves, AugProtStart, AugProtMax, AugProtCap, AugProtBend, AugArmorStart, AugArmorMax, AugArmorCap, AugArmorBend,
+            // Spell True Damage (owner 2026-10-02) - APPEND-ONLY
+            TrueDamageSpell, TrueDamageSpellVariance,
         };
 
         /// <summary>
@@ -1305,5 +1356,6 @@ namespace ACE.Server.Managers.ZoneScaling
         }
 
         public IReadOnlyDictionary<string, double> Values => _values;
+
     }
 }

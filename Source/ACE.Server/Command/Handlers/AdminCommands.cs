@@ -5134,7 +5134,10 @@ namespace ACE.Server.Command.Handlers
             var creature = CommandHandlerHelper.GetLastAppraisedObject(session);
             if (creature == null) return;
 
-            CommandHandlerHelper.WriteOutputInfo(session, $"{creature.Name} XP: {creature.XpOverride}");
+            // short format (K / M / B / T / Q - owner 2026-09-27), the audit lines' formatter
+            // the weenie value; a Zone Control xp_kill on the mob's rank pays instead when set
+            var xp = creature is Creature c ? c.WeenieKillXp : (creature.XpOverride ?? 0);
+            CommandHandlerHelper.WriteOutputInfo(session, $"{creature.Name} XP: {ShortNumber.Format(xp)}");
         }
 
         // de_n name, text

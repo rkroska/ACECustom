@@ -335,7 +335,7 @@ namespace ACE.Server.Command.Handlers
                             .Append("|wcid=").Append(wcid?.ToString() ?? "")
                             .Append("|found=").Append(area != null ? 1 : 0)
                             .Append("|override=").Append(hasOverride ? 1 : 0);
-                        foreach (var stat in new[] { ZoneStat.PercentHpBase, ZoneStat.SpellDamage, ZoneStat.SpellVariance, ZoneStat.CritDamageRating })
+                        foreach (var stat in new[] { ZoneStat.PercentHpBase, ZoneStat.SpellDamage, ZoneStat.SpellVariance, ZoneStat.CritDamageRating, ZoneStat.TrueDamage })   // true_damage appended 2026-10-01 (name-matched)
                         {
                             int defined = 0;
                             double value = 0;
@@ -489,6 +489,42 @@ namespace ACE.Server.Command.Handlers
                         Msg(ZoneControlManager.SetEnabled(name, false)
                             ? $"'{name}' disabled. Live stats revert now; HP/attributes on respawn."
                             : $"No zone '{name}'.");
+                        return;
+                    }
+
+                    case "damagemult":
+                    {
+                        // damagemult <wcid> <factor|clear> | damagemult list   (owner 2026-10-03, Bestiary "Damage Multiplier")
+                        // One factor per MONSTER on all the damage it deals to players - melee + spells, normal + True
+                        // Damage - at every tier and in every zone (never retail). 1.0 = unchanged; 2 = double; 0.5 = half.
+                        if (args.Count >= 2 && args[1].Equals("list", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var all = ZoneControlManager.ListDamageMults();
+                            if (all.Count == 0) { Msg("No monster has a damage multiplier (every monster is 1.0)."); return; }
+                            foreach (var kv in all)
+                            {
+                                var wn = ACE.Database.DatabaseManager.World.GetCachedWeenie(kv.Key)?.GetName() ?? "?";
+                                Msg($"  {kv.Key} {wn}: x{kv.Value.ToString("0.###", CultureInfo.InvariantCulture)}");
+                            }
+                            return;
+                        }
+                        if (args.Count < 3 || !uint.TryParse(args[1], out var dmWcid))
+                        { Msg($"Usage: damagemult <wcid> <factor {ZoneControlManager.DamageMultMin:0.0}-{ZoneControlManager.DamageMultMax:0}|clear> | damagemult list   (1.0 = unchanged)"); return; }
+                        var dmName = ACE.Database.DatabaseManager.World.GetCachedWeenie(dmWcid)?.GetName();
+                        if (dmName == null) { Msg($"No weenie {dmWcid}."); return; }
+                        double? dmValue = null;
+                        if (!args[2].Equals("clear", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!double.TryParse(args[2].TrimStart('x', 'X'), NumberStyles.Float, CultureInfo.InvariantCulture, out var dv)
+                                || dv < ZoneControlManager.DamageMultMin || dv > ZoneControlManager.DamageMultMax)
+                            { Msg($"factor must be {ZoneControlManager.DamageMultMin:0.0} to {ZoneControlManager.DamageMultMax:0} (1.0 = unchanged), or 'clear'."); return; }
+                            dmValue = dv;
+                        }
+                        var dmWas = ZoneControlManager.GetDamageMult(dmWcid);
+                        ZoneControlManager.SetDamageMult(dmWcid, dmValue);
+                        var dmNow = ZoneControlManager.GetDamageMult(dmWcid);
+                        Msg($"{dmName} ({dmWcid}) damage multiplier: x{dmWas.ToString("0.###", CultureInfo.InvariantCulture)} -> x{dmNow.ToString("0.###", CultureInfo.InvariantCulture)} - all its damage to players, every tier, every zone. Live at once.");
+                        PlayerManager.BroadcastToAuditChannel(session?.Player, $"damagemult {dmWcid} {dmName}: x{dmWas:0.###} -> x{dmNow:0.###}");
                         return;
                     }
 
@@ -2488,6 +2524,14 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
+                    case "clonelayer":
+                    {
+                        // copy the zone's own placement layer onto other tiers - never touches rows it did not create
+                        // (ZoneControlCloneLayer.cs, owner 2026-10-03)
+                        ZoneControlCloneLayer.Run(session, args, Msg);
+                        return;
+                    }
+
                     case "clonezone":
                     {
                         // clonezone <src> <variation|lo-hi>
@@ -2963,9 +3007,9 @@ namespace ACE.Server.Command.Handlers
                   .Append(sp.IgnorePortalRestrictions ? 1 : 0);
         }
 
-        /// <summary>"|combatdefs=..." â€” live combat-rule bool states so the plugin's GM Tools toggles
+        /// <summary>"|combatdefs=..." - live shard bool states so the plugin's GM Tools toggles
         /// show truth. Fixed order: missile_power_bar, zonecontrol_enabled, zc_weapon_zone_lock,
-        /// zc_pertier_authoring, zc_armor_zone_lock. APPEND-ONLY: the plugin indexes positionally.</summary>
+        /// zc_pertier_authoring, zc_armor_zone_lock, audit_short_numbers. APPEND-ONLY: the plugin indexes positionally.</summary>
         private static void AppendCombatDefs(StringBuilder sb)
         {
             sb.Append("|combatdefs=")
@@ -2973,7 +3017,8 @@ namespace ACE.Server.Command.Handlers
               .Append(ServerConfig.zonecontrol_enabled.Value ? '1' : '0').Append(',')
               .Append(ServerConfig.zc_weapon_zone_lock.Value ? '1' : '0').Append(',')
               .Append(ServerConfig.zc_pertier_authoring.Value ? '1' : '0').Append(',')
-              .Append(ServerConfig.zc_armor_zone_lock.Value ? '1' : '0');
+              .Append(ServerConfig.zc_armor_zone_lock.Value ? '1' : '0').Append(',')
+              .Append(ServerConfig.audit_short_numbers.Value ? '1' : '0');
         }
 
         /// <summary>"|missilepower=fast,full,mid" - the missile power ladder (owner 2026-09-12) so the Bow Power Bar
@@ -3078,7 +3123,7 @@ namespace ACE.Server.Command.Handlers
 
             try
             {
-                ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(armor, 11, p: p);
+                ACE.Server.Factories.LootGenerationFactory.ApplyZoneGearStats(armor, 11, p: p);
                 if (p != null) ZoneLootMutator.MutateLootItem(armor, p, null, 11);
                 // guarantee at least one graded line on the piece regardless of the zone's roll
                 if (ZoneModifiers.TryGet(28, out var dr))
@@ -3475,34 +3520,53 @@ namespace ACE.Server.Command.Handlers
                 // exempt=1 (2026-09-03, APPEND-ONLY, SPARSE): the master switch is OFF for this monster here.
                 if (area.Profile.ExemptWcids != null && area.Profile.ExemptWcids.Contains(wcid.Value))
                     sb.Append("|exempt=1");
+                // dmult= (2026-10-03, APPEND-ONLY, SPARSE): this monster's damage multiplier (absent = 1.0) - global per
+                // monster, not per zone; the Bestiary Offense tab shows and sets it (/zonecontrol damagemult).
+                var dmult = ZoneControlManager.GetDamageMult(wcid.Value);
+                if (dmult != 1.0)
+                    sb.Append("|dmult=").Append(dmult.ToString(CultureInfo.InvariantCulture));
             }
 
-            // Live server-wide relief-curve defaults (v11_relief_* config, /modify-tunable) so the
+            // Live server-wide relief-curve defaults (zc_relief_* config, /modify-tunable) so the
             // plugin's Curves tab hints/graphs/simulator never drift from what combat actually uses
             // when a zone doesn't author its own anchors. Fixed order: aug s,m,c,b | dr | critdr.
             sb.Append("|reliefdefs=")
-              .Append(ServerConfig.v11_relief_aug_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_aug_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_aug_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_aug_bend.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_dr_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_dr_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_dr_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_dr_bend.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_critdr_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_critdr_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_critdr_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_critdr_bend.Value.ToString(CultureInfo.InvariantCulture));
+              .Append(ServerConfig.zc_relief_aug_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_aug_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_aug_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_aug_bend.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_dr_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_dr_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_dr_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_dr_bend.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_critdr_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_critdr_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_critdr_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_critdr_bend.Value.ToString(CultureInfo.InvariantCulture));
 
             // Live shard-wide tuning defaults for the plugin's Curves Server-defaults view
             // (owner-approved 2026-07-28). Fixed order: pcthp variance, pcthp crit mult,
             // vuln effectiveness, vuln cap, vuln enabled (1/0).
             sb.Append("|tunedefs=")
-              .Append(ServerConfig.v11_pcthp_variance.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_pcthp_crit_mult.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_vuln_effectiveness.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_vuln_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_vuln_enabled.Value ? '1' : '0');
+              .Append(ServerConfig.zc_pcthp_variance.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_pcthp_crit_mult.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_vuln_effectiveness.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_vuln_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_vuln_enabled.Value ? '1' : '0');
+
+            // Aug curves + True Damage server defaults (owner 2026-10-02, APPEND-ONLY new key). Fixed order: protections
+            // (life) start, max, cap, bend | armor (item) start, max, cap, bend | True Damage crit mult, variance.
+            sb.Append("|augcurvedefs=")
+              .Append(ServerConfig.zc_aug_prot_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_prot_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_prot_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_prot_bend.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_armor_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_armor_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_armor_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_armor_bend.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_true_damage_crit_mult.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_true_damage_variance.Value.ToString(CultureInfo.InvariantCulture));
 
             // Live diagnostics-bool states so the plugin's Log-section toggles show truth.
             // Fixed order: damage_event_debug_server_log, damage_event_debug_only_nonplayer_attackers,
@@ -5489,7 +5553,8 @@ namespace ACE.Server.Command.Handlers
                 ZoneStat.MeleeDefense, ZoneStat.MissileDefense, ZoneStat.MagicDefense,
                 ZoneStat.ArmorLevel, ZoneStat.AttackDamage,
                 // offense coverage (2026-09-02, mob->player lane): what makes a T11 monster HIT like one
-                ZoneStat.DamageRating, ZoneStat.CritRating, ZoneStat.CritDamageRating, ZoneStat.PercentHpBase,
+                // 2026-10-01: True Damage is the main monster damage; the %HP floor is optional, so it is not core
+                ZoneStat.DamageRating, ZoneStat.CritRating, ZoneStat.CritDamageRating, ZoneStat.TrueDamage,
             };
             r.CoreTotal = core.Length;
             r.CoreMissing = core.Where(c => !Has(c)).ToList();

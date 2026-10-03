@@ -382,6 +382,11 @@ namespace ACE.Server.WorldObjects.Managers
                         entry.AugmentationLevelWhenCast = wielder.EffectiveItemAugCount;
                     }
                 }
+
+                // Debuff compression (owner 2026-10-04): a vuln / Imperil PROC'd by an item (jewelry, weapon) counts like a cast -
+                // the bonus on a T11+ monster ramps on the WIELDER's life augs (Creature.GetZcDebuffBonus reads this field).
+                if (caster != null && spell.School == MagicSchool.LifeMagic && spell.IsHarmful && caster.Wielder is Creature procWielder)
+                    entry.AugmentationLevelWhenCast = procWielder.EffectiveLifeAugCount;
             }
 
 
@@ -1309,6 +1314,20 @@ namespace ACE.Server.WorldObjects.Managers
             return modifier;
         }
 
+        /// <summary>Debuff compression (2026-10-04): the top-layer VULN entries (above 1.0) on this resistance - the same ones
+        /// GetVulnerabilityResistanceMod multiplies - so the bonus can read each one's spell and caster life augs.</summary>
+        public List<PropertiesEnchantmentRegistry> GetVulnerabilityEntries(DamageType damageType)
+        {
+            var typeFlags = EnchantmentTypeFlags.Float | EnchantmentTypeFlags.SingleStat | EnchantmentTypeFlags.Multiplicative;
+            return GetEnchantments_TopLayer(typeFlags, (uint)GetResistanceKey(damageType)).Where(e => e.StatModValue > 1.0f).ToList();
+        }
+
+        /// <summary>Debuff compression (2026-10-04): the top-layer NEGATIVE body-armor entries (Imperil).</summary>
+        public List<PropertiesEnchantmentRegistry> GetImperilEntries()
+        {
+            return GetEnchantments_TopLayer(EnchantmentTypeFlags.BodyArmorValue).Where(e => e.StatModValue < 0).ToList();
+        }
+
         /// <summary>
         /// Gets the regeneration modifier for a vital type
         /// (regeneration / rejuvenation / mana renewal)
@@ -1463,6 +1482,73 @@ namespace ACE.Server.WorldObjects.Managers
         public virtual float GetVarianceMod()
         {
             return GetMultiplicativeMod(PropertyFloat.DamageVariance);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────────────────────────────────
+        // Zone Control aug curves (owner 2026-10-02, ZoneAugCurves_Plan): the same totals with the cast-time
+        // luminance-aug parts taken back OUT - a tier with aug_curves on applies its own curves instead.
+        // ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+        /// <summary>The protection multiplier for a damage type at each spell's BASE strength: the life-aug bonus a
+        /// self-cast protection got at cast (GetLifeAugProtectRating(AugmentationLevelWhenCast)) added back.</summary>
+        public float GetProtectionResistanceModNoAugs(DamageType damageType)
+        {
+            var typeFlags = EnchantmentTypeFlags.Float | EnchantmentTypeFlags.SingleStat | EnchantmentTypeFlags.Multiplicative;
+            var enchantments = GetEnchantments_TopLayer(typeFlags, (uint)GetResistanceKey(damageType));
+            var modifier = 1.0f;
+            foreach (var enchantment in enchantments)
+            {
+                var value = enchantment.StatModValue;
+                if (value < 1.0f && (enchantment.AugmentationLevelWhenCast ?? 0) > 0)
+                    value += GetLifeAugProtectRating(enchantment.AugmentationLevelWhenCast.Value);
+                if (value < 1.0f)
+                    modifier *= value;
+            }
+            return Math.Max(modifier, 0f);
+        }
+
+        /// <summary>Impenetrability etc. without the +1 armor level per item aug a self-cast buff got.</summary>
+        public int GetArmorModNoAugs()
+        {
+            var modifier = 0;
+            foreach (var enchantment in GetEnchantments_TopLayer(EnchantmentTypeFlags.Additive, (uint)PropertyInt.ArmorLevel)
+                         .Where(e => (e.StatModType & EnchantmentTypeFlags.Skill) == 0))
+            {
+                var value = enchantment.StatModValue;
+                if (value > 0 && (enchantment.AugmentationLevelWhenCast ?? 0) > 0)
+                    value = Math.Max(0f, value - enchantment.AugmentationLevelWhenCast.Value);
+                modifier += (int)value;
+            }
+            return modifier;
+        }
+
+        /// <summary>Banes without the +0.01 per item aug a self-cast bane got.</summary>
+        public float GetArmorModVsTypeNoAugs(DamageType damageType)
+        {
+            var typeFlags = EnchantmentTypeFlags.Float | EnchantmentTypeFlags.SingleStat | EnchantmentTypeFlags.Additive;
+            var modifier = 0.0f;
+            foreach (var enchantment in GetEnchantments_TopLayer(typeFlags, (uint)GetImpenBaneKey(damageType)))
+            {
+                var value = enchantment.StatModValue;
+                if (value > 0 && (enchantment.AugmentationLevelWhenCast ?? 0) > 0)
+                    value = Math.Max(0f, value - enchantment.AugmentationLevelWhenCast.Value * 0.01f);
+                modifier += value;
+            }
+            return modifier;
+        }
+
+        /// <summary>Armor Self etc. without the +1 per life aug a self-cast buff got (debuffs stay as they are).</summary>
+        public int GetBodyArmorModNoAugs()
+        {
+            var modifier = 0;
+            foreach (var enchantment in GetEnchantments_TopLayer(EnchantmentTypeFlags.BodyArmorValue))
+            {
+                var value = enchantment.StatModValue;
+                if (value > 0 && (enchantment.AugmentationLevelWhenCast ?? 0) > 0)
+                    value = Math.Max(0f, value - enchantment.AugmentationLevelWhenCast.Value);
+                modifier += (int)value;
+            }
+            return modifier;
         }
 
         /// <summary>
@@ -1740,6 +1826,10 @@ namespace ACE.Server.WorldObjects.Managers
 
                 var resistanceMod = creature.GetResistanceMod(damageType, damager, null);
 
+                // Spell Armor (owner 2026-10-04): a player's DoT on a T11+ monster (Creature_SpellArmor.cs). The tick cannot tell a
+                // proc'd DoT from a cast one, so both are cut.
+                resistanceMod *= creature.GetZcSpellArmorMod(damager, false);
+
                 var sourcePlayer = damager as Player;
 
                 if (sourcePlayer != null && targetPlayer != null)
@@ -1783,6 +1873,11 @@ namespace ACE.Server.WorldObjects.Managers
                 //Console.WriteLine("NRR: " + Creature.NegativeModToRating(netherResistRatingMod));
 
                 tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod * netherResistRatingMod;
+
+                // per-monster DAMAGE MULTIPLIER (owner 2026-10-03: "cover harm, drain and DoTs too"): a monster's DoT tick on a
+                // player (the caster is looked up above; a caster that is gone deals no tick at all, as before)
+                if (targetPlayer != null && damager is Creature dotCaster)
+                    tickAmount *= ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(dotCaster, targetPlayer);
 
                 // make sure the target's current health is not exceeded
                 if (tickAmountTotal + tickAmount >= creature.Health.Current)
