@@ -57,6 +57,10 @@ namespace ACE.Server.WorldObjects
 
             var currencyWcid = vendor.AlternateCurrency ?? coinStackWcid;
 
+            // pyreal ledger: the currency spent and any currency items bought (trade notes) are VendorBuy. The bought items
+            // are saved as they are created and a bank debit with the next character save, like a note withdrawal.
+            using var ledgerScope = PyrealLedger.Begin(PyrealLedger.SrcVendorBuy, vendor.WeenieClassId.ToString(), vendor.Name, this, counterpartSaved: true);
+
             ConsumeCurrency(currencyWcid, cost);
 
             vendor.MoneyIncome += (int)cost;
@@ -207,7 +211,15 @@ namespace ACE.Server.WorldObjects
             var processedMs = timingStart != 0 ? System.Diagnostics.Stopwatch.GetElapsedTime(timingStart).TotalMilliseconds : 0;
 
             // Deposit to bank.
-            BankedPyreals = (BankedPyreals ?? 0) + payoutCoinAmount;
+            using (PyrealLedger.Begin(PyrealLedger.SrcVendorSell, vendor.WeenieClassId.ToString(), $"{vendor.Name} (buys at {vendor.BuyPrice ?? 1:0.###}x)", this))
+            {
+                foreach (var soldItem in soldItems)
+                    PyrealLedger.OnCurrencyItem(this, soldItem, soldItem.StackSize ?? 1, false);
+
+                PyrealLedger.OnItemsSold(this, vendor, soldItems);
+
+                BankedPyreals = (BankedPyreals ?? 0) + payoutCoinAmount;
+            }
             Session.Network.EnqueueSend(new GameMessageSystemChat($"Sold items for {payoutCoinAmount:N0} pyreals (deposited to bank).", ChatMessageType.System));
             UpdateCoinValue();
 
@@ -406,10 +418,12 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Spend pyreals from inventory coin stacks then banked pyreals (same pools as CoinValue / vendors). Returns false if total wealth is insufficient.
         /// </summary>
-        public bool TrySpendPyreals(long amount)
+        public bool TrySpendPyreals(long amount, string ledgerSource = null, string ledgerKey = "", string ledgerName = "")
         {
             if (amount <= 0)
                 return true;
+
+            using var ledgerScope = ledgerSource != null ? PyrealLedger.Begin(ledgerSource, ledgerKey, ledgerName, this) : default;
 
             UpdateCoinValue(false);
             if ((CoinValue ?? 0) < amount)

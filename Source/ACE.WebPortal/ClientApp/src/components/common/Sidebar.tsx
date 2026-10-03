@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { User, LogOut } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { getRoleName } from '../../utils/auth';
@@ -145,26 +145,36 @@ const Sidebar: React.FC = () => {
   );
 };
 
-const SidebarItem: React.FC<{ to: string; icon: React.ReactNode; label: string }> = ({ to, icon, label }) => (
-  <NavLink
-    to={to}
-    className={({ isActive }) => cn(
-      "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200",
-      isActive 
-        ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" 
-        : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
-    )}
-  >
-    {({ isActive }) => (
-      <>
-        <div className={cn(isActive ? 'text-white' : 'text-neutral-500')}>
-          {icon}
-        </div>
-        <span className="text-sm font-medium">{label}</span>
-      </>
-    )}
-  </NavLink>
-);
+const pathMatches = (pathname: string, path: string) => pathname === path || pathname.startsWith(`${path}/`);
+
+const SidebarItem: React.FC<{ to: string; icon: React.ReactNode; label: string }> = ({ to, icon, label }) => {
+  const { pathname } = useLocation();
+  // A nested portal route (e.g. /audit/pyreals under /audit) owns the highlight; the parent item stays inactive.
+  const nestedRouteActive = PORTAL_ROUTES.some(
+    r => r.path !== to && r.path.startsWith(`${to}/`) && pathMatches(pathname, r.path)
+  );
+
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) => cn(
+        "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200",
+        isActive && !nestedRouteActive
+          ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+          : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+      )}
+    >
+      {({ isActive }) => (
+        <>
+          <div className={cn(isActive && !nestedRouteActive ? 'text-white' : 'text-neutral-500')}>
+            {icon}
+          </div>
+          <span className="text-sm font-medium">{label}</span>
+        </>
+      )}
+    </NavLink>
+  );
+};
 
 const NavSection: React.FC<{ label: string; className?: string }> = ({ label, className }) => (
   <div className={cn("mt-8 mb-3 px-4 flex items-center gap-2", className)}>

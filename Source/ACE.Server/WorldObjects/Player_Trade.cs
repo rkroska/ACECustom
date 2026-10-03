@@ -268,11 +268,23 @@ namespace ACE.Server.WorldObjects
             actionChain.AddDelaySeconds(0.5f);
             actionChain.AddAction(CurrentLandblock, ActionType.PlayerTrade_FinalizeTrade, () =>
             {
-                foreach (var wo in myEscrow)
-                    TryCreateInInventoryWithNetworking(wo);
+                using (PyrealLedger.Begin(PyrealLedger.SrcTrade, target.Guid.Full.ToString(), target.Name))
+                {
+                    foreach (var wo in myEscrow)
+                    {
+                        PyrealLedger.OnCurrencyItem(target, wo, wo.StackSize ?? 1, false, PyrealLedger.SrcTrade, Guid.Full.ToString(), Name);
+                        TryCreateInInventoryWithNetworking(wo);
+                    }
+                }
 
-                foreach (var wo in targetEscrow)
-                    target.TryCreateInInventoryWithNetworking(wo);
+                using (PyrealLedger.Begin(PyrealLedger.SrcTrade, Guid.Full.ToString(), Name))
+                {
+                    foreach (var wo in targetEscrow)
+                    {
+                        PyrealLedger.OnCurrencyItem(this, wo, wo.StackSize ?? 1, false, PyrealLedger.SrcTrade, target.Guid.Full.ToString(), target.Name);
+                        target.TryCreateInInventoryWithNetworking(wo);
+                    }
+                }
 
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.TradeComplete));
                 target.Session.Network.EnqueueSend(new GameEventWeenieError(target.Session, WeenieError.TradeComplete));

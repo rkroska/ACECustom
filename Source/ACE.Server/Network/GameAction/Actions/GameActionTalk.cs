@@ -6,6 +6,7 @@ using ACE.Common.Extensions;
 using ACE.Entity.Enum;
 using ACE.Server.Command;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Server.Managers;
 
 namespace ACE.Server.Network.GameAction.Actions
 {
@@ -53,7 +54,9 @@ namespace ACE.Server.Network.GameAction.Actions
                         {
                             parameters = CommandManager.StuffRawIntoParameters(message.Remove(0, 1), command, parameters);
                         }
-                        ((CommandHandler)commandHandler.Handler).Invoke(session, parameters);
+                        // pyreal ledger: anything a command changes is labeled with the command, unless the code it calls labels it
+                        using (PyrealLedger.BeginIfNone(PyrealLedger.SrcCommand, command, "@" + command, session.Player))
+                            ((CommandHandler)commandHandler.Handler).Invoke(session, parameters);
                     }
                     catch (Exception ex)
                     {
@@ -71,7 +74,8 @@ namespace ACE.Server.Network.GameAction.Actions
                         {
                             parameters = CommandManager.StuffRawIntoParameters(message.Remove(0, 1), command, parameters);
                         }
-                        ((CommandHandler)commandHandler.Handler).Invoke(session, sudoParameters);
+                        using (PyrealLedger.BeginIfNone(PyrealLedger.SrcCommand, command, "@" + command, session.Player))
+                            ((CommandHandler)commandHandler.Handler).Invoke(session, sudoParameters);
                     }
                     catch (Exception ex)
                     {

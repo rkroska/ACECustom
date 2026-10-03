@@ -4296,7 +4296,11 @@ namespace ACE.Server.Command.Handlers
                             foreach (var possession in possessions)
                                 possessedBiotas.Add((possession.Biota, possession.BiotaDatabaseLock));
 
-                            // We must await here -- 
+                            // pyreal ledger: the copy is written directly, so give it a baseline (and a flag when it holds pyreals)
+                            PyrealLedger.OnCharacterCopied(newPlayer.Guid.Full, newCharName, newPlayer.Character.AccountId,
+                                newPlayer.GetProperty(PropertyInt64.BankedPyreals) ?? 0, existingCharacter.Name, session?.Player?.Name ?? "console");
+
+                            // We must await here --
                             DatabaseManager.Shard.AddCharacterInParallel(newPlayer.Biota, newPlayer.BiotaDatabaseLock, possessedBiotas, newPlayer.Character, newPlayer.CharacterDatabaseLock, saveSuccess =>
                             {
                                 if (!saveSuccess)

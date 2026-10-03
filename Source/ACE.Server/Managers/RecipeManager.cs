@@ -1178,7 +1178,8 @@ namespace ACE.Server.Managers
             if (amount > 1)
                 wo.SetStackSize((int)amount);
 
-            player.TryCreateInInventoryWithNetworking(wo);
+            using (PyrealLedger.Begin(PyrealLedger.SrcRecipe, wcid.ToString(), wo.Name))
+                player.TryCreateInInventoryWithNetworking(wo);
             return wo;
         }
 

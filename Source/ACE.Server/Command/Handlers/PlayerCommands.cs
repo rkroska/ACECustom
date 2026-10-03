@@ -504,7 +504,8 @@ namespace ACE.Server.Command.Handlers
             //cleanup edge cases
             if (session.Player.BankedPyreals < 0)
             {
-                session.Player.BankedPyreals = 0;
+                using (PyrealLedger.Begin(PyrealLedger.SrcBankClamp, "", "negative balance reset to 0", session.Player))
+                    session.Player.BankedPyreals = 0;
             }
             if (session.Player.BankedLuminance < 0)
             {
@@ -1082,7 +1083,8 @@ namespace ACE.Server.Command.Handlers
 
 
             // Deduct ClapCost for Coalesced Aetheria and Chunks
-            session.Player.BankedPyreals -= totalClapCost;
+            using (PyrealLedger.Begin(PyrealLedger.SrcClap, "", "", session.Player))
+                session.Player.BankedPyreals -= totalClapCost;
 
             // OPTIMIZATION: Track if we need to save to database (only save once at the end)
             // Save only if redComboCount > 30 or blueComboCount > 90

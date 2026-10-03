@@ -383,6 +383,12 @@ namespace ACE.Server
             log.Info("Initializing PlayerManager...");
             PlayerManager.Initialize();
 
+            if (ServerConfig.pyreal_ledger.Value)
+            {
+                log.Info("Initializing PyrealLedger...");
+                PyrealLedger.Initialize();
+            }
+
             log.Info("Initializing HouseManager...");
             HouseManager.Initialize();
 
