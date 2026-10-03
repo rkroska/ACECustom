@@ -134,17 +134,20 @@ namespace ACE.Entity.Enum.Properties
         /// Owner range 50000+ (moved off 9018 - upstream took that id for PetCustomName).</summary>
         RoomAssignRooms = 50500,
 
-        /// <summary>Kill Reward (owner 2026-09-23), on a room-source WEENIE: the dungeon's rewards -
-        /// "on;#nextId;wcid|amount|kills|minutes|id;..." (on = 1/0). Server-only. See KillRewardConfig.Format.</summary>
-        RoomAssignKillReward = 50504,
+        /// <summary>Bounty (owner 2026-09-23), on a room-source WEENIE: the dungeon's rewards -
+        /// "on;#nextId;wcid|amount|kills|minutes|id;..." (on = 1/0). Server-only. See BountyConfig.Format.
+        /// Renamed from RoomAssignKillReward 2026-09-26 - the ID is what persists, so stored rows are unaffected.</summary>
+        RoomAssignBounty = 50504,
 
-        /// <summary>Kill Reward, on a CHARACTER: kills counted and the last award, per area and reward - "area#rId|kills|lastUnix;..."
+        /// <summary>Bounty, on a CHARACTER: kills counted and the last award, per area and reward - "area#rId|kills|lastUnix;..."
         /// (area = "zone:name" or "dungeon:WCIDvVARIATION", rId = the reward's permanent ID). Kept on the
-        /// character so a relog or a restart can neither reset the cooldown nor lose progress. Server-only.</summary>
-        KillRewardProgress = 50505,
+        /// character so a relog or a restart can neither reset the cooldown nor lose progress. Server-only.
+        /// Renamed from KillRewardProgress 2026-09-26 - the ID is what persists.</summary>
+        BountyProgress = 50505,
 
-        /// <summary>Kill Reward, on a CHARACTER: rewards earned while the pack was full - "wcid:amount;..." - handed over as soon as
-        /// there is room (checked on the player heartbeat). Never dropped. Server-only.</summary>
-        KillRewardOwed = 50506,
+        /// <summary>Bounty, on a CHARACTER: rewards earned while the pack was full - "wcid:amount;..." - handed over as soon as
+        /// there is room (checked on the player heartbeat). Never dropped. Server-only.
+        /// Renamed from KillRewardOwed 2026-09-26 - the ID is what persists.</summary>
+        BountyOwed = 50506,
     }
 }
