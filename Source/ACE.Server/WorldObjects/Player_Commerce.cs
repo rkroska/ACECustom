@@ -396,6 +396,21 @@ namespace ACE.Server.WorldObjects
                     BankedWeaklyEnlightenedCoins -= takeFromBank;
                 }
             }
+            else if (currentWcid == PRESTIGE_COIN_WCID) // Prestige Coin (2026-10-04): pack first, then the bank
+            {
+                inventoryAmount = GetNumInventoryItemsOfWCID(currentWcid);
+                long takeFromInventory = Math.Min(amount, inventoryAmount);
+                long takeFromBank = amount - takeFromInventory;
+
+                if (takeFromInventory > 0)
+                    TryConsumeFromInventoryWithNetworking(currentWcid, (int)takeFromInventory);
+
+                if (takeFromBank > 0)
+                {
+                    BankedPrestigeCoins ??= 0;
+                    BankedPrestigeCoins -= takeFromBank;
+                }
+            }
             else
             {
                 // Anything else just gets consumed from inventory.

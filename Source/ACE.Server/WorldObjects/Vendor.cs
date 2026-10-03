@@ -579,6 +579,10 @@ namespace ACE.Server.WorldObjects
                 {
                     playerAltCurrency += player.BankedWeaklyEnlightenedCoins ?? 0;
                 }
+                else if (AlternateCurrency.Value == Player.PRESTIGE_COIN_WCID) // Prestige Coin (2026-10-04)
+                {
+                    playerAltCurrency += player.BankedPrestigeCoins ?? 0;
+                }
 
                 if (playerAltCurrency < totalPrice)
                 {
