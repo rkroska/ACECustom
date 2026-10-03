@@ -334,6 +334,9 @@ namespace ACE.Server.WorldObjects.Managers
         /// <param name="actionChain">Only used for passing to further sets</param>
         public float ExecuteEmote(PropertiesEmote emoteSet, PropertiesEmoteAction emote, WorldObject targetObject = null)
         {
+            // pyreal ledger: items given or taken and bank stats changed by this emote are labeled with the emoter
+            using var ledgerScope = PyrealLedger.BeginFor(PyrealLedger.SrcEmote, WorldObject);
+
             var player = targetObject as Player;
             var creature = WorldObject as Creature;
             var targetCreature = targetObject as Creature;

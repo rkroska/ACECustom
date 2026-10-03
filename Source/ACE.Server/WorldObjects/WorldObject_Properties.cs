@@ -190,6 +190,12 @@ namespace ACE.Server.WorldObjects
         }
         public void SetProperty(PropertyInt64 property, long value)
         {
+            if (PyrealLedger.Tracks(property))
+            {
+                SetTrackedProperty(property, value);
+                return;
+            }
+
             if (EphemeralProperties.PropertiesInt64.Contains(property))
             {
                 if (ephemeralPropertyInt64s == null)
@@ -204,6 +210,28 @@ namespace ACE.Server.WorldObjects
                     ChangesDetected = true;
             }
         }
+        // BankedPyreals goes through the pyreal ledger. Kept out of SetProperty / RemoveProperty so their lambdas
+        // don't allocate on the hot int64 path (XP and luminance).
+        private void SetTrackedProperty(PropertyInt64 property, long value)
+        {
+            PyrealLedger.TrackedWrite(this, value, () => GetProperty(property) ?? 0, () =>
+            {
+                Biota.SetProperty(property, value, BiotaDatabaseLock, out var changed);
+
+                if (changed)
+                    ChangesDetected = true;
+            });
+        }
+
+        private void RemoveTrackedProperty(PropertyInt64 property)
+        {
+            PyrealLedger.TrackedWrite(this, 0, () => GetProperty(property) ?? 0, () =>
+            {
+                if (Biota.TryRemoveProperty(property, BiotaDatabaseLock))
+                    ChangesDetected = true;
+            });
+        }
+
         public void SetProperty(PropertyString property, string value)
         {
             if (EphemeralProperties.PropertiesString.Contains(property))
@@ -297,6 +325,12 @@ namespace ACE.Server.WorldObjects
         }
         public void RemoveProperty(PropertyInt64 property)
         {
+            if (PyrealLedger.Tracks(property))
+            {
+                RemoveTrackedProperty(property);
+                return;
+            }
+
             if (EphemeralProperties.PropertiesInt64.Contains(property))
             {
                 if (ephemeralPropertyInt64s != null)

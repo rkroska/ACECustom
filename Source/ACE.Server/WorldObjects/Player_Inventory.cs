@@ -108,8 +108,14 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            // captured before the add, which can merge the item into an existing stack
+            var ledgerWcid = item.WeenieClassId;
+            var ledgerUnits = (long)(item.StackSize ?? 1);
+
             if (!TryAddToInventory(item, out container)) // We don't have enough burden available or no empty pack slot.
                 return false;
+
+            PyrealLedger.OnCurrencyItem(this, ledgerWcid, ledgerUnits, true);
 
             Session.Network.EnqueueSend(new GameMessageCreateObject(item));
 
@@ -142,6 +148,9 @@ namespace ACE.Server.WorldObjects
             if (item.IsAbilityCharm && item.UnlimitedUse)
                 return true;
 
+            var ledgerWcid = item.WeenieClassId;
+            var ledgerUnits = Math.Min((long)amount, (long)(item.StackSize ?? 1));
+
             if (amount >= (item.StackSize ?? 1))
             {
                 if (!TryRemoveFromInventory(item.Guid, out item))
@@ -168,6 +177,8 @@ namespace ACE.Server.WorldObjects
 
             if (item.WeenieType == WeenieType.Coin)
                 UpdateCoinValue();
+
+            PyrealLedger.OnCurrencyItem(this, ledgerWcid, ledgerUnits, false);
 
             return true;
         }
@@ -1614,6 +1625,7 @@ namespace ACE.Server.WorldObjects
             Landblock prevLandblock = null;
 
             var prevContainer = item.Container;
+            var ledgerUnits = (long)(item.StackSize ?? 1);
             
 #if DEBUG
             log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer START for {item.Name} (0x{item.Guid}) | ItemRootOwner={(itemRootOwner is Player itemRootPlayer ? $"Player {itemRootPlayer.Name}" : $"{itemRootOwner?.Name ?? "null"} (0x{(itemRootOwner?.Guid.Full ?? 0):X8})")} | ContainerRootOwner={(containerRootOwner is Player containerRootPlayer ? $"Player {containerRootPlayer.Name}" : $"{containerRootOwner?.Name ?? "null"} (0x{(containerRootOwner?.Guid.Full ?? 0):X8})")} | Target Container={(container is Player targetPlayer ? $"Player {targetPlayer.Name}" : $"{container?.Name ?? "null"} (0x{(container?.Guid.Full ?? 0):X8})")} | PrevContainer={(prevContainer is Player prevPlayer ? $"Player {prevPlayer.Name}" : $"{prevContainer?.Name ?? "null"} (0x{(prevContainer?.Guid.Full ?? 0):X8})")} | ItemWasEquipped={itemWasEquipped}");
@@ -1745,6 +1757,8 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            PyrealLedger.OnItemMoved(this, item, ledgerUnits, itemRootOwner, containerRootOwner);
+
             return true;
         }
 
@@ -1824,6 +1838,8 @@ namespace ACE.Server.WorldObjects
                     EnqueueBroadcast(new GameMessageSound(Guid, Sound.DropItem));
 
                     item.EmoteManager.OnDrop(this);
+
+                    PyrealLedger.OnItemMoved(this, item, item.StackSize ?? 1, this, null);
 
                     // Log ground drop for transfer monitoring (after successful drop and client notification)
                     try
@@ -2869,8 +2885,10 @@ namespace ACE.Server.WorldObjects
                 log.Warn($"[STACK SPLIT] Original stack {stack.Name} (0x{stack.Guid}) does NOT have ChangesDetected=true after AdjustStack! StackSize={oldStackSize}->{newStackSize}");
             }
 
+            PyrealLedger.OnItemMoved(this, newStack, amount, stackRootOwner, containerRootOwner);
+
             // Log chest deposit for splits from player to chest
-            bool isChestDeposit = stackRootOwner == this && 
+            bool isChestDeposit = stackRootOwner == this &&  
                                   containerRootOwner != this && 
                                   container is Container &&
                                   container.WeenieType != WeenieType.Corpse &&
@@ -3028,7 +3046,9 @@ namespace ACE.Server.WorldObjects
                 if (TryDropItem(newStack))
                 {
                     EnqueueBroadcast(new GameMessageSound(Guid, Sound.DropItem));
-                    
+
+                    PyrealLedger.OnItemMoved(this, newStack, amount, this, null);
+
                     // Log the stack split to ground
                     try
                     {
@@ -3511,6 +3531,8 @@ namespace ACE.Server.WorldObjects
 
                         if (DoHandleActionStackableMerge(sourceStack, targetStack, amount))
                         {
+                            PyrealLedger.OnItemMoved(this, sourceStack, amount, sourceStackRootOwner, targetStackRootOwner);
+
                             // Check if this was a ground pickup (source stack was on ground, target is in inventory)
                             if (sourceStackRootOwner == null && targetStackRootOwner == this)
                             {
@@ -3570,6 +3592,8 @@ namespace ACE.Server.WorldObjects
                 var mergeAmount = amount;
                 if (DoHandleActionStackableMerge(sourceStack, targetStack, mergeAmount))
                 {
+                    PyrealLedger.OnItemMoved(this, sourceStack, mergeAmount, sourceStackRootOwner, targetStackRootOwner);
+
                     // Check if this was a ground pickup (source stack was on ground, target is in inventory)
                     if (sourceStackRootOwner == null && targetStackRootOwner == this)
                     {
@@ -3875,7 +3899,15 @@ namespace ACE.Server.WorldObjects
 
             actionChain.AddAction(this, ActionType.PlayerInventory_GiveObjectToPlayer, () =>
             {
-                if (!target.TryCreateInInventoryWithNetworking(itemToGive, out _))
+                var ledgerUnits = (long)(itemToGive.StackSize ?? 1);
+                bool given;
+                using (PyrealLedger.Begin(PyrealLedger.SrcGive, Guid.Full.ToString(), Name))
+                    given = target.TryCreateInInventoryWithNetworking(itemToGive, out _);
+
+                if (given)
+                    PyrealLedger.OnCurrencyItem(this, itemToGive.WeenieClassId, ledgerUnits, false, PyrealLedger.SrcGive, target.Guid.Full.ToString(), target.Name);
+
+                if (!given)
                 {
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "TryCreateInInventoryWithNetworking failed!")); // Custom error message
 
@@ -3883,8 +3915,11 @@ namespace ACE.Server.WorldObjects
 
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, itemToGive.Guid.Full));
 
-                    if (!TryCreateInInventoryWithNetworking(itemToGive))
-                        log.WarnFormat("Item 0x{0:X8}:{1} for player {2} lost from GiveObjecttoPlayer failure.", item.Guid.Full, item.Name, Name);
+                    using (PyrealLedger.Begin(PyrealLedger.SrcIgnore))
+                    {
+                        if (!TryCreateInInventoryWithNetworking(itemToGive))
+                            log.WarnFormat("Item 0x{0:X8}:{1} for player {2} lost from GiveObjecttoPlayer failure.", item.Guid.Full, item.Name, Name);
+                    }
 
                     return;
                 }
@@ -4021,6 +4056,8 @@ namespace ACE.Server.WorldObjects
                         target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
 
                         target.EmoteManager.ExecuteEmoteSet(emoteResult, this);
+
+                        PyrealLedger.OnCurrencyItem(this, itemToGive, stackSize, false, PyrealLedger.SrcGiveNpc, target.WeenieClassId.ToString(), target.Name);
 
                         itemToGive.Destroy();
                     }
