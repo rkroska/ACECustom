@@ -130,7 +130,99 @@ namespace ACE.Server.Tests
                 PyrealLedger.Classify(loaded: state.Saved, live: state.Live, saved: state.Saved, pendingNotes: state.NotesText));
         }
 
+        // ---- the dupe signal must survive the caps ----------------------------------------------------------------
+
+        [TestMethod]
+        public void RiskNoteBeyondTheTextCap_IsStillADupe()
+        {
+            // 20 purchases, then an offline transfer: only the first 12 notes are written out as text
+            var state = new PyrealLedger.CharState { Saved = 10_000, Live = 10_000 };
+            long balance = 10_000;
+            for (var i = 0; i < 20; i++)
+                state.AddPending($"Deposit::{-10}", balance -= 10);
+            state.AddPending("!Transfer:Alt:-500", balance -= 500);
+            state.Live = balance;
+
+            Assert.IsFalse(state.NotesText.Contains("Transfer"), "the transfer note itself is past the text cap");
+            Assert.AreEqual(PyrealLedger.Classification.LikelyDupe, PyrealLedger.Classify(state.Saved, state.Live, state.Saved, state.NotesText));
+        }
+
+        [TestMethod]
+        public void RiskSignal_SurvivesTheColumnLengthLimit()
+        {
+            var longName = new string('x', 128);
+            var state = new PyrealLedger.CharState { Saved = 10_000, Live = 10_000 };
+            long balance = 10_000;
+            for (var i = 0; i < 11; i++)
+                state.AddPending($"VendorSell:{longName}:{5}", balance += 5);
+            state.AddPending($"!Transfer:{longName}:-500", balance -= 500);
+            state.Live = balance;
+
+            var persisted = state.NotesText.Substring(0, 1000); // what the varchar(1000) column keeps
+
+            Assert.AreEqual(PyrealLedger.Classification.LikelyDupe, PyrealLedger.Classify(state.Saved, state.Live, state.Saved, persisted));
+        }
+
+        [TestMethod]
+        public void RiskNoteBeyondTheChangeCap_IsStillADupe_AndClearsOnAFullSave()
+        {
+            var state = new PyrealLedger.CharState { Saved = 1_000_000, Live = 1_000_000 };
+            long balance = 1_000_000;
+            for (var i = 0; i < PyrealLedger.MaxPendingChanges; i++)
+                state.AddPending("VendorBuy:Hugh:-1", balance -= 1);
+            state.AddPending("!Transfer:Alt:-500", balance -= 500);
+            state.Live = balance;
+
+            Assert.IsTrue(state.PendingOverflow);
+            Assert.AreEqual(PyrealLedger.Classification.LikelyDupe, PyrealLedger.Classify(state.Saved, state.Live, state.Saved, state.NotesText));
+
+            // a save in the middle keeps the dropped risk pending
+            state.ApplySave(1_000_000 - 100);
+            Assert.IsTrue(state.HasDupeRisk);
+            Assert.IsTrue(state.Urgent);
+
+            // a save of the live balance included everything
+            state.ApplySave(state.Live);
+            Assert.IsFalse(state.PendingOverflow);
+            Assert.IsFalse(state.HasDupeRisk);
+            Assert.IsFalse(state.Urgent);
+            Assert.AreEqual("", state.NotesText);
+        }
+
+        [TestMethod]
+        public void SavedRiskNote_NoLongerMarksADupe()
+        {
+            var state = new PyrealLedger.CharState { Saved = 1000, Live = 1000 };
+            state.AddPending("!Transfer:Alt:-500", 500);
+            state.AddPending("VendorBuy:Hugh:-100", 400);
+            state.Live = 400;
+
+            state.ApplySave(500);
+
+            Assert.IsFalse(state.HasDupeRisk);
+            Assert.IsFalse(state.Urgent);
+            Assert.AreEqual(PyrealLedger.Classification.RollbackGain, PyrealLedger.Classify(state.Saved, state.Live, state.Saved, state.NotesText));
+        }
+
         // ---- source scopes ---------------------------------------------------------------------------------------
+
+        [TestInitialize]
+        public void EnableScopes() => PyrealLedger.ForceScopesForTests = true;
+
+        [TestCleanup]
+        public void DisableScopes() => PyrealLedger.ForceScopesForTests = false;
+
+        [TestMethod]
+        public void Scopes_DoNothingWhileTheLedgerIsOff()
+        {
+            PyrealLedger.ForceScopesForTests = false;
+
+            using (PyrealLedger.Begin(PyrealLedger.SrcCommand))
+                Assert.IsNull(PyrealLedger.CurrentSource);
+
+            using (PyrealLedger.BeginFor(PyrealLedger.SrcEmote, null))
+                Assert.IsNull(PyrealLedger.CurrentSource);
+        }
 
         [TestMethod]
         public void Scopes_NestAndRestore()

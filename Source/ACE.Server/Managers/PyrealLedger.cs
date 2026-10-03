@@ -140,6 +140,22 @@ namespace ACE.Server.Managers
             public string Source;
             public string Key;
             public string Name;
+            /// <summary>When set, Key and Name come from this object, read only if something is recorded in the scope.</summary>
+            public WorldObject Subject;
+
+            public string GetKey() => Key ??= Subject?.WeenieClassId.ToString() ?? "";
+
+            public string GetName()
+            {
+                if (Name != null)
+                    return Name;
+
+                var name = Subject?.Name ?? "";
+                if (Subject is Vendor vendor)
+                    name = $"{name} (buys at {vendor.BuyPrice ?? 1:0.###}x)";
+
+                return Name = name;
+            }
             public uint ActorGuid;
             public string ActorName;
             public bool CounterpartSaved;
@@ -177,6 +193,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public static Scope Begin(string source, string key = "", string name = "", WorldObject actor = null, bool counterpartSaved = false)
         {
+            if (!ScopesActive)
+                return default;
+
             var ctx = new SourceContext
             {
                 Source = source,
@@ -192,6 +211,37 @@ namespace ACE.Server.Managers
             current = ctx;
             return scope;
         }
+
+        /// <summary>
+        /// Like <see cref="Begin"/>, labeled with a world object (the NPC running an emote, the vendor bought from). Its
+        /// wcid and name are read only if something is recorded inside the scope, so this is cheap on paths that run
+        /// constantly and almost never touch currency (every emote action).
+        /// </summary>
+        public static Scope BeginFor(string source, WorldObject subject, WorldObject actor = null, bool counterpartSaved = false)
+        {
+            if (!ScopesActive)
+                return default;
+
+            var ctx = new SourceContext
+            {
+                Source = source,
+                Subject = subject,
+                ActorGuid = actor?.Guid.Full ?? 0,
+                ActorName = actor?.Name ?? "",
+                CounterpartSaved = counterpartSaved,
+                Previous = current,
+            };
+
+            var scope = new Scope(current);
+            current = ctx;
+            return scope;
+        }
+
+        /// <summary>Scopes do nothing (no allocation, no property reads) while the ledger is off.</summary>
+        private static bool ScopesActive => initialized || ForceScopesForTests;
+
+        /// <summary>Lets unit tests exercise scopes without a running ledger.</summary>
+        internal static bool ForceScopesForTests;
 
         /// <summary>The source label open on this thread, or null. For tests.</summary>
         internal static string CurrentSource => current?.Source;
@@ -212,13 +262,25 @@ namespace ACE.Server.Managers
             public readonly string Text;
             /// <summary>The balance right after this change; a save that wrote this balance included it.</summary>
             public readonly long After;
+            /// <summary>A debit whose other side is saved immediately: losing it in a crash duplicates pyreals.</summary>
+            public readonly bool Risk;
 
             public PendingNote(string text, long after)
             {
                 Text = text;
                 After = after;
+                Risk = text != null && text.StartsWith(DupeRiskMarker);
             }
         }
+
+        /// <summary>Prefix of a pending note (and of the persisted notes text) that marks a dupe risk. See <see cref="Classify"/>.</summary>
+        internal const string DupeRiskMarker = "!";
+
+        /// <summary>How many pending notes are written out as text; the rest only keep their balance and risk bit.</summary>
+        internal const int MaxNoteTexts = 12;
+
+        /// <summary>Unsaved changes kept per character. A save normally clears them every few minutes.</summary>
+        internal const int MaxPendingChanges = 512;
 
         internal sealed class CharState
         {
@@ -230,12 +292,46 @@ namespace ACE.Server.Managers
             public DateTime SavedUtc;
             /// <summary>Changes since the last save, oldest first.</summary>
             public readonly List<PendingNote> PendingNotes = new List<PendingNote>();
+            /// <summary>More than <see cref="MaxPendingChanges"/> unsaved changes: the newest were not kept individually.</summary>
             public bool PendingOverflow;
+            /// <summary>One of the changes dropped by <see cref="PendingOverflow"/> was a dupe risk.</summary>
+            public bool OverflowRisk;
             public bool Dirty;
+            /// <summary>Holds an unsaved dupe-risk debit: write the row at the next opportunity, not the next timer tick.</summary>
+            public bool Urgent;
             public DateTime LastBypassFlagHour;
             public DateTime LastUnattributedFlagHour;
 
-            public string NotesText => string.Join("|", PendingNotes.Select(n => n.Text)) + (PendingOverflow ? "|..." : "");
+            public bool HasDupeRisk => OverflowRisk || PendingNotes.Any(n => n.Risk);
+
+            public void AddPending(string text, long after)
+            {
+                var note = new PendingNote(text, after);
+
+                if (PendingNotes.Count < MaxPendingChanges)
+                    PendingNotes.Add(note);
+                else
+                {
+                    PendingOverflow = true;
+                    OverflowRisk |= note.Risk;
+                }
+            }
+
+            /// <summary>
+            /// The persisted notes. The dupe-risk signal is written first as its own token, so it survives both the cap
+            /// on note texts and the column's length limit.
+            /// </summary>
+            public string NotesText
+            {
+                get
+                {
+                    var text = string.Join("|", PendingNotes.Take(MaxNoteTexts).Select(n => n.Text));
+                    if (PendingOverflow || PendingNotes.Count > MaxNoteTexts)
+                        text += "|...";
+
+                    return HasDupeRisk ? DupeRiskMarker + "risk|" + text : text;
+                }
+            }
 
             /// <summary>
             /// A save wrote <paramref name="savedBalance"/>: drop the notes it included (up to the last note that ended at
@@ -252,17 +348,23 @@ namespace ACE.Server.Managers
                 {
                     PendingNotes.Clear();
                     PendingOverflow = false;
+                    OverflowRisk = false;
+                    Urgent = false;
                     return;
                 }
 
+                // changes dropped by the overflow have no balance to match against, so their risk bit stays set until a
+                // save of the live balance (above) shows that everything was written
                 for (var i = PendingNotes.Count - 1; i >= 0; i--)
                 {
                     if (PendingNotes[i].After == savedBalance)
                     {
                         PendingNotes.RemoveRange(0, i + 1);
-                        return;
+                        break;
                     }
                 }
+
+                Urgent = HasDupeRisk;
             }
         }
 
@@ -327,7 +429,6 @@ namespace ACE.Server.Managers
 
         private const int FlushIntervalMs = 5000;
         private const int BucketFlushSeconds = 60;
-        private const int MaxPendingNotes = 12;
         private const int MaxDetail = 1000;
 
         public static bool IsInitialized => initialized;
@@ -432,9 +533,7 @@ namespace ACE.Server.Managers
 
                 try
                 {
-                    // only for a change nobody labeled: the trace shows developers which code path to label
-                    var trace = ctx == null ? Environment.StackTrace : null;
-                    RecordBankChangeLocked(ctx, trace, charId, name, accountId, oldValue, newValue);
+                    RecordBankChangeLocked(ctx, charId, name, accountId, oldValue, newValue);
                 }
                 catch (Exception ex)
                 {
@@ -455,13 +554,13 @@ namespace ACE.Server.Managers
             TrackedWrite(owner.Guid.Full, owner.Name, AccountIdOf(owner), newValue, read, write);
         }
 
-        private static void RecordBankChangeLocked(SourceContext ctx, string trace, uint charId, string name, uint accountId, long oldValue, long newValue)
+        private static void RecordBankChangeLocked(SourceContext ctx, uint charId, string name, uint accountId, long oldValue, long newValue)
         {
             var delta = newValue - oldValue;
             var source = ctx?.Source ?? SrcUnattributed;
             var isActor = ctx == null || ctx.ActorGuid == 0 || ctx.ActorGuid == charId;
-            var detailKey = ctx == null ? "" : (isActor ? ctx.Key : ctx.ActorGuid.ToString());
-            var detailName = ctx == null ? "" : (isActor ? ctx.Name : ctx.ActorName);
+            var detailKey = ctx == null ? "" : (isActor ? ctx.GetKey() : ctx.ActorGuid.ToString());
+            var detailName = ctx == null ? "" : (isActor ? ctx.GetName() : ctx.ActorName);
             var now = DateTime.UtcNow;
 
             var state = GetOrCreateState(charId, accountId, name, oldValue);
@@ -482,21 +581,28 @@ namespace ACE.Server.Managers
             state.Live = newValue;
             state.Dirty = true;
 
-            var marker = (isActor && delta < 0 && ctx != null && ctx.CounterpartSaved) ? "!" : "";
-            if (state.PendingNotes.Count < MaxPendingNotes)
-                state.PendingNotes.Add(new PendingNote($"{marker}{source}:{(string.IsNullOrEmpty(detailName) ? detailKey : detailName)}:{delta}", newValue));
-            else
-                state.PendingOverflow = true;
+            var risk = isActor && delta < 0 && ctx != null && ctx.CounterpartSaved;
+            state.AddPending($"{(risk ? DupeRiskMarker : "")}{source}:{(string.IsNullOrEmpty(detailName) ? detailKey : detailName)}:{delta}", newValue);
+
+            if (risk)
+            {
+                // The other side of this debit is already saved. If the server dies before this row is written, the
+                // restart check has nothing to compare against and the dupe goes unseen, so write it a moment from
+                // now instead of at the next 5 second tick.
+                state.Urgent = true;
+                NudgeFlush();
+            }
 
             AddToBucket(now, charId, state.AccountId, name, KindBank, source, detailKey, detailName, Math.Max(0, delta), Math.Max(0, -delta), 0);
 
-            if (trace != null)
+            if (ctx == null)
             {
+                // a change nobody labeled: once per character per hour, store the code path so developers can label it
                 var hour = HourOf(now);
                 if (state.LastUnattributedFlagHour != hour)
                 {
                     state.LastUnattributedFlagHour = hour;
-                    AddFlag(charId, state.AccountId, name, FlagUnattributed, delta, oldValue, newValue, TrimTrace(trace));
+                    AddFlag(charId, state.AccountId, name, FlagUnattributed, delta, oldValue, newValue, TrimTrace(Environment.StackTrace));
                 }
             }
         }
@@ -532,8 +638,8 @@ namespace ACE.Server.Managers
                 if (source == null && ctx != null)
                 {
                     var isActor = ctx.ActorGuid == 0 || ctx.ActorGuid == player.Guid.Full;
-                    detailKey ??= isActor ? ctx.Key : ctx.ActorGuid.ToString();
-                    detailName ??= isActor ? ctx.Name : ctx.ActorName;
+                    detailKey ??= isActor ? ctx.GetKey() : ctx.ActorGuid.ToString();
+                    detailName ??= isActor ? ctx.GetName() : ctx.ActorName;
                 }
 
                 var value = FaceValue(wcid) * units;
@@ -599,7 +705,15 @@ namespace ACE.Server.Managers
             {
                 var sales = new List<(uint wcid, long units, long payout)>(items.Count);
                 foreach (var item in items)
+                {
+                    if (item == null)
+                        continue;
+
                     sales.Add((item.WeenieClassId, item.StackSize ?? 1, vendor.GetBuyCost(item)));
+
+                    // coins, notes and peas sold to a vendor also leave the character as currency
+                    OnCurrencyItem(player, item.WeenieClassId, item.StackSize ?? 1, false);
+                }
 
                 var now = DateTime.UtcNow;
                 var vendorKey = vendor.WeenieClassId.ToString();
@@ -623,9 +737,22 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void OnItemMoved(Player player, WorldObject item, long units, Container fromRoot, Container toRoot)
         {
-            if (!initialized || player == null || item == null || !IsCurrency(item.WeenieClassId))
+            if (!initialized || player == null || item == null)
                 return;
 
+            try
+            {
+                if (IsCurrency(item.WeenieClassId))
+                    RecordItemMoved(player, item, units, fromRoot, toRoot);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[PyrealLedger] OnItemMoved failed: {ex.Message}");
+            }
+        }
+
+        private static void RecordItemMoved(Player player, WorldObject item, long units, Container fromRoot, Container toRoot)
+        {
             var fromMe = fromRoot == player;
             var toMe = toRoot == player;
             if (fromMe == toMe)
@@ -677,17 +804,18 @@ namespace ACE.Server.Managers
                         state = GetOrCreateState(biotaId, 0, null, savedBalance);
                     }
 
-                    if (state.Saved != savedBalance || state.PendingNotes.Count > 0)
-                    {
-                        state.ApplySave(savedBalance);
-                        state.Dirty = true;
-                    }
+                    if (state.Saved == savedBalance && state.PendingNotes.Count == 0)
+                        return;
+
+                    state.ApplySave(savedBalance);
+                    state.Dirty = true;
                 }
 
-                // Persist this character's row now, not on the next timer tick: if the server dies in between, the
-                // database would hold the new balance while the row still says the old one, which reads as Unexplained.
-                // Runs on the database thread, after the save it describes.
-                FlushStates(onlyCharId: biotaId);
+                // This runs on the shard save thread, so it must not do database work of its own: a slow ledger write
+                // would hold up every save queued behind it. Ask the flush timer to write the row a moment from now
+                // instead. If the server dies inside that moment the database holds the new balance while the row
+                // still has the old one, which the next startup reports as Unexplained with a "not clean" note.
+                NudgeFlush();
             }
             catch (Exception ex)
             {
@@ -747,7 +875,7 @@ namespace ACE.Server.Managers
             {
                 // the changes after the last save were lost: live - saved is what was lost
                 if (live < saved)
-                    return (pendingNotes ?? "").Split('|').Any(n => n.StartsWith("!")) ? Classification.LikelyDupe : Classification.RollbackGain;
+                    return (pendingNotes ?? "").Split('|').Any(n => n.StartsWith(DupeRiskMarker)) ? Classification.LikelyDupe : Classification.RollbackGain;
 
                 return Classification.RollbackLoss;
             }
@@ -859,7 +987,54 @@ namespace ACE.Server.Managers
             {
                 log.Error($"[PyrealLedger] Initialize failed, ledger disabled: {ex}");
                 initialized = false;
+                ShardDatabase.BankedPyrealsSaved = null;
             }
+        }
+
+        /// <summary>
+        /// Call at startup when the ledger is switched off. Balances change unrecorded while it is off, so the stored
+        /// rows would be stale: forget the baseline, and the next enabled start writes a fresh one instead of flagging
+        /// every changed balance as Unexplained. Does nothing if the ledger has never run.
+        /// </summary>
+        public static void InvalidateBaseline()
+        {
+            try
+            {
+                using var ctx = new ShardDbContext();
+                var con = OpenConnection(ctx);
+
+                using (var check = NewCommand(con))
+                {
+                    check.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'pyreal_ledger_meta'";
+                    if (Convert.ToInt64(check.ExecuteScalar()) == 0)
+                        return;
+                }
+
+                using var cmd = NewCommand(con);
+                cmd.CommandText = "DELETE FROM `pyreal_ledger_meta` WHERE `k` = 'baseline_complete'";
+                if (cmd.ExecuteNonQuery() > 0)
+                    log.Info("[PyrealLedger] Ledger is off: baseline cleared, the next enabled start will write a new one.");
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[PyrealLedger] InvalidateBaseline failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Switches the ledger off while the server runs (@pyrealledger off): final flush, then every hook returns at
+        /// its first line and BankedPyreals writes take the original path again. The baseline is cleared because
+        /// balances change unrecorded from here on. It cannot be switched back on without a restart.
+        /// </summary>
+        public static bool StopLive()
+        {
+            if (!initialized)
+                return false;
+
+            Shutdown();
+            InvalidateBaseline();
+            log.Warn("[PyrealLedger] Switched off by an admin. Recording resumes at the next server start if ServerConfig pyreal_ledger is true.");
+            return true;
         }
 
         /// <summary>Final flush. Call after the shard save queue has drained.</summary>
@@ -904,6 +1079,9 @@ namespace ACE.Server.Managers
         {
             if (Interlocked.CompareExchange(ref flushRunning, 1, 0) != 0)
                 return;
+
+            // cleared before the flush reads the rows: a nudge that arrives during the flush schedules another one
+            Interlocked.Exchange(ref nudgePending, 0);
 
             try
             {
@@ -982,9 +1160,9 @@ namespace ACE.Server.Managers
 
             while (true)
             {
-                using var cmd = con.CreateCommand();
+                using var cmd = NewCommand(con);
                 cmd.CommandText = $"DELETE FROM `{table}` WHERE `{column}` < @cutoff LIMIT {CleanupBatchRows}";
-                cmd.CommandTimeout = 120;
+                cmd.CommandTimeout = 30;
                 AddParam(cmd, "@cutoff", cutoff);
 
                 var deleted = cmd.ExecuteNonQuery();
@@ -1007,6 +1185,16 @@ namespace ACE.Server.Managers
             return con;
         }
 
+        private const int CommandTimeoutSeconds = 10;
+
+        /// <summary>A command with a short timeout, so a locked or slow ledger table cannot hold a thread for long.</summary>
+        private static DbCommand NewCommand(DbConnection con)
+        {
+            var cmd = con.CreateCommand();
+            cmd.CommandTimeout = CommandTimeoutSeconds;
+            return cmd;
+        }
+
         private static void AddParam(DbCommand cmd, string name, object value)
         {
             var p = cmd.CreateParameter();
@@ -1017,7 +1205,7 @@ namespace ACE.Server.Managers
 
         private static void Execute(DbConnection con, string sql)
         {
-            using var cmd = con.CreateCommand();
+            using var cmd = NewCommand(con);
             cmd.CommandText = sql;
             cmd.ExecuteNonQuery();
         }
@@ -1042,9 +1230,9 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_hourly` (
   `amount_out`   bigint           NOT NULL DEFAULT 0,
   `units`        bigint           NOT NULL DEFAULT 0,
   PRIMARY KEY (`hour_utc`, `char_id`, `kind`, `source`, `detail_key`),
-  KEY `ix_char_hour` (`char_id`, `hour_utc`),
-  KEY `ix_account_hour` (`account_id`, `hour_utc`),
-  KEY `ix_source_hour` (`source`, `hour_utc`)
+  KEY `ix_char_kind_hour` (`char_id`, `kind`, `hour_utc`),
+  KEY `ix_account_kind_hour` (`account_id`, `kind`, `hour_utc`),
+  KEY `ix_kind_source_hour` (`kind`, `source`, `hour_utc`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
             Execute(con, @"
@@ -1096,7 +1284,7 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
             using var ctx = new ShardDbContext();
             var con = OpenConnection(ctx);
 
-            using (var cmd = con.CreateCommand())
+            using (var cmd = NewCommand(con))
             {
                 cmd.CommandText = "SELECT `k`, `v` FROM `pyreal_ledger_meta`";
                 using var reader = cmd.ExecuteReader();
@@ -1104,7 +1292,7 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
                     meta[reader.GetString(0)] = reader.GetString(1);
             }
 
-            using (var cmd = con.CreateCommand())
+            using (var cmd = NewCommand(con))
             {
                 cmd.CommandText = "SELECT `char_id`, `live_balance`, `saved_balance`, `pending_notes` FROM `pyreal_ledger_state`";
                 using var reader = cmd.ExecuteReader();
@@ -1122,7 +1310,7 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
 
             foreach (var kv in meta)
             {
-                using var cmd = con.CreateCommand();
+                using var cmd = NewCommand(con);
                 cmd.CommandText = "INSERT INTO `pyreal_ledger_meta` (`k`, `v`) VALUES (@k, @v) ON DUPLICATE KEY UPDATE `v` = VALUES(`v`)";
                 AddParam(cmd, "@k", kv.Key);
                 AddParam(cmd, "@v", kv.Value);
@@ -1135,14 +1323,36 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
         /// <summary>Serializes state row writes so a later snapshot is never overwritten by an earlier one.</summary>
         private static readonly object stateWriteLock = new object();
 
-        /// <summary>Writes dirty state rows (all of them, or one character's). Returns false if the write failed.</summary>
-        private static bool FlushStates(uint? onlyCharId = null)
+        private const int UrgentFlushDelayMs = 250;
+        private static int nudgePending;
+
+        /// <summary>
+        /// Brings the next timer flush forward. Only the first nudge after a flush moves the timer, so a steady stream
+        /// of nudges cannot keep pushing the flush back. Never throws, never blocks.
+        /// </summary>
+        private static void NudgeFlush()
         {
-            lock (stateWriteLock)
-                return FlushStatesSerialized(onlyCharId);
+            if (Interlocked.CompareExchange(ref nudgePending, 1, 0) != 0)
+                return;
+
+            try
+            {
+                flushTimer?.Change(UrgentFlushDelayMs, FlushIntervalMs);
+            }
+            catch (Exception)
+            {
+                // shutting down; Shutdown() does the final flush
+            }
         }
 
-        private static bool FlushStatesSerialized(uint? onlyCharId)
+        /// <summary>Writes every dirty state row. Returns false if the write failed.</summary>
+        private static bool FlushStates()
+        {
+            lock (stateWriteLock)
+                return FlushStatesSerialized();
+        }
+
+        private static bool FlushStatesSerialized()
         {
             List<(uint id, uint acct, string name, long live, long saved, DateTime savedUtc, string notes)> rows;
 
@@ -1150,13 +1360,7 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
             {
                 rows = new List<(uint, uint, string, long, long, DateTime, string)>();
 
-                IEnumerable<CharState> candidates;
-                if (onlyCharId.HasValue)
-                    candidates = states.TryGetValue(onlyCharId.Value, out var one) ? new[] { one } : Array.Empty<CharState>();
-                else
-                    candidates = states.Values;
-
-                foreach (var s in candidates)
+                foreach (var s in states.Values)
                 {
                     if (!s.Dirty)
                         continue;
@@ -1176,7 +1380,7 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
 
                 foreach (var batch in rows.Chunk(BatchRows))
                 {
-                    using var cmd = con.CreateCommand();
+                    using var cmd = NewCommand(con);
                     var sb = new StringBuilder("INSERT INTO `pyreal_ledger_state` (`char_id`,`account_id`,`char_name`,`live_balance`,`saved_balance`,`saved_utc`,`pending_notes`,`updated_utc`) VALUES ");
                     for (var i = 0; i < batch.Length; i++)
                     {
@@ -1235,7 +1439,7 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
 
                 foreach (var batch in toWrite.Chunk(BatchRows))
                 {
-                    using var cmd = con.CreateCommand();
+                    using var cmd = NewCommand(con);
                     var sb = new StringBuilder("INSERT INTO `pyreal_ledger_hourly` (`hour_utc`,`char_id`,`kind`,`source`,`detail_key`,`account_id`,`char_name`,`detail_name`,`events`,`amount_in`,`amount_out`,`units`) VALUES ");
                     for (var i = 0; i < batch.Length; i++)
                     {
@@ -1305,7 +1509,7 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
 
                 foreach (var batch in toWrite.Chunk(BatchRows))
                 {
-                    using var cmd = con.CreateCommand();
+                    using var cmd = NewCommand(con);
                     var sb = new StringBuilder("INSERT INTO `pyreal_ledger_flags` (`utc`,`char_id`,`account_id`,`char_name`,`flag`,`amount`,`expected`,`actual`,`detail`) VALUES ");
                     for (var i = 0; i < batch.Length; i++)
                     {

@@ -211,11 +211,8 @@ namespace ACE.Server.WorldObjects
             var processedMs = timingStart != 0 ? System.Diagnostics.Stopwatch.GetElapsedTime(timingStart).TotalMilliseconds : 0;
 
             // Deposit to bank.
-            using (PyrealLedger.Begin(PyrealLedger.SrcVendorSell, vendor.WeenieClassId.ToString(), $"{vendor.Name} (buys at {vendor.BuyPrice ?? 1:0.###}x)", this))
+            using (PyrealLedger.BeginFor(PyrealLedger.SrcVendorSell, vendor, this))
             {
-                foreach (var soldItem in soldItems)
-                    PyrealLedger.OnCurrencyItem(this, soldItem, soldItem.StackSize ?? 1, false);
-
                 PyrealLedger.OnItemsSold(this, vendor, soldItems);
 
                 BankedPyreals = (BankedPyreals ?? 0) + payoutCoinAmount;

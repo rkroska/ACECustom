@@ -388,6 +388,8 @@ namespace ACE.Server
                 log.Info("Initializing PyrealLedger...");
                 PyrealLedger.Initialize();
             }
+            else
+                PyrealLedger.InvalidateBaseline();
 
             log.Info("Initializing HouseManager...");
             HouseManager.Initialize();

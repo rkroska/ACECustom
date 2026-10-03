@@ -235,6 +235,13 @@ namespace ACE.Server.Managers
 
         // ---- helpers ---------------------------------------------------------------------------------------------
 
+        // The SQL filters use the same constants the C# comparisons do. These are compile-time constants, not input.
+        private const int KBank = PyrealLedger.KindBank;
+        private const int KItemIn = PyrealLedger.KindItemIn;
+        private const int KItemOut = PyrealLedger.KindItemOut;
+        private const int KSold = PyrealLedger.KindSold;
+        private const string VendorSell = PyrealLedger.SrcVendorSell;
+
         public static int ClampDays(int days) => Math.Clamp(days <= 0 ? 7 : days, 1, MaxDays);
 
         private static DateTime Since(int days) => DateTime.UtcNow.AddDays(-ClampDays(days));
@@ -291,7 +298,8 @@ namespace ACE.Server.Managers
             }
             catch
             {
-                name = $"#{accountId}";
+                // not cached: the auth database may answer next time
+                return $"#{accountId}";
             }
 
             lock (accountNameCache)
@@ -348,13 +356,13 @@ namespace ACE.Server.Managers
 
             result.BankTotals = Query(
                 "SELECT `source`, SUM(`amount_in`), SUM(`amount_out`), SUM(`events`) FROM `pyreal_ledger_hourly` " +
-                "WHERE `kind` = 1 AND `hour_utc` >= @since GROUP BY `source` ORDER BY SUM(`amount_in`) DESC",
+                $"WHERE `kind` = {KBank} AND `hour_utc` >= @since GROUP BY `source` ORDER BY SUM(`amount_in`) DESC",
                 c => P(c, "@since", since),
                 r => new SourceTotal { Source = S(r, 0), AmountIn = L(r, 1), AmountOut = L(r, 2), Events = L(r, 3) });
 
             result.ItemTotals = Query(
                 "SELECT `kind`, `source`, SUM(`amount_in` + `amount_out`), SUM(`units`) FROM `pyreal_ledger_hourly` " +
-                "WHERE `kind` IN (2, 3) AND `hour_utc` >= @since GROUP BY `kind`, `source` ORDER BY SUM(`amount_in` + `amount_out`) DESC",
+                $"WHERE `kind` IN ({KItemIn}, {KItemOut}) AND `hour_utc` >= @since GROUP BY `kind`, `source` ORDER BY SUM(`amount_in` + `amount_out`) DESC",
                 c => P(c, "@since", since),
                 r => new ItemTotal { Direction = Dir(L(r, 0)), Source = S(r, 1), Value = L(r, 2), Units = L(r, 3) });
 
@@ -415,7 +423,7 @@ namespace ACE.Server.Managers
 
             foreach (var (acct, vendor, payout) in Query(
                 "SELECT `account_id`, `detail_name`, SUM(`amount_in`) FROM `pyreal_ledger_hourly` " +
-                "WHERE `kind` = 1 AND `source` = 'VendorSell' AND `hour_utc` >= @since GROUP BY `account_id`, `detail_key`, `detail_name`",
+                $"WHERE `kind` = {KBank} AND `source` = '{VendorSell}' AND `hour_utc` >= @since GROUP BY `account_id`, `detail_key`, `detail_name`",
                 c => P(c, "@since", since),
                 r => (U(r, 0), S(r, 1), L(r, 2))))
             {
@@ -472,7 +480,7 @@ namespace ACE.Server.Managers
             var rows = new Dictionary<uint, EarnerRow>();
             foreach (var (id, name, acct, src, amtIn, amtOut, events) in Query(
                 $"SELECT {idCol}, MAX(`char_name`), MAX(`account_id`), `source`, SUM(`amount_in`), SUM(`amount_out`), SUM(`events`) FROM `pyreal_ledger_hourly` " +
-                $"WHERE `kind` = 1 AND `hour_utc` >= @since GROUP BY {idCol}, `source`",
+                $"WHERE `kind` = {KBank} AND `hour_utc` >= @since GROUP BY {idCol}, `source`",
                 c => P(c, "@since", since),
                 r => (U(r, 0), S(r, 1), U(r, 2), S(r, 3), L(r, 4), L(r, 5), L(r, 6))))
             {
@@ -501,7 +509,7 @@ namespace ACE.Server.Managers
 
             var rows = Query(
                 "SELECT `detail_key`, MAX(`detail_name`), SUM(`amount_in`), SUM(`events`), COUNT(DISTINCT `char_id`), COUNT(DISTINCT `account_id`) FROM `pyreal_ledger_hourly` " +
-                "WHERE `kind` = 1 AND `source` = 'VendorSell' AND `hour_utc` >= @since GROUP BY `detail_key` ORDER BY SUM(`amount_in`) DESC",
+                $"WHERE `kind` = {KBank} AND `source` = '{VendorSell}' AND `hour_utc` >= @since GROUP BY `detail_key` ORDER BY SUM(`amount_in`) DESC",
                 c => P(c, "@since", since),
                 r => new VendorRow
                 {
@@ -525,7 +533,7 @@ namespace ACE.Server.Managers
 
             var rows = Query(
                 "SELECT `char_id`, MAX(`char_name`), MAX(`account_id`), SUM(`amount_in`), SUM(`events`), MIN(`hour_utc`), MAX(`hour_utc`) FROM `pyreal_ledger_hourly` " +
-                "WHERE `kind` = 1 AND `source` = 'VendorSell' AND `detail_key` = @v AND `hour_utc` >= @since GROUP BY `char_id` ORDER BY SUM(`amount_in`) DESC LIMIT 500",
+                $"WHERE `kind` = {KBank} AND `source` = '{VendorSell}' AND `detail_key` = @v AND `hour_utc` >= @since GROUP BY `char_id` ORDER BY SUM(`amount_in`) DESC LIMIT 500",
                 c => { P(c, "@since", since); P(c, "@v", vendorWcid.ToString()); },
                 r => new VendorSellerRow { CharId = U(r, 0), CharName = S(r, 1), AccountId = U(r, 2), Payout = L(r, 3), Sales = L(r, 4), FirstHourUtc = D(r, 5), LastHourUtc = D(r, 6) });
 
@@ -601,7 +609,7 @@ namespace ACE.Server.Managers
             FillDetail(detail, "`account_id` = @id", accountId, since);
 
             var perChar = Query(
-                "SELECT `char_id`, MAX(`char_name`), SUM(`amount_in`), SUM(`amount_out`) FROM `pyreal_ledger_hourly` WHERE `account_id` = @id AND `kind` = 1 AND `hour_utc` >= @since GROUP BY `char_id`",
+                $"SELECT `char_id`, MAX(`char_name`), SUM(`amount_in`), SUM(`amount_out`) FROM `pyreal_ledger_hourly` WHERE `account_id` = @id AND `kind` = {KBank} AND `hour_utc` >= @since GROUP BY `char_id`",
                 c => { P(c, "@id", accountId); P(c, "@since", since); },
                 r => (U(r, 0), S(r, 1), L(r, 2), L(r, 3)))
                 .ToDictionary(x => x.Item1);
@@ -628,13 +636,13 @@ namespace ACE.Server.Managers
         {
             detail.Bank = Query(
                 $"SELECT `source`, `detail_key`, MAX(`detail_name`), SUM(`amount_in`), SUM(`amount_out`), SUM(`events`) FROM `pyreal_ledger_hourly` " +
-                $"WHERE {idWhere} AND `kind` = 1 AND `hour_utc` >= @since GROUP BY `source`, `detail_key` ORDER BY SUM(`amount_in`) + SUM(`amount_out`) DESC LIMIT 300",
+                $"WHERE {idWhere} AND `kind` = {KBank} AND `hour_utc` >= @since GROUP BY `source`, `detail_key` ORDER BY SUM(`amount_in`) + SUM(`amount_out`) DESC LIMIT 300",
                 c => { P(c, "@id", id); P(c, "@since", since); },
                 r => new DetailRow { Source = S(r, 0), DetailKey = S(r, 1), DetailName = S(r, 2), AmountIn = L(r, 3), AmountOut = L(r, 4), Events = L(r, 5) });
 
             detail.Items = Query(
                 $"SELECT `kind`, `source`, `detail_key`, MAX(`detail_name`), SUM(`units`), SUM(`amount_in` + `amount_out`) FROM `pyreal_ledger_hourly` " +
-                $"WHERE {idWhere} AND `kind` IN (2, 3) AND `hour_utc` >= @since GROUP BY `kind`, `source`, `detail_key` ORDER BY SUM(`amount_in` + `amount_out`) DESC LIMIT 300",
+                $"WHERE {idWhere} AND `kind` IN ({KItemIn}, {KItemOut}) AND `hour_utc` >= @since GROUP BY `kind`, `source`, `detail_key` ORDER BY SUM(`amount_in` + `amount_out`) DESC LIMIT 300",
                 c => { P(c, "@id", id); P(c, "@since", since); },
                 r =>
                 {
@@ -644,7 +652,7 @@ namespace ACE.Server.Managers
 
             detail.Sold = Query(
                 $"SELECT `detail_key`, MAX(`detail_name`), SUM(`units`), SUM(`amount_in`) FROM `pyreal_ledger_hourly` " +
-                $"WHERE {idWhere} AND `kind` = 4 AND `hour_utc` >= @since GROUP BY `detail_key` ORDER BY SUM(`amount_in`) DESC LIMIT 300",
+                $"WHERE {idWhere} AND `kind` = {KSold} AND `source` = '{VendorSell}' AND `hour_utc` >= @since GROUP BY `detail_key` ORDER BY SUM(`amount_in`) DESC LIMIT 300",
                 c => { P(c, "@id", id); P(c, "@since", since); },
                 r =>
                 {
@@ -654,7 +662,7 @@ namespace ACE.Server.Managers
                 });
 
             detail.Hours = Query(
-                $"SELECT `hour_utc`, SUM(`amount_in`), SUM(`amount_out`) FROM `pyreal_ledger_hourly` WHERE {idWhere} AND `kind` = 1 AND `hour_utc` >= @since GROUP BY `hour_utc` ORDER BY `hour_utc`",
+                $"SELECT `hour_utc`, SUM(`amount_in`), SUM(`amount_out`) FROM `pyreal_ledger_hourly` WHERE {idWhere} AND `kind` = {KBank} AND `hour_utc` >= @since GROUP BY `hour_utc` ORDER BY `hour_utc`",
                 c => { P(c, "@id", id); P(c, "@since", since); },
                 r => new HourRow { HourUtc = D(r, 0), BankIn = L(r, 1), BankOut = L(r, 2) });
 
@@ -675,7 +683,7 @@ namespace ACE.Server.Managers
 
             var rows = Query(
                 "SELECT SUBSTRING_INDEX(`detail_key`, ':', 1) AS `wcid`, SUM(`units`), SUM(`amount_in`), COUNT(DISTINCT `char_id`), COUNT(DISTINCT `account_id`) FROM `pyreal_ledger_hourly` " +
-                $"WHERE `kind` = 4 AND `hour_utc` >= @since GROUP BY `wcid` ORDER BY SUM(`amount_in`) DESC LIMIT {limit}",
+                $"WHERE `kind` = {KSold} AND `source` = '{VendorSell}' AND `hour_utc` >= @since GROUP BY `wcid` ORDER BY SUM(`amount_in`) DESC LIMIT {limit}",
                 c => P(c, "@since", since),
                 r => new ItemSaleRow { Wcid = uint.TryParse(S(r, 0), out var w) ? w : 0, Units = L(r, 1), Payout = L(r, 2), Characters = L(r, 3), Accounts = L(r, 4) });
 
@@ -686,7 +694,7 @@ namespace ACE.Server.Managers
             var top = new Dictionary<uint, (uint charId, string name, long units)>();
             foreach (var (wcid, charId, name, units) in Query(
                 "SELECT SUBSTRING_INDEX(`detail_key`, ':', 1) AS `wcid`, `char_id`, MAX(`char_name`), SUM(`units`) FROM `pyreal_ledger_hourly` " +
-                "WHERE `kind` = 4 AND `hour_utc` >= @since GROUP BY `wcid`, `char_id`",
+                $"WHERE `kind` = {KSold} AND `source` = '{VendorSell}' AND `hour_utc` >= @since GROUP BY `wcid`, `char_id`",
                 c => P(c, "@since", since),
                 r => (uint.TryParse(S(r, 0), out var w) ? w : 0, U(r, 1), S(r, 2), L(r, 3))))
             {
@@ -715,7 +723,7 @@ namespace ACE.Server.Managers
 
             var rows = Query(
                 "SELECT `char_id`, MAX(`char_name`), MAX(`account_id`), SUM(`units`), SUM(`amount_in`), GROUP_CONCAT(DISTINCT `detail_name` SEPARATOR ', '), MIN(`hour_utc`), MAX(`hour_utc`) " +
-                "FROM `pyreal_ledger_hourly` WHERE `kind` = 4 AND `detail_key` LIKE @prefix AND `hour_utc` >= @since GROUP BY `char_id` ORDER BY SUM(`units`) DESC LIMIT 500",
+                $"FROM `pyreal_ledger_hourly` WHERE `kind` = {KSold} AND `source` = '{VendorSell}' AND `detail_key` LIKE @prefix AND `hour_utc` >= @since GROUP BY `char_id` ORDER BY SUM(`units`) DESC LIMIT 500",
                 c => { P(c, "@since", since); P(c, "@prefix", wcid + ":%"); },
                 r => new ItemSellerRow { CharId = U(r, 0), CharName = S(r, 1), AccountId = U(r, 2), Units = L(r, 3), Payout = L(r, 4), Vendors = S(r, 5), FirstHourUtc = D(r, 6), LastHourUtc = D(r, 7) });
 

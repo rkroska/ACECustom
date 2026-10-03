@@ -335,7 +335,7 @@ namespace ACE.Server.WorldObjects.Managers
         public float ExecuteEmote(PropertiesEmote emoteSet, PropertiesEmoteAction emote, WorldObject targetObject = null)
         {
             // pyreal ledger: items given or taken and bank stats changed by this emote are labeled with the emoter
-            using var ledgerScope = PyrealLedger.Begin(PyrealLedger.SrcEmote, WorldObject.WeenieClassId.ToString(), WorldObject.Name);
+            using var ledgerScope = PyrealLedger.BeginFor(PyrealLedger.SrcEmote, WorldObject);
 
             var player = targetObject as Player;
             var creature = WorldObject as Creature;

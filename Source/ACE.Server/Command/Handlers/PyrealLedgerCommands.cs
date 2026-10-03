@@ -84,6 +84,43 @@ namespace ACE.Server.Command.Handlers
             });
         }
 
+        [CommandHandler("pyrealledger", AccessLevel.Admin, CommandHandlerFlag.None, 0,
+            "Pyreal ledger switch: shows whether it is recording, or turns it off without a restart.",
+            "@pyrealledger       - is the ledger recording?\n" +
+            "@pyrealledger off   - stop recording now. It stays off until the next server start; to keep it off after a restart also run @modifybool pyreal_ledger false")]
+        public static void HandlePyrealLedger(Session session, params string[] parameters)
+        {
+            if (parameters.Length == 0 || parameters[0].Equals("status", StringComparison.OrdinalIgnoreCase))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, PyrealLedger.IsInitialized
+                    ? $"The pyreal ledger is recording (since {PyrealLedger.LedgerStartUtc:yyyy-MM-dd HH:mm} UTC)."
+                    : "The pyreal ledger is not recording.");
+                return;
+            }
+
+            if (!parameters[0].Equals("off", StringComparison.OrdinalIgnoreCase))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: @pyrealledger | @pyrealledger off");
+                return;
+            }
+
+            // the final flush writes to the database, so keep it off the world thread
+            Task.Run(() =>
+            {
+                try
+                {
+                    var stopped = PyrealLedger.StopLive();
+                    CommandHandlerHelper.WriteOutputInfo(session, stopped
+                        ? "[OK] The pyreal ledger is off. It starts again at the next server start unless you also run @modifybool pyreal_ledger false."
+                        : "The pyreal ledger was already off.");
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[PyrealLedger] @pyrealledger off failed: {ex}");
+                }
+            });
+        }
+
         private static string SummaryReport(int days)
         {
             var sb = new StringBuilder();
