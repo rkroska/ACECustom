@@ -330,6 +330,10 @@ namespace ACE.Server.WorldObjects.Managers
                         entry.AugmentationLevelWhenCast = player.EffectiveItemAugCount;
                     }                    
                 }
+                // owner 2026-10-04: a void DoT's bonus on a T11+ monster ramps on the caster's VOID augs (Creature_DebuffCompression).
+                // T11+ monster targets only - the stamp also drives stacking (AddEnchantmentResult), so retail / PvP keep retail stacking
+                if (spell.School == MagicSchool.VoidMagic && spell.IsHarmful && WorldObject is Creature zcTarget && zcTarget.ZcDebuffCompressed)
+                    entry.AugmentationLevelWhenCast = player.EffectiveVoidAugCount;
                 if (spell.School == MagicSchool.LifeMagic)
                 {
                     if (spell.IsBeneficial && spell.IsSelfTargeted) //buffs
@@ -406,6 +410,9 @@ namespace ACE.Server.WorldObjects.Managers
                     entry.StatModValue = caster.CalculateDotEnchantment_StatModValue(spell, WorldObject, weapon, entry.StatModValue);
                 }
                 //Console.WriteLine($"enchantment_statModVal: {entry.StatModValue}");
+
+                // owner 2026-10-04: DoTs on their own (faster) ticker when dot_tick_seconds < 5
+                (WorldObject as Creature)?.EnsureDotTicker();
             }
 
             // handle equipment sets
@@ -1700,7 +1707,13 @@ namespace ACE.Server.WorldObjects.Managers
         {
             var topLayerEnchantments = WorldObject.Biota.PropertiesEnchantmentRegistry.GetEnchantmentsTopLayer(WorldObject.BiotaDatabaseLock, SpellSet.SetSpells);
 
-            HeartBeat_DamageOverTime(topLayerEnchantments);
+            // a T11+ monster on the DoT ticker (dot_tick_seconds < 5) takes its damage ticks there; heals over time stay here.
+            // Starting it from here covers DoTs that never went through BuildEntry (loaded, refreshed, setting changed).
+            var creature = WorldObject as Creature;
+            var onTicker = creature != null && creature.UsesDotTicker;
+            HeartBeat_DamageOverTime(topLayerEnchantments, includeDamage: !onTicker);
+            if (onTicker && Creature.HasDamageDot(topLayerEnchantments))
+                creature.EnsureDotTicker();
 
             var expired = WorldObject.Biota.PropertiesEnchantmentRegistry.HeartBeatEnchantmentsAndReturnExpired(heartbeatInterval, WorldObject.BiotaDatabaseLock);
 
@@ -1712,7 +1725,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// Applies damage from DoTs every ~5 seconds
         /// </summary>
         /// <param name="enchantments">A list of active enchantments at the top layers</param>
-        public void HeartBeat_DamageOverTime(List<PropertiesEnchantmentRegistry> enchantments)
+        public void HeartBeat_DamageOverTime(List<PropertiesEnchantmentRegistry> enchantments, bool includeDamage = true, bool includeHeals = true, float tickScale = 1f)
         {
             var dots = new List<PropertiesEnchantmentRegistry>();
             var netherDots = new List<PropertiesEnchantmentRegistry>();
@@ -1737,17 +1750,17 @@ namespace ACE.Server.WorldObjects.Managers
             }
 
             // apply damage over time (DoTs)
-            if (dots.Count > 0)
-                ApplyDamageTick(dots, DamageType.Undef);
+            if (includeDamage && dots.Count > 0)
+                ApplyDamageTick(dots, DamageType.Undef, false, tickScale);
 
-            if (netherDots.Count > 0)
-                ApplyDamageTick(netherDots, DamageType.Nether);
+            if (includeDamage && netherDots.Count > 0)
+                ApplyDamageTick(netherDots, DamageType.Nether, false, tickScale);
 
-            if (aetheriaDots.Count > 0)
-                ApplyDamageTick(aetheriaDots, DamageType.Undef, true);
+            if (includeDamage && aetheriaDots.Count > 0)
+                ApplyDamageTick(aetheriaDots, DamageType.Undef, true, tickScale);
 
             // apply healing over time (HoTs)
-            if (heals.Count > 0)
+            if (includeHeals && heals.Count > 0)
                 ApplyHealingTick(heals);
         }
 
@@ -1783,7 +1796,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// Applies 1 tick of damage from a DoT spell
         /// </summary>
         /// <param name="enchantments">The damage over time (DoT) spells</param>
-        public void ApplyDamageTick(List<PropertiesEnchantmentRegistry> enchantments, DamageType damageType, bool aetheria = false)
+        public void ApplyDamageTick(List<PropertiesEnchantmentRegistry> enchantments, DamageType damageType, bool aetheria = false, float tickScale = 1f)
         {
             var creature = WorldObject as Creature;
             if (creature == null || creature.IsDead) return;
@@ -1803,7 +1816,7 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 //var totalAmount = enchantment.StatModValue;
                 //var totalTicks = GetNumTicks(enchantment);
-                var tickAmount = enchantment.StatModValue;
+                var tickAmount = enchantment.StatModValue * tickScale;   // tickScale < 1 on the faster DoT ticker (dot_tick_seconds)
                 var traceBase = tickAmount;
 
                 // run tick amount through damage calculation functions?
@@ -1828,7 +1841,10 @@ namespace ACE.Server.WorldObjects.Managers
 
                 // Spell Armor (owner 2026-10-04): a player's DoT on a T11+ monster (Creature_SpellArmor.cs). The tick cannot tell a
                 // proc'd DoT from a cast one, so both are cut.
-                resistanceMod *= creature.GetZcSpellArmorMod(damager, false);
+                // NETHER DoTs (owner 2026-10-04): a PLAYER's DoT on a T11+ monster - DOT ARMOR replaces Spell Armor here and the
+                // Damage Resist / DoT Resist / nether resist ratings below (together they cut the tick to ~0.01 pct)
+                var zcDotTick = creature.ZcDebuffCompressed && damager is Player && targetPlayer == null && !(creature is CombatPet);
+                resistanceMod *= zcDotTick ? creature.GetZcDotArmorMod((uint)enchantment.SpellId) : creature.GetZcSpellArmorMod(damager, false);
 
                 var sourcePlayer = damager as Player;
 
@@ -1871,6 +1887,13 @@ namespace ACE.Server.WorldObjects.Managers
                 //Console.WriteLine("DR: " + Creature.ModToRating(damageRatingMod));
                 //Console.WriteLine("DRR: " + Creature.NegativeModToRating(damageResistRatingMod));
                 //Console.WriteLine("NRR: " + Creature.NegativeModToRating(netherResistRatingMod));
+
+                if (zcDotTick)
+                {
+                    damageResistRatingMod = 1.0f;
+                    dotResistRatingMod = 1.0f;
+                    netherResistRatingMod = 1.0f;
+                }
 
                 tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod * netherResistRatingMod;
 

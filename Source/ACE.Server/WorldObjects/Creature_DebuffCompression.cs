@@ -29,6 +29,36 @@ namespace ACE.Server.WorldObjects
     /// </summary>
     partial class Creature
     {
+        /// <summary>DOT ARMOR x DOT DAMAGE MULT (owner 2026-10-04): x a PLAYER's DoT tick on this T11+ monster, 66.67 / (66.67 +
+        /// dot_armor) x dot_damage_mult. Replaces
+        /// Spell Armor + Damage Resist + DoT Resist + nether resist rating for that tick. 1.0 when unset / not a gated monster.
+        /// Corruption and Destructive Curse ticks also take their own dot_mult_corruption / dot_mult_destructive (owner 2026-10-04
+        /// night: Corrosion is the main DoT, the other two ~10 pct of it).</summary>
+        public float GetZcDotArmorMod(uint spellId = 0)
+        {
+            if (!ZcDebuffCompressed) return 1.0f;
+            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this);
+            if (zp == null) return 1.0f;
+            var mod = 1.0f;
+            if (zp.Has(ZoneStat.DotArmor))
+            {
+                var level = (float)zp.Get(ZoneStat.DotArmor);
+                if (level > 0) mod *= SkillFormula.CalcArmorMod(level);
+            }
+            if (zp.Has(ZoneStat.DotDamageMult))
+                mod *= (float)Math.Max(0.0, zp.Get(ZoneStat.DotDamageMult));
+            var own = IsCorruptionSpell(spellId) ? ZoneStat.DotMultCorruption : IsDestructiveCurseSpell(spellId) ? ZoneStat.DotMultDestructive : null;
+            if (own != null && zp.Has(own))
+                mod *= (float)Math.Max(0.0, zp.Get(own));
+            return mod;
+        }
+
+        /// <summary>Corruption I-VII (5395-5401) + Incantation of Corruption (5402).</summary>
+        public static bool IsCorruptionSpell(uint spellId) => spellId >= 5395 && spellId <= 5402;
+
+        /// <summary>Destructive Curse VII (5337), Incantation (5338), I-VI (5339-5344).</summary>
+        public static bool IsDestructiveCurseSpell(uint spellId) => spellId >= 5337 && spellId <= 5344;
+
         /// <summary>Same gate as the retail-vuln compression it replaces: a non-player, non-pet monster at endgame variation
         /// zc_vuln_min_variation (11) and up, with zc_vuln_enabled and zc_combat_rules_enabled on.</summary>
         public bool ZcDebuffCompressed =>
@@ -50,10 +80,10 @@ namespace ACE.Server.WorldObjects
         /// the monster is not gated or carries no such debuff. The strongest entry of each kind counts (top layer per category,
         /// so a proc'd and a cast debuff of one kind never add up).
         /// </summary>
-        public (float Vuln, float Imperil) GetZcDebuffBonus(DamageType resistanceType, bool withImperil)
+        public (float Vuln, float Imperil, float Dot) GetZcDebuffBonus(DamageType resistanceType, bool withImperil)
         {
             if (!ZcDebuffCompressed)
-                return (0f, 0f);
+                return (0f, 0f, 0f);
 
             var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this);
             var tier = VariationManager.GetEffectiveEndgameVariation(this);
@@ -81,7 +111,18 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            return ((float)Math.Max(0.0, vuln), (float)Math.Max(0.0, imperil));
+            // NETHER DoTs (owner 2026-10-04): the strongest void DoT on the monster gives the vuln-like bonus, ramped on the
+            // caster's VOID augs (EnchantmentManager.Add stamps them); a lower level spell gets its level's share. Any school.
+            double dot = 0;
+            var dotFlags = ACE.Entity.Enum.EnchantmentTypeFlags.Int | ACE.Entity.Enum.EnchantmentTypeFlags.SingleStat | ACE.Entity.Enum.EnchantmentTypeFlags.Additive;
+            foreach (var e in EnchantmentManager.GetEnchantments_TopLayer(dotFlags, (uint)ACE.Entity.Enum.Properties.PropertyInt.NetherOverTime))
+            {
+                var share = SpellShare((uint)e.SpellId, s => s.Level / 8.0);
+                var b = Ramp(Get(ZoneStat.DotBonusFloor, DebuffDefaultFloor), Get(ZoneStat.DotBonusCap, DebuffDefaultCap), e.AugmentationLevelWhenCast ?? 0, entry, ramp) * share;
+                if (b > dot) dot = b;
+            }
+
+            return ((float)Math.Max(0.0, vuln), (float)Math.Max(0.0, imperil), (float)Math.Max(0.0, dot));
         }
 
         private static double Ramp(double floor, double cap, double lifeAugs, double entry, double ramp)

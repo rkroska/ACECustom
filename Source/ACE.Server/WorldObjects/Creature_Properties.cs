@@ -129,7 +129,8 @@ namespace ACE.Server.WorldObjects
             var zcVulnBonus = 0f;
             if (debuffCompressed)
             {
-                zcVulnBonus = GetZcDebuffBonus(damageType, false).Vuln;
+                var zcBonus = GetZcDebuffBonus(damageType, false);
+                zcVulnBonus = zcBonus.Vuln + zcBonus.Dot;   // the nether DoT bonus adds to the vuln's (owner 2026-10-04)
                 vulnMod = 1.0f;
             }
 

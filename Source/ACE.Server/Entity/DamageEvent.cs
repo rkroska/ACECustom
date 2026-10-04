@@ -631,9 +631,9 @@ namespace ACE.Server.Entity
                 // Hollow skips it (owner 10-04): hollow ignored Imperil before, and GetResistanceMod early-returns for it.
                 if (defender.ZcDebuffCompressed && !IgnoreMagicResist)
                 {
-                    var (zcVuln, zcImperil) = defender.GetZcDebuffBonus(DamageType, true);
+                    var (zcVuln, zcImperil, zcDot) = defender.GetZcDebuffBonus(DamageType, true);
                     if (zcImperil > 0f)
-                        ResistanceMod *= (1f + zcVuln + zcImperil) / (1f + zcVuln);
+                        ResistanceMod *= (1f + zcVuln + zcDot + zcImperil) / (1f + zcVuln + zcDot);
                 }
 
                 // Combat pets can optionally borrow the owner's player resistance pipeline.

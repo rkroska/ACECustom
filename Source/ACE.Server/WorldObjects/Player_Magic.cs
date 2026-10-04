@@ -680,7 +680,16 @@ namespace ACE.Server.WorldObjects
                 magicSkill = playerSkill.InitLevel + playerSkill.Ranks;
             }
 
-            var maxRange = Math.Min(spell.BaseRangeConstant + magicSkill * spell.BaseRangeMod, MaxRadarRange_Outdoors);
+            var baseRange = spell.BaseRangeConstant + magicSkill * spell.BaseRangeMod;
+            // owner 2026-10-04: a longer cast range for EVERY void curse cast on another target - the DoTs (Corrosion / Corruption /
+            // Destructive Curse), Festering and Weakening Curse and their lower levels (not the nether projectiles):
+            // x void_dot_range_mult, at least void_curse_min_range metres (1 / 0 = retail), still radar-capped.
+            // MONSTER targets at every tier (owner 2026-10-04 night: "retail can get the range increase"); players and pets
+            // (PvP) keep the retail range
+            if (spell.School == MagicSchool.VoidMagic && spell.IsHarmful && !spell.IsSelfTargeted && spell.MetaSpellType == SpellType.Enchantment
+                && target is Creature curseTarget && !(curseTarget is Player) && !(curseTarget is CombatPet))
+                baseRange = Math.Max(baseRange * (float)Math.Max(1.0, ServerConfig.void_dot_range_mult.Value), (float)ServerConfig.void_curse_min_range.Value);
+            var maxRange = Math.Min(baseRange, MaxRadarRange_Outdoors);
 
             if (distanceTo > maxRange)
             {
@@ -2123,6 +2132,7 @@ namespace ACE.Server.WorldObjects
                     }
 
                     long baseDamage = 0;
+                    long ringCritAugs = 0;   // the war / void aug term the ring used - the ZC aug crit term (hand casts)
 
                     if (isLifeProjectile)
                     {
@@ -2186,6 +2196,7 @@ namespace ACE.Server.WorldObjects
                         }
                         if (ringAugs > 0)
                             baseDamage += ringAugs;
+                        ringCritAugs = ringAugs;
                     }
 
                     // Elemental modifier (wand element vs target).
@@ -2243,13 +2254,24 @@ namespace ACE.Server.WorldObjects
                     // composed base (max roll or ring B, plus the aug term, post-variance/cap) -
                     // one formula for hand-casts and ring procs alike, replacing the 0.5f
                     // proc-only re-derive. mod = CritX - 1 (default 1.0 = retail's 2x).
+                    // Zone Control spell crits mirror melee (owner 2026-10-04, mirrors SpellProjectile): the school's aug
+                    // crit term here, the separate Crit Damage multiply below. See Creature.ZcSpellCritMirrorsMelee.
+                    var zcCritMirror = Creature.ZcSpellCritMirrorsMelee(this, weapon, creature, fromProc);
                     if (criticalHit && !isLifeProjectile && !isPvP)
+                    {
+                        var ringCritDamageMod = GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
+                        if (zcCritMirror)
+                        {
+                            ringCritDamageMod = Math.Max(ringCritDamageMod,
+                                ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetSpellCritDamageBonus(weapon, this, ringCritAugs));
+                            ringCritDamageMod += Creature.ZcSpellAugCritBonus(ringCritAugs);
+                        }
+
                         critDamageBonus = endgameCrit
-                            ? (baseDamage + skillBonus)
-                                * GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature)
+                            ? (baseDamage + skillBonus) * ringCritDamageMod
                             // retail: half of MAX, and the skill bonus is NOT folded into the crit term
-                            : spell.MaxDamage * 0.5f
-                                * GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
+                            : spell.MaxDamage * 0.5f * ringCritDamageMod;
+                    }
 
                     var preModDamage = isLifeProjectile
                         ? lifeMagicDamage + critDamageBonus
@@ -2267,11 +2289,15 @@ namespace ACE.Server.WorldObjects
 
                         var damageResistRatingMod = creature.GetDamageResistRatingMod(CombatType.Magic);
 
+                        var critDamageOnTop = 1.0f;
                         if (criticalHit)
                         {
                             var critDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetCritDamageResistRating());
 
-                            damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
+                            if (zcCritMirror)
+                                critDamageOnTop = critDamageRatingMod;   // melee: Crit Damage multiplies on its own
+                            else
+                                damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
                             damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, critDamageResistRatingMod);
                         }
 
@@ -2283,7 +2309,7 @@ namespace ACE.Server.WorldObjects
                             damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, pkDamageResistRatingMod);
                         }
 
-                        finalDamage *= damageRatingMod * damageResistRatingMod;
+                        finalDamage *= damageRatingMod * damageResistRatingMod * critDamageOnTop;
                     }
 
                     // Apply enrage damage reduction for the defender.

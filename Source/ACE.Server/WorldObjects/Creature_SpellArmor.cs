@@ -1,3 +1,4 @@
+using ACE.Server.Managers;
 using ACE.Server.Managers.ZoneScaling;
 
 namespace ACE.Server.WorldObjects
@@ -27,5 +28,32 @@ namespace ACE.Server.WorldObjects
             var level = (float)zp.Get(ZoneStat.SpellArmor);
             return level > 0 ? SkillFormula.CalcArmorMod(level) : 1.0f;
         }
+
+        /// <summary>
+        /// ZONE CONTROL SPELL CRITS MIRROR MELEE (owner 2026-10-04, T11_Release_Readiness_2026-10-04.md 3.2). The monster's
+        /// crit_damage_resist_rating rows were solved so a MELEE crit lands at 3x, and melee builds its crit two ways spells
+        /// did not: (1) Crit Damage Rating multiplies the crit ON ITS OWN (DamageEvent: DamageBeforeMitigation *= crit DR mod)
+        /// where a spell folded it additively into Damage Rating (x1.58 instead of x15.24 at T25), and (2) every melee /
+        /// missile aug adds melee_missile_aug_crit_modifier (0.002) to the crit multiplier, which spells never had, and (3) the
+        /// crit mod is max(Crushing, the weapon-scaling crit floor kc x 0.002 x augs), whose floor was 0 for a wand
+        /// (WeaponScalingCombat.GetSpellCritDamageBonus, added the same day). The same
+        /// CDR then divided a ~4-10x spell crit by melee's ~13-533x stack: spell crits landed at 0.98x (T11) .. 0.06x (T25).
+        /// True when both melee rules apply to this spell crit: a player HAND-casting with Zone Control gear at a Zone Control
+        /// monster. Retail (base world, retail gear), PvP, pets, monster casts and Cast on Strike procs (their own tuning, as
+        /// with Spell Armor) keep the stock spell crit.
+        /// </summary>
+        public static bool ZcSpellCritMirrorsMelee(Creature caster, WorldObject weapon, Creature target, bool fromProc)
+        {
+            if (fromProc || !(caster is Player) || target == null || target is Player || target is CombatPet)
+                return false;
+
+            return ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon)
+                && ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToMonster(target);
+        }
+
+        /// <summary>The melee aug crit term for a war / void spell: school aug count x melee_missile_aug_crit_modifier
+        /// (the same knob melee and missile read, so the two schools cannot drift). Added to the crit damage mod.</summary>
+        public static float ZcSpellAugCritBonus(long schoolAugs)
+            => schoolAugs > 0 ? schoolAugs * (float)ServerConfig.melee_missile_aug_crit_modifier.Value : 0f;
     }
 }

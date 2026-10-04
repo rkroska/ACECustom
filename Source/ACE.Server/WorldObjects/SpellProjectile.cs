@@ -614,6 +614,11 @@ namespace ACE.Server.WorldObjects
             // above, so computing the gate first was wasted work on every resist.
             var endgameCrit = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(sourceCreature, weapon);
 
+            // Zone Control spell crits mirror melee (owner 2026-10-04): the melee aug crit term below, the separate Crit
+            // Damage multiply in DamageTarget. See Creature.ZcSpellCritMirrorsMelee.
+            var zcCritMirror = Creature.ZcSpellCritMirrorsMelee(sourceCreature, weapon, target, FromProc);
+            long critSchoolAugs = 0;
+
             CreatureSkill attackSkill = null;
             if (sourceCreature != null)
                 attackSkill = sourceCreature.GetCreatureSkill(Spell.School);
@@ -872,6 +877,7 @@ namespace ACE.Server.WorldObjects
 
                     if (augs > 0)
                         baseDamage += augs;
+                    critSchoolAugs = augs;
                     if (tr != null) tr.Augs = augs;
                 }
 
@@ -946,9 +952,20 @@ namespace ACE.Server.WorldObjects
                 // Blow band bounds it. This replaces the per-site 0.5f re-derives that quietly
                 // halved crush on every magic path. PvP keeps its retail bonus from above.
                 if (criticalHit && !isPVP)
+                {
+                    // melee's crit multiplier (owner 2026-10-04): melee CritX = 1 + max(Crushing, the aug-pegged crit floor) +
+                    // melee augs x 0.002; a Zone Control hand-cast crit now takes the floor and the aug term with its school's augs
+                    if (zcCritMirror)
+                    {
+                        weaponCritDamageMod = Math.Max(weaponCritDamageMod,
+                            ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetSpellCritDamageBonus(weapon, sourceCreature, critSchoolAugs));
+                        weaponCritDamageMod += Creature.ZcSpellAugCritBonus(critSchoolAugs);
+                    }
+
                     critDamageBonus = endgameCrit
                         ? (float)((baseDamage + skillBonus) * weaponCritDamageMod)
                         : Spell.MaxDamage * 0.5f * weaponCritDamageMod;   // retail: half of MAX, skillBonus NOT doubled
+                }
 
                 finalDamage = baseDamage + critDamageBonus + skillBonus;
 
@@ -1367,12 +1384,19 @@ namespace ACE.Server.WorldObjects
 
                 damageResistRatingMod = target.GetDamageResistRatingMod(CombatType.Magic);
 
+                // Zone Control spell crits mirror melee (owner 2026-10-04): Crit Damage Rating multiplies the crit on its
+                // own, exactly as DamageEvent does (DamageBeforeMitigation *= crit DR mod), instead of folding into
+                // Damage Rating. Stock (retail, PvP, monster casts) keeps the additive combine.
+                var critDamageOnTop = 1.0f;
                 if (critical)
                 {
                     critDamageRatingMod = Creature.GetPositiveRatingMod(sourceCreature?.GetCritDamageRating() ?? 0);
                     critDamageResistRatingMod = Creature.GetNegativeRatingMod(target.GetCritDamageResistRating());
 
-                    damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
+                    if (Creature.ZcSpellCritMirrorsMelee(sourceCreature, ProjectileLauncher, target, FromProc))
+                        critDamageOnTop = critDamageRatingMod;
+                    else
+                        damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
                     damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, critDamageResistRatingMod);
                 }
 
@@ -1388,7 +1412,7 @@ namespace ACE.Server.WorldObjects
                 // Rating chain applies unconditionally (2026-08-02, owner ruling): authored spell_damage
                 // is a PRE-mitigation base replacement, so Damage Rating and the defender's Damage Resist
                 // Rating hit spells exactly like they hit melee. (Old WYSIWYG skip removed.)
-                damage *= damageRatingMod * damageResistRatingMod;
+                damage *= damageRatingMod * damageResistRatingMod * critDamageOnTop;
 
                 // Apply enrage damage reduction for the defender
                 if (target.IsEnraged)

@@ -105,6 +105,24 @@ namespace ACE.Server.Managers.ZoneScaling
         public const string ImperilBonusCap = "imperil_bonus_cap";
         public const string DebuffEntryLifeAugs = "debuff_entry_life_augs";
         public const string DebuffRampAugs = "debuff_ramp_augs";
+        // NETHER DoTs (owner 2026-10-04, "make the dots strong, but not OP"; void + DoTs above war + vuln is intended): on a T11+
+        // monster a PLAYER's void DoT (Corrosion / Corruption / Destructive Curse) stops cutting Damage Resist Rating (-50 cap, which
+        // was x1.83 on a T11 Regular and nothing past T15) and gives a capped bonus like the vuln, ramped on the caster's VOID augs
+        // (same entry / ramp as above): x (1 + vuln + dot [+ imperil]). Unset = floor 0.25, cap 0.50.
+        public const string DotBonusFloor = "dot_bonus_floor";
+        public const string DotBonusCap = "dot_bonus_cap";
+        // DOT ARMOR: a player's DoT TICK on the monster x 66.67 / (66.67 + level), REPLACING Spell Armor, Damage Resist Rating,
+        // DoT Resist Rating and nether resist rating for that tick (they cut it to ~0.01 pct). Unset / 0 = full tick.
+        public const string DotArmor = "dot_armor";
+        // DOT DAMAGE MULT: x a PLAYER's DoT tick on the monster, any positive value (dot_armor can only cut). Owner 2026-10-04:
+        // "dot ticks worth 1 streak-ish, each tick needs to feel like real damage" - solved per tier x rank against the nether
+        // streak (one Corrosion tick at dot_tick_seconds = a set share of one streak hit). Unset = x1.
+        public const string DotDamageMult = "dot_damage_mult";
+        // DOT MULT per secondary DoT (owner 2026-10-04 night: "Corrosive should be the main damage force. Corruption and Destructive
+        // should be much smaller, lets say 10% of Corrosive"): x that DoT's tick ON TOP of dot_damage_mult - Corruption (I-VII +
+        // Incantation) and Destructive Curse (I-VII + Incantation). Solved per tier x rank against a Corrosion tick. Unset = x1.
+        public const string DotMultCorruption = "dot_mult_corruption";
+        public const string DotMultDestructive = "dot_mult_destructive";
         // owner 2026-10-03: 1 = the monster takes NO damage from Rocky Shrapnel (6152) / Ring of Unspeakable Agony (2673).
         // Zone / Tier Default / rank / wcid like any stat; PropertyBool.ZcImmuneShrapnelAgony (50059) does the same per weenie.
         public const string ImmuneShrapnelAgony = "immune_shrapnel_agony";
@@ -509,6 +527,7 @@ namespace ACE.Server.Managers.ZoneScaling
             MonsterLevel, MonsterCreatureType, AttackSkill, MagicSkill, MeleeDefense, MissileDefense, MagicDefense, DamageRating,
             DamageResistRating, ArmorLevel, SpellArmor, VulnCap, ImmuneShrapnelAgony, PercentHpBase,
             VulnBonusFloor, VulnBonusCap, ImperilBonusFloor, ImperilBonusCap, DebuffEntryLifeAugs, DebuffRampAugs,
+            DotBonusFloor, DotBonusCap, DotArmor, DotDamageMult, DotMultCorruption, DotMultDestructive,
             CritRating, CritDamageRating, CritResistRating, CritDamageResistRating,
             AttackDamage, AttackVariance, AttackDamageType, SpellDamage, SpellVariance, SpellDamageMult,
             ReliefAugStart, ReliefAugMax, ReliefAugCap, ReliefAugBend,
