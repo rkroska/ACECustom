@@ -25,8 +25,8 @@ namespace ACE.Server.WorldObjects
             if (zp == null || !zp.Has(ZoneStat.SpellArmor))
                 return 1.0f;
 
-            var level = (float)zp.Get(ZoneStat.SpellArmor);
-            return level > 0 ? SkillFormula.CalcArmorMod(level) : 1.0f;
+            var level = zp.Get(ZoneStat.SpellArmor);
+            return double.IsFinite(level) && level > 0 ? SkillFormula.CalcArmorMod((float)level) : 1.0f;   // non-finite = unset
         }
 
         /// <summary>
@@ -51,7 +51,7 @@ namespace ACE.Server.WorldObjects
                 && ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToMonster(target);
         }
 
-        /// <summary>The melee aug crit term for a war / void spell: school aug count x melee_missile_aug_crit_modifier
+        /// <summary>The melee aug crit term for a war / void / life spell: school aug count x melee_missile_aug_crit_modifier
         /// (the same knob melee and missile read, so the two schools cannot drift). Added to the crit damage mod.</summary>
         public static float ZcSpellAugCritBonus(long schoolAugs)
             => schoolAugs > 0 ? schoolAugs * (float)ServerConfig.melee_missile_aug_crit_modifier.Value : 0f;

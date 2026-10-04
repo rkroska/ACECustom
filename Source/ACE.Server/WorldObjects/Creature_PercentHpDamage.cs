@@ -321,8 +321,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// v11+ attack-skill floor: the minimum effective attack skill a monster uses against a PLAYER
         /// defender, so endgame mobs can land hits against very high Effective Melee/Missile Defense.
-        /// Prestige-only: variation >= zc_pcthp_min_variation uses the zc_min_attack_skill config,
-        /// while prestige_systems_enabled is on. (The zone min_attack_skill stat was REMOVED 2026-08-02
+        /// Variation >= zc_pcthp_min_variation uses the zc_min_attack_skill config, while zc_combat_rules_enabled is on. (The zone min_attack_skill stat was REMOVED 2026-08-02
         /// — redundant with attack_skill's absolute replace; zones tune accuracy via attack_skill.)
         /// Returns 0 when it doesn't apply, in which case callers keep the monster's normal attack skill.
         /// </summary>
@@ -331,7 +330,7 @@ namespace ACE.Server.WorldObjects
             if (attacker == null || defender == null)
                 return 0;
 
-            // Variation-triggered path — fully off with the prestige master switch.
+            // Variation-triggered path - fully off with zc_combat_rules_enabled.
             if (!ServerConfig.zc_combat_rules_enabled.Value)
                 return 0;
 

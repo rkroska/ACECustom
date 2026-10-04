@@ -343,6 +343,23 @@ namespace ACE.Server.Managers.ZoneScaling
         public const string LootGradeFloor = "loot_grade_floor";
         public const string GradeSOdds = "grade_s_odds";
         public const string SpecialOdds = "special_odds";                  // denominator (default 750000). Per rank via the Ranks rows (2026-09-02, owner D4: absolute per rank - special_boss_mult / special_leader_mult divisors RETIRED)
+        // Salvage Bags (owner 2026-10-02 as Gear Essences, renamed 2026-10-04): ONE roll per KILL inside a zone, 1-in-odds like
+        // special_odds and per rank through the Ranks rows. Unset = bags never drop. On a hit the weights pick which bag (the four
+        // core weights default to 1, so they are equally likely until tuned). Read by Creature_Death -> GearEssences.TryRollDrop.
+        public const string BagOdds = "bag_odds";
+        public const string BagWeightForgetfulness = "bag_weight_forgetfulness";
+        public const string BagWeightMemory = "bag_weight_memory";
+        public const string BagWeightSecondThoughts = "bag_weight_second_thoughts";
+        public const string BagWeightTempering = "bag_weight_tempering";
+        // The extras default to 0 (they never drop until a weight is set).
+        public const string BagWeightFortune = "bag_weight_fortune";
+        public const string BagWeightRebirth = "bag_weight_rebirth";
+        public const string BagWeightLocking = "bag_weight_locking";
+        public const string BagWeightVengeance = "bag_weight_vengeance";
+        public const string BagWeightMadness = "bag_weight_madness";
+        public const string BagWeightTransmutation = "bag_weight_transmutation";
+        public const string BagWeightEmptiness = "bag_weight_emptiness";
+        public const string BagWeightExchange = "bag_weight_exchange";
         // Special behaviour knobs (read by the combat side)
         public const string BattleMendThreshold = "battlemend_threshold";  // HP fraction below which Battle Mending fires (default .25)
         public const string BattleMendCooldown = "battlemend_cooldown";    // seconds (default 60)
@@ -637,6 +654,10 @@ namespace ACE.Server.Managers.ZoneScaling
             AugCurves, AugProtStart, AugProtMax, AugProtCap, AugProtBend, AugArmorStart, AugArmorMax, AugArmorCap, AugArmorBend,
             // Spell True Damage (owner 2026-10-02) - APPEND-ONLY
             TrueDamageSpell, TrueDamageSpellVariance,
+            // Salvage Bags (2026-10-02, renamed 2026-10-04) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            BagOdds, BagWeightForgetfulness, BagWeightMemory, BagWeightSecondThoughts, BagWeightTempering,
+            BagWeightFortune, BagWeightRebirth, BagWeightLocking, BagWeightVengeance,
+            BagWeightMadness, BagWeightTransmutation, BagWeightEmptiness, BagWeightExchange,
         };
 
         /// <summary>

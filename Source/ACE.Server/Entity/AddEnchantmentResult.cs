@@ -52,7 +52,7 @@ namespace ACE.Server.Entity
 
         public ushort NextLayerId => (ushort)(TopLayerId + 1);
 
-        public void BuildStack(List<PropertiesEnchantmentRegistry> entries, Spell spell, WorldObject caster, bool equip = false)
+        public void BuildStack(List<PropertiesEnchantmentRegistry> entries, Spell spell, WorldObject caster, bool equip = false, WorldObject target = null)
         {
             Surpass = [];
             Refresh = [];
@@ -82,7 +82,12 @@ namespace ACE.Server.Entity
                     default:
                         break;
                 }
-                
+            }
+            else if (EnchantmentManager.ProcDebuffAugLevel(spell, caster, target) is long procAugs)
+            {
+                // an item caster's harmful Life spell on a T11+ monster carries its wielder's life augs (EnchantmentManager.BuildEntry
+                // stamps the same value), so the comparison below sees the same level as the entry it would refresh
+                augmentLevel = procAugs;
             }
 
             var powerLevel = spell.Power;

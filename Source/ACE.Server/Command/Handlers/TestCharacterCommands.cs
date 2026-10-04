@@ -844,10 +844,9 @@ namespace ACE.Server.Command.Handlers
             var itemCur = player.LuminanceAugmentItemCount ?? 0;
             if (itemTarget > 0 && itemCur != itemTarget)
             {
-                var cur = player.LuminanceAugmentItemCount ?? 0;
                 player.LuminanceAugmentItemCount = (uint)itemTarget;
                 player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.LumAugItemCount, itemTarget));
-                raised.Add($"Item Augs {cur:N0} -> {itemTarget:N0}");
+                raised.Add($"Item Augs {itemCur:N0} -> {itemTarget:N0}");
             }
             Raise(PropertyInt64.TriuneWeaveCount, row.MinWieldTriune, "Triune Weave");
             Raise(PropertyInt64.BattlemagesWrathCharmCount, row.MinWieldSkillCharm, "Battlemage's Wrath");

@@ -54,9 +54,6 @@ namespace ACE.Server.Managers
         private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod()!.DeclaringType);
 
         /// <summary>
-        // Retrieve the property info by key.
-        /// </summary>
-        /// <summary>
         /// Old key name -> its current name (owner 2026-10-01: endgame settings named after a tier became Zone Control
         /// "zc_" keys). An old name still works in /modify* and a row stored under it still loads - into the new key.
         /// </summary>
@@ -82,6 +79,7 @@ namespace ACE.Server.Managers
         /// <summary>The current name of a key (an old renamed name maps to its new one).</summary>
         private static string CanonicalKey(string key) => key != null && RenamedKeys.TryGetValue(key, out var renamed) ? renamed : key;
 
+        /// <summary>Retrieve the property info by key (an old renamed key resolves to its current name).</summary>
         private static PropertyInfo? GetPropertyInfo<T>(string key) where T : notnull
         {
             key = CanonicalKey(key);
@@ -108,6 +106,10 @@ namespace ACE.Server.Managers
         /// </summary>
         public static bool SetValue<T>(string key, T newValue, bool markModified = true) where T : notnull
         {
+            // a double setting is never NaN / Infinity: every reader multiplies or compares with it, and NaN slips past
+            // Math.Max / Math.Min / range checks (review 2026-10-04: a NaN aug-curve cap made players take no damage)
+            if (newValue is double d && !double.IsFinite(d))
+                return false;
             key = CanonicalKey(key);   // a change typed under an old name is stored under the new one
             var propInfo = GetPropertyInfo<T>(key);
             if (propInfo == null)
@@ -476,7 +478,6 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> zc_armor_zone_lock { get; private set; } = new(false, "if TRUE, worn ZC-stamped gear (ZcTier 11+) only contributes its Modifier LINES - the 50200-block bonuses and the ZC portion of the Gear* rating sums - while the PLAYER wearing it stands inside an enabled Zone Control area; outside, the gear falls back to its base stats (AL/protections stay). FALSE (default) = full power everywhere. Applies live. Use /modifybool zc_armor_zone_lock <true/false>. GM Tools > Shard Combat 'Armor Zone Lock'.");
         public static ConfigProperty<bool> zc_pertier_authoring { get; private set; } = new(false, "AUTHORING-UX mode shared by every dev's ZoneControl plugin (it changes where the Modifiers tabs WRITE, not how combat resolves). FALSE (default) = Anchored banding: T11 and T25 anchor boxes on the v11 Default, tiers 12-24 derived on the line. TRUE = Per-Tier: every tier's boxes edit that tier's own VariationDefault directly; an authored per-tier value shadows the anchor lerp for that stat (the Merge shadow rule). Flip via /modifybool zc_pertier_authoring <true/false> or the Modifiers tab switch.");
         public static ConfigProperty<bool> audit_short_numbers { get; private set; } = new(true, "if TRUE (default), large AMOUNTS in audit lines (in-game Audit channel + its Discord copy: /grantxp, /grantluminance) print short - 5B, 1.2M, 250K (K / M / B / T / Q). FALSE = full numbers with commas. Ids are never shortened (owner 2026-09-27). Applies live. Use /modifybool audit_short_numbers <true/false>. GM Tools > Shard Combat > Audit Log 'Short Numbers'.");
-        public static ConfigProperty<bool> present_bot_enabled { get; private set; } = new(false, "if TRUE, admins can run /presentbot: the server spam-uses Mine, Mine, Mine! presents on the admin's own character through the real use path (HandleActionUseItem) and reports uses vs actual prize rolls per 10 s. FALSE (default) = /presentbot refuses. A TEST-SHARD tool - leave it off on live. Use /modifybool present_bot_enabled <true/false>.");
         public static ConfigProperty<bool> zc_killxp_diag { get; private set; } = new(false, "if TRUE, every governed (Zone Control) monster kill writes a [KILLXP] line per rewarded player to the server log - the launch-day XP/luminance readout, since the client filters that chat. OFF by default; switch it on only while a shard is being tuned, never on a busy live shard. Use /modifybool zc_killxp_diag <true/false>.");
         public static ConfigProperty<bool> zc_proc_diag { get; private set; } = new(false, "if TRUE, every Zone Control Cast-on-Strike proc (arc and ring) writes a [ZCPROC] line with its damage terms to the server log. Bring-up diagnostic from 2026-08-27; OFF by default since 2026-09-04. Use /modifybool zc_proc_diag <true/false>.");
         public static ConfigProperty<bool> npc_hairstyle_fullrange { get; private set; } = new(false, "if TRUE, allows generated creatures to use full range of hairstyles. Retail only allowed first nine (0-8) out of 51");
@@ -893,9 +894,9 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> zc_relief_critdr_bend { get; private set; } = new(1.0, "shape of the Crit Damage Resist relief curve (see zc_relief_aug_bend).");
 
         // Zone Control monster vuln-defense system: compresses the vulnerability (Imperil) enchantment multiplier against variation>=zc_vuln_min_variation monsters so stacked vulns can't produce absurd damage. Only the vuln bonus is compressed; base damage, offensive augs, and weapon rending are untouched.
-        public static ConfigProperty<bool> zc_vuln_enabled { get; private set; } = new(true, "master switch for the Zone Control monster vuln-compression system. When on, vulnerability (Imperil) enchantment multipliers against variation>=zc_vuln_min_variation monsters are compressed via a diminishing curve + cap.");
+        public static ConfigProperty<bool> zc_vuln_enabled { get; private set; } = new(true, "master switch for the Zone Control monster vuln-compression system. When on, vulnerability (Imperil) enchantment multipliers against variation>=zc_vuln_min_variation monsters are compressed via a diminishing curve + cap. Together with zc_combat_rules_enabled it also gates the T11+ debuff compression (vuln / Imperil / void DoT bonuses), the DoT ticker, DoT Armor and the void-aug stamp on void DoTs.");
         public static ConfigProperty<long> zc_vuln_min_variation { get; private set; } = new(11, "minimum Location.Variation a monster must be spawned in for vuln compression to apply. Matches the v11 endgame convention.");
-        public static ConfigProperty<double> dot_tick_seconds { get; private set; } = new(5.0, "seconds between damage-over-time ticks (owner 2026-10-04). 5 = retail (the DoT ticks inside the 5 s heartbeat). Below 5, every T11+ Zone Control monster carrying a DoT gets its own ticker at this interval and each tick is scaled down to keep the same damage per second. Heals over time stay on the heartbeat. Players, pets and everything below T11 keep the retail heartbeat tick.");
+        public static ConfigProperty<double> dot_tick_seconds { get; private set; } = new(5.0, "seconds between damage-over-time ticks (owner 2026-10-04). 5 = retail (the DoT ticks inside the 5 s heartbeat). Below 5, every T11+ Zone Control monster carrying a DoT gets its own ticker at this interval and each tick is scaled down to keep the same damage per second. Heals over time stay on the heartbeat. Players, pets and everything below T11 keep the retail heartbeat tick. Never faster than 0.5 s. Needs zc_vuln_enabled and zc_combat_rules_enabled.");
         public static ConfigProperty<double> void_dot_range_mult { get; private set; } = new(1.0, "cast range multiplier for every void curse cast on a MONSTER, any tier (Corrosion / Corruption / Destructive Curse / Festering / Weakening and lower levels), owner 2026-10-04. 1 = retail. Still capped at radar range (75 m).");
         public static ConfigProperty<double> void_curse_min_range { get; private set; } = new(0.0, "minimum cast range in metres for every void curse cast on a MONSTER, any tier (owner 2026-10-04: Destructive Curse's base range is very short). 0 = retail. Still capped at radar range (75 m).");
         public static ConfigProperty<double> zc_vuln_effectiveness { get; private set; } = new(0.35, "fraction of the vuln BONUS that lands against endgame monsters. effectiveVuln = 1 + (rawVuln - 1) * this. 0.35 = vulns are 35% as strong. 1.0 = uncompressed (vanilla). 0.0 = vulns do nothing.");

@@ -342,7 +342,7 @@ namespace ACE.Server.Managers.WeaponScaling
             return CritFloor(weapon, count);
         }
 
-        /// <summary>The same aug-pegged crit floor for a Zone Control HAND-CAST war / void spell (owner 2026-10-04, "spell crits
+        /// <summary>The same aug-pegged crit floor for a Zone Control HAND-CAST war / void / life spell (owner 2026-10-04, "spell crits
         /// same as melee"): kc(wand quality) x melee_missile_aug_crit_modifier x min(the spell school's augs, tier cap). The
         /// caller (SpellProjectile / Player_Magic rings, gated by Creature.ZcSpellCritMirrorsMelee) composes it with Math.Max
         /// against the wand's Crushing exactly as GetWeaponCritDamageMod does for melee. Without it a claw's crit mod read

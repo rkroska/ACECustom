@@ -509,22 +509,22 @@ namespace ACE.Server.Command.Handlers
                             return;
                         }
                         if (args.Count < 3 || !uint.TryParse(args[1], out var dmWcid))
-                        { Msg($"Usage: damagemult <wcid> <factor {ZoneControlManager.DamageMultMin:0.0}-{ZoneControlManager.DamageMultMax:0}|clear> | damagemult list   (1.0 = unchanged)"); return; }
+                        { Msg(FormattableString.Invariant($"Usage: damagemult <wcid> <factor {ZoneControlManager.DamageMultMin:0.0}-{ZoneControlManager.DamageMultMax:0}|clear> | damagemult list   (1.0 = unchanged)")); return; }
                         var dmName = ACE.Database.DatabaseManager.World.GetCachedWeenie(dmWcid)?.GetName();
                         if (dmName == null) { Msg($"No weenie {dmWcid}."); return; }
                         double? dmValue = null;
                         if (!args[2].Equals("clear", StringComparison.OrdinalIgnoreCase))
                         {
                             if (!double.TryParse(args[2].TrimStart('x', 'X'), NumberStyles.Float, CultureInfo.InvariantCulture, out var dv)
-                                || dv < ZoneControlManager.DamageMultMin || dv > ZoneControlManager.DamageMultMax)
-                            { Msg($"factor must be {ZoneControlManager.DamageMultMin:0.0} to {ZoneControlManager.DamageMultMax:0} (1.0 = unchanged), or 'clear'."); return; }
+                                || !double.IsFinite(dv) || dv < ZoneControlManager.DamageMultMin || dv > ZoneControlManager.DamageMultMax)
+                            { Msg(FormattableString.Invariant($"factor must be {ZoneControlManager.DamageMultMin:0.0} to {ZoneControlManager.DamageMultMax:0} (1.0 = unchanged), or 'clear'.")); return; }
                             dmValue = dv;
                         }
                         var dmWas = ZoneControlManager.GetDamageMult(dmWcid);
                         ZoneControlManager.SetDamageMult(dmWcid, dmValue);
                         var dmNow = ZoneControlManager.GetDamageMult(dmWcid);
-                        Msg($"{dmName} ({dmWcid}) damage multiplier: x{dmWas.ToString("0.###", CultureInfo.InvariantCulture)} -> x{dmNow.ToString("0.###", CultureInfo.InvariantCulture)} - all its damage to players, every tier, every zone. Live at once.");
-                        PlayerManager.BroadcastToAuditChannel(session?.Player, $"damagemult {dmWcid} {dmName}: x{dmWas:0.###} -> x{dmNow:0.###}");
+                        Msg($"{dmName} ({dmWcid}) damage multiplier: x{dmWas.ToString("0.###", CultureInfo.InvariantCulture)} -> x{dmNow.ToString("0.###", CultureInfo.InvariantCulture)} - all its damage to players inside an enabled Zone Control zone, every tier. Live at once.");
+                        PlayerManager.BroadcastToAuditChannel(session?.Player, $"damagemult {dmWcid} {dmName}: x{dmWas.ToString("0.###", CultureInfo.InvariantCulture)} -> x{dmNow.ToString("0.###", CultureInfo.InvariantCulture)}");
                         return;
                     }
 
@@ -663,7 +663,7 @@ namespace ACE.Server.Command.Handlers
                         if (args.Count < 4 || !uint.TryParse(args[1], out var genWcid))
                         { Msg("Usage: genedit <wcid> delay|radius|stagger|init|max <value>"); return; }
                         var genField = args[2].ToLowerInvariant();
-                        if (!float.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var genVal) || genVal < 0)
+                        if (!float.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var genVal) || !float.IsFinite(genVal) || genVal < 0)
                         { Msg("Value must be a non-negative number."); return; }
                         if (ACE.Database.DatabaseManager.World.GetCachedWeenie(genWcid) == null)
                         { Msg($"No weenie {genWcid}."); return; }
@@ -922,15 +922,21 @@ namespace ACE.Server.Command.Handlers
                             if (args.Count < opIdx + 3
                                 || !int.TryParse(args[opIdx + 1], out var lineKey)
                                 || !ZoneModifiers.TryGet(lineKey, out var lineDef) || lineDef.SlotSpecial
-                                || !double.TryParse(args[opIdx + 2], NumberStyles.Float, CultureInfo.InvariantCulture, out var c11) || c11 < 0 || c11 > 1)
+                                || !TryFiniteNumber(args[opIdx + 2], out var c11) || c11 < 0 || c11 > 1)
                             { Msg("Usage: modifier <name> chance <catalog key> <t11 chance 0..1> [t25 chance 0..1]"); return; }
-                            SetStat(ZoneModifiers.LineChanceStat(lineKey), c11);
-                            if (args.Count > opIdx + 3
-                                && double.TryParse(args[opIdx + 3], NumberStyles.Float, CultureInfo.InvariantCulture, out var c25)
-                                && c25 >= 0 && c25 <= 1)
+                            // a T25 value that is given but not a valid 0..1 number refuses the whole command (it used to be dropped silently)
+                            double? c25 = null;
+                            if (args.Count > opIdx + 3)
                             {
-                                SetStat(ZoneModifiers.LineChanceStat(lineKey) + "_t25", c25);
-                                Msg($"{scopeTag} {lineDef.Name} chance: {c11:0.###} at T11 -> {c25:0.###} at T25.");
+                                if (!TryFiniteNumber(args[opIdx + 3], out var t25) || t25 < 0 || t25 > 1)
+                                { Msg("Usage: modifier <name> chance <catalog key> <t11 chance 0..1> [t25 chance 0..1]"); return; }
+                                c25 = t25;
+                            }
+                            SetStat(ZoneModifiers.LineChanceStat(lineKey), c11);
+                            if (c25 != null)
+                            {
+                                SetStat(ZoneModifiers.LineChanceStat(lineKey) + "_t25", c25.Value);
+                                Msg($"{scopeTag} {lineDef.Name} chance: {c11:0.###} at T11 -> {c25.Value:0.###} at T25.");
                             }
                             else
                                 Msg($"{scopeTag} {lineDef.Name} chance: {c11:0.###} (flat, every tier).");
@@ -1015,7 +1021,7 @@ namespace ACE.Server.Command.Handlers
                         var spellLabel = spellCheck.NotFound ? "#" + ruleSpellId : spellCheck.Name;
 
                         double? chanceArg = null;
-                        if (args.Count >= 5 && double.TryParse(args[4], System.Globalization.NumberStyles.Any, CultureInfo.InvariantCulture, out var chanceVal))
+                        if (args.Count >= 5 && TryFiniteNumber(args[4], out var chanceVal))
                             chanceArg = Math.Clamp(chanceVal, 0.0, 100.0);
 
                         switch (op)
@@ -2526,7 +2532,7 @@ namespace ACE.Server.Command.Handlers
 
                     case "clonelayer":
                     {
-                        // copy the zone's own placement layer onto other tiers - never touches rows it did not create
+                        // copy the zone's own placement layer onto other tiers - never touches rows it did not create or adopt
                         // (ZoneControlCloneLayer.cs, owner 2026-10-03)
                         ZoneControlCloneLayer.Run(session, args, Msg);
                         return;
@@ -3094,80 +3100,6 @@ namespace ACE.Server.Command.Handlers
             if (!isDefaultScope) { Msg("  (zone band: new drops in this zone only - existing gear follows the tier Default)"); return; }
             if (defaultVar < 11 || defaultVar > 25) return;
             LadderApplyNow(session, defaultVar, Msg);
-        }
-
-        /// <summary>
-        /// `ladder bench [n]` (owner 2026-08-23: "nothing has ever been tested at scale"): in-process timing of
-        /// the hot paths. Mints ONE T11 armor piece and ONE T11 melee weapon through the real producers (so they
-        /// carry a record / a quality stamp), then times n iterations of: armor Compute (the appraisal cost),
-        /// armor Compute+Apply (the equip / ladder-apply cost, no DB), weapon TryResolve x3 (one swing's worth of
-        /// WeaponScalingCombat lookups). Single thread, so it measures CPU per op - not lock contention.
-        /// Both objects are destroyed afterwards; nothing is saved.
-        /// </summary>
-        private static void LadderBench(Session session, List<string> args, Action<string> Msg)
-        {
-            var n = 10000;
-            if (args.Count >= 3 && int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var nn) && nn > 0)
-                n = Math.Min(nn, 1_000_000);
-
-            var player = session?.Player;
-            var p = player != null ? ZoneControlManager.ResolveZoneDefaultForPlayer(player) : null;
-
-            // armor: Iron Celdon Breastplate; weapon: Iron Spada (same wcids the plugin Preview uses)
-            var armor = ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject("breastplatecelodoniron")
-                     ?? ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject(37);
-            var weapon = ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject("swordspada")
-                      ?? ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject(30571);
-            if (armor == null || weapon == null) { Msg("bench: could not create the sample items."); return; }
-            if (!(weapon is ACE.Server.WorldObjects.MeleeWeapon)) { Msg($"bench: '{weapon.Name}' is not a melee weapon - weapon timings would be the bail-out path."); armor.Destroy(); weapon.Destroy(); return; }
-
-            try
-            {
-                ACE.Server.Factories.LootGenerationFactory.ApplyZoneGearStats(armor, 11, p: p);
-                if (p != null) ZoneLootMutator.MutateLootItem(armor, p, null, 11);
-                // guarantee at least one graded line on the piece regardless of the zone's roll
-                if (ZoneModifiers.TryGet(28, out var dr))
-                    ZoneModifiers.StampGraded(armor, dr, 500, ZoneStatResolver.EffectiveBand(28, 11));
-                ACE.Server.Factories.LootGenerationFactory.ApplyWeaponAugScaleStamp(weapon, 11);
-
-                var rec = ZoneStatResolver.Read(armor).Count;
-                Msg($"bench: armor '{armor.Name}' record {rec} entries (\"{armor.GetProperty(PropertyString.ZcModifiers)}\"), weapon '{weapon.Name}' quality {weapon.GetProperty(PropertyInt.WeaponAugScaleQuality)}; n = {n:N0}");
-
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                for (var i = 0; i < n; i++) ZoneStatResolver.Compute(armor);
-                sw.Stop();
-                Msg($"  armor Compute (appraisal):        {sw.Elapsed.TotalMilliseconds * 1000.0 / n,8:0.00} us/op  ({sw.ElapsedMilliseconds} ms total)");
-
-                sw.Restart();
-                for (var i = 0; i < n; i++) ZoneStatResolver.Apply(armor, ZoneStatResolver.Compute(armor));
-                sw.Stop();
-                var equipUs = sw.Elapsed.TotalMilliseconds * 1000.0 / n;
-                Msg($"  armor Compute+Apply (equip):      {equipUs,8:0.00} us/op  ({sw.ElapsedMilliseconds} ms total, no DB)");
-
-                sw.Restart();
-                for (var i = 0; i < n; i++) ZoneStatResolver.ApplyIfStale(armor);
-                sw.Stop();
-                Msg($"  armor ApplyIfStale (login, current): {sw.Elapsed.TotalMilliseconds * 1000.0 / n,5:0.00} us/op  (the no-op path every login takes)");
-
-                var sink = 0f;
-                sw.Restart();
-                for (var i = 0; i < n; i++)
-                {
-                    sink += ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFlatBonus(weapon, player);
-                    sink += ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetCritDamageBonus(weapon, player);
-                    ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetEffectiveVariance(weapon, out var v); sink += (float)v;
-                }
-                sw.Stop();
-                Msg($"  weapon swing (3 resolves):        {sw.Elapsed.TotalMilliseconds * 1000.0 / n,8:0.00} us/swing  ({sw.ElapsedMilliseconds} ms total, sink {sink:0})");
-
-                var hits = 400 * 2;
-                Msg($"  at 400 players x 2 hits/s: weapons ~{sw.Elapsed.TotalMilliseconds / n * hits:0.0} ms CPU per second; one ladder apply = {400 * 18:N0} armor resolves ~{equipUs * 400 * 18 / 1000.0:0.0} ms CPU total.");
-            }
-            finally
-            {
-                armor.Destroy();
-                weapon.Destroy();
-            }
         }
 
         /// <summary>
@@ -3850,7 +3782,7 @@ namespace ACE.Server.Command.Handlers
 
             AppendLadder(sb);   // APPEND-ONLY (2026-08-22): ladder apply versions, last so older plugins ignore it
             AppendMissilePower(sb);   // APPEND-ONLY (2026-09-12): the missile power ladder, after the ladder tag
-            // APPEND-ONLY (2026-08-25), and genuinely last in the [[ZC]] payload. ðŸ”´ vp here is
+            // APPEND-ONLY (2026-08-25). ðŸ”´ vp here is
             // ResolveProfileForDisplay - the EVALUATED view after the Default -> zone -> wcid merge, which is
             // the convention every other layered tag in this payload already uses (the stat rows, cantrips=,
             // ctslots=, ctspoff=). So wpnoff at zone scope answers "which cards are OFF FOR THIS ZONE",
@@ -3860,10 +3792,42 @@ namespace ACE.Server.Command.Handlers
             // what this one means, because the two readings disagree only in the inherited case, which is
             // the case nobody tests.
             AppendWeaponCardsOff(sb, vp?.CustomWeaponCards);
-            // LAST tag in the [[ZC]] payload - APPEND-ONLY (2026-08-29). Same evaluated-view rule as
-            // wpnoff above: this answers "which stats are OFF FOR THIS SCOPE", inherited included.
+            // APPEND-ONLY (2026-08-29). Same evaluated-view rule as wpnoff above: this answers "which stats are OFF FOR
+            // THIS SCOPE", inherited included.
             AppendStatOffs(sb, vp?.StatToggles);
+            // LAST tag in the [[ZC]] payload - APPEND-ONLY (2026-10-04, D8): zone scope only.
+            if (!wcid.HasValue && area != null)
+                AppendBagRanks(sb, area.Name);
             return sb.ToString();
+        }
+
+        /// <summary>The Salvage Bag drop stats (bag_odds + bag_weight_*), in ZoneStat.All order.</summary>
+        private static readonly string[] BagStats = ZoneStat.All.Where(s => s == ZoneStat.BagOdds || s.StartsWith("bag_weight_", StringComparison.Ordinal)).ToArray();
+
+        /// <summary>
+        /// "|bagrank=&lt;rank&gt;:&lt;stat&gt;:&lt;value&gt;;..." (D8, 2026-10-04): the bag drop stats a kill of each rank (default /
+        /// regular / leader / boss) REALLY reads in this zone - ZoneControlManager.ResolveZoneRankForDisplay, the same
+        /// layer-by-layer merge combat uses. Sparse: an unset stat is absent. Always sent at zone scope (even empty), so the
+        /// plugin knows the server resolves per rank. Plain decimal, never exponent.
+        /// </summary>
+        private static void AppendBagRanks(StringBuilder sb, string zoneName)
+        {
+            sb.Append("|bagrank=");
+            var first = true;
+            foreach (var rank in ZoneRank.All)
+            {
+                var p = ZoneControlManager.ResolveZoneRankForDisplay(zoneName, rank);
+                if (p == null) continue;
+                var key = ZoneRank.Key(rank);
+                foreach (var stat in BagStats)
+                {
+                    if (!p.Has(stat)) continue;
+                    if (!first) sb.Append(';');
+                    first = false;
+                    sb.Append(key).Append(':').Append(stat).Append(':')
+                      .Append(p.Get(stat).ToString("0.##########", CultureInfo.InvariantCulture));
+                }
+            }
         }
 
         private static double? GetLiveStatValue(ACE.Server.WorldObjects.Creature creature, string stat)
@@ -4062,8 +4026,15 @@ namespace ACE.Server.Command.Handlers
             return int.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
         }
 
+        /// <summary>A finite number - NaN / Infinity parse under NumberStyles.Any and would poison every reader of the stat
+        /// (review 2026-10-04: a NaN bag_odds dropped a bag on every kill, a NaN loot_grade_floor forced every grade to 0).</summary>
         private static bool TryDouble(string s, out double value)
-            => double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out value);
+            => double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out value) && double.IsFinite(value);
+
+        /// <summary>A finite plain number - no thousands separators ("0,1" is refused, never read as 1), no currency or
+        /// parentheses. For values where a comma can only be a mistyped decimal point (chances, tier anchors).</summary>
+        private static bool TryFiniteNumber(string s, out double value)
+            => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && double.IsFinite(value);
 
         /// <summary>Strip the wire's separator chars from a value so it can't break payload parsing.</summary>
         // â”€â”€ live stat resolution: /zonecontrol ladder ... (2026-08-22) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -4125,10 +4096,6 @@ namespace ACE.Server.Command.Handlers
 
                 case "migrate":
                     LadderMigrate(session, args, Msg);
-                    return;
-
-                case "bench":
-                    LadderBench(session, args, Msg);
                     return;
 
                 case "show":
@@ -5327,8 +5294,8 @@ namespace ACE.Server.Command.Handlers
             var stat = NormalizeStat(verb);
             if (stat == null) { Msg($"Unknown stat '{verb}'. See 'statlist'."); return; }
             if (args.Count < 4
-                || !double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var v11)
-                || !double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var v25))
+                || !TryFiniteNumber(args[2], out var v11)
+                || !TryFiniteNumber(args[3], out var v25))
             { Msg("Usage: tier <stat> <t11value> <t25value> [--curve augs|linear]"); return; }
 
             var useAugs = true;

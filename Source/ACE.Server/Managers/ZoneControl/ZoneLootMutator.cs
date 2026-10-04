@@ -209,8 +209,11 @@ namespace ACE.Server.Managers.ZoneControl
             if (ACE.Server.Managers.RecipeManager.IconUnderlay.TryGetValue(rend, out var underlayId))
                 wo.IconUnderlayId = underlayId;
             else if (rend == ImbuedEffectType.NetherRending)
-                wo.IconUnderlayId = 0x060067A1;
+                wo.IconUnderlayId = NetherRendUnderlay;
         }
+
+        /// <summary>The Nether Rending icon underlay (RecipeManager.IconUnderlay has no Nether entry).</summary>
+        public const uint NetherRendUnderlay = 0x060067A1;
 
         /// <returns>The DISPLAY value that landed (Crushing Blow: the advertised multiplier, not the
         /// stored one) - for a caller that reports what it stamped. TrySpecialRolls ignores it.</returns>
@@ -306,7 +309,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Rend imbues that MATCH the weapon's own damage type (owner rule: a fire sword can only
         /// get Fire Rend — a rend for an element the weapon can't deal is dead weight). Multi-type weapons
         /// (e.g. slash/pierce) return every matching rend.</summary>
-        private static List<ImbuedEffectType> GetMatchingRends(DamageType dt)
+        internal static List<ImbuedEffectType> GetMatchingRends(DamageType dt)
         {
             var rends = new List<ImbuedEffectType>();
             if (dt.HasFlag(DamageType.Slash)) rends.Add(ImbuedEffectType.SlashRending);

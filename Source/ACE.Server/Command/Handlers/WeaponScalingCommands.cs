@@ -543,7 +543,7 @@ namespace ACE.Server.Command.Handlers
 
         private static bool TryParseDouble(string s, out double v)
         {
-            return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v);
+            return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v) && double.IsFinite(v);   // never NaN / Infinity
         }
 
         /// <summary>Matched-quality test weapons for cross-family tuning (owner 2026-08-01): one

@@ -880,8 +880,8 @@ namespace ACE.Entity.Enum.Properties
 
         /// <summary>
         /// If set on a generator, its total spawn count (InitCreate/MaxCreate) is overridden at
-        /// StartGenerator to: VariationScaledSpawnBase + (landblock variation - VariationScaledSpawnBaseline),
-        /// never dropping below the base. Used by prestige-zone camp generators.
+        /// StartGenerator to: VariationScaledSpawnBase + floor((landblock variation - VariationScaledSpawnBaseline)
+        /// / VariationScaledSpawnStep), never dropping below the base. Used by Zone Control camp generators.
         /// </summary>
         VariationScaledSpawnBase = 50103,
 
@@ -895,7 +895,7 @@ namespace ACE.Entity.Enum.Properties
         /// Owner 2026-10-03: how many tiers per extra spawn for a VariationScaledSpawnBase generator. Total =
         /// base + floor((variation - baseline) / step), never below base. Unset = 1 (one extra per tier, as before).
         /// The Tou Tou packs use base 4, baseline 10, step 5: T11-14 = 4, T15-19 = 5, T20-24 = 6, T25 = 7.
-        /// 50105-50110 are taken on other branches.
+        /// 50105-50108 are taken on other branches (50109-50110 are defined below).
         /// </summary>
         VariationScaledSpawnStep = 50111,
 
@@ -947,6 +947,13 @@ namespace ACE.Entity.Enum.Properties
         PortalReqType5 = 50118,
         PortalReqValue5 = 50119,
         PortalReqMaxValue5 = 50120,
+
+        /// <summary>Gear Essences (2026-10-02): the ZcModifiers record key a Bag of Locking locked on this item
+        /// (negative = a weapon card). Other essences skip it. Server-only - not an assessment property.</summary>
+        GearEssenceLockedKey = 51000,
+        /// <summary>Gear Essences: on a Bag of Vengeance, the CreatureType of the monster that dropped it -
+        /// the Slayer type it gives. Server-only - not an assessment property.</summary>
+        GearEssenceHuntCreatureType = 51001,
     }
 
     public static class PropertyIntExtensions

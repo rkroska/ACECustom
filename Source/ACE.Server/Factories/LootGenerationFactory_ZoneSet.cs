@@ -327,7 +327,7 @@ namespace ACE.Server.Factories
             // rank loot (owner 2026-09-29): the kill's rank row can lift the floor and set its own S odds
             var quality = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.RollQuality(
                 ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeFloorOf(p),
-                p == null ? 0 : (int)System.Math.Round(p.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.GradeSOdds, 0.0)));
+                p == null ? 0 : ACE.Server.Managers.ZoneControl.ZoneStatResolver.OddsToInt(p.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.GradeSOdds, 0.0)));
             wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.WeaponAugScaleQuality, quality);
             wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.WeaponAugScaleTier, tier);
 
@@ -969,7 +969,7 @@ namespace ACE.Server.Factories
         /// Clears a tier-11+ drop's MaterialType, so the client shows the plain item name with no material adjective and the
         /// drop cannot be salvaged for material (owner 2026-10-04: keep that; T11 gear is worn, not salvage fodder;
         /// ItemWorkmanship stays, so tinkering ONTO the item still works). The "T11 - " name prefix this used to add
-        /// (2026-07-20) was a testing aid and is gone (owner 2026-10-04) - the drop's tier is inscribed on the item itself.
+        /// (2026-07-20) was a testing aid and is gone (owner 2026-10-04) - the drop's tier shows in its provenance line ("Location: <zone> v<variation>").
         /// </summary>
         public static void ApplyZoneMaterialClear(WorldObject wo)
         {

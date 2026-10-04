@@ -52,8 +52,6 @@ namespace ACE.Entity.Enum.Properties
         LumAugMissileDefenseCount = 9025,
         LumAugMagicDefenseCount = 9026,
         BankedWeaklyEnlightenedCoins = 9027,
-        // Prestige Coin (19860000) bank balance (owner 2026-10-04): deposit / withdraw only - Bonded + Attuned, never transferable
-        BankedPrestigeCoins = 9028,
 
         // 50000+ block (matches the PropertyInt/PropertyBool charm-system ids)
         /// <summary>Charm of the Triune Weave: each point grants +1 Creature, +1 Item, and +1 Life augmentation on top of the (capped) gem-bought counts.</summary>
@@ -76,6 +74,11 @@ namespace ACE.Entity.Enum.Properties
         /// 50600 is free in EVERY Property enum (50005 is PropertyInt.CharmLevel).
         /// </summary>
         XpOverride64           = 50600,
+        /// <summary>
+        /// Prestige Coin (19860000) bank balance (owner 2026-10-04): deposit / withdraw only - Bonded + Attuned, never transferable.
+        /// 50601, free in EVERY Property enum - moved off 9028 before release (upstream ACE owns the 90xx range).
+        /// </summary>
+        BankedPrestigeCoins    = 50601,
 
         // Pet Bonding System (Combat Pet Devices) — [AssessmentProperty] for identify + plugin PublicUpdateProperty*
         /// <summary>Current bond XP toward next level on a PetDevice.</summary>

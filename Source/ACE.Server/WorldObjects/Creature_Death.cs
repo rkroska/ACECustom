@@ -1280,7 +1280,7 @@ namespace ACE.Server.WorldObjects
                         // A future pass will APPEND extra lines to the bottom (LongDesc renders
                         // last) without touching the default layout.
 
-                        // plain item name, no material (no salvage) - the tier is inscribed on the item
+                        // plain item name, no material (no salvage) - the tier shows in the item's provenance line
                         LootGenerationFactory.ApplyZoneMaterialClear(wo);
 
                         // name tinted by damage element (trial 2026-07-20, may revert)
@@ -1293,6 +1293,28 @@ namespace ACE.Server.WorldObjects
                         droppedItems.Add(wo);
 
                     DoModifierLogging(killer, wo);
+                }
+
+                // Gear Essences (owner 2026-10-02): ONE roll per KILL, zone drops only - the same gate as the
+                // slot special above. Added after the loot loop on purpose: the T11 sweep in that loop would
+                // rename and restat the essence as if it were gear.
+                if (zoneLoot != null && ServerConfig.zonecontrol_enabled.Value
+                    && effectiveTreasure.Tier >= LootGenerationFactory.ZoneLootSetMinTier)
+                {
+                    // a bag roll never aborts the corpse: a bad stat must not stop every kill (and its respawn) in the zone
+                    WorldObject essence = null;
+                    try { essence = GearEssences.TryRollDrop(zoneLoot, killer?.Name, this); }
+                    catch (Exception ex) { log.Error($"[ZONELOOT] SALVAGE BAG: roll failed for {Name} ({WeenieClassId}): {ex}"); }
+                    if (essence != null)
+                    {
+                        if (corpse == null)
+                            droppedItems.Add(essence);
+                        else if (!corpse.TryAddToInventory(essence))
+                        {
+                            log.Warn($"[ZONELOOT] SALVAGE BAG: {essence.Name} from {Name} ({WeenieClassId}) did not fit on the corpse and was lost");
+                            essence.Destroy();
+                        }
+                    }
                 }
             }
 

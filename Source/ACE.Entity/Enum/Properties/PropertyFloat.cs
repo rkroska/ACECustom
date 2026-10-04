@@ -297,11 +297,13 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>
         /// v11+ vuln compression: per-weenie override for the vuln effectiveness (default from zc_vuln_effectiveness).
         /// Fraction of the vuln BONUS that lands against this monster. 1.0 = uncompressed (vanilla vulns), 0.0 = vulns do nothing.
+        /// Not read for a T11+ debuff-compressed monster (Creature.ZcDebuffCompressed): its vuln runs through the debuff bonus.
         /// </summary>
         VulnEffectivenessOverride = 9052,
         /// <summary>
         /// v11+ vuln compression: per-weenie override for the max total vuln multiplier cap (default from zc_vuln_cap).
         /// Set high (e.g. 999) together with VulnEffectivenessOverride = 1.0 to exempt this monster entirely.
+        /// Not read for a T11+ debuff-compressed monster (Creature.ZcDebuffCompressed): its vuln runs through the debuff bonus.
         /// </summary>
         VulnCapOverride = 9053,
         /// <summary>

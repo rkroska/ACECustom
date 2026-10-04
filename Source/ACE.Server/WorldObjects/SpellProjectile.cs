@@ -684,7 +684,18 @@ namespace ACE.Server.WorldObjects
                 // so a cardless crit = 2x, the same retail rule the melee path now follows. The bonus itself is
                 // derived below, once the base is final (life aug term, zone replacement, variance).
                 if (criticalHit)
+                {
                     weaponCritDamageMod = GetWeaponCritDamageMod(weapon, sourceCreature, attackSkill, target);
+                    // Zone Control spell crits mirror melee for LIFE projectiles too (owner 2026-10-04): the crit floor and the
+                    // aug crit term with the caster's LIFE augs, as war / void take theirs below
+                    if (zcCritMirror)
+                    {
+                        var lifeAugs = sourceCreature?.EffectiveLifeAugCount ?? 0;
+                        weaponCritDamageMod = Math.Max(weaponCritDamageMod,
+                            ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetSpellCritDamageBonus(weapon, sourceCreature, lifeAugs));
+                        weaponCritDamageMod += Creature.ZcSpellAugCritBonus(lifeAugs);
+                    }
+                }
 
                 // ORDERING MATTERS FOR THE RETAIL BRANCH (found by review 2026-09-10). Baseline
                 // (9d128e912:606) computed the crit bonus from the PRE-AUG base, then added the aug

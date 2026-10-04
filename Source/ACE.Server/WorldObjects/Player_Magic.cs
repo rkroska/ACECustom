@@ -686,9 +686,16 @@ namespace ACE.Server.WorldObjects
             // x void_dot_range_mult, at least void_curse_min_range metres (1 / 0 = retail), still radar-capped.
             // MONSTER targets at every tier (owner 2026-10-04 night: "retail can get the range increase"); players and pets
             // (PvP) keep the retail range
-            if (spell.School == MagicSchool.VoidMagic && spell.IsHarmful && !spell.IsSelfTargeted && spell.MetaSpellType == SpellType.Enchantment
+            if (spell.School == MagicSchool.VoidMagic && spell.IsHarmful && !spell.IsSelfTargeted
+                && (spell.MetaSpellType == SpellType.Enchantment || spell.MetaSpellType == SpellType.EnchantmentProjectile)
                 && target is Creature curseTarget && !(curseTarget is Player) && !(curseTarget is CombatPet))
-                baseRange = Math.Max(baseRange * (float)Math.Max(1.0, ServerConfig.void_dot_range_mult.Value), (float)ServerConfig.void_curse_min_range.Value);
+            {
+                // a non-finite setting counts as unset (NaN would make maxRange NaN and remove the range check entirely)
+                var rangeMult = ServerConfig.void_dot_range_mult.Value;
+                var minRange = ServerConfig.void_curse_min_range.Value;
+                baseRange = Math.Max(baseRange * (float)(double.IsFinite(rangeMult) ? Math.Max(1.0, rangeMult) : 1.0),
+                    (float)(double.IsFinite(minRange) ? minRange : 0.0));
+            }
             var maxRange = Math.Min(baseRange, MaxRadarRange_Outdoors);
 
             if (distanceTo > maxRange)
@@ -2087,6 +2094,7 @@ namespace ACE.Server.WorldObjects
                     var critDamageBonus  = 0.0f;
                     var skillBonus       = 0.0f;
                     var isPvP            = creature is Player;
+                    float? lifeCritMod   = null;   // a PvE endgame Life ring's crit mod - applied once the base is final (see below)
 
                     // Life projectiles (e.g. 3818 - Curse of Raven Fury) take their damage from the vital
                     // the caster drained at cast time, NOT from the spell's Min/Max — those are near-zero
@@ -2112,22 +2120,37 @@ namespace ACE.Server.WorldObjects
                             criticalHit = true;
                             // UNIFIED CRIT MODEL (owner 2026-08-29, matching SpellProjectile): PvE
                             // crit = CritX x the fully composed base, computed AFTER the aug term
-                            // below. Life: CritX x the drained base (0.5 coefficient gone). PvP
-                            // keeps the retail halved-min rule.
+                            // below. Life (PvE endgame): CritX x the drained base + life augs, like war / void
+                            // (owner 2026-10-04); retail life keeps 0.5 x the pre-aug base. PvP keeps the retail
+                            // halved-min rule (an endgame PvP Life ring still crits off the pre-aug base, as on master).
                             // only the life / PvP branches use the mod here; the war/void PvE crit reads it
                             // once in the unified block below (review 2026-09-04: it was computed twice)
                             var earlyMod = isLifeProjectile || isPvP
                                 ? GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature)
                                 : 0f;
+                            // Zone Control spell crits mirror melee for LIFE rings too (owner 2026-10-04): the crit floor and the
+                            // aug crit term with the caster's life augs (war / void rings take theirs in the block below)
+                            if (isLifeProjectile && !isPvP && Creature.ZcSpellCritMirrorsMelee(this, weapon, creature, fromProc))
+                            {
+                                earlyMod = Math.Max(earlyMod,
+                                    ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetSpellCritDamageBonus(weapon, this, EffectiveLifeAugCount));
+                                earlyMod += Creature.ZcSpellAugCritBonus(EffectiveLifeAugCount);
+                            }
                             // GATED 2026-09-10: the life branch dropped the retail 0.5f coefficient
                             // unconditionally, so a RETAIL-geared player critting with a Life ring
                             // spell got double the baseline crit bonus. Missed on the first pass -
                             // only the war/void ring branch below was gated.
-                            critDamageBonus = isLifeProjectile
-                                ? (endgameCrit
-                                    ? lifeMagicDamage * earlyMod
-                                    : lifeMagicDamage * 0.5f * earlyMod)
-                                : (isPvP ? spell.MinDamage * 0.5f * earlyMod : 0f);
+                            // Owner 2026-10-04: a PvE endgame Life ring crits like a war / void ring - CritX x the FULLY
+                            // composed base, life augs included - so its bonus is taken below, after the aug term (as
+                            // SpellProjectile's life branch does). Retail and PvP keep the pre-aug derivation here.
+                            if (isLifeProjectile && endgameCrit && !isPvP)
+                                lifeCritMod = earlyMod;
+                            else
+                                critDamageBonus = isLifeProjectile
+                                    ? (endgameCrit
+                                        ? lifeMagicDamage * earlyMod
+                                        : lifeMagicDamage * 0.5f * earlyMod)
+                                    : (isPvP ? spell.MinDamage * 0.5f * earlyMod : 0f);
                         }
                     }
 
@@ -2136,7 +2159,8 @@ namespace ACE.Server.WorldObjects
 
                     if (isLifeProjectile)
                     {
-                        // Luminance Life augment — added AFTER the crit bonus, matching SpellProjectile.
+                        // Luminance Life augment - added AFTER the retail / PvP crit bonus, BEFORE the PvE endgame one
+                        // (SpellProjectile's life branch does the same for PvE; its endgame PvP differs - pre-existing).
                         // Life projectiles get no skill-based damage bonus.
                         //
                         // EffectiveLifeAugCount, not the raw count: SpellProjectile.CalculateDamage -
@@ -2150,6 +2174,10 @@ namespace ACE.Server.WorldObjects
                         // nothing to the capped War/Void stats.
                         if (EffectiveLifeAugCount >= 1)
                             lifeMagicDamage += EffectiveLifeAugCount;
+
+                        // the PvE endgame Life ring crit, off the composed base (life augs included) - war / void parity
+                        if (lifeCritMod.HasValue)
+                            critDamageBonus = lifeMagicDamage * lifeCritMod.Value;
                     }
                     else
                     {

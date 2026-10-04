@@ -519,14 +519,14 @@ namespace ACE.Server.Managers.WeaponScaling
             int q;
             if (sOdds > 0)
             {
-                if (ACE.Common.ThreadSafeRandom.Next(1, sOdds) == 1)
+                if (ACE.Common.ThreadSafeRandom.Next(1, Math.Min(sOdds, int.MaxValue - 1)) == 1)
                     return QualityMax;
                 q = RollQualityCore(excludeS: true);
             }
             else
                 q = RollQualityCore(excludeS: false);
 
-            floor = Math.Clamp(floor, 0.0, 0.9);
+            floor = double.IsFinite(floor) ? Math.Clamp(floor, 0.0, 0.9) : 0.0;
             if (q >= QualityMax || floor <= 0.0)
                 return q;
             return Math.Min(QualityMax - 1, (int)Math.Round(floor * QualityMax + q * (1.0 - floor)));

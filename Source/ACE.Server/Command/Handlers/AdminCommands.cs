@@ -7460,6 +7460,11 @@ namespace ACE.Server.Command.Handlers
             {
                 string key = parameters[0];
                 var doubleVal = double.Parse(parameters[1]);
+                if (!double.IsFinite(doubleVal))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "Please input a finite number (not NaN or Infinity).", ChatMessageType.Help);
+                    return;
+                }
                 if (ServerConfig.SetValue(key, doubleVal))
                 {
                     switch (key)

@@ -281,13 +281,22 @@ namespace ACE.Server.Managers.ZoneControl
             if (forceMax) return GradeMax;
             var g = RollGradeCore(tier);
             // rank loot (owner 2026-09-29): squeeze into the top (1 - floor) of the band; the top stays the top
-            floor = Math.Clamp(floor, 0.0, 0.9);
+            floor = double.IsFinite(floor) ? Math.Clamp(floor, 0.0, 0.9) : 0.0;
             return floor <= 0.0 ? g : (int)Math.Round(floor * GradeMax + g * (1.0 - floor));
         }
 
         /// <summary>Rank loot (owner 2026-09-29): the drop profile's grade floor, 0 when unset / no profile.</summary>
         public static double GradeFloorOf(EvaluatedProfile p)
-            => p == null ? 0.0 : Math.Clamp(p.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootGradeFloor, 0.0), 0.0, 0.9);
+        {
+            var floor = p == null ? 0.0 : p.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootGradeFloor, 0.0);
+            return double.IsFinite(floor) ? Math.Clamp(floor, 0.0, 0.9) : 0.0;   // Math.Clamp passes NaN through
+        }
+
+        /// <summary>A "1 in N" stat as a safe int for ThreadSafeRandom.Next(1, N): 0 (= never / off) when it is unset, below 1
+        /// or not finite, and at most int.MaxValue - 1 (Next(1, int.MaxValue) overflows inside Random.Next and throws, which on
+        /// the kill path aborted the corpse - review 2026-10-04).</summary>
+        public static int OddsToInt(double odds)
+            => !double.IsFinite(odds) || odds < 1.0 ? 0 : (int)Math.Min(Math.Round(odds), int.MaxValue - 1);
 
         /// <summary>The grade floor of the kill whose loot is being generated on THIS thread - for the value rolls
         /// that run inside item creation with no profile in hand (the T11 weapon Damage / Crit Damage rating).

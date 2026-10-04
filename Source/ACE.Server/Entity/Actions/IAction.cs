@@ -487,7 +487,6 @@ namespace ACE.Server.Entity.Actions
         Bounty_Credit,                      // Bounty: a kill's bounty credit handed to the killer's own thread
         Player_CloakSelfViewAtLogin,        // cloak: re-sends what a cloaked (On / Ghost) player's own client draws, a second after login
         DungeonBuilder_LiveEdit,            // dungeon builder: a placed wall / generator moved or turned on its own landblock's thread
-        PresentBot_Tick,                    // present bot: spam-uses Mine, Mine, Mine! presents through the real use path (test tool)
     }
     public static class ActionTypeConverter
     {

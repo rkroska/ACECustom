@@ -1638,6 +1638,37 @@ namespace ACE.Server.Managers.ZoneControl
         /// SAME numbers combat resolves. Merges VariationDefault -&gt; zone -&gt; wcid. Null if no such zone.
         /// </summary>
         public static ZoneVariantProfile ResolveProfileForDisplay(string name, uint? wcid = null)
+            => ResolveProfileForDisplayCore(name, wcid);
+
+        /// <summary>
+        /// D8 (2026-10-04): the EVALUATED profile a kill of <paramref name="rank"/> reads in this zone - built exactly as the
+        /// snapshot builds ZoneRef.ByRank (each layer flattened for the rank, then merged), but for any zone, enabled or not.
+        /// The plugin's Salvage Bags tab shows these per-rank values; the merged rows it gets otherwise cannot reproduce the
+        /// per-layer rule (a layer's own Default beats a lower layer's rank row). Null if no such zone.
+        /// </summary>
+        public static EvaluatedProfile ResolveZoneRankForDisplay(string name, ZcRank rank)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var area = FindArea(name);
+                if (area == null)
+                    return null;
+                // the SAME cache key Evaluate uses for a zone-wide (no per-monster bucket) profile of this rank - the same
+                // computation, so the two share one entry; _evalCache is cleared on every save. The [[ZC]] push rebuilds
+                // its payload every 2 s, so this must not re-merge four profiles each time (review 2026-10-04).
+                var cacheKey = area.Name + "|default|r" + (int)rank;
+                if (_evalCache.TryGetValue(cacheKey, out var cached))
+                    return cached;
+                var defProfile = AnchoredDefaultProfileFor(area.Variation, rank);
+                var zoneLayer = area.Profile.Minion?.ForRank(rank);
+                var eval = EvaluateVariant(area.Name, ZoneVariantProfile.Merge(defProfile, zoneLayer));
+                _evalCache[cacheKey] = eval;
+                return eval;
+            }
+        }
+
+        private static ZoneVariantProfile ResolveProfileForDisplayCore(string name, uint? wcid)
         {
             EnsureInitialized();
             lock (_lock)
@@ -1950,6 +1981,9 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>`/zonecontrol damagemult`: set (or clear with null / 1.0) one monster's multiplier. Persists.</summary>
         public static void SetDamageMult(uint wcid, double? value)
         {
+            // the same bounds Load keeps, so no caller can store a value a restart would drop (NaN, Infinity, out of range)
+            if (value.HasValue && (!double.IsFinite(value.Value) || value.Value < DamageMultMin || value.Value > DamageMultMax))
+                throw new ArgumentOutOfRangeException(nameof(value), value, $"damage multiplier must be {DamageMultMin}-{DamageMultMax}");
             EnsureInitialized();
             lock (_lock)
             {
@@ -2239,6 +2273,15 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 return FindArea(name);
             }
+        }
+
+        /// <summary>A copy of an area's landblocks taken under the manager lock - the area object is live, and addlb / removelb
+        /// change its set while a caller iterates it.</summary>
+        public static List<ushort> SnapshotLandblocks(ControlledArea area)
+        {
+            if (area == null) return new List<ushort>();
+            lock (_lock)
+                return area.Landblocks.ToList();
         }
 
         public static IReadOnlyList<ControlledArea> ListAreas()

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Data.Common;
 using System.Globalization;
 using System.Linq;
-using System.Text;
 
 using Microsoft.EntityFrameworkCore;
 
@@ -92,7 +91,7 @@ namespace ACE.Server.Command.Handlers
             {
                 Msg("Usage: clonelayer <zone> <variation|lo-hi> [update] [prune] [restore] [dry]   e.g. clonelayer Tou Tou 12-25 dry"
                     + "   (the tier range is the LAST word before the flags)");
-                Msg("  Copies the zone's own layer (its variation) onto the target layers. Never touches rows it did not create.");
+                Msg("  Copies the zone's own layer (its variation) onto the target layers. Never touches rows it did not create or adopt.");
                 return;
             }
             var area = ZoneControlManager.GetArea(string.Join(" ", nameTokens));
@@ -107,11 +106,10 @@ namespace ACE.Server.Command.Handlers
             var doPrune = flags.Contains("prune");
             var doRestore = flags.Contains("restore");
 
-            List<ushort> lbs = null;
-            for (var attempt = 0; attempt < 3 && lbs == null; attempt++)
-                try { lbs = area.Landblocks.ToList(); } catch (InvalidOperationException) { }   // a concurrent addlb / removelb
-            if (lbs == null || lbs.Count == 0) { Msg($"'{area.Name}' has no landblocks."); return; }
+            var lbs = ZoneControlManager.SnapshotLandblocks(area);   // copied under the manager lock (a concurrent addlb / removelb)
+            if (lbs.Count == 0) { Msg($"'{area.Name}' has no landblocks."); return; }
 
+            var committed = false;
             try
             {
                 using var ctx = new WorldDbContext();
@@ -264,7 +262,8 @@ namespace ACE.Server.Command.Handlers
                 }
 
                 // ---------------------------------------------------------- WRITE (raw SQL only) -------------
-                var written = Apply(ctx, plans, allTracks, srcVar, area.Name, srcLinks, destLinks, existing);
+                var written = Apply(ctx, plans, srcVar, area.Name, srcLinks, destLinks);
+                committed = true;
                 foreach (var v in targets)
                     foreach (var lb in lbs)
                         DatabaseManager.World.ClearCachedInstancesByLandblock(lb, v);
@@ -273,12 +272,15 @@ namespace ACE.Server.Command.Handlers
             }
             catch (Exception ex)
             {
-                Msg($"clonelayer failed - the write is all-or-nothing, so nothing was changed: {ex.Message}");
+                log.Error($"[ZONECONTROL] clonelayer {area.Name} failed: {ex}");
+                Msg(committed
+                    ? $"clonelayer wrote the placements but failed afterwards: {ex.Message}. Run /clearcache, then 'dry' to check."
+                    : $"clonelayer failed: {ex.Message}. The placement write is one transaction, so no placements were changed.");
             }
         }
 
-        private static string Apply(WorldDbContext ctx, List<TierPlan> plans, List<Track> allTracks, int srcVar, string zone,
-            List<LandblockInstanceLink> srcLinks, HashSet<(uint, uint)> destLinks, HashSet<uint> existing)
+        private static string Apply(WorldDbContext ctx, List<TierPlan> plans, int srcVar, string zone,
+            List<LandblockInstanceLink> srcLinks, HashSet<(uint, uint)> destLinks)
         {
             EnsureTrackTable(ctx);   // DDL commits implicitly - so it runs BEFORE the transaction opens
             var zoneSql = "'" + zone.Replace("\\", "\\\\").Replace("'", "''") + "'";

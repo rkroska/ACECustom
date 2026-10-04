@@ -84,7 +84,7 @@ namespace ACE.Server.Factories
             if (gearRating == 0)
                 return false;
 
-            int rollType = ThreadSafeRandom.Next(0, 2); // 0 or 1
+            int rollType = ThreadSafeRandom.Next(0, 2); // 0, 1 or 2 (max-inclusive): 1/3 Damage Rating, 2/3 Crit Damage Rating - kept on purpose (owner 2026-10-04)
 
             if (rollType == 0)
                 wo.GearDamage = gearRating;

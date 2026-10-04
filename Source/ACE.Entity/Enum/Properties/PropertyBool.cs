@@ -407,6 +407,13 @@ namespace ACE.Entity.Enum.Properties
         /// Server-only - not an assessment property. Numbered beside the other Room Assign properties (50500-50502).</summary>
         RoomAssignZoneShare = 50503,
 
+        /// <summary>Salvage Bags (2026-10-02, code name Gear Essences): a Bag of Madness was used on this item; no bag works
+        /// on it again. Server-only - not an assessment property.</summary>
+        GearEssenceTainted = 51000,
+        /// <summary>Salvage Bags: a bag has changed this item. The appraisal keeps the Modifiers block (and the Tainted line)
+        /// on a piece a bag emptied. Server-only - not an assessment property.</summary>
+        GearEssenceWorked = 51001,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }
