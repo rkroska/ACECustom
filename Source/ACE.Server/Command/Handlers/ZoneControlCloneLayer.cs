@@ -63,7 +63,7 @@ namespace ACE.Server.Command.Handlers
             public readonly List<uint> Prune = new();          // dst rows to delete (source gone)
             public readonly List<uint> DropTracks = new();     // tracking rows to delete (restored, stale, or copy and source both gone)
             public readonly Dictionary<uint, uint> Alive = new(); // src guid -> its live tracked copy on this tier (the ONE the plan chose)
-            public int Unchanged, KeptOff, Drifted, Stale;
+            public int Unchanged, KeptOff, Drifted, Stale, Unverified;
         }
 
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
@@ -128,13 +128,12 @@ namespace ACE.Server.Command.Handlers
                 // the tier they were made for (review: /createinst can hand a freed guid to an unrelated row on another layer)
                 var guidVar = new Dictionary<uint, int?>();   // guid -> its variation, for every guid any track names
                 var guidWcid = new Dictionary<uint, uint>();  // guid -> its weenie
-                var guidCell = new Dictionary<uint, uint>();  // guid -> its cell
                 var lookup = allTracks.Select(t => t.Dst).Concat(allTracks.Select(t => t.Src)).Distinct().ToList();
                 for (var i = 0; i < lookup.Count; i += 1000)
                 {
                     var chunk = lookup.Skip(i).Take(1000).ToList();
-                    foreach (var r in ctx.LandblockInstance.AsNoTracking().Where(r => chunk.Contains(r.Guid)).Select(r => new { r.Guid, r.VariationId, r.WeenieClassId, r.ObjCellId }))
-                    { guidVar[r.Guid] = r.VariationId; guidWcid[r.Guid] = r.WeenieClassId; guidCell[r.Guid] = r.ObjCellId; }
+                    foreach (var r in ctx.LandblockInstance.AsNoTracking().Where(r => chunk.Contains(r.Guid)).Select(r => new { r.Guid, r.VariationId, r.WeenieClassId }))
+                    { guidVar[r.Guid] = r.VariationId; guidWcid[r.Guid] = r.WeenieClassId; }
                 }
                 bool AliveOn(uint guid, int variation) => guidVar.TryGetValue(guid, out var gv) && gv == variation;
                 // a tracked copy is OURS only while its guid is on its tier AND still carries the weenie clonelayer wrote (review
@@ -144,12 +143,14 @@ namespace ACE.Server.Command.Handlers
                 {
                     if (!AliveOn(t.Dst, t.DstVar) || !guidWcid.TryGetValue(t.Dst, out var w)) return false;
                     if (t.DstWcid != null) return w == t.DstWcid.Value;
-                    // a record from before the weenie was kept (CodeRabbit #539): someone else's row only when it carries ANOTHER
-                    // weenie than its source AND stands in another cell. A source whose weenie was changed on purpose keeps its
-                    // copy (in the source's cell - update rewrites it), and a copy whose source is gone stays prunable.
-                    if (!guidWcid.TryGetValue(t.Src, out var sw) || sw == w) return true;
-                    return guidCell.TryGetValue(t.Src, out var sc) && guidCell.TryGetValue(t.Dst, out var dc) && sc == dc;
+                    // a record from before the weenie was kept: ours only when PROVEN - its source still exists with the same weenie
+                    return guidWcid.TryGetValue(t.Src, out var sw) && sw == w;
                 }
+                // ... and one that cannot be proven (source gone, or a different weenie than its source) is left ALONE (CodeRabbit
+                // #539): never updated, never pruned, never replaced by a new copy, its record and guid kept - it may be a source
+                // changed on purpose or an unrelated row that reused the guid, and nothing here can tell which. Only test layers
+                // copied before 2026-10-04 have such records; every copy made since records its weenie.
+                bool Unverified(Track t) => t.DstWcid == null && AliveOn(t.Dst, t.DstVar) && !CopyAlive(t);
                 var existing = new HashSet<uint>(allTracks.Where(CopyAlive).Select(t => t.Dst));
 
                 // reserved guids per landblock range: every row in the range (any landblock, any variation) + every
@@ -200,7 +201,7 @@ namespace ACE.Server.Command.Handlers
 
                     // a track whose dst guid now belongs to an unrelated row - on ANOTHER layer (review finding 2), or on this tier
                     // with another weenie (review 2026-10-04) - is stale: clear the record, never touch that row
-                    foreach (var t in tierTracks.Where(t => !CopyAlive(t) && guidVar.ContainsKey(t.Dst)))
+                    foreach (var t in tierTracks.Where(t => !CopyAlive(t) && !Unverified(t) && guidVar.ContainsKey(t.Dst)))
                     { plan.DropTracks.Add(t.Dst); plan.Stale++; }
                     var staleSet = plan.DropTracks.ToHashSet();
 
@@ -210,6 +211,7 @@ namespace ACE.Server.Command.Handlers
                             ? allMine.Where(t => !staleSet.Contains(t.Dst)).ToList() : new List<Track>();
                         if (myTracks.Count > 0)
                         {
+                            if (myTracks.Any(Unverified)) { plan.Unverified++; continue; }   // an old record not provably ours - left alone
                             var alive = myTracks.FirstOrDefault(t => existing.Contains(t.Dst));
                             if (alive != null)
                             {
@@ -242,7 +244,7 @@ namespace ACE.Server.Command.Handlers
                     // whole table - review finding 1: another zone at the same variation, or a removelb'd landblock, must never
                     // count as "source gone") and only this zone's records
                     if (doPrune)
-                        foreach (var t in tierTracks.Where(t => t.SrcVar == srcVar && !staleSet.Contains(t.Dst) && !AliveOn(t.Src, srcVar)
+                        foreach (var t in tierTracks.Where(t => t.SrcVar == srcVar && !staleSet.Contains(t.Dst) && !Unverified(t) && !AliveOn(t.Src, srcVar)
                                                             && string.Equals(t.Zone, area.Name, StringComparison.OrdinalIgnoreCase)))
                         {
                             if (existing.Contains(t.Dst)) plan.Prune.Add(t.Dst);
@@ -425,7 +427,8 @@ namespace ACE.Server.Command.Handlers
                     + $", already in sync {p.Unchanged}"
                     + (p.Drifted > 0 ? $", {p.Drifted} differ from their source (run with 'update')" : "")
                     + (p.Stale > 0 ? $", {p.Stale} stale record(s) cleared (their guid now belongs to another row)" : "")
-                    + (p.KeptOff > 0 ? $", {p.KeptOff} kept off (deleted by hand - 'restore' brings them back)" : ""));
+                    + (p.KeptOff > 0 ? $", {p.KeptOff} kept off (deleted by hand - 'restore' brings them back)" : "")
+                    + (p.Unverified > 0 ? $", {p.Unverified} old record(s) left alone (copied before weenies were recorded and not provably ours - check by hand)" : ""));
             // what is being added, by name, when it is a small change (a new NPC, say)
             var adds = plans.SelectMany(p => p.Add).GroupBy(n => n.Src.WeenieClassId).ToList();
             if (adds.Count > 0 && adds.Count <= 12)
