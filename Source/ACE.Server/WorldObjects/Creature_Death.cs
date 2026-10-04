@@ -1158,7 +1158,9 @@ namespace ACE.Server.WorldObjects
                     // special_boss_mult / special_leader_mult divisors were folded into those rows
                     // by the migration SQL (151,200 / 3 and / 2 at T11).
                     var odds = zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.SpecialOdds, 750000.0);
-                    var denom = Math.Max(1, (int)Math.Round(odds));
+                    // OddsToInt: a huge value (int.MaxValue, 1e10) made ThreadSafeRandom.Next(1, max) overflow max + 1 and
+                    // throw here, before the corpse entered the world (review 2026-10-04); NaN / below 1 = every kill, as before
+                    var denom = Math.Max(1, ACE.Server.Managers.ZoneControl.ZoneStatResolver.OddsToInt(odds));
 
                     if (ACE.Common.ThreadSafeRandom.Next(1, denom) == 1)
                     {

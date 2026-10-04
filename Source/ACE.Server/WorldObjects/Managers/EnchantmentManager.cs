@@ -1981,6 +1981,10 @@ namespace ACE.Server.WorldObjects.Managers
 
             if (!creature.IsAlive) return;
 
+            // ReceiveDamage emotes roll once per heartbeat interval on the faster ticker, for every damager of that tick (review
+            // 2026-10-04: per 1 s tick they fired ~5x as often as on retail); the retail heartbeat (tickScale 1) always rolls
+            var emotesDue = tickScale >= 1f || creature.DotEmotesDue();
+
             foreach (var kvp in damagers)
             {
                 var damager = kvp.Key;
@@ -1998,7 +2002,7 @@ namespace ACE.Server.WorldObjects.Managers
                     if (tickScale >= 1f)
                         creature.TakeDamageOverTime_NotifySource(damageSourcePlayer, damageType, amount, aetheria);
 
-                    if (creature.IsAlive)
+                    if (emotesDue && creature.IsAlive)
                         creature.EmoteManager.OnDamage(damageSourcePlayer, damageType);
                 }
             }

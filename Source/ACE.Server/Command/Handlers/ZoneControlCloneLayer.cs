@@ -49,7 +49,8 @@ namespace ACE.Server.Command.Handlers
         private const float RotEpsilon = 0.0001f;
         private const int Batch = 500;
 
-        private sealed class Track { public uint Dst, Src; public int SrcVar, DstVar; public string Zone; }
+        // DstWcid: the weenie the copy carried when clonelayer wrote it (null = a record from before 2026-10-04)
+        private sealed class Track { public uint Dst, Src; public int SrcVar, DstVar; public string Zone; public uint? DstWcid; }
 
         private sealed class NewRow { public LandblockInstance Src; public uint Guid; public int Variation; }
 
@@ -120,25 +121,32 @@ namespace ACE.Server.Command.Handlers
                 var src = rows.Where(r => r.VariationId == srcVar).ToList();
                 var srcGuids = src.Select(s => s.Guid).ToHashSet();
                 var tableExists = TrackTableExists(ctx);
-                var allTracks = tableExists ? ReadTracks(ctx, $"dst_variation IN ({string.Join(",", targets)})") : new List<Track>();
+                var hasWcid = tableExists && TrackHasWcidColumn(ctx);
+                var allTracks = tableExists ? ReadTracks(ctx, $"dst_variation IN ({string.Join(",", targets)})", hasWcid) : new List<Track>();
 
                 // which tracked copies still exist - by guid across the WHOLE table (a landblock may have left the zone) AND on
                 // the tier they were made for (review: /createinst can hand a freed guid to an unrelated row on another layer)
                 var guidVar = new Dictionary<uint, int?>();   // guid -> its variation, for every guid any track names
+                var guidWcid = new Dictionary<uint, uint>();  // guid -> its weenie
                 var lookup = allTracks.Select(t => t.Dst).Concat(allTracks.Select(t => t.Src)).Distinct().ToList();
                 for (var i = 0; i < lookup.Count; i += 1000)
                 {
                     var chunk = lookup.Skip(i).Take(1000).ToList();
-                    foreach (var r in ctx.LandblockInstance.AsNoTracking().Where(r => chunk.Contains(r.Guid)).Select(r => new { r.Guid, r.VariationId }))
-                        guidVar[r.Guid] = r.VariationId;
+                    foreach (var r in ctx.LandblockInstance.AsNoTracking().Where(r => chunk.Contains(r.Guid)).Select(r => new { r.Guid, r.VariationId, r.WeenieClassId }))
+                    { guidVar[r.Guid] = r.VariationId; guidWcid[r.Guid] = r.WeenieClassId; }
                 }
                 bool AliveOn(uint guid, int variation) => guidVar.TryGetValue(guid, out var gv) && gv == variation;
-                var existing = new HashSet<uint>(allTracks.Where(t => AliveOn(t.Dst, t.DstVar)).Select(t => t.Dst));
+                // a tracked copy is OURS only while its guid is on its tier AND still carries the weenie clonelayer wrote (review
+                // 2026-10-04: /removeinst a copy, then /createinst another object on that tier that gets the freed guid - update
+                // must not overwrite it, prune must not delete it). A record from before the weenie was kept has no DstWcid.
+                bool CopyAlive(Track t) => AliveOn(t.Dst, t.DstVar)
+                    && (t.DstWcid == null || (guidWcid.TryGetValue(t.Dst, out var w) && w == t.DstWcid.Value));
+                var existing = new HashSet<uint>(allTracks.Where(CopyAlive).Select(t => t.Dst));
 
                 // reserved guids per landblock range: every row in the range (any landblock, any variation) + every
                 // dst_guid still in the tracking table (a hand-deleted copy keeps its record, so its guid stays reserved)
                 var reserved = new Dictionary<ushort, HashSet<uint>>();
-                var allTrackGuids = tableExists ? ReadTracks(ctx, "1=1").Select(t => t.Dst).ToHashSet() : new HashSet<uint>();
+                var allTrackGuids = tableExists ? ReadTracks(ctx, "1=1", hasWcid).Select(t => t.Dst).ToHashSet() : new HashSet<uint>();
                 // a source row that is itself a tracked COPY of another layer (cloning from v12 that holds v11's copies) is
                 // never re-copied - it would duplicate every placement (review finding 3)
                 var copiesInSource = src.Count(s => allTrackGuids.Contains(s.Guid));
@@ -181,9 +189,9 @@ namespace ACE.Server.Command.Handlers
                     var adoptPool = layer.Values.Where(r => !owned.Contains(r.Guid) && !allTrackGuids.Contains(r.Guid))
                         .GroupBy(r => (r.WeenieClassId, r.ObjCellId)).ToDictionary(g => g.Key, g => g.ToList());
 
-                    // a track whose dst guid now belongs to an unrelated row on ANOTHER layer is stale: clear the record, never
-                    // touch that row (review finding 2)
-                    foreach (var t in tierTracks.Where(t => !AliveOn(t.Dst, v) && guidVar.ContainsKey(t.Dst)))
+                    // a track whose dst guid now belongs to an unrelated row - on ANOTHER layer (review finding 2), or on this tier
+                    // with another weenie (review 2026-10-04) - is stale: clear the record, never touch that row
+                    foreach (var t in tierTracks.Where(t => !CopyAlive(t) && guidVar.ContainsKey(t.Dst)))
                     { plan.DropTracks.Add(t.Dst); plan.Stale++; }
                     var staleSet = plan.DropTracks.ToHashSet();
 
@@ -288,6 +296,9 @@ namespace ACE.Server.Command.Handlers
             int added = 0, adopted = 0, updated = 0, pruned = 0, links = 0, dropped = 0;
 
             using var tx = ctx.Database.BeginTransaction();
+            // records written before the weenie was kept: fill it in from the copy on its own tier the first time we write
+            Exec(ctx, $"UPDATE {TrackTable} t JOIN landblock_instance i ON i.guid = t.dst_guid AND i.variation_Id = t.dst_variation "
+                + "SET t.dst_wcid = i.weenie_Class_Id WHERE t.dst_wcid IS NULL");
             foreach (var p in plans)
             {
                 // src guid -> dst guid on this tier after the write: the plan's chosen live copies + adopted + new
@@ -311,14 +322,14 @@ namespace ACE.Server.Command.Handlers
                         + $"s.angles_W, s.angles_X, s.angles_Y, s.angles_Z, s.is_Link_Child, {now}, m.variation "
                         + "FROM zc_clone_tmp m JOIN landblock_instance s ON s.guid = m.src_guid");
                     for (var i = 0; i < p.Add.Count; i += Batch)
-                        InsertTracks(ctx, p.Add.Skip(i).Take(Batch).Select(n => (n.Guid, n.Src.Guid, n.Variation)), srcVar, zoneSql, now);
+                        InsertTracks(ctx, p.Add.Skip(i).Take(Batch).Select(n => (n.Guid, n.Src.Guid, n.Variation, n.Src.WeenieClassId)), srcVar, zoneSql, now);
                     foreach (var n in p.Add) copyOf[n.Src.Guid] = n.Guid;
                     added += p.Add.Count;
                 }
                 for (var i = 0; i < p.Adopt.Count; i += Batch)
                 {
                     var chunk = p.Adopt.Skip(i).Take(Batch).ToList();
-                    InsertTracks(ctx, chunk.Select(a => (a.Dst, a.Src.Guid, p.Variation)), srcVar, zoneSql, now);
+                    InsertTracks(ctx, chunk.Select(a => (a.Dst, a.Src.Guid, p.Variation, a.Src.WeenieClassId)), srcVar, zoneSql, now);
                     foreach (var a in chunk) copyOf[a.Src.Guid] = a.Dst;
                     adopted += chunk.Count;
                 }
@@ -328,6 +339,7 @@ namespace ACE.Server.Command.Handlers
                         + "d.obj_Cell_Id = s.obj_Cell_Id, d.origin_X = s.origin_X, d.origin_Y = s.origin_Y, d.origin_Z = s.origin_Z, "
                         + "d.angles_W = s.angles_W, d.angles_X = s.angles_X, d.angles_Y = s.angles_Y, d.angles_Z = s.angles_Z, "
                         + $"d.is_Link_Child = s.is_Link_Child, d.last_Modified = {now} WHERE d.guid = {d}");
+                    Exec(ctx, $"UPDATE {TrackTable} SET dst_wcid = {s.WeenieClassId} WHERE dst_guid = {d}");   // the copy's weenie now
                     updated++;
                 }
                 if (p.Prune.Count > 0)
@@ -360,12 +372,12 @@ namespace ACE.Server.Command.Handlers
             return $"added {added}, adopted {adopted}, updated {updated}, pruned {pruned}, links {links}" + (dropped > 0 ? $", {dropped} record(s) cleared" : "");
         }
 
-        private static void InsertTracks(WorldDbContext ctx, IEnumerable<(uint Dst, uint Src, int DstVar)> rows, int srcVar, string zoneSql, string now)
+        private static void InsertTracks(WorldDbContext ctx, IEnumerable<(uint Dst, uint Src, int DstVar, uint DstWcid)> rows, int srcVar, string zoneSql, string now)
         {
             var list = rows.ToList();
             if (list.Count == 0) return;
-            Exec(ctx, $"INSERT INTO {TrackTable} (dst_guid, src_guid, src_variation, dst_variation, zone, created) VALUES "
-                + string.Join(",", list.Select(r => $"({r.Dst},{r.Src},{srcVar},{r.DstVar},{zoneSql},{now})")));
+            Exec(ctx, $"INSERT INTO {TrackTable} (dst_guid, src_guid, src_variation, dst_variation, zone, created, dst_wcid) VALUES "
+                + string.Join(",", list.Select(r => $"({r.Dst},{r.Src},{srcVar},{r.DstVar},{zoneSql},{now},{r.DstWcid})")));
         }
 
         // raw SQL with no parameters - EF still runs string.Format over it, so a brace in user text (a zone name) is doubled
@@ -427,13 +439,32 @@ namespace ACE.Server.Command.Handlers
             finally { if (!wasOpen) conn.Close(); }
         }
 
-        private static void EnsureTrackTable(WorldDbContext ctx) =>
+        private static void EnsureTrackTable(WorldDbContext ctx)
+        {
             Exec(ctx, $"CREATE TABLE IF NOT EXISTS {TrackTable} ("
                 + "dst_guid INT UNSIGNED NOT NULL PRIMARY KEY, src_guid INT UNSIGNED NOT NULL, src_variation INT NOT NULL, "
-                + "dst_variation INT NOT NULL, zone VARCHAR(255) NULL, created DATETIME NOT NULL, "
+                + "dst_variation INT NOT NULL, zone VARCHAR(255) NULL, created DATETIME NOT NULL, dst_wcid INT UNSIGNED NULL, "
                 + "KEY ix_src (src_guid, dst_variation))");
+            // a table made before 2026-10-04 has no dst_wcid: add it (checked first - MySQL has no ADD COLUMN IF NOT EXISTS)
+            if (!TrackHasWcidColumn(ctx))
+                Exec(ctx, $"ALTER TABLE {TrackTable} ADD COLUMN dst_wcid INT UNSIGNED NULL");
+        }
 
-        private static List<Track> ReadTracks(WorldDbContext ctx, string where)
+        private static bool TrackHasWcidColumn(WorldDbContext ctx)
+        {
+            var conn = ctx.Database.GetDbConnection();
+            var wasOpen = conn.State == System.Data.ConnectionState.Open;
+            if (!wasOpen) conn.Open();
+            try
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{TrackTable}' AND COLUMN_NAME = 'dst_wcid'";
+                return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
+            }
+            finally { if (!wasOpen) conn.Close(); }
+        }
+
+        private static List<Track> ReadTracks(WorldDbContext ctx, string where, bool hasWcid)
         {
             var list = new List<Track>();
             var conn = ctx.Database.GetDbConnection();
@@ -442,12 +473,13 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = $"SELECT dst_guid, src_guid, src_variation, dst_variation, zone FROM {TrackTable} WHERE {where}";
+                cmd.CommandText = $"SELECT dst_guid, src_guid, src_variation, dst_variation, zone, {(hasWcid ? "dst_wcid" : "NULL")} FROM {TrackTable} WHERE {where}";
                 using DbDataReader r = cmd.ExecuteReader();
                 while (r.Read())
                     list.Add(new Track { Dst = Convert.ToUInt32(r.GetValue(0)), Src = Convert.ToUInt32(r.GetValue(1)),
                         SrcVar = Convert.ToInt32(r.GetValue(2)), DstVar = Convert.ToInt32(r.GetValue(3)),
-                        Zone = r.IsDBNull(4) ? null : r.GetString(4) });
+                        Zone = r.IsDBNull(4) ? null : r.GetString(4),
+                        DstWcid = r.IsDBNull(5) ? null : Convert.ToUInt32(r.GetValue(5)) });
             }
             finally { if (!wasOpen) conn.Close(); }
             return list;

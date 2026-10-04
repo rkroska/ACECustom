@@ -748,7 +748,8 @@ namespace ACE.Server.Entity
             // Cast on Strike counts only when it is a card (in the record): a player's own Ring Glyph proc is not one
             if (present.Contains(ZoneStatResolver.WeaponProcArcDamageKey)) count++;
             if (present.Contains(ZoneStatResolver.WeaponProcRingDamageKey)) count++;
-            // Cleave counts only when a card raised it above the base weapon's own (two-handers carry Cleaving natively)
+            // Cleave counts when a card changed the base weapon's own (two-handers carry Cleaving natively). A drop's card always
+            // lands above it since 2026-10-04 (ZoneLootMutator); "!=" also counts an older drop that rolled below it
             var cleave = target.GetProperty(PropertyInt.Cleaving) ?? 0;
             var baseCleave = DatabaseManager.World.GetCachedWeenie(target.WeenieClassId)?.GetProperty(PropertyInt.Cleaving) ?? 0;
             if (cleave > 1 && cleave != baseCleave) count++;

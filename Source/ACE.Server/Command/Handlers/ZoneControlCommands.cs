@@ -429,7 +429,8 @@ namespace ACE.Server.Command.Handlers
                             variation = ZoneControlManager.GetEffectiveVariation(session.Player);
                         else
                             int.TryParse(args[varIdx].TrimStart('v', 'V'), out variation);
-                        if (variation < 0) { Msg($"variation must be >= 0 (you're at v{variation} - zones can't be created on rift design variations)."); return; }
+                        // owner 2026-10-04 (review): a zone on v0-v10 put Zone Control combat on retail monsters - zones live on v11+
+                        if (variation < VariationManager.EndgameMinVariation) { Msg($"Zones live on v{VariationManager.EndgameMinVariation} and above (you asked for v{variation}; v0-v10 is retail and Zone Control never touches it)."); return; }
 
                         ushort lb;
                         if (args.Count >= varIdx + 2)
@@ -530,13 +531,16 @@ namespace ACE.Server.Command.Handlers
 
                     case "setvar":
                     {
-                        if (args.Count < 3) { Msg("Usage: setvar <name> <variation>   (0 = normal world, 11+ = variants; use 'here' to read yours)"); return; }
+                        if (args.Count < 3) { Msg("Usage: setvar <name> <variation>   (11+ only - v0-v10 is retail; use 'here' to read yours)"); return; }
                         var name = args[1];
                         int variation;
                         if (args[2].Equals("here", StringComparison.OrdinalIgnoreCase))
                             variation = ZoneControlManager.GetEffectiveVariation(session.Player);
-                        else if (!int.TryParse(args[2].TrimStart('v', 'V'), out variation) || variation < 0)
-                        { Msg("variation must be a number >= 0 (or 'here')."); return; }
+                        else if (!int.TryParse(args[2].TrimStart('v', 'V'), out variation))
+                        { Msg($"variation must be a number >= {VariationManager.EndgameMinVariation} (or 'here')."); return; }
+                        // owner 2026-10-04 (review): v0-v10 is retail - a zone there would put Zone Control combat on retail monsters
+                        if (variation < VariationManager.EndgameMinVariation)
+                        { Msg($"Zones live on v{VariationManager.EndgameMinVariation} and above (v{variation} is retail - Zone Control never touches it)."); return; }
                         if (!ZoneControlManager.SetVariation(name, variation)) { Msg($"No zone '{name}'."); return; }
                         Msg($"'{name}' Variation set to v{variation}. Now governs monsters/effects at that variation.");
                         // A boundary can't live on a retail variation â€” moving a bounded zone to <= 10 drops it.
@@ -2567,7 +2571,7 @@ namespace ACE.Server.Command.Handlers
                             czHi = czLo;
                         }
 
-                        if (czLo < 0 || czHi < czLo || czHi - czLo > 50) { Msg("Bad variation range."); return; }
+                        if (czLo < VariationManager.EndgameMinVariation || czHi < czLo || czHi - czLo > 50) { Msg($"Bad variation range (v{VariationManager.EndgameMinVariation} and above, at most 50 at a time)."); return; }
 
                         var czMade = new List<string>();
                         var czSkipped = new List<string>();
@@ -4026,10 +4030,22 @@ namespace ACE.Server.Command.Handlers
             return int.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
         }
 
-        /// <summary>A finite number - NaN / Infinity parse under NumberStyles.Any and would poison every reader of the stat
-        /// (review 2026-10-04: a NaN bag_odds dropped a bag on every kill, a NaN loot_grade_floor forced every grade to 0).</summary>
+        /// <summary>A finite number - NaN / Infinity would poison every reader of the stat (review 2026-10-04: a NaN bag_odds
+        /// dropped a bag on every kill, a NaN loot_grade_floor forced every grade to 0). Thousands separators are allowed only
+        /// as real 3-digit groups after a non-zero lead ("151,200" for odds): "0,5" used to read as 5 (x10 a vuln cap or a DoT
+        /// multiplier) and is now refused, like "0,500", currency signs and parentheses (review 2026-10-04).</summary>
         private static bool TryDouble(string s, out double value)
-            => double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out value) && double.IsFinite(value);
+        {
+            value = 0;
+            s = s?.Trim();
+            if (string.IsNullOrEmpty(s) || (s.Contains(',') && !ThousandsGroups.IsMatch(s)))
+                return false;
+            return double.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out value)
+                && double.IsFinite(value);
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex ThousandsGroups =
+            new System.Text.RegularExpressions.Regex(@"^[+-]?[1-9]\d{0,2}(,\d{3})+(\.\d*)?([eE][+-]?\d+)?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
         /// <summary>A finite plain number - no thousands separators ("0,1" is refused, never read as 1), no currency or
         /// parentheses. For values where a comma can only be a mistyped decimal point (chances, tier anchors).</summary>

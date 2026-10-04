@@ -29,19 +29,27 @@ namespace ACE.Server.WorldObjects
         private int dotTickerGeneration;
         private double dotTickerScheduledAt;
         private double dotEffectsNextAt;
+        private double dotEmotesNextAt;
 
         /// <summary>True when a DoT tick on this creature should play the hit sound and splatter: always on the retail
         /// heartbeat, and at most once per heartbeat interval while it is on the faster ticker (owner 2026-10-04: "can the sound
         /// only tick every 5 seconds like normal"). Touched only on this creature's own thread, like the ticker.</summary>
-        public bool DotEffectsDue()
+        public bool DotEffectsDue() => HeartbeatPaced(ref dotEffectsNextAt);
+
+        /// <summary>True when a DoT tick should roll this creature's ReceiveDamage emotes (heals, summons, taunts): once per
+        /// heartbeat interval on the faster ticker, as on the retail heartbeat - every 1 s tick rolled them, about 5x as often
+        /// (review 2026-10-04). Its own clock, so the sound throttle cannot eat it. Own thread only.</summary>
+        public bool DotEmotesDue() => HeartbeatPaced(ref dotEmotesNextAt);
+
+        private bool HeartbeatPaced(ref double nextAt)
         {
             if (!UsesDotTicker)
                 return true;
             var now = Time.GetUnixTime();
-            if (now < dotEffectsNextAt)
+            if (now < nextAt)
                 return false;
             var heartbeat = HeartbeatInterval ?? DefaultHeartbeatSeconds;
-            dotEffectsNextAt = now + (heartbeat > 0 ? heartbeat : DefaultHeartbeatSeconds);
+            nextAt = now + (heartbeat > 0 ? heartbeat : DefaultHeartbeatSeconds);
             return true;
         }
 

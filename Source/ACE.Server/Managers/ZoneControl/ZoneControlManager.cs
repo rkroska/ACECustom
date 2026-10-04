@@ -904,6 +904,10 @@ namespace ACE.Server.Managers.ZoneControl
                 return null;
 
             var effVar = GetEffectiveVariation(creature);
+            // never retail (owner 2026-10-04, review): a zone left on v0-v10 from before setvar / create refused it governs
+            // nothing - Zone Control combat, loot, effects and looks stay off retail monsters
+            if (effVar < VariationManager.EndgameMinVariation)
+                return null;
 
             ZoneRef best = null;
             foreach (var zr in list)
@@ -1335,6 +1339,10 @@ namespace ACE.Server.Managers.ZoneControl
                 return null;
 
             var effVar = GetEffectiveVariation(creature);
+            // never retail (owner 2026-10-04, review): a zone left on v0-v10 from before setvar / create refused it governs
+            // nothing - Zone Control combat, loot, effects and looks stay off retail monsters
+            if (effVar < VariationManager.EndgameMinVariation)
+                return null;
 
             ZoneRef best = null;
             foreach (var zr in list)

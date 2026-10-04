@@ -57,7 +57,8 @@ never reads as real salvage. The client receives exactly three icon layers (icon
 - **The limit:** the appraisal shows "Properties: X of Y" (armour: top of Modifiers; weapons: under Weapon Grade). Y is the
   tier's `armor_modifier_cap` / `weapon_modifier_cap`; X counts what a drop's limit counts - every Modifiers line that is
   not marked "(Built-in)", Reinforced included, and on weapons every card: the graded ones plus Cast on Strike, Cleave and
-  Split Arrow, which bags count but never change. Memory and Vengeance refuse at the limit; Exchange never adds to the
+  Split Arrow, which bags count but never change (a dropped Cleave card always lands above the weapon's own Cleave, so it
+  is always visible to the count). Memory and Vengeance refuse at the limit; Exchange never adds to the
   count, so it is never refused for it.
 - **Rerolls** use the tier's normal grade odds (the tier Default's - a rank's `loot_grade_floor` does not apply, so a boss
   piece rerolls like any other; owner: "crafting is gambling"); the value lands inside the live band and keeps its place

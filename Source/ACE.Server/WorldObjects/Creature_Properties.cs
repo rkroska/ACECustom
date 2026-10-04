@@ -148,7 +148,7 @@ namespace ACE.Server.WorldObjects
             if (vulnMod > 1.0f && ServerConfig.zc_vuln_enabled.Value && !(this is Player)
                 && ((zoneProfile != null && zoneProfile.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.VulnCap))
                     || (ServerConfig.zc_combat_rules_enabled.Value
-                        && ACE.Server.Managers.VariationManager.GetEffectiveEndgameVariation(this) >= ServerConfig.zc_vuln_min_variation.Value)))
+                        && ACE.Server.Managers.VariationManager.GetEffectiveEndgameVariation(this) >= ACE.Server.Managers.VariationManager.EndgameGate(ServerConfig.zc_vuln_min_variation.Value))))
             {
                 var vulnEff = GetProperty(PropertyFloat.VulnEffectivenessOverride) ?? ServerConfig.zc_vuln_effectiveness.Value;
                 var vulnCap = GetProperty(PropertyFloat.VulnCapOverride) ?? ServerConfig.zc_vuln_cap.Value;
@@ -213,7 +213,7 @@ namespace ACE.Server.WorldObjects
             // redundant with damage_resist_rating.
             if (ServerConfig.zc_mob_dmg_taken_enabled.Value && !(this is Player)
                 && ServerConfig.zc_combat_rules_enabled.Value
-                && ACE.Server.Managers.VariationManager.GetEffectiveEndgameVariation(this) >= ServerConfig.zc_mob_dmg_taken_min_variation.Value)
+                && ACE.Server.Managers.VariationManager.GetEffectiveEndgameVariation(this) >= ACE.Server.Managers.VariationManager.EndgameGate(ServerConfig.zc_mob_dmg_taken_min_variation.Value))
             {
                 var dmgMult = GetProperty(PropertyFloat.MobDmgTakenOverride) ?? ServerConfig.zc_mob_dmg_taken_mult.Value;
 

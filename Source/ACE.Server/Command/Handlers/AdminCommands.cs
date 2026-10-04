@@ -7459,7 +7459,9 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 string key = parameters[0];
-                var doubleVal = double.Parse(parameters[1]);
+                // invariant culture, no thousands separators: on a comma-decimal host "0.9" (what the plugin sends) read as 9
+                // (review 2026-10-04); a bad value lands in the catch below like before
+                var doubleVal = double.Parse(parameters[1], NumberStyles.Float, CultureInfo.InvariantCulture);
                 if (!double.IsFinite(doubleVal))
                 {
                     CommandHandlerHelper.WriteOutputInfo(session, "Please input a finite number (not NaN or Infinity).", ChatMessageType.Help);

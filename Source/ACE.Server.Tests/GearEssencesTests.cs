@@ -96,6 +96,17 @@ namespace ACE.Server.Tests
             Assert.AreEqual(0, ZoneStatResolver.OddsToInt(double.PositiveInfinity));
             Assert.AreEqual(500, ZoneStatResolver.OddsToInt(500));
             Assert.AreEqual(int.MaxValue - 1, ZoneStatResolver.OddsToInt(1e12));   // Next(1, int.MaxValue) would throw
+            Assert.AreEqual(int.MaxValue - 1, ZoneStatResolver.OddsToInt(int.MaxValue));   // special_odds 2147483647 (review 2026-10-04)
+            ACE.Common.ThreadSafeRandom.Next(1, ZoneStatResolver.OddsToInt(int.MaxValue));   // must not throw
+        }
+
+        [TestMethod]
+        public void EndgameGate_NeverBelowV11()
+        {
+            Assert.AreEqual(11, ACE.Server.Managers.VariationManager.EndgameGate(0));   // a typo can never reach retail v0-v2
+            Assert.AreEqual(11, ACE.Server.Managers.VariationManager.EndgameGate(2));
+            Assert.AreEqual(11, ACE.Server.Managers.VariationManager.EndgameGate(11));
+            Assert.AreEqual(14, ACE.Server.Managers.VariationManager.EndgameGate(14));
         }
 
         [TestMethod]

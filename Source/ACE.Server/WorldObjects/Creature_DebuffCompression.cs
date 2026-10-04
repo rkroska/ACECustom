@@ -58,7 +58,8 @@ namespace ACE.Server.WorldObjects
         {
             if (!zp.Has(stat)) return 1.0f;
             var v = zp.Get(stat);
-            return double.IsFinite(v) ? (float)Math.Max(0.0, v) : 1.0f;
+            // capped at float.MaxValue: a finite double above float range (1e39) became +Infinity, and 0 x Infinity = NaN
+            return double.IsFinite(v) ? (float)Math.Min(Math.Max(0.0, v), float.MaxValue) : 1.0f;
         }
 
         /// <summary>Corruption I-VII (5395-5401) + Incantation of Corruption (5402).</summary>
@@ -72,7 +73,7 @@ namespace ACE.Server.WorldObjects
         public bool ZcDebuffCompressed =>
             !(this is Player) && !(this is CombatPet)
             && ServerConfig.zc_vuln_enabled.Value && ServerConfig.zc_combat_rules_enabled.Value
-            && VariationManager.GetEffectiveEndgameVariation(this) >= ServerConfig.zc_vuln_min_variation.Value;
+            && VariationManager.GetEffectiveEndgameVariation(this) >= ACE.Server.Managers.VariationManager.EndgameGate(ServerConfig.zc_vuln_min_variation.Value);
 
         public const double DebuffDefaultFloor = 0.25;
         public const double DebuffDefaultCap = 0.50;

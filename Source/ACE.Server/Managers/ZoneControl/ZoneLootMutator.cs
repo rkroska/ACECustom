@@ -612,7 +612,11 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 var (defLo, defHi) = CleaveSplitBandAt(lootTier);
                 var targets = (int)Math.Round(RollRangeBand(p, ZoneStat.WeaponCleaveMin, ZoneStat.WeaponCleaveMax, defLo, defHi, 1, 10, lootTier));
-                wo.SetProperty(PropertyInt.Cleaving, targets + 1); // engine: CleaveTargets = Cleaving - 1
+                // owner 2026-10-04 (review): the card always beats the weapon's OWN Cleaving (two-handers carry 2-5 natively) -
+                // a roll at or below it was a dead card that still spent a slot, and the Salvage Bag counter (which sees a
+                // Cleave card only as "differs from the weenie") could not see it, so a bag could add one over the tier cap
+                var ownCleaving = wo.GetProperty(PropertyInt.Cleaving) ?? 0;
+                wo.SetProperty(PropertyInt.Cleaving, Math.Max(targets + 1, ownCleaving + 1)); // engine: CleaveTargets = Cleaving - 1
             }
 
             // Split Arrows (bows): shots fork to hit extra targets (the custom bowstring system).

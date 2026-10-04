@@ -201,7 +201,7 @@ namespace ACE.Server.WorldObjects
                 return 0f;
 
             var variation = VariationManager.GetEffectiveEndgameVariation(attacker);
-            var minVariation = ServerConfig.zc_pcthp_min_variation.Value;
+            var minVariation = ACE.Server.Managers.VariationManager.EndgameGate(ServerConfig.zc_pcthp_min_variation.Value);
 
             // floor fraction P: per-weenie override wins; otherwise tier-scaled (+ boss multiplier)
             double p;
@@ -315,7 +315,7 @@ namespace ACE.Server.WorldObjects
 
             if (amount <= 0.0 || double.IsNaN(amount) || double.IsInfinity(amount))
                 return 0f;
-            return (float)amount;
+            return (float)Math.Min(amount, float.MaxValue);   // a finite double above float range would cast to +Infinity
         }
 
         /// <summary>
@@ -339,7 +339,7 @@ namespace ACE.Server.WorldObjects
                 return 0;
 
             var variation = VariationManager.GetEffectiveEndgameVariation(attacker);
-            if (variation < ServerConfig.zc_pcthp_min_variation.Value)
+            if (variation < ACE.Server.Managers.VariationManager.EndgameGate(ServerConfig.zc_pcthp_min_variation.Value))
                 return 0;
 
             return (uint)floor;
