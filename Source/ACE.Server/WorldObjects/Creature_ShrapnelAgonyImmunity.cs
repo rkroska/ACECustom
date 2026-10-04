@@ -11,7 +11,8 @@ namespace ACE.Server.WorldObjects
     /// SHRAPNEL / AGONY IMMUNITY (owner 2026-10-03): Rocky Shrapnel and Ring of Unspeakable Agony - the two fast-casting
     /// bludgeon rings the Shrapnel / Agony charms give players - are far too strong, but players keep them. Instead a
     /// monster can be made immune: its damage from those two spells is 0. Two switches, either one is enough:
-    ///   - the WEENIE / creature bool PropertyBool.ZcImmuneShrapnelAgony (50059) - any monster, anywhere in the world;
+    ///   - the WEENIE / creature bool PropertyBool.ZcImmuneShrapnelAgony (50059) - any monster, anywhere in the world
+    ///     (while Zone Control is on - with zonecontrol_enabled off both switches are inert);
     ///   - the Zone Control stat immune_shrapnel_agony = 1 - zone-wide, Tier Default, per rank or per wcid (Bestiary Defense).
     /// Checked in both damage paths: Player.ApplyRingSpellAreaDamage (a player's rings, the normal path) and
     /// SpellProjectile.OnCollideObject (Classic-mode rings and anything else that fires these spells as projectiles).
@@ -27,7 +28,8 @@ namespace ACE.Server.WorldObjects
         /// Unspeakable Agony only). Players are never immune - the switch is for monsters.</summary>
         public bool IsImmuneToShrapnelAgony(uint spellId)
         {
-            if (!IsShrapnelOrAgony(spellId) || this is Player)
+            // the per-monster property too is Zone Control combat: inert with the master switch off (CodeRabbit #539)
+            if (!IsShrapnelOrAgony(spellId) || this is Player || !ACE.Server.Managers.ServerConfig.zonecontrol_enabled.Value)
                 return false;
             if (GetProperty(PropertyBool.ZcImmuneShrapnelAgony) == true)
                 return true;

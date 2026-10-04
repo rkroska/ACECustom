@@ -143,8 +143,9 @@ namespace ACE.Server.Command.Handlers
                 {
                     if (!AliveOn(t.Dst, t.DstVar) || !guidWcid.TryGetValue(t.Dst, out var w)) return false;
                     if (t.DstWcid != null) return w == t.DstWcid.Value;
-                    // a record from before the weenie was kept: ours only when PROVEN - its source still exists with the same weenie
-                    return guidWcid.TryGetValue(t.Src, out var sw) && sw == w;
+                    // a record from before the weenie was kept: ours only when PROVEN - its source still exists ON ITS OWN variation
+                    // with the same weenie (a source moved to another layer is not proof - CodeRabbit #539)
+                    return AliveOn(t.Src, t.SrcVar) && guidWcid.TryGetValue(t.Src, out var sw) && sw == w;
                 }
                 // ... and one that cannot be proven (source gone, or a different weenie than its source) is left ALONE (CodeRabbit
                 // #539): never updated, never pruned, never replaced by a new copy, its record and guid kept - it may be a source
@@ -204,6 +205,9 @@ namespace ACE.Server.Command.Handlers
                     foreach (var t in tierTracks.Where(t => !CopyAlive(t) && !Unverified(t) && guidVar.ContainsKey(t.Dst)))
                     { plan.DropTracks.Add(t.Dst); plan.Stale++; }
                     var staleSet = plan.DropTracks.ToHashSet();
+                    // every old record of this tier left alone - including those whose source was deleted (CodeRabbit #539)
+                    plan.Unverified = tierTracks.Count(t => t.SrcVar == srcVar && Unverified(t)
+                                                          && string.Equals(t.Zone, area.Name, StringComparison.OrdinalIgnoreCase));
 
                     foreach (var s in src)
                     {
@@ -211,7 +215,7 @@ namespace ACE.Server.Command.Handlers
                             ? allMine.Where(t => !staleSet.Contains(t.Dst)).ToList() : new List<Track>();
                         if (myTracks.Count > 0)
                         {
-                            if (myTracks.Any(Unverified)) { plan.Unverified++; continue; }   // an old record not provably ours - left alone
+                            if (myTracks.Any(Unverified)) continue;   // an old record not provably ours - left alone (counted below)
                             var alive = myTracks.FirstOrDefault(t => existing.Contains(t.Dst));
                             if (alive != null)
                             {
@@ -311,7 +315,7 @@ namespace ACE.Server.Command.Handlers
             // (CodeRabbit #539) only where the row still carries its SOURCE's weenie - a hand-deleted copy whose guid /createinst
             // gave to an unrelated object must not be recorded as ours
             Exec(ctx, $"UPDATE {TrackTable} t JOIN landblock_instance i ON i.guid = t.dst_guid AND i.variation_Id = t.dst_variation "
-                + "JOIN landblock_instance s ON s.guid = t.src_guid AND s.weenie_Class_Id = i.weenie_Class_Id "
+                + "JOIN landblock_instance s ON s.guid = t.src_guid AND s.variation_Id = t.src_variation AND s.weenie_Class_Id = i.weenie_Class_Id "
                 + "SET t.dst_wcid = i.weenie_Class_Id WHERE t.dst_wcid IS NULL");
             foreach (var p in plans)
             {

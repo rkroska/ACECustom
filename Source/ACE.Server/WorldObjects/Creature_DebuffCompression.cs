@@ -69,9 +69,11 @@ namespace ACE.Server.WorldObjects
         public static bool IsDestructiveCurseSpell(uint spellId) => spellId >= 5337 && spellId <= 5344;
 
         /// <summary>Same gate as the retail-vuln compression it replaces: a non-player, non-pet monster at endgame variation
-        /// zc_vuln_min_variation (11) and up, with zc_vuln_enabled and zc_combat_rules_enabled on.</summary>
+        /// zc_vuln_min_variation (11) and up, with zc_vuln_enabled and zc_combat_rules_enabled on - and Zone Control itself on
+        /// (RULING 1 "fully inert", CodeRabbit #539).</summary>
         public bool ZcDebuffCompressed =>
             !(this is Player) && !(this is CombatPet)
+            && ServerConfig.zonecontrol_enabled.Value
             && ServerConfig.zc_vuln_enabled.Value && ServerConfig.zc_combat_rules_enabled.Value
             && VariationManager.GetEffectiveEndgameVariation(this) >= ACE.Server.Managers.VariationManager.EndgameGate(ServerConfig.zc_vuln_min_variation.Value);
 
