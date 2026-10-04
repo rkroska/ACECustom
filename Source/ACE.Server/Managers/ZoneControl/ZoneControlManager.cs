@@ -874,6 +874,15 @@ namespace ACE.Server.Managers.ZoneControl
             || ExemptBoolOf(creature);   // cached bool read - no biota lock on the per-hit path (2026-09-04)
 
         /// <summary>
+        /// The zone profile for a COMBAT-MODEL read (True Damage, the damage multiplier, aug curves, Spell Armor, DoT armor /
+        /// multipliers, the debuff bonus, the Shrapnel / Agony immunity): <see cref="ResolveForCreature"/>, but null while
+        /// zonecontrol_enabled is OFF - RULING 1, "fully inert", like every other combat gate (CodeRabbit #539: the damage
+        /// multiplier still applied with it off).
+        /// </summary>
+        public static EvaluatedProfile ResolveCombatProfile(Creature creature)
+            => ServerConfig.zonecontrol_enabled.Value ? ResolveForCreature(creature) : null;
+
+        /// <summary>
         /// Resolves the winning zone for a creature and evaluates its stat profile. Returns null when the
         /// creature should NOT be zone-controlled: it's a player, it's a pet, it's exempt, no enabled zone
         /// covers its landblock, or no covering zone's Variation matches the creature's current variation.
@@ -1980,10 +1989,10 @@ namespace ACE.Server.Managers.ZoneControl
         /// player, so the empty-map case returns before any resolve.</summary>
         public static float MonsterDamageMultFor(Creature attacker, Creature defender)
         {
-            if (attacker == null || attacker is Player || defender is not Player) return 1f;
+            if (!ServerConfig.zonecontrol_enabled.Value || attacker == null || attacker is Player || defender is not Player) return 1f;
             var map = _damageMultSnapshot;
             if (map.Count == 0 || !map.TryGetValue(attacker.WeenieClassId, out var m)) return 1f;
-            return ResolveForCreature(attacker) != null ? (float)m : 1f;
+            return ResolveCombatProfile(attacker) != null ? (float)m : 1f;
         }
 
         /// <summary>`/zonecontrol damagemult`: set (or clear with null / 1.0) one monster's multiplier. Persists.</summary>

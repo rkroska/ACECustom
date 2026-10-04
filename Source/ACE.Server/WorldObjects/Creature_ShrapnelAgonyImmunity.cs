@@ -31,7 +31,7 @@ namespace ACE.Server.WorldObjects
                 return false;
             if (GetProperty(PropertyBool.ZcImmuneShrapnelAgony) == true)
                 return true;
-            var zone = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this);
+            var zone = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveCombatProfile(this);
             return zone != null && zone.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.ImmuneShrapnelAgony)
                 && zone.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.ImmuneShrapnelAgony) >= 0.5;
         }

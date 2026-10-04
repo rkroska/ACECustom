@@ -829,7 +829,9 @@ namespace ACE.Server.Command.Handlers
                         ErrorMessage = "You must specify the amount of xp."
                     }
                 };
-                if (CommandParameterHelpers.ResolveACEParameters(session, parameters, aceParams))
+                // the ceiling holds for plain digits too - ExpandLastAmount only checks shaped amounts (CodeRabbit #539)
+                if (CommandParameterHelpers.ResolveACEParameters(session, parameters, aceParams)
+                    && aceParams[1].AsLong <= ShortNumber.MaxGrantAmount)
                 {
                     try
                     {
@@ -878,7 +880,9 @@ namespace ACE.Server.Command.Handlers
                         ErrorMessage = "You must specify the amount of luminance."
                     }
                 };
-                if (CommandParameterHelpers.ResolveACEParameters(session, parameters, aceParams))
+                // the ceiling holds for plain digits too - ExpandLastAmount only checks shaped amounts (CodeRabbit #539)
+                if (CommandParameterHelpers.ResolveACEParameters(session, parameters, aceParams)
+                    && aceParams[1].AsLong <= ShortNumber.MaxGrantAmount)
                 {
                     try
                     {

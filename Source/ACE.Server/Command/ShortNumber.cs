@@ -21,9 +21,15 @@ namespace ACE.Server.Command
         private static readonly Regex Shape = new Regex(@"^(\d{1,3}(,\d{3})+|\d*)(\.\d+)?[KMBTQ]?$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-        /// <summary>An audit-line amount: short (5B) while audit_short_numbers is on, else full with commas.</summary>
+        /// <summary>An audit-line amount: full with commas; while audit_short_numbers is on the short form leads and the exact
+        /// amount follows ("5B (5,000,000,001)") - an auditor must be able to recover the real grant (CodeRabbit #539).</summary>
         public static string Audit(long value)
-            => ServerConfig.audit_short_numbers.Value ? Format(value) : value.ToString("N0", CultureInfo.InvariantCulture);
+        {
+            var exact = value.ToString("N0", CultureInfo.InvariantCulture);
+            if (!ServerConfig.audit_short_numbers.Value) return exact;
+            var shortForm = Format(value);
+            return shortForm == exact ? exact : $"{shortForm} ({exact})";
+        }
 
         /// <summary>5B / 1.2M / 250K; exact with commas below 10,000. Same thresholds and "0.#" rounding as
         /// Creature.FormatDamage mode 2 (and the web portal's shortNumber.ts), but culture-invariant.</summary>

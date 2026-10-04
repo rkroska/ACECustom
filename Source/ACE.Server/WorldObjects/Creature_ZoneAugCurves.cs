@@ -30,7 +30,7 @@ namespace ACE.Server.WorldObjects
         {
             if (attacker is SpellProjectile sp) attacker = sp.ProjectileSource;
             if (attacker is not Creature c || attacker is Player) return null;
-            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(c);
+            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveCombatProfile(c);
             return zp != null && zp.Get(ZoneStat.AugCurves) >= 0.5 ? zp : null;
         }
 

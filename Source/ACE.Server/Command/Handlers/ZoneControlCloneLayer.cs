@@ -128,19 +128,28 @@ namespace ACE.Server.Command.Handlers
                 // the tier they were made for (review: /createinst can hand a freed guid to an unrelated row on another layer)
                 var guidVar = new Dictionary<uint, int?>();   // guid -> its variation, for every guid any track names
                 var guidWcid = new Dictionary<uint, uint>();  // guid -> its weenie
+                var guidCell = new Dictionary<uint, uint>();  // guid -> its cell
                 var lookup = allTracks.Select(t => t.Dst).Concat(allTracks.Select(t => t.Src)).Distinct().ToList();
                 for (var i = 0; i < lookup.Count; i += 1000)
                 {
                     var chunk = lookup.Skip(i).Take(1000).ToList();
-                    foreach (var r in ctx.LandblockInstance.AsNoTracking().Where(r => chunk.Contains(r.Guid)).Select(r => new { r.Guid, r.VariationId, r.WeenieClassId }))
-                    { guidVar[r.Guid] = r.VariationId; guidWcid[r.Guid] = r.WeenieClassId; }
+                    foreach (var r in ctx.LandblockInstance.AsNoTracking().Where(r => chunk.Contains(r.Guid)).Select(r => new { r.Guid, r.VariationId, r.WeenieClassId, r.ObjCellId }))
+                    { guidVar[r.Guid] = r.VariationId; guidWcid[r.Guid] = r.WeenieClassId; guidCell[r.Guid] = r.ObjCellId; }
                 }
                 bool AliveOn(uint guid, int variation) => guidVar.TryGetValue(guid, out var gv) && gv == variation;
                 // a tracked copy is OURS only while its guid is on its tier AND still carries the weenie clonelayer wrote (review
                 // 2026-10-04: /removeinst a copy, then /createinst another object on that tier that gets the freed guid - update
                 // must not overwrite it, prune must not delete it). A record from before the weenie was kept has no DstWcid.
-                bool CopyAlive(Track t) => AliveOn(t.Dst, t.DstVar)
-                    && (t.DstWcid == null || (guidWcid.TryGetValue(t.Dst, out var w) && w == t.DstWcid.Value));
+                bool CopyAlive(Track t)
+                {
+                    if (!AliveOn(t.Dst, t.DstVar) || !guidWcid.TryGetValue(t.Dst, out var w)) return false;
+                    if (t.DstWcid != null) return w == t.DstWcid.Value;
+                    // a record from before the weenie was kept (CodeRabbit #539): someone else's row only when it carries ANOTHER
+                    // weenie than its source AND stands in another cell. A source whose weenie was changed on purpose keeps its
+                    // copy (in the source's cell - update rewrites it), and a copy whose source is gone stays prunable.
+                    if (!guidWcid.TryGetValue(t.Src, out var sw) || sw == w) return true;
+                    return guidCell.TryGetValue(t.Src, out var sc) && guidCell.TryGetValue(t.Dst, out var dc) && sc == dc;
+                }
                 var existing = new HashSet<uint>(allTracks.Where(CopyAlive).Select(t => t.Dst));
 
                 // reserved guids per landblock range: every row in the range (any landblock, any variation) + every
@@ -297,7 +306,10 @@ namespace ACE.Server.Command.Handlers
 
             using var tx = ctx.Database.BeginTransaction();
             // records written before the weenie was kept: fill it in from the copy on its own tier the first time we write
+            // (CodeRabbit #539) only where the row still carries its SOURCE's weenie - a hand-deleted copy whose guid /createinst
+            // gave to an unrelated object must not be recorded as ours
             Exec(ctx, $"UPDATE {TrackTable} t JOIN landblock_instance i ON i.guid = t.dst_guid AND i.variation_Id = t.dst_variation "
+                + "JOIN landblock_instance s ON s.guid = t.src_guid AND s.weenie_Class_Id = i.weenie_Class_Id "
                 + "SET t.dst_wcid = i.weenie_Class_Id WHERE t.dst_wcid IS NULL");
             foreach (var p in plans)
             {

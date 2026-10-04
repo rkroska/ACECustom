@@ -284,7 +284,7 @@ namespace ACE.Server.WorldObjects
             if (attacker == null || defender == null || attacker is Player)
                 return 0f;
 
-            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(attacker);
+            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveCombatProfile(attacker);
             // a spell uses true_damage_spell when the tier authors it (owner 2026-10-02: spells ~3x a melee hit), else true_damage
             var amountStat = isSpell && zp != null && zp.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.TrueDamageSpell)
                 ? ACE.Server.Managers.ZoneScaling.ZoneStat.TrueDamageSpell : ACE.Server.Managers.ZoneScaling.ZoneStat.TrueDamage;

@@ -37,7 +37,7 @@ namespace ACE.Server.WorldObjects
         public float GetZcDotArmorMod(uint spellId = 0)
         {
             if (!ZcDebuffCompressed) return 1.0f;
-            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this);
+            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveCombatProfile(this);
             if (zp == null) return 1.0f;
             var mod = 1.0f;
             // a non-finite stat counts as unset (a NaN here would make every tick NaN)
@@ -97,7 +97,7 @@ namespace ACE.Server.WorldObjects
             if (!ZcDebuffCompressed)
                 return (0f, 0f, 0f);
 
-            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this);
+            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveCombatProfile(this);
             var tier = VariationManager.GetEffectiveEndgameVariation(this);
             double Get(string key, double fallback) => zp != null && zp.Has(key) ? zp.Get(key) : fallback;
 

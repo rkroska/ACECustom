@@ -21,7 +21,7 @@ namespace ACE.Server.WorldObjects
             if (fromProc || !(source is Player) || this is Player || this is CombatPet)
                 return 1.0f;
 
-            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this);
+            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveCombatProfile(this);
             if (zp == null || !zp.Has(ZoneStat.SpellArmor))
                 return 1.0f;
 
