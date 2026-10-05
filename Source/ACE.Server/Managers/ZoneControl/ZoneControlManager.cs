@@ -198,6 +198,11 @@ namespace ACE.Server.Managers.ZoneControl
             /// <summary>Live stat resolution (2026-08-22): per-TIER ladder apply state. Absent / empty =
             /// version 0 everywhere = no apply has ever run. See <see cref="GetLadderVersion"/>.</summary>
             public Dictionary<int, LadderApply> LadderApplies { get; set; } = new();
+
+            /// <summary>Per-MONSTER damage multipliers (owner 2026-10-03, "Damage Multiplier" in the Bestiary): wcid ->
+            /// factor on ALL the damage that monster deals to players (melee + spells, normal + True Damage), at every
+            /// tier and in every zone. Absent = 1.0. Evens out a slow swinger (the Kraken) or softens a monster.</summary>
+            public Dictionary<uint, double> DamageMults { get; set; } = new();
         }
 
         /// <summary>One `ladder apply` state for a tier. Version is a counter an item compares its
@@ -214,6 +219,11 @@ namespace ACE.Server.Managers.ZoneControl
         // tier -> ladder apply state. Guarded by _lock; read through the volatile copy below (hot equip path).
         private static readonly Dictionary<int, LadderApply> _ladderApplies = new();
         private static volatile Dictionary<int, LadderApply> _ladderSnapshot = new();
+
+        // wcid -> damage multiplier. Guarded by _lock; read through the volatile copy (every monster hit on a player).
+        private static readonly Dictionary<uint, double> _damageMults = new();
+        private static volatile Dictionary<uint, double> _damageMultSnapshot = new();
+        public const double DamageMultMin = 0.1, DamageMultMax = 10.0;
 
         // variation -> Default layer. Guarded by _lock; copied into the lock-free snapshot at rebuild.
         private static readonly Dictionary<int, VariationDefault> _variationDefaults = new();
@@ -329,6 +339,12 @@ namespace ACE.Server.Managers.ZoneControl
                     if (kv.Value != null)
                         ladderApplies[kv.Key] = kv.Value;
 
+            var damageMults = new Dictionary<uint, double>();
+            if (store.DamageMults != null)
+                foreach (var kv in store.DamageMults)
+                    if (kv.Value >= DamageMultMin && kv.Value <= DamageMultMax && kv.Value != 1.0)
+                        damageMults[kv.Key] = kv.Value;
+
             // ── commit: from here on nothing can throw ──
             _areas.Clear();
             foreach (var kv in areas) _areas[kv.Key] = kv.Value;
@@ -338,6 +354,9 @@ namespace ACE.Server.Managers.ZoneControl
             foreach (var kv in ladderApplies) _ladderApplies[kv.Key] = kv.Value;
             _evalCache.Clear();
             _ladderSnapshot = new Dictionary<int, LadderApply>(_ladderApplies);
+            _damageMults.Clear();
+            foreach (var kv in damageMults) _damageMults[kv.Key] = kv.Value;
+            _damageMultSnapshot = new Dictionary<uint, double>(_damageMults);
 
             RebuildIndexes();
         }
@@ -445,6 +464,7 @@ namespace ACE.Server.Managers.ZoneControl
                 Areas = _areas.Values.ToList(),
                 VariationDefaults = new Dictionary<int, VariationDefault>(_variationDefaults),
                 LadderApplies = new Dictionary<int, LadderApply>(_ladderApplies),
+                DamageMults = new Dictionary<uint, double>(_damageMults),
             };
             _ladderSnapshot = new Dictionary<int, LadderApply>(_ladderApplies);
             var jsonOut = JsonConvert.SerializeObject(store);
@@ -854,6 +874,15 @@ namespace ACE.Server.Managers.ZoneControl
             || ExemptBoolOf(creature);   // cached bool read - no biota lock on the per-hit path (2026-09-04)
 
         /// <summary>
+        /// The zone profile for a COMBAT-MODEL read (True Damage, the damage multiplier, aug curves, Spell Armor, DoT armor /
+        /// multipliers, the debuff bonus, the Shrapnel / Agony immunity): <see cref="ResolveForCreature"/>, but null while
+        /// zonecontrol_enabled is OFF - RULING 1, "fully inert", like every other combat gate (CodeRabbit #539: the damage
+        /// multiplier still applied with it off).
+        /// </summary>
+        public static EvaluatedProfile ResolveCombatProfile(Creature creature)
+            => ServerConfig.zonecontrol_enabled.Value ? ResolveForCreature(creature) : null;
+
+        /// <summary>
         /// Resolves the winning zone for a creature and evaluates its stat profile. Returns null when the
         /// creature should NOT be zone-controlled: it's a player, it's a pet, it's exempt, no enabled zone
         /// covers its landblock, or no covering zone's Variation matches the creature's current variation.
@@ -884,6 +913,10 @@ namespace ACE.Server.Managers.ZoneControl
                 return null;
 
             var effVar = GetEffectiveVariation(creature);
+            // never retail (owner 2026-10-04, review): a zone left on v0-v10 from before setvar / create refused it governs
+            // nothing - Zone Control combat, loot, effects and looks stay off retail monsters
+            if (effVar < VariationManager.EndgameMinVariation)
+                return null;
 
             ZoneRef best = null;
             foreach (var zr in list)
@@ -1315,6 +1348,10 @@ namespace ACE.Server.Managers.ZoneControl
                 return null;
 
             var effVar = GetEffectiveVariation(creature);
+            // never retail (owner 2026-10-04, review): a zone left on v0-v10 from before setvar / create refused it governs
+            // nothing - Zone Control combat, loot, effects and looks stay off retail monsters
+            if (effVar < VariationManager.EndgameMinVariation)
+                return null;
 
             ZoneRef best = null;
             foreach (var zr in list)
@@ -1618,6 +1655,37 @@ namespace ACE.Server.Managers.ZoneControl
         /// SAME numbers combat resolves. Merges VariationDefault -&gt; zone -&gt; wcid. Null if no such zone.
         /// </summary>
         public static ZoneVariantProfile ResolveProfileForDisplay(string name, uint? wcid = null)
+            => ResolveProfileForDisplayCore(name, wcid);
+
+        /// <summary>
+        /// D8 (2026-10-04): the EVALUATED profile a kill of <paramref name="rank"/> reads in this zone - built exactly as the
+        /// snapshot builds ZoneRef.ByRank (each layer flattened for the rank, then merged), but for any zone, enabled or not.
+        /// The plugin's Salvage Bags tab shows these per-rank values; the merged rows it gets otherwise cannot reproduce the
+        /// per-layer rule (a layer's own Default beats a lower layer's rank row). Null if no such zone.
+        /// </summary>
+        public static EvaluatedProfile ResolveZoneRankForDisplay(string name, ZcRank rank)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var area = FindArea(name);
+                if (area == null)
+                    return null;
+                // the SAME cache key Evaluate uses for a zone-wide (no per-monster bucket) profile of this rank - the same
+                // computation, so the two share one entry; _evalCache is cleared on every save. The [[ZC]] push rebuilds
+                // its payload every 2 s, so this must not re-merge four profiles each time (review 2026-10-04).
+                var cacheKey = area.Name + "|default|r" + (int)rank;
+                if (_evalCache.TryGetValue(cacheKey, out var cached))
+                    return cached;
+                var defProfile = AnchoredDefaultProfileFor(area.Variation, rank);
+                var zoneLayer = area.Profile.Minion?.ForRank(rank);
+                var eval = EvaluateVariant(area.Name, ZoneVariantProfile.Merge(defProfile, zoneLayer));
+                _evalCache[cacheKey] = eval;
+                return eval;
+            }
+        }
+
+        private static ZoneVariantProfile ResolveProfileForDisplayCore(string name, uint? wcid)
         {
             EnsureInitialized();
             lock (_lock)
@@ -1907,6 +1975,49 @@ namespace ACE.Server.Managers.ZoneControl
             return bumped;
         }
 
+        // ── per-monster damage multipliers (owner 2026-10-03) ──
+
+        /// <summary>Lock-free: the damage multiplier for a monster wcid, 1.0 when none is set.</summary>
+        public static double GetDamageMult(uint wcid)
+        {
+            EnsureInitialized();
+            return _damageMultSnapshot.TryGetValue(wcid, out var m) ? m : 1.0;
+        }
+
+        /// <summary>The factor on a monster's damage to a PLAYER: its multiplier when the monster is governed by Zone
+        /// Control (an enabled zone resolves it - never retail), else 1.0. Called on every monster hit / spell on a
+        /// player, so the empty-map case returns before any resolve.</summary>
+        public static float MonsterDamageMultFor(Creature attacker, Creature defender)
+        {
+            if (!ServerConfig.zonecontrol_enabled.Value || attacker == null || attacker is Player || defender is not Player) return 1f;
+            var map = _damageMultSnapshot;
+            if (map.Count == 0 || !map.TryGetValue(attacker.WeenieClassId, out var m)) return 1f;
+            return ResolveCombatProfile(attacker) != null ? (float)m : 1f;
+        }
+
+        /// <summary>`/zonecontrol damagemult`: set (or clear with null / 1.0) one monster's multiplier. Persists.</summary>
+        public static void SetDamageMult(uint wcid, double? value)
+        {
+            // the same bounds Load keeps, so no caller can store a value a restart would drop (NaN, Infinity, out of range)
+            if (value.HasValue && (!double.IsFinite(value.Value) || value.Value < DamageMultMin || value.Value > DamageMultMax))
+                throw new ArgumentOutOfRangeException(nameof(value), value, $"damage multiplier must be {DamageMultMin}-{DamageMultMax}");
+            EnsureInitialized();
+            lock (_lock)
+            {
+                if (value == null || value.Value == 1.0) _damageMults.Remove(wcid);
+                else _damageMults[wcid] = value.Value;
+                _damageMultSnapshot = new Dictionary<uint, double>(_damageMults);
+                Save();
+            }
+        }
+
+        /// <summary>Every monster with a multiplier, by wcid.</summary>
+        public static List<KeyValuePair<uint, double>> ListDamageMults()
+        {
+            EnsureInitialized();
+            return _damageMultSnapshot.OrderBy(kv => kv.Key).ToList();
+        }
+
         /// <summary>Variations that currently have an authored Default, ascending.</summary>
         public static List<int> ListVariationDefaults()
         {
@@ -2179,6 +2290,15 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 return FindArea(name);
             }
+        }
+
+        /// <summary>A copy of an area's landblocks taken under the manager lock - the area object is live, and addlb / removelb
+        /// change its set while a caller iterates it.</summary>
+        public static List<ushort> SnapshotLandblocks(ControlledArea area)
+        {
+            if (area == null) return new List<ushort>();
+            lock (_lock)
+                return area.Landblocks.ToList();
         }
 
         public static IReadOnlyList<ControlledArea> ListAreas()

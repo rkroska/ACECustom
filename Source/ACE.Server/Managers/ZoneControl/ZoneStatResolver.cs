@@ -276,9 +276,43 @@ namespace ACE.Server.Managers.ZoneControl
         /// T25 10/30/60). forceMax = 1000. The producers roll THIS and derive the value with
         /// <see cref="ValueFor"/>, so the grade is the truth and the value its projection.
         /// </summary>
-        public static int RollGrade(int tier, bool forceMax = false)
+        public static int RollGrade(int tier, bool forceMax = false, double floor = 0.0)
         {
             if (forceMax) return GradeMax;
+            var g = RollGradeCore(tier);
+            // rank loot (owner 2026-09-29): squeeze into the top (1 - floor) of the band; the top stays the top
+            floor = double.IsFinite(floor) ? Math.Clamp(floor, 0.0, 0.9) : 0.0;
+            return floor <= 0.0 ? g : (int)Math.Round(floor * GradeMax + g * (1.0 - floor));
+        }
+
+        /// <summary>Rank loot (owner 2026-09-29): the drop profile's grade floor, 0 when unset / no profile.</summary>
+        public static double GradeFloorOf(EvaluatedProfile p)
+        {
+            var floor = p == null ? 0.0 : p.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootGradeFloor, 0.0);
+            return double.IsFinite(floor) ? Math.Clamp(floor, 0.0, 0.9) : 0.0;   // Math.Clamp passes NaN through
+        }
+
+        /// <summary>A "1 in N" stat as a safe int for ThreadSafeRandom.Next(1, N): 0 (= never / off) when it is unset, below 1
+        /// or not finite, and at most int.MaxValue - 1 (Next(1, int.MaxValue) overflows inside Random.Next and throws, which on
+        /// the kill path aborted the corpse - review 2026-10-04).</summary>
+        public static int OddsToInt(double odds)
+            => !double.IsFinite(odds) || odds < 1.0 ? 0 : (int)Math.Min(Math.Round(odds), int.MaxValue - 1);
+
+        /// <summary>The grade floor of the kill whose loot is being generated on THIS thread - for the value rolls
+        /// that run inside item creation with no profile in hand (the T11 weapon Damage / Crit Damage rating).
+        /// Set around CreateZoneLootSet by Creature_Death; 0 everywhere else.</summary>
+        [ThreadStatic] private static double _dropFloor;
+        public static double DropFloor => _dropFloor;
+        public static DropFloorScope ScopeDropFloor(double floor) => new DropFloorScope(floor);
+        public readonly struct DropFloorScope : IDisposable
+        {
+            private readonly double _prev;
+            public DropFloorScope(double floor) { _prev = _dropFloor; _dropFloor = floor; }
+            public void Dispose() => _dropFloor = _prev;
+        }
+
+        private static int RollGradeCore(int tier)
+        {
             var (wLo, wMid, wHi) = ZoneModifiers.TierThirds(tier);
             var pick = ThreadSafeRandom.Next(0, wLo + wMid + wHi - 1);
             if (pick < wLo) return ThreadSafeRandom.Next(0, 333);
@@ -453,7 +487,7 @@ namespace ACE.Server.Managers.ZoneControl
         public static int LadderArmorLevel(int tier) => 1100 + 100 * (tier - 11);
 
         /// <summary>
-        /// The per-tier armor base (ApplyT11GearStats + Compute). Three-step chain, owner 2026-08-24
+        /// The per-tier armor base (ApplyZoneGearStats + Compute). Three-step chain, owner 2026-08-24
         /// (Armor_Base_Values_Plan_2026-08-24.md section 2.1):
         ///   zonecontrol_enabled OFF          -> the flat T10 fallback, and NOTHING authored is consulted
         ///                                       (same rule as EffectiveBand, owner 2026-08-23)
@@ -542,7 +576,7 @@ namespace ACE.Server.Managers.ZoneControl
 
         /// <summary>
         /// The item's ladder row. ARMOUR, clothing and jewelry carry ZcTier; WEAPONS DO NOT -
-        /// LootGenerationFactory.ApplyT11GearStats returns at its `default:` case for weapons/casters
+        /// LootGenerationFactory.ApplyZoneGearStats returns at its `default:` case for weapons/casters
         /// BEFORE <see cref="StampIdentity"/> ever runs, so a weapon's tier lives in
         /// PropertyInt.WeaponAugScaleTier (stamped by ApplyWeaponAugScaleStamp later in the same
         /// Creature_Death sweep). Reading only ZcTier - which is what this did before 2026-08-25 -
@@ -729,7 +763,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// WeaponAugScaleTier and never branch on which is present, and the only code that decides
         /// "is this armour" is <see cref="Compute"/>, which keys on ItemType + ArmorLevel. The rule
         /// was a convention that had documented itself as a constraint.
-        /// Weapons now DO carry ZcTier (owner 2026-08-25, stamped in ApplyT11GearStats' default case)
+        /// Weapons now DO carry ZcTier (owner 2026-08-25, stamped in ApplyZoneGearStats' default case)
         /// so the crafting gate cannot be switched off by a single missing stamp.
         /// This method still writes only the VERSION, because the version must be stamped after the
         /// weapon's grades are recorded - which is here, not at gear-stat time.

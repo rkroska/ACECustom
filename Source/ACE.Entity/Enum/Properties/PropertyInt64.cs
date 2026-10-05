@@ -68,6 +68,17 @@ namespace ACE.Entity.Enum.Properties
         CrashingSteelCharmCount = 50003,
         /// <summary>Charm of the True Shot (Missile).</summary>
         TrueShotCharmCount      = 50004,
+        /// <summary>
+        /// 64-bit flat kill XP (2026-09-27): XpOverride (PropertyInt 146) is int32 and tops out at 2,147,483,647,
+        /// below a T11 boss's 5B. When set it wins over XpOverride; a Zone Control xp_kill still wins over both.
+        /// 50600 is free in EVERY Property enum (50005 is PropertyInt.CharmLevel).
+        /// </summary>
+        XpOverride64           = 50600,
+        /// <summary>
+        /// Prestige Coin (19860000) bank balance (owner 2026-10-04): deposit / withdraw only - Bonded + Attuned, never transferable.
+        /// 50601, free in EVERY Property enum - moved off 9028 before release (upstream ACE owns the 90xx range).
+        /// </summary>
+        BankedPrestigeCoins    = 50601,
 
         // Pet Bonding System (Combat Pet Devices) — [AssessmentProperty] for identify + plugin PublicUpdateProperty*
         /// <summary>Current bond XP toward next level on a PetDevice.</summary>

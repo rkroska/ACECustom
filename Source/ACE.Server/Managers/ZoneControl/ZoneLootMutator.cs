@@ -39,7 +39,7 @@ namespace ACE.Server.Managers.ZoneControl
             // the creature's effective variation; killed = the dropping monster). Every non-coin drop gets it.
             if (!string.IsNullOrEmpty(p.ScopeKey))
             {
-                // Two-line provenance (owner 2026-08-01). FinalizeT11LongDesc and the AppraiseInfo
+                // Two-line provenance (owner 2026-08-01). FinalizeZoneLongDesc and the AppraiseInfo
                 // projection-insert anchor on the "Dropped by"/"Location:" prefixes - the three
                 // move together.
                 var variation = killed != null ? ZoneControlManager.GetEffectiveVariation(killed) : 0;
@@ -209,8 +209,11 @@ namespace ACE.Server.Managers.ZoneControl
             if (ACE.Server.Managers.RecipeManager.IconUnderlay.TryGetValue(rend, out var underlayId))
                 wo.IconUnderlayId = underlayId;
             else if (rend == ImbuedEffectType.NetherRending)
-                wo.IconUnderlayId = 0x060067A1;
+                wo.IconUnderlayId = NetherRendUnderlay;
         }
+
+        /// <summary>The Nether Rending icon underlay (RecipeManager.IconUnderlay has no Nether entry).</summary>
+        public const uint NetherRendUnderlay = 0x060067A1;
 
         /// <returns>The DISPLAY value that landed (Crushing Blow: the advertised multiplier, not the
         /// stored one) - for a caller that reports what it stamped. TrySpecialRolls ignores it.</returns>
@@ -218,7 +221,7 @@ namespace ACE.Server.Managers.ZoneControl
             ZoneStatResolver.WeaponSpecial ws, int tier, bool forceMax)
         {
             var (lo, hi) = ZoneStatResolver.WeaponDropBand(p, ws, tier);
-            var grade = ZoneStatResolver.RollGrade(tier, forceMax);
+            var grade = ZoneStatResolver.RollGrade(tier, forceMax, ZoneStatResolver.GradeFloorOf(p));
             var display = Math.Clamp(ZoneStatResolver.ValueForD(lo, hi, grade), ws.Band.Lo, ws.Band.Hi);
             // EngineValue is the ONE display -> engine conversion in the server (Crushing Blow's
             // "- 1.0"). Do not subtract anything here and do not pre-convert before calling: the
@@ -306,7 +309,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Rend imbues that MATCH the weapon's own damage type (owner rule: a fire sword can only
         /// get Fire Rend — a rend for an element the weapon can't deal is dead weight). Multi-type weapons
         /// (e.g. slash/pierce) return every matching rend.</summary>
-        private static List<ImbuedEffectType> GetMatchingRends(DamageType dt)
+        internal static List<ImbuedEffectType> GetMatchingRends(DamageType dt)
         {
             var rends = new List<ImbuedEffectType>();
             if (dt.HasFlag(DamageType.Slash)) rends.Add(ImbuedEffectType.SlashRending);
@@ -609,7 +612,11 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 var (defLo, defHi) = CleaveSplitBandAt(lootTier);
                 var targets = (int)Math.Round(RollRangeBand(p, ZoneStat.WeaponCleaveMin, ZoneStat.WeaponCleaveMax, defLo, defHi, 1, 10, lootTier));
-                wo.SetProperty(PropertyInt.Cleaving, targets + 1); // engine: CleaveTargets = Cleaving - 1
+                // owner 2026-10-04 (review): the card always beats the weapon's OWN Cleaving (two-handers carry 2-5 natively) -
+                // a roll at or below it was a dead card that still spent a slot, and the Salvage Bag counter (which sees a
+                // Cleave card only as "differs from the weenie") could not see it, so a bag could add one over the tier cap
+                var ownCleaving = wo.GetProperty(PropertyInt.Cleaving) ?? 0;
+                wo.SetProperty(PropertyInt.Cleaving, Math.Max(targets + 1, ownCleaving + 1)); // engine: CleaveTargets = Cleaving - 1
             }
 
             // Split Arrows (bows): shots fork to hit extra targets (the custom bowstring system).
@@ -691,7 +698,7 @@ namespace ACE.Server.Managers.ZoneControl
 
             // WEAPON RESOLVE IDENTITY, last, once the record is final (2026-08-25).
             //
-            // Armour gets this from LootGenerationFactory.ApplyT11GearStats -> StampIdentity, but that
+            // Armour gets this from LootGenerationFactory.ApplyZoneGearStats -> StampIdentity, but that
             // method returns at its `default:` case for weapons and casters, so nothing ever stamped a
             // weapon's ZcResolvedVersion. An unstamped weapon reads 0, which is a legitimate stamp
             // value (tier ladder v0, Zone Control on), so a weapon that dropped on a v0 tier would look
@@ -767,7 +774,7 @@ namespace ACE.Server.Managers.ZoneControl
                 // Option A: T11 uniform, climbing to 10/30/60 at T25) and stamp it through the record;
                 // the prop value is ValueFor(grade) inside the effective band. Key 49 Reinforced routes
                 // to the plain Stamp inside StampGraded (earned + frozen, never in the record).
-                var grade = ZoneStatResolver.RollGrade(lootTier, forceMax);
+                var grade = ZoneStatResolver.RollGrade(lootTier, forceMax, ZoneStatResolver.GradeFloorOf(p));
                 ZoneModifiers.StampGraded(wo, def, grade, (min, max));
             }
 

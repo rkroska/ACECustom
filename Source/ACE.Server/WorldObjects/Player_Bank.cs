@@ -32,6 +32,8 @@ namespace ACE.Server.WorldObjects
         private const int PYREAL_MAX_STACK = 25000;
         private const int ENLIGHTENED_COIN_MAX_STACK = 25000;
         private const int WEAKLY_ENLIGHTENED_COIN_MAX_STACK = 25000;
+        private const int PRESTIGE_COIN_MAX_STACK = 25000;
+        public const uint PRESTIGE_COIN_WCID = 19860000;
         private const int TRADE_NOTE_MAX_STACK = 250;
         private const int MMD_TRADE_NOTE_MAX_STACK = 5000;
 
@@ -791,6 +793,42 @@ namespace ACE.Server.WorldObjects
 
 
         /// <summary>
+        /// Deposit all Prestige Coins (owner 2026-10-04). Counted by STACK SIZE, not Value: the coin is worth 0 (unsellable),
+        /// so summing Value like the Enlightened Coin deposit would bank nothing.
+        /// </summary>
+        public void DepositPrestigeCoins(bool suppressChat = false)
+        {
+            if (BankedPrestigeCoins == null)
+            {
+                BankedPrestigeCoins = 0;
+            }
+            lock (balanceLock)
+            {
+                long totalDeposited = 0;
+                var coins = this.GetInventoryItemsOfWCID(PRESTIGE_COIN_WCID);
+                foreach (var coin in coins)
+                {
+                    int count = coin.StackSize ?? 1;
+                    if (count > 0 && this.TryConsumeFromInventoryWithNetworking(coin))
+                    {
+                        BankedPrestigeCoins += count;
+                        totalDeposited += count;
+                    }
+                }
+
+                if (!suppressChat)
+                {
+                    if (totalDeposited > 0)
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} prestige coins", ChatMessageType.System));
+                    else
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("No prestige coins found to deposit", ChatMessageType.System));
+                }
+            }
+
+            this.SavePlayerToDatabase();
+        }
+
+        /// <summary>
         /// Deposit all luminance
         /// </summary>
         public void DepositLuminance(bool suppressChat = false)
@@ -1506,6 +1544,75 @@ namespace ACE.Server.WorldObjects
             else
             {
                 Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create weakly enlightened coins - check pack space. Withdrawal cancelled.", ChatMessageType.System));
+            }
+        }
+
+        /// <summary>Mints Prestige Coin stacks (Bonded + Attuned come from the weenie) into the pack; returns how many were made.</summary>
+        private long CreatePrestigeCoins(long Amount)
+        {
+            long remaining = Amount;
+            long successfullyCreated = 0;
+            var createdItems = new List<WorldObject>();
+
+            while (remaining > 0)
+            {
+                int stackSize = (int)Math.Min(remaining, (long)PRESTIGE_COIN_MAX_STACK);
+
+                WorldObject wo = WorldObjectFactory.CreateNewWorldObject(PRESTIGE_COIN_WCID);
+                if (wo == null)
+                    break;
+
+                wo.SetStackSize(stackSize);
+
+                if (!this.TryAddToInventory(wo, out _))
+                {
+                    LogDebug($"[BANK_DEBUG] Player: {Name} | Failed to create prestige coin stack of {stackSize} - insufficient pack space");
+                    break;
+                }
+
+                createdItems.Add(wo);
+                successfullyCreated += stackSize;
+                remaining -= stackSize;
+            }
+
+            foreach (var item in createdItems)
+                Session.Network.EnqueueSend(new GameMessageCreateObject(item));
+
+            return successfullyCreated;
+        }
+
+        /// <summary>Withdraw Prestige Coins from the bank (owner 2026-10-04). There is deliberately NO TransferPrestigeCoins.</summary>
+        public void WithdrawPrestigeCoins(long Amount)
+        {
+            if (Amount <= 0)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Amount must be greater than zero", ChatMessageType.System));
+                return;
+            }
+
+            if (BankedPrestigeCoins < Amount)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You don't have enough prestige coins banked. Need {Amount:N0} coins but only have {BankedPrestigeCoins:N0}.", ChatMessageType.System));
+                return;
+            }
+
+            long successfullyCreated = CreatePrestigeCoins(Amount);
+
+            if (successfullyCreated > 0)
+            {
+                lock (balanceLock)
+                {
+                    BankedPrestigeCoins -= successfullyCreated;
+                }
+
+                if (successfullyCreated == Amount)
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} prestige coins", ChatMessageType.System));
+                else
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} prestige coins (partial - insufficient pack space for remaining {Amount - successfullyCreated:N0} prestige coins)", ChatMessageType.System));
+            }
+            else
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create prestige coins - check pack space. Withdrawal cancelled.", ChatMessageType.System));
             }
         }
 
@@ -2321,6 +2428,11 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins) ?? 0;
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedWeaklyEnlightenedCoins); else SetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins, value.Value); }
+        }
+        public long? BankedPrestigeCoins
+        {
+            get => GetProperty(PropertyInt64.BankedPrestigeCoins) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPrestigeCoins); else SetProperty(PropertyInt64.BankedPrestigeCoins, value.Value); }
         }
         public long? BankedMythicalKeys
         {

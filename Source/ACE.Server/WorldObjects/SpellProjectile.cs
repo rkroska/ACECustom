@@ -407,6 +407,14 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Shrapnel / Agony immunity (owner 2026-10-03, Creature_ShrapnelAgonyImmunity.cs) - the projectile path
+            // (Classic-mode rings); a player's normal rings are stopped in Player.ApplyRingSpellAreaDamage.
+            if (creatureTarget.IsImmuneToShrapnelAgony(Spell.Id))
+            {
+                player?.NotifyShrapnelAgonyImmune(creatureTarget, Spell.Name);
+                return;
+            }
+
             var critical = false;
             var critDefended = false;
             var overpower = false;
@@ -606,6 +614,11 @@ namespace ACE.Server.WorldObjects
             // above, so computing the gate first was wasted work on every resist.
             var endgameCrit = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(sourceCreature, weapon);
 
+            // Zone Control spell crits mirror melee (owner 2026-10-04): the melee aug crit term below, the separate Crit
+            // Damage multiply in DamageTarget. See Creature.ZcSpellCritMirrorsMelee.
+            var zcCritMirror = Creature.ZcSpellCritMirrorsMelee(sourceCreature, weapon, target, FromProc);
+            long critSchoolAugs = 0;
+
             CreatureSkill attackSkill = null;
             if (sourceCreature != null)
                 attackSkill = sourceCreature.GetCreatureSkill(Spell.School);
@@ -671,7 +684,18 @@ namespace ACE.Server.WorldObjects
                 // so a cardless crit = 2x, the same retail rule the melee path now follows. The bonus itself is
                 // derived below, once the base is final (life aug term, zone replacement, variance).
                 if (criticalHit)
+                {
                     weaponCritDamageMod = GetWeaponCritDamageMod(weapon, sourceCreature, attackSkill, target);
+                    // Zone Control spell crits mirror melee for LIFE projectiles too (owner 2026-10-04): the crit floor and the
+                    // aug crit term with the caster's LIFE augs, as war / void take theirs below
+                    if (zcCritMirror)
+                    {
+                        var lifeAugs = sourceCreature?.EffectiveLifeAugCount ?? 0;
+                        weaponCritDamageMod = Math.Max(weaponCritDamageMod,
+                            ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetSpellCritDamageBonus(weapon, sourceCreature, lifeAugs));
+                        weaponCritDamageMod += Creature.ZcSpellAugCritBonus(lifeAugs);
+                    }
+                }
 
                 // ORDERING MATTERS FOR THE RETAIL BRANCH (found by review 2026-09-10). Baseline
                 // (9d128e912:606) computed the crit bonus from the PRE-AUG base, then added the aug
@@ -724,6 +748,9 @@ namespace ACE.Server.WorldObjects
                 // only pass if SpellProjectile has it directly, such as 2637 - Invoking Aun Tanua
 
                 resistanceMod = (float)Math.Max(0.0f, target.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
+
+                // Spell Armor (owner 2026-10-04): a T11+ monster's armor against player hand-cast spells (Creature_SpellArmor.cs)
+                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer, FromProc);
 
                 // UNIFIED CRIT: CritX x the base the hit ACTUALLY uses - player and governed casters alike
                 if (criticalHit)
@@ -861,6 +888,7 @@ namespace ACE.Server.WorldObjects
 
                     if (augs > 0)
                         baseDamage += augs;
+                    critSchoolAugs = augs;
                     if (tr != null) tr.Augs = augs;
                 }
 
@@ -897,6 +925,9 @@ namespace ACE.Server.WorldObjects
 
                 resistanceMod = (float)Math.Max(0.0f, target.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
 
+                // Spell Armor (owner 2026-10-04): a T11+ monster's armor against player hand-cast spells (Creature_SpellArmor.cs)
+                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer, FromProc);
+
                 if (sourcePlayer != null && targetPlayer != null && Spell.DamageType == DamageType.Nether)
                 {
                     // for direct damage from void spells in pvp,
@@ -932,9 +963,20 @@ namespace ACE.Server.WorldObjects
                 // Blow band bounds it. This replaces the per-site 0.5f re-derives that quietly
                 // halved crush on every magic path. PvP keeps its retail bonus from above.
                 if (criticalHit && !isPVP)
+                {
+                    // melee's crit multiplier (owner 2026-10-04): melee CritX = 1 + max(Crushing, the aug-pegged crit floor) +
+                    // melee augs x 0.002; a Zone Control hand-cast crit now takes the floor and the aug term with its school's augs
+                    if (zcCritMirror)
+                    {
+                        weaponCritDamageMod = Math.Max(weaponCritDamageMod,
+                            ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetSpellCritDamageBonus(weapon, sourceCreature, critSchoolAugs));
+                        weaponCritDamageMod += Creature.ZcSpellAugCritBonus(critSchoolAugs);
+                    }
+
                     critDamageBonus = endgameCrit
                         ? (float)((baseDamage + skillBonus) * weaponCritDamageMod)
                         : Spell.MaxDamage * 0.5f * weaponCritDamageMod;   // retail: half of MAX, skillBonus NOT doubled
+                }
 
                 finalDamage = baseDamage + critDamageBonus + skillBonus;
 
@@ -1353,12 +1395,19 @@ namespace ACE.Server.WorldObjects
 
                 damageResistRatingMod = target.GetDamageResistRatingMod(CombatType.Magic);
 
+                // Zone Control spell crits mirror melee (owner 2026-10-04): Crit Damage Rating multiplies the crit on its
+                // own, exactly as DamageEvent does (DamageBeforeMitigation *= crit DR mod), instead of folding into
+                // Damage Rating. Stock (retail, PvP, monster casts) keeps the additive combine.
+                var critDamageOnTop = 1.0f;
                 if (critical)
                 {
                     critDamageRatingMod = Creature.GetPositiveRatingMod(sourceCreature?.GetCritDamageRating() ?? 0);
                     critDamageResistRatingMod = Creature.GetNegativeRatingMod(target.GetCritDamageResistRating());
 
-                    damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
+                    if (Creature.ZcSpellCritMirrorsMelee(sourceCreature, ProjectileLauncher, target, FromProc))
+                        critDamageOnTop = critDamageRatingMod;
+                    else
+                        damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
                     damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, critDamageResistRatingMod);
                 }
 
@@ -1374,7 +1423,7 @@ namespace ACE.Server.WorldObjects
                 // Rating chain applies unconditionally (2026-08-02, owner ruling): authored spell_damage
                 // is a PRE-mitigation base replacement, so Damage Rating and the defender's Damage Resist
                 // Rating hit spells exactly like they hit melee. (Old WYSIWYG skip removed.)
-                damage *= damageRatingMod * damageResistRatingMod;
+                damage *= damageRatingMod * damageResistRatingMod * critDamageOnTop;
 
                 // Apply enrage damage reduction for the defender
                 if (target.IsEnraged)
@@ -1384,9 +1433,9 @@ namespace ACE.Server.WorldObjects
                     //Console.WriteLine($"[DEBUG] Enrage Damage Reduction Applied by Defender: {enrageReduction * 100}%, Final Damage: {damage}");
                 }
 
-                // v11+ percent-HP floor: a high-variation monster's harmful health-damage spell always
-                // deals at least a %HP chunk to a player, bypassing life-aug damage reduction. Taken here,
-                // after the rating mods, so the floor lands at the felt scale (mirrors the melee ordering).
+                // Zone Control percent-HP floor (an option since 2026-10-01): a monster's harmful health-damage spell
+                // deals at least a %HP chunk to a player. Taken here, after the rating mods, so the floor lands at the
+                // felt scale (mirrors the melee ordering).
                 if (damage > 0 && Spell.IsHarmful && targetPlayer != null && sourceCreature != null
                     && Spell.DamageType != DamageType.Stamina && Spell.DamageType != DamageType.Mana)
                 {
@@ -1406,6 +1455,25 @@ namespace ACE.Server.WorldObjects
                 {
                     damage += sourcePlayer.ZcTryPctHpDamage(target);
                     sourcePlayer.ZcTryLifeOnHit(target);             // key 48 Life on Hit (heals the caster; cooldown inside)
+                }
+
+                // TRUE DAMAGE (owner 2026-10-01, mirrors DamageEvent): the zone's fixed amount, after every rating and
+                // mitigation step. Kept apart until after the cloak and Mana Barrier, which never act on it.
+                var spellTrueDamage = 0f;
+                if (Spell.IsHarmful && targetPlayer != null && sourceCreature != null && !(sourceCreature is Player)
+                    && Spell.DamageType != DamageType.Stamina && Spell.DamageType != DamageType.Mana)
+                    spellTrueDamage = Creature.GetTrueDamage(sourceCreature, targetPlayer, critical, isSpell: true);
+
+                // per-monster DAMAGE MULTIPLIER (owner 2026-10-03, mirrors DamageEvent): the spell's normal part and its
+                // True Damage, before the cloak / Mana Barrier.
+                if (Spell.IsHarmful && targetPlayer != null)
+                {
+                    var spellDamageMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(sourceCreature, targetPlayer);
+                    if (spellDamageMult != 1f)
+                    {
+                        damage *= spellDamageMult;
+                        spellTrueDamage *= spellDamageMult;
+                    }
                 }
 
                 percent = damage / target.Health.MaxValue;
@@ -1431,18 +1499,24 @@ namespace ACE.Server.WorldObjects
                 target.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
 
                 // ── Mana Barrier ───────────────────────────────────────────────────────
-                preAbsorbDamage = damage; // preserve for messaging
+                preAbsorbDamage = damage + spellTrueDamage; // preserve for messaging
                 if (targetPlayer != null)
-                    mbResult = targetPlayer.TryAbsorbWithManaBarrier(ref damage, Spell.DamageType);
+                {
+                    if (damage > 0)
+                        mbResult = targetPlayer.TryAbsorbWithManaBarrier(ref damage, Spell.DamageType);
+                }
                 else if (target.HasManaBarrier)
                     mbResult = target.TryAbsorbWithManaBarrier(ref damage, Spell.DamageType);
+                damage += spellTrueDamage;   // True Damage goes back on after the barrier
 
-                if (mbResult.FullyAbsorbed)
+                if (mbResult.FullyAbsorbed && spellTrueDamage <= 0)
                     amount = 0;
                 else
                 {
                     spellPreHitHealth = (uint)Math.Max(0, target.Health.Current);
-                    var roundedDamage = (uint)Math.Round(damage);
+                    // the same cap as Player.TakeDamage (2026-10-02): past uint range the cast wraps - no damage instead of death
+                    if (float.IsNaN(damage)) damage = 0;
+                    var roundedDamage = (uint)Math.Round(Math.Min(damage, Player.MaxSingleHit));
 
                     // Zone Control Cheat Death (key 45): lethal hit -> land on 1 HP + immunity window
                     if (targetPlayer != null)
@@ -1455,7 +1529,7 @@ namespace ACE.Server.WorldObjects
                 target.DamageHistory.Add(ProjectileSource, Spell.DamageType, amount);
 
                 // Zone Control Battle Mending (key 42): survived, but under the threshold -> heal to full
-                if (targetPlayer != null && !mbResult.FullyAbsorbed)
+                if (targetPlayer != null && (!mbResult.FullyAbsorbed || spellTrueDamage > 0))
                     targetPlayer.ZcTryBattleMend(ProjectileSource);
                 // ───────────────────────────────────────────────────────────────────
 

@@ -2387,6 +2387,14 @@ namespace ACE.Server.Managers
                 var occupancy = BuildOccupancy(rooms, variation, guid);
                 var current = CurrentRoom(player, rooms, variation);
 
+                // "Welcome back ... still yours" only while their hold on the room they left still counts. A lapsed hold that
+                // happens to hand them the same room again is a fresh arrival (owner hit it on live 2026-10-03, hours after
+                // leaving). Checked BEFORE ClaimRoom, which spends the account's holds.
+                lock (_lock)
+                    if (_leftRoom.TryGetValue(guid, out var leftKey)
+                        && !(_holds.TryGetValue(leftKey, out var leftHold) && leftHold.Account == account && IsHoldActive(leftHold, now)))
+                        _leftRoom.Remove(guid);
+
                 var result = ClaimRoom(player, guid, account, rooms, variation, sourceWcid, occupancy, current, now, out var room, out landing, out var refusal);
 
                 if (result != ClaimResult.Claimed)

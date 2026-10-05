@@ -181,7 +181,7 @@ namespace ACE.Server.Managers
             if (victim.IsOnNoDeathXPLandblock || victim.DamageHistory.TotalHealth == 0)
                 return false;
 
-            var xp = (long)(victim.XpOverride ?? 0);
+            var xp = victim.WeenieKillXp;   // the same read OnDeath_GrantXP uses
             long lum = victim.LuminanceAward ?? 0;
 
             var profile = ZoneControlManager.ResolveForCreature(victim);

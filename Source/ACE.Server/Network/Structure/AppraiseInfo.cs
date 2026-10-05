@@ -217,13 +217,7 @@ namespace ACE.Server.Network.Structure
                         PropertiesString[PropertyString.LongDesc] = msg;
                 }
 
-                var reqs = new (PortalRequirement type, int? value, int? max)[]
-                {
-                    (portal.PortalReqType, portal.PortalReqValue, portal.PortalReqMaxValue),
-                    (portal.PortalReqType2, portal.PortalReqValue2, portal.PortalReqMaxValue2)
-                };
-
-                foreach (var req in reqs)
+                foreach (var req in portal.PortalRequirements)
                 {
                     if (req.type == PortalRequirement.None) continue;
                     if (req.value.GetValueOrDefault() <= 0 && (req.max.GetValueOrDefault() <= 0 || req.max.GetValueOrDefault() == 999)) continue;
@@ -239,6 +233,7 @@ namespace ACE.Server.Network.Structure
                         case PortalRequirement.Enlighten: typeName = "Enlightenment"; break;
                         case PortalRequirement.QuestBonus: typeName = "Quest Bonus"; break;
                         case PortalRequirement.XPMultiplier: typeName = "XP Multiplier"; isMultiplier = true; break;
+                        case PortalRequirement.TriuneWeave: typeName = "Triune Weave"; break;
                         default: continue;
                     }
 
@@ -930,7 +925,7 @@ namespace ACE.Server.Network.Structure
         /// is never touched, so nothing is re-rolled and existing drops re-render correctly on the
         /// next appraise. Bullets stay in STAMP ORDER (owner: no sorting - two identical pieces
         /// must read identically). The "Zone Cantrip:" prefix is a MARKER, not decoration -
-        /// FinalizeT11LongDesc's whitelist deletes any line that lacks it - so it stays in the
+        /// FinalizeZoneLongDesc's whitelist deletes any line that lacks it - so it stays in the
         /// stored text and is dropped from the render only.
         ///
         /// Weapons carry their own "Property Details:" block pinned to the top; the cantrip group
@@ -980,9 +975,13 @@ namespace ACE.Server.Network.Structure
         /// (earned + frozen, never in the record). The baked "Zone Cantrip:" text is stripped either way.</param>
         private void PromoteZoneModifierLines(ZoneStatResolver.Resolved resolved = null, WorldObject wo = null, Player examiner = null)
         {
-            if (!PropertiesString.TryGetValue(PropertyString.LongDesc, out var ld) || string.IsNullOrEmpty(ld))
-                return;
-            if (ld.IndexOf(LegacyModifierMarker, StringComparison.Ordinal) < 0)
+            PropertiesString.TryGetValue(PropertyString.LongDesc, out var ld);
+            ld ??= "";
+            // a piece an essence has worked on keeps its block even after its last text line (or its whole record) is
+            // gone; a Tainted armour / jewelry piece always shows the Tainted line (weapons show it in Property Details)
+            var worked = wo?.GetProperty(PropertyBool.GearEssenceWorked) == true;
+            var showTainted = GearEssences.IsTainted(wo) && !GearEssences.IsWeapon(wo);   // Tainted implies Worked
+            if (!worked && ld.IndexOf(LegacyModifierMarker, StringComparison.Ordinal) < 0)
                 return;
 
             var cantrips = new List<string>();
@@ -1007,11 +1006,29 @@ namespace ACE.Server.Network.Structure
 
             if (resolved != null)
             {
+                var essenceLock = GearEssences.LockedKey(wo);
                 foreach (var line in resolved.Lines)
-                    cantrips.Add("- " + line.Text);
+                    cantrips.Add("- " + line.Text
+                        + (!GearEssences.UsesASlot(line.Def) ? GearEssences.BuiltInMarker : "")   // a null Def = a legacy core resist: no slot either
+                        + (line.Record.Key == essenceLock ? " (Locked)" : ""));
                 cantrips.AddRange(reinforced);
             }
 
+            if (showTainted)
+                cantrips.Add(GearEssences.TaintedAppraisalLine);
+
+            if (cantrips.Count == 0 && !worked)
+                return;
+
+            // "Properties: 3 of 5" heads the block (owner 2026-10-04): the slot count the drop limit and the bags use. Not on
+            // a legacy piece whose bullets come from baked text only (no record to count - a number there could be wrong).
+            // Reinforced is always baked text (earned and frozen, never in the record) and the count includes it, so it is not "legacy"
+            var legacyText = resolved == null && cantrips.Any(c => c != GearEssences.TaintedAppraisalLine
+                && !c.StartsWith("- " + ReinforcedLineName, StringComparison.Ordinal));
+            // weapons carry the counter in Property Details (BuildWeapon) - never twice
+            var propertiesLine = legacyText || GearEssences.IsWeapon(wo) ? null : GearEssences.PropertiesAppraisalLine(wo);
+            if (propertiesLine != null)
+                cantrips.Insert(0, propertiesLine);
             if (cantrips.Count == 0)
                 return;
 
@@ -1382,6 +1399,13 @@ namespace ACE.Server.Network.Structure
 
             effectDescriptions.Sort();
 
+            // Salvage Bags: a card locked by a Bag of Locking, and the Bag of Madness taint
+            var essenceLockLine = GearEssences.LockedCardAppraisalLine(weapon);
+            if (essenceLockLine != null)
+                effectDescriptions.Add(essenceLockLine);
+            if (GearEssences.IsTainted(weapon))
+                effectDescriptions.Add(GearEssences.TaintedAppraisalLine);
+
             // Weapon Grade pinned ABOVE the sorted list; wield gate pinned to the very BOTTOM
             // (owner 2026-08-01). Weapons carry these here instead of in the description block
             // (armor/jewelry have no Property Details section and keep the LongDesc line).
@@ -1413,6 +1437,12 @@ namespace ACE.Server.Network.Structure
                 else
                     effectDescriptions.Insert(0, $"- Weapon Grade: {wsGrade}");
             }
+
+            // "Properties: 2 of 5" right under Weapon Grade (owner 2026-10-04): the cards that use a slot and the tier's
+            // limit - the same count the drop limit and the bags use
+            var propertiesLine = GearEssences.PropertiesAppraisalLine(weapon);
+            if (propertiesLine != null)
+                effectDescriptions.Insert(wsQuality != null ? 1 : 0, propertiesLine);
 
             // Zone lock (owner 2026-08-30, "add the dormant line"): when the lock is ON and THIS
             // examiner is standing outside every authored area, say so at the very top - the

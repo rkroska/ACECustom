@@ -5134,7 +5134,10 @@ namespace ACE.Server.Command.Handlers
             var creature = CommandHandlerHelper.GetLastAppraisedObject(session);
             if (creature == null) return;
 
-            CommandHandlerHelper.WriteOutputInfo(session, $"{creature.Name} XP: {creature.XpOverride}");
+            // short format (K / M / B / T / Q - owner 2026-09-27), the audit lines' formatter
+            // the weenie value; a Zone Control xp_kill on the mob's rank pays instead when set
+            var xp = creature is Creature c ? c.WeenieKillXp : (creature.XpOverride ?? 0);
+            CommandHandlerHelper.WriteOutputInfo(session, $"{creature.Name} XP: {ShortNumber.Format(xp)}");
         }
 
         // de_n name, text
@@ -7456,7 +7459,14 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 string key = parameters[0];
-                var doubleVal = double.Parse(parameters[1]);
+                // invariant culture, no thousands separators: on a comma-decimal host "0.9" (what the plugin sends) read as 9
+                // (review 2026-10-04); a bad value lands in the catch below like before
+                var doubleVal = double.Parse(parameters[1], NumberStyles.Float, CultureInfo.InvariantCulture);
+                if (!double.IsFinite(doubleVal))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "Please input a finite number (not NaN or Infinity).", ChatMessageType.Help);
+                    return;
+                }
                 if (ServerConfig.SetValue(key, doubleVal))
                 {
                     switch (key)
