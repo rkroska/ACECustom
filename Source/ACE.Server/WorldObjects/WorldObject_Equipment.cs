@@ -158,6 +158,9 @@ namespace ACE.Server.WorldObjects
         public virtual void OnWield(Creature creature)
         {
             EmoteManager.OnWield(creature);
+
+            // Blacksmithing: a forge weapon whose binding was bought off binds to whoever wields it next.
+            ACE.Server.Entity.ForgeService.OnWield(this, creature);
         }
 
         public virtual void OnUnWield(Creature creature)

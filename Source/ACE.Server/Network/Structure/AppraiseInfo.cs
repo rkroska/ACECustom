@@ -380,6 +380,16 @@ namespace ACE.Server.Network.Structure
                 }
             }
 
+            // Blacksmithing: a forged weapon says so, with its hone levels (ASCII, explicit \n).
+            var forgeMsg = ACE.Server.Entity.ForgeWeaponReader.BuildAppraisalBlock(wo);
+            if (!string.IsNullOrEmpty(forgeMsg))
+            {
+                if (PropertiesString.TryGetValue(PropertyString.LongDesc, out var forgeLd) && !string.IsNullOrEmpty(forgeLd))
+                    PropertiesString[PropertyString.LongDesc] = forgeLd + $"\n\n{forgeMsg}";
+                else
+                    PropertiesString[PropertyString.LongDesc] = forgeMsg;
+            }
+
             // Growth charms + gems carry UnlimitedUse only so Gem.ActOnUse does not self-consume
             // them (gems are consumed by the confirm handler). It is a mechanical flag, not a use
             // counter - hide it so the panel shows no "Number of uses remaining" line.

@@ -921,6 +921,32 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>The per-tier ladder version this piece's retail props were last resolved against
         /// (ZoneControlManager.GetLadderVersion). A mismatch on equip re-resolves + re-stamps.</summary>
         ZcResolvedVersion = 50110,
+
+        /// <summary>Blacksmithing dye (2026-09-28 prototype): a full 0x04 DAT palette id painted over a weapon
+        /// at render time (WorldObject.CalculateObjDesc). Kept apart from PaletteTemplate so the retail colour
+        /// option, its icon and every existing reader stay untouched; removing this restores the retail look.</summary>
+        ForgeDyePalette = 50111,
+
+        // 50112 skipped on purpose: the removed @reskin_weapon prototype stored a WCID there on dev servers.
+
+        /// <summary>Blacksmithing: how many forges went into this weapon (the higher input's count + 1).</summary>
+        ForgeCount = 50113,
+
+        /// <summary>Blacksmithing: consecutive failed hone attempts; each adds to the next attempt's chance, reset on success.</summary>
+        ForgeHoneMisfortune = 50114,
+
+        /// <summary>Blacksmithing: a dye being tried on (a 0x04 palette id). It is drawn instead of ForgeDyePalette until
+        /// PropertyInt64.ForgeDyePreviewUntil passes; "keep" copies it to ForgeDyePalette. Expiring by time means a logout or
+        /// crash during a preview can never leave a free colour behind.</summary>
+        ForgeDyePreview = 50115,
+
+        /// <summary>Blacksmithing: on an item, the kind of forge tool it is (ForgeService.ForgeTool: 1 hone stone, 2 dye,
+        /// 3 flux, 4 unbinding oil). Using such an item on a weapon goes to ForgeService, not to a recipe.</summary>
+        ForgeTool = 50116,
+
+        /// <summary>Blacksmithing: what the tool is for. Hone stone: the ForgeMath.ForgeLine number it hones. Dye: the colour
+        /// family (ForgeDyes.Family; 0 = any).</summary>
+        ForgeToolArg = 50117,
     }
 
     public static class PropertyIntExtensions

@@ -65,6 +65,14 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Blacksmithing tools (hone stones, dyes, unbinding oil) go to the forge service, not to a recipe.
+            if (ACE.Server.Entity.ForgeService.IsForgeTool(sourceItem))
+            {
+                ACE.Server.Entity.ForgeService.HandleToolUse(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
             // handle objects with built-in spells
             if (sourceItem.SpellDID != null)
             {

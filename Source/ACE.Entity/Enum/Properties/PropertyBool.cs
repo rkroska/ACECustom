@@ -396,6 +396,20 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         OnlyCombatPetsCanDamage = 50057,
 
+        /// <summary>Blacksmithing: on an NPC, makes it a forge smith. A weapon handed to it is never taken; the smith notes
+        /// it as the main weapon, and the next one handed over is offered as a forge (ForgeService.HandleGive).</summary>
+        ForgeSmith = 50058,
+
+        /// <summary>Blacksmithing: on a world object, marks a grindstone. A weapon can only be honed near one.</summary>
+        ForgeGrindstone = 50059,
+
+        /// <summary>Blacksmithing: on a world object, marks a dye vat. A weapon can only be dyed near one.</summary>
+        ForgeDyeVat = 50060,
+
+        /// <summary>Blacksmithing: on a weapon whose binding was bought off. It trades freely until it is next wielded, which
+        /// makes it Attuned and Bonded again and clears this.</summary>
+        ForgeRebindOnWield = 50061,
+
         /// <summary>Room Assign, Zone Share (owner 2026-09-23): on a room-source WEENIE (the one carrying RoomAssignRooms), everyone
         /// standing in that dungeon shares kill XP, kill luminance and kill-task credit as if they were all in one fellowship.
         /// Server-only - not an assessment property. Numbered beside the other Room Assign properties (50500-50502).</summary>

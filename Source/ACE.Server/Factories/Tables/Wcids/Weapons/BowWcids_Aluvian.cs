@@ -121,6 +121,9 @@ namespace ACE.Server.Factories.Tables.Wcids
             }
         }
 
+        /// <summary>Every wcid this table can roll (read-only; the blacksmithing forge groups weapons by these tables).</summary>
+        public static IEnumerable<WeenieClassName> All => _combined.Keys;
+
         public static bool TryGetValue(WeenieClassName wcid, out TreasureWeaponType weaponType)
         {
             return _combined.TryGetValue(wcid, out weaponType);
