@@ -342,11 +342,14 @@ namespace ACE.Server.WorldObjects
 
             TakeDamage(null, damageType, amount);
 
-            // splatter effects
-            var hitSound = new GameMessageSound(Guid, Sound.HitFlesh1, 0.5f);
-            //var splatter = (PlayScript)Enum.Parse(typeof(PlayScript), "Splatter" + playerSource.GetSplatterHeight() + playerSource.GetSplatterDir(this));
-            var splatter = new GameMessageScript(Guid, damageType == DamageType.Nether ? PlayScript.HealthDownVoid : PlayScript.DirtyFightingDamageOverTime);
-            EnqueueBroadcast(hitSound, splatter);
+            // splatter effects - on the faster DoT ticker only once per heartbeat, like retail (Creature_DotTicker.DotEffectsDue)
+            if (DotEffectsDue())
+            {
+                var hitSound = new GameMessageSound(Guid, Sound.HitFlesh1, 0.5f);
+                //var splatter = (PlayScript)Enum.Parse(typeof(PlayScript), "Splatter" + playerSource.GetSplatterHeight() + playerSource.GetSplatterDir(this));
+                var splatter = new GameMessageScript(Guid, damageType == DamageType.Nether ? PlayScript.HealthDownVoid : PlayScript.DirtyFightingDamageOverTime);
+                EnqueueBroadcast(hitSound, splatter);
+            }
 
             if (Health.Current <= 0) return;
 

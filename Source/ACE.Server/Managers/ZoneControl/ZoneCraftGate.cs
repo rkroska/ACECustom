@@ -160,9 +160,9 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>The item's tier, as max(ZcTier, WeaponAugScaleTier).
         ///
         /// BOTH are checked because either one alone has been the whole gate's off switch. Weapons used to
-        /// carry ONLY WeaponAugScaleTier - ApplyT11GearStats returned for them before any tier stamp ran -
+        /// carry ONLY WeaponAugScaleTier - ApplyZoneGearStats returned for them before any tier stamp ran -
         /// and on 2026-08-25 exactly two items on the shard carried that property, so this read 0 and the
-        /// gate was silently off for every weapon. ApplyT11GearStats now stamps ZcTier on weapons too
+        /// gate was silently off for every weapon. ApplyZoneGearStats now stamps ZcTier on weapons too
         /// (LootGenerationFactory_ZoneSet.cs, default case), which is what makes the tier test below
         /// actually fire on a weapon. Keep taking the max of both: they are two independent signals for
         /// one fact, and a weapon that misses one still gets a tier from the other.</summary>

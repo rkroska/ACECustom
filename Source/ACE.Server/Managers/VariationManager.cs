@@ -42,6 +42,13 @@ namespace ACE.Server.Managers
         public const int EndgameMinVariation = 11;
 
         /// <summary>
+        /// A zc_*_min_variation setting as a combat gate: never below <see cref="EndgameMinVariation"/>, so a typo such as
+        /// <c>/modifylong zc_vuln_min_variation 0</c> cannot switch the endgame combat rules on for retail (v0-v2) monsters
+        /// (owner rule 2026-09-11: Zone Control never changes retail; review 2026-10-04).
+        /// </summary>
+        public static long EndgameGate(long configured) => System.Math.Max(configured, EndgameMinVariation);
+
+        /// <summary>
         /// Effective variation for the v11+ endgame systems (combat gates and Zone Control resolution):
         /// normally the object's real Location.Variation.
         ///

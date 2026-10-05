@@ -63,6 +63,12 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            if (GearEssences.IsGearEssence(WeenieClassId))
+            {
+                GearEssences.UseOnTarget(player, this, target);
+                return;
+            }
+
             if (Aetheria.IsAetheriaManaStone(this) && Aetheria.IsAetheria(target.WeenieClassId))
             {
                 Aetheria.UseObjectOnTarget(player, this, target);

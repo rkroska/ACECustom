@@ -276,7 +276,7 @@ namespace ACE.Server.Managers.WeaponScaling
             // Tiers T11..T25: cap = 2500 + 500 * (tier - 11); minWieldAugs = previous tier's cap.
             // T11's floor is the PRE-EXISTING live gate (2,000 item augs, owner 2026-07-20,
             // LootGenerationFactory.ZoneLootSetWieldItemAugs) — not 0: every T11+ drop already
-            // requires it, and ApplyT11WieldRequirement now reads this table per tier.
+            // requires it, and ApplyZoneWieldRequirement now reads this table per tier.
             for (var tier = 11; tier <= 25; tier++)
             {
                 // Item augs purchase-cap at 4,000 (EmoteManager.AugmentationCaps), which the
@@ -509,31 +509,54 @@ namespace ACE.Server.Managers.WeaponScaling
         public static string GetQualitySubGrade(int quality) => GetSubGradeBand(quality).Grade;
 
         /// <summary>Roll a drop's quality: weighted grade pick, then uniform inside the band.
-        /// Falls back to the legacy uniform 0-1000 roll when no weights are authored.</summary>
-        public static int RollQuality()
+        /// Falls back to the legacy uniform 0-1000 roll when no weights are authored.
+        /// Rank loot (owner 2026-09-29): <paramref name="sOdds"/> &gt; 0 = S (the single perfect roll) is its OWN
+        /// 1-in-N roll and the weights table picks among A-F only; <paramref name="floor"/> (0-0.9) then squeezes
+        /// the non-S roll into the top (1 - floor) of 0-999 - never up to 1000, so a floor can not mint an S.</summary>
+        public static int RollQuality(double floor = 0.0, int sOdds = 0)
         {
             Initialize();
+            int q;
+            if (sOdds > 0)
+            {
+                if (ACE.Common.ThreadSafeRandom.Next(1, Math.Min(sOdds, int.MaxValue - 1)) == 1)
+                    return QualityMax;
+                q = RollQualityCore(excludeS: true);
+            }
+            else
+                q = RollQualityCore(excludeS: false);
+
+            floor = double.IsFinite(floor) ? Math.Clamp(floor, 0.0, 0.9) : 0.0;
+            if (q >= QualityMax || floor <= 0.0)
+                return q;
+            return Math.Min(QualityMax - 1, (int)Math.Round(floor * QualityMax + q * (1.0 - floor)));
+        }
+
+        private static int RollQualityCore(bool excludeS)
+        {
             var weights = _current.GradeWeights;
 
             var total = 0.0;
             if (weights != null)
                 foreach (var b in GradeBands)
-                    if (weights.TryGetValue(b.Grade, out var w) && w > 0)
+                    if ((!excludeS || b.QMin < QualityMax) && weights.TryGetValue(b.Grade, out var w) && w > 0)
                         total += w;
             if (total <= 0)
-                return ACE.Common.ThreadSafeRandom.Next(0, QualityMax);   // legacy uniform
+                return ACE.Common.ThreadSafeRandom.Next(0, excludeS ? QualityMax - 1 : QualityMax);   // legacy uniform
 
             var pick = ACE.Common.ThreadSafeRandom.Next(0f, (float)total);
             var acc = 0.0;
             foreach (var b in GradeBands)
             {
+                if (excludeS && b.QMin >= QualityMax)
+                    continue;
                 if (!weights.TryGetValue(b.Grade, out var w) || w <= 0)
                     continue;
                 acc += w;
                 if (pick <= acc)
                     return b.QMin >= b.QMax ? b.QMin : ACE.Common.ThreadSafeRandom.Next(b.QMin, b.QMax);
             }
-            return QualityMax;   // float edge: pick landed exactly on total
+            return excludeS ? QualityMax - 1 : QualityMax;   // float edge: pick landed exactly on total
         }
 
         /// <summary>Deserialized dictionaries lose the case-insensitive comparer, and hand-edited

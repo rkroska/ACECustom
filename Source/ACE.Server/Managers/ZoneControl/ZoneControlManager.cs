@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using log4net;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
@@ -33,6 +34,34 @@ namespace ACE.Server.Managers.ZoneControl
 
         private const string StoreKey = "zonecontrol_data";
 
+        /// <summary>"KillReward" as a JSON property name - the quoted token followed by optional whitespace and a colon.</summary>
+        private static readonly Regex LegacyBountyKey = new Regex("\"KillReward\"(\\s*):", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Neither build writes both keys, but a hand edit can leave ONE zone with a "KillReward" and a "Bounty" block; the old
+        /// one is then renamed and its rewards merge into the new block's (Sanitize renumbers any clashing ids). Checked per
+        /// zone, so zones that each carry only one of the two names - a store part-way through the rename - say nothing.
+        /// </summary>
+        internal static int CountBothBountyKeys(string json)   // internal: ZoneStoreCompatTests
+        {
+            try
+            {
+                return Newtonsoft.Json.Linq.JToken.Parse(json).SelectTokens("$..*").OfType<Newtonsoft.Json.Linq.JObject>()
+                    .Count(o => o.Property("KillReward") != null && o.Property("Bounty") != null);
+            }
+            catch (JsonException)
+            {
+                return 0;   // the load itself reports a blob that does not parse
+            }
+        }
+
+        private static void WarnIfBothBountyKeys(string json)
+        {
+            var both = CountBothBountyKeys(json);
+            if (both > 0)
+                log.Warn($"[ZoneControl] {both} zone(s) in the store have both a \"KillReward\" and a \"Bounty\" block - the old block is renamed and its rewards merge into the new one.");
+        }
+
         /// <summary>The cantrip -> MODIFIER stat-key rename (2026-08-28). Stat keys are plain JSON
         /// dictionary keys inside the blob, so a stored blob written before the rename still carries
         /// cantrip_* keys; alias them to the modifier_* names before deserializing. The next save
@@ -42,9 +71,15 @@ namespace ACE.Server.Managers.ZoneControl
         /// ALSO aliases the SERIALIZED PROFILE MEMBER names renamed in the identifier sweep
         /// (ZoneVariantProfile.CustomModifiers / CustomModifierBands / CustomModifierSlots, formerly
         /// CustomCantrip*): those C# property names ARE the blob's JSON keys, so without the alias a
-        /// pre-rename blob's zone pools would silently deserialize to empty.</summary>
-        private static string UpgradeLegacyStoreKeys(string json)
+        /// pre-rename blob's zone pools would silently deserialize to empty.
+        ///
+        /// AND the ControlledArea "KillReward" block, renamed "Bounty" 2026-09-26 (same shape), so zone bounties saved before
+        /// the rename carry over. Only where "KillReward" is a KEY (followed by ':') - a zone or a note that happens to be
+        /// named KillReward is left alone (review 2026-09-26 round 2).</summary>
+        internal static string UpgradeLegacyStoreKeys(string json)   // internal: ZoneStoreCompatTests
         {
+            json = LegacyBountyKey.Replace(json, "\"Bounty\"$1:");
+
             if (json.IndexOf("cantrip", StringComparison.OrdinalIgnoreCase) < 0)
                 return json;
             return json
@@ -110,7 +145,7 @@ namespace ACE.Server.Managers.ZoneControl
             public HashSet<uint> ExemptGenerators;           // master switch per generator (2026-09-03): nor anything these spawn
             public ZoneEffects Effects;                      // immutable copy (readers never touch the live zone)
             public bool ZoneShare;                           // Zone Share (2026-09-23): the whole zone shares kills as one fellowship
-            public KillRewardConfig KillReward;              // Kill Reward (2026-09-23): immutable copy
+            public BountyConfig Bounty;              // Bounty (2026-09-23): immutable copy
             public ZoneAppearance AppearanceDefault;         // cosmetic default (separate from stats)
             public Dictionary<uint, ZoneAppearance> AppearanceByWcid; // per-WCID cosmetic overlays
         }
@@ -163,6 +198,11 @@ namespace ACE.Server.Managers.ZoneControl
             /// <summary>Live stat resolution (2026-08-22): per-TIER ladder apply state. Absent / empty =
             /// version 0 everywhere = no apply has ever run. See <see cref="GetLadderVersion"/>.</summary>
             public Dictionary<int, LadderApply> LadderApplies { get; set; } = new();
+
+            /// <summary>Per-MONSTER damage multipliers (owner 2026-10-03, "Damage Multiplier" in the Bestiary): wcid ->
+            /// factor on ALL the damage that monster deals to players (melee + spells, normal + True Damage), at every
+            /// tier and in every zone. Absent = 1.0. Evens out a slow swinger (the Kraken) or softens a monster.</summary>
+            public Dictionary<uint, double> DamageMults { get; set; } = new();
         }
 
         /// <summary>One `ladder apply` state for a tier. Version is a counter an item compares its
@@ -179,6 +219,11 @@ namespace ACE.Server.Managers.ZoneControl
         // tier -> ladder apply state. Guarded by _lock; read through the volatile copy below (hot equip path).
         private static readonly Dictionary<int, LadderApply> _ladderApplies = new();
         private static volatile Dictionary<int, LadderApply> _ladderSnapshot = new();
+
+        // wcid -> damage multiplier. Guarded by _lock; read through the volatile copy (every monster hit on a player).
+        private static readonly Dictionary<uint, double> _damageMults = new();
+        private static volatile Dictionary<uint, double> _damageMultSnapshot = new();
+        public const double DamageMultMin = 0.1, DamageMultMax = 10.0;
 
         // variation -> Default layer. Guarded by _lock; copied into the lock-free snapshot at rebuild.
         private static readonly Dictionary<int, VariationDefault> _variationDefaults = new();
@@ -248,7 +293,11 @@ namespace ACE.Server.Managers.ZoneControl
             }
 
             if (!string.IsNullOrWhiteSpace(json))
+            {
+                if (LegacyBountyKey.IsMatch(json))
+                    WarnIfBothBountyKeys(json);
                 json = UpgradeLegacyStoreKeys(json);
+            }
 
             var store = string.IsNullOrWhiteSpace(json)
                 ? new Store()
@@ -290,6 +339,12 @@ namespace ACE.Server.Managers.ZoneControl
                     if (kv.Value != null)
                         ladderApplies[kv.Key] = kv.Value;
 
+            var damageMults = new Dictionary<uint, double>();
+            if (store.DamageMults != null)
+                foreach (var kv in store.DamageMults)
+                    if (kv.Value >= DamageMultMin && kv.Value <= DamageMultMax && kv.Value != 1.0)
+                        damageMults[kv.Key] = kv.Value;
+
             // ── commit: from here on nothing can throw ──
             _areas.Clear();
             foreach (var kv in areas) _areas[kv.Key] = kv.Value;
@@ -299,6 +354,9 @@ namespace ACE.Server.Managers.ZoneControl
             foreach (var kv in ladderApplies) _ladderApplies[kv.Key] = kv.Value;
             _evalCache.Clear();
             _ladderSnapshot = new Dictionary<int, LadderApply>(_ladderApplies);
+            _damageMults.Clear();
+            foreach (var kv in damageMults) _damageMults[kv.Key] = kv.Value;
+            _damageMultSnapshot = new Dictionary<uint, double>(_damageMults);
 
             RebuildIndexes();
         }
@@ -406,6 +464,7 @@ namespace ACE.Server.Managers.ZoneControl
                 Areas = _areas.Values.ToList(),
                 VariationDefaults = new Dictionary<int, VariationDefault>(_variationDefaults),
                 LadderApplies = new Dictionary<int, LadderApply>(_ladderApplies),
+                DamageMults = new Dictionary<uint, double>(_damageMults),
             };
             _ladderSnapshot = new Dictionary<int, LadderApply>(_ladderApplies);
             var jsonOut = JsonConvert.SerializeObject(store);
@@ -663,7 +722,7 @@ namespace ACE.Server.Managers.ZoneControl
                 ExemptGenerators = area.Profile.ExemptGenerators != null ? new HashSet<uint>(area.Profile.ExemptGenerators) : new HashSet<uint>(),
                 Effects = ZoneEffects.Merge(def?.Effects, area.Effects),
                 ZoneShare = area.ZoneShare,
-                KillReward = area.KillReward?.Clone(),
+                Bounty = area.Bounty?.Clone(),
                 AppearanceDefault = apZone,
                 AppearanceByWcid = apWcid,
             };
@@ -815,6 +874,15 @@ namespace ACE.Server.Managers.ZoneControl
             || ExemptBoolOf(creature);   // cached bool read - no biota lock on the per-hit path (2026-09-04)
 
         /// <summary>
+        /// The zone profile for a COMBAT-MODEL read (True Damage, the damage multiplier, aug curves, Spell Armor, DoT armor /
+        /// multipliers, the debuff bonus, the Shrapnel / Agony immunity): <see cref="ResolveForCreature"/>, but null while
+        /// zonecontrol_enabled is OFF - RULING 1, "fully inert", like every other combat gate (CodeRabbit #539: the damage
+        /// multiplier still applied with it off).
+        /// </summary>
+        public static EvaluatedProfile ResolveCombatProfile(Creature creature)
+            => ServerConfig.zonecontrol_enabled.Value ? ResolveForCreature(creature) : null;
+
+        /// <summary>
         /// Resolves the winning zone for a creature and evaluates its stat profile. Returns null when the
         /// creature should NOT be zone-controlled: it's a player, it's a pet, it's exempt, no enabled zone
         /// covers its landblock, or no covering zone's Variation matches the creature's current variation.
@@ -845,6 +913,10 @@ namespace ACE.Server.Managers.ZoneControl
                 return null;
 
             var effVar = GetEffectiveVariation(creature);
+            // never retail (owner 2026-10-04, review): a zone left on v0-v10 from before setvar / create refused it governs
+            // nothing - Zone Control combat, loot, effects and looks stay off retail monsters
+            if (effVar < VariationManager.EndgameMinVariation)
+                return null;
 
             ZoneRef best = null;
             foreach (var zr in list)
@@ -1003,7 +1075,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>
         /// The enabled zone that governs where this object stands, at its effective variation: most-specific wins (the zone
         /// with the fewest landblocks), as everywhere else. Null when no enabled zone covers the spot. Lock-free snapshot read.
-        /// The one copy of the "governing zone" walk - the player gear caps, Zone Share and Kill Reward all go through it.
+        /// The one copy of the "governing zone" walk - the player gear caps, Zone Share and Bounty all go through it.
         /// </summary>
         private static ZoneRef GoverningZoneRef(WorldObject wo)
         {
@@ -1030,7 +1102,7 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// The zone that governs this spot for Zone Share / Kill Reward: as <see cref="GoverningZoneRef"/>, but never below the
+        /// The zone that governs this spot for Zone Share / Bounty: as <see cref="GoverningZoneRef"/>, but never below the
         /// endgame floor (v11) and never while the Zone Control master switch is off. Retail - every variation under 11 - is
         /// out of reach by construction, however a zone was authored (review 2026-09-24: the owner's never-touch-retail rule).
         /// </summary>
@@ -1276,6 +1348,10 @@ namespace ACE.Server.Managers.ZoneControl
                 return null;
 
             var effVar = GetEffectiveVariation(creature);
+            // never retail (owner 2026-10-04, review): a zone left on v0-v10 from before setvar / create refused it governs
+            // nothing - Zone Control combat, loot, effects and looks stay off retail monsters
+            if (effVar < VariationManager.EndgameMinVariation)
+                return null;
 
             ZoneRef best = null;
             foreach (var zr in list)
@@ -1579,6 +1655,37 @@ namespace ACE.Server.Managers.ZoneControl
         /// SAME numbers combat resolves. Merges VariationDefault -&gt; zone -&gt; wcid. Null if no such zone.
         /// </summary>
         public static ZoneVariantProfile ResolveProfileForDisplay(string name, uint? wcid = null)
+            => ResolveProfileForDisplayCore(name, wcid);
+
+        /// <summary>
+        /// D8 (2026-10-04): the EVALUATED profile a kill of <paramref name="rank"/> reads in this zone - built exactly as the
+        /// snapshot builds ZoneRef.ByRank (each layer flattened for the rank, then merged), but for any zone, enabled or not.
+        /// The plugin's Salvage Bags tab shows these per-rank values; the merged rows it gets otherwise cannot reproduce the
+        /// per-layer rule (a layer's own Default beats a lower layer's rank row). Null if no such zone.
+        /// </summary>
+        public static EvaluatedProfile ResolveZoneRankForDisplay(string name, ZcRank rank)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var area = FindArea(name);
+                if (area == null)
+                    return null;
+                // the SAME cache key Evaluate uses for a zone-wide (no per-monster bucket) profile of this rank - the same
+                // computation, so the two share one entry; _evalCache is cleared on every save. The [[ZC]] push rebuilds
+                // its payload every 2 s, so this must not re-merge four profiles each time (review 2026-10-04).
+                var cacheKey = area.Name + "|default|r" + (int)rank;
+                if (_evalCache.TryGetValue(cacheKey, out var cached))
+                    return cached;
+                var defProfile = AnchoredDefaultProfileFor(area.Variation, rank);
+                var zoneLayer = area.Profile.Minion?.ForRank(rank);
+                var eval = EvaluateVariant(area.Name, ZoneVariantProfile.Merge(defProfile, zoneLayer));
+                _evalCache[cacheKey] = eval;
+                return eval;
+            }
+        }
+
+        private static ZoneVariantProfile ResolveProfileForDisplayCore(string name, uint? wcid)
         {
             EnsureInitialized();
             lock (_lock)
@@ -1868,6 +1975,49 @@ namespace ACE.Server.Managers.ZoneControl
             return bumped;
         }
 
+        // ── per-monster damage multipliers (owner 2026-10-03) ──
+
+        /// <summary>Lock-free: the damage multiplier for a monster wcid, 1.0 when none is set.</summary>
+        public static double GetDamageMult(uint wcid)
+        {
+            EnsureInitialized();
+            return _damageMultSnapshot.TryGetValue(wcid, out var m) ? m : 1.0;
+        }
+
+        /// <summary>The factor on a monster's damage to a PLAYER: its multiplier when the monster is governed by Zone
+        /// Control (an enabled zone resolves it - never retail), else 1.0. Called on every monster hit / spell on a
+        /// player, so the empty-map case returns before any resolve.</summary>
+        public static float MonsterDamageMultFor(Creature attacker, Creature defender)
+        {
+            if (!ServerConfig.zonecontrol_enabled.Value || attacker == null || attacker is Player || defender is not Player) return 1f;
+            var map = _damageMultSnapshot;
+            if (map.Count == 0 || !map.TryGetValue(attacker.WeenieClassId, out var m)) return 1f;
+            return ResolveCombatProfile(attacker) != null ? (float)m : 1f;
+        }
+
+        /// <summary>`/zonecontrol damagemult`: set (or clear with null / 1.0) one monster's multiplier. Persists.</summary>
+        public static void SetDamageMult(uint wcid, double? value)
+        {
+            // the same bounds Load keeps, so no caller can store a value a restart would drop (NaN, Infinity, out of range)
+            if (value.HasValue && (!double.IsFinite(value.Value) || value.Value < DamageMultMin || value.Value > DamageMultMax))
+                throw new ArgumentOutOfRangeException(nameof(value), value, $"damage multiplier must be {DamageMultMin}-{DamageMultMax}");
+            EnsureInitialized();
+            lock (_lock)
+            {
+                if (value == null || value.Value == 1.0) _damageMults.Remove(wcid);
+                else _damageMults[wcid] = value.Value;
+                _damageMultSnapshot = new Dictionary<uint, double>(_damageMults);
+                Save();
+            }
+        }
+
+        /// <summary>Every monster with a multiplier, by wcid.</summary>
+        public static List<KeyValuePair<uint, double>> ListDamageMults()
+        {
+            EnsureInitialized();
+            return _damageMultSnapshot.OrderBy(kv => kv.Key).ToList();
+        }
+
         /// <summary>Variations that currently have an authored Default, ascending.</summary>
         public static List<int> ListVariationDefaults()
         {
@@ -2001,12 +2151,12 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// Kill Reward for a zone (owner 2026-09-23): applies one edit to the zone's CURRENT settings under the store lock and
+        /// Bounty for a zone (owner 2026-09-23): applies one edit to the zone's CURRENT settings under the store lock and
         /// saves - read, change and write in one step, so two admins' edits each touch only their own reward and neither
         /// writes back an old copy over the other. <paramref name="edit"/> returns why it refused (nothing is saved then), or
         /// null. Returns the settings as they now are (null for no such zone), and the refusal.
         /// </summary>
-        public static KillRewardConfig EditKillReward(string name, Func<KillRewardConfig, string> edit, out string refused)
+        public static BountyConfig EditBounty(string name, Func<BountyConfig, string> edit, out string refused)
         {
             refused = null;
             EnsureInitialized();
@@ -2014,28 +2164,50 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 var a = FindArea(name);
                 if (a == null) return null;
-                var cfg = (a.KillReward ?? new KillRewardConfig()).Clone();
+                var cfg = (a.Bounty ?? new BountyConfig()).Clone();
                 refused = edit(cfg);
                 if (refused != null)
-                    return (a.KillReward ?? new KillRewardConfig()).Clone();
-                a.KillReward = cfg;
+                    return (a.Bounty ?? new BountyConfig()).Clone();
+                a.Bounty = cfg;
                 Save();
                 return cfg.Clone();
             }
         }
 
         /// <summary>
-        /// Kill Reward (owner 2026-09-23): the governing zone's reward where this object stands - its name and settings - or
+        /// Every enabled zone with an active Bounty, sorted by name - /bounty list (owner 2026-09-27). Lock-free snapshot read.
+        /// Zones at the endgame layers only (EndgameZoneRef's floor), and none while the Zone Control master switch is off. It
+        /// does not re-check where a zone would actually decide a kill: a zone wholly covered by smaller zones, or lying only
+        /// inside a Vaulted Dungeon (whose own setting wins), is still listed. No such zone exists today (2026-09-27).
+        /// </summary>
+        public static List<(string Name, BountyConfig Reward)> ActiveZoneBounties()
+        {
+            var list = new List<(string Name, BountyConfig Reward)>();
+            if (!ServerConfig.zonecontrol_enabled.Value)
+                return list;
+
+            var seen = new HashSet<ZoneRef>();   // a zone is listed under each of its landblocks: once each
+            foreach (var refs in _snapshot.ByLandblock.Values)
+                foreach (var zone in refs)
+                    if (seen.Add(zone) && zone.Bounty != null && zone.Bounty.Active && zone.Variation >= VariationManager.EndgameMinVariation)
+                        list.Add((zone.Name, zone.Bounty));
+
+            list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            return list;
+        }
+
+        /// <summary>
+        /// Bounty (owner 2026-09-23): the governing zone's reward where this object stands - its name and settings - or
         /// null. Same rules as Zone Share: the most specific zone decides, enabled zones at v11+ only, nothing while the master
         /// switch is off. Asked for both the killer and the victim (they must be in the same area). Lock-free snapshot read.
         /// </summary>
-        public static (string Name, KillRewardConfig Reward)? ResolveKillReward(WorldObject wo)
+        public static (string Name, BountyConfig Reward)? ResolveBounty(WorldObject wo)
         {
             var best = EndgameZoneRef(wo);
-            if (best?.KillReward == null || !best.KillReward.Active)
+            if (best?.Bounty == null || !best.Bounty.Active)
                 return null;
 
-            return (best.Name, best.KillReward);
+            return (best.Name, best.Bounty);
         }
 
         /// <summary>Zone Share on/off for a zone (owner 2026-09-23). Save() rebuilds the snapshot the kill hooks read.</summary>
@@ -2118,6 +2290,15 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 return FindArea(name);
             }
+        }
+
+        /// <summary>A copy of an area's landblocks taken under the manager lock - the area object is live, and addlb / removelb
+        /// change its set while a caller iterates it.</summary>
+        public static List<ushort> SnapshotLandblocks(ControlledArea area)
+        {
+            if (area == null) return new List<ushort>();
+            lock (_lock)
+                return area.Landblocks.ToList();
         }
 
         public static IReadOnlyList<ControlledArea> ListAreas()

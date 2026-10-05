@@ -2287,7 +2287,10 @@ namespace ACE.Server.Command.Handlers
                     message += $"Account created on {account.CreateTime.ToLocalTime()} by IP: {(account.CreateIP != null ? new IPAddress(account.CreateIP).ToString() : "N/A")} \n";
                     message += $"Account last logged on at {(account.LastLoginTime.HasValue ? account.LastLoginTime.Value.ToLocalTime().ToString() : "N/A")} by IP: {(account.LastLoginIP != null ? new IPAddress(account.LastLoginIP).ToString() : "N/A")}\n";
                     message += $"Account total times logged on {account.TotalTimesLoggedIn}\n";
-                    var characters = DatabaseManager.Shard.BaseDatabase.GetCharacters(account.AccountId, true);
+                    // Only the name, id, plussed and delete fields are printed, so use the lightweight stub query.
+                    // GetCharacters loads every child table per character, which stalled the world thread on
+                    // accounts with hundreds of deleted characters.
+                    var characters = DatabaseManager.Shard.BaseDatabase.GetCharacterListForLogin(account.AccountId, true);
                     message += $"{characters.Count} Character(s) owned by: {account.AccountName}\n";
                     message += "-------------------\n";
                     foreach (var character in characters.Where(x => !x.IsDeleted && x.DeleteTime == 0))
@@ -5131,7 +5134,10 @@ namespace ACE.Server.Command.Handlers
             var creature = CommandHandlerHelper.GetLastAppraisedObject(session);
             if (creature == null) return;
 
-            CommandHandlerHelper.WriteOutputInfo(session, $"{creature.Name} XP: {creature.XpOverride}");
+            // short format (K / M / B / T / Q - owner 2026-09-27), the audit lines' formatter
+            // the weenie value; a Zone Control xp_kill on the mob's rank pays instead when set
+            var xp = creature is Creature c ? c.WeenieKillXp : (creature.XpOverride ?? 0);
+            CommandHandlerHelper.WriteOutputInfo(session, $"{creature.Name} XP: {ShortNumber.Format(xp)}");
         }
 
         // de_n name, text
@@ -7453,7 +7459,14 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 string key = parameters[0];
-                var doubleVal = double.Parse(parameters[1]);
+                // invariant culture, no thousands separators: on a comma-decimal host "0.9" (what the plugin sends) read as 9
+                // (review 2026-10-04); a bad value lands in the catch below like before
+                var doubleVal = double.Parse(parameters[1], NumberStyles.Float, CultureInfo.InvariantCulture);
+                if (!double.IsFinite(doubleVal))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "Please input a finite number (not NaN or Infinity).", ChatMessageType.Help);
+                    return;
+                }
                 if (ServerConfig.SetValue(key, doubleVal))
                 {
                     switch (key)

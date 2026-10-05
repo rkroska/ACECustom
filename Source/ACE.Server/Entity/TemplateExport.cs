@@ -1046,6 +1046,8 @@ namespace ACE.Server.Entity
             // no loot / XP / corpse, the way MatingGuardian.cs does it
             SetBool(w, PropertyBool.NoCorpse, true);
             SetInt(w, PropertyInt.XpOverride, 0);
+            foreach (var row in w.WeeniePropertiesInt64.Where(r => r.Type == (ushort)PropertyInt64.XpOverride64).ToList())
+                w.WeeniePropertiesInt64.Remove(row);   // XpOverride64 wins over XpOverride on a kill (2026-09-27)
             RemoveDid(w, PropertyDataId.DeathTreasureType);
             foreach (var row in w.WeeniePropertiesCreateList.Where(r => (r.DestinationType & (sbyte)DestinationType.Treasure) != 0).ToList())
                 w.WeeniePropertiesCreateList.Remove(row);

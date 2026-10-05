@@ -835,9 +835,13 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>On a T11+ weapon: the quality percentile roll (0-1000). The server-wide
         /// weaponscaling_data config maps quality -> the k coefficient at swing time, so config
         /// edits re-price every stamped weapon live. Absent = the weapon has no scaling term.</summary>
+        // [AssessmentProperty] (owner 2026-09-29): sent in appraisal so VTank loot rules can test it numerically
+        [AssessmentProperty]
         WeaponAugScaleQuality                   = 9060,
         /// <summary>On a T11+ weapon: the loot tier it was stamped at. Selects the tier row
         /// (scaling cap / min-wield augs) in the weaponscaling_data config.</summary>
+        // [AssessmentProperty] (owner 2026-09-29): sent in appraisal so VTank loot rules can test it numerically
+        [AssessmentProperty]
         WeaponAugScaleTier                      = 9061,
 
         /// <summary>
@@ -876,8 +880,8 @@ namespace ACE.Entity.Enum.Properties
 
         /// <summary>
         /// If set on a generator, its total spawn count (InitCreate/MaxCreate) is overridden at
-        /// StartGenerator to: VariationScaledSpawnBase + (landblock variation - VariationScaledSpawnBaseline),
-        /// never dropping below the base. Used by prestige-zone camp generators.
+        /// StartGenerator to: VariationScaledSpawnBase + floor((landblock variation - VariationScaledSpawnBaseline)
+        /// / VariationScaledSpawnStep), never dropping below the base. Used by Zone Control camp generators.
         /// </summary>
         VariationScaledSpawnBase = 50103,
 
@@ -886,6 +890,14 @@ namespace ACE.Entity.Enum.Properties
         /// base count. Defaults to 11 (T11 Tou Tou) when not set.
         /// </summary>
         VariationScaledSpawnBaseline = 50104,
+
+        /// <summary>
+        /// Owner 2026-10-03: how many tiers per extra spawn for a VariationScaledSpawnBase generator. Total =
+        /// base + floor((variation - baseline) / step), never below base. Unset = 1 (one extra per tier, as before).
+        /// The Tou Tou packs use base 4, baseline 10, step 5: T11-14 = 4, T15-19 = 5, T20-24 = 6, T25 = 7.
+        /// 50105-50108 are taken on other branches (50109-50110 are defined below).
+        /// </summary>
+        VariationScaledSpawnStep = 50111,
 
         /// <summary>TEST HOOK (pairs with PropertyBool.ForceEndgameSystems): the ENDGAME CONTENT variation this
         /// creature should SIMULATE when force-enabled at a non-endgame variation. Drives percent-HP growth and
@@ -917,36 +929,57 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Zone Control live stat resolution (2026-08-22): the loot TIER a ZC-lined piece was
         /// stamped at. Picks the ladder row (per-variation Default bands / core anchors) that resolves
         /// its grades. Outside the 50200-50399 cantrip block on purpose - that block is summed on equip.</summary>
+        // [AssessmentProperty] (owner 2026-09-29): sent in appraisal so VTank loot rules can test it numerically
+        [AssessmentProperty]
         ZcTier = 50109,
         /// <summary>The per-tier ladder version this piece's retail props were last resolved against
         /// (ZoneControlManager.GetLadderVersion). A mismatch on equip re-resolves + re-stamps.</summary>
         ZcResolvedVersion = 50110,
 
+        /// <summary>Portal gates 3-5 (owner 2026-10-02: "bump up to 5 gates"). Same meaning as PortalReqType /
+        /// PortalReqValue / PortalReqMaxValue (9019-9021) and the *2 set (9022-9024); every set gate must pass.</summary>
+        PortalReqType3 = 50112,
+        PortalReqValue3 = 50113,
+        PortalReqMaxValue3 = 50114,
+        PortalReqType4 = 50115,
+        PortalReqValue4 = 50116,
+        PortalReqMaxValue4 = 50117,
+        PortalReqType5 = 50118,
+        PortalReqValue5 = 50119,
+        PortalReqMaxValue5 = 50120,
+
+        /// <summary>Gear Essences (2026-10-02): the ZcModifiers record key a Bag of Locking locked on this item
+        /// (negative = a weapon card). Other essences skip it. Server-only - not an assessment property.</summary>
+        GearEssenceLockedKey = 51000,
+        /// <summary>Gear Essences: on a Bag of Vengeance, the CreatureType of the monster that dropped it -
+        /// the Slayer type it gives. Server-only - not an assessment property.</summary>
+        GearEssenceHuntCreatureType = 51001,
+
+        // Blacksmithing properties live at 52000+ in every property type (renumbered 2026-10-05: the first numbers,
+        // taken next to the newest ones in use, collided with properties added on master the same week).
         /// <summary>Blacksmithing dye (2026-09-28 prototype): a full 0x04 DAT palette id painted over a weapon
         /// at render time (WorldObject.CalculateObjDesc). Kept apart from PaletteTemplate so the retail colour
         /// option, its icon and every existing reader stay untouched; removing this restores the retail look.</summary>
-        ForgeDyePalette = 50111,
-
-        // 50112 skipped on purpose: the removed @reskin_weapon prototype stored a WCID there on dev servers.
+        ForgeDyePalette = 52000,
 
         /// <summary>Blacksmithing: how many forges went into this weapon (the higher input's count + 1).</summary>
-        ForgeCount = 50113,
+        ForgeCount = 52001,
 
         /// <summary>Blacksmithing: consecutive failed hone attempts; each adds to the next attempt's chance, reset on success.</summary>
-        ForgeHoneMisfortune = 50114,
+        ForgeHoneMisfortune = 52002,
 
         /// <summary>Blacksmithing: a dye being tried on (a 0x04 palette id). It is drawn instead of ForgeDyePalette until
         /// PropertyInt64.ForgeDyePreviewUntil passes; "keep" copies it to ForgeDyePalette. Expiring by time means a logout or
         /// crash during a preview can never leave a free colour behind.</summary>
-        ForgeDyePreview = 50115,
+        ForgeDyePreview = 52003,
 
         /// <summary>Blacksmithing: on an item, the kind of forge tool it is (ForgeService.ForgeTool: 1 hone stone, 2 dye,
         /// 3 flux, 4 unbinding oil). Using such an item on a weapon goes to ForgeService, not to a recipe.</summary>
-        ForgeTool = 50116,
+        ForgeTool = 52004,
 
         /// <summary>Blacksmithing: what the tool is for. Hone stone: the ForgeMath.ForgeLine number it hones. Dye: the colour
         /// family (ForgeDyes.Family; 0 = any).</summary>
-        ForgeToolArg = 50117,
+        ForgeToolArg = 52005,
     }
 
     public static class PropertyIntExtensions

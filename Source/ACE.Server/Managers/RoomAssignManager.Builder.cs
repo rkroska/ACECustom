@@ -404,7 +404,7 @@ namespace ACE.Server.Managers
         public const string BuilderMapTag = "[[ZCDGM]]";
 
         /// <summary>Zone Control's wire uses | , = ~ as separators, and this payload also : and + - none may ride in a name.
-        /// The one name cleaner for the wire: Kill Reward's reward lines use it too.</summary>
+        /// The one name cleaner for the wire: Bounty's reward lines use it too.</summary>
         internal static string BuilderWireName(string name)
         {
             var text = new System.Text.StringBuilder(name ?? "");
@@ -493,7 +493,7 @@ namespace ACE.Server.Managers
             string sourceName = null;
             DatabaseManager.World.GetCachedWeenie(sourceWcid)?.PropertiesString?.TryGetValue(PropertyString.Name, out sourceName);
             var zoneShare = IsZoneShareSource(sourceWcid);
-            var kr = KillRewardOf(sourceWcid);
+            var bounty = BountyOf(sourceWcid);
 
             return $"{BuilderStateTag}src={sourceWcid}|kind={BuilderWeenieType(sourceWcid)}|name={BuilderWireName(sourceName)}|v={variation}"
                 + $"|lb={rooms[0].LandingCell >> 16:X4}|write={((variation ?? 0) >= BuilderMinVariation ? 1 : 0)}|tools={tools}|admin={admin}"
@@ -504,7 +504,8 @@ namespace ACE.Server.Managers
                 + $"|since={string.Join(",", held)}"   // appended 2026-09-22: how long the owning account has had each room
                 + $"|heldby={string.Join(",", heldBy)}"   // appended 2026-09-23: the character each hold is waiting for
                 + $"|zshare={(zoneShare ? 1 : 0)}|zsharen={(zoneShare ? ZoneShareManager.CountInDungeon(sourceWcid, variation) : 0)}"   // appended 2026-09-23: Zone Share switch + players sharing now
-                + $"|kr={(kr.Enabled ? 1 : 0)}|krlist={KillRewardManager.Wire(kr)}";   // appended 2026-09-23: Kill Reward - on, and every reward
+                + $"|kr={(bounty.Enabled ? 1 : 0)}|krlist={BountyManager.Wire(bounty)}"   // appended 2026-09-23: Bounty (then Kill Reward) on, and every reward
+                + $"|bounty={(bounty.Enabled ? 1 : 0)}|bountylist={BountyManager.Wire(bounty)}";   // appended 2026-09-27: the same under the Bounty name (owner rename 09-26). kr= / krlist= stay - the wire is append-only, and a plugin built before the rename reads only those
         }
 
         /// <summary>
@@ -564,13 +565,13 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Kill Reward for the selected dungeon (owner 2026-09-23): edits its settings - PropertyString.RoomAssignKillReward on
+        /// Bounty for the selected dungeon (owner 2026-09-23): edits its settings - PropertyString.RoomAssignBounty on
         /// the room source's weenie in the world database, beside its room list, so it ships with the source's SQL - then drops
-        /// the weenie cache so the kill hook reads the new value. The edit (KillRewardManager.Edit, shared with zones) refuses
+        /// the weenie cache so the kill hook reads the new value. The edit (BountyManager.Edit, shared with zones) refuses
         /// what it cannot do - turning on with no reward, an unknown WCID - and then nothing is written. The SQL is logged, as
         /// every builder write is.
         /// </summary>
-        public static List<string> BuilderSetKillReward(Player player, Func<ACE.Server.Managers.ZoneControl.KillRewardConfig, string> edit)
+        public static List<string> BuilderSetBounty(Player player, Func<ACE.Server.Managers.ZoneControl.BountyConfig, string> edit)
         {
             var lines = new List<string>();
 
@@ -585,14 +586,14 @@ namespace ACE.Server.Managers
 
             // One locked read-change-write (owner 2026-09-23: two admins at once): read the CURRENT settings from the database,
             // apply this one edit, write - so each admin's edit touches only its own reward, and the last save to it wins.
-            ACE.Server.Managers.ZoneControl.KillRewardConfig cfg;
+            ACE.Server.Managers.ZoneControl.BountyConfig cfg;
             string raw;
-            lock (_killRewardWriteLock)
+            lock (_bountyWriteLock)
             {
                 using (var context = new WorldDbContext())
                 {
-                    var row = context.WeeniePropertiesString.FirstOrDefault(r => r.ObjectId == sourceWcid && r.Type == (ushort)PropertyString.RoomAssignKillReward);
-                    cfg = ACE.Server.Managers.ZoneControl.KillRewardConfig.Parse(row?.Value);
+                    var row = context.WeeniePropertiesString.FirstOrDefault(r => r.ObjectId == sourceWcid && r.Type == (ushort)PropertyString.RoomAssignBounty);
+                    cfg = ACE.Server.Managers.ZoneControl.BountyConfig.Parse(row?.Value);
 
                     var refused = edit(cfg);
                     if (refused != null)
@@ -603,7 +604,7 @@ namespace ACE.Server.Managers
 
                     raw = cfg.Format();
                     if (row == null)
-                        context.WeeniePropertiesString.Add(new WeeniePropertiesString { ObjectId = sourceWcid, Type = (ushort)PropertyString.RoomAssignKillReward, Value = raw });
+                        context.WeeniePropertiesString.Add(new WeeniePropertiesString { ObjectId = sourceWcid, Type = (ushort)PropertyString.RoomAssignBounty, Value = raw });
                     else
                         row.Value = raw;
                     context.SaveChanges();
@@ -613,13 +614,13 @@ namespace ACE.Server.Managers
             }
             GetRooms(sourceWcid);   // re-warm the cache the room code reads
 
-            log.Info($"[RoomAssign][DUNGEON] {player.Name} set Kill Reward '{raw}' on wcid {sourceWcid}. SQL: INSERT INTO weenie_properties_string (object_Id, type, value) VALUES ({sourceWcid}, {(ushort)PropertyString.RoomAssignKillReward}, '{raw}') ON DUPLICATE KEY UPDATE value = '{raw}';");
+            log.Info($"[RoomAssign][DUNGEON] {player.Name} set Bounty '{raw}' on wcid {sourceWcid}. SQL: INSERT INTO weenie_properties_string (object_Id, type, value) VALUES ({sourceWcid}, {(ushort)PropertyString.RoomAssignBounty}, '{raw}') ON DUPLICATE KEY UPDATE value = '{raw}';");
 
-            lines.Add("Kill Reward " + KillRewardManager.Describe(cfg) + ".");
+            lines.Add("Bounty " + BountyManager.Describe(cfg) + ".");
             return lines;
         }
 
-        private static readonly object _killRewardWriteLock = new object();
+        private static readonly object _bountyWriteLock = new object();
 
         /// <summary>An item's name for messages and the wire, or "WCID n" when it has none.</summary>
         internal static string ItemName(uint wcid)

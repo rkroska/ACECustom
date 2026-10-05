@@ -2715,6 +2715,71 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqMaxValue2); else SetProperty(PropertyInt.PortalReqMaxValue2, value.Value); }
         }
 
+        public PortalRequirement PortalReqType3
+        {
+            get => (PortalRequirement)(GetProperty(PropertyInt.PortalReqType3) ?? 0);
+            set { if (value == PortalRequirement.None) RemoveProperty(PropertyInt.PortalReqType3); else SetProperty(PropertyInt.PortalReqType3, (int)value); }
+        }
+
+        public int? PortalReqValue3
+        {
+            get => GetProperty(PropertyInt.PortalReqValue3);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqValue3); else SetProperty(PropertyInt.PortalReqValue3, value.Value); }
+        }
+
+        public int? PortalReqMaxValue3
+        {
+            get => GetProperty(PropertyInt.PortalReqMaxValue3);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqMaxValue3); else SetProperty(PropertyInt.PortalReqMaxValue3, value.Value); }
+        }
+
+        public PortalRequirement PortalReqType4
+        {
+            get => (PortalRequirement)(GetProperty(PropertyInt.PortalReqType4) ?? 0);
+            set { if (value == PortalRequirement.None) RemoveProperty(PropertyInt.PortalReqType4); else SetProperty(PropertyInt.PortalReqType4, (int)value); }
+        }
+
+        public int? PortalReqValue4
+        {
+            get => GetProperty(PropertyInt.PortalReqValue4);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqValue4); else SetProperty(PropertyInt.PortalReqValue4, value.Value); }
+        }
+
+        public int? PortalReqMaxValue4
+        {
+            get => GetProperty(PropertyInt.PortalReqMaxValue4);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqMaxValue4); else SetProperty(PropertyInt.PortalReqMaxValue4, value.Value); }
+        }
+
+        public PortalRequirement PortalReqType5
+        {
+            get => (PortalRequirement)(GetProperty(PropertyInt.PortalReqType5) ?? 0);
+            set { if (value == PortalRequirement.None) RemoveProperty(PropertyInt.PortalReqType5); else SetProperty(PropertyInt.PortalReqType5, (int)value); }
+        }
+
+        public int? PortalReqValue5
+        {
+            get => GetProperty(PropertyInt.PortalReqValue5);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqValue5); else SetProperty(PropertyInt.PortalReqValue5, value.Value); }
+        }
+
+        public int? PortalReqMaxValue5
+        {
+            get => GetProperty(PropertyInt.PortalReqMaxValue5);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqMaxValue5); else SetProperty(PropertyInt.PortalReqMaxValue5, value.Value); }
+        }
+
+        /// <summary>All five portal gates in order (owner 2026-10-02: 2 -> 5). Gates 1-2 are the 9019-9024 set,
+        /// 3-5 are ours (50112-50120). Unset gates come back as PortalRequirement.None.</summary>
+        public (PortalRequirement type, int? value, int? max)[] PortalRequirements => new[]
+        {
+            (PortalReqType, PortalReqValue, PortalReqMaxValue),
+            (PortalReqType2, PortalReqValue2, PortalReqMaxValue2),
+            (PortalReqType3, PortalReqValue3, PortalReqMaxValue3),
+            (PortalReqType4, PortalReqValue4, PortalReqMaxValue4),
+            (PortalReqType5, PortalReqValue5, PortalReqMaxValue5),
+        };
+
         public uint? CreatedByAccountId
         {
             get => GetProperty(PropertyDataId.CreatedByAccountId);

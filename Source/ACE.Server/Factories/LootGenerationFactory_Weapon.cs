@@ -48,24 +48,50 @@ namespace ACE.Server.Factories
             if (profile.Tier < 10)
                 return false;
 
+            if (roll == null || !(roll.IsCaster || roll.IsMeleeWeapon || roll.IsMissileWeapon))   // null = legacy_loot_system
+                return false;
+
+            // T11+ (owner 2026-09-27): the old table gave 3-5, far below every other T11 roll. A weapon's
+            // Damage / Crit Damage rating is now worth one Zone Control line of the same name - it feeds the
+            // same worn total - so it rolls that line's band and grade: 14-69 at T11, tier-scaled to T25 like
+            // the lines, following a band authored on the tier Default (not a zone's own band override).
+            // The value is FROZEN at drop: it is a plain GearDamage / GearCritDamage with no grade record, so
+            // Live Stat Resolution, a later band edit and the zonecontrol_enabled switch never move it.
+            if (profile.Tier >= 11)
+            {
+                var critDamage = ThreadSafeRandom.Next(0, 1) == 1;
+                var key = critDamage ? 29 : 28;   // 28 Damage Rating, 29 Crit Damage Rating
+                var (min, max) = Managers.ZoneControl.ZoneStatResolver.EffectiveBand(key, profile.Tier);
+                var value = Managers.ZoneControl.ZoneStatResolver.ValueFor(min, max, Managers.ZoneControl.ZoneStatResolver.RollGrade(profile.Tier, false, Managers.ZoneControl.ZoneStatResolver.DropFloor));
+                // Frozen at drop, so a mistyped authored band would mint permanent outliers: never above the
+                // line's own T25 catalog ceiling (138 for 28/29).
+                if (Managers.ZoneControl.ZoneModifiers.TryGet(key, out var def))
+                    value = System.Math.Min(value, Managers.ZoneControl.ZoneModifiers.CatalogBandAt(def, 25).Max);
+
+                if (value <= 0)
+                    return false;
+
+                if (critDamage)
+                    wo.GearCritDamage = value;
+                else
+                    wo.GearDamage = value;
+
+                return true;
+            }
+
             int gearRating = GearRatingChance.RollForTier(wo, profile, roll); // Make sure this supports weapon types
 
             if (gearRating == 0)
                 return false;
 
-            int rollType = ThreadSafeRandom.Next(0, 2); // 0 or 1
+            int rollType = ThreadSafeRandom.Next(0, 2); // 0, 1 or 2 (max-inclusive): 1/3 Damage Rating, 2/3 Crit Damage Rating - kept on purpose (owner 2026-10-04)
 
-            if (roll.IsCaster || roll.IsMeleeWeapon || roll.IsMissileWeapon)
-            {
-                if (rollType == 0)
-                    wo.GearDamage = gearRating;
-                else
-                    wo.GearCritDamage = gearRating;
+            if (rollType == 0)
+                wo.GearDamage = gearRating;
+            else
+                wo.GearCritDamage = gearRating;
 
-                return true;
-            }
-
-            return false;
+            return true;
         }
     }
 }

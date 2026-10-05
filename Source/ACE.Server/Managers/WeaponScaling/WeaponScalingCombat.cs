@@ -377,7 +377,29 @@ namespace ACE.Server.Managers.WeaponScaling
         {
             if (!(wielder is Player player) || weapon == null)
                 return 0f;
+            if (weapon is Caster)
+                return 0f;   // a spell takes the floor through GetSpellCritDamageBonus (Zone Control hand casts only)
 
+            var count = weapon.IsMissileWeapon
+                ? player.EffectiveMissileAugCount
+                : player.EffectiveMeleeAugCount;
+            return CritFloor(weapon, count);
+        }
+
+        /// <summary>The same aug-pegged crit floor for a Zone Control HAND-CAST war / void / life spell (owner 2026-10-04, "spell crits
+        /// same as melee"): kc(wand quality) x melee_missile_aug_crit_modifier x min(the spell school's augs, tier cap). The
+        /// caller (SpellProjectile / Player_Magic rings, gated by Creature.ZcSpellCritMirrorsMelee) composes it with Math.Max
+        /// against the wand's Crushing exactly as GetWeaponCritDamageMod does for melee. Without it a claw's crit mod read
+        /// 3.1 (T11) .. 13.9 (T25) while the wand stayed on Crushing 2.9 .. 5.6, so spell crits landed at 2.8x .. 2.1x.</summary>
+        public static float GetSpellCritDamageBonus(WorldObject caster, Creature wielder, long schoolAugs)
+        {
+            if (!(wielder is Player) || !(caster is Caster))
+                return 0f;
+            return CritFloor(caster, schoolAugs);
+        }
+
+        private static float CritFloor(WorldObject weapon, long count)
+        {
             var cfg = WeaponScalingManager.Current;
             if (!cfg.Enabled)
                 return 0f;
@@ -388,8 +410,6 @@ namespace ACE.Server.Managers.WeaponScaling
             var tier = weapon.GetProperty(PropertyInt.WeaponAugScaleTier);
             if (tier == null)
                 return 0f;
-            if (weapon is Caster)
-                return 0f;
 
             WeaponScalingTier tierRow = null;
             foreach (var t in cfg.Tiers)
@@ -398,9 +418,6 @@ namespace ACE.Server.Managers.WeaponScaling
                 return 0f;
 
             var kc = WeaponScalingManager.ResolveFromQuality(cfg.KcMin, cfg.KcMax, quality.Value);
-            var count = weapon.IsMissileWeapon
-                ? player.EffectiveMissileAugCount
-                : player.EffectiveMeleeAugCount;
             // Same per-aug crit modifier the aug crit bonus itself uses, so the peg stays honest
             // if the server ever retunes it.
             var modifier = ServerConfig.melee_missile_aug_crit_modifier.Value;

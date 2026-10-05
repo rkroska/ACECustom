@@ -543,7 +543,7 @@ namespace ACE.Server.Command.Handlers
 
         private static bool TryParseDouble(string s, out double v)
         {
-            return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v);
+            return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v) && double.IsFinite(v);   // never NaN / Infinity
         }
 
         /// <summary>Matched-quality test weapons for cross-family tuning (owner 2026-08-01): one
@@ -556,9 +556,9 @@ namespace ACE.Server.Command.Handlers
         // One representative base weenie per scaling family (all verified in the world DB 08-01:
         // W_WeaponType + MultiStrike/thrust flags resolve to exactly the intended GetFamilyKey).
         // TWType = the loot pipeline's weapon type for this class, used by the tier-10 forge
-        // path to run the bench weenie through the SAME mutation scripts a real T10 drop rolls
+        // path to run the forge weenie through the SAME mutation scripts a real T10 drop rolls
         // (owner 2026-08-15: T10 forge output must match the existing T10 loot table range).
-        private static readonly (string Key, uint Wcid, string CleanName, ACE.Server.Factories.Enum.TreasureWeaponType TWType)[] ForgeClasses =
+        internal static readonly (string Key, uint Wcid, string CleanName, ACE.Server.Factories.Enum.TreasureWeaponType TWType)[] ForgeClasses =
         {
             ("sword",     30566, "Sword", ACE.Server.Factories.Enum.TreasureWeaponType.Sword),      // swordsabra — single strike
             ("sword_ms",   6853, "Rapier", ACE.Server.Factories.Enum.TreasureWeaponType.SwordMS),   // swordrapier — multi-strike
@@ -581,7 +581,7 @@ namespace ACE.Server.Command.Handlers
             ("wand",      29265, "Sceptre", ACE.Server.Factories.Enum.TreasureWeaponType.Caster),       // wandslashing (gets EDM 1.5)
         };
 
-        private static DamageType? ParseElement(string s)
+        internal static DamageType? ParseElement(string s)
         {
             return s?.ToLowerInvariant() switch
             {
@@ -995,7 +995,7 @@ namespace ACE.Server.Command.Handlers
             if (tier == 10 && twType != ACE.Server.Factories.Enum.TreasureWeaponType.Undef)
             {
                 // T10 = the SAME range as the existing tier-10 loot table (owner 2026-08-15). The
-                // bench weenie runs through the real loot pipeline with a synthetic tier-10
+                // forge weenie runs through the real loot pipeline with a synthetic tier-10
                 // profile, so its damage rolls from the same mutation-script ranges as a live T10
                 // drop. It also gets NO quality/tier stamp below - a real T10 drop carries none,
                 // so a forged one gets no aug-scaling term and the quality arg is ignored here.
@@ -1016,13 +1016,13 @@ namespace ACE.Server.Command.Handlers
             ACE.Server.Factories.LootGenerationFactory.StripWieldRequirements(wo);
             // Standard T10+ mods: 20 pct attack / 20 pct melee d (wands +20 pct mana c), same as
             // every loot drop (owner 2026-08-15). The T10 CreateAndMutateWcid path already stamped
-            // them in mutation; this covers the T11+ bench path.
+            // them in mutation; this covers the T11+ forge path.
             ACE.Server.Factories.LootGenerationFactory.ApplyStandardWeaponMods(wo, tier);
             // T10 = the basic tier, no aug wield gate (same rule as /asforge armor). A minwield-0
-            // tier row would NOT give that: ApplyT11WieldRequirement falls back to the global gate.
+            // tier row would NOT give that: ApplyZoneWieldRequirement falls back to the global gate.
             if (tier >= 11)
             {
-                ACE.Server.Factories.LootGenerationFactory.ApplyT11WieldRequirement(wo, tier);
+                ACE.Server.Factories.LootGenerationFactory.ApplyZoneWieldRequirement(wo, tier);
                 wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.WeaponAugScaleQuality, quality);
                 wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.WeaponAugScaleTier, tier);
             }

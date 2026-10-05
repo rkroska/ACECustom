@@ -705,7 +705,7 @@ namespace ACE.Server.Tests
         public void Smithy_Weenies_AreInTheWorldDatabase_AndWiredToTheCode()
         {
             Need();
-            if (DatabaseManager.World.GetCachedWeenie(78780310) == null)
+            if (DatabaseManager.World.GetCachedWeenie(78780410) == null)
                 Assert.Inconclusive("the smithy SQL (Database/Updates/World/2026-10-03-00-Forge-Smithy.sql) has not been run on this world database");
 
             ACE.Entity.Models.Weenie W(uint id)
@@ -717,26 +717,26 @@ namespace ACE.Server.Tests
             int? I(uint id, PropertyInt p) => W(id).PropertiesInt != null && W(id).PropertiesInt.TryGetValue(p, out var v) ? v : null;
             bool? B(uint id, PropertyBool p) => W(id).PropertiesBool != null && W(id).PropertiesBool.TryGetValue(p, out var v) ? v : null;
 
-            Assert.AreEqual(true, B(78780300, PropertyBool.ForgeSmith), "the smith (2026-10-02-00-Forge-Smith-NPC.sql)");
-            Assert.AreEqual(true, B(78780301, PropertyBool.ForgeGrindstone));
-            Assert.AreEqual(true, B(78780302, PropertyBool.ForgeDyeVat));
+            Assert.AreEqual(true, B(78780400, PropertyBool.ForgeSmith), "the smith (2026-10-02-00-Forge-Smith-NPC.sql)");
+            Assert.AreEqual(true, B(78780401, PropertyBool.ForgeGrindstone));
+            Assert.AreEqual(true, B(78780402, PropertyBool.ForgeDyeVat));
 
             var tools = new List<uint>();
             for (uint i = 0; i < 8; i++)
             {
-                var id = 78780310 + i;
+                var id = 78780410 + i;
                 tools.Add(id);
                 Assert.AreEqual((int)ForgeService.ForgeTool.HoneStone, I(id, PropertyInt.ForgeTool));
                 Assert.AreEqual((int)(i + 1), I(id, PropertyInt.ForgeToolArg));
                 Assert.IsTrue(ForgeMath.IsHonable((ForgeMath.ForgeLine)(i + 1)), $"stone {id} hones a line that cannot be honed");
             }
             CollectionAssert.AreEquivalent(Enumerable.Range(1, 8).ToList(), ForgeMath.HonableLines.Select(l => (int)l).ToList(), "one stone for every honable line");
-            Assert.AreEqual((int)ForgeService.ForgeTool.Flux, I(78780318, PropertyInt.ForgeTool));
-            Assert.AreEqual((int)ForgeService.ForgeTool.UnbindingOil, I(78780319, PropertyInt.ForgeTool));
-            tools.Add(78780318); tools.Add(78780319);
+            Assert.AreEqual((int)ForgeService.ForgeTool.Flux, I(78780418, PropertyInt.ForgeTool));
+            Assert.AreEqual((int)ForgeService.ForgeTool.UnbindingOil, I(78780419, PropertyInt.ForgeTool));
+            tools.Add(78780418); tools.Add(78780419);
             foreach (ForgeDyes.Family family in Enum.GetValues(typeof(ForgeDyes.Family)))
             {
-                var id = 78780320 + (uint)family;
+                var id = 78780420 + (uint)family;
                 tools.Add(id);
                 Assert.AreEqual((int)ForgeService.ForgeTool.Dye, I(id, PropertyInt.ForgeTool));
                 Assert.AreEqual((int)family, I(id, PropertyInt.ForgeToolArg));
@@ -745,15 +745,15 @@ namespace ACE.Server.Tests
             foreach (var id in tools)
             {
                 Assert.AreEqual(false, B(id, PropertyBool.IsSellable), $"{id} must not be sellable to vendors");
-                Assert.AreEqual(id >= 78780320 ? 33025 | 2 | 4 | 16 : id == 78780319 ? 33025 | 2 | 4 : 33025, I(id, PropertyInt.TargetType), $"{id} must target weapons (dyes: also armour, clothing and yourself)");
+                Assert.AreEqual(id >= 78780420 ? 33025 | 2 | 4 | 16 : id == 78780419 ? 33025 | 2 | 4 : 33025, I(id, PropertyInt.TargetType), $"{id} must target weapons (dyes: also armour, clothing and yourself)");
                 Assert.IsTrue((I(id, PropertyInt.Value) ?? 0) > 0, $"{id} has no price");
                 foreach (var text in W(id).PropertiesString.Values)
                     Assert.IsTrue(text.All(c => c >= 32 && c < 127), $"{id}: non-ASCII text '{text}'");
             }
 
-            var shop = W(78780303).PropertiesCreateList.Where(c => c.DestinationType == DestinationType.Shop).Select(c => c.WeenieClassId).ToList();
+            var shop = W(78780403).PropertiesCreateList.Where(c => c.DestinationType == DestinationType.Shop).Select(c => c.WeenieClassId).ToList();
             CollectionAssert.AreEquivalent(tools, shop, "the apprentice sells exactly the forge tools");
-            Assert.AreEqual(0, I(78780303, PropertyInt.MerchandiseItemTypes), "the apprentice buys nothing");
+            Assert.AreEqual(0, I(78780403, PropertyInt.MerchandiseItemTypes), "the apprentice buys nothing");
         }
     }
 }
