@@ -677,6 +677,41 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void DyeBottles_DrawTheIconOfTheirColourOption_UnlessToldToKeepTheirOwn()
+        {
+            Need();
+            // The SQL builds every dye from the retail dye vial (8643) and picks its bottle by PaletteTemplate. This is the
+            // table that file relies on, checked against the server's own rendering: template -> the icon a player sees.
+            var bottles = new Dictionary<int, uint>
+            {
+                { 90, 0x06001DED }, { 14, 0x06001DE6 }, { 17, 0x06001DE7 }, { 8, 0x06001DE8 },
+                { 77, 0x06001DEE }, { 2, 0x06001DE9 }, { 13, 0x06001DEB }, { 9, 0x06001DEC },
+            };
+            foreach (var (template, icon) in bottles)
+            {
+                var vial = NewScratch(8643);
+                vial.PaletteTemplate = template;
+                vial.CalculateObjDesc();
+                Assert.AreEqual(icon, vial.IconId, $"template {template} draws icon 0x{vial.IconId:X8}, the SQL expects 0x{icon:X8}");
+            }
+            Assert.AreEqual(bottles.Count, bottles.Values.Distinct().Count(), "eight different bottles");
+
+            // Amber and Rose have no bottle of their colour: IgnoreCloIcons keeps the icon the weenie stores.
+            var own = NewScratch(8643);
+            own.PaletteTemplate = 4;
+            own.IconId = 0x060061C1;
+            own.SetProperty(PropertyBool.IgnoreCloIcons, true);
+            own.CalculateObjDesc();
+            Assert.AreEqual(0x060061C1u, own.IconId, "with IgnoreCloIcons the stored icon is drawn");
+
+            var replaced = NewScratch(8643);
+            replaced.PaletteTemplate = 4;
+            replaced.IconId = 0x060061C1;
+            replaced.CalculateObjDesc();
+            Assert.AreNotEqual(0x060061C1u, replaced.IconId, "without it the bottle of the colour option replaces the stored icon");
+        }
+
+        [TestMethod]
         public void Unbind_ThenWield_BindsAgain()
         {
             Need();
@@ -754,6 +789,23 @@ namespace ACE.Server.Tests
             var shop = W(78780403).PropertiesCreateList.Where(c => c.DestinationType == DestinationType.Shop).Select(c => c.WeenieClassId).ToList();
             CollectionAssert.AreEquivalent(tools, shop, "the apprentice sells exactly the forge tools");
             Assert.AreEqual(0, I(78780403, PropertyInt.MerchandiseItemTypes), "the apprentice buys nothing");
+
+            // the dyes-only vendor, for a server that opens the dye vats before the forge
+            var dyerShop = W(78780404).PropertiesCreateList.Where(c => c.DestinationType == DestinationType.Shop).Select(c => c.WeenieClassId).ToList();
+            CollectionAssert.AreEquivalent(Enumerable.Range(0, 10).Select(n => 78780420u + (uint)n).ToList(), dyerShop, "the dyer sells exactly the ten dyes");
+            Assert.AreEqual(0, I(78780404, PropertyInt.MerchandiseItemTypes), "the dyer buys nothing");
+
+            // A dye is drawn with the bottle of its colour option unless it carries IgnoreCloIcons, so the icon a player
+            // sees must be the one stored: no dye may show a bottle of some other colour.
+            foreach (ForgeDyes.Family family in Enum.GetValues(typeof(ForgeDyes.Family)))
+            {
+                var id = 78780420 + (uint)family;
+                var dye = NewScratch(id);
+                var stored = W(id).PropertiesDID[PropertyDataId.Icon];
+                dye.CalculateObjDesc();
+                Assert.AreEqual(stored, dye.IconId, $"{dye.Name} ({id}): the server draws icon 0x{dye.IconId:X8}, not its own 0x{stored:X8}");
+            }
+            Assert.AreEqual(10, tools.Skip(10).Select(id => W(id).PropertiesDID[PropertyDataId.Icon]).Distinct().Count(), "every dye has its own icon");
         }
     }
 }

@@ -144,6 +144,7 @@ VALUES (@parent_id, 0, 10 /* Tell */, 0, 1, NULL, 'Hand me the weapon or the pie
 --   78780401  Grindstone        station: hone stones only work near one   (PropertyBool 52001 ForgeGrindstone)
 --   78780402  Dye Vat           station: dyes only work near one          (PropertyBool 52002 ForgeDyeVat)
 --   78780403  smith's apprentice, a vendor selling every tool below
+--   78780404  Sorrel the Dyer, a vendor selling only the ten dyes (for opening the dye vats on their own)
 --   78780410-78780417  hone stones, one per stat (ForgeTool 1, ForgeToolArg = ForgeMath.ForgeLine 1-8)
 --   78780418  Smith's Flux      (ForgeTool 3; one is used per hone attempt, +forge_flux_bonus)
 --   78780419  Unbinding Oil     (ForgeTool 4)
@@ -663,7 +664,7 @@ VALUES (78780420, 1, 0x0200090F)
      , (78780420, 3, 0x20000014)
      , (78780420, 6, 0x04000BEF)
      , (78780420, 7, 0x10000242)
-     , (78780420, 8, 0x0600690C)
+     , (78780420, 8, 0x06001DED)
      , (78780420, 22, 0x3400002B);
 
 -- 78780421 forge-dye-crimson: Crimson Dye (copied from retail 8643)
@@ -674,7 +675,7 @@ VALUES (78780421, 'forge-dye-crimson', 44, '2026-10-03 12:00:00') /* CraftTool *
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (78780421, 1, 67108864)
-     , (78780421, 3, 90)
+     , (78780421, 3, 14)
      , (78780421, 5, 10)
      , (78780421, 8, 5)
      , (78780421, 9, 0)
@@ -701,7 +702,7 @@ VALUES (78780421, 1, 0x0200090F)
      , (78780421, 3, 0x20000014)
      , (78780421, 6, 0x04000BEF)
      , (78780421, 7, 0x10000242)
-     , (78780421, 8, 0x060061BA)
+     , (78780421, 8, 0x06001DE6)
      , (78780421, 22, 0x3400002B);
 
 -- 78780422 forge-dye-amber: Amber Dye (copied from retail 8643)
@@ -712,7 +713,7 @@ VALUES (78780422, 'forge-dye-amber', 44, '2026-10-03 12:00:00') /* CraftTool */;
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (78780422, 1, 67108864)
-     , (78780422, 3, 90)
+     , (78780422, 3, 4)
      , (78780422, 5, 10)
      , (78780422, 8, 5)
      , (78780422, 9, 0)
@@ -726,7 +727,8 @@ VALUES (78780422, 1, 67108864)
      , (78780422, 52005, 2);
 
 INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`)
-VALUES (78780422, 69, False);
+VALUES (78780422, 69, False)
+     , (78780422, 84, True);
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (78780422, 1, 'Amber Dye')
@@ -750,7 +752,7 @@ VALUES (78780423, 'forge-dye-golden', 44, '2026-10-03 12:00:00') /* CraftTool */
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (78780423, 1, 67108864)
-     , (78780423, 3, 90)
+     , (78780423, 3, 17)
      , (78780423, 5, 10)
      , (78780423, 8, 5)
      , (78780423, 9, 0)
@@ -777,7 +779,7 @@ VALUES (78780423, 1, 0x0200090F)
      , (78780423, 3, 0x20000014)
      , (78780423, 6, 0x04000BEF)
      , (78780423, 7, 0x10000242)
-     , (78780423, 8, 0x060061B8)
+     , (78780423, 8, 0x06001DE7)
      , (78780423, 22, 0x3400002B);
 
 -- 78780424 forge-dye-verdant: Verdant Dye (copied from retail 8643)
@@ -788,7 +790,7 @@ VALUES (78780424, 'forge-dye-verdant', 44, '2026-10-03 12:00:00') /* CraftTool *
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (78780424, 1, 67108864)
-     , (78780424, 3, 90)
+     , (78780424, 3, 8)
      , (78780424, 5, 10)
      , (78780424, 8, 5)
      , (78780424, 9, 0)
@@ -815,7 +817,7 @@ VALUES (78780424, 1, 0x0200090F)
      , (78780424, 3, 0x20000014)
      , (78780424, 6, 0x04000BEF)
      , (78780424, 7, 0x10000242)
-     , (78780424, 8, 0x060061B9)
+     , (78780424, 8, 0x06001DE8)
      , (78780424, 22, 0x3400002B);
 
 -- 78780425 forge-dye-teal: Teal Dye (copied from retail 8643)
@@ -826,7 +828,7 @@ VALUES (78780425, 'forge-dye-teal', 44, '2026-10-03 12:00:00') /* CraftTool */;
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (78780425, 1, 67108864)
-     , (78780425, 3, 90)
+     , (78780425, 3, 77)
      , (78780425, 5, 10)
      , (78780425, 8, 5)
      , (78780425, 9, 0)
@@ -853,7 +855,7 @@ VALUES (78780425, 1, 0x0200090F)
      , (78780425, 3, 0x20000014)
      , (78780425, 6, 0x04000BEF)
      , (78780425, 7, 0x10000242)
-     , (78780425, 8, 0x060061C0)
+     , (78780425, 8, 0x06001DEE)
      , (78780425, 22, 0x3400002B);
 
 -- 78780426 forge-dye-azure: Azure Dye (copied from retail 8643)
@@ -864,7 +866,7 @@ VALUES (78780426, 'forge-dye-azure', 44, '2026-10-03 12:00:00') /* CraftTool */;
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (78780426, 1, 67108864)
-     , (78780426, 3, 90)
+     , (78780426, 3, 2)
      , (78780426, 5, 10)
      , (78780426, 8, 5)
      , (78780426, 9, 0)
@@ -891,7 +893,7 @@ VALUES (78780426, 1, 0x0200090F)
      , (78780426, 3, 0x20000014)
      , (78780426, 6, 0x04000BEF)
      , (78780426, 7, 0x10000242)
-     , (78780426, 8, 0x060061BD)
+     , (78780426, 8, 0x06001DE9)
      , (78780426, 22, 0x3400002B);
 
 -- 78780427 forge-dye-violet: Violet Dye (copied from retail 8643)
@@ -902,7 +904,7 @@ VALUES (78780427, 'forge-dye-violet', 44, '2026-10-03 12:00:00') /* CraftTool */
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (78780427, 1, 67108864)
-     , (78780427, 3, 90)
+     , (78780427, 3, 13)
      , (78780427, 5, 10)
      , (78780427, 8, 5)
      , (78780427, 9, 0)
@@ -929,7 +931,7 @@ VALUES (78780427, 1, 0x0200090F)
      , (78780427, 3, 0x20000014)
      , (78780427, 6, 0x04000BEF)
      , (78780427, 7, 0x10000242)
-     , (78780427, 8, 0x060061BC)
+     , (78780427, 8, 0x06001DEB)
      , (78780427, 22, 0x3400002B);
 
 -- 78780428 forge-dye-rose: Rose Dye (copied from retail 8643)
@@ -940,7 +942,7 @@ VALUES (78780428, 'forge-dye-rose', 44, '2026-10-03 12:00:00') /* CraftTool */;
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (78780428, 1, 67108864)
-     , (78780428, 3, 90)
+     , (78780428, 3, 14)
      , (78780428, 5, 10)
      , (78780428, 8, 5)
      , (78780428, 9, 0)
@@ -954,7 +956,8 @@ VALUES (78780428, 1, 67108864)
      , (78780428, 52005, 8);
 
 INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`)
-VALUES (78780428, 69, False);
+VALUES (78780428, 69, False)
+     , (78780428, 84, True);
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (78780428, 1, 'Rose Dye')
@@ -978,7 +981,7 @@ VALUES (78780429, 'forge-dye-ashen', 44, '2026-10-03 12:00:00') /* CraftTool */;
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
 VALUES (78780429, 1, 67108864)
-     , (78780429, 3, 90)
+     , (78780429, 3, 9)
      , (78780429, 5, 10)
      , (78780429, 8, 5)
      , (78780429, 9, 0)
@@ -1005,10 +1008,10 @@ VALUES (78780429, 1, 0x0200090F)
      , (78780429, 3, 0x20000014)
      , (78780429, 6, 0x04000BEF)
      , (78780429, 7, 0x10000242)
-     , (78780429, 8, 0x060061BE)
+     , (78780429, 8, 0x06001DEC)
      , (78780429, 22, 0x3400002B);
 
--- 78780403 npc-forge-apprentice: Mei the Smith's Apprentice, vendor of forge tools (copied from retail 835)
+-- 78780403 npc-forge-apprentice: Mei the Smith's Apprentice, vendor of every forge tool (copied from retail 835)
 DELETE FROM `weenie` WHERE `class_Id` = 78780403 AND `class_Name` = 'npc-forge-apprentice';
 
 INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`)
@@ -1201,9 +1204,192 @@ SET @parent_id = LAST_INSERT_ID();
 INSERT INTO `weenie_properties_emote_action` (`emote_Id`, `order`, `type`, `delay`, `extent`, `motion`, `message`, `test_String`, `min`, `max`, `min_64`, `max_64`, `min_Dbl`, `max_Dbl`, `stat`, `display`, `amount`, `amount_64`, `hero_X_P_64`, `percent`, `spell_Id`, `wealth_Rating`, `treasure_Class`, `treasure_Type`, `p_Script`, `sound`, `destination_Type`, `weenie_Class_Id`, `stack_Size`, `palette`, `shade`, `try_To_Bond`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`)
 VALUES (@parent_id, 0, 5, 0, 1, 318767235, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
+-- 78780404 npc-forge-dyer: Sorrel the Dyer, vendor of the ten dyes only (copied from retail 835)
+DELETE FROM `weenie` WHERE `class_Id` = 78780404 AND `class_Name` = 'npc-forge-dyer';
+
+INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`)
+VALUES (78780404, 'npc-forge-dyer', 12, '2026-10-03 12:00:00') /* Vendor */;
+
+INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
+VALUES (78780404, 1, 16)
+     , (78780404, 2, 31)
+     , (78780404, 6, -1)
+     , (78780404, 7, -1)
+     , (78780404, 8, 120)
+     , (78780404, 16, 32)
+     , (78780404, 25, 6)
+     , (78780404, 27, 0)
+     , (78780404, 74, 0)
+     , (78780404, 75, 0)
+     , (78780404, 76, 1000000)
+     , (78780404, 93, 2098200)
+     , (78780404, 126, 1000)
+     , (78780404, 127, 500)
+     , (78780404, 133, 4)
+     , (78780404, 134, 16)
+     , (78780404, 146, 108);
+
+INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`)
+VALUES (78780404, 1, True)
+     , (78780404, 12, True)
+     , (78780404, 13, False)
+     , (78780404, 19, False)
+     , (78780404, 39, True)
+     , (78780404, 41, True);
+
+INSERT INTO `weenie_properties_float` (`object_Id`, `type`, `value`)
+VALUES (78780404, 1, 5)
+     , (78780404, 2, 0)
+     , (78780404, 3, 0.16)
+     , (78780404, 4, 5)
+     , (78780404, 5, 1)
+     , (78780404, 11, 300)
+     , (78780404, 13, 0.9)
+     , (78780404, 14, 1)
+     , (78780404, 15, 1.1)
+     , (78780404, 16, 0.4)
+     , (78780404, 17, 0.4)
+     , (78780404, 18, 1)
+     , (78780404, 19, 0.6)
+     , (78780404, 37, 0.9)
+     , (78780404, 38, 1)
+     , (78780404, 54, 3)
+     , (78780404, 64, 1)
+     , (78780404, 65, 1)
+     , (78780404, 66, 1)
+     , (78780404, 67, 1)
+     , (78780404, 68, 1)
+     , (78780404, 69, 1)
+     , (78780404, 70, 1)
+     , (78780404, 71, 1)
+     , (78780404, 72, 1)
+     , (78780404, 73, 1)
+     , (78780404, 74, 1)
+     , (78780404, 75, 1)
+     , (78780404, 104, 10)
+     , (78780404, 125, 1);
+
+INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
+VALUES (78780404, 1, 'Sorrel the Dyer')
+     , (78780404, 3, 'Female')
+     , (78780404, 4, 'Sho')
+     , (78780404, 5, 'Dyer');
+
+INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
+VALUES (78780404, 1, 0x0200004E)
+     , (78780404, 2, 0x09000001)
+     , (78780404, 3, 0x20000002)
+     , (78780404, 4, 0x30000000)
+     , (78780404, 8, 0x06001036);
+
+INSERT INTO `weenie_properties_attribute` (`object_Id`, `type`, `init_Level`, `level_From_C_P`, `c_P_Spent`)
+VALUES (78780404, 1, 55, 0, 0)
+     , (78780404, 2, 65, 0, 0)
+     , (78780404, 3, 50, 0, 0)
+     , (78780404, 4, 50, 0, 0)
+     , (78780404, 5, 35, 0, 0)
+     , (78780404, 6, 25, 0, 0);
+
+INSERT INTO `weenie_properties_attribute_2nd` (`object_Id`, `type`, `init_Level`, `level_From_C_P`, `c_P_Spent`, `current_Level`)
+VALUES (78780404, 1, 95, 0, 0, 128)
+     , (78780404, 3, 100, 0, 0, 165)
+     , (78780404, 5, 30, 0, 0, 55);
+
+INSERT INTO `weenie_properties_body_part` (`object_Id`, `key`, `d_Type`, `d_Val`, `d_Var`, `base_Armor`, `armor_Vs_Slash`, `armor_Vs_Pierce`, `armor_Vs_Bludgeon`, `armor_Vs_Cold`, `armor_Vs_Fire`, `armor_Vs_Acid`, `armor_Vs_Electric`, `armor_Vs_Nether`, `b_h`, `h_l_f`, `m_l_f`, `l_l_f`, `h_r_f`, `m_r_f`, `l_r_f`, `h_l_b`, `m_l_b`, `l_l_b`, `h_r_b`, `m_r_b`, `l_r_b`)
+VALUES (78780404, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0.33, 0, 0, 0.33, 0, 0, 0.33, 0, 0, 0.33, 0, 0)
+     , (78780404, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0.44, 0.17, 0, 0.44, 0.17, 0, 0.44, 0.17, 0, 0.44, 0.17, 0)
+     , (78780404, 2, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0.17, 0, 0, 0.17, 0, 0, 0.17, 0, 0, 0.17, 0)
+     , (78780404, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0.23, 0.03, 0, 0.23, 0.03, 0, 0.23, 0.03, 0, 0.23, 0.03, 0)
+     , (78780404, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0.3, 0, 0, 0.3, 0, 0, 0.3, 0, 0, 0.3, 0)
+     , (78780404, 5, 4, 2, 0.75, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0.2, 0, 0, 0.2, 0, 0, 0.2, 0, 0, 0.2, 0)
+     , (78780404, 6, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0.13, 0.18, 0, 0.13, 0.18, 0, 0.13, 0.18, 0, 0.13, 0.18)
+     , (78780404, 7, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0.6, 0, 0, 0.6, 0, 0, 0.6, 0, 0, 0.6)
+     , (78780404, 8, 4, 2, 0.75, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0.22, 0, 0, 0.22, 0, 0, 0.22, 0, 0, 0.22);
+
+INSERT INTO `weenie_properties_create_list` (`object_Id`, `destination_Type`, `weenie_Class_Id`, `stack_Size`, `palette`, `shade`, `try_To_Bond`)
+VALUES (78780404, 2, 303, 0, 0, 0, False)
+     , (78780404, 2, 2596, 0, 13, 0.5, False)
+     , (78780404, 2, 2602, 0, 9, 1, False)
+     , (78780404, 2, 132, 0, 5, 0, False)
+     , (78780404, 2, 10696, 0, 15, 1, False)
+     , (78780404, 4, 78780420, -1, 0, 0, False)
+     , (78780404, 4, 78780421, -1, 0, 0, False)
+     , (78780404, 4, 78780422, -1, 0, 0, False)
+     , (78780404, 4, 78780423, -1, 0, 0, False)
+     , (78780404, 4, 78780424, -1, 0, 0, False)
+     , (78780404, 4, 78780425, -1, 0, 0, False)
+     , (78780404, 4, 78780426, -1, 0, 0, False)
+     , (78780404, 4, 78780427, -1, 0, 0, False)
+     , (78780404, 4, 78780428, -1, 0, 0, False)
+     , (78780404, 4, 78780429, -1, 0, 0, False);
+
+INSERT INTO `weenie_properties_emote` (`object_Id`, `category`, `probability`, `weenie_Class_Id`, `style`, `substyle`, `quest`, `vendor_Type`, `min_Health`, `max_Health`)
+VALUES (78780404, 2, 0.8, NULL, NULL, NULL, NULL, 1, NULL, NULL);
+
+SET @parent_id = LAST_INSERT_ID();
+
+INSERT INTO `weenie_properties_emote_action` (`emote_Id`, `order`, `type`, `delay`, `extent`, `motion`, `message`, `test_String`, `min`, `max`, `min_64`, `max_64`, `min_Dbl`, `max_Dbl`, `stat`, `display`, `amount`, `amount_64`, `hero_X_P_64`, `percent`, `spell_Id`, `wealth_Rating`, `treasure_Class`, `treasure_Type`, `p_Script`, `sound`, `destination_Type`, `weenie_Class_Id`, `stack_Size`, `palette`, `shade`, `try_To_Bond`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`)
+VALUES (@parent_id, 0, 10, 0, 1, NULL, 'Welcome! What''s your pleasure today?', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+INSERT INTO `weenie_properties_emote` (`object_Id`, `category`, `probability`, `weenie_Class_Id`, `style`, `substyle`, `quest`, `vendor_Type`, `min_Health`, `max_Health`)
+VALUES (78780404, 2, 0.8, NULL, NULL, NULL, NULL, 2, NULL, NULL);
+
+SET @parent_id = LAST_INSERT_ID();
+
+INSERT INTO `weenie_properties_emote_action` (`emote_Id`, `order`, `type`, `delay`, `extent`, `motion`, `message`, `test_String`, `min`, `max`, `min_64`, `max_64`, `min_Dbl`, `max_Dbl`, `stat`, `display`, `amount`, `amount_64`, `hero_X_P_64`, `percent`, `spell_Id`, `wealth_Rating`, `treasure_Class`, `treasure_Type`, `p_Script`, `sound`, `destination_Type`, `weenie_Class_Id`, `stack_Size`, `palette`, `shade`, `try_To_Bond`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`)
+VALUES (@parent_id, 0, 10, 0, 1, NULL, 'Thank you for your business. Please return soon.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+INSERT INTO `weenie_properties_emote` (`object_Id`, `category`, `probability`, `weenie_Class_Id`, `style`, `substyle`, `quest`, `vendor_Type`, `min_Health`, `max_Health`)
+VALUES (78780404, 2, 0.8, NULL, NULL, NULL, NULL, 3, NULL, NULL);
+
+SET @parent_id = LAST_INSERT_ID();
+
+INSERT INTO `weenie_properties_emote_action` (`emote_Id`, `order`, `type`, `delay`, `extent`, `motion`, `message`, `test_String`, `min`, `max`, `min_64`, `max_64`, `min_Dbl`, `max_Dbl`, `stat`, `display`, `amount`, `amount_64`, `hero_X_P_64`, `percent`, `spell_Id`, `wealth_Rating`, `treasure_Class`, `treasure_Type`, `p_Script`, `sound`, `destination_Type`, `weenie_Class_Id`, `stack_Size`, `palette`, `shade`, `try_To_Bond`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`)
+VALUES (@parent_id, 0, 10, 0, 1, NULL, 'You drive a hard bargain, my friend.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+INSERT INTO `weenie_properties_emote` (`object_Id`, `category`, `probability`, `weenie_Class_Id`, `style`, `substyle`, `quest`, `vendor_Type`, `min_Health`, `max_Health`)
+VALUES (78780404, 2, 0.8, NULL, NULL, NULL, NULL, 4, NULL, NULL);
+
+SET @parent_id = LAST_INSERT_ID();
+
+INSERT INTO `weenie_properties_emote_action` (`emote_Id`, `order`, `type`, `delay`, `extent`, `motion`, `message`, `test_String`, `min`, `max`, `min_64`, `max_64`, `min_Dbl`, `max_Dbl`, `stat`, `display`, `amount`, `amount_64`, `hero_X_P_64`, `percent`, `spell_Id`, `wealth_Rating`, `treasure_Class`, `treasure_Type`, `p_Script`, `sound`, `destination_Type`, `weenie_Class_Id`, `stack_Size`, `palette`, `shade`, `try_To_Bond`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`)
+VALUES (@parent_id, 0, 10, 0, 1, NULL, 'An excellent purchase.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+INSERT INTO `weenie_properties_emote` (`object_Id`, `category`, `probability`, `weenie_Class_Id`, `style`, `substyle`, `quest`, `vendor_Type`, `min_Health`, `max_Health`)
+VALUES (78780404, 2, 0.125, NULL, NULL, NULL, NULL, 5, NULL, NULL);
+
+SET @parent_id = LAST_INSERT_ID();
+
+INSERT INTO `weenie_properties_emote_action` (`emote_Id`, `order`, `type`, `delay`, `extent`, `motion`, `message`, `test_String`, `min`, `max`, `min_64`, `max_64`, `min_Dbl`, `max_Dbl`, `stat`, `display`, `amount`, `amount_64`, `hero_X_P_64`, `percent`, `spell_Id`, `wealth_Rating`, `treasure_Class`, `treasure_Type`, `p_Script`, `sound`, `destination_Type`, `weenie_Class_Id`, `stack_Size`, `palette`, `shade`, `try_To_Bond`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`)
+VALUES (@parent_id, 0, 5, 0, 1, 318767239, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+INSERT INTO `weenie_properties_emote` (`object_Id`, `category`, `probability`, `weenie_Class_Id`, `style`, `substyle`, `quest`, `vendor_Type`, `min_Health`, `max_Health`)
+VALUES (78780404, 2, 0.25, NULL, NULL, NULL, NULL, 5, NULL, NULL);
+
+SET @parent_id = LAST_INSERT_ID();
+
+INSERT INTO `weenie_properties_emote_action` (`emote_Id`, `order`, `type`, `delay`, `extent`, `motion`, `message`, `test_String`, `min`, `max`, `min_64`, `max_64`, `min_Dbl`, `max_Dbl`, `stat`, `display`, `amount`, `amount_64`, `hero_X_P_64`, `percent`, `spell_Id`, `wealth_Rating`, `treasure_Class`, `treasure_Type`, `p_Script`, `sound`, `destination_Type`, `weenie_Class_Id`, `stack_Size`, `palette`, `shade`, `try_To_Bond`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`)
+VALUES (@parent_id, 0, 5, 0, 1, 318767229, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+INSERT INTO `weenie_properties_emote` (`object_Id`, `category`, `probability`, `weenie_Class_Id`, `style`, `substyle`, `quest`, `vendor_Type`, `min_Health`, `max_Health`)
+VALUES (78780404, 2, 0.375, NULL, NULL, NULL, NULL, 5, NULL, NULL);
+
+SET @parent_id = LAST_INSERT_ID();
+
+INSERT INTO `weenie_properties_emote_action` (`emote_Id`, `order`, `type`, `delay`, `extent`, `motion`, `message`, `test_String`, `min`, `max`, `min_64`, `max_64`, `min_Dbl`, `max_Dbl`, `stat`, `display`, `amount`, `amount_64`, `hero_X_P_64`, `percent`, `spell_Id`, `wealth_Rating`, `treasure_Class`, `treasure_Type`, `p_Script`, `sound`, `destination_Type`, `weenie_Class_Id`, `stack_Size`, `palette`, `shade`, `try_To_Bond`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`)
+VALUES (@parent_id, 0, 5, 0, 1, 318767238, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+INSERT INTO `weenie_properties_emote` (`object_Id`, `category`, `probability`, `weenie_Class_Id`, `style`, `substyle`, `quest`, `vendor_Type`, `min_Health`, `max_Health`)
+VALUES (78780404, 2, 0.5, NULL, NULL, NULL, NULL, 5, NULL, NULL);
+
+SET @parent_id = LAST_INSERT_ID();
+
+INSERT INTO `weenie_properties_emote_action` (`emote_Id`, `order`, `type`, `delay`, `extent`, `motion`, `message`, `test_String`, `min`, `max`, `min_64`, `max_64`, `min_Dbl`, `max_Dbl`, `stat`, `display`, `amount`, `amount_64`, `hero_X_P_64`, `percent`, `spell_Id`, `wealth_Rating`, `treasure_Class`, `treasure_Type`, `p_Script`, `sound`, `destination_Type`, `weenie_Class_Id`, `stack_Size`, `palette`, `shade`, `try_To_Bond`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`)
+VALUES (@parent_id, 0, 5, 0, 1, 318767235, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
 COMMIT;
 
--- Check: must list 24 rows, 78780400 to 78780429, and no forge-* or npc-forge-* row below 78780400.
+-- Check: must list 25 rows, 78780400 to 78780429, and no forge-* or npc-forge-* row below 78780400.
 SELECT w.class_Id, w.class_Name, s.value AS name
 FROM weenie w LEFT JOIN weenie_properties_string s ON s.object_Id = w.class_Id AND s.type = 1
 WHERE w.class_Id BETWEEN 78780400 AND 78780449 OR w.class_Name LIKE 'forge-%' OR w.class_Name LIKE 'npc-forge-%' ORDER BY w.class_Id;

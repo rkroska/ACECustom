@@ -34,8 +34,42 @@ namespace ACE.Server.Entity
         private const uint PyrealWcid = 273;
 
         private static readonly ConcurrentDictionary<uint, (uint MainGuid, DateTime At)> selections = new();
-        /// <summary>Players with a forge between "Yes" and done; a second forge is refused meanwhile.</summary>
-        private static readonly ConcurrentDictionary<uint, byte> forging = new();
+        /// <summary>How long a forge, hone or unbind popup stays open before the server closes it.</summary>
+        public const double PopupSeconds = 30;
+
+        /// <summary>Grace added to a popup's own timeout before its lock is treated as abandoned.</summary>
+        private const double PopupLockMargin = 15;
+
+        /// <summary>
+        /// Players with a forge popup open, and when that popup's lock runs out. One popup at a time per character.
+        /// The lock is released when the popup is answered or times out - but neither happens if the player logs out
+        /// or drops link with it open (the answer handler needs the player online), so every lock also EXPIRES by the
+        /// clock. Without that, one disconnect at the wrong moment would shut the character out until a restart.
+        /// </summary>
+        private static readonly ConcurrentDictionary<uint, DateTime> forging = new();
+
+        /// <summary>Takes the popup lock for <paramref name="seconds"/> (the popup's timeout) plus a margin. False when a live one is held.</summary>
+        public static bool TryLock(uint playerGuid, double seconds, DateTime nowUtc)
+        {
+            var until = nowUtc.AddSeconds(Math.Max(1, seconds) + PopupLockMargin);
+            while (true)
+            {
+                if (forging.TryAdd(playerGuid, until))
+                    return true;
+                if (!forging.TryGetValue(playerGuid, out var held))
+                    continue;                                   // released between the two calls: try again
+                if (held > nowUtc)
+                    return false;                               // a live popup
+                if (forging.TryUpdate(playerGuid, until, held))
+                    return true;                                // an abandoned one: taken over
+            }
+        }
+
+        private static bool TryLock(Player player, double seconds) => TryLock(player.Guid.Full, seconds, DateTime.UtcNow);
+
+        public static void Unlock(uint playerGuid) => forging.TryRemove(playerGuid, out _);
+
+        private static void Unlock(Player player) => Unlock(player.Guid.Full);
 
         // ---------------------------------------------------------------- selection
 
@@ -61,7 +95,7 @@ namespace ACE.Server.Entity
         /// <summary>A weapon was handed to a forge smith. The item never leaves the player.</summary>
         public static void HandleGive(Player player, WorldObject smith, WorldObject item)
         {
-            if (!ServerConfig.forge_enabled.Value)
+            if (!ServerConfig.forge_enabled.Value || !ServerConfig.forge_smith_enabled.Value)
             {
                 Say(player, smith, "The forge is cold today. Come back another time.");
                 return;
@@ -105,7 +139,7 @@ namespace ACE.Server.Entity
                 return;
             }
 
-            if (!forging.TryAdd(player.Guid.Full, 0))
+            if (!TryLock(player, PopupSeconds))
             {
                 Say(player, smith, "A forge is already in progress.");
                 return;
@@ -142,14 +176,14 @@ namespace ACE.Server.Entity
                 }
                 finally
                 {
-                    forging.TryRemove(player.Guid.Full, out _);
+                    Unlock(player);
                 }
-            }), question);
+            }), question, PopupSeconds);
 
             log.Info($"[ForgeSmith] {player.Name} forge popup {(sent ? "sent" : "NOT sent (another popup is open)")}: {main.Name} (0x{mainId:X8}) + {feeder.Name} (0x{feederId:X8}), fee {fee}");
             if (!sent)
             {
-                forging.TryRemove(player.Guid.Full, out _);
+                Unlock(player);
                 Say(player, smith, "Answer the popup you already have open first.");
             }
         }

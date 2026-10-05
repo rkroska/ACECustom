@@ -573,5 +573,45 @@ namespace ACE.Server.Tests
             Assert.AreEqual(expected, UnbindFee(maxed, c));
             Assert.IsTrue(expected > 1_000_000_000L);
         }
+
+        // ---------------------------------------------------------------- the popup lock
+
+        [TestMethod]
+        public void PopupLock_OneAtATime_ReleasedByUnlock()
+        {
+            const uint who = 0x50FFF001;
+            var now = new DateTime(2026, 10, 5, 12, 0, 0, DateTimeKind.Utc);
+            ForgeService.Unlock(who);
+            Assert.IsTrue(ForgeService.TryLock(who, 30, now), "free: taken");
+            Assert.IsFalse(ForgeService.TryLock(who, 30, now.AddSeconds(5)), "a popup is open: refused");
+            ForgeService.Unlock(who);
+            Assert.IsTrue(ForgeService.TryLock(who, 30, now.AddSeconds(6)), "answered: free again");
+            ForgeService.Unlock(who);
+        }
+
+        [TestMethod]
+        public void PopupLock_AbandonedByALogout_ExpiresByTheClock()
+        {
+            // The answer handler never runs for a player who logged out with the popup open, so nothing unlocks.
+            const uint who = 0x50FFF002;
+            var now = new DateTime(2026, 10, 5, 12, 0, 0, DateTimeKind.Utc);
+            ForgeService.Unlock(who);
+            Assert.IsTrue(ForgeService.TryLock(who, 60, now));
+            Assert.IsFalse(ForgeService.TryLock(who, 60, now.AddSeconds(60)), "still inside the popup's own timeout");
+            Assert.IsFalse(ForgeService.TryLock(who, 60, now.AddSeconds(74)), "still inside the margin");
+            Assert.IsTrue(ForgeService.TryLock(who, 60, now.AddSeconds(76)), "past timeout + margin: the stale lock is taken over");
+            Assert.IsFalse(ForgeService.TryLock(who, 60, now.AddSeconds(77)), "and the new one holds");
+            ForgeService.Unlock(who);
+        }
+
+        [TestMethod]
+        public void PopupLock_IsPerCharacter()
+        {
+            var now = new DateTime(2026, 10, 5, 12, 0, 0, DateTimeKind.Utc);
+            ForgeService.Unlock(0x50FFF003); ForgeService.Unlock(0x50FFF004);
+            Assert.IsTrue(ForgeService.TryLock(0x50FFF003, 30, now));
+            Assert.IsTrue(ForgeService.TryLock(0x50FFF004, 30, now), "another character is not blocked");
+            ForgeService.Unlock(0x50FFF003); ForgeService.Unlock(0x50FFF004);
+        }
     }
 }

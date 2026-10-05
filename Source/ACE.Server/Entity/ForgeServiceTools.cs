@@ -42,8 +42,24 @@ namespace ACE.Server.Entity
                 return;
             }
 
+            // Each part of the smithy has its own switch on top of forge_enabled, so a server can open the dye vats
+            // alone: a stray grindstone or a traded hone stone then still does nothing.
+            var kind = ToolOf(tool);
+            var closed = kind switch
+            {
+                ForgeTool.HoneStone or ForgeTool.Flux => !ServerConfig.forge_hone_enabled.Value ? "The grindstones are not turning yet." : null,
+                ForgeTool.Dye => !ServerConfig.forge_dye_enabled.Value ? "The dye vats are not open yet." : null,
+                ForgeTool.UnbindingOil => !ServerConfig.forge_unbind_enabled.Value ? "The oil has no use yet." : null,
+                _ => null,
+            };
+            if (closed != null)
+            {
+                Say(player, null, closed);
+                return;
+            }
+
             var arg = tool.GetProperty(PropertyInt.ForgeToolArg) ?? 0;
-            switch (ToolOf(tool))
+            switch (kind)
             {
                 case ForgeTool.HoneStone:
                     OfferHone(player, target, (ForgeMath.ForgeLine)arg);
@@ -104,6 +120,29 @@ namespace ACE.Server.Entity
                 player.MoveItemToFirstContainerSlot(weapon);
         }
 
+        /// <summary>
+        /// Redraws <paramref name="items"/> for the player and everyone nearby: one update per item and ONE redraw of the
+        /// wearer however many pieces are worn. Saves only when <paramref name="save"/> is set. A dye being tried on is
+        /// free and can be repeated without limit, so it must not cost a database write per piece per try; the try-on
+        /// properties expire by the clock, and ride along with the item's next ordinary save.
+        /// </summary>
+        public static void Redraw(Player player, IReadOnlyList<WorldObject> items, bool save)
+        {
+            var worn = false;
+            foreach (var item in items)
+            {
+                if (save)
+                {
+                    item.ChangesDetected = true;
+                    item.SaveBiotaToDatabase();
+                }
+                player.EnqueueBroadcast(new GameMessageUpdateObject(item));
+                worn |= item.CurrentWieldedLocation != null;
+            }
+            if (worn)
+                player.EnqueueBroadcast(new GameMessageObjDescEvent(player));
+        }
+
         // ---------------------------------------------------------------- honing
 
         private static WorldObject FindFlux(Player player)
@@ -147,7 +186,7 @@ namespace ACE.Server.Entity
                 Say(player, null, reason);
                 return;
             }
-            if (!forging.TryAdd(player.Guid.Full, 0))
+            if (!TryLock(player, PopupSeconds))
             {
                 Say(player, null, "Finish what you are doing at the forge first.");
                 return;
@@ -177,13 +216,13 @@ namespace ACE.Server.Entity
                 }
                 finally
                 {
-                    forging.TryRemove(player.Guid.Full, out _);
+                    Unlock(player);
                 }
-            }), question);
+            }), question, PopupSeconds);
 
             if (!sent)
             {
-                forging.TryRemove(player.Guid.Full, out _);
+                Unlock(player);
                 Say(player, null, "Answer the popup you already have open first.");
             }
         }
@@ -320,7 +359,7 @@ namespace ACE.Server.Entity
                 Say(player, null, reason);
                 return;
             }
-            if (!forging.TryAdd(player.Guid.Full, 0))
+            if (!TryLock(player, Math.Max(5, ServerConfig.forge_dye_preview_seconds.Value)))
             {
                 Say(player, null, "Finish what you are doing at the forge first.");
                 return;
@@ -338,8 +377,8 @@ namespace ACE.Server.Entity
             {
                 item.SetProperty(PropertyInt.ForgeDyePreview, (int)palette.Value);
                 item.SetProperty(PropertyInt64.ForgeDyePreviewUntil, (long)ACE.Common.Time.GetUnixTime() + seconds);
-                Refresh(player, item);
             }
+            Redraw(player, items, false);
 
             var ids = items.Select(i => i.Guid.Full).ToList();
             var previewed = (int)palette.Value;
@@ -371,10 +410,9 @@ namespace ACE.Server.Entity
                         }
                     }
                     foreach (var w in found)
-                    {
                         ClearPreview(w);
-                        Refresh(player, w);
-                    }
+                    // a kept colour is paid for, so it is saved at once with the pyreals; a washed-out try-on is not
+                    Redraw(player, found, kept);
                     if (kept)
                         player.SaveBiotaToDatabase();
                     log.Info($"[Dye] {player.Name}: {string.Join(", ", found.Select(w => $"{w.Name} (0x{w.Guid.Full:X8})"))} palette 0x{previewed:X8} family {family} fee {(kept ? paid : 0)} kept {kept}");
@@ -382,18 +420,16 @@ namespace ACE.Server.Entity
                 }
                 finally
                 {
-                    forging.TryRemove(player.Guid.Full, out _);
+                    Unlock(player);
                 }
             }), question, seconds);
 
             if (!sent)
             {
-                forging.TryRemove(player.Guid.Full, out _);
+                Unlock(player);
                 foreach (var item in items)
-                {
                     ClearPreview(item);
-                    Refresh(player, item);
-                }
+                Redraw(player, items, false);
                 Say(player, null, "Answer the popup you already have open first.");
             }
         }
@@ -425,7 +461,7 @@ namespace ACE.Server.Entity
                 Say(player, null, reason);
                 return;
             }
-            if (!forging.TryAdd(player.Guid.Full, 0))
+            if (!TryLock(player, PopupSeconds))
             {
                 Say(player, null, "Finish what you are doing at the forge first.");
                 return;
@@ -463,13 +499,13 @@ namespace ACE.Server.Entity
                 }
                 finally
                 {
-                    forging.TryRemove(player.Guid.Full, out _);
+                    Unlock(player);
                 }
-            }), question);
+            }), question, PopupSeconds);
 
             if (!sent)
             {
-                forging.TryRemove(player.Guid.Full, out _);
+                Unlock(player);
                 Say(player, null, "Answer the popup you already have open first.");
             }
         }
