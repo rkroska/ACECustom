@@ -19,7 +19,8 @@ const Sidebar: React.FC = () => {
   const charactersRoute = visibleRoutes.find(r => r.key === 'characters');
   const leaderboardsRoute = visibleRoutes.find(r => r.key === 'leaderboards');
   const petGuideRoute = visibleRoutes.find(r => r.key === 'pet-guide');
-  const topLevelKeys = ['characters', 'leaderboards', 'pet-guide'];
+  const dressingRoomRoute = visibleRoutes.find(r => r.key === 'dressing-room');
+  const topLevelKeys = ['characters', 'leaderboards', 'pet-guide', 'dressing-room'];
   const adminRoutes = visibleRoutes.filter(r => !topLevelKeys.includes(r.key));
 
   const sections = useMemo(() => {
@@ -56,6 +57,12 @@ const Sidebar: React.FC = () => {
             const Icon = petGuideRoute.icon;
             return Icon ? <Icon className="w-4 h-4" /> : null;
           })()} label={petGuideRoute.label} />
+        )}
+        {dressingRoomRoute && (
+          <SidebarItem to={dressingRoomRoute.path} icon={(() => {
+            const Icon = dressingRoomRoute.icon;
+            return Icon ? <Icon className="w-4 h-4" /> : null;
+          })()} label={dressingRoomRoute.label} />
         )}
 
         {sections.length > 0 && (

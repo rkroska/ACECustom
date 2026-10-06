@@ -363,6 +363,10 @@ namespace ACE.Server.WorldObjects
         public override void ActOnUse(WorldObject worldObject)
         {
             // handled in base.OnActivate -> EmoteManager.OnUse()
+
+            // Dressing Room: an attendant offers to lock in what the player is wearing as their look.
+            if (worldObject is Player dressingRoomPlayer && GetProperty(PropertyBool.DressingRoomAttendant) == true)
+                DressingRoom.HandleUse(dressingRoomPlayer, this);
         }
 
         public override void OnCollideObject(WorldObject target)
