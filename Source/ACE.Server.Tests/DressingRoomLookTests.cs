@@ -243,26 +243,60 @@ namespace ACE.Server.Tests
         // ---- the guide page's fee table --------------------------------------------------------
 
         [TestMethod]
-        public void FeeSchedule_ListsEachFeeOnce_AndStopsAtTheCap()
+        public void FeeSchedule_ListsEachFeeOnce_AndIsCompleteAtTheCap()
         {
+            var (fees, complete) = ACE.Server.Controllers.DressingRoomGuideController.FeeSchedule(100_000_000, 2.0, 10_000_000_000);
             CollectionAssert.AreEqual(
                 new long[] { 100_000_000, 200_000_000, 400_000_000, 800_000_000, 1_600_000_000, 3_200_000_000, 6_400_000_000, 10_000_000_000 },
-                ACE.Server.Controllers.DressingRoomGuideController.FeeSchedule(100_000_000, 2.0, 10_000_000_000));
+                fees);
+            Assert.IsTrue(complete, "the cap is reached, so the last row is every later fee");
         }
 
         [TestMethod]
-        public void FeeSchedule_IsOneRow_WhenTheFeeNeverGrowsOrIsFree()
+        public void FeeSchedule_IsOneCompleteRow_WhenTheFeeNeverGrowsOrIsFree()
         {
-            CollectionAssert.AreEqual(new long[] { 500 }, ACE.Server.Controllers.DressingRoomGuideController.FeeSchedule(500, 1.0, 0));
-            CollectionAssert.AreEqual(new long[] { 0 }, ACE.Server.Controllers.DressingRoomGuideController.FeeSchedule(0, 2.0, 0));
+            var flat = ACE.Server.Controllers.DressingRoomGuideController.FeeSchedule(500, 1.0, 0);
+            CollectionAssert.AreEqual(new long[] { 500 }, flat.Fees);
+            Assert.IsTrue(flat.Complete);
+
+            var free = ACE.Server.Controllers.DressingRoomGuideController.FeeSchedule(0, 2.0, 0);
+            CollectionAssert.AreEqual(new long[] { 0 }, free.Fees);
+            Assert.IsTrue(free.Complete);
         }
 
         [TestMethod]
-        public void FeeSchedule_IsBounded_WhenThereIsNoCap()
+        public void FeeSchedule_IsBoundedButNotComplete_WhenThereIsNoCap()
         {
-            var schedule = ACE.Server.Controllers.DressingRoomGuideController.FeeSchedule(1000, 2.0, 0);
-            Assert.AreEqual(12, schedule.Count);
-            Assert.AreEqual(1000L << 11, schedule[11]);
+            var (fees, complete) = ACE.Server.Controllers.DressingRoomGuideController.FeeSchedule(1000, 2.0, 0);
+            Assert.AreEqual(12, fees.Count);
+            Assert.AreEqual(1000L << 11, fees[11]);
+            Assert.IsFalse(complete, "a thirteenth lock costs more than anything listed");
+        }
+
+        [TestMethod]
+        public void FeeSchedule_DoesNotStopOnEqualNeighbours_WhenTheFeeStillGrows()
+        {
+            // growth just above 1 rounds to the same fee at first (10, 10, 10...) and then rises
+            var (fees, complete) = ACE.Server.Controllers.DressingRoomGuideController.FeeSchedule(10, 1.01, 0);
+            Assert.AreEqual(12, fees.Count);
+            Assert.AreEqual(fees[0], fees[1]);
+            Assert.IsTrue(fees[11] > fees[0]);
+            Assert.IsFalse(complete);
+        }
+
+        [TestMethod]
+        public void FeeIsFinal_OnlyWhenNoLaterLockCanCostMore()
+        {
+            Assert.IsTrue(DressingRoomLook.FeeIsFinal(0, 0, 2.0, 0), "free");
+            Assert.IsTrue(DressingRoomLook.FeeIsFinal(0, 100, 1.0, 0), "no growth");
+            Assert.IsTrue(DressingRoomLook.FeeIsFinal(0, 100, 0.5, 0), "growth below 1 is treated as none");
+            Assert.IsTrue(DressingRoomLook.FeeIsFinal(0, 100, double.NaN, 0));
+            Assert.IsTrue(DressingRoomLook.FeeIsFinal(0, 100, 2.0, 50), "a cap below the base is already reached");
+            Assert.IsFalse(DressingRoomLook.FeeIsFinal(0, 100, 2.0, 1000));
+            Assert.IsFalse(DressingRoomLook.FeeIsFinal(3, 100, 2.0, 1000), "800 is still under the cap");
+            Assert.IsTrue(DressingRoomLook.FeeIsFinal(4, 100, 2.0, 1000), "1,600 is capped to 1,000");
+            Assert.IsFalse(DressingRoomLook.FeeIsFinal(0, 10, 1.01, 0), "equal neighbours, but it still grows");
+            Assert.IsFalse(DressingRoomLook.FeeIsFinal(11, 1000, 2.0, 0));
         }
 
         // ---- paying ---------------------------------------------------------------------------

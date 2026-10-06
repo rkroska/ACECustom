@@ -231,6 +231,10 @@ namespace ACE.Server.Entity
                     Fee = DressingRoomLook.Fee(look.PriorLocks(location), baseFee, growth, cap),
                 };
 
+                // a total past what a long can hold would wrap negative and be "paid" for nothing
+                if (piece.Fee < 0 || piece.Fee > long.MaxValue - result.Total)
+                    return "The fee for this outfit is too large to charge. Please tell an admin - nothing has been changed.";
+
                 result.Entries.Add((item, piece));
                 result.Total += piece.Fee;
             }

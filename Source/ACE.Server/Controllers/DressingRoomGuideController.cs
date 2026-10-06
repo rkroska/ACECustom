@@ -26,7 +26,7 @@ namespace ACE.Server.Controllers
     [Route("api/dressing-room-guide")]
     public class DressingRoomGuideController : BaseController
     {
-        /// <summary>How many lock-ins of one slot the fee table lists at most (it stops early once the cap is reached).</summary>
+        /// <summary>How many lock-ins of one slot the fee table lists at most (it stops early once the fee can no longer rise).</summary>
         private const int MaxScheduleRows = 12;
 
         // Attendants move only with a content push; cache them so the public page is cheap.
@@ -42,6 +42,7 @@ namespace ACE.Server.Controllers
             var baseFee = ServerConfig.dressing_room_fee_base.Value;
             var growth = ServerConfig.dressing_room_fee_growth.Value;
             var cap = ServerConfig.dressing_room_fee_cap.Value;
+            var (schedule, scheduleComplete) = FeeSchedule(baseFee, growth, cap);
 
             return Ok(new
             {
@@ -51,7 +52,9 @@ namespace ACE.Server.Controllers
                     baseFee,
                     cap,
                     // what the attendant charges for a piece whose most-locked slot has been locked 0, 1, 2... times before
-                    schedule = FeeSchedule(baseFee, growth, cap),
+                    schedule,
+                    // true when the last row is what every later lock-in costs; false when the list simply stops
+                    scheduleComplete,
                 },
                 slots = DressingRoomLook.SlotBits(DressingRoomLook.SlotMask).Select(bit => DressingRoom.SlotName(bit)).ToList(),
                 attendants = Attendants(),
@@ -64,19 +67,21 @@ namespace ACE.Server.Controllers
             });
         }
 
-        /// <summary>The fee per earlier lock-in of a slot, from none upward, ending at the first row that reaches the highest fee.</summary>
-        public static List<long> FeeSchedule(long baseFee, double growth, long cap)
+        /// <summary>
+        /// The fee per earlier lock-in of a slot, from none upward. <c>Complete</c> is true when the list ends on a fee
+        /// that can never rise again, so its last row stands for every later lock-in; it is false when the list only
+        /// stopped at <see cref="MaxScheduleRows"/> and later lock-ins cost more than anything listed.
+        /// </summary>
+        public static (List<long> Fees, bool Complete) FeeSchedule(long baseFee, double growth, long cap)
         {
-            var schedule = new List<long>();
+            var fees = new List<long>();
             for (var prior = 0; prior < MaxScheduleRows; prior++)
             {
-                var fee = DressingRoomLook.Fee(prior, baseFee, growth, cap);
-                schedule.Add(fee);
-                // once a further lock-in costs the same, every later one does too
-                if (DressingRoomLook.Fee(prior + 1, baseFee, growth, cap) == fee)
-                    break;
+                fees.Add(DressingRoomLook.Fee(prior, baseFee, growth, cap));
+                if (DressingRoomLook.FeeIsFinal(prior, baseFee, growth, cap))
+                    return (fees, true);
             }
-            return schedule;
+            return (fees, false);
         }
 
         /// <summary>Every NPC flagged as an attendant (PropertyBool.DressingRoomAttendant) and where the world database places it.</summary>

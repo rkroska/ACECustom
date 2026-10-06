@@ -34,8 +34,10 @@ export interface DressingRoomGuideData {
     baseFee: number
     /** The most one piece can cost; 0 means no cap. */
     cap: number
-    /** Fee for a piece whose most-locked slot has been locked 0, 1, 2... times before. The last entry repeats forever. */
+    /** Fee for a piece whose most-locked slot has been locked 0, 1, 2... times before. */
     schedule: number[]
+    /** True when the last entry is what every later lock costs. False when the list just stops and later locks cost more. */
+    scheduleComplete: boolean
   }
   /** The wear slots a look can hold, named as the attendant names them. */
   slots: string[]
@@ -46,6 +48,7 @@ export interface DressingRoomGuideData {
 function isGuideData(json: unknown): json is DressingRoomGuideData {
   const d = json as DressingRoomGuideData
   return !!d && typeof d.enabled === 'boolean' && !!d.fee && Array.isArray(d.fee.schedule) && d.fee.schedule.length > 0
+    && typeof d.fee.scheduleComplete === 'boolean'
     && Array.isArray(d.slots) && Array.isArray(d.attendants) && Array.isArray(d.bodies)
 }
 

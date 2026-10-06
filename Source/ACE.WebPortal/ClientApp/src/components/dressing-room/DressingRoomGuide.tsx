@@ -172,11 +172,14 @@ function Guide({ data }: { data: DressingRoomGuideData }) {
 }
 
 function FeeTable({ data }: { data: DressingRoomGuideData }) {
-  const { schedule, cap } = data.fee
+  const { schedule, scheduleComplete, cap } = data.fee
   const [pieces, setPieces] = useState(9)
   const [prior, setPrior] = useState(0)
   const last = schedule.length - 1
+  // the dropdown only offers listed rows, so this never prices a lock the server did not list
   const perPiece = schedule[Math.min(prior, last)]
+  // only claim the last row covers later locks when the server says the fee can no longer rise
+  const lastCoversLater = scheduleComplete && schedule.length > 1
 
   if (schedule[0] <= 0)
     return <Card accent="emerald">Locking in a look is currently free. You still lose the pieces.</Card>
@@ -194,13 +197,14 @@ function FeeTable({ data }: { data: DressingRoomGuideData }) {
           <tbody>
             {schedule.map((fee, i) => (
               <tr key={i} className="border-t border-neutral-800/70">
-                <td className="py-1.5 capitalize">{ordinal(i)}{i === last && schedule.length > 1 ? ' and every one after' : ''}</td>
+                <td className="py-1.5 capitalize">{ordinal(i)}{i === last && lastCoversLater ? ' and every one after' : ''}</td>
                 <td className="py-1.5 text-right font-bold text-neutral-100">{num(fee)}</td>
               </tr>
             ))}
           </tbody>
         </table>
         {cap > 0 && schedule[last] >= cap && <p className="text-neutral-400">One piece never costs more than {num(cap)} pyreals.</p>}
+        {!scheduleComplete && <p className="text-neutral-400">The fee keeps rising after the {ordinal(last)} lock. The attendant tells you the exact fee before you confirm.</p>}
       </Card>
 
       <Card title="Work out an outfit" icon={<Shirt className="w-4 h-4 text-violet-300" />} accent="violet">
@@ -225,7 +229,7 @@ function FeeTable({ data }: { data: DressingRoomGuideData }) {
               onChange={e => setPrior(Number(e.target.value))}
               className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm font-bold text-neutral-100 capitalize"
             >
-              {schedule.map((_, i) => <option key={i} value={i}>{ordinal(i)} look{i === last && schedule.length > 1 ? ' or later' : ''}</option>)}
+              {schedule.map((_, i) => <option key={i} value={i}>{ordinal(i)} look{i === last && lastCoversLater ? ' or later' : ''}</option>)}
             </select>
           </label>
         </div>
@@ -289,7 +293,7 @@ function BodyTable({ bodies }: { bodies: Body[] }) {
           ))}
         </tbody>
       </table>
-      <p className="text-[11px] text-neutral-500 pt-3">All = every piece shows. None = no piece shows, so the attendant will refuse every piece for that part. A percentage means some pieces show and some do not.</p>
+      <p className="text-[11px] text-neutral-500 pt-3">All = every counted piece changes that part of this body. None = no counted piece changes that part; a piece that also covers another part can still show there and be accepted. A percentage means some pieces change that part and some do not.</p>
     </div>
   )
 }

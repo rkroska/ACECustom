@@ -154,13 +154,33 @@ namespace ACE.Server.Entity
                 return 0;
             if (double.IsNaN(growth) || growth < 1.0)
                 growth = 1.0;
-            // far below long.MaxValue, so the multiplication below can be done in a double and cast safely
-            const double ceiling = 1e18;
-            var limit = cap > 0 ? Math.Min(cap, ceiling) : ceiling;
+            var limit = FeeLimit(cap);
             var fee = baseFee * Math.Pow(growth, Math.Max(0, priorLocks));
             if (double.IsNaN(fee) || fee >= limit)
                 return (long)limit;
             return Math.Max(baseFee, (long)Math.Round(fee));
+        }
+
+        /// <summary>
+        /// The most <see cref="Fee"/> can return: the cap, or with no cap a fixed ceiling far below long.MaxValue, so the
+        /// fee can be worked out in a double and cast safely.
+        /// </summary>
+        private static double FeeLimit(long cap)
+        {
+            const double ceiling = 1e18;
+            return cap > 0 ? Math.Min(cap, ceiling) : ceiling;
+        }
+
+        /// <summary>
+        /// True when no later lock-in of the slot can cost more than this one: the fee is free, never grows, or has
+        /// reached the most it can be. Two neighbouring fees being equal does not show this - a growth just above 1
+        /// rounds to the same fee for a while and then rises.
+        /// </summary>
+        public static bool FeeIsFinal(int priorLocks, long baseFee, double growth, long cap)
+        {
+            if (baseFee <= 0 || double.IsNaN(growth) || growth <= 1.0)
+                return true;
+            return Fee(priorLocks, baseFee, growth, cap) >= (long)FeeLimit(cap);
         }
 
         /// <summary>The saved pieces a newly locked piece worn in <paramref name="location"/> would replace.</summary>
