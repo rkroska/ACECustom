@@ -210,11 +210,39 @@ namespace ACE.Server.Entity
 
         // ---------------------------------------------------------------- the fee
 
+        /// <summary>
+        /// Pyreal coins (wcid 273) in the player's packs, counted off the stacks themselves. Never Player.CoinValue: on this
+        /// server that number already INCLUDES the banked pyreals (Player.UpdateCoinValue, for the wealth display) and every
+        /// other coin-type item, so adding it to the bank counts the bank twice.
+        /// </summary>
+        public static long PackPyreals(Player player)
+        {
+            long total = 0;
+            foreach (var stack in player.GetInventoryItemsOfWCID(PyrealWcid))
+                total += stack.StackSize ?? 1;
+            return total;
+        }
+
         /// <summary>Pyreals the player can pay with: banked pyreals plus pyreal coins carried.</summary>
-        public static long Funds(Player player) => (player.BankedPyreals ?? 0) + (player.CoinValue ?? 0);
+        public static long Funds(Player player) => (player.BankedPyreals ?? 0) + PackPyreals(player);
+
+        /// <summary>
+        /// How a fee is split: the bank first, then coins from the pack. Null when the two together cannot cover it (or
+        /// the pack's share is more than one consume call can take).
+        /// </summary>
+        public static (long FromBank, long FromPack)? SplitFee(long bank, long pack, long fee)
+        {
+            if (fee <= 0)
+                return (0, 0);
+            var fromBank = Math.Min(Math.Max(0, bank), fee);
+            var fromPack = fee - fromBank;
+            if (fromPack > Math.Max(0, pack) || fromPack > int.MaxValue)
+                return null;
+            return (fromBank, fromPack);
+        }
 
         private static string CheckFee(Player player, long fee)
-            => fee > 0 && Funds(player) < fee
+            => fee > 0 && SplitFee(player.BankedPyreals ?? 0, PackPyreals(player), fee) == null
                 ? $"The work costs {fee:N0} pyreals. You have {Funds(player):N0} between your bank and your pack."
                 : null;
 
@@ -224,13 +252,24 @@ namespace ACE.Server.Entity
             if (fee <= 0)
                 return true;
             var bank = player.BankedPyreals ?? 0;
-            var fromBank = Math.Min(bank, fee);
-            var fromPack = fee - fromBank;
-            if (fromPack > (player.CoinValue ?? 0) || fromPack > int.MaxValue)
+            var pack = PackPyreals(player);
+            var split = SplitFee(bank, pack, fee);
+            if (split == null)
                 return false;
-            // coins first: this is the step that can fail, so the bank is only touched once it has succeeded
-            if (fromPack > 0 && !player.TryConsumeFromInventoryWithNetworking(PyrealWcid, (int)fromPack))
-                return false;
+            var (fromBank, fromPack) = split.Value;
+
+            // Coins first: this is the step that can fail, so the bank is only touched once it has succeeded. The consume
+            // call reports success even when it ran out of stacks early, so what was really taken is counted, not assumed.
+            if (fromPack > 0)
+            {
+                var consumed = player.TryConsumeFromInventoryWithNetworking(PyrealWcid, (int)fromPack);
+                var taken = pack - PackPyreals(player);
+                if (!consumed || taken != fromPack)
+                {
+                    log.Error($"[Forge] {player.Name}: fee {fee} needed {fromPack} pyreal coins from the pack but {taken} were taken (consume returned {consumed}); the bank was not touched");
+                    return false;
+                }
+            }
             if (fromBank > 0)
                 player.BankedPyreals = bank - fromBank;
             return true;

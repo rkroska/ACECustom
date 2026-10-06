@@ -255,6 +255,8 @@ namespace ACE.Server.Tests
 
             var failures = new List<string>();
             var ran = 0;
+            // the counter is shared by every test that forges: only what THIS loop adds may count toward its threshold
+            var spellsBefore = forgedWithSpells;
             var modes = new[] { ForgeMath.RollMode.Pick, ForgeMath.RollMode.Between, ForgeMath.RollMode.BestOfTwo };
             for (var i = 0; i < 300; i++)
             {
@@ -268,7 +270,8 @@ namespace ACE.Server.Tests
                     failures.Add($"[{modes[i % modes.Length]}] {main.Name} + {feeder.Name}: {string.Join("; ", problems)}");
             }
             AssertNone(failures, ran);
-            Assert.IsTrue(forgedWithSpells >= ran / 4, $"only {forgedWithSpells} of {ran} forged weapons carried a spell: spells are being dropped");
+            var withSpells = forgedWithSpells - spellsBefore;
+            Assert.IsTrue(withSpells >= ran / 4, $"only {withSpells} of {ran} forged weapons carried a spell: spells are being dropped");
         }
 
         [TestMethod]

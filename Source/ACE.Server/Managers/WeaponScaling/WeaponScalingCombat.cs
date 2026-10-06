@@ -167,7 +167,8 @@ namespace ACE.Server.Managers.WeaponScaling
                 return 1.0;
             if (!ACE.Server.Entity.ForgeHones.Parse(text).Levels.TryGetValue(line, out var levels) || levels <= 0)
                 return 1.0;
-            var step = ACE.Server.Entity.ForgeMath.ForgeConfig.FromServerConfig().StepFor(line) * levels;
+            // one setting read: this runs on every hit of a honed weapon, so no config object is built here
+            var step = ACE.Server.Entity.ForgeMath.ForgeConfig.ServerStepFor(line) * levels;
             return ACE.Server.Entity.ForgeMath.LowerIsBetter(line) ? Math.Max(0.0, 1.0 - step) : 1.0 + step;
         }
 

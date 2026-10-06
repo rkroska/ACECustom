@@ -248,6 +248,22 @@ namespace ACE.Server.Entity
 
             public double StepFor(ForgeLine line) => HoneStep.TryGetValue(line, out var s) ? s : 0.0;
 
+            /// <summary>
+            /// The live per-level hone step of one line, straight from its server setting; 0 for a line that cannot be
+            /// honed. The single mapping from a line to its setting: <see cref="FromServerConfig"/> is built from it,
+            /// and combat reads it directly so a hit does not build a whole config.
+            /// </summary>
+            public static double ServerStepFor(ForgeLine line) => line switch
+            {
+                ForgeLine.MaxDamage => ServerConfig.forge_hone_step_damage.Value,
+                ForgeLine.Variance => ServerConfig.forge_hone_step_variance.Value,
+                ForgeLine.Speed => ServerConfig.forge_hone_step_speed.Value,
+                ForgeLine.AttackMod => ServerConfig.forge_hone_step_attack.Value,
+                ForgeLine.MeleeDefense or ForgeLine.MissileDefense or ForgeLine.MagicDefense => ServerConfig.forge_hone_step_defense.Value,
+                ForgeLine.DamageMod => ServerConfig.forge_hone_step_damage_mod.Value,
+                _ => 0.0,
+            };
+
             public static ForgeConfig FromServerConfig() => new()
             {
                 HigherParentChance = ServerConfig.forge_higher_parent_chance.Value,
@@ -261,17 +277,7 @@ namespace ACE.Server.Entity
                 HoneMinChance = ServerConfig.forge_hone_min_chance.Value,
                 HoneMisfortuneStep = ServerConfig.forge_hone_misfortune_step.Value,
                 HoneMaxLevels = (int)ServerConfig.forge_hone_max_levels.Value,
-                HoneStep = new Dictionary<ForgeLine, double>
-                {
-                    [ForgeLine.MaxDamage] = ServerConfig.forge_hone_step_damage.Value,
-                    [ForgeLine.Variance] = ServerConfig.forge_hone_step_variance.Value,
-                    [ForgeLine.Speed] = ServerConfig.forge_hone_step_speed.Value,
-                    [ForgeLine.AttackMod] = ServerConfig.forge_hone_step_attack.Value,
-                    [ForgeLine.MeleeDefense] = ServerConfig.forge_hone_step_defense.Value,
-                    [ForgeLine.MissileDefense] = ServerConfig.forge_hone_step_defense.Value,
-                    [ForgeLine.MagicDefense] = ServerConfig.forge_hone_step_defense.Value,
-                    [ForgeLine.DamageMod] = ServerConfig.forge_hone_step_damage_mod.Value,
-                },
+                HoneStep = HonableLines.ToDictionary(l => l, ServerStepFor),
                 UnbindFraction = ServerConfig.forge_unbind_fraction.Value,
                 UnbindMinFee = ServerConfig.forge_unbind_min_fee.Value,
             };

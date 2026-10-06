@@ -613,5 +613,30 @@ namespace ACE.Server.Tests
             Assert.IsTrue(ForgeService.TryLock(0x50FFF004, 30, now), "another character is not blocked");
             ForgeService.Unlock(0x50FFF003); ForgeService.Unlock(0x50FFF004);
         }
+
+        // ---------------------------------------------------------------- the fee
+
+        [TestMethod]
+        public void SplitFee_BankFirst_ThenPack_AndTheBankIsCountedOnce()
+        {
+            Assert.AreEqual((1000L, 0L), ForgeService.SplitFee(5000, 0, 1000), "the bank covers it");
+            Assert.AreEqual((1000L, 500L), ForgeService.SplitFee(1000, 800, 1500), "bank emptied, the rest from the pack");
+            Assert.AreEqual((0L, 300L), ForgeService.SplitFee(0, 300, 300), "no bank: all from the pack");
+            // the case the old sum got wrong: 1,000,000 banked and no coins must NOT cover 1,500,000
+            Assert.IsNull(ForgeService.SplitFee(1_000_000, 0, 1_500_000), "the bank cannot be spent twice");
+            Assert.IsNull(ForgeService.SplitFee(1000, 499, 1500), "one pyreal short");
+            Assert.AreEqual((0L, 0L), ForgeService.SplitFee(0, 0, 0), "a zero fee is free");
+            Assert.IsNull(ForgeService.SplitFee(0, 5_000_000_000, 3_000_000_000), "more coins than one consume can take: refused, not truncated");
+        }
+
+        [TestMethod]
+        public void ServerStepFor_CoversEveryHonableLine_AndMatchesTheConfig()
+        {
+            var config = ForgeConfig.FromServerConfig();
+            foreach (var line in HonableLines)
+                Assert.AreEqual(ForgeConfig.ServerStepFor(line), config.StepFor(line), $"{line}");
+            Assert.AreEqual(0.0, ForgeConfig.ServerStepFor(ForgeLine.Spellcraft), "not honable");
+            Assert.AreEqual(0.0, ForgeConfig.ServerStepFor(ForgeLine.ArmorLevel), "armour is not honable");
+        }
     }
 }
