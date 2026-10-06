@@ -159,6 +159,9 @@ namespace ACE.Server.Entity
         /// <summary>Additional crit-only multiplier applied when defender is a CombatPet (1 if not applicable).</summary>
         public float DebugCombatPetCritDamageTakenMultiplier = 1.0f;
 
+        /// <summary>pet_combat_endgame_damage_dealt_multiplier applied when a CombatPet hits a v11+ zone monster (1 if not applicable).</summary>
+        public float DebugCombatPetEndgameDamageDealtMultiplier = 1.0f;
+
         /// <summary>Owner resistance mod computed via Player.GetResistanceMod when defender is a CombatPet (NaN if not computed).</summary>
         public float DebugCombatPetOwnerResistanceMod = float.NaN;
 
@@ -762,6 +765,21 @@ namespace ACE.Server.Entity
 
             DamageMitigated = DamageBeforeMitigation - Damage;
 
+            // Combat pets: endgame damage dealt multiplier. Pets are exempt from Zone Control, so their ratings never
+            // rescale to a v11+ monster's defenses; this is the pet system's own knob for that gap. Applied to the
+            // finished hit, after DamageMitigated is booked, and only against a zone-governed monster at v11+.
+            DebugCombatPetEndgameDamageDealtMultiplier = 1.0f;
+            if (Damage > 0 && attacker is CombatPet && !(defender is Pet))
+            {
+                var dealtMult = (float)ServerConfig.pet_combat_endgame_damage_dealt_multiplier.Value;
+                if (dealtMult > 0 && !float.IsNaN(dealtMult) && !float.IsInfinity(dealtMult) && dealtMult != 1.0f
+                    && ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToMonster(defender))
+                {
+                    DebugCombatPetEndgameDamageDealtMultiplier = dealtMult;
+                    Damage *= dealtMult;
+                }
+            }
+
             // TRUE DAMAGE (owner 2026-10-01, the main Zone Control monster damage): the zone's fixed amount on top of the
             // landed hit, after every defense step and after DamageMitigated is booked (same pattern as key 44 below).
             // Only life augs (incl. Triune) reduce it - inside GetTrueDamage. Health hits only, like the %HP floor.
@@ -1223,7 +1241,7 @@ namespace ACE.Server.Entity
                 ? $"baseRolled={BaseDamage:F2} range={BaseDamageMod.Range} bonus={BaseDamageMod.DamageBonus} lumFlat={DebugLuminanceFlatDamageBonus}"
                 : $"baseRolled={BaseDamage:F2} lumFlat={DebugLuminanceFlatDamageBonus}";
             return
-                $"[CombatPetOutgoing] pet={pet.Name} petWcid={pet.WeenieClassId} tgt={defender.Name} tgtWcid={defender.WeenieClassId} {CombatType} {DamageType} evade={Evaded} crit={IsCritical} {baseLine} preMit={DamageBeforeMitigation:F2} final={Damage:F2}";
+                $"[CombatPetOutgoing] pet={pet.Name} petWcid={pet.WeenieClassId} tgt={defender.Name} tgtWcid={defender.WeenieClassId} {CombatType} {DamageType} evade={Evaded} crit={IsCritical} {baseLine} preMit={DamageBeforeMitigation:F2} endgameDealtMult={DebugCombatPetEndgameDamageDealtMultiplier:F2} final={Damage:F2}";
         }
 
         private string BuildExtensiveDebugLog(Creature attacker, Creature defender)
