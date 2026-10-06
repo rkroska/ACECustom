@@ -157,7 +157,13 @@ namespace ACE.Server.Entity
             // 4. The main weapon's tinkers, back on top of the forged stats.
             var mainTinkers = TinkerReversal.Strip(main);
             if (mainTinkers.Status != TinkerReversal.Status.Ok || !TinkerReversal.ReplayOnForgeStats(item, mainTinkers.Tinkers))
+            {
+                // The half-built result is never handed over: release it, or its guid stays allocated until a restart.
+                // Only when this method made it - a caller's own factory (the offline audits) owns what it creates.
+                if (create == null)
+                    item.Destroy();
                 return new Built { Error = "the main weapon's tinkers could not be applied again" };
+            }
 
             // Mana never exceeds the new maximum.
             if (item.ItemMaxMana.HasValue && (item.ItemCurMana ?? 0) > item.ItemMaxMana)

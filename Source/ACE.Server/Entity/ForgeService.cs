@@ -299,6 +299,7 @@ namespace ACE.Server.Entity
             var item = built.Item;
             if (!player.TryCreateInInventoryWithNetworking(item))
             {
+                item.Destroy();   // never handed over: release it and its guid
                 Say(player, smith, "There is no room in your pack for the result. Nothing was changed.");
                 return false;
             }
