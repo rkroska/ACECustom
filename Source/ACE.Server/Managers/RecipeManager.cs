@@ -398,12 +398,27 @@ namespace ACE.Server.Managers
                 if (success) player.ImbueSuccesses++;
             }
 
+            // Tier 11+ piece (2026-10-05): a tinker on a prop the piece re-stamps from its record (ArmorLevel, line ints) is
+            // remembered in ZcTinkerBonus, or the appraisal hides it and the next re-stamp wipes it (the Steel bug)
+            // The piece is re-stamped first (what an equip does), so the change is measured against its CURRENT resolution: a
+            // recipe that SETS a prop and one that ADDS to it are then both recorded exactly, even on a piece left stale by a
+            // ladder change.
+            ZoneControl.ZoneStatResolver.TinkerSnapshot zcOwned = null;
+            if (success && ZoneControl.ZoneControlManager.IsZcGear(target))
+            {
+                ZoneControl.ZoneStatResolver.ApplyIfStale(target);
+                zcOwned = ZoneControl.ZoneStatResolver.SnapshotOwnedInts(target);
+            }
+
             var modified = CreateDestroyItems(player, recipe, source, target, successChance, success);
 
             // null == the craft was aborted before anything was consumed (missing result weenie, or the
             // player has no room for the result). Stop here so no skill XP is granted for a no-op craft.
             if (modified == null)
                 return;
+
+            if (zcOwned != null)
+                ZoneControl.ZoneStatResolver.RecordTinker(target, zcOwned);
 
             if (modified.Contains(source.Guid.Full))
                 UpdateObj(player, source);

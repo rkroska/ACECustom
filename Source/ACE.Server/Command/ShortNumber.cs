@@ -31,6 +31,22 @@ namespace ACE.Server.Command
             return shortForm == exact ? exact : $"{shortForm} ({exact})";
         }
 
+        /// <summary>A player-facing amount, short first and exact after the label (owner 2026-10-06): "5B Lum deposited
+        /// (5,000,000,000)"; below 10,000 the short form is the exact one, so it shows once ("5,000 Lum deposited").</summary>
+        public static string Both(long value)
+        {
+            var exact = value.ToString("N0", CultureInfo.InvariantCulture);
+            var shortForm = Format(value);
+            return shortForm == exact ? exact : $"{shortForm} ({exact})";
+        }
+
+        public static string Amount(long value, string label)
+        {
+            var exact = value.ToString("N0", CultureInfo.InvariantCulture);
+            var shortForm = Format(value);
+            return shortForm == exact ? $"{exact} {label}" : $"{shortForm} {label} ({exact})";
+        }
+
         /// <summary>5B / 1.2M / 250K; exact with commas below 10,000. Same thresholds and "0.#" rounding as
         /// Creature.FormatDamage mode 2 (and the web portal's shortNumber.ts), but culture-invariant.</summary>
         public static string Format(long value)

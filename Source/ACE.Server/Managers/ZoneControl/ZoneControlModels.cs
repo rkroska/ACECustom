@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using ACE.Server.Managers.ZoneScaling;
@@ -91,6 +92,10 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Several rewards per area (owner 2026-09-23: "may use multiple rewards in some zones"). Each counts on its own.</summary>
         public List<BountyEntry> Entries { get; set; } = new();
 
+        /// <summary>SERVER-WIDE bounty only (owner 2026-10-06: "a single bounty, that can be achieved by killing the wcids (multiple,
+        /// optional) anywhere"): the creature WCIDs whose kills count. Empty = any kill that pays XP / luminance.</summary>
+        public List<uint> TargetWcids { get; set; } = new();
+
         /// <summary>On, with at least one complete reward - the only state that awards anything.</summary>
         public bool Active => Enabled && Entries != null && Entries.Exists(e => e != null && e.Valid);
 
@@ -128,6 +133,7 @@ namespace ACE.Server.Managers.ZoneControl
                 Enabled = Enabled,
                 NextId = NextId,
                 Entries = Entries?.ConvertAll(e => e?.Clone()) ?? new List<BountyEntry>(),
+                TargetWcids = TargetWcids?.Where(w => w != 0).Distinct().Take(500).ToList() ?? new List<uint>(),
             };
             copy.Sanitize();
             return copy;

@@ -197,7 +197,9 @@ namespace ACE.Server.WorldObjects
             if (attacker == null || defender == null)
                 return 0f;
 
-            if (!ServerConfig.zc_pcthp_enabled.Value)
+            // the Zone Control master switch too (2026-10-05, owner 10-04 note after #539): switch off = retail, no floor - both
+            // routes below, like every other Zone Control hook (ResolveCombatProfile is null while it is off)
+            if (!ServerConfig.zc_pcthp_enabled.Value || !ServerConfig.zonecontrol_enabled.Value)
                 return 0f;
 
             var variation = VariationManager.GetEffectiveEndgameVariation(attacker);
@@ -206,7 +208,7 @@ namespace ACE.Server.WorldObjects
             // floor fraction P: per-weenie override wins; otherwise tier-scaled (+ boss multiplier)
             double p;
             var pOverride = attacker.GetProperty(PropertyFloat.PercentHpDamageOverride);
-            var zoneProfile = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(attacker);
+            var zoneProfile = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveCombatProfile(attacker);
 
             // Gate: endgame monsters (variation >= min, while zc_combat_rules_enabled is on - zc_pcthp_base defaults to
             // 0 since 2026-10-01, so this path deals nothing unless the server sets it) OR a controlled area that

@@ -711,6 +711,98 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        /// <summary>
+        /// ILT LUM TOKENS (owner 2026-10-05: "make those items bankable and auto convert to lum, just like how peas auto convert to
+        /// pyreals"): each token and the NPC that pays for it. ILT tokens only - their NPC turn-in is a FLAT IncrementInt64Stat on
+        /// BankedLuminance, so the bank can pay exactly the same. Retail lum gems stay NPC-only: their AwardLuminance turn-in is
+        /// multiplied by quest count / enlightenment, which a flat bank deposit would quietly undercut.
+        /// </summary>
+        private static readonly (uint Token, uint Npc)[] LumTokens =
+        {
+            (227190187, 12050),     // Thaelaryn Token of Greater Luminance -> Agent of the Arcanum
+            (300101211, 12050),     // Thaelaryn Token of Luminance -> Agent of the Arcanum
+            (867530211, 12050),     // ILT Token of Luminance - Event Reward -> Agent of the Arcanum
+            (867530194, 12050),     // ILT Token of Luminance -> Agent of the Arcanum
+            (64454972, 64454916),   // Researcher's Token of Luminance -> Red Underrly
+        };
+
+        /// <summary>The lum one token pays at its NPC: the NPC's own Give emote for that wcid, its IncrementInt64Stat on
+        /// BankedLuminance. Read from the cached weenie, so the bank always pays what the NPC pays (0 = not found - never deposited).</summary>
+        public static long LumTokenValue(uint tokenWcid)
+        {
+            foreach (var (token, npc) in LumTokens)
+            {
+                if (token != tokenWcid) continue;
+                var emotes = DatabaseManager.World.GetCachedWeenie(npc)?.PropertiesEmote;
+                if (emotes == null) return 0;
+                foreach (var e in emotes)
+                    if (e.Category == EmoteCategory.Give && e.WeenieClassId == tokenWcid)
+                        foreach (var a in e.PropertiesEmoteAction)
+                            if (a.Type == (uint)EmoteType.IncrementInt64Stat && a.Stat == (int)PropertyInt64.BankedLuminance && (a.Amount64 ?? 0) > 0)
+                                return a.Amount64.Value;
+                return 0;
+            }
+            return 0;
+        }
+
+        /// <summary>`/b lum` and deposit-all: every ILT lum token in the packs is consumed and its NPC value goes to BankedLuminance.
+        /// Saves at once (the token is gone from the shard the moment it is consumed, so the lum must not wait for the 10-minute save).
+        /// Returns the lum deposited.</summary>
+        public long DepositLuminanceTokens(bool suppressChat = false, bool quietIfNone = false, long? startingBalance = null, bool showTotal = false)
+        {
+            long total = 0;
+            long before = 0;
+            var lines = new List<string>();
+            lock (balanceLock)
+            {
+                var oldBalance = BankedLuminance ?? 0;
+                before = oldBalance;
+                foreach (var (token, _) in LumTokens)
+                {
+                    var value = LumTokenValue(token);
+                    if (value <= 0) continue;
+                    var items = GetAllPossessionsDeep().Where(i => i.WeenieClassId == token && i.Wielder == null).ToList();
+                    long count = 0;
+                    string name = null;
+                    foreach (var item in items)
+                    {
+                        var stack = (long)(item.StackSize ?? 1);
+                        name ??= item.Name;
+                        var ok = TryConsumeFromInventoryWithNetworking(item);
+                        LogItemConsumption("DepositLuminanceTokens", item, ok, $"Lum each: {value} | Stack: {stack}");
+                        if (!ok) continue;
+                        BankedLuminance = (BankedLuminance ?? 0) + value * stack;
+                        total += value * stack;
+                        count += stack;
+                    }
+                    if (count > 0)
+                        lines.Add($"{count:N0} x {name}: {ACE.Server.Command.ShortNumber.Amount(value * count, "Lum deposited")}");
+                }
+                if (total > 0)
+                    LogBankChange("DepositLuminanceTokens", "Luminance", total, oldBalance, BankedLuminance ?? 0, string.Join(" | ", lines));
+            }
+
+            if (total > 0)
+                this.SavePlayerToDatabase();
+
+            if (!suppressChat)
+            {
+                // owner 2026-10-06: Starting Banked Lum, every token line, Ending Banked Lum - in that order. /b d passes its
+                // own starting balance (taken before any of its deposits) and asks for the tokens total line.
+                if (total > 0)
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Starting Banked Lum: {ACE.Server.Command.ShortNumber.Both(startingBalance ?? before)}", ChatMessageType.System));
+                foreach (var l in lines)
+                    Session.Network.EnqueueSend(new GameMessageSystemChat(l, ChatMessageType.System));
+                if (total > 0 && showTotal)
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Luminance tokens total: {ACE.Server.Command.ShortNumber.Amount(total, "Lum deposited")}", ChatMessageType.System));
+                if (total > 0)
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Ending Banked Lum: {ACE.Server.Command.ShortNumber.Both(BankedLuminance ?? 0)}", ChatMessageType.System));
+                if (total == 0 && !quietIfNone)
+                    Session.Network.EnqueueSend(new GameMessageSystemChat("No luminance tokens found to deposit", ChatMessageType.System));
+            }
+            return total;
+        }
+
         public void DepositEnlightenedCoins(bool suppressChat = false)
         {
             if (BankedEnlightenedCoins == null)
@@ -891,7 +983,7 @@ namespace ACE.Server.WorldObjects
             
             if (actualAmount > 0 && !suppressChat)
             {
-                Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {actualAmount:N0} luminance", ChatMessageType.System));
+                Session.Network.EnqueueSend(new GameMessageSystemChat(ACE.Server.Command.ShortNumber.Amount(actualAmount, "Lum deposited"), ChatMessageType.System));
             }
             else if (!suppressChat)
             {
@@ -999,7 +1091,7 @@ namespace ACE.Server.WorldObjects
             
             if (actualWithdraw == Amount)
             {
-                Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {actualWithdraw:N0} luminance", ChatMessageType.System));
+                Session.Network.EnqueueSend(new GameMessageSystemChat(ACE.Server.Command.ShortNumber.Amount(actualWithdraw, "Lum withdrawn"), ChatMessageType.System));
             }
             else
             {

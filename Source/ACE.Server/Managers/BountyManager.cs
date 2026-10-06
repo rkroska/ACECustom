@@ -68,10 +68,20 @@ namespace ACE.Server.Managers
                     return;
 
                 // The kill's own area first - read here, on the victim's thread.
-                if (!TryResolve(victim, out var victimArea, out _))
+                var hasArea = TryResolve(victim, out var victimArea, out _);
+
+                // SERVER-WIDE bounty (owner 2026-10-06): its target WCIDs count ANYWHERE ("Any kill that matches the wcid(s)" - even a
+                // kill that pays no XP); with no targets, any kill that pays XP / luminance counts.
+                var server = ZoneControlManager.ActiveServerWideBounty();
+                var targeted = server != null && server.TargetWcids != null && server.TargetWcids.Count > 0;
+                var serverMatch = server != null && (!targeted || server.TargetWcids.Contains(victim.WeenieClassId));
+                if (!hasArea && !serverMatch)
                     return;
 
-                if (!PaysBounty(victim))
+                var pays = PaysBounty(victim);
+                var areaOk = hasArea && pays;
+                var serverOk = serverMatch && (targeted || pays);
+                if (!areaOk && !serverOk)
                     return;
 
                 // The ONLINE player, never the object the damage history remembers (review 2026-09-24): that is a weak
@@ -85,7 +95,11 @@ namespace ACE.Server.Managers
 
                 // The player may be ticked by another landblock group (a pet or a DoT finished the kill after a portal): the
                 // credit, the progress and the pack are the player's, so they are touched on the player's thread only.
-                LandblockManager.RunOnThreadFor(player, ActionType.Bounty_Credit, () => Credit(player, victimArea));
+                LandblockManager.RunOnThreadFor(player, ActionType.Bounty_Credit, () =>
+                {
+                    if (areaOk) Credit(player, victimArea);
+                    if (serverOk) CreditServer(player);
+                });
             }
             catch (Exception ex)
             {
@@ -107,9 +121,44 @@ namespace ACE.Server.Managers
                 if (!TryResolve(player, out var areaKey, out var cfg) || areaKey != victimArea)
                     return;
 
+                CreditCore(player, areaKey, cfg);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[Bounty] Credit: {ex}");
+            }
+        }
+
+        /// <summary>The server-wide bounty's half of a kill (player thread): no area to match - it counts anywhere.</summary>
+        private static void CreditServer(Player player)
+        {
+            try
+            {
+                if (player.IsLoggingOut || !ReferenceEquals(PlayerManager.GetOnlinePlayer(player.Guid), player))
+                    return;
+                var cfg = ZoneControlManager.ActiveServerWideBounty();
+                if (cfg != null)
+                    CreditCore(player, ServerAreaKey, cfg);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[Bounty] CreditServer: {ex}");
+            }
+        }
+
+        /// <summary>Counts one kill for one bounty (area or server-wide) and hands over whatever it completed.</summary>
+        private static void CreditCore(Player player, string areaKey, BountyConfig cfg)
+        {
+            try
+            {
                 var now = Time.GetUnixTime();
                 var progress = LoadProgress(player);
                 var completed = new List<BountyEntry>();
+                // ONE SHARED TIMER (owner 2026-10-06, ruling 2b): a reward from ANY bounty starts the cooldown on ALL of them
+                progress.TryGetValue(SharedTimerKey, out var shared);
+                // read ONCE, before this kill: rewards of this bounty that complete on the same kill all pay (an award earlier in the
+                // loop must not put the next row of the same kill in cooldown - test 2026-10-06)
+                var sharedBefore = shared.LastAward;
 
                 // Each reward row counts on its own: its own kills and its own cooldown (owner 2026-09-23: several rewards).
                 foreach (var reward in cfg.Entries)
@@ -122,7 +171,7 @@ namespace ACE.Server.Managers
                     // No pre-hunting (owner 2026-09-23, replacing "held until the cooldown ends"): while the cooldown after the
                     // last bounty runs, kills do not count at all. The next bounty is the full cooldown, THEN N kills.
                     var cooldownSeconds = reward.CooldownSeconds;
-                    if (now - entry.LastAward < cooldownSeconds)
+                    if (now - Math.Max(entry.LastAward, sharedBefore) < cooldownSeconds)
                         continue;
 
                     // The first kill that counts after a cooldown says so (owner 2026-09-23) - once per cycle, and not for a
@@ -137,6 +186,8 @@ namespace ACE.Server.Managers
                         entry.Kills = 0;
                         entry.LastAward = now;
                         completed.Add(reward);
+                        shared.LastAward = now;
+                        progress[SharedTimerKey] = shared;
                     }
 
                     progress[key] = entry;
@@ -168,7 +219,7 @@ namespace ACE.Server.Managers
             }
             catch (Exception ex)
             {
-                log.Error($"[Bounty] Credit: {ex}");
+                log.Error($"[Bounty] CreditCore: {ex}");
             }
         }
 
@@ -223,6 +274,17 @@ namespace ACE.Server.Managers
             if (RoomAssignManager.IsInRoomDungeon(location))
                 return false;
 
+            // ZONE-WIDE BOUNTY (owner 2026-10-05): one bounty + one timer per character across every T11-T25 zone - the progress
+            // key is the same in every zone and tier, so hopping cannot restart a cooldown. While it is on it replaces the
+            // per-zone bounties.
+            var zoneWide = ZoneControlManager.ResolveZoneWideBounty(wo);
+            if (zoneWide != null)
+            {
+                areaKey = ZoneWideAreaKey;
+                cfg = zoneWide;
+                return true;
+            }
+
             var zone = ZoneControlManager.ResolveBounty(wo);
             if (zone == null)
                 return false;
@@ -248,27 +310,46 @@ namespace ACE.Server.Managers
                 var heldLine = held.Count == 0 ? null
                     : "Held for you until you have room: " + string.Join(", ", held.Select(h => $"{h.Amount:N0} {RoomAssignManager.ItemName(h.Wcid)}")) + ".";
 
+                var now = Time.GetUnixTime();
+                var progress = LoadProgress(player);
                 if (!TryResolve(player, out var areaKey, out var cfg))
                 {
-                    Tell(player, "Bounty: there is no bounty here.");
+                    if (ZoneControlManager.ActiveServerWideBounty() == null)
+                        Tell(player, "Bounty: there is no bounty here.");
+                    ShowServerBounty(player, progress, now);
                     if (heldLine != null) Tell(player, "Bounty: " + heldLine);
                     return;
                 }
 
-                var now = Time.GetUnixTime();
-                var progress = LoadProgress(player);
-
+                // the zone-wide bounty says so: its count and timer follow the player into every zone (owner 2026-10-05)
+                var where = areaKey == ZoneWideAreaKey ? "Bounty (all zones, one shared timer)" : "Bounty";
                 foreach (var reward in cfg.Entries)
                 {
                     if (reward == null || !reward.Valid) continue;
-                    Tell(player, $"Bounty: {RewardText(reward)} - {StatusText(progress, areaKey, reward, now)}.");
+                    Tell(player, $"{where}: {RewardText(reward)} - {StatusText(progress, areaKey, reward, now)}.");
                 }
 
+                ShowServerBounty(player, progress, now);
                 if (heldLine != null) Tell(player, "Bounty: " + heldLine);
             }
             catch (Exception ex)
             {
                 log.Error($"[Bounty] /bounty: {ex}");
+            }
+        }
+
+        /// <summary>The server-wide bounty's lines in /bounty: what to kill, and where the player stands on it (2026-10-06).</summary>
+        private static void ShowServerBounty(Player player, Dictionary<string, Entry> progress, double now)
+        {
+            var cfg = ZoneControlManager.ActiveServerWideBounty();
+            if (cfg == null) return;
+            var what = cfg.TargetWcids != null && cfg.TargetWcids.Count > 0
+                ? "kill " + string.Join(" or ", cfg.TargetWcids.Select(w => RoomAssignManager.ItemName(w))) + " anywhere"
+                : "any kill, anywhere";
+            foreach (var reward in cfg.Entries)
+            {
+                if (reward == null || !reward.Valid) continue;
+                Tell(player, $"Server bounty ({what}): {RewardText(reward)} - {StatusText(progress, ServerAreaKey, reward, now)}.");
             }
         }
 
@@ -282,7 +363,8 @@ namespace ACE.Server.Managers
         private static string StatusText(Dictionary<string, Entry> progress, string areaKey, BountyEntry reward, double now)
         {
             progress.TryGetValue(areaKey + "#" + reward.ProgressKey, out var entry);
-            var unlockAt = entry.LastAward + reward.CooldownSeconds;
+            progress.TryGetValue(SharedTimerKey, out var shared);   // one shared timer across every bounty (2026-10-06)
+            var unlockAt = Math.Max(entry.LastAward, shared.LastAward) + reward.CooldownSeconds;
             var wait = (int)Math.Ceiling(Math.Min(unlockAt - now, int.MaxValue));
             return wait > 0
                 ? $"unlocks in {FormatWait(wait)}, then {KillsText(reward.Kills)} required"
@@ -291,6 +373,15 @@ namespace ACE.Server.Managers
 
         /// <summary>The same area key TryResolve builds for a zone (progress is saved under it).</summary>
         private static string ZoneAreaKey(string zoneName) => "zone:" + Clean(zoneName).ToLowerInvariant();
+
+        /// <summary>The zone-wide bounty's progress key - one per character for every T11-T25 zone (owner 2026-10-05).</summary>
+        public const string ZoneWideAreaKey = "zonewide";
+
+        /// <summary>The server-wide bounty's progress key (2026-10-06).</summary>
+        public const string ServerAreaKey = "server";
+
+        /// <summary>The character's last award from ANY bounty - the one shared timer (owner 2026-10-06, ruling 2b).</summary>
+        private const string SharedTimerKey = "*";
 
         /// <summary>
         /// /bounty list (owner 2026-09-27): every bounty that can pay right now - each Vaulted Dungeon's, then each zone's -
@@ -330,8 +421,19 @@ namespace ACE.Server.Managers
                     ShowArea(multiLayer.Contains(d.SourceWcid) ? $"{d.Name} (layer {d.Variation})" : d.Name,
                         RoomAssignManager.DungeonAreaKey(d.SourceWcid, d.Variation), d.Bounty);
 
-                foreach (var z in ZoneControlManager.ActiveZoneBounties())
-                    ShowArea(z.Name, ZoneAreaKey(z.Name), z.Reward);
+                // the zone-wide bounty replaces every zone's own while it is on (owner 2026-10-05)
+                var zoneWide = ZoneControlManager.GetZoneWideBounty();
+                if (zoneWide.Active && ServerConfig.zonecontrol_enabled.Value)
+                    ShowArea("All zones (one shared timer)", ZoneWideAreaKey, zoneWide);
+                else
+                    foreach (var z in ZoneControlManager.ActiveZoneBounties())
+                        ShowArea(z.Name, ZoneAreaKey(z.Name), z.Reward);
+
+                var serverCfg = ZoneControlManager.ActiveServerWideBounty();
+                if (serverCfg != null)
+                    ShowArea(serverCfg.TargetWcids != null && serverCfg.TargetWcids.Count > 0
+                        ? "Anywhere (kill " + string.Join(" or ", serverCfg.TargetWcids.Select(w => RoomAssignManager.ItemName(w))) + ")"
+                        : "Anywhere (any kill)", ServerAreaKey, serverCfg);
 
                 if (shown == 0)
                     Tell(player, "Bounty: there are no bounties anywhere right now.");
@@ -432,6 +534,24 @@ namespace ACE.Server.Managers
                     return null;
                 }
 
+                case "target":
+                {
+                    // server-wide bounty targets (2026-10-06): target add|remove <creature wcid> | target clear
+                    var sub = args.Count > at ? args[at].ToLowerInvariant() : "";
+                    if (sub == "clear") { cfg.TargetWcids.Clear(); return null; }
+                    if ((sub != "add" && sub != "remove") || args.Count <= at + 1 || !uint.TryParse(args[at + 1], NumberStyles.Integer, inv, out var tw) || tw == 0)
+                        return "Give: target add <creature wcid> | target remove <creature wcid> | target clear.";
+                    cfg.TargetWcids ??= new List<uint>();
+                    if (sub == "add")
+                    {
+                        if (ACE.Database.DatabaseManager.World.GetCachedWeenie(tw) == null) return $"There is no WCID {tw}.";
+                        if (!cfg.TargetWcids.Contains(tw)) cfg.TargetWcids.Add(tw);
+                    }
+                    else if (!cfg.TargetWcids.Remove(tw))
+                        return $"WCID {tw} is not a target.";
+                    return null;
+                }
+
                 default:
                     return "Bounty: " + EditUsage;
             }
@@ -493,7 +613,14 @@ namespace ACE.Server.Managers
 
             var list = string.Join("; ", cfg.Entries.Where(e => e != null).Select(e =>
                 $"[{e.Id}] {e.Amount}x {RoomAssignManager.ItemName(e.Wcid)} every {e.Kills} kills ({e.CooldownMinutes.ToString("0.##", CultureInfo.InvariantCulture)} min)"));
-            return (cfg.Enabled ? "ON" : "off") + ": " + list;
+            return (cfg.Enabled ? "ON" : "off") + ": " + list + TargetsText(cfg);
+        }
+
+        /// <summary>" - kill: Grandcap the Overgrown (730000711), ..." for a bounty with targets (server-wide), else "".</summary>
+        public static string TargetsText(BountyConfig cfg)
+        {
+            if (cfg?.TargetWcids == null || cfg.TargetWcids.Count == 0) return "";
+            return " - kill: " + string.Join(", ", cfg.TargetWcids.Select(w => $"{RoomAssignManager.ItemName(w)} ({w})"));
         }
 
         /// <summary>

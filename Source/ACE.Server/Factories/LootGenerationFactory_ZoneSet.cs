@@ -58,6 +58,7 @@ namespace ACE.Server.Factories
             public int Shield;
             public int Amulet, Ring, Bracelet, Trinket;
             public int Cloak;
+            public int Clothing;   // shirts / pants / robes from the retail clothing table (2026-10-06)
 
             /// <summary>BUDGET MODE only: the exact weapon families to create, one weapon each. Null in
             /// legacy mode, where Weapons is instead a MULTIPLIER over every family (1 = all nine).</summary>
@@ -67,7 +68,7 @@ namespace ACE.Server.Factories
                 (WeaponFamilyPicks != null && WeaponFamilyPicks.Count > 0) ||
                 Weapons > 0 || Helm > 0 || Chest > 0 || Shoulder > 0 || Bracer > 0 || Glove > 0 ||
                 Girth > 0 || UpperLeg > 0 || LowerLeg > 0 || Boot > 0 || Shield > 0 ||
-                Amulet > 0 || Ring > 0 || Bracelet > 0 || Trinket > 0 || Cloak > 0;
+                Amulet > 0 || Ring > 0 || Bracelet > 0 || Trinket > 0 || Cloak > 0 || Clothing > 0;
 
             /// <summary>Tier default: one of everything at tier 11+, nothing below.</summary>
             public static ZoneLootSetCounts TierDefault(int tier)
@@ -78,7 +79,7 @@ namespace ACE.Server.Factories
                     Weapons = n,
                     Helm = n, Chest = n, Shoulder = n, Bracer = n, Glove = n,
                     Girth = n, UpperLeg = n, LowerLeg = n, Boot = n,
-                    Shield = n, Amulet = n, Ring = n, Bracelet = n, Trinket = n, Cloak = n,
+                    Shield = n, Amulet = n, Ring = n, Bracelet = n, Trinket = n, Cloak = n, Clothing = n,
                 };
             }
         }
@@ -127,6 +128,10 @@ namespace ACE.Server.Factories
         /// <summary>Item augmentations required to wield any tier-11+ drop (owner 2026-07-20).</summary>
         public const int ZoneLootSetWieldItemAugs = 2000;
 
+        /// <summary>Share of each armor-slot draw taken from the retail CLOTHING table (owner 2026-10-06: robes, cowls, caps, shoes
+        /// and gloves belong to the armor slots they cover). The draw is still rejected unless it covers that slot.</summary>
+        private const float ZoneSetClothingInArmorShare = 0.25f;
+
         /// <summary>
         /// The tier-11+ wield gate: item augmentations (LumAugItemCount), replacing every
         /// requirement StripWieldRequirements removed. Validated server-side by the
@@ -144,42 +149,8 @@ namespace ACE.Server.Factories
             if (wo == null)
                 return;
 
-            var minWield = ZoneLootSetWieldItemAugs;
-            var tierRow = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(tier);
-            if (tierRow != null && tierRow.MinWieldAugs > 0)
-                minWield = tierRow.MinWieldAugs;
-
-            wo.WieldRequirements = ACE.Entity.Enum.WieldRequirement.Int64Stat;
-            wo.WieldSkillType = (int)PropertyInt64.LumAugItemCount;
-            wo.WieldDifficulty = minWield;
-
-            // T16+ charm gates (owner 2026-08-15): the item-aug ladder purchase-caps at 4,000
-            // (reached at T15), so higher tiers freeze the item req and gate on growth charm
-            // counters instead — Triune Weave plus the weapon-family charm, both +500/tier.
-            // WEAPONS ONLY, and slots 3/4: slot 2 belongs to the forge's training requirement.
             var isWeapon = wo is MeleeWeapon || wo is MissileLauncher || wo is Caster;
-            if (isWeapon && tierRow != null && tierRow.MinWieldTriune > 0)
-            {
-                wo.WieldRequirements3 = ACE.Entity.Enum.WieldRequirement.Int64Stat;
-                wo.WieldSkillType3 = (int)PropertyInt64.TriuneWeaveCount;
-                wo.WieldDifficulty3 = tierRow.MinWieldTriune;
-            }
-            if (isWeapon && tierRow != null && tierRow.MinWieldSkillCharm > 0)
-            {
-                wo.WieldRequirements4 = ACE.Entity.Enum.WieldRequirement.Int64Stat;
-                wo.WieldSkillType4 = (int)GetWieldCharmProperty(wo);
-                wo.WieldDifficulty4 = tierRow.MinWieldSkillCharm;
-            }
-
-            // Armor / jewelry / cloaks at T16+ (owner 2026-08-23: "4k item augs isn't enough - Item Augs +
-            // Triune Count"): slot 3 = Triune Weave count on the same 500 x (tier-15) ladder the weapons use.
-            // No family charm for non-weapons (none exists).
-            if (!isWeapon && tierRow != null && tierRow.MinWieldTriune > 0)
-            {
-                wo.WieldRequirements3 = ACE.Entity.Enum.WieldRequirement.Int64Stat;
-                wo.WieldSkillType3 = (int)PropertyInt64.TriuneWeaveCount;
-                wo.WieldDifficulty3 = tierRow.MinWieldTriune;
-            }
+            StampTierGates(wo, tier);
 
             // The client cannot render Int64Stat requirements. WEAPONS show the gate in the
             // Property Details section instead (AppraiseInfo, pinned bottom - owner 2026-08-01);
@@ -194,7 +165,7 @@ namespace ACE.Server.Factories
         /// line. Weapons are left to the weapon-scaling system. Returns the number of properties changed.</summary>
         public static int RefreshWieldGate(WorldObject wo, int tier)
         {
-            if (wo == null || wo is MeleeWeapon || wo is MissileLauncher || wo is Caster)
+            if (wo == null)
                 return 0;
 
             // WIELD GATES IGNORE zonecontrol_enabled ON PURPOSE (owner 2026-08-23). Clearing them off the
@@ -206,35 +177,11 @@ namespace ACE.Server.Factories
             // never rechecked, because they are already wearing it. They keep it until they choose to
             // unequip. Keeping the gate costs only cosmetics (a T25 piece asks 5,000 Triune while its stats
             // read T10 in fallback); clearing it costs a hole. DO NOT re-add the clearing branch.
-            var tierRow = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(tier);
-            var minWield = tierRow != null && tierRow.MinWieldAugs > 0 ? tierRow.MinWieldAugs : ZoneLootSetWieldItemAugs;
-            var triune = tierRow != null ? tierRow.MinWieldTriune : 0;
-            var changed = 0;
+            var changed = StampTierGates(wo, tier);
 
-            if (wo.WieldRequirements != ACE.Entity.Enum.WieldRequirement.Int64Stat || wo.WieldSkillType != (int)PropertyInt64.LumAugItemCount || wo.WieldDifficulty != minWield)
-            {
-                wo.WieldRequirements = ACE.Entity.Enum.WieldRequirement.Int64Stat;
-                wo.WieldSkillType = (int)PropertyInt64.LumAugItemCount;
-                wo.WieldDifficulty = minWield;
-                changed++;
-            }
-            if (triune > 0)
-            {
-                if (wo.WieldRequirements3 != ACE.Entity.Enum.WieldRequirement.Int64Stat || wo.WieldSkillType3 != (int)PropertyInt64.TriuneWeaveCount || wo.WieldDifficulty3 != triune)
-                {
-                    wo.WieldRequirements3 = ACE.Entity.Enum.WieldRequirement.Int64Stat;
-                    wo.WieldSkillType3 = (int)PropertyInt64.TriuneWeaveCount;
-                    wo.WieldDifficulty3 = triune;
-                    changed++;
-                }
-            }
-            else if (wo.WieldRequirements3 == ACE.Entity.Enum.WieldRequirement.Int64Stat && wo.WieldSkillType3 == (int)PropertyInt64.TriuneWeaveCount)
-            {
-                wo.WieldRequirements3 = ACE.Entity.Enum.WieldRequirement.Invalid;
-                wo.WieldSkillType3 = null;
-                wo.WieldDifficulty3 = null;
-                changed++;
-            }
+            // weapons show their gates in Property Details (built live in the appraisal) - no LongDesc block to keep in step
+            if (wo is MeleeWeapon || wo is MissileLauncher || wo is Caster)
+                return changed;
 
             // rewrite the LongDesc gate block so the appraisal matches the live gate. The block sits in
             // its own paragraph (blank line before it) and each requirement has its own line (owner 2026-08-23).
@@ -252,15 +199,106 @@ namespace ACE.Server.Factories
             return changed;
         }
 
-        /// <summary>The "Wield requires:" LongDesc block for a non-weapon: one line per requirement -
-        /// item augs, then the T16+ Triune gate when stamped (owner 2026-08-23).</summary>
-        private static string WieldLineFor(WorldObject wo)
+        /// <summary>The "Wield requires:" block: one line per tier gate, in the portal gem's order (Creature, Item, Life), then
+        /// Triune - armour / jewelry carry it in LongDesc, weapons in Property Details.</summary>
+        public static string WieldLineFor(WorldObject wo)
         {
-            var line = $"Wield requires: {wo.WieldDifficulty ?? 0:N0} Item Augmentations";
-            if (wo.WieldRequirements3 == ACE.Entity.Enum.WieldRequirement.Int64Stat &&
-                wo.WieldSkillType3 == (int)PropertyInt64.TriuneWeaveCount && (wo.WieldDifficulty3 ?? 0) > 0)
-                line += $"\nWield requires: {wo.WieldDifficulty3 ?? 0:N0} Triune Weave";
-            return line;
+            var lines = new List<string>();
+            foreach (var (req, skill, diff) in Gates(wo).OrderBy(g => GateOrder(g.Skill)))
+                if (req == ACE.Entity.Enum.WieldRequirement.Int64Stat && (diff ?? 0) > 0 && GateName(skill) is string name)
+                    lines.Add($"Wield requires: {diff ?? 0:N0} {name}");
+            return string.Join("\n", lines);
+        }
+
+        /// <summary>True when the item carries any tier gate (the weapon Property Details line keys on this).</summary>
+        public static bool HasTierGate(WorldObject wo)
+            => Gates(wo).Any(g => g.Req == ACE.Entity.Enum.WieldRequirement.Int64Stat && GateName(g.Skill) != null);
+
+        private static IEnumerable<(ACE.Entity.Enum.WieldRequirement Req, int? Skill, int? Diff)> Gates(WorldObject wo)
+        {
+            yield return (wo.WieldRequirements, wo.WieldSkillType, wo.WieldDifficulty);
+            yield return (wo.WieldRequirements3, wo.WieldSkillType3, wo.WieldDifficulty3);
+            yield return (wo.WieldRequirements4, wo.WieldSkillType4, wo.WieldDifficulty4);
+        }
+
+        private static string GateName(int? skill) => skill switch
+        {
+            (int)PropertyInt64.LumAugCreatureCount => "Creature Augmentations",
+            (int)PropertyInt64.LumAugItemCount => "Item Augmentations",
+            (int)PropertyInt64.LumAugLifeCount => "Life Augmentations",
+            (int)PropertyInt64.TriuneWeaveCount => "Triune Weave",
+            (int)PropertyInt64.CrashingSteelCharmCount => "Crashing Steel",
+            (int)PropertyInt64.TrueShotCharmCount => "True Shot",
+            (int)PropertyInt64.BattlemagesWrathCharmCount => "Battlemage's Wrath",
+            (int)PropertyInt64.NetherVeilCharmCount => "Nether Veil",
+            _ => null,
+        };
+
+        private static int GateOrder(int? skill) => skill switch
+        {
+            (int)PropertyInt64.LumAugCreatureCount => 0,
+            (int)PropertyInt64.LumAugItemCount => 1,
+            (int)PropertyInt64.LumAugLifeCount => 2,
+            (int)PropertyInt64.TriuneWeaveCount => 3,
+            _ => 4,
+        };
+
+        /// <summary>
+        /// THE tier gate rule (owner 2026-10-05), shared by new drops and the live re-stamp of existing gear:
+        ///   T11-T15 (a tier row with no Triune): Item augs (slot 1) + Creature augs (slot 3) + Life augs (slot 4) - the same
+        ///           numbers as the tier's portal gem, from the weaponscaling tier row (minwield / minwieldcreature / minwieldlife).
+        ///   T16+   (a tier row with Triune):    Triune Weave only (slot 3); slots 1 and 4 are cleared.
+        /// Slot 2 is never touched (the forge's training requirement lives there). A slot is only cleared when it holds one of
+        /// OUR gates, never an unrelated requirement. Returns the number of slots that changed.
+        /// </summary>
+        public static int StampTierGates(WorldObject wo, int tier)
+        {
+            if (wo == null) return 0;
+            var row = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(tier);
+            var triune = row?.MinWieldTriune ?? 0;
+            var changed = 0;
+            if (triune > 0)
+            {
+                changed += SetGate(wo, 1, null, 0);
+                changed += SetGate(wo, 3, PropertyInt64.TriuneWeaveCount, triune);
+                changed += SetGate(wo, 4, null, 0);
+            }
+            else
+            {
+                var item = row != null && row.MinWieldAugs > 0 ? row.MinWieldAugs : ZoneLootSetWieldItemAugs;
+                changed += SetGate(wo, 1, PropertyInt64.LumAugItemCount, item);
+                changed += SetGate(wo, 3, PropertyInt64.LumAugCreatureCount, row?.MinWieldCreature ?? 0);
+                changed += SetGate(wo, 4, PropertyInt64.LumAugLifeCount, row?.MinWieldLife ?? 0);
+            }
+            return changed;
+        }
+
+        /// <summary>Set (or clear, when stat is null or value 0) one of our Int64Stat gates in slot 1 / 3 / 4.</summary>
+        private static int SetGate(WorldObject wo, int slot, PropertyInt64? stat, int value)
+        {
+            var (req, skill, diff) = slot == 1 ? (wo.WieldRequirements, wo.WieldSkillType, wo.WieldDifficulty)
+                                   : slot == 3 ? (wo.WieldRequirements3, wo.WieldSkillType3, wo.WieldDifficulty3)
+                                   :             (wo.WieldRequirements4, wo.WieldSkillType4, wo.WieldDifficulty4);
+            if (stat == null || value <= 0)
+            {
+                // clear only our own gate
+                if (req != ACE.Entity.Enum.WieldRequirement.Int64Stat || GateName(skill) == null) return 0;
+                switch (slot)
+                {
+                    case 1: wo.WieldRequirements = ACE.Entity.Enum.WieldRequirement.Invalid; wo.WieldSkillType = null; wo.WieldDifficulty = null; break;
+                    case 3: wo.WieldRequirements3 = ACE.Entity.Enum.WieldRequirement.Invalid; wo.WieldSkillType3 = null; wo.WieldDifficulty3 = null; break;
+                    default: wo.WieldRequirements4 = ACE.Entity.Enum.WieldRequirement.Invalid; wo.WieldSkillType4 = null; wo.WieldDifficulty4 = null; break;
+                }
+                return 1;
+            }
+            if (req == ACE.Entity.Enum.WieldRequirement.Int64Stat && skill == (int)stat.Value && diff == value) return 0;
+            switch (slot)
+            {
+                case 1: wo.WieldRequirements = ACE.Entity.Enum.WieldRequirement.Int64Stat; wo.WieldSkillType = (int)stat.Value; wo.WieldDifficulty = value; break;
+                case 3: wo.WieldRequirements3 = ACE.Entity.Enum.WieldRequirement.Int64Stat; wo.WieldSkillType3 = (int)stat.Value; wo.WieldDifficulty3 = value; break;
+                default: wo.WieldRequirements4 = ACE.Entity.Enum.WieldRequirement.Int64Stat; wo.WieldSkillType4 = (int)stat.Value; wo.WieldDifficulty4 = value; break;
+            }
+            return 1;
         }
 
         /// <summary>Standard weapon mods (owner 2026-08-15): every T10+ weapon and wand leaves
@@ -636,7 +674,7 @@ namespace ACE.Server.Factories
         /// </summary>
         public static ZoneLootSetCounts RollBudgetedCounts(
             ZoneLootSetCounts w, int budget,
-            double wWeapon, double wArmor, double wJewelry, double wCloak)
+            double wWeapon, double wArmor, double wJewelry, double wCloak, double wClothing = 0)
         {
             var result = new ZoneLootSetCounts { WeaponFamilyPicks = new List<int>() };
             if (budget <= 0)
@@ -697,6 +735,7 @@ namespace ACE.Server.Factories
                 if (wArmor > 0 && armorTotal > 0) cats.Add((1, wArmor));
                 if (wJewelry > 0 && jewelTotal > 0) cats.Add((2, wJewelry));
                 if (wCloak > 0 && w.Cloak > 0) cats.Add((3, wCloak));
+                if (wClothing > 0 && w.Clothing > 0) cats.Add((4, wClothing));
                 if (cats.Count == 0)
                     break;
 
@@ -777,8 +816,12 @@ namespace ACE.Server.Factories
                         }
                         break;
 
-                    default:  // cloak
+                    case 3:   // cloak
                         result.Cloak++;
+                        break;
+
+                    default:  // clothing (2026-10-06)
+                        result.Clothing++;
                         break;
                 }
             }
@@ -840,6 +883,11 @@ namespace ACE.Server.Factories
             for (var i = 0; i < counts.Cloak; i++)
                 AddZoneSetGearPiece(items, profile, TreasureItemType_Orig.Cloak);
 
+            // clothing (owner 2026-10-05): the retail clothing table T10 drops from (ClothingWcids - shirts, pants, robes ...),
+            // blank like every zone-set piece; the zone stats, lines, item spells and gates layer on in Creature_Death
+            for (var i = 0; i < counts.Clothing; i++)
+                AddZoneSetClothingPiece(items, profile);
+
             return items;
         }
 
@@ -876,13 +924,24 @@ namespace ACE.Server.Factories
                     // creation.
                     var armorType = TreasureArmorType.Undef;
                     var wcid = WeenieClassName.undef;
+                    var fromClothing = false;
 
                     for (var attempt = 0; attempt < 50; attempt++)
                     {
-                        // same two-step as the stock armor path (LootGenerationFactory.cs:1130-1131):
-                        // roll the armor TYPE for the tier, then a wcid within it
-                        var candidateType = ArmorTypeChance.Roll(profile.Tier);
-                        var candidate = ArmorWcids.Roll(profile, ref candidateType);
+                        // owner 2026-10-06: robes, cowls, caps, shoes and gloves from the retail clothing table "fall into the armor
+                        // bucket" - a share of each slot's draws comes from that table, still accepted only for the slot it covers
+                        var clothingDraw = ThreadSafeRandom.Next(0.0f, 1.0f) < ZoneSetClothingInArmorShare;
+                        var candidateType = TreasureArmorType.Undef;
+                        WeenieClassName candidate;
+                        if (clothingDraw)
+                            candidate = ClothingWcids.Roll(profile);
+                        else
+                        {
+                            // same two-step as the stock armor path (LootGenerationFactory.cs:1130-1131):
+                            // roll the armor TYPE for the tier, then a wcid within it
+                            candidateType = ArmorTypeChance.Roll(profile.Tier);
+                            candidate = ArmorWcids.Roll(profile, ref candidateType);
+                        }
 
                         if (candidate == WeenieClassName.undef)
                             continue;
@@ -894,6 +953,7 @@ namespace ACE.Server.Factories
 
                         armorType = candidateType;
                         wcid = candidate;
+                        fromClothing = clothingDraw;
                         break;
                     }
 
@@ -903,7 +963,9 @@ namespace ACE.Server.Factories
                         break;
                     }
 
-                    var roll = new TreasureRoll(TreasureItemType_Orig.Armor) { ArmorType = armorType, Wcid = wcid };
+                    var roll = fromClothing
+                        ? new TreasureRoll(TreasureItemType_Orig.Clothing) { Wcid = wcid }
+                        : new TreasureRoll(TreasureItemType_Orig.Armor) { ArmorType = armorType, Wcid = wcid };
                     var wo = CreateAndMutateWcid(profile, roll, false);
 
                     if (wo == null)
@@ -963,20 +1025,6 @@ namespace ACE.Server.Factories
             }
 
             log.Warn($"[ZONELOOT] CreateZoneLootSet({profile.TreasureType}): failed to roll a shield");
-        }
-
-        /// <summary>
-        /// Clears a tier-11+ drop's MaterialType, so the client shows the plain item name with no material adjective and the
-        /// drop cannot be salvaged for material (owner 2026-10-04: keep that; T11 gear is worn, not salvage fodder;
-        /// ItemWorkmanship stays, so tinkering ONTO the item still works). The "T11 - " name prefix this used to add
-        /// (2026-07-20) was a testing aid and is gone (owner 2026-10-04) - the drop's tier shows in its provenance line ("Location: <zone> v<variation>").
-        /// </summary>
-        public static void ApplyZoneMaterialClear(WorldObject wo)
-        {
-            if (wo == null)
-                return;
-
-            wo.MaterialType = null;
         }
 
         /// <summary>
@@ -1200,8 +1248,7 @@ namespace ACE.Server.Factories
                 sb.Append($"Item Levels: {wo.ItemMaxLevel}\n");
 
             // the item-aug wield gate (client cannot render Int64Stat requirements)
-            if (wo.WieldRequirements == ACE.Entity.Enum.WieldRequirement.Int64Stat &&
-                wo.WieldSkillType == (int)PropertyInt64.LumAugItemCount)
+            if (HasTierGate(wo))
                 sb.Append(WieldLineFor(wo)).Append('\n');
 
             // aug-scaling identity (the per-wielder damage term itself shows live in the weapon
@@ -1234,6 +1281,31 @@ namespace ACE.Server.Factories
                 items.Add(wo);
             else
                 log.Warn($"[ZONELOOT] CreateZoneLootSet({profile.TreasureType}): failed to create {slotName} jewelry ({wcid})");
+        }
+
+        /// <summary>The Clothing slot (owner 2026-10-06): SHIRTS AND PANTS ONLY - the retail clothing table, reject-sampled down to
+        /// pieces that cover only undergarment slots. Robes, cowls, caps, shoes and gloves "fall into the armor bucket as gloves,
+        /// feet, chest, helm" - AddZoneSetArmorSlots draws them from the same table for the slot they cover.</summary>
+        private static void AddZoneSetClothingPiece(List<WorldObject> items, TreasureDeath profile)
+        {
+            for (var attempt = 0; attempt < 50; attempt++)
+            {
+                var wcid = ClothingWcids.Roll(profile);
+                if (wcid == WeenieClassName.undef)
+                    continue;
+                var cov = GetZoneSetCoverage(wcid);
+                const uint outerwear = 0x0001FF00;   // outerwear arms / legs / chest / abdomen + head, hands, feet
+                const uint underwear = 0x0000007E;   // underwear legs / chest / abdomen / arms
+                if (((uint)cov & outerwear) != 0 || ((uint)cov & underwear) == 0)
+                    continue;   // a robe / cap / shoe / glove belongs to an armor slot
+                var wo = CreateAndMutateWcid(profile, new TreasureRoll(TreasureItemType_Orig.Clothing) { Wcid = wcid }, false);
+                if (wo != null)
+                {
+                    items.Add(wo);
+                    return;
+                }
+            }
+            log.Warn($"[ZONELOOT] CreateZoneLootSet({profile.TreasureType}): failed to roll a shirt / pants piece");
         }
 
         private static void AddZoneSetGearPiece(List<WorldObject> items, TreasureDeath profile, TreasureItemType_Orig itemType)

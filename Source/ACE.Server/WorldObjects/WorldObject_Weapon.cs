@@ -623,6 +623,16 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Returns a multiplicative elemental damage modifier for the magic caster weapon type
         /// </summary>
+        /// <summary>Jewelry Cast on Strike (key 54, owner 2026-10-05: damage "like a hand-cast of that spell by the wearer"): the
+        /// wand-derived terms (elemental mod, rend) come from the WEARER's equipped caster, exactly as their own hand-cast would -
+        /// none held = 1.0, as a bare-hand cast. Any other launcher is returned unchanged.</summary>
+        public static WorldObject HandCastParityWeapon(WorldObject launcher, Creature wielder)
+        {
+            if (launcher == null || (launcher.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0) <= 0)
+                return launcher;
+            return wielder?.GetEquippedWand() as Caster;
+        }
+
         public static float GetCasterElementalDamageModifier(WorldObject weapon, Creature wielder, Creature target, DamageType damageType)
         {
             if (wielder == null || !(weapon is Caster) || weapon.W_DamageType != damageType)

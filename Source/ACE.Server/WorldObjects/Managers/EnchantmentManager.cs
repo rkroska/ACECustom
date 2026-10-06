@@ -1891,7 +1891,7 @@ namespace ACE.Server.WorldObjects.Managers
                 // NETHER DoTs (owner 2026-10-04): a PLAYER's DoT on a T11+ monster - DOT ARMOR replaces Spell Armor here and the
                 // Damage Resist / DoT Resist / nether resist ratings below (together they cut the tick to ~0.01 pct)
                 var zcDotTick = creature.ZcDebuffCompressed && damager is Player && targetPlayer == null && !(creature is CombatPet);
-                resistanceMod *= zcDotTick ? creature.GetZcDotArmorMod((uint)enchantment.SpellId) : creature.GetZcSpellArmorMod(damager, false);
+                resistanceMod *= zcDotTick ? creature.GetZcDotArmorMod((uint)enchantment.SpellId) : creature.GetZcSpellArmorMod(damager);
 
                 var sourcePlayer = damager as Player;
 
@@ -1948,6 +1948,10 @@ namespace ACE.Server.WorldObjects.Managers
                 // player (the caster is looked up above; a caster that is gone deals no tick at all, as before)
                 if (targetPlayer != null && damager is Creature dotCaster)
                     tickAmount *= ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(dotCaster, targetPlayer);
+
+                // DAMAGE TAKEN multiplier (owner 2026-10-05): any DoT tick on a Zone Control monster
+                if (targetPlayer == null)
+                    tickAmount *= ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(creature);
 
                 // make sure the target's current health is not exceeded
                 if (tickAmountTotal + tickAmount >= creature.Health.Current)

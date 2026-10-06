@@ -111,8 +111,8 @@ namespace ACE.Server.Managers.ZoneControl
         /// asks "is this one blocked?", but it means the plugin has nothing to draw an UNCHECKED row
         /// from. The toggle UI needs the CANDIDATES, not just the current answer.
         ///
-        /// WHY ONLY (Wcid, Group) AND NO DISPLAY TEXT. This table is published on the [[ZCCG]] wire,
-        /// which is ONE unchunked chat line (ZoneControlCommands.BuildCraftGatePayload -> Msg). The 49
+        /// WHY ONLY (Wcid, Group) AND NO DISPLAY TEXT. This table is published on the [[ZCCG]] wire
+        /// (ZoneControlCommands.BuildCraftGatePayload; chunked since 2026-10-05, ~300 rows). The 49
         /// names alone measure 907 characters and a prose description per row would add ~4.7 KB to that
         /// single line. So the wire carries wcid~group (~1 KB) and the PLUGIN owns the display name and
         /// the one-line explanation, compiled in - the same split the cantrip catalog already uses.
@@ -179,11 +179,326 @@ namespace ACE.Server.Managers.ZoneControl
             new ComponentCatalogEntry(527870022u, "Inscription"), new ComponentCatalogEntry(527870023u, "Inscription"),
             new ComponentCatalogEntry(527870024u, "Inscription"), new ComponentCatalogEntry(527870031u, "Inscription"),
 
+            // T10 vendor proc tools (owner 2026-10-06: "these should already be there? If not, get them there"): each writes a
+            // ProcSpell + ProcSpellRate (5-15 pct) onto jewelry (Inscriptions) / armor (Paragon gems) - the same base wcids T11 drops
+            // are built on, so unblocked they put an OLD proc on T11 gear, where the low-tier proc gate cannot see it.
+            new ComponentCatalogEntry(227001u, "ProcInscription"),   // Inscription of Acid -> Acid Streak I
+            new ComponentCatalogEntry(227002u, "ProcInscription"),   // Inscription of Flame -> Flame Streak I
+            new ComponentCatalogEntry(227003u, "ProcInscription"),   // Inscription of Frost -> Frost Streak I
+            new ComponentCatalogEntry(227004u, "ProcInscription"),   // Inscription of Lightning -> Lightning Streak I
+            new ComponentCatalogEntry(227005u, "ProcInscription"),   // Inscription of Force -> Force Streak I
+            new ComponentCatalogEntry(227006u, "ProcInscription"),   // Inscription of Blade -> Whirling Blade Streak I
+            new ComponentCatalogEntry(227007u, "ProcInscription"),   // Inscription of Shock Wave -> Shock Wave Streak I
+            new ComponentCatalogEntry(227008u, "ProcInscription"),   // Inscription of Nether -> Nether Streak I
+            new ComponentCatalogEntry(227009u, "ProcInscription"),   // Inscription of Healing -> Heal Self I
+            new ComponentCatalogEntry(227010u, "ProcInscription"),   // Inscription of Acid Vulnerability -> Acid Vulnerability Other I
+            new ComponentCatalogEntry(227011u, "ProcInscription"),   // Inscription of Fire Vulnerability -> Fire Vulnerability Other I
+            new ComponentCatalogEntry(227012u, "ProcInscription"),   // Inscription of Cold Vulnerability -> Cold Vulnerability Other I
+            new ComponentCatalogEntry(227013u, "ProcInscription"),   // Inscription of Lightning Vulnerability -> Lightning Vulnerability Other I
+            new ComponentCatalogEntry(227014u, "ProcInscription"),   // Inscription of Piercing Vulnerability -> Piercing Vulnerability Other I
+            new ComponentCatalogEntry(227015u, "ProcInscription"),   // Inscription of Blade Vulnerability -> Blade Vulnerability Other I
+            new ComponentCatalogEntry(227016u, "ProcInscription"),   // Inscription of Bludgeoning Vulnerability -> Bludgeoning Vulnerability Other I
+            new ComponentCatalogEntry(227017u, "ProcInscription"),   // Inscription of Imperil -> Imperil Other I
+            new ComponentCatalogEntry(227018u, "ProcInscription"),   // Inscription of Weakening -> Weakening Curse I
+            new ComponentCatalogEntry(64454515u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Breath of Renewal
+            new ComponentCatalogEntry(64454516u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Robustification
+            new ComponentCatalogEntry(64454517u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Mana Blast
+            new ComponentCatalogEntry(64454518u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Incantation of Nullify Item Magic
+            new ComponentCatalogEntry(64454519u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Incantation of Nullify Life Magic Self
+            new ComponentCatalogEntry(64454520u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Incantation of Nullify Creature Magic Self
+            new ComponentCatalogEntry(64454521u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Armor Breach
+            new ComponentCatalogEntry(64454522u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Arcane Pyramid
+            new ComponentCatalogEntry(64454523u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Blade Arc I
+            new ComponentCatalogEntry(64454524u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Thousand Fists
+            new ComponentCatalogEntry(64454525u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Torrential Acid
+            new ComponentCatalogEntry(64454526u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Flame Chain
+            new ComponentCatalogEntry(64454527u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Spectral Flame
+            new ComponentCatalogEntry(64454528u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Violet Rain
+            new ComponentCatalogEntry(64454529u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Incantation of Corrosion
+            new ComponentCatalogEntry(64454530u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Incantation of Corruption
+            new ComponentCatalogEntry(64454531u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Incantation of Destructive Curse
+            new ComponentCatalogEntry(64454532u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Incantation of Festering Curse
+            new ComponentCatalogEntry(64454533u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Incantation of Weakening Curse
+            new ComponentCatalogEntry(64454534u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Incantation of Brittlemail
+            new ComponentCatalogEntry(64454535u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Incantation of Spirit Loather
+            new ComponentCatalogEntry(64454536u, "ParagonGem"),   // Gem of the 50th Tier Paragon for Armor -> Incantation of Blood Loather
+            new ComponentCatalogEntry(64454537u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Breath of Renewal
+            new ComponentCatalogEntry(64454538u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Robustification
+            new ComponentCatalogEntry(64454539u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Mana Blast
+            new ComponentCatalogEntry(64454540u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Incantation of Nullify Item Magic
+            new ComponentCatalogEntry(64454541u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Incantation of Nullify Life Magic Self
+            new ComponentCatalogEntry(64454542u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Incantation of Nullify Creature Magic Self
+            new ComponentCatalogEntry(64454543u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Armor Breach
+            new ComponentCatalogEntry(64454544u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Arcane Pyramid
+            new ComponentCatalogEntry(64454545u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Blade Arc I
+            new ComponentCatalogEntry(64454546u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Thousand Fists
+            new ComponentCatalogEntry(64454547u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Torrential Acid
+            new ComponentCatalogEntry(64454548u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Flame Chain
+            new ComponentCatalogEntry(64454549u, "ParagonGem"),   // Clouded 50th Tier Paragon Armor Gem -> Spectral Flame
+
             // Split arrows - both write SplitArrowCount +1 as an ADD, repeatable to 10.
             new ComponentCatalogEntry(21085u, "Split"),            // Salvaged White Quartz (also Cleaving)
             new ComponentCatalogEntry(21081u, "Split"),            // Salvaged Tiger Eye
 
             new ComponentCatalogEntry(227190065u, "GemBag"),       // Bag of Abyssal-Touched Gems
+
+            // EVERY tinker and imbue in the game (owner 2026-10-05). Generated from the world DB (every
+            // TinkeringMaterial salvage + every Foolproof) plus the non-salvage items that change T11 gear
+            // (ZoneControl\T11_Tinker_Matrix_2026-10-05.md). Candidates only - nothing here is blocked until
+            // the owner ticks it (or its group) in GM Tools > Crafting > Components.
+            new ComponentCatalogEntry(29582u, "ArmorRend"),           // Sunstone - Salvaged, 100-bag
+
+            new ComponentCatalogEntry(30096u, "Imbue"),               // Black Opal - Foolproof
+            new ComponentCatalogEntry(36621u, "Imbue"),               // Black Opal - Foolproof (alt)
+            new ComponentCatalogEntry(21040u, "Imbue"),               // Black Opal - Salvaged
+            new ComponentCatalogEntry(29573u, "Imbue"),               // Black Opal - Salvaged, 100-bag
+            new ComponentCatalogEntry(30098u, "Imbue"),               // Fire Opal - Foolproof
+            new ComponentCatalogEntry(36623u, "Imbue"),               // Fire Opal - Foolproof (alt)
+            new ComponentCatalogEntry(21049u, "Imbue"),               // Fire Opal - Salvaged
+            new ComponentCatalogEntry(29575u, "Imbue"),               // Fire Opal - Salvaged, 100-bag
+            new ComponentCatalogEntry(30101u, "Imbue"),               // Peridot - Foolproof
+            new ComponentCatalogEntry(36634u, "Imbue"),               // Peridot - Foolproof (alt)
+            new ComponentCatalogEntry(21066u, "Imbue"),               // Peridot - Salvaged
+            new ComponentCatalogEntry(30105u, "Imbue"),               // Yellow Topaz - Foolproof
+            new ComponentCatalogEntry(36635u, "Imbue"),               // Yellow Topaz - Foolproof (alt)
+            new ComponentCatalogEntry(21088u, "Imbue"),               // Yellow Topaz - Salvaged
+            new ComponentCatalogEntry(30106u, "Imbue"),               // Zircon - Foolproof
+            new ComponentCatalogEntry(36636u, "Imbue"),               // Zircon - Foolproof (alt)
+            new ComponentCatalogEntry(21089u, "Imbue"),               // Zircon - Salvaged
+
+            new ComponentCatalogEntry(21034u, "Tinker"),              // Agate - Salvaged
+            new ComponentCatalogEntry(20980u, "Tinker"),              // Alabaster - Salvaged
+            new ComponentCatalogEntry(21035u, "Tinker"),              // Amber - Salvaged
+            new ComponentCatalogEntry(70737u, "Tinker"),              // Amber - Salvaged (alt)
+            new ComponentCatalogEntry(21036u, "Tinker"),              // Amethyst - Salvaged
+            new ComponentCatalogEntry(20981u, "Tinker"),              // Armoredillo Hide - Salvaged
+            new ComponentCatalogEntry(21038u, "Tinker"),              // Azurite - Salvaged
+            new ComponentCatalogEntry(21041u, "Tinker"),              // Bloodstone - Salvaged
+            new ComponentCatalogEntry(21042u, "Tinker"),              // Brass - Salvaged
+            new ComponentCatalogEntry(36570u, "Tinker"),              // Brass - Salvaged (alt)
+            new ComponentCatalogEntry(20982u, "Tinker"),              // Bronze - Salvaged
+            new ComponentCatalogEntry(21043u, "Tinker"),              // Carnelian - Salvaged
+            new ComponentCatalogEntry(20983u, "Tinker"),              // Ceramic - Salvaged
+            new ComponentCatalogEntry(21044u, "Tinker"),              // Citrine - Salvaged
+            new ComponentCatalogEntry(21045u, "Tinker"),              // Copper - Salvaged
+            new ComponentCatalogEntry(64454630u, "Tinker"),           // Corrupted Brass Salvage
+            new ComponentCatalogEntry(64454634u, "Tinker"),           // Corrupted Granite Salvage
+            new ComponentCatalogEntry(64454640u, "Tinker"),           // Corrupted Green Garnet Salvage
+            new ComponentCatalogEntry(64454632u, "Tinker"),           // Corrupted Iron Salvage
+            new ComponentCatalogEntry(64454638u, "Tinker"),           // Corrupted Mahogany Salvage
+            new ComponentCatalogEntry(64454636u, "Tinker"),           // Corrupted Velvet Salvage
+            new ComponentCatalogEntry(21046u, "Tinker"),              // Diamond - Salvaged
+            new ComponentCatalogEntry(70738u, "Tinker"),              // Diamond - Salvaged (alt)
+            new ComponentCatalogEntry(21047u, "Tinker"),              // Ebony - Salvaged
+            new ComponentCatalogEntry(20984u, "Tinker"),              // Gold - Salvaged
+            new ComponentCatalogEntry(20985u, "Tinker"),              // Granite - Salvaged
+            new ComponentCatalogEntry(33620u, "Tinker"),              // Granite - Salvaged (alt)
+            new ComponentCatalogEntry(29576u, "Tinker"),              // Granite - Salvaged, 100-bag
+            new ComponentCatalogEntry(21050u, "Tinker"),              // Green Garnet - Salvaged
+            new ComponentCatalogEntry(36571u, "Tinker"),              // Green Garnet - Salvaged (alt)
+            new ComponentCatalogEntry(21051u, "Tinker"),              // Green Jade - Salvaged
+            new ComponentCatalogEntry(21052u, "Tinker"),              // Gromnie Hide - Salvaged
+            new ComponentCatalogEntry(41777u, "Tinker"),              // Gromnie Hide - Salvaged (alt)
+            new ComponentCatalogEntry(21053u, "Tinker"),              // Hematite - Salvaged
+            new ComponentCatalogEntry(30092u, "Tinker"),              // Infinite Ivory
+            new ComponentCatalogEntry(30093u, "Tinker"),              // Infinite Leather
+            new ComponentCatalogEntry(20986u, "Tinker"),              // Iron - Salvaged
+            new ComponentCatalogEntry(36572u, "Tinker"),              // Iron - Salvaged (alt)
+            new ComponentCatalogEntry(21055u, "Tinker"),              // Ivory - Salvaged
+            new ComponentCatalogEntry(21057u, "Tinker"),              // Lapis Lazuli - Salvaged
+            new ComponentCatalogEntry(21058u, "Tinker"),              // Lavender Jade - Salvaged
+            new ComponentCatalogEntry(21059u, "Tinker"),              // Leather - Salvaged
+            new ComponentCatalogEntry(20987u, "Tinker"),              // Linen - Salvaged
+            new ComponentCatalogEntry(20988u, "Tinker"),              // Mahogany - Salvaged
+            new ComponentCatalogEntry(29579u, "Tinker"),              // Mahogany - Salvaged, 100-bag
+            new ComponentCatalogEntry(21060u, "Tinker"),              // Malachite - Salvaged
+            new ComponentCatalogEntry(21061u, "Tinker"),              // Marble - Salvaged
+            new ComponentCatalogEntry(21062u, "Tinker"),              // Moonstone - Salvaged
+            new ComponentCatalogEntry(34965u, "Tinker"),              // Mucor-altered Mahogany
+            new ComponentCatalogEntry(87422u, "Tinker"),              // Mucor-altered Opal
+            new ComponentCatalogEntry(20989u, "Tinker"),              // Oak - Salvaged
+            new ComponentCatalogEntry(21063u, "Tinker"),              // Obsidian - Salvaged
+            new ComponentCatalogEntry(21065u, "Tinker"),              // Opal - Salvaged
+            new ComponentCatalogEntry(36574u, "Tinker"),              // Opal - Salvaged (alt)
+            new ComponentCatalogEntry(20990u, "Tinker"),              // Pine - Salvaged
+            new ComponentCatalogEntry(21067u, "Tinker"),              // Porcelain - Salvaged
+            new ComponentCatalogEntry(21068u, "Tinker"),              // Pyreal - Salvaged
+            new ComponentCatalogEntry(41772u, "Tinker"),              // Pyreal - Salvaged (alt)
+            new ComponentCatalogEntry(21070u, "Tinker"),              // Red Jade - Salvaged
+            new ComponentCatalogEntry(20991u, "Tinker"),              // Reedshark Hide - Salvaged
+            new ComponentCatalogEntry(64454628u, "Tinker"),           // Refined White Jade Salvage
+            new ComponentCatalogEntry(21071u, "Tinker"),              // Rose Quartz - Salvaged
+            new ComponentCatalogEntry(21072u, "Tinker"),              // Ruby - Salvaged
+            new ComponentCatalogEntry(70741u, "Tinker"),              // Ruby - Salvaged (alt)
+            new ComponentCatalogEntry(21073u, "Tinker"),              // Sandstone - Salvaged
+            new ComponentCatalogEntry(43946u, "Tinker"),              // Sandstone - Salvaged (alt)
+            new ComponentCatalogEntry(21074u, "Tinker"),              // Sapphire - Salvaged
+            new ComponentCatalogEntry(70736u, "Tinker"),              // Sapphire - Salvaged (alt)
+            new ComponentCatalogEntry(20992u, "Tinker"),              // Satin - Salvaged
+            new ComponentCatalogEntry(21075u, "Tinker"),              // Serpentine - Salvaged
+            new ComponentCatalogEntry(21076u, "Tinker"),              // Silk - Salvaged
+            new ComponentCatalogEntry(21077u, "Tinker"),              // Silver - Salvaged
+            new ComponentCatalogEntry(21078u, "Tinker"),              // Smoky Quartz - Salvaged
+            new ComponentCatalogEntry(20993u, "Tinker"),              // Steel - Salvaged
+            new ComponentCatalogEntry(33621u, "Tinker"),              // Steel - Salvaged (alt)
+            new ComponentCatalogEntry(9920993u, "Tinker"),            // Steel - Salvaged (alt)
+            new ComponentCatalogEntry(29581u, "Tinker"),              // Steel - Salvaged, 100-bag
+            new ComponentCatalogEntry(21080u, "Tinker"),              // Teak - Salvaged
+            new ComponentCatalogEntry(21082u, "Tinker"),              // Tourmaline - Salvaged
+            new ComponentCatalogEntry(21083u, "Tinker"),              // Turquoise - Salvaged
+            new ComponentCatalogEntry(20994u, "Tinker"),              // Velvet - Salvaged
+            new ComponentCatalogEntry(36573u, "Tinker"),              // Velvet - Salvaged (alt)
+            new ComponentCatalogEntry(21084u, "Tinker"),              // White Jade - Salvaged
+            new ComponentCatalogEntry(20995u, "Tinker"),              // Wool - Salvaged
+            new ComponentCatalogEntry(21087u, "Tinker"),              // Yellow Garnet - Salvaged
+
+            new ComponentCatalogEntry(53016u, "Amber"),               // Corrupted Amber: Bracers of the Corrupted Heart
+            new ComponentCatalogEntry(53021u, "Amber"),               // Corrupted Amber: Breastplate of the Corrupted Soul
+            new ComponentCatalogEntry(53017u, "Amber"),               // Corrupted Amber: Gauntlets of the Corrupted Heart
+            new ComponentCatalogEntry(53022u, "Amber"),               // Corrupted Amber: Girth of the Corrupted Soul
+            new ComponentCatalogEntry(53023u, "Amber"),               // Corrupted Amber: Greaves of the Corrupted Soul
+            new ComponentCatalogEntry(53018u, "Amber"),               // Corrupted Amber: Helm of the Corrupted Heart
+            new ComponentCatalogEntry(53019u, "Amber"),               // Corrupted Amber: Pauldrons of the Corrupted Heart
+            new ComponentCatalogEntry(53020u, "Amber"),               // Corrupted Amber: Sollerets of the Corrupted Heart
+            new ComponentCatalogEntry(53024u, "Amber"),               // Corrupted Amber: Tassets of the Corrupted Soul
+            new ComponentCatalogEntry(53452u, "Amber"),               // Corrupted Amber: Weapon of the Corrupted Heart
+            new ComponentCatalogEntry(53453u, "Amber"),               // Corrupted Amber: Weapon of the Corrupted Soul
+            new ComponentCatalogEntry(53066u, "Amber"),               // Empowered Amber: Bracers of Life
+            new ComponentCatalogEntry(53067u, "Amber"),               // Empowered Amber: Breastplate of Life
+            new ComponentCatalogEntry(53068u, "Amber"),               // Empowered Amber: Gauntlets of Life
+            new ComponentCatalogEntry(53069u, "Amber"),               // Empowered Amber: Girth of Life
+            new ComponentCatalogEntry(53070u, "Amber"),               // Empowered Amber: Greaves of Life
+            new ComponentCatalogEntry(53071u, "Amber"),               // Empowered Amber: Helm of Life
+            new ComponentCatalogEntry(53072u, "Amber"),               // Empowered Amber: Pauldrons of Life
+            new ComponentCatalogEntry(53440u, "Amber"),               // Empowered Amber: Shield Reinforcement
+            new ComponentCatalogEntry(53073u, "Amber"),               // Empowered Amber: Sollerets of Life
+            new ComponentCatalogEntry(53074u, "Amber"),               // Empowered Amber: Tassets of Life
+            new ComponentCatalogEntry(53147u, "Amber"),               // Guardian of Ash
+            new ComponentCatalogEntry(53155u, "Amber"),               // Luminous Amber of the 10th Tier Paragon
+            new ComponentCatalogEntry(53156u, "Amber"),               // Luminous Amber of the 11th Tier Paragon
+            new ComponentCatalogEntry(53157u, "Amber"),               // Luminous Amber of the 12th Tier Paragon
+            new ComponentCatalogEntry(53158u, "Amber"),               // Luminous Amber of the 13th Tier Paragon
+            new ComponentCatalogEntry(53159u, "Amber"),               // Luminous Amber of the 14th Tier Paragon
+            new ComponentCatalogEntry(53160u, "Amber"),               // Luminous Amber of the 15th Tier Paragon
+            new ComponentCatalogEntry(53161u, "Amber"),               // Luminous Amber of the 16th Tier Paragon
+            new ComponentCatalogEntry(53162u, "Amber"),               // Luminous Amber of the 17th Tier Paragon
+            new ComponentCatalogEntry(53163u, "Amber"),               // Luminous Amber of the 18th Tier Paragon
+            new ComponentCatalogEntry(53164u, "Amber"),               // Luminous Amber of the 19th Tier Paragon
+            new ComponentCatalogEntry(53145u, "Amber"),               // Luminous Amber of the 1st Tier Paragon
+            new ComponentCatalogEntry(53165u, "Amber"),               // Luminous Amber of the 20th Tier Paragon
+            new ComponentCatalogEntry(53166u, "Amber"),               // Luminous Amber of the 21st Tier Paragon
+            new ComponentCatalogEntry(53167u, "Amber"),               // Luminous Amber of the 22nd Tier Paragon
+            new ComponentCatalogEntry(53168u, "Amber"),               // Luminous Amber of the 23rd Tier Paragon
+            new ComponentCatalogEntry(53169u, "Amber"),               // Luminous Amber of the 24th Tier Paragon
+            new ComponentCatalogEntry(53170u, "Amber"),               // Luminous Amber of the 25th Tier Paragon
+            new ComponentCatalogEntry(53171u, "Amber"),               // Luminous Amber of the 26th Tier Paragon
+            new ComponentCatalogEntry(53172u, "Amber"),               // Luminous Amber of the 27th Tier Paragon
+            new ComponentCatalogEntry(53173u, "Amber"),               // Luminous Amber of the 28th Tier Paragon
+            new ComponentCatalogEntry(53174u, "Amber"),               // Luminous Amber of the 29th Tier Paragon
+            new ComponentCatalogEntry(53146u, "Amber"),               // Luminous Amber of the 2nd Tier Paragon
+            new ComponentCatalogEntry(53175u, "Amber"),               // Luminous Amber of the 30th Tier Paragon
+            new ComponentCatalogEntry(53176u, "Amber"),               // Luminous Amber of the 31st Tier Paragon
+            new ComponentCatalogEntry(53177u, "Amber"),               // Luminous Amber of the 32nd Tier Paragon
+            new ComponentCatalogEntry(53178u, "Amber"),               // Luminous Amber of the 33rd Tier Paragon
+            new ComponentCatalogEntry(53179u, "Amber"),               // Luminous Amber of the 34th Tier Paragon
+            new ComponentCatalogEntry(53180u, "Amber"),               // Luminous Amber of the 35th Tier Paragon
+            new ComponentCatalogEntry(53181u, "Amber"),               // Luminous Amber of the 36th Tier Paragon
+            new ComponentCatalogEntry(53182u, "Amber"),               // Luminous Amber of the 37th Tier Paragon
+            new ComponentCatalogEntry(53183u, "Amber"),               // Luminous Amber of the 38th Tier Paragon
+            new ComponentCatalogEntry(53184u, "Amber"),               // Luminous Amber of the 39th Tier Paragon
+            new ComponentCatalogEntry(53148u, "Amber"),               // Luminous Amber of the 3rd Tier Paragon
+            new ComponentCatalogEntry(53185u, "Amber"),               // Luminous Amber of the 40th Tier Paragon
+            new ComponentCatalogEntry(53186u, "Amber"),               // Luminous Amber of the 41st Tier Paragon
+            new ComponentCatalogEntry(53187u, "Amber"),               // Luminous Amber of the 42nd Tier Paragon
+            new ComponentCatalogEntry(53188u, "Amber"),               // Luminous Amber of the 43rd Tier Paragon
+            new ComponentCatalogEntry(53189u, "Amber"),               // Luminous Amber of the 44th Tier Paragon
+            new ComponentCatalogEntry(53190u, "Amber"),               // Luminous Amber of the 45th Tier Paragon
+            new ComponentCatalogEntry(53191u, "Amber"),               // Luminous Amber of the 46th Tier Paragon
+            new ComponentCatalogEntry(53192u, "Amber"),               // Luminous Amber of the 47th Tier Paragon
+            new ComponentCatalogEntry(53193u, "Amber"),               // Luminous Amber of the 48th Tier Paragon
+            new ComponentCatalogEntry(53194u, "Amber"),               // Luminous Amber of the 49th Tier Paragon
+            new ComponentCatalogEntry(53149u, "Amber"),               // Luminous Amber of the 4th Tier Paragon
+            new ComponentCatalogEntry(53195u, "Amber"),               // Luminous Amber of the 50th Tier Paragon
+            new ComponentCatalogEntry(53150u, "Amber"),               // Luminous Amber of the 5th Tier Paragon
+            new ComponentCatalogEntry(53151u, "Amber"),               // Luminous Amber of the 6th Tier Paragon
+            new ComponentCatalogEntry(53152u, "Amber"),               // Luminous Amber of the 7th Tier Paragon
+            new ComponentCatalogEntry(53153u, "Amber"),               // Luminous Amber of the 8th Tier Paragon
+            new ComponentCatalogEntry(53154u, "Amber"),               // Luminous Amber of the 9th Tier Paragon
+            new ComponentCatalogEntry(53293u, "Amber"),               // Luminous Amber: Bracers of Thunderous Blows
+            new ComponentCatalogEntry(53297u, "Amber"),               // Luminous Amber: Breastplate of the Bulwark
+            new ComponentCatalogEntry(53299u, "Amber"),               // Luminous Amber: Gauntlets of the Storm
+            new ComponentCatalogEntry(53298u, "Amber"),               // Luminous Amber: Girth of the Bulwark
+            new ComponentCatalogEntry(53295u, "Amber"),               // Luminous Amber: Greaves of the Tower
+            new ComponentCatalogEntry(53301u, "Amber"),               // Luminous Amber: Helm of Healing
+            new ComponentCatalogEntry(53294u, "Amber"),               // Luminous Amber: Pauldrons of Thunderous Blows
+            new ComponentCatalogEntry(53441u, "Amber"),               // Luminous Amber: Shield Fortification
+            new ComponentCatalogEntry(53300u, "Amber"),               // Luminous Amber: Sollerets of the Storm
+            new ComponentCatalogEntry(53296u, "Amber"),               // Luminous Amber: Tassets of the Tower
+
+            new ComponentCatalogEntry(44636u, "Special"),             // A'nekshay Slayer Stone
+            new ComponentCatalogEntry(64454900u, "Special"),          // Admin Only Turquiose Gem
+            new ComponentCatalogEntry(64454901u, "Special"),          // Admin Only White Quartz Gem
+            new ComponentCatalogEntry(64454902u, "Special"),          // Admin Only Yellow Garnet Gem
+            new ComponentCatalogEntry(34042u, "Special"),             // Black Skull of Xikma
+            new ComponentCatalogEntry(23850u, "Special"),             // Brilliant Shard
+            new ComponentCatalogEntry(23855u, "Special"),             // Charged Shard
+            new ComponentCatalogEntry(23854u, "Special"),             // Chilled Shard
+            new ComponentCatalogEntry(227190160u, "Special"),         // Concentrated Ember Essence
+            new ComponentCatalogEntry(64454512u, "Special"),          // DH Fix of the 48th Tier Paragon for Armor
+            new ComponentCatalogEntry(98854501u, "Special"),          // Dev Fix Gem of the 48th Tier Paragon for Armor
+            new ComponentCatalogEntry(99954501u, "Special"),          // Dev Fix Gem of the 48th Tier Paragon for Armor
+            new ComponentCatalogEntry(227190088u, "Special"),         // Fetish of the Corrupt Idols
+            new ComponentCatalogEntry(27795u, "Special"),             // Fetish of the Dark Idols
+            new ComponentCatalogEntry(52757u, "Special"),             // Gauntlet Brutality Amplification
+            new ComponentCatalogEntry(52758u, "Special"),             // Gauntlet Defense Amplification
+            new ComponentCatalogEntry(94454996u, "Special"),          // Gem of Paragon Proc Swap
+            new ComponentCatalogEntry(94454995u, "Special"),          // Gem of Paragon Self Proc
+            new ComponentCatalogEntry(35492u, "Special"),             // Gem of Spectral Force
+            new ComponentCatalogEntry(53305u, "Special"),             // Gem of Verdant Force
+            new ComponentCatalogEntry(64454101u, "Special"),          // Gem of the 1st Tier Paragon for Armor
+            new ComponentCatalogEntry(644541011u, "Special"),         // Gem of the 1st Tier Paragon for Armor
+            new ComponentCatalogEntry(33688u, "Special"),             // Greater Mukkir Slayer Stone
+            new ComponentCatalogEntry(23856u, "Special"),             // Hardened Shard
+            new ComponentCatalogEntry(53415u, "Special"),             // Horizon's Edge Amplification
+            new ComponentCatalogEntry(90000075u, "Special"),          // Imbued Bloodstone Shard
+            new ComponentCatalogEntry(32937u, "Special"),             // Lucky White Rabbit's Foot
+            new ComponentCatalogEntry(35491u, "Special"),             // Maelstrom of Souls Gem
+            new ComponentCatalogEntry(36631u, "Special"),             // Magic Defense Weapon Augmentation
+            new ComponentCatalogEntry(41494u, "Special"),             // Major Item Tinkering Armature
+            new ComponentCatalogEntry(41497u, "Special"),             // Major Item Tinkering Armature
+            new ComponentCatalogEntry(41499u, "Special"),             // Major Item Tinkering Armature
+            new ComponentCatalogEntry(41502u, "Special"),             // Major Item Tinkering Armature
+            new ComponentCatalogEntry(71420u, "Special"),             // Major Item Tinkering Armature
+            new ComponentCatalogEntry(71421u, "Special"),             // Major Item Tinkering Armature
+            new ComponentCatalogEntry(41493u, "Special"),             // Minor Item Tinkering Armature
+            new ComponentCatalogEntry(41501u, "Special"),             // Minor Item Tinkering Armature
+            new ComponentCatalogEntry(41506u, "Special"),             // Minor Item Tinkering Armature
+            new ComponentCatalogEntry(71425u, "Special"),             // Minor Item Tinkering Armature
+            new ComponentCatalogEntry(71426u, "Special"),             // Minor Item Tinkering Armature
+            new ComponentCatalogEntry(71427u, "Special"),             // Minor Item Tinkering Armature
+            new ComponentCatalogEntry(36633u, "Special"),             // Missile Defense Weapon Augmentation
+            new ComponentCatalogEntry(64454642u, "Special"),          // Mist of the Abyss
+            new ComponentCatalogEntry(41492u, "Special"),             // Moderate Item Tinkering Armature
+            new ComponentCatalogEntry(41498u, "Special"),             // Moderate Item Tinkering Armature
+            new ComponentCatalogEntry(41500u, "Special"),             // Moderate Item Tinkering Armature
+            new ComponentCatalogEntry(71422u, "Special"),             // Moderate Item Tinkering Armature
+            new ComponentCatalogEntry(71423u, "Special"),             // Moderate Item Tinkering Armature
+            new ComponentCatalogEntry(71424u, "Special"),             // Moderate Item Tinkering Armature
+            new ComponentCatalogEntry(52756u, "Special"),             // Nature's Wrath Amplification
+            new ComponentCatalogEntry(23852u, "Special"),             // Plated Shard
+            new ComponentCatalogEntry(98760169u, "Special"),          // Pure Quiddity Essence
+            new ComponentCatalogEntry(23849u, "Special"),             // Scored Shard
+            new ComponentCatalogEntry(23853u, "Special"),             // Seared Shard
+            new ComponentCatalogEntry(719220022u, "Special"),         // Shadow Armor Infusion
+            new ComponentCatalogEntry(719220032u, "Special"),         // Shadow Damage Infusion
+            new ComponentCatalogEntry(719220074u, "Special"),         // Shadow Nether Infusion
+            new ComponentCatalogEntry(719220037u, "Special"),         // Shadow Precision Infusion
+            new ComponentCatalogEntry(719220065u, "Special"),         // Shadow Protection Infusion
+            new ComponentCatalogEntry(719220029u, "Special"),         // Shadow Vitality Infusion
+            new ComponentCatalogEntry(23851u, "Special"),             // Solid Shard
+            new ComponentCatalogEntry(42038u, "Special"),             // Spectral Skull
+            new ComponentCatalogEntry(3110215u, "Special"),           // Vial of Flamma Spirit
+            new ComponentCatalogEntry(3110214u, "Special"),           // Vial of Olthoi Spit
         };
 
         /// <summary>The catalog, for the wire. Deliberately NOT filtered against the blocked set - the
@@ -493,6 +808,38 @@ namespace ACE.Server.Managers.ZoneControl
                 _componentsAuthored = true;
                 Save();
                 return true;
+            }
+        }
+
+        /// <summary>The catalog WCIDs filed under <paramref name="group"/> (case-insensitive). Empty when no
+        /// such group exists.</summary>
+        public static List<uint> CatalogGroup(string group)
+            => ComponentCatalog.Where(e => string.Equals(e.Group, group, StringComparison.OrdinalIgnoreCase))
+                               .Select(e => e.Wcid).ToList();
+
+        /// <summary>True when <paramref name="wcid"/> is in the catalog (the plugin labels those itself).</summary>
+        public static bool InCatalog(uint wcid) => CatalogWcids.Contains(wcid);
+
+        private static readonly HashSet<uint> CatalogWcids = new HashSet<uint>(ComponentCatalog.Select(e => e.Wcid));
+
+        /// <summary>Add or remove many WCIDs with ONE shard write (a catalog group can be ~100 rows, and
+        /// AddComponent saves per call). Returns how many actually changed; 0 writes nothing.</summary>
+        public static int SetComponents(IEnumerable<uint> wcids, bool blocked)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var next = new HashSet<uint>(_components);
+                var changed = 0;
+                foreach (var w in wcids)
+                    if (blocked ? next.Add(w) : next.Remove(w))
+                        changed++;
+                if (changed == 0)
+                    return 0;
+                _components = next;
+                _componentsAuthored = true;
+                Save();
+                return changed;
             }
         }
 

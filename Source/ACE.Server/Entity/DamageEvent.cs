@@ -791,6 +791,15 @@ namespace ACE.Server.Entity
                 playerAttacker.ZcTryLifeOnHit(defender);            // key 48 Life on Hit (heals the attacker; cooldown inside)
             }
 
+            // zone / tier / rank DAMAGE TAKEN multiplier (owner 2026-10-05, stat monster_damage_taken_mult): the whole landed hit
+            // on a Zone Control monster, key 44 included - the "more HP" knob. 1.0 unless set.
+            if (Damage > 0 && playerDefender == null)
+            {
+                var takenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(defender);
+                if (takenMult != 1f)
+                    Damage *= takenMult;
+            }
+
             //Console.WriteLine($"[DEBUG] Final Damage: {Damage}");
             return Damage;
         }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 using ACE.Common;
@@ -356,6 +356,53 @@ namespace ACE.Server.Managers.ZoneControl
         /// GetMatchingRends uses so a multi-type weapon picks the same element for both cards. Returns
         /// false for a weapon with no resolvable element (a plain bow takes its element from the ammo,
         /// a generic caster has none) - those roll no proc, exactly as they roll no rend.</summary>
+        // key 54 Cast on Strike on JEWELRY (owner 2026-10-05): "spells = ring + streak + arc, random element", damage "like a
+        // hand-cast of that spell by the wearer" - so the level-8 streak / arc a caster hand-casts (no B value: the projectile and
+        // ring paths fall through to the spell's own base + the wearer's augs), and the same ring a weapon proc uses.
+        private static readonly (DamageType Dt, SpellId Streak, SpellId Arc)[] JewelProcSpells =
+        {
+            (DamageType.Slash, SpellId.WhirlingBladeStreak8, SpellId.BladeArc8),
+            (DamageType.Pierce, SpellId.ForceStreak8, SpellId.ForceArc8),
+            (DamageType.Bludgeon, SpellId.ShockwaveStreak8, SpellId.ShockArc8),
+            (DamageType.Acid, SpellId.AcidStreak8, SpellId.AcidArc8),
+            (DamageType.Cold, SpellId.FrostStreak8, SpellId.FrostArc8),
+            (DamageType.Electric, SpellId.LightningStreak8, SpellId.LightningArc8),
+            (DamageType.Fire, SpellId.FlameStreak8, SpellId.FlameArc8),
+            (DamageType.Nether, SpellId.NetherStreak8, SpellId.NetherArc8),
+        };
+
+        /// <summary>Key 54 (jewelry Cast on Strike): stamps a random element x {streak, arc, ring} as the piece's ProcSpell, the rate
+        /// (jewelry_proc_rate + U(0, jewelry_proc_rate_rand), 0..1) and the resist spellcraft. Called by the drop line stamp and
+        /// the Salvage Bag Add; <paramref name="p"/> null = the defaults. Never overwrites an existing proc (retail / crafted).</summary>
+        public static bool StampJewelProc(WorldObject wo, EvaluatedProfile p, int tier)
+        {
+            if (wo == null || wo.ProcSpell != null)
+                return false;
+            var row = JewelProcSpells[ThreadSafeRandom.Next(0, JewelProcSpells.Length - 1)];
+            uint spell;
+            switch (ThreadSafeRandom.Next(0, 2))
+            {
+                case 0: spell = (uint)row.Streak; break;
+                case 1: spell = (uint)row.Arc; break;
+                default: spell = TryGetProcSpells(row.Dt, out _, out var ring) ? ring : (uint)row.Arc; break;
+            }
+            var rate = p?.GetT(ZoneStat.JewelryProcRate, 0.10, tier) ?? 0.10;
+            var rand = Math.Max(0.0, p?.GetT(ZoneStat.JewelryProcRateRand, 0.05, tier) ?? 0.05);
+            wo.ProcSpell = spell;
+            wo.ProcSpellSelfTargeted = false;
+            wo.ProcSpellRate = Math.Clamp(rate + rand * ThreadSafeRandom.Next(0.0f, 1.0f), 0.0, 1.0);
+            wo.ItemSpellcraft = (int)Math.Round(Math.Max(0.0, p?.GetT(ZoneStat.JewelryProcSpellcraft, 9999, tier) ?? 9999));
+            return true;
+        }
+
+        /// <summary>The Salvage Bag removed key 54: the proc goes with the line.</summary>
+        public static void ClearJewelProc(WorldObject wo)
+        {
+            wo.ProcSpell = null;
+            wo.ProcSpellRate = null;
+            wo.RemoveProperty(PropertyBool.ProcSpellSelfTargeted);
+        }
+
         public static bool TryGetProcSpells(DamageType dt, out uint arc, out uint ring)
         {
             foreach (var row in ProcSpellsByElement)
@@ -754,6 +801,9 @@ namespace ACE.Server.Managers.ZoneControl
                 // per-line slot rule (owner 2026-08-22): zone / Default override per key, else the catalog's ArmorOnly / JewelryOnly
                 if (!ZoneModifiers.SlotAllowed(ZoneModifiers.EffectiveSlotMask(def, p.ModifierSlots), pieceMask))
                     continue;
+                // key 54 jewelry Cast on Strike needs the one proc slot free - a retail / crafted proc is never replaced
+                if (def.Key == ZoneModifiers.JewelProcKey && wo.ProcSpell != null)
+                    continue;
                 // ALWAYS ROLLED (owner 2026-09-14): same chance cell, band and grade as any line, but they
                 // are not "a roll" - they never spend a cap slot and never count toward the floor.
                 if (def.Class == ZoneModifiers.ModifierClass.Always)
@@ -776,6 +826,8 @@ namespace ACE.Server.Managers.ZoneControl
                 // to the plain Stamp inside StampGraded (earned + frozen, never in the record).
                 var grade = ZoneStatResolver.RollGrade(lootTier, forceMax, ZoneStatResolver.GradeFloorOf(p));
                 ZoneModifiers.StampGraded(wo, def, grade, (min, max));
+                if (def.Key == ZoneModifiers.JewelProcKey)
+                    StampJewelProc(wo, p, lootTier);
             }
 
             // stamped first so they lead the line list, as they lead the plugin's Modifiers tab

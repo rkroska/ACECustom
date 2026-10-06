@@ -70,6 +70,14 @@ namespace ACE.Server.WorldObjects
                 && !creatureCaster.CanDamage(targetCreature))
                 return;
 
+            // T11+ LOW-TIER PROC RESIST (owner 2026-10-06: "the PROCs from those items get resisted, not all damage and spells"):
+            // a weapon / jewelry / cloak PROC from gear below T11 is always resisted by a governed v11+ monster - regardless of
+            // tryResist (cloaks skip it). Hand-casts and gems are never touched. Projectile procs are judged where they land
+            // (SpellProjectile.CalculateDamage, ApplyRingSpellAreaDamage).
+            if (fromProc && spell.NumProjectiles == 0 && (itemCaster ?? weapon) != null
+                && ACE.Server.Managers.ZoneControl.TierHitGate.BlockLowTierCast(this, target, spell, itemCaster ?? weapon))
+                return;
+
             // perform resistance check, if applicable
             if (tryResist && TryResistSpell(target, spell, itemCaster))
                 return;
@@ -565,6 +573,13 @@ namespace ACE.Server.WorldObjects
                 if (harmMult != 1f)
                     tryBoost = (int)Math.Round(tryBoost * (double)harmMult);
             }
+            // DAMAGE TAKEN multiplier (owner 2026-10-05): any Harm on a Zone Control monster
+            else if (tryBoost < 0 && spell.VitalDamageType == DamageType.Health && targetCreature != null && !(targetCreature is Player))
+            {
+                var harmTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(targetCreature);
+                if (harmTakenMult != 1f)
+                    tryBoost = (int)Math.Round(tryBoost * (double)harmTakenMult);
+            }
 
             var traceAfterResist = tryBoost;
 
@@ -930,6 +945,13 @@ namespace ACE.Server.WorldObjects
                 if (drainMult != 1f)
                     srcVitalChange = (uint)Math.Min(Math.Round(srcVitalChange * (double)drainMult), drainedPlayer.Health.Current);
             }
+            // DAMAGE TAKEN multiplier (owner 2026-10-05): any Drain Health on a Zone Control monster
+            else if (isDrain && spell.Source == PropertyAttribute2nd.Health && srcVitalChange > 0 && !(transferSource is Player))
+            {
+                var drainTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(transferSource);
+                if (drainTakenMult != 1f)
+                    srcVitalChange = (uint)Math.Min(Math.Round(srcVitalChange * (double)drainTakenMult), transferSource.Health.Current);
+            }
 
             // should healing resistances be applied here?
             var boostMod = isDrain ? (float)destination.GetResistanceMod(GetBoostResistanceType(spell.Destination)) : 1.0f;
@@ -1248,7 +1270,10 @@ namespace ACE.Server.WorldObjects
                     // untargeted (target is null), so fall back to the trigger TryProcOneSpell recorded.
                     // No exemption when the proc came off a non-projectile cast, which never had to reach
                     // its target (a vuln through a wall), see RingProcTriggerUnreached.
-                    losExempt: fromProc && !ringPlayer.RingProcTriggerUnreached ? (target ?? ringPlayer.RingProcTrigger) : null);
+                    losExempt: fromProc && !ringPlayer.RingProcTriggerUnreached ? (target ?? ringPlayer.RingProcTrigger) : null,
+                    // T11+ low-tier PROC resist (owner 2026-10-06): PROCS only - the real proccing item, separate from procWeapon,
+                    // which stays null for a retail proc ring by design (see zcProc above). A hand-cast ring is never gated.
+                    lowTierGate: fromProc, lowTierItem: weapon, lowTierBareHands: false);
             }
 
             if (spell.School == MagicSchool.LifeMagic)

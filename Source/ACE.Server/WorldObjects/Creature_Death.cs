@@ -1091,6 +1091,7 @@ namespace ACE.Server.WorldObjects
                     slotCounts.Bracelet = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotBracelet, slotCounts.Bracelet);
                     slotCounts.Trinket = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotTrinket, slotCounts.Trinket);
                     slotCounts.Cloak = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotCloak, slotCounts.Cloak);
+                    slotCounts.Clothing = Slot(ACE.Server.Managers.ZoneScaling.ZoneStat.LootSlotClothing, slotCounts.Clothing);
                 }
                 // LEGACY per-slot mode has no budget: its aggregate must respect the corpse cap too (the budget path
                 // clamps below). Weapons is a multiplier over the nine families.
@@ -1098,11 +1099,11 @@ namespace ACE.Server.WorldObjects
                 {
                     var perSlotTotal = slotCounts.Weapons * 9 + slotCounts.Helm + slotCounts.Chest + slotCounts.Shoulder + slotCounts.Bracer
                         + slotCounts.Glove + slotCounts.Girth + slotCounts.UpperLeg + slotCounts.LowerLeg + slotCounts.Boot + slotCounts.Shield
-                        + slotCounts.Amulet + slotCounts.Ring + slotCounts.Bracelet + slotCounts.Trinket + slotCounts.Cloak;
+                        + slotCounts.Amulet + slotCounts.Ring + slotCounts.Bracelet + slotCounts.Trinket + slotCounts.Cloak + slotCounts.Clothing;
                     if (perSlotTotal > ZoneCorpseItemCap)
                     {
                         log.Warn($"[ZoneLoot] {Name} (0x{Guid}): per-slot counts total {perSlotTotal}, above the corpse cap {ZoneCorpseItemCap}; rolling a capped budget instead.");
-                        slotCounts = LootGenerationFactory.RollBudgetedCounts(slotCounts, ZoneCorpseItemCap, 1.0, 1.0, 1.0, 1.0);
+                        slotCounts = LootGenerationFactory.RollBudgetedCounts(slotCounts, ZoneCorpseItemCap, 1.0, 1.0, 1.0, 1.0, 0.5);
                     }
                 }
 
@@ -1131,7 +1132,9 @@ namespace ACE.Server.WorldObjects
                         zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightWeapon, 1.0),
                         zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightArmor, 1.0),
                         zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightJewelry, 1.0),
-                        zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightCloak, 1.0));
+                        zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightCloak, 1.0),
+                        // 0.5 by default: retail T10 drops clothing ~13 pct, about half of armor's 24 (TreasureItemTypeChances)
+                        zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightClothing, 0.5));
                 }
 
                 // rank loot (owner 2026-09-29): the kill's grade floor reaches the value rolls inside item creation
@@ -1234,7 +1237,11 @@ namespace ACE.Server.WorldObjects
                     // stamps layer ON TOP of it rather than being clobbered.
                     var isSpecial = specialPiece != null && ReferenceEquals(wo, specialPiece);
                     if (effectiveTreasure.Tier >= LootGenerationFactory.ZoneLootSetMinTier)
+                    {
                         LootGenerationFactory.ApplyZoneGearStats(wo, effectiveTreasure.Tier, p: zoneLoot);
+                        // item spells (owner 2026-10-05): random cantrips from the slot's list, count + level per zone
+                        LootGenerationFactory.ApplyZoneSpells(wo, effectiveTreasure.Tier, zoneLoot);
+                    }
 
                     // Zone Control loot: post-roll per-item mutations (weapon stats, AL, workmanship, coins,
                     // value, and the low-chance special-property rolls)
@@ -1282,8 +1289,8 @@ namespace ACE.Server.WorldObjects
                         // A future pass will APPEND extra lines to the bottom (LongDesc renders
                         // last) without touching the default layout.
 
-                        // plain item name, no material (no salvage) - the tier shows in the item's provenance line
-                        LootGenerationFactory.ApplyZoneMaterialClear(wo);
+                        // the drop KEEPS its rolled material, so it can be salvaged (owner 2026-10-05: salvaging is back on
+                        // T11+; ApplyZoneMaterialClear removed). Gear that dropped before keeps no material - by ruling, not repaired.
 
                         // name tinted by damage element (trial 2026-07-20, may revert)
                         LootGenerationFactory.ApplyZoneElementTint(wo);

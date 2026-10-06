@@ -1908,7 +1908,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         internal static readonly float RingSightHeightFactor = ProjHeight;
 
-        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0, WorldObject losOrigin = null, WorldObject losExempt = null)
+        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0, WorldObject losOrigin = null, WorldObject losExempt = null, bool lowTierGate = false, WorldObject lowTierItem = null, bool lowTierBareHands = false)
         {
             var center = centerOverride ?? Location;
             if (center == null) return;
@@ -2073,7 +2073,17 @@ namespace ACE.Server.WorldObjects
                     // resistSource - passing null here rolled the PLAYER's own War/Void skill, the
                     // precise failure the spellcraft stamp exists to prevent (fixed 2026-08-28, the
                     // sixth everything-must-be-done-TWICE bug). Hand-cast rings keep null = own skill.
-                    var resisted = TryResistSpell(creature, spell, fromProc && procBaseDamage > 0 ? weapon : null, true);
+                    // T11+ low-tier caster resist (owner 2026-10-05) - before the roll and Overpower, which must not land it
+                    if (lowTierGate && ACE.Server.Managers.ZoneControl.TierHitGate.BlockLowTierCast(this, creature, spell, lowTierItem, lowTierBareHands))
+                    {
+                        dbgResist++;
+                        continue;
+                    }
+
+                    // a jewelry Cast on Strike ring (key 54) has no B value but its own spellcraft stamp - it resists on that too,
+                    // not the wearer's own War / Void skill (2026-10-06)
+                    var jewelProc = fromProc && (weapon?.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0) > 0;
+                    var resisted = TryResistSpell(creature, spell, fromProc && (procBaseDamage > 0 || jewelProc) ? weapon : null, true);
                     if (resisted && !(Overpower != null && Creature.GetOverpower(this, creature)))
                     {
                         dbgResist++;
@@ -2228,7 +2238,7 @@ namespace ACE.Server.WorldObjects
                     }
 
                     // Elemental modifier (wand element vs target).
-                    var elementalMod = GetCasterElementalDamageModifier(weapon, this as Creature, creature, spell.DamageType);
+                    var elementalMod = GetCasterElementalDamageModifier(HandCastParityWeapon(weapon, this), this as Creature, creature, spell.DamageType);
 
                     // Slayer modifier — respects wand/creature slayer properties.
                     var slayerMod = GetWeaponCreatureSlayerModifier(weapon, this as Creature, creature);
@@ -2238,11 +2248,11 @@ namespace ACE.Server.WorldObjects
                     // passes null there so a hollow wand's IgnoreMagicResist does not transfer to the
                     // spell and blanket-bypass the target's resistances.  Rending still applies — it
                     // rides in via weaponResistanceMod.
-                    var weaponResistanceMod = GetWeaponResistanceModifier(weapon, this as Creature, attackSkill, spell.DamageType);
+                    var weaponResistanceMod = GetWeaponResistanceModifier(HandCastParityWeapon(weapon, this), this as Creature, attackSkill, spell.DamageType);
                     var resistanceMod = (float)Math.Max(0.0f, creature.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
 
-                    // Spell Armor (owner 2026-10-04): hand-cast rings only, procs keep their own tuning (Creature_SpellArmor.cs)
-                    resistanceMod *= creature.GetZcSpellArmorMod(this, fromProc);
+                    // Spell Armor (owner 2026-10-04): every player ring, hand-cast and proc'd alike (procs since 2026-10-05, Creature_SpellArmor.cs)
+                    resistanceMod *= creature.GetZcSpellArmorMod(this);
 
                     // Void PvP modifier (matches SpellProjectile line ~602).
                     if (isPvP && spell.DamageType == DamageType.Nether)
@@ -2338,6 +2348,14 @@ namespace ACE.Server.WorldObjects
                         }
 
                         finalDamage *= damageRatingMod * damageResistRatingMod * critDamageOnTop;
+
+                        // jewelry Cast on Strike (key 54, owner 2026-10-05): a hand-cast of the ring x the piece's rolled power pct
+                        if (fromProc && weapon != null)
+                        {
+                            var jewelPct = weapon.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0;
+                            if (jewelPct > 0)
+                                finalDamage *= jewelPct / 100.0f;
+                        }
                     }
 
                     // Apply enrage damage reduction for the defender.

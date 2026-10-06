@@ -128,6 +128,11 @@ namespace ACE.Entity.Enum.Properties
         // persists - 50100 is unchanged, so the 19 already-stamped items are untouched.
         ZcModifiers = 50100,
 
+        /// <summary>Zone Control (2026-10-05): what TINKERING added on top of the record, for the props a Tier 11+ piece
+        /// re-stamps from its record (ArmorLevel, the Gear* / 502xx line ints) - "propId:delta;propId:delta". The resolver
+        /// adds it back, so a Steel tinker shows in the appraisal and survives a re-stamp. Server-only. See ZoneStatResolver.</summary>
+        ZcTinkerBonus = 50101,
+
         /// <summary>Room Assign (RoomAssignManager): every one-player room, on one line -
         /// "room|0xCELL [x y z] qw qx qy qz|0xCELL,0xCELL;room|...". On a Portal or PressurePlate WEENIE it makes that
         /// weenie a room source. Server-only - not an assessment property, so it is never sent to a player.

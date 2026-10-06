@@ -591,6 +591,14 @@ namespace ACE.Server.WorldObjects
 
             var resistSource = IsWeaponSpell ? weapon : source;
 
+            // T11+ LOW-TIER PROC RESIST (owner 2026-10-06): a PROC from gear below T11 (ProjectileLauncher = the proccing item),
+            // before the roll and Overpower, which must not land it. Hand-cast projectiles are never gated.
+            if (FromProc && ACE.Server.Managers.ZoneControl.TierHitGate.BlockLowTierCast(source, target, Spell, weapon))
+            {
+                if (tr != null) { tr.Resisted = true; tr.Reason = "resisted (item below T11)"; PetTrace.CombatSpellMiss(this, target, tr); }
+                return null;
+            }
+
             var resisted = source.TryResistSpell(target, Spell, resistSource, true);
             if (tr != null)
             {
@@ -660,7 +668,7 @@ namespace ACE.Server.WorldObjects
             if (isPVP && Spell.IsHarmful)
                 Player.UpdatePKTimers(sourcePlayer, targetPlayer);
 
-            var elementalDamageMod = GetCasterElementalDamageModifier(weapon, sourceCreature, target, Spell.DamageType);
+            var elementalDamageMod = GetCasterElementalDamageModifier(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, target, Spell.DamageType);
 
             // Possible 2x + damage bonus for the slayer property
             var slayerMod = GetWeaponCreatureSlayerModifier(weapon, sourceCreature, target);
@@ -749,8 +757,8 @@ namespace ACE.Server.WorldObjects
 
                 resistanceMod = (float)Math.Max(0.0f, target.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
 
-                // Spell Armor (owner 2026-10-04): a T11+ monster's armor against player hand-cast spells (Creature_SpellArmor.cs)
-                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer, FromProc);
+                // Spell Armor (owner 2026-10-04): a T11+ monster's armor against player spells, hand-cast and proc'd (Creature_SpellArmor.cs)
+                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer);
 
                 // UNIFIED CRIT: CritX x the base the hit ACTUALLY uses - player and governed casters alike
                 if (criticalHit)
@@ -918,15 +926,15 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                weaponResistanceMod = GetWeaponResistanceModifier(weapon, sourceCreature, attackSkill, Spell.DamageType);
+                weaponResistanceMod = GetWeaponResistanceModifier(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, attackSkill, Spell.DamageType);
 
                 // if attacker/weapon has IgnoreMagicResist directly, do not transfer to spell projectile
                 // only pass if SpellProjectile has it directly, such as 2637 - Invoking Aun Tanua
 
                 resistanceMod = (float)Math.Max(0.0f, target.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
 
-                // Spell Armor (owner 2026-10-04): a T11+ monster's armor against player hand-cast spells (Creature_SpellArmor.cs)
-                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer, FromProc);
+                // Spell Armor (owner 2026-10-04): a T11+ monster's armor against player spells, hand-cast and proc'd (Creature_SpellArmor.cs)
+                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer);
 
                 if (sourcePlayer != null && targetPlayer != null && Spell.DamageType == DamageType.Nether)
                 {
@@ -981,6 +989,14 @@ namespace ACE.Server.WorldObjects
                 finalDamage = baseDamage + critDamageBonus + skillBonus;
 
                 finalDamage *= elementalDamageMod * slayerMod * resistanceMod * absorbMod * attribBonus;
+
+                // jewelry Cast on Strike (key 54, owner 2026-10-05): a hand-cast of the spell x the piece's rolled power pct
+                if (FromProc && weapon != null)
+                {
+                    var jewelPct = weapon.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0;
+                    if (jewelPct > 0)
+                        finalDamage *= jewelPct / 100.0f;
+                }
 
                 // [ZCPROC] diagnostic, added 2026-08-27 for the Cast on Strike bring-up. Combat chat
                 // never reaches ACE_Log.txt, so without this the only way to read a proc's terms is the
@@ -1455,6 +1471,14 @@ namespace ACE.Server.WorldObjects
                 {
                     damage += sourcePlayer.ZcTryPctHpDamage(target);
                     sourcePlayer.ZcTryLifeOnHit(target);             // key 48 Life on Hit (heals the caster; cooldown inside)
+                }
+
+                // DAMAGE TAKEN multiplier (owner 2026-10-05, mirrors DamageEvent): a harmful spell on a Zone Control monster
+                if (damage > 0 && Spell.IsHarmful && targetPlayer == null)
+                {
+                    var spellTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(target);
+                    if (spellTakenMult != 1f)
+                        damage *= spellTakenMult;
                 }
 
                 // TRUE DAMAGE (owner 2026-10-01, mirrors DamageEvent): the zone's fixed amount, after every rating and

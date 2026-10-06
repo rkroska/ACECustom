@@ -34,6 +34,10 @@ namespace ACE.Server.Managers.WeaponScaling
         /// carries the ladder, exactly as it does for the item-aug wield gate.
         /// </summary>
         public int MinWieldCreature { get; set; }
+
+        /// <summary>LIFE aug wield requirement (owner 2026-10-05): T11-T15 gear asks Creature + Item + Life augs, the same numbers
+        /// as that tier's portal gem (Life 2,000 at T11, +500/tier, 4,000 at T15). T16+ gear asks Triune only. 0 = no gate.</summary>
+        public int MinWieldLife { get; set; }
         public int MinWieldTriune { get; set; }
         public int MinWieldSkillCharm { get; set; }
     }
@@ -289,6 +293,7 @@ namespace ACE.Server.Managers.WeaponScaling
                     Cap = 2500 + 500 * (tier - 11),
                     MinWieldAugs = tier == 11 ? 2000 : Math.Min(4000, 2500 + 500 * (tier - 12)),
                     MinWieldCreature = Math.Min(6000, 4000 + 500 * (tier - 11)),
+                    MinWieldLife = DefaultMinWieldLife(tier),
                     MinWieldTriune = tier >= 16 ? 500 * (tier - 15) : 0,
                     MinWieldSkillCharm = tier >= 16 ? 500 * (tier - 15) : 0,
                 });
@@ -575,6 +580,7 @@ namespace ACE.Server.Managers.WeaponScaling
                 t.Cap = Math.Max(0, t.Cap);
                 t.MinWieldAugs = Math.Max(0, t.MinWieldAugs);
                 t.MinWieldCreature = Math.Max(0, t.MinWieldCreature);
+                t.MinWieldLife = Math.Max(0, t.MinWieldLife);
                 t.MinWieldTriune = Math.Max(0, t.MinWieldTriune);
                 t.MinWieldSkillCharm = Math.Max(0, t.MinWieldSkillCharm);
 
@@ -601,6 +607,10 @@ namespace ACE.Server.Managers.WeaponScaling
                 // stored 0 can be deliberate.
                 if (t.Tier >= 11 && t.MinWieldCreature == 0)
                     t.MinWieldCreature = Math.Min(6000, 4000 + 500 * (t.Tier - 11));
+
+                // Same migration for MinWieldLife (added 2026-10-05): a stored 0 is UNSET - seed the portal-gem ladder.
+                if (t.Tier >= 11 && t.MinWieldLife == 0)
+                    t.MinWieldLife = DefaultMinWieldLife(t.Tier);
             }
 
             var scripts = new Dictionary<string, WeaponScalingScript>(StringComparer.OrdinalIgnoreCase);
@@ -688,6 +698,9 @@ namespace ACE.Server.Managers.WeaponScaling
         }
 
         // ── Resolve helpers (consumed by the step-3 combat wire-in; pure math is static for tests) ──
+
+        /// <summary>The Tou Tou portal gem's Life aug requirement for a tier: 2,000 at T11, +500/tier, 4,000 from T15.</summary>
+        public static int DefaultMinWieldLife(int tier) => tier < 11 ? 0 : Math.Min(4000, 2000 + 500 * (tier - 11));
 
         public static WeaponScalingTier GetTier(int tier)
         {
