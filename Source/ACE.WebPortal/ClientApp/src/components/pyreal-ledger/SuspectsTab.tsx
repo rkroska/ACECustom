@@ -22,7 +22,7 @@ import {
   TableScroll,
 } from './LedgerShared'
 
-export default function SuspectsTab({ days, surplusNoisy }: { days: number; surplusNoisy: boolean }) {
+export default function SuspectsTab({ days }: { days: number }) {
   const { data, loading, error } = useLedgerFetch<LedgerSuspectRow[]>(`/suspects?days=${days}&limit=100`)
   const navigate = useNavigate()
   const rows = data ?? []
@@ -37,12 +37,10 @@ export default function SuspectsTab({ days, surplusNoisy }: { days: number; surp
             Accounts ranked by a suspicion score: pyreals tied to flags + currency surplus (if positive) + bank gains from
             unlabeled code paths. Higher score = look here first. A high score is a lead, not proof. Click a row to open the
             account.
-            {surplusNoisy && (
-              <span className="block mt-1 text-amber-300/90">
-                The ledger started recently, so currency surplus is noisy: players may still be spending coins and notes they
-                held from before it started.
-              </span>
-            )}
+            <span className="block mt-1">
+              Currency surplus = coins, trade notes and peas the account got rid of beyond what it held when tracking began plus
+              everything it was seen receiving. It is an all-time number and does not change with the period picker.
+            </span>
           </>
         }
       >
@@ -61,7 +59,7 @@ export default function SuspectsTab({ days, surplusNoisy }: { days: number; surp
                   <th className={TH_CLASS}>Characters</th>
                   <th className={TH_NUM_CLASS} title="Flagged amount + positive currency surplus + unattributed gains">Score</th>
                   <th className={TH_NUM_CLASS} title="Pyreals tied to ledger flags">Flagged</th>
-                  <th className={TH_NUM_CLASS} title="Currency given up minus currency received. Positive = more went out than the ledger saw come in.">Currency surplus</th>
+                  <th className={TH_NUM_CLASS} title="All time, not just this period: currency the account got rid of beyond what it held when tracking began plus everything it was seen receiving.">Currency surplus (all time)</th>
                   <th className={TH_NUM_CLASS} title="Bank gains from a code path with no label">Unattributed</th>
                   <th className={TH_NUM_CLASS} title="All bank credits in this period">Bank in</th>
                   <th className={TH_CLASS} title="The vendor that paid this account the most">Top vendor</th>

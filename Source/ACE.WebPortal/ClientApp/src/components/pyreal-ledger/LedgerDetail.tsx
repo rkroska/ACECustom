@@ -10,9 +10,11 @@ import type {
 import {
   LEDGER_BASE_PATH,
   accountPath,
+  formatCompact,
   characterPath,
   formatDateTime,
   itemPath,
+  npcPath,
   parseVendorMultiplier,
   sortFlagsBySeverity,
   useLedgerFetch,
@@ -31,7 +33,6 @@ import {
   ROW_CLASS,
   SourceLabel,
   StatCard,
-  SurplusMoney,
   TABLE_CLASS,
   TBODY_CLASS,
   TD_CLASS,
@@ -48,12 +49,10 @@ export default function LedgerDetail({
   kind,
   id,
   days,
-  surplusNoisy,
 }: {
   kind: LedgerDetailKind
   id: number
   days: number
-  surplusNoisy: boolean
 }) {
   const path = Number.isFinite(id) && id > 0 ? `/${kind === 'character' ? 'characters' : 'accounts'}/${id}?days=${days}` : null
   const { data, loading, error } = useLedgerFetch<LedgerDetailData>(path)
@@ -72,13 +71,13 @@ export default function LedgerDetail({
       ) : !data ? (
         <EmptyState message="Nothing found." />
       ) : (
-        <DetailBody data={data} days={days} surplusNoisy={surplusNoisy} />
+        <DetailBody data={data} days={days} />
       )}
     </div>
   )
 }
 
-function DetailBody({ data, days, surplusNoisy }: { data: LedgerDetailData; days: number; surplusNoisy: boolean }) {
+function DetailBody({ data, days }: { data: LedgerDetailData; days: number }) {
   const isChar = data.kind === 'character'
   const bank = data.bank ?? []
   const items = data.items ?? []
@@ -87,7 +86,7 @@ function DetailBody({ data, days, surplusNoisy }: { data: LedgerDetailData; days
   const bankOut = bank.reduce((s, r) => s + r.amountOut, 0)
   const curIn = items.filter(i => i.direction === 'in').reduce((s, r) => s + r.value, 0)
   const curOut = items.filter(i => i.direction === 'out').reduce((s, r) => s + r.value, 0)
-  const surplus = curOut - curIn
+  const position = data.currencyPosition ?? null
   const flaggedAmount = flags.reduce((s, f) => s + Math.max(0, f.amount), 0)
   const unattributedIn = bank.filter(b => b.source === 'Unattributed').reduce((s, r) => s + r.amountIn, 0)
   const Icon = isChar ? User : Users
@@ -130,10 +129,20 @@ function DetailBody({ data, days, surplusNoisy }: { data: LedgerDetailData; days
           hint={`${flags.length.toLocaleString()} flag event${flags.length === 1 ? '' : 's'}`}
         />
         <StatCard
-          label="Currency surplus"
-          value={<SurplusMoney value={surplus} />}
-          tone={surplus > 0 ? 'warn' : 'default'}
-          hint="Currency given up minus received"
+          label="Currency position (all time)"
+          value={<Money value={position} />}
+          tone={position !== null && position < 0 ? 'bad' : 'default'}
+          hint={
+            position === null ? (
+              'Not available'
+            ) : position < 0 ? (
+              <span className="text-red-300" title={`${Math.abs(position).toLocaleString()} pyreals of face value`}>
+                Surplus: got rid of {formatCompact(Math.abs(position))} more currency than ever seen arriving
+              </span>
+            ) : (
+              'Should be holding about this much in coins, notes and peas'
+            )
+          }
         />
       </div>
 
@@ -176,7 +185,7 @@ function DetailBody({ data, days, surplusNoisy }: { data: LedgerDetailData; days
 
       <SoldPanel rows={data.sold ?? []} days={days} />
 
-      <ItemsPanel rows={items} curIn={curIn} curOut={curOut} surplusNoisy={surplusNoisy} />
+      <ItemsPanel rows={items} curIn={curIn} curOut={curOut} />
     </div>
   )
 }
@@ -291,6 +300,13 @@ function BankDetailCell({ row, days }: { row: LedgerDetailBankRow; days: number 
       </span>
     )
   }
+  if (row.source === 'Emote' && row.detailKey && /^\d+$/.test(row.detailKey) && Number(row.detailKey) > 0) {
+    return (
+      <Link to={npcPath(Number(row.detailKey), days)} className={LINK_CLASS} title="See everyone this NPC paid">
+        {row.detailName || `WCID ${row.detailKey}`}
+      </Link>
+    )
+  }
   if (row.source === 'Transfer' && row.detailKey && /^\d+$/.test(row.detailKey)) {
     return (
       <Link to={characterPath(Number(row.detailKey), days)} className={LINK_CLASS} title="Open the other character">
@@ -389,39 +405,23 @@ function ItemsPanel({
   rows,
   curIn,
   curOut,
-  surplusNoisy,
 }: {
   rows: LedgerDetailItemRow[]
   curIn: number
   curOut: number
-  surplusNoisy: boolean
 }) {
   const inRows = rows.filter(r => r.direction === 'in')
   const outRows = rows.filter(r => r.direction === 'out')
-  const surplus = curOut - curIn
   return (
     <Panel
       title="Currency items (coins, trade notes, peas)"
-      help="Physical currency at face value. Received = picked up, looted, traded or withdrawn. Given up = deposited, sold or given away. If much more was given up than received, the extra either was held from before the ledger started or was duplicated."
+      help="Physical currency at face value, for this period. Received = picked up, looted, traded or withdrawn. Given up = deposited, sold or given away. Opening rows are what the character already held when tracking began; they are not suspicious. The all-time verdict is the Currency position number at the top."
     >
       <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatCard label="Received" value={<Money value={curIn} />} tone="good" />
         <StatCard label="Given up" value={<Money value={curOut} />} />
-        <StatCard
-          label="Surplus"
-          value={<SurplusMoney value={surplus} />}
-          tone={surplus > 0 ? 'warn' : 'default'}
-          hint="Given up minus received"
-        />
+        <StatCard label="Net this period" value={<NetMoney value={curIn - curOut} />} hint="Received minus given up" />
       </div>
-      {surplusNoisy && (
-        <div className="px-4 pb-3">
-          <InfoNote tone="warn">
-            The ledger started recently. Surplus is noisy for the first weeks because players are still spending currency they held
-            from before it started.
-          </InfoNote>
-        </div>
-      )}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-px bg-neutral-800 border-t border-neutral-800">
         <div className="bg-neutral-900/90">
           <div className="px-4 py-2 text-[10px] font-bold text-emerald-400/80 uppercase tracking-widest">Received ({inRows.length})</div>

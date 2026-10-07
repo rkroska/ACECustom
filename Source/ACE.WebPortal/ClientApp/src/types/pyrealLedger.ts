@@ -45,6 +45,7 @@ export interface LedgerSuspectRow {
   currencyIn: number
   currencyOut: number
   currencyDeposited: number
+  /** ALL-TIME (ignores the period): how far the account's currency position is below zero. */
   currencySurplus: number
   flags: Record<string, number>
   flaggedAmount: number
@@ -138,6 +139,8 @@ export interface LedgerCharacterState {
   savedBalance: number
   savedUtc: string | null
   pendingNotes: string | null
+  /** All-time currency position of this character (see LedgerDetail.currencyPosition). */
+  currencyPosition?: number | null
   updatedUtc: string
 }
 
@@ -158,6 +161,11 @@ export interface LedgerDetail {
   items: LedgerDetailItemRow[]
   hours: LedgerHourRow[]
   flags: LedgerFlagRow[]
+  /**
+   * All-time face value of currency this character / account should be holding:
+   * held when tracking began + seen arriving - seen leaving. Negative = the dupe signal.
+   */
+  currencyPosition: number | null
   /** Items this character / account sold to vendors. */
   sold: LedgerDetailSoldRow[]
 }
@@ -206,4 +214,37 @@ export interface LedgerSearchRow {
   balance: number
 }
 
-export type LedgerTab = 'suspects' | 'earners' | 'vendors' | 'items' | 'flags' | 'overview'
+export interface LedgerNpcRow {
+  npcWcid: number
+  npcName: string | null
+  /** Face value of coins / notes / peas the NPC handed out. */
+  currencyValue: number
+  /** Item count. */
+  units: number
+  /** Pyreals the NPC credited straight to the bank. */
+  bankIn: number
+  /** currencyValue + bankIn. */
+  total: number
+  gives: number
+  characters: number
+  accounts: number
+  topReceiver: string | null
+  topReceiverCharId: number
+  topReceiverValue: number
+}
+
+export interface LedgerNpcReceiverRow {
+  charId: number
+  charName: string
+  accountId: number
+  accountName: string
+  currencyValue: number
+  units: number
+  bankIn: number
+  total: number
+  gives: number
+  firstHourUtc: string
+  lastHourUtc: string
+}
+
+export type LedgerTab = 'suspects' | 'earners' | 'vendors' | 'items' | 'npcs' | 'flags' | 'overview'

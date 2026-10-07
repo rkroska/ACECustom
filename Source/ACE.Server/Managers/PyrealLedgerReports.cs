@@ -165,6 +165,7 @@ namespace ACE.Server.Managers
         {
             public long LiveBalance { get; set; }
             public long SavedBalance { get; set; }
+            public long CurrencyPosition { get; set; }
             public DateTime? SavedUtc { get; set; }
             public string PendingNotes { get; set; }
             public DateTime UpdatedUtc { get; set; }
@@ -179,6 +180,11 @@ namespace ACE.Server.Managers
             public string AccountName { get; set; }
             public int Days { get; set; }
             public long? Balance { get; set; }
+            /// <summary>
+            /// Face value of currency this character (or account) should be holding: held when tracking began + seen
+            /// arriving - seen leaving, all time. Negative means they got rid of currency never seen arriving.
+            /// </summary>
+            public long CurrencyPosition { get; set; }
             public StateRow State { get; set; }
             public List<CharacterSummary> Characters { get; set; } = new();
             public List<DetailRow> Bank { get; set; } = new();
@@ -222,6 +228,39 @@ namespace ACE.Server.Managers
             public string VendorName { get; set; }
             public long Units { get; set; }
             public long Payout { get; set; }
+        }
+
+        public class NpcRow
+        {
+            public uint NpcWcid { get; set; }
+            public string NpcName { get; set; }
+            /// <summary>Face value of coins, notes and peas handed out.</summary>
+            public long CurrencyValue { get; set; }
+            public long Units { get; set; }
+            /// <summary>Pyreals credited straight to the bank by this NPC's emotes.</summary>
+            public long BankIn { get; set; }
+            public long Total { get; set; }
+            public long Gives { get; set; }
+            public long Characters { get; set; }
+            public long Accounts { get; set; }
+            public string TopReceiver { get; set; }
+            public uint TopReceiverCharId { get; set; }
+            public long TopReceiverValue { get; set; }
+        }
+
+        public class NpcReceiverRow
+        {
+            public uint CharId { get; set; }
+            public string CharName { get; set; }
+            public uint AccountId { get; set; }
+            public string AccountName { get; set; }
+            public long CurrencyValue { get; set; }
+            public long Units { get; set; }
+            public long BankIn { get; set; }
+            public long Total { get; set; }
+            public long Gives { get; set; }
+            public DateTime FirstHourUtc { get; set; }
+            public DateTime LastHourUtc { get; set; }
         }
 
         public class SearchRow
@@ -456,10 +495,19 @@ namespace ACE.Server.Managers
                     row.Characters = names.Length > 200 ? names.Substring(0, 200) + "..." : names;
             }
 
+            // Surplus is all-time, not per period: an account's running currency position (held when tracking began +
+            // seen arriving - seen leaving) below zero means it got rid of currency it was never seen receiving.
+            foreach (var (acct, position) in Query(
+                "SELECT `account_id`, SUM(`currency_position`) FROM `pyreal_ledger_state` GROUP BY `account_id` HAVING SUM(`currency_position`) < 0",
+                null,
+                r => (U(r, 0), L(r, 1))))
+            {
+                Row(acct).CurrencySurplus = -position;
+            }
+
             foreach (var row in rows.Values)
             {
                 row.AccountName = AccountName(row.AccountId);
-                row.CurrencySurplus = row.CurrencyOut - row.CurrencyIn;
                 row.Score = row.FlaggedAmount + Math.Max(0, row.CurrencySurplus) + row.UnattributedIn;
             }
 
@@ -582,14 +630,15 @@ namespace ACE.Server.Managers
             FillDetail(detail, "`char_id` = @id", charId, since);
 
             var state = Query(
-                "SELECT `live_balance`, `saved_balance`, `saved_utc`, `pending_notes`, `updated_utc`, `account_id`, `char_name` FROM `pyreal_ledger_state` WHERE `char_id` = @id",
+                "SELECT `live_balance`, `saved_balance`, `saved_utc`, `pending_notes`, `updated_utc`, `account_id`, `char_name`, `currency_position` FROM `pyreal_ledger_state` WHERE `char_id` = @id",
                 c => P(c, "@id", charId),
-                r => (new StateRow { LiveBalance = L(r, 0), SavedBalance = L(r, 1), SavedUtc = r.IsDBNull(2) ? null : D(r, 2), PendingNotes = S(r, 3), UpdatedUtc = D(r, 4) }, U(r, 5), S(r, 6)))
+                r => (new StateRow { LiveBalance = L(r, 0), SavedBalance = L(r, 1), SavedUtc = r.IsDBNull(2) ? null : D(r, 2), PendingNotes = S(r, 3), UpdatedUtc = D(r, 4), CurrencyPosition = L(r, 7) }, U(r, 5), S(r, 6)))
                 .FirstOrDefault();
 
             if (state.Item1 != null)
             {
                 detail.State = state.Item1;
+                detail.CurrencyPosition = state.Item1.CurrencyPosition;
                 if (detail.AccountId == 0) detail.AccountId = state.Item2;
                 if (string.IsNullOrEmpty(detail.Name)) detail.Name = state.Item3;
             }
@@ -629,6 +678,10 @@ namespace ACE.Server.Managers
 
             detail.Characters = detail.Characters.OrderByDescending(c => c.Balance).ToList();
             detail.Balance = detail.Characters.Sum(c => c.Balance);
+            detail.CurrencyPosition = Query(
+                "SELECT COALESCE(SUM(`currency_position`), 0) FROM `pyreal_ledger_state` WHERE `account_id` = @id",
+                c => P(c, "@id", accountId),
+                r => L(r, 0)).FirstOrDefault();
             return detail;
         }
 
@@ -729,6 +782,88 @@ namespace ACE.Server.Managers
 
             foreach (var row in rows)
                 row.AccountName = AccountName(row.AccountId);
+
+            return rows;
+        }
+
+        // An NPC's emote rows: currency items it gave (detail_key "itemWcid:npcWcid") and pyreals it credited straight to
+        // the bank (detail_key "npcWcid"). SUBSTRING_INDEX(key, ':', -1) is the NPC wcid for both shapes.
+        private static readonly string NpcRowsWhere =
+            $"`source` = '{PyrealLedger.SrcEmote}' AND `kind` IN ({KBank}, {KItemIn}) AND `hour_utc` >= @since";
+
+        /// <summary>NPCs ranked by the currency their quest rewards handed out, with the character who received the most.</summary>
+        public static List<NpcRow> GetNpcs(int days, int limit)
+        {
+            var since = Since(days);
+            limit = Math.Clamp(limit <= 0 ? 200 : limit, 1, 1000);
+
+            var rows = Query(
+                "SELECT SUBSTRING_INDEX(`detail_key`, ':', -1) AS `npc`, MAX(`detail_name`), " +
+                $"SUM(CASE WHEN `kind` = {KItemIn} THEN `amount_in` ELSE 0 END), SUM(CASE WHEN `kind` = {KItemIn} THEN `units` ELSE 0 END), " +
+                $"SUM(CASE WHEN `kind` = {KBank} THEN `amount_in` ELSE 0 END), SUM(`events`), COUNT(DISTINCT `char_id`), COUNT(DISTINCT `account_id`) " +
+                $"FROM `pyreal_ledger_hourly` WHERE {NpcRowsWhere} GROUP BY `npc` ORDER BY SUM(`amount_in`) DESC LIMIT {limit}",
+                c => P(c, "@since", since),
+                r => new NpcRow
+                {
+                    NpcWcid = uint.TryParse(S(r, 0), out var w) ? w : 0,
+                    NpcName = S(r, 1),
+                    CurrencyValue = L(r, 2),
+                    Units = L(r, 3),
+                    BankIn = L(r, 4),
+                    Gives = L(r, 5),
+                    Characters = L(r, 6),
+                    Accounts = L(r, 7),
+                });
+
+            if (rows.Count == 0)
+                return rows;
+
+            var top = new Dictionary<uint, (uint charId, string name, long value)>();
+            foreach (var (npc, charId, name, value) in Query(
+                "SELECT SUBSTRING_INDEX(`detail_key`, ':', -1) AS `npc`, `char_id`, MAX(`char_name`), SUM(`amount_in`) " +
+                $"FROM `pyreal_ledger_hourly` WHERE {NpcRowsWhere} GROUP BY `npc`, `char_id`",
+                c => P(c, "@since", since),
+                r => (uint.TryParse(S(r, 0), out var w) ? w : 0, U(r, 1), S(r, 2), L(r, 3))))
+            {
+                if (!top.TryGetValue(npc, out var best) || value > best.value)
+                    top[npc] = (charId, name, value);
+            }
+
+            foreach (var row in rows)
+            {
+                row.Total = row.CurrencyValue + row.BankIn;
+                if (string.IsNullOrEmpty(row.NpcName))
+                    row.NpcName = ItemName(row.NpcWcid);
+                if (top.TryGetValue(row.NpcWcid, out var best))
+                {
+                    row.TopReceiver = best.name;
+                    row.TopReceiverCharId = best.charId;
+                    row.TopReceiverValue = best.value;
+                }
+            }
+
+            return rows;
+        }
+
+        /// <summary>Who received currency from one NPC, most first.</summary>
+        public static List<NpcReceiverRow> GetNpcReceivers(uint npcWcid, int days)
+        {
+            var since = Since(days);
+
+            var rows = Query(
+                "SELECT `char_id`, MAX(`char_name`), MAX(`account_id`), " +
+                $"SUM(CASE WHEN `kind` = {KItemIn} THEN `amount_in` ELSE 0 END), SUM(CASE WHEN `kind` = {KItemIn} THEN `units` ELSE 0 END), " +
+                $"SUM(CASE WHEN `kind` = {KBank} THEN `amount_in` ELSE 0 END), SUM(`events`), MIN(`hour_utc`), MAX(`hour_utc`) " +
+                $"FROM `pyreal_ledger_hourly` WHERE {NpcRowsWhere} AND SUBSTRING_INDEX(`detail_key`, ':', -1) = @npc " +
+                "GROUP BY `char_id` ORDER BY SUM(`amount_in`) DESC LIMIT 500",
+                c => { P(c, "@since", since); P(c, "@npc", npcWcid.ToString()); },
+                r => new NpcReceiverRow { CharId = U(r, 0), CharName = S(r, 1), AccountId = U(r, 2), CurrencyValue = L(r, 3), Units = L(r, 4), BankIn = L(r, 5), Gives = L(r, 6), FirstHourUtc = D(r, 7), LastHourUtc = D(r, 8) });
+
+            foreach (var row in rows)
+            {
+                row.Total = row.CurrencyValue + row.BankIn;
+                row.AccountName = AccountName(row.AccountId);
+            }
 
             return rows;
         }

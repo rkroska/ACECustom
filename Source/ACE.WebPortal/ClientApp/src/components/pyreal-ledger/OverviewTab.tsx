@@ -11,7 +11,6 @@ import {
   ROW_CLASS,
   SourceLabel,
   StatCard,
-  SurplusMoney,
   TABLE_CLASS,
   TBODY_CLASS,
   TD_CLASS,
@@ -189,8 +188,8 @@ export default function OverviewTab({
                   <td className={TD_NUM_CLASS}>
                     <Money value={itemOut} />
                   </td>
-                  <td className={`${TD_NUM_CLASS} text-[11px]`} title="Out minus in. Positive = more currency given up than received.">
-                    Surplus <SurplusMoney value={itemOut - itemIn} />
+                  <td className={`${TD_NUM_CLASS} text-[11px]`} title="Value out minus value in, for this period only.">
+                    Net out this period <NetMoney value={itemOut - itemIn} />
                   </td>
                 </tr>
               </tfoot>

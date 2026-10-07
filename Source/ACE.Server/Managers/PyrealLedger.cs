@@ -64,6 +64,8 @@ namespace ACE.Server.Managers
         public const string SrcBankClamp = "BankClamp";
         public const string SrcCopyChar = "CopyChar";
         public const string SrcDeath = "Death";
+        /// <summary>Currency a character already held when item tracking began (written once, at startup).</summary>
+        public const string SrcOpening = "Opening";
         /// <summary>Records nothing: an item going back to where it came from after a failed action.</summary>
         public const string SrcIgnore = "(ignore)";
 
@@ -296,6 +298,13 @@ namespace ACE.Server.Managers
             public bool PendingOverflow;
             /// <summary>One of the changes dropped by <see cref="PendingOverflow"/> was a dupe risk.</summary>
             public bool OverflowRisk;
+            /// <summary>
+            /// Face value of the coins, notes and peas this character should be holding: what they held when tracking
+            /// began, plus everything seen arriving, minus everything seen leaving. It can only go negative if they got
+            /// rid of currency the ledger never saw them receive. Kept as a running total so it does not depend on how
+            /// far back the hourly rows go.
+            /// </summary>
+            public long CurrencyPosition;
             public bool Dirty;
             /// <summary>Holds an unsaved dupe-risk debit: write the row at the next opportunity, not the next timer tick.</summary>
             public bool Urgent;
@@ -643,11 +652,19 @@ namespace ACE.Server.Managers
                 }
 
                 var value = FaceValue(wcid) * units;
+                var charId = player.Guid.Full;
+                var accountId = player.Account?.AccountId ?? 0;
+                var name = player.Name;
+                var bankedNow = player.GetProperty(PropertyInt64.BankedPyreals) ?? 0; // only used if this character has no state yet
 
                 lock (sync)
                 {
-                    AddToBucket(DateTime.UtcNow, player.Guid.Full, player.Account?.AccountId ?? 0, player.Name, incoming ? KindItemIn : KindItemOut,
+                    AddToBucket(DateTime.UtcNow, charId, accountId, name, incoming ? KindItemIn : KindItemOut,
                         src, $"{wcid}:{detailKey ?? ""}", detailName ?? "", incoming ? value : 0, incoming ? 0 : value, units);
+
+                    var state = GetOrCreateState(charId, accountId, name, bankedNow);
+                    state.CurrencyPosition += incoming ? value : -value;
+                    state.Dirty = true;
                 }
             }
             catch (Exception ex)
@@ -823,8 +840,26 @@ namespace ACE.Server.Managers
             }
         }
 
+        /// <summary>Face value of the coins, notes and peas among <paramref name="items"/>. Never throws.</summary>
+        public static long CurrencyValueOf(IEnumerable<WorldObject> items)
+        {
+            try
+            {
+                long total = 0;
+                foreach (var item in items)
+                    if (item != null && IsCurrency(item.WeenieClassId))
+                        total += FaceValue(item.WeenieClassId) * (item.StackSize ?? 1);
+                return total;
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[PyrealLedger] CurrencyValueOf failed: {ex.Message}");
+                return 0;
+            }
+        }
+
         /// <summary>@copychar wrote a new character biota directly; give it a baseline and a flag.</summary>
-        public static void OnCharacterCopied(uint newCharId, string newName, uint accountId, long balance, string sourceName, string adminName)
+        public static void OnCharacterCopied(uint newCharId, string newName, uint accountId, long balance, string sourceName, string adminName, long currencyValue = 0)
         {
             if (!initialized)
                 return;
@@ -836,6 +871,7 @@ namespace ACE.Server.Managers
                     var state = GetOrCreateState(newCharId, accountId, newName, balance);
                     state.Live = balance;
                     state.Saved = balance;
+                    state.CurrencyPosition = currencyValue;
                     state.Dirty = true;
 
                     if (balance != 0)
@@ -885,6 +921,7 @@ namespace ACE.Server.Managers
 
         private sealed class PersistedState
         {
+            public long Position;
             public long Live;
             public long Saved;
             public string Notes;
@@ -921,6 +958,9 @@ namespace ACE.Server.Managers
 
                         var state = new CharState { CharId = charId, AccountId = accountId, Name = player.Name, Live = loaded, Saved = loaded, SavedUtc = DateTime.UtcNow };
                         states[charId] = state;
+
+                        if (persisted.TryGetValue(charId, out var known))
+                            state.CurrencyPosition = known.Position;
 
                         if (firstRun)
                         {
@@ -978,6 +1018,10 @@ namespace ACE.Server.Managers
                         log.Warn("[PyrealLedger] Baseline rows were not all written; the next startup will write the baseline again instead of comparing balances.");
                 }
 
+                // once, and again after any period with the ledger off: count the currency every character already holds
+                if (firstRun || !meta.ContainsKey("opening_items"))
+                    RecordOpeningHoldings();
+
                 flushTimer = new Timer(_ => TimerTick(), null, FlushIntervalMs, FlushIntervalMs);
 
                 var summary = string.Join(", ", counts.Select(kv => $"{kv.Key}={kv.Value}"));
@@ -988,6 +1032,135 @@ namespace ACE.Server.Managers
                 log.Error($"[PyrealLedger] Initialize failed, ledger disabled: {ex}");
                 initialized = false;
                 ShardDatabase.BankedPyrealsSaved = null;
+            }
+        }
+
+        /// <summary>
+        /// Counts the coins, notes and peas every character holds (main pack and side packs) straight from the shard
+        /// database and makes that their currency position, so stock held before tracking began is not later mistaken
+        /// for currency from nowhere. Runs at startup before the world opens, when nobody is online and every save has
+        /// been written, so the database is the truth. Read-only on game tables. One slow query (about 15 seconds on a
+        /// 3M row biota table), which is why it runs once and is remembered in the meta table.
+        /// </summary>
+        private static void RecordOpeningHoldings()
+        {
+            try
+            {
+                var started = DateTime.UtcNow;
+                var wcids = string.Join(",", currencyWcids.OrderBy(w => w));
+
+                // char -> wcid -> units held now
+                var held = new Dictionary<uint, Dictionary<uint, long>>();
+                // char -> wcid -> (units in, units out) the ledger already recorded
+                var seen = new Dictionary<(uint charId, uint wcid), (long unitsIn, long unitsOut)>();
+
+                using (var ctx = new ShardDbContext())
+                {
+                    var con = OpenConnection(ctx);
+
+                    using (var cmd = NewCommand(con))
+                    {
+                        cmd.CommandTimeout = 300;
+                        // an item's container is the character, or a side pack whose container is the character
+                        cmd.CommandText =
+                            "SELECT ch.`id`, b.`weenie_Class_Id`, SUM(COALESCE(st.`value`, 1)) " +
+                            "FROM `biota` b " +
+                            "JOIN `biota_properties_i_i_d` c ON c.`object_Id` = b.`id` AND c.`type` = 2 " +
+                            "LEFT JOIN `biota_properties_i_i_d` c2 ON c2.`object_Id` = c.`value` AND c2.`type` = 2 " +
+                            "JOIN `character` ch ON ch.`id` = COALESCE(c2.`value`, c.`value`) " +
+                            "LEFT JOIN `biota_properties_int` st ON st.`object_Id` = b.`id` AND st.`type` = 12 " +
+                            $"WHERE b.`weenie_Class_Id` IN ({wcids}) " +
+                            "GROUP BY ch.`id`, b.`weenie_Class_Id`";
+
+                        using var reader = cmd.ExecuteReader();
+                        while (reader.Read())
+                        {
+                            var charId = Convert.ToUInt32(reader.GetValue(0));
+                            var wcid = Convert.ToUInt32(reader.GetValue(1));
+                            var units = Convert.ToInt64(reader.GetValue(2));
+
+                            if (!held.TryGetValue(charId, out var byWcid))
+                                held[charId] = byWcid = new Dictionary<uint, long>();
+                            byWcid[wcid] = units;
+                        }
+                    }
+
+                    using (var cmd = NewCommand(con))
+                    {
+                        cmd.CommandTimeout = 120;
+                        cmd.CommandText =
+                            "SELECT `char_id`, SUBSTRING_INDEX(`detail_key`, ':', 1), " +
+                            $"SUM(CASE WHEN `kind` = {KindItemIn} THEN `units` ELSE 0 END), SUM(CASE WHEN `kind` = {KindItemOut} THEN `units` ELSE 0 END) " +
+                            $"FROM `pyreal_ledger_hourly` WHERE `kind` IN ({KindItemIn}, {KindItemOut}) GROUP BY `char_id`, SUBSTRING_INDEX(`detail_key`, ':', 1)";
+
+                        using var reader = cmd.ExecuteReader();
+                        while (reader.Read())
+                        {
+                            if (uint.TryParse(reader.GetValue(1).ToString(), out var wcid))
+                                seen[(Convert.ToUInt32(reader.GetValue(0)), wcid)] = (Convert.ToInt64(reader.GetValue(2)), Convert.ToInt64(reader.GetValue(3)));
+                        }
+                    }
+                }
+
+                long totalValue = 0;
+                var holders = 0;
+                var now = DateTime.UtcNow;
+
+                lock (sync)
+                {
+                    // every character's position becomes what they hold right now
+                    foreach (var state in states.Values)
+                    {
+                        long position = 0;
+                        if (held.TryGetValue(state.CharId, out var byWcid))
+                        {
+                            foreach (var kv in byWcid)
+                                position += FaceValue(kv.Key) * kv.Value;
+                            holders++;
+                        }
+
+                        if (state.CurrencyPosition != position)
+                        {
+                            state.CurrencyPosition = position;
+                            state.Dirty = true;
+                        }
+
+                        totalValue += position;
+                    }
+
+                    // For the page: an "Opening" row per character and item, sized so that what the hourly rows show
+                    // arriving and leaving adds up to what they hold now (held - in + out, never below zero).
+                    var keys = new HashSet<(uint charId, uint wcid)>(seen.Keys);
+                    foreach (var h in held)
+                        foreach (var w in h.Value.Keys)
+                            keys.Add((h.Key, w));
+
+                    foreach (var key in keys)
+                    {
+                        if (!states.TryGetValue(key.charId, out var state))
+                            continue;
+
+                        var heldUnits = held.TryGetValue(key.charId, out var byWcid) && byWcid.TryGetValue(key.wcid, out var u) ? u : 0;
+                        seen.TryGetValue(key, out var s);
+                        var opening = heldUnits - s.unitsIn + s.unitsOut;
+                        if (opening <= 0)
+                            continue;
+
+                        AddToBucket(now, key.charId, state.AccountId, state.Name, KindItemIn, SrcOpening, $"{key.wcid}:", "held when tracking began",
+                            FaceValue(key.wcid) * opening, 0, opening);
+                    }
+                }
+
+                var written = FlushBuckets(force: true) & FlushStates();
+                if (written)
+                    SaveMeta(new Dictionary<string, string> { ["opening_items"] = now.ToString("o") });
+
+                log.Info($"[PyrealLedger] Opening currency count: {holders:N0} characters hold {totalValue:N0} pyreals in coins, notes and peas " +
+                         $"({(DateTime.UtcNow - started).TotalSeconds:N1} s){(written ? "" : " - NOT saved, will run again at the next startup")}");
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[PyrealLedger] Opening currency count failed, it will run again at the next startup: {ex.Message}");
             }
         }
 
@@ -1260,10 +1433,19 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_state` (
   `saved_balance`  bigint        NOT NULL DEFAULT 0,
   `saved_utc`      datetime      NULL,
   `pending_notes`  varchar(1000) NOT NULL DEFAULT '',
+  `currency_position` bigint     NOT NULL DEFAULT 0,
   `updated_utc`    datetime      NOT NULL,
   PRIMARY KEY (`char_id`),
   KEY `ix_account` (`account_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            // the ledger's own table, created by an earlier build without this column
+            using (var check = NewCommand(con))
+            {
+                check.CommandText = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'pyreal_ledger_state' AND column_name = 'currency_position'";
+                if (Convert.ToInt64(check.ExecuteScalar()) == 0)
+                    Execute(con, "ALTER TABLE `pyreal_ledger_state` ADD COLUMN `currency_position` bigint NOT NULL DEFAULT 0 AFTER `pending_notes`");
+            }
 
             Execute(con, @"
 CREATE TABLE IF NOT EXISTS `pyreal_ledger_flags` (
@@ -1310,10 +1492,10 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
 
             using (var cmd = NewCommand(con))
             {
-                cmd.CommandText = "SELECT `char_id`, `live_balance`, `saved_balance`, `pending_notes` FROM `pyreal_ledger_state`";
+                cmd.CommandText = "SELECT `char_id`, `live_balance`, `saved_balance`, `pending_notes`, `currency_position` FROM `pyreal_ledger_state`";
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
-                    result[Convert.ToUInt32(reader.GetValue(0))] = new PersistedState { Live = reader.GetInt64(1), Saved = reader.GetInt64(2), Notes = reader.GetString(3) };
+                    result[Convert.ToUInt32(reader.GetValue(0))] = new PersistedState { Live = reader.GetInt64(1), Saved = reader.GetInt64(2), Notes = reader.GetString(3), Position = reader.GetInt64(4) };
             }
 
             return result;
@@ -1370,18 +1552,18 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
 
         private static bool FlushStatesSerialized()
         {
-            List<(uint id, uint acct, string name, long live, long saved, DateTime savedUtc, string notes)> rows;
+            List<(uint id, uint acct, string name, long live, long saved, DateTime savedUtc, string notes, long position)> rows;
 
             lock (sync)
             {
-                rows = new List<(uint, uint, string, long, long, DateTime, string)>();
+                rows = new List<(uint, uint, string, long, long, DateTime, string, long)>();
 
                 foreach (var s in states.Values)
                 {
                     if (!s.Dirty)
                         continue;
                     s.Dirty = false;
-                    rows.Add((s.CharId, s.AccountId, s.Name ?? "", s.Live, s.Saved, s.SavedUtc, Truncate(s.NotesText, MaxDetail)));
+                    rows.Add((s.CharId, s.AccountId, s.Name ?? "", s.Live, s.Saved, s.SavedUtc, Truncate(s.NotesText, MaxDetail), s.CurrencyPosition));
                 }
             }
 
@@ -1397,11 +1579,11 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
                 foreach (var batch in rows.Chunk(BatchRows))
                 {
                     using var cmd = NewCommand(con);
-                    var sb = new StringBuilder("INSERT INTO `pyreal_ledger_state` (`char_id`,`account_id`,`char_name`,`live_balance`,`saved_balance`,`saved_utc`,`pending_notes`,`updated_utc`) VALUES ");
+                    var sb = new StringBuilder("INSERT INTO `pyreal_ledger_state` (`char_id`,`account_id`,`char_name`,`live_balance`,`saved_balance`,`saved_utc`,`pending_notes`,`currency_position`,`updated_utc`) VALUES ");
                     for (var i = 0; i < batch.Length; i++)
                     {
                         if (i > 0) sb.Append(',');
-                        sb.Append($"(@c{i},@a{i},@n{i},@l{i},@s{i},@su{i},@p{i},@u)");
+                        sb.Append($"(@c{i},@a{i},@n{i},@l{i},@s{i},@su{i},@p{i},@cp{i},@u)");
                         AddParam(cmd, $"@c{i}", batch[i].id);
                         AddParam(cmd, $"@a{i}", batch[i].acct);
                         AddParam(cmd, $"@n{i}", Truncate(batch[i].name, 64));
@@ -1409,10 +1591,11 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
                         AddParam(cmd, $"@s{i}", batch[i].saved);
                         AddParam(cmd, $"@su{i}", batch[i].savedUtc);
                         AddParam(cmd, $"@p{i}", batch[i].notes);
+                        AddParam(cmd, $"@cp{i}", batch[i].position);
                     }
                     AddParam(cmd, "@u", now);
                     sb.Append(" ON DUPLICATE KEY UPDATE `account_id`=VALUES(`account_id`),`char_name`=VALUES(`char_name`),`live_balance`=VALUES(`live_balance`)," +
-                              "`saved_balance`=VALUES(`saved_balance`),`saved_utc`=VALUES(`saved_utc`),`pending_notes`=VALUES(`pending_notes`),`updated_utc`=VALUES(`updated_utc`)");
+                              "`saved_balance`=VALUES(`saved_balance`),`saved_utc`=VALUES(`saved_utc`),`pending_notes`=VALUES(`pending_notes`),`currency_position`=VALUES(`currency_position`),`updated_utc`=VALUES(`updated_utc`)");
                     cmd.CommandText = sb.ToString();
                     cmd.ExecuteNonQuery();
                 }

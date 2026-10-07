@@ -169,6 +169,7 @@ export const SOURCE_INFO: Record<string, string> = {
   BankClamp: 'Balance clamped to the bank limit',
   CopyChar: 'Admin copied a character',
   Death: 'Lost on death',
+  Opening: 'Held when tracking began',
   Unattributed: 'Unlabeled code path - suspicious by itself',
 }
 
@@ -193,6 +194,10 @@ export function characterPath(charId: number, days: number): string {
 
 export function itemPath(wcid: number, days: number): string {
   return `${LEDGER_BASE_PATH}?tab=items&item=${wcid}&days=${days}`
+}
+
+export function npcPath(wcid: number, days: number): string {
+  return `${LEDGER_BASE_PATH}?tab=npcs&npc=${wcid}&days=${days}`
 }
 
 export function accountPath(accountId: number, days: number): string {

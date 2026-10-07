@@ -52,6 +52,12 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("items/{wcid}")]
         public IActionResult GetItemSellers(uint wcid, [FromQuery] int days = 30) => Run(() => PyrealLedgerReports.GetItemSellers(wcid, days));
 
+        [HttpGet("npcs")]
+        public IActionResult GetNpcs([FromQuery] int days = 30, [FromQuery] int limit = 200) => Run(() => PyrealLedgerReports.GetNpcs(days, limit));
+
+        [HttpGet("npcs/{wcid}")]
+        public IActionResult GetNpcReceivers(uint wcid, [FromQuery] int days = 30) => Run(() => PyrealLedgerReports.GetNpcReceivers(wcid, days));
+
         [HttpGet("flags")]
         public IActionResult GetFlags([FromQuery] int days = 30, [FromQuery] string flag = null, [FromQuery] uint? charId = null, [FromQuery] uint? accountId = null, [FromQuery] int limit = 200)
             => Run(() => PyrealLedgerReports.GetFlags(days, flag, charId, accountId, limit));

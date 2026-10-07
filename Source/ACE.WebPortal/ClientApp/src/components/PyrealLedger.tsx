@@ -1,25 +1,24 @@
 import { Navigate, useParams, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, BarChart3, Coins, Flag, Package, Store, TrendingUp, UserSearch } from 'lucide-react'
+import { AlertTriangle, BarChart3, Coins, Flag, Package, ScrollText, Store, TrendingUp, UserSearch } from 'lucide-react'
 import PageHeader from './common/PageHeader'
 import TabButton from './common/TabButton'
 import type { LedgerEarnerScope, LedgerOverview, LedgerTab } from '../types/pyrealLedger'
-import { DAY_OPTIONS, LEDGER_BASE_PATH, clampDays, formatDate, parseUtc, useLedgerFetch } from './pyreal-ledger/ledgerUtils'
+import { DAY_OPTIONS, LEDGER_BASE_PATH, clampDays, formatDate, useLedgerFetch } from './pyreal-ledger/ledgerUtils'
 import SuspectsTab from './pyreal-ledger/SuspectsTab'
 import EarnersTab from './pyreal-ledger/EarnersTab'
 import VendorsTab from './pyreal-ledger/VendorsTab'
 import FlagsTab from './pyreal-ledger/FlagsTab'
 import ItemsSoldTab from './pyreal-ledger/ItemsSoldTab'
+import NpcsTab from './pyreal-ledger/NpcsTab'
 import OverviewTab from './pyreal-ledger/OverviewTab'
 import LedgerDetail from './pyreal-ledger/LedgerDetail'
 import LedgerSearch from './pyreal-ledger/LedgerSearch'
 
-const TABS: LedgerTab[] = ['suspects', 'earners', 'vendors', 'items', 'flags', 'overview']
-/** Currency surplus is unreliable until the ledger has been running this long. */
-const SURPLUS_SETTLE_DAYS = 28
+const TABS: LedgerTab[] = ['suspects', 'earners', 'vendors', 'items', 'npcs', 'flags', 'overview']
 
 /**
  * Pyreal Ledger: find pyreals that appear without a reason.
- * URL state: /audit/pyreals?tab=&days=&by=&flag=&vendor=&item=  and  /audit/pyreals/(character|account)/:id?days=
+ * URL state: /audit/pyreals?tab=&days=&by=&flag=&vendor=&item=&npc=  and  /audit/pyreals/(character|account)/:id?days=
  */
 export default function PyrealLedger() {
   const { kind, id } = useParams<{ kind?: string; id?: string }>()
@@ -34,10 +33,10 @@ export default function PyrealLedger() {
   const openVendor = Number.isFinite(vendorRaw) && vendorRaw > 0 ? vendorRaw : null
   const itemRaw = Number(params.get('item'))
   const openItem = Number.isFinite(itemRaw) && itemRaw > 0 ? itemRaw : null
+  const npcRaw = Number(params.get('npc'))
+  const openNpc = Number.isFinite(npcRaw) && npcRaw > 0 ? npcRaw : null
 
   const overview = useLedgerFetch<LedgerOverview>(`/overview?days=${days}`)
-  const start = parseUtc(overview.data?.ledgerStartUtc)
-  const surplusNoisy = !start || Date.now() - start.getTime() < SURPLUS_SETTLE_DAYS * 24 * 3600_000
 
   const isDetail = kind !== undefined
   if (isDetail && kind !== 'character' && kind !== 'account') {
@@ -82,7 +81,7 @@ export default function PyrealLedger() {
       </div>
 
       {isDetail ? (
-        <LedgerDetail kind={kind} id={Number(id)} days={days} surplusNoisy={surplusNoisy} />
+        <LedgerDetail kind={kind} id={Number(id)} days={days} />
       ) : (
         <>
           <div className="shrink-0 flex gap-1 mb-4 border-b border-neutral-800 overflow-x-auto">
@@ -90,14 +89,16 @@ export default function PyrealLedger() {
             <TabButton active={tab === 'earners'} onClick={() => update({ tab: 'earners' })} icon={<TrendingUp />} label="Top earners" />
             <TabButton active={tab === 'vendors'} onClick={() => update({ tab: 'vendors' })} icon={<Store />} label="Vendors" />
             <TabButton active={tab === 'items'} onClick={() => update({ tab: 'items' })} icon={<Package />} label="Items sold" />
+            <TabButton active={tab === 'npcs'} onClick={() => update({ tab: 'npcs' })} icon={<ScrollText />} label="Quest NPCs" />
             <TabButton active={tab === 'flags'} onClick={() => update({ tab: 'flags' })} icon={<Flag />} label="Flags" />
             <TabButton active={tab === 'overview'} onClick={() => update({ tab: 'overview' })} icon={<BarChart3 />} label="Overview" />
           </div>
 
-          {tab === 'suspects' && <SuspectsTab days={days} surplusNoisy={surplusNoisy} />}
+          {tab === 'suspects' && <SuspectsTab days={days} />}
           {tab === 'earners' && <EarnersTab days={days} by={by} onByChange={b => update({ by: b === 'account' ? null : b })} />}
           {tab === 'vendors' && <VendorsTab days={days} openWcid={openVendor} onToggle={w => update({ vendor: w })} />}
           {tab === 'items' && <ItemsSoldTab days={days} openWcid={openItem} onToggle={w => update({ item: w })} />}
+          {tab === 'npcs' && <NpcsTab days={days} openWcid={openNpc} onToggle={w => update({ npc: w })} />}
           {tab === 'flags' && <FlagsTab days={days} flag={flag} onFlagChange={f => update({ flag: f })} />}
           {tab === 'overview' && <OverviewTab overview={overview} onFlagClick={f => update({ tab: 'flags', flag: f })} />}
         </>

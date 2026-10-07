@@ -147,6 +147,13 @@ namespace ACE.Server.Command.Handlers
             foreach (var i in items)
                 sb.Append($"  {i.ItemName} (wcid {i.Wcid}): {N(i.Units)} sold for {N(i.Payout)}, most by {i.TopSeller} ({N(i.TopSellerUnits)})\n");
 
+            var npcs = PyrealLedgerReports.GetNpcs(days, 5);
+            sb.Append("Top NPC payouts (quest rewards):\n");
+            if (npcs.Count == 0)
+                sb.Append("  none\n");
+            foreach (var npc in npcs)
+                sb.Append($"  {npc.NpcName} (wcid {npc.NpcWcid}): {N(npc.Total)} in {N(npc.Gives)} give(s) to {npc.Characters} character(s), most to {npc.TopReceiver}\n");
+
             var vendors = PyrealLedgerReports.GetVendors(days).Take(5).ToList();
             sb.Append("Top vendor payouts:\n");
             if (vendors.Count == 0)

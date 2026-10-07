@@ -4311,7 +4311,8 @@ namespace ACE.Server.Command.Handlers
 
                                 // pyreal ledger: the copy is written directly, so give it a baseline (and a flag when it holds pyreals)
                                 PyrealLedger.OnCharacterCopied(newPlayer.Guid.Full, newCharName, newPlayer.Character.AccountId,
-                                    newPlayer.GetProperty(PropertyInt64.BankedPyreals) ?? 0, existingCharacter.Name, session?.Player?.Name ?? "console");
+                                    newPlayer.GetProperty(PropertyInt64.BankedPyreals) ?? 0, existingCharacter.Name, session?.Player?.Name ?? "console",
+                                    PyrealLedger.CurrencyValueOf(possessions));
 
                                 PlayerManager.AddOfflinePlayer(newPlayer);
 
