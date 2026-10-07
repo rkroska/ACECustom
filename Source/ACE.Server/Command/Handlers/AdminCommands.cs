@@ -4299,7 +4299,7 @@ namespace ACE.Server.Command.Handlers
                             foreach (var possession in possessions)
                                 possessedBiotas.Add((possession.Biota, possession.BiotaDatabaseLock));
 
-                            // We must await here -- 
+                            // We must await here --
                             DatabaseManager.Shard.AddCharacterInParallel(newPlayer.Biota, newPlayer.BiotaDatabaseLock, possessedBiotas, newPlayer.Character, newPlayer.CharacterDatabaseLock, saveSuccess =>
                             {
                                 if (!saveSuccess)
@@ -4308,6 +4308,11 @@ namespace ACE.Server.Command.Handlers
                                     CommandHandlerHelper.WriteOutputInfo(session, $"Failed to {(isDeletedChar ? "restore" : "copy")} the character \"{(existingCharacter.IsPlussed ? "+" : "")}{existingCharacter.Name}\" to a new character \"{newPlayer.Name}\" for the account \"{newPlayer.Account.AccountName}\"! Does the character exist? Is the new character name already taken, or is the account out of free character slots?", ChatMessageType.Broadcast);
                                     return;
                                 }
+
+                                // pyreal ledger: the copy is written directly, so give it a baseline (and a flag when it holds pyreals)
+                                PyrealLedger.OnCharacterCopied(newPlayer.Guid.Full, newCharName, newPlayer.Character.AccountId,
+                                    newPlayer.GetProperty(PropertyInt64.BankedPyreals) ?? 0, existingCharacter.Name, session?.Player?.Name ?? "console",
+                                    PyrealLedger.CurrencyValueOf(possessions));
 
                                 PlayerManager.AddOfflinePlayer(newPlayer);
 

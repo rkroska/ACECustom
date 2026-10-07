@@ -365,8 +365,12 @@ namespace ACE.Database
             }
         }
 
-        protected bool DoSaveBiota(ShardDbContext context, Biota biota)
+        protected bool DoSaveBiota(ShardDbContext context, Biota biota) => DoSaveBiota(context, biota, out _);
+
+        /// <param name="persisted">false when the call reports success without writing (a concurrency conflict that re-saves later)</param>
+        protected bool DoSaveBiota(ShardDbContext context, Biota biota, out bool persisted)
         {
+            persisted = false;
             SetBiotaPopulatedCollections(biota);
 
             Exception firstException = null;
@@ -379,6 +383,7 @@ namespace ACE.Database
                 if (firstException != null)
                     log.Debug($"[DATABASE] DoSaveBiota 0x{biota.Id:X8}:{biota.GetProperty(PropertyString.Name)} retry succeeded after initial exception of: {firstException.GetFullMessage()}");
 
+                persisted = true;
                 return true;
             }
             catch (DbUpdateConcurrencyException dbex)
@@ -401,11 +406,39 @@ namespace ACE.Database
             }
         }
 
+        /// <summary>
+        /// Pyreal ledger: called after a save of a biota that holds PropertyInt64.BankedPyreals succeeds, with the value
+        /// that save wrote. Runs on the database thread.
+        /// </summary>
+        public static Action<uint, long> BankedPyrealsSaved;
+
+        /// <summary>Reads BankedPyreals from the biota. The caller holds the biota's read lock.</summary>
+        protected static bool TryReadBankedPyreals(ACE.Entity.Models.Biota biota, out long value)
+        {
+            value = 0;
+            return BankedPyrealsSaved != null && biota.PropertiesInt64 != null && biota.PropertiesInt64.TryGetValue(PropertyInt64.BankedPyreals, out value);
+        }
+
+        protected static void NotifyBankedPyrealsSaved(uint biotaId, long value)
+        {
+            try
+            {
+                BankedPyrealsSaved?.Invoke(biotaId, value);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[DATABASE] BankedPyrealsSaved hook failed for 0x{biotaId:X8}: {ex.Message}");
+            }
+        }
+
         public virtual bool SaveBiota(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)
         {
             using (var context = new ShardDbContext())
             {
                 var existingBiota = GetBiota(context, biota.Id);
+
+                bool hasBankedPyreals;
+                long bankedPyreals;
 
                 rwLock.EnterReadLock();
                 try
@@ -420,13 +453,20 @@ namespace ACE.Database
                     {
                         ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
                     }
+
+                    hasBankedPyreals = TryReadBankedPyreals(biota, out bankedPyreals);
                 }
                 finally
                 {
                     rwLock.ExitReadLock();
                 }
 
-                return DoSaveBiota(context, existingBiota);
+                var saved = DoSaveBiota(context, existingBiota, out var persisted);
+
+                if (persisted && hasBankedPyreals)
+                    NotifyBankedPyrealsSaved(biota.Id, bankedPyreals);
+
+                return saved;
             }
         }
 

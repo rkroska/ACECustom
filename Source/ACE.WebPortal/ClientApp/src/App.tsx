@@ -38,6 +38,7 @@ import QuestBuilder from './components/quest-builder/QuestBuilder'
 import PortalSecurity from './components/PortalSecurity'
 
 import AuditLog from './components/AuditLog'
+import PyrealLedger from './components/PyrealLedger'
 import CorpseFinder from './components/CorpseFinder'
 import PetNameApprovals from './components/admin/PetNameApprovals'
 
@@ -233,6 +234,12 @@ function App() {
 
           </ProtectedRoute>
 
+        } />
+
+        <Route path="/audit/pyreals/:kind?/:id?" element={
+          <ProtectedRoute pageKey="pyreal-ledger">
+            <PyrealLedger />
+          </ProtectedRoute>
         } />
 
         <Route path="/corpse-finder" element={

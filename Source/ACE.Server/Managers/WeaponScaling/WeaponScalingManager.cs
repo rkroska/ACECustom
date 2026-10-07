@@ -27,14 +27,22 @@ namespace ACE.Server.Managers.WeaponScaling
         // (Crashing Steel melee / True Shot launchers / Battlemage's Wrath elemental casters /
         // Nether Veil nether casters). 0 = no charm gate (all tiers through T15).
         /// <summary>
-        /// CREATURE aug requirement for the T11+ hit gate (owner 2026-08-31). Unlike MinWieldAugs this
-        /// is NOT a wield requirement - nothing stops you equipping the gear. It gates whether your
-        /// swings and spells can LAND on a monster at this variation (TierHitGate).
+        /// CREATURE aug requirement (owner 2026-08-31) for the T11+ hit gate - whether your swings and spells can LAND on a
+        /// monster at this variation (TierHitGate) - and, since 2026-10-05, also a WIELD requirement on T11-T15 zone gear
+        /// (wield slot 3, LootGenerationFactory_ZoneSet). 0 at T11+ = unset (Normalize re-seeds it; the command refuses 0).
         /// 4,000 at T11, +500/tier, frozen at the 6,000 purchase cap from T15 - above which TRIUNE
         /// carries the ladder, exactly as it does for the item-aug wield gate.
         /// </summary>
         public int MinWieldCreature { get; set; }
+
+        /// <summary>LIFE aug wield requirement (owner 2026-10-05): T11-T15 gear asks Creature + Item + Life augs, the same numbers
+        /// as that tier's portal gem (Life 2,000 at T11, +500/tier, 4,000 at T15). T16+ gear asks Triune only, so a T16+ row's
+        /// value is shown but never stamped. 0 at T11+ = unset (Normalize re-seeds it; the command refuses 0).</summary>
+        public int MinWieldLife { get; set; }
         public int MinWieldTriune { get; set; }
+
+        /// <summary>RETIRED 2026-10-05 (owner: T16+ gear asks Triune only): the weapon-family charm count. Kept so stored configs and
+        /// older plugins still load it; no drop stamps it any more.</summary>
         public int MinWieldSkillCharm { get; set; }
     }
 
@@ -289,6 +297,7 @@ namespace ACE.Server.Managers.WeaponScaling
                     Cap = 2500 + 500 * (tier - 11),
                     MinWieldAugs = tier == 11 ? 2000 : Math.Min(4000, 2500 + 500 * (tier - 12)),
                     MinWieldCreature = Math.Min(6000, 4000 + 500 * (tier - 11)),
+                    MinWieldLife = DefaultMinWieldLife(tier),
                     MinWieldTriune = tier >= 16 ? 500 * (tier - 15) : 0,
                     MinWieldSkillCharm = tier >= 16 ? 500 * (tier - 15) : 0,
                 });
@@ -575,6 +584,7 @@ namespace ACE.Server.Managers.WeaponScaling
                 t.Cap = Math.Max(0, t.Cap);
                 t.MinWieldAugs = Math.Max(0, t.MinWieldAugs);
                 t.MinWieldCreature = Math.Max(0, t.MinWieldCreature);
+                t.MinWieldLife = Math.Max(0, t.MinWieldLife);
                 t.MinWieldTriune = Math.Max(0, t.MinWieldTriune);
                 t.MinWieldSkillCharm = Math.Max(0, t.MinWieldSkillCharm);
 
@@ -597,10 +607,14 @@ namespace ACE.Server.Managers.WeaponScaling
                 // 2026-09-01 when `tier curves` printed a creature column of zeros and a suspiciously
                 // straight interpolation.
                 // 0 is read as UNSET rather than as an authored "no requirement", same assumption the
-                // charm migration above makes: the field was never reachable from any command, so no
-                // stored 0 can be deliberate.
+                // charm migration above makes: no stored 0 can be deliberate - /weaponscale tier <t> minwieldcreature
+                // (and minwieldlife, 2026-10-05) refuse 0 at T11+.
                 if (t.Tier >= 11 && t.MinWieldCreature == 0)
                     t.MinWieldCreature = Math.Min(6000, 4000 + 500 * (t.Tier - 11));
+
+                // Same migration for MinWieldLife (added 2026-10-05): a stored 0 is UNSET - seed the portal-gem ladder.
+                if (t.Tier >= 11 && t.MinWieldLife == 0)
+                    t.MinWieldLife = DefaultMinWieldLife(t.Tier);
             }
 
             var scripts = new Dictionary<string, WeaponScalingScript>(StringComparer.OrdinalIgnoreCase);
@@ -688,6 +702,9 @@ namespace ACE.Server.Managers.WeaponScaling
         }
 
         // ── Resolve helpers (consumed by the step-3 combat wire-in; pure math is static for tests) ──
+
+        /// <summary>The Tou Tou portal gem's Life aug requirement for a tier: 2,000 at T11, +500/tier, 4,000 from T15.</summary>
+        public static int DefaultMinWieldLife(int tier) => tier < 11 ? 0 : Math.Min(4000, 2000 + 500 * (tier - 11));
 
         public static WeaponScalingTier GetTier(int tier)
         {

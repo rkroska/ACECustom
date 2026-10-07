@@ -106,6 +106,7 @@ class ApiClient {
         error.name = 'ApiError';
         (error as any).code = data.code || response.status.toString();
         (error as any).details = data.details;
+        (error as any).correlationId = data.correlationId;
         throw error;
       }
 

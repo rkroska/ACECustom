@@ -468,6 +468,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit weaklyenlightenedcoins (or /b d we) - Deposit all weakly enlightened coins", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit prestigecoins (or /b d pc) - Deposit all prestige coins", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit notes (or /b d n) - Deposit all trade notes", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b lum - Bank your luminance tokens (Thaelaryn, ILT, Researcher's) as luminance - deposit all does this too", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"WITHDRAWAL COMMANDS:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw pyreals <amount> (or /b w p <amount>) - Withdraw pyreals as coins", ChatMessageType.System));
@@ -504,10 +505,32 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
+            // `/b lum` (owner 2026-10-05): bank the ILT luminance tokens in your packs - each pays what its NPC pays
+            if (parameters[0].Equals("lum", StringComparison.OrdinalIgnoreCase))
+            {
+                if (session.Player.IsBusy)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot deposit while teleporting or busy. Complete your movement and try again!", ChatMessageType.System));
+                    return;
+                }
+                var lumLimit = ServerConfig.bank_command_limit.Value;
+                if ((DateTime.UtcNow - session.LastBankCommandTime).TotalSeconds < lumLimit)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[Deposit] This command may only be run once every {lumLimit} seconds.", ChatMessageType.Broadcast);
+                    return;
+                }
+                session.LastBankCommandTime = DateTime.UtcNow;
+                if (session.Player.BankedLuminance < 0)
+                    session.Player.BankedLuminance = 0;   // the same cleanup every other deposit runs first
+                session.Player.DepositLuminanceTokens();
+                return;
+            }
+
             //cleanup edge cases
             if (session.Player.BankedPyreals < 0)
             {
-                session.Player.BankedPyreals = 0;
+                using (PyrealLedger.Begin(PyrealLedger.SrcBankClamp, "", "negative balance reset to 0", session.Player))
+                    session.Player.BankedPyreals = 0;
             }
             if (session.Player.BankedLuminance < 0)
             {
@@ -638,6 +661,9 @@ namespace ACE.Server.Command.Handlers
                     session.Player.DepositPrestigeCoins(true);
                     session.Player.DepositMythicalKeys(true);
                     session.Player.DepositTradeNotes(true);
+                    // ILT lum tokens (owner 2026-10-05): per-token lines like /b lum, between Starting and Ending Banked Lum (owner
+                    // 2026-10-06) - read after the plain lum deposit above, so Starting + the tokens = Ending
+                    session.Player.DepositLuminanceTokens(quietIfNone: true, showTotal: true);
 
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all currencies!", ChatMessageType.System));
                     return;
@@ -1105,7 +1131,8 @@ namespace ACE.Server.Command.Handlers
 
 
             // Deduct ClapCost for Coalesced Aetheria and Chunks
-            session.Player.BankedPyreals -= totalClapCost;
+            using (PyrealLedger.Begin(PyrealLedger.SrcClap, "", "", session.Player))
+                session.Player.BankedPyreals -= totalClapCost;
 
             // OPTIMIZATION: Track if we need to save to database (only save once at the end)
             // Save only if redComboCount > 30 or blueComboCount > 90

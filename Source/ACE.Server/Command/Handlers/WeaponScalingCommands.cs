@@ -143,7 +143,7 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("weaponscale", AccessLevel.Developer, CommandHandlerFlag.None, 0,
             "Weapon Scaling config (plugin fallback).",
-            "show | enable on|off | tier <t> cap|minwield|minwieldtriune|minwieldskillcharm <n> | tier add <t> [cap] [minwield] | tier remove <t> | "
+            "show | enable on|off | tier <t> cap|minwield|minwieldcreature|minwieldlife|minwieldtriune|minwieldskillcharm <n> | tier add <t> [cap] [minwield] | tier remove <t> | "
             + "script <name> kmin|kmax <v> | script add <name> [kmin] [kmax] | script remove <name> | "
             + "kc min|max <v> | sync on|off | reset | reload")]
         public static void HandleWeaponScale(Session session, params string[] parameters)
@@ -157,8 +157,10 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /weaponscale enable on|off       master switch; off = static-base-only combat (current behavior)");
                 Msg("  /weaponscale tier <t> cap <n>    scaling stops growing at n item augs for tier-t weapons");
                 Msg("  /weaponscale tier <t> minwield <n>   item augs required to WIELD tier-t weapons (economy gate)");
+                Msg("  /weaponscale tier <t> minwieldcreature <n> Creature augs required to wield (T11-T15; also the hit gate)");
+                Msg("  /weaponscale tier <t> minwieldlife <n>     Life augs required to wield (T11-T15)");
                 Msg("  /weaponscale tier <t> minwieldtriune <n>   Triune Weave count required to wield (T16+ charm gate)");
-                Msg("  /weaponscale tier <t> minwieldskillcharm <n>   weapon-family charm count required to wield (T16+)");
+                Msg("  /weaponscale tier <t> minwieldskillcharm <n>   weapon-family charm count (RETIRED 2026-10-05: no longer stamped)");
                 Msg("  /weaponscale tier add <t> [cap] [minwield] | tier remove <t>");
                 Msg("  /weaponscale script <name> kmin <v> | kmax <v> | variance <v>   per-loot-script k range + Scheme C family variance");
                 Msg("  /weaponscale script <name> ladder <anchorS> | ladder clear   seed/drop the 16-rung grade ladder (+18 pct per grade)");
@@ -200,9 +202,9 @@ namespace ACE.Server.Command.Handlers
                     var cfg = WeaponScalingManager.Current;
                     var sb = new StringBuilder();
                     sb.AppendLine($"Weapon Scaling: {(cfg.Enabled ? "Enabled" : "Disabled")} (kc {cfg.KcMin:0.###}-{cfg.KcMax:0.###}, tighten {cfg.TightenStrength:0.###})");
-                    sb.AppendLine("  tier | cap | minwield | triune | skillcharm");
+                    sb.AppendLine("  tier | cap | item | creature | life | triune | skillcharm");
                     foreach (var t in cfg.Tiers)
-                        sb.AppendLine($"  T{t.Tier} | {t.Cap:N0} | {t.MinWieldAugs:N0} | {t.MinWieldTriune:N0} | {t.MinWieldSkillCharm:N0}");
+                        sb.AppendLine($"  T{t.Tier} | {t.Cap:N0} | {t.MinWieldAugs:N0} | {t.MinWieldCreature:N0} | {t.MinWieldLife:N0} | {t.MinWieldTriune:N0} | {t.MinWieldSkillCharm:N0}");
                     sb.AppendLine("  script | kmin | kmax | variance | ladder");
                     foreach (var s in cfg.Scripts.OrderBy(s => s.Key, StringComparer.OrdinalIgnoreCase))
                         sb.AppendLine($"  {s.Key} | {s.Value.KMin:0.###} | {s.Value.KMax:0.###} | {s.Value.Variance:0.###} | "
@@ -308,13 +310,33 @@ namespace ACE.Server.Command.Handlers
                     }
                     if (args.Length < 4 || !int.TryParse(args[1], out var tier) || !int.TryParse(args[3], out var value))
                     {
-                        Msg("Usage: /weaponscale tier <t> cap|minwield <n>  |  tier add <t> [cap] [minwield]  |  tier remove <t>");
+                        Msg("Usage: /weaponscale tier <t> cap|minwield|minwieldcreature|minwieldlife|minwieldtriune|minwieldskillcharm <n>  |  tier add <t> [cap] [minwield]  |  tier remove <t>");
                         return;
                     }
                     var field = args[2].ToLowerInvariant();
-                    if (field != "cap" && field != "minwield" && field != "minwieldtriune" && field != "minwieldskillcharm")
+                    if (field != "cap" && field != "minwield" && field != "minwieldcreature" && field != "minwieldlife" && field != "minwieldtriune" && field != "minwieldskillcharm")
                     {
-                        Msg("tier: field must be cap, minwield, minwieldtriune, or minwieldskillcharm.");
+                        Msg("tier: field must be cap, minwield, minwieldcreature, minwieldlife, minwieldtriune, or minwieldskillcharm.");
+                        return;
+                    }
+                    if (value < 0)
+                    {
+                        Msg($"tier: {field} must be 0 or more.");
+                        return;
+                    }
+                    // a stored 0 means UNSET for these two at T11+ (WeaponScalingManager.Normalize re-seeds the ladder), so it is refused
+                    // rather than reported as set and silently undone
+                    // the same at T16+: Normalize re-seeds a T16+ row whose Triune AND (retired) charm are both 0
+                    var t16Row = tier >= 16 ? WeaponScalingManager.GetTier(tier) : null;
+                    if (value < 1 && t16Row != null
+                        && ((field == "minwieldtriune" && t16Row.MinWieldSkillCharm == 0) || (field == "minwieldskillcharm" && t16Row.MinWieldTriune == 0)))
+                    {
+                        Msg($"tier: at T16+ minwieldtriune and minwieldskillcharm cannot both be 0 (read as unset and re-seeded to the default ladder).");
+                        return;
+                    }
+                    if ((field == "minwieldcreature" || field == "minwieldlife") && tier >= 11 && value < 1)
+                    {
+                        Msg($"tier: {field} must be 1 or more at T11+ (0 is read as unset and re-seeded to the default ladder).");
                         return;
                     }
                     var found = false;
@@ -325,6 +347,8 @@ namespace ACE.Server.Command.Handlers
                         found = true;
                         if (field == "cap") row.Cap = value;
                         else if (field == "minwield") row.MinWieldAugs = value;
+                        else if (field == "minwieldcreature") row.MinWieldCreature = value;
+                        else if (field == "minwieldlife") row.MinWieldLife = value;
                         else if (field == "minwieldtriune") row.MinWieldTriune = value;
                         else row.MinWieldSkillCharm = value;
                     });

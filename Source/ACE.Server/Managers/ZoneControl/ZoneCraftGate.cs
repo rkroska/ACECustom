@@ -143,6 +143,11 @@ namespace ACE.Server.Managers.ZoneControl
         private static readonly HashSet<int> OwnedIdentity = new()
         {
             (int)PropertyInt.SlayerCreatureType,
+            // the tier WIELD GATES (2026-10-06 review): society covers / heraldry write slot 4 and the level gem slot 1 - a recipe
+            // that would swap a T11+ aug gate for a society rank or a level is refused before anything is used up
+            (int)PropertyInt.WieldRequirements, (int)PropertyInt.WieldSkillType, (int)PropertyInt.WieldDifficulty,
+            (int)PropertyInt.WieldRequirements3, (int)PropertyInt.WieldSkillType3, (int)PropertyInt.WieldDifficulty3,
+            (int)PropertyInt.WieldRequirements4, (int)PropertyInt.WieldSkillType4, (int)PropertyInt.WieldDifficulty4,
         };
 
         private static readonly HashSet<int> OwnedFloats = new()

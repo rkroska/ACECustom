@@ -157,6 +157,9 @@ namespace ACE.Database
                 {
                     var existingBiota = base.GetBiota(context, biota.Id);
 
+                    bool hasBankedPyreals;
+                    long bankedPyreals;
+
                     rwLock.EnterReadLock();
                     try
                     {
@@ -169,14 +172,19 @@ namespace ACE.Database
                         {
                             ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
                         }
+
+                        hasBankedPyreals = TryReadBankedPyreals(biota, out bankedPyreals);
                     }
                     finally
                     {
                         rwLock.ExitReadLock();
                     }
 
-                    if (DoSaveBiota(context, existingBiota))
+                    if (DoSaveBiota(context, existingBiota, out var persisted))
                     {
+                        if (persisted && hasBankedPyreals)
+                            NotifyBankedPyrealsSaved(biota.Id, bankedPyreals);
+
                         InvalidateBiotaCache(biota.Id);
                         return true;
                     }
@@ -188,6 +196,9 @@ namespace ACE.Database
             using (var context = new ShardDbContext())
             {
                 var existingBiota = base.GetBiota(context, biota.Id);
+
+                bool hasBankedPyreals;
+                long bankedPyreals;
 
                 rwLock.EnterReadLock();
                 try
@@ -202,14 +213,19 @@ namespace ACE.Database
                     {
                         ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
                     }
+
+                    hasBankedPyreals = TryReadBankedPyreals(biota, out bankedPyreals);
                 }
                 finally
                 {
                     rwLock.ExitReadLock();
                 }
 
-                if (DoSaveBiota(context, existingBiota))
+                if (DoSaveBiota(context, existingBiota, out var persisted))
                 {
+                    if (persisted && hasBankedPyreals)
+                        NotifyBankedPyrealsSaved(biota.Id, bankedPyreals);
+
                     InvalidateBiotaCache(biota.Id);
                     return true;
                 }

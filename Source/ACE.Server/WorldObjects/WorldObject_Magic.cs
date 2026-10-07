@@ -70,6 +70,14 @@ namespace ACE.Server.WorldObjects
                 && !creatureCaster.CanDamage(targetCreature))
                 return;
 
+            // T11+ LOW-TIER PROC RESIST (owner 2026-10-06: "the PROCs from those items get resisted, not all damage and spells"):
+            // a weapon / jewelry / cloak PROC from gear below T11 is always resisted by a governed v11+ monster - regardless of
+            // tryResist (cloaks skip it). Hand-casts and gems are never touched. Projectile procs are judged where they land
+            // (SpellProjectile.CalculateDamage, ApplyRingSpellAreaDamage).
+            if (fromProc && spell.NumProjectiles == 0
+                && ACE.Server.Managers.ZoneControl.TierHitGate.BlockLowTierCast(this, target, spell, itemCaster ?? weapon))
+                return;
+
             // perform resistance check, if applicable
             if (tryResist && TryResistSpell(target, spell, itemCaster))
                 return;
@@ -565,6 +573,16 @@ namespace ACE.Server.WorldObjects
                 if (harmMult != 1f)
                     tryBoost = (int)Math.Round(tryBoost * (double)harmMult);
             }
+            // DAMAGE TAKEN multiplier (owner 2026-10-05): any Harm on a Zone Control monster - not the capture wand's fixed cap
+            // (useHarmCap), which stays unmodified like the melee UseDamageCap path. The life-aug bonus below is scaled by it too.
+            var harmTakenMult = 1f;
+            if (!(tryBoost < 0 && spell.VitalDamageType == DamageType.Health && player == null && creature != null && targetCreature is Player)
+                && tryBoost < 0 && spell.VitalDamageType == DamageType.Health && !useHarmCap && !(targetCreature is Player))
+            {
+                harmTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(targetCreature);
+                if (harmTakenMult != 1f)
+                    tryBoost = (int)Math.Round(tryBoost * (double)harmTakenMult);
+            }
 
             var traceAfterResist = tryBoost;
 
@@ -609,7 +627,8 @@ namespace ACE.Server.WorldObjects
             }
             if (!useHarmCap && player != null && tryBoost < 0)
             {
-                tryBoost -= (int)player.EffectiveLifeAugCount;
+                // scaled by the zone's damage-taken multiplier like the rest of the Harm (1.0 everywhere else)
+                tryBoost -= (int)Math.Round(player.EffectiveLifeAugCount * (double)harmTakenMult);
             }
 
             string srcVital;
@@ -922,6 +941,8 @@ namespace ACE.Server.WorldObjects
             if (spell.TransferCap != 0 && srcVitalChange > spell.TransferCap)
                 srcVitalChange = (uint)spell.TransferCap;
 
+            var drainTakenMult = 1f;
+
             // per-monster DAMAGE MULTIPLIER (owner 2026-10-03: "cover harm, drain and DoTs too"): a monster's Drain Health on a
             // player, after the spell's cap, never more than the player has
             if (isDrain && spell.Source == PropertyAttribute2nd.Health && srcVitalChange > 0 && transferSource is Player drainedPlayer && this is Creature drainer)
@@ -929,6 +950,17 @@ namespace ACE.Server.WorldObjects
                 var drainMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(drainer, drainedPlayer);
                 if (drainMult != 1f)
                     srcVitalChange = (uint)Math.Min(Math.Round(srcVitalChange * (double)drainMult), drainedPlayer.Health.Current);
+            }
+            // DAMAGE TAKEN multiplier (owner 2026-10-05): any Drain Health on a Zone Control monster (the life-aug bonus added to
+            // the drain below is scaled by it too)
+            else if (isDrain && spell.Source == PropertyAttribute2nd.Health && srcVitalChange > 0 && !(transferSource is Player))
+            {
+                drainTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(transferSource);
+                if (drainTakenMult != 1f)
+                    srcVitalChange = (uint)Math.Min(Math.Round(srcVitalChange * (double)drainTakenMult), transferSource.Health.Current);
+                // the spell's TransferCap still caps the drain (and with it the heal below)
+                if (spell.TransferCap != 0 && srcVitalChange > spell.TransferCap)
+                    srcVitalChange = (uint)spell.TransferCap;
             }
 
             // should healing resistances be applied here?
@@ -988,7 +1020,7 @@ namespace ACE.Server.WorldObjects
                 // Only boost a transfer that is actually moving something. These are unsigned
                 // magnitudes, so subtracting from a zero change wraps to ~uint.MaxValue.
                 if (srcVitalChange > 0)
-                    srcVitalChange += (uint)player.EffectiveLifeAugCount;
+                    srcVitalChange += (uint)Math.Round(player.EffectiveLifeAugCount * (double)drainTakenMult);   // 1.0 off Zone Control monsters
 
                 if (destVitalChange > 0)
                     destVitalChange += (uint)player.EffectiveLifeAugCount;
@@ -1214,7 +1246,7 @@ namespace ACE.Server.WorldObjects
                 // so the four arguments can never disagree with each other again.
                 var zcProc = fromProc
                     && ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon)
-                    && !ZcPowerSuppressed(weapon, ringPlayer);
+                    && !ZcProcSuppressed(weapon, ringPlayer);   // jewelry: the worn lock (2026-10-06), as in TryProcItem
 
                 var zcRingB = zcProc
                     ? (weapon?.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRingDamagePropId) ?? 0)
@@ -1248,7 +1280,10 @@ namespace ACE.Server.WorldObjects
                     // untargeted (target is null), so fall back to the trigger TryProcOneSpell recorded.
                     // No exemption when the proc came off a non-projectile cast, which never had to reach
                     // its target (a vuln through a wall), see RingProcTriggerUnreached.
-                    losExempt: fromProc && !ringPlayer.RingProcTriggerUnreached ? (target ?? ringPlayer.RingProcTrigger) : null);
+                    losExempt: fromProc && !ringPlayer.RingProcTriggerUnreached ? (target ?? ringPlayer.RingProcTrigger) : null,
+                    // T11+ low-tier PROC resist (owner 2026-10-06): PROCS only - the real proccing item, separate from procWeapon,
+                    // which stays null for a retail proc ring by design (see zcProc above). A hand-cast ring is never gated.
+                    lowTierItem: fromProc ? weapon : null);
             }
 
             if (spell.School == MagicSchool.LifeMagic)
@@ -2205,7 +2240,7 @@ namespace ACE.Server.WorldObjects
             return dir * speed;
         }
 
-        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f)
+        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f, bool handCastFork = false)
         {
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -2297,6 +2332,7 @@ namespace ACE.Server.WorldObjects
                 // Fork state — set before AddObject so IsProjectileVisible-killed bolts have correct flags.
                 sp.IsForkProjectile = isForkProjectile;
                 sp.ForkDamageMult   = forkDamageMult;
+                sp.HandCastFork     = handCastFork;   // a projectile can collide inside AddObject, so the low-tier gate needs it now
 
                 if (!LandblockManager.AddObject(sp))
                 {

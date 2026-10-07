@@ -63,9 +63,14 @@ namespace ACE.Server.Network.Structure
             // reported variance is re-derived to keep the displayed MIN true: min = staticMin +
             // term, max = staticMax + term — without this the client applies the weapon's
             // variance to the whole and understates min ~2x.
-            var augTerm = weapon.Wielder is Player wielderPlayer
-                ? (int)ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFlatBonus(weapon, wielderPlayer)
-                : (int)ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetExamineBonus(weapon, examiner);
+            // gear / zone lock (owner 2026-10-05: "Show the real value"): no aug term where the holder stands - combat adds none
+            int augTerm;
+            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, (weapon.Wielder as Player) ?? examiner))
+                augTerm = 0;
+            else if (weapon.Wielder is Player wielderPlayer)
+                augTerm = (int)ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFlatBonus(weapon, wielderPlayer);
+            else
+                augTerm = (int)ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetExamineBonus(weapon, examiner);
             if (augTerm > 0)
             {
                 if (ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetEffectiveVariance(weapon, out var vEff))
@@ -142,7 +147,9 @@ namespace ACE.Server.Network.Structure
             // the owner compared a T11 and a T13 bow, saw identical +300% panels, and reasonably
             // concluded the weapons were identical.
             var holder = (weapon.Wielder as Player) ?? examiner;
-            var baseMultiplier = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetLauncherDamageMod(weapon, holder, out var gradedMod)
+            // gear / zone lock: combat uses the authored DamageMod there (BaseDamageMod gate), so show that
+            var baseMultiplier = !ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, holder)
+                && ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetLauncherDamageMod(weapon, holder, out var gradedMod)
                 ? gradedMod
                 : weapon.GetProperty(PropertyFloat.DamageMod) ?? 1.0f;
             var damageMod = weapon.EnchantmentManager.GetDamageMod();

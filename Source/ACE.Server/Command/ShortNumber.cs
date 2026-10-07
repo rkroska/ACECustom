@@ -24,11 +24,24 @@ namespace ACE.Server.Command
         /// <summary>An audit-line amount: full with commas; while audit_short_numbers is on the short form leads and the exact
         /// amount follows ("5B (5,000,000,001)") - an auditor must be able to recover the real grant (CodeRabbit #539).</summary>
         public static string Audit(long value)
+            => ServerConfig.audit_short_numbers.Value ? Both(value) : value.ToString("N0", CultureInfo.InvariantCulture);
+
+        /// <summary>Short then exact (owner 2026-10-06): "5B (5,000,000,000)"; below 10,000 the short form is the exact one, so
+        /// it shows once ("5,000"). Player-facing balances.</summary>
+        public static string Both(long value)
         {
             var exact = value.ToString("N0", CultureInfo.InvariantCulture);
-            if (!ServerConfig.audit_short_numbers.Value) return exact;
             var shortForm = Format(value);
             return shortForm == exact ? exact : $"{shortForm} ({exact})";
+        }
+
+        /// <summary>A player-facing amount with its label between the two forms (owner 2026-10-06): Amount(v, "Lum") =
+        /// "5B Lum (5,000,000,000)"; below 10,000 it shows once ("5,000 Lum").</summary>
+        public static string Amount(long value, string label)
+        {
+            var exact = value.ToString("N0", CultureInfo.InvariantCulture);
+            var shortForm = Format(value);
+            return shortForm == exact ? $"{exact} {label}" : $"{shortForm} {label} ({exact})";
         }
 
         /// <summary>5B / 1.2M / 250K; exact with commas below 10,000. Same thresholds and "0.#" rounding as
