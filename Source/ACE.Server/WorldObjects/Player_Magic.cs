@@ -1264,6 +1264,10 @@ namespace ACE.Server.WorldObjects
             }
 
             var flatDmg = (float)(arrowDamage * ThreadSafeRandom.Next(minMult, maxMult));
+            // nothing to blast with (an invincible or fully immune target took 0): a 0 flatDamage would make the ring roll its OWN
+            // spell damage instead
+            if (flatDmg <= 0f)
+                return;
 
             // Delay between arrow hit and ring detonation (tunable via /charm explosivearrow delay <seconds>)
             var actionChain = new ActionChain();
@@ -1908,7 +1912,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         internal static readonly float RingSightHeightFactor = ProjHeight;
 
-        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0, WorldObject losOrigin = null, WorldObject losExempt = null)
+        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0, WorldObject losOrigin = null, WorldObject losExempt = null, WorldObject lowTierItem = null)
         {
             var center = centerOverride ?? Location;
             if (center == null) return;
@@ -2060,6 +2064,14 @@ namespace ACE.Server.WorldObjects
                     continue;
                 }
 
+                // T11+ low-tier PROC resist (owner 2026-10-06): lowTierItem = the proccing item of a PROC ring (null for a hand-cast
+                // ring). Once per creature, before the roll and Overpower, which must not land it.
+                if (lowTierItem != null && ACE.Server.Managers.ZoneControl.TierHitGate.BlockLowTierCast(this, creature, spell, lowTierItem))
+                {
+                    dbgResist++;
+                    continue;
+                }
+
                 // Run the loop for multi-procs
                 for (var procIdx = 0; procIdx < procCount; procIdx++)
                 {
@@ -2073,7 +2085,10 @@ namespace ACE.Server.WorldObjects
                     // resistSource - passing null here rolled the PLAYER's own War/Void skill, the
                     // precise failure the spellcraft stamp exists to prevent (fixed 2026-08-28, the
                     // sixth everything-must-be-done-TWICE bug). Hand-cast rings keep null = own skill.
-                    var resisted = TryResistSpell(creature, spell, fromProc && procBaseDamage > 0 ? weapon : null, true);
+                    // a jewelry Cast on Strike ring (key 54) has no B value but its own spellcraft stamp - it resists on that too,
+                    // not the wearer's own War / Void skill (2026-10-06)
+                    var jewelProc = fromProc && (weapon?.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0) > 0;
+                    var resisted = TryResistSpell(creature, spell, fromProc && (procBaseDamage > 0 || jewelProc) ? weapon : null, true);
                     if (resisted && !(Overpower != null && Creature.GetOverpower(this, creature)))
                     {
                         dbgResist++;
@@ -2103,7 +2118,7 @@ namespace ACE.Server.WorldObjects
 
                     // Crit chance — 10% base since 2026-08-29 (unified with melee/missile) + player
                     // crit rating, mitigated by target resist rating.
-                    var critChance = GetWeaponMagicCritFrequency(weapon, this as Creature, attackSkill, creature);
+                    var critChance = GetWeaponMagicCritFrequency(HandCastParityWeapon(weapon, this), this as Creature, attackSkill, creature);
                     if (ThreadSafeRandom.Next(0.0f, 1.0f) < critChance)
                     {
                         // AugmentationCriticalDefense check (PvP only — 5% per aug rank vs player attacker).
@@ -2126,7 +2141,7 @@ namespace ACE.Server.WorldObjects
                             // only the life / PvP branches use the mod here; the war/void PvE crit reads it
                             // once in the unified block below (review 2026-09-04: it was computed twice)
                             var earlyMod = isLifeProjectile || isPvP
-                                ? GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature)
+                                ? GetWeaponCritDamageMod(HandCastParityWeapon(weapon, this), this as Creature, attackSkill, creature)
                                 : 0f;
                             // Zone Control spell crits mirror melee for LIFE rings too (owner 2026-10-04): the crit floor and the
                             // aug crit term with the caster's life augs (war / void rings take theirs in the block below)
@@ -2228,21 +2243,21 @@ namespace ACE.Server.WorldObjects
                     }
 
                     // Elemental modifier (wand element vs target).
-                    var elementalMod = GetCasterElementalDamageModifier(weapon, this as Creature, creature, spell.DamageType);
+                    var elementalMod = GetCasterElementalDamageModifier(HandCastParityWeapon(weapon, this), this as Creature, creature, spell.DamageType);
 
                     // Slayer modifier — respects wand/creature slayer properties.
-                    var slayerMod = GetWeaponCreatureSlayerModifier(weapon, this as Creature, creature);
+                    var slayerMod = GetWeaponCreatureSlayerModifier(HandCastParityWeapon(weapon, this), this as Creature, creature);
 
                     // Weapon resistance mod — applies rending on wand to target resistance.
                     // The wand is deliberately NOT passed as the `weapon` arg below: SpellProjectile
                     // passes null there so a hollow wand's IgnoreMagicResist does not transfer to the
                     // spell and blanket-bypass the target's resistances.  Rending still applies — it
                     // rides in via weaponResistanceMod.
-                    var weaponResistanceMod = GetWeaponResistanceModifier(weapon, this as Creature, attackSkill, spell.DamageType);
+                    var weaponResistanceMod = GetWeaponResistanceModifier(HandCastParityWeapon(weapon, this), this as Creature, attackSkill, spell.DamageType);
                     var resistanceMod = (float)Math.Max(0.0f, creature.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
 
-                    // Spell Armor (owner 2026-10-04): hand-cast rings only, procs keep their own tuning (Creature_SpellArmor.cs)
-                    resistanceMod *= creature.GetZcSpellArmorMod(this, fromProc);
+                    // Spell Armor (owner 2026-10-04): every player ring, hand-cast and proc'd alike (procs since 2026-10-05, Creature_SpellArmor.cs)
+                    resistanceMod *= creature.GetZcSpellArmorMod(this);
 
                     // Void PvP modifier (matches SpellProjectile line ~602).
                     if (isPvP && spell.DamageType == DamageType.Nether)
@@ -2287,7 +2302,7 @@ namespace ACE.Server.WorldObjects
                     var zcCritMirror = Creature.ZcSpellCritMirrorsMelee(this, weapon, creature, fromProc);
                     if (criticalHit && !isLifeProjectile && !isPvP)
                     {
-                        var ringCritDamageMod = GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
+                        var ringCritDamageMod = GetWeaponCritDamageMod(HandCastParityWeapon(weapon, this), this as Creature, attackSkill, creature);
                         if (zcCritMirror)
                         {
                             ringCritDamageMod = Math.Max(ringCritDamageMod,
@@ -2338,6 +2353,14 @@ namespace ACE.Server.WorldObjects
                         }
 
                         finalDamage *= damageRatingMod * damageResistRatingMod * critDamageOnTop;
+
+                        // jewelry Cast on Strike (key 54, owner 2026-10-05): a hand-cast of the ring x the piece's rolled power pct
+                        if (fromProc && weapon != null)
+                        {
+                            var jewelPct = weapon.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0;
+                            if (jewelPct > 0)
+                                finalDamage *= Math.Min(jewelPct, 100) / 100.0f;   // a power pct, never above 100
+                        }
                     }
 
                     // Apply enrage damage reduction for the defender.
@@ -2352,6 +2375,17 @@ namespace ACE.Server.WorldObjects
                     {
                         var petMit = combatPet.GetSpellProjectileDamageTakenMultiplier();
                         if (petMit < 1.0f) finalDamage *= petMit;
+                    }
+
+                    // DAMAGE TAKEN multiplier (owner 2026-10-05, mirrors SpellProjectile / DamageEvent): a harmful ring on a Zone
+                    // Control monster - the ring AoE never reaches SpellProjectile.DamageTarget. 1.0 for players and pets. An
+                    // Explosive Arrow ring (flatDamage) starts from the arrow's hit BEFORE the multiplier (DamageBeforeZoneTaken),
+                    // so each creature in it takes its own here.
+                    if (finalDamage > 0 && spell.IsHarmful)
+                    {
+                        var ringTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(creature);
+                        if (ringTakenMult != 1f)
+                            finalDamage *= ringTakenMult;
                     }
 
                     if (finalDamage <= 0) continue;

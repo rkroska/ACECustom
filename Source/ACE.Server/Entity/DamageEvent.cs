@@ -140,6 +140,11 @@ namespace ACE.Server.Entity
 
         public float Damage;
 
+        /// <summary>The landed hit BEFORE the zone's damage-taken multiplier and the key-44 pct-HP add (2026-10-06): the base a
+        /// splash of this hit (Explosive Arrow) starts from, so each creature it reaches takes ITS OWN multiplier and the pct-HP
+        /// add (with its no-kill rule) stays on the creature it was rolled for.</summary>
+        public float DamageBeforeZoneTaken;
+
         /// <summary>The True Damage part of <see cref="Damage"/> (owner 2026-10-01): added after every defense step, so
         /// the cloak proc and Mana Barrier leave it alone too (Player.TakeDamage).</summary>
         public float TrueDamage;
@@ -325,6 +330,7 @@ namespace ACE.Server.Entity
 
                     BaseDamage = Damage; // Set after multiplier so ShowInfo() is consistent
                     DamageMitigated = 0.0f; // Intentional — nothing was mitigated in this path
+                    DamageBeforeZoneTaken = Damage;   // the fixed capture damage: no zone multiplier on this path
                     return Damage;
                 }
             }
@@ -785,11 +791,20 @@ namespace ACE.Server.Entity
             // added AFTER DamageMitigated is booked so no crit/armor/DRR/pet mitigation touches it (and the
             // mitigation figure does not go negative). Player attacker vs a zone-profiled monster only;
             // the NO-KILL rule, immune bool and per-character cooldown live in Player.ZcTryPctHpDamage.
+            var pctHpAdd = 0f;
             if (Damage > 0 && playerAttacker != null && playerDefender == null)
             {
-                Damage += playerAttacker.ZcTryPctHpDamage(defender);
+                pctHpAdd = playerAttacker.ZcTryPctHpDamage(defender);
                 playerAttacker.ZcTryLifeOnHit(defender);            // key 48 Life on Hit (heals the attacker; cooldown inside)
             }
+
+            // zone / tier / rank DAMAGE TAKEN multiplier (owner 2026-10-05, stat monster_damage_taken_mult): the whole landed hit
+            // on a Zone Control monster, key 44 included - the "more HP" knob. 1.0 unless set. Key 44 is only ever scaled DOWN
+            // by it: above 1 its NO-KILL amount would become a killing blow.
+            var takenMult = Damage > 0 && playerDefender == null
+                ? ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(defender) : 1f;
+            DamageBeforeZoneTaken = Damage;
+            Damage = Damage * takenMult + pctHpAdd * Math.Min(takenMult, 1f);
 
             //Console.WriteLine($"[DEBUG] Final Damage: {Damage}");
             return Damage;
