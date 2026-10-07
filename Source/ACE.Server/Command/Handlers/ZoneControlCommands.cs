@@ -192,8 +192,8 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /zonecontrol zoneshare <name> <on|off|show>   (Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship; only while the zone is enabled)");
                 Msg("  /zonecontrol gearlock [list] | here [any] | add|remove <landblock hex> [variation|any]   (T11+ gear is suppressed on these landblocks)");
                 Msg("  /zonecontrol procallow [list] | add <spell id> | remove <spell id>   (proc spells T11+ monsters never resist for being on gear below T11)");
-                Msg("  /zonecontrol serverbounty <show|on|off|add|set|remove> | target add|remove <creature wcid> | target clear   (ONE bounty for killing the target WCIDs ANYWHERE; one timer shared with every bounty)");
-                Msg("  /zonecontrol zonebounty <show|on|off|add|set|remove>   (ONE bounty across every T11-T25 zone, one timer shared with every bounty; replaces the zone bounties while on)");
+                Msg("  /zonecontrol serverbounty <show|on|off|add|set|remove> | target add|remove <creature wcid> | target clear   (ONE bounty for killing the target WCIDs ANYWHERE; its own cooldown unless bounty_shared_timer is on)");
+                Msg("  /zonecontrol zonebounty <show|on|off|add|set|remove>   (ONE bounty, one count and one cooldown across every T11-T25 zone; replaces the zone bounties while on)");
                 Msg("  /zonecontrol bounty <name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>   (Bounty: items every N kills per player, at most once per cooldown; v11+ only)");
                 Msg("  /zonecontrol survey <name> [lbHex]   (per-landblock content: generator + creature summary; lbHex = full detail for one landblock)");
                 Msg("  /zonecontrol quests <name>   (quest registry for the plugin Quests tab; throttled to one pull per 60s)");
@@ -2492,7 +2492,7 @@ namespace ACE.Server.Command.Handlers
                             // it hands items to every player on the shard: every change is on the audit channel
                             PlayerManager.BroadcastToAuditChannel(session?.Player, $"serverbounty {string.Join(" ", args.Skip(1))} -> {BountyManager.Describe(edited)}");
                         }
-                        Msg($"Server Bounty (kills anywhere; one timer shared with every bounty) {BountyManager.Describe(edited)}"
+                        Msg($"Server Bounty (kills anywhere{(ServerConfig.bounty_shared_timer.Value ? "; cooldown shared with every bounty" : "")}) {BountyManager.Describe(edited)}"
                             + (edited.TargetWcids.Count == 0 ? " - no targets: any kill that pays XP / luminance counts." : "."));
                         return;
                     }
@@ -2512,7 +2512,7 @@ namespace ACE.Server.Command.Handlers
                             if (err != null) { Msg($"Zone-wide bounty: {err}"); return; }
                             PlayerManager.BroadcastToAuditChannel(session?.Player, $"zonebounty {string.Join(" ", args.Skip(1))} -> {BountyManager.Describe(edited)}");
                         }
-                        Msg($"Zone-wide Bounty (every T11-T25 zone; one timer shared with every bounty) {BountyManager.Describe(edited)}"
+                        Msg($"Zone-wide Bounty (every T11-T25 zone: one count, one cooldown{(ServerConfig.bounty_shared_timer.Value ? ", shared with every bounty" : "")}) {BountyManager.Describe(edited)}"
                             + (edited.Active ? " - zone bounties are replaced while it is on." : "."));
                         return;
                     }

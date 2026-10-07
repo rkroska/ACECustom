@@ -140,7 +140,8 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Counts one kill for each bounty it reached (the area's, then the server-wide one) and hands over what it completed.
-        /// ONE SHARED TIMER (owner 2026-10-06, ruling 2b) - see SharedTimerPrefix:
+        /// Each bounty keeps its own cooldown. With the server setting bounty_shared_timer ON (default off), ONE SHARED TIMER -
+        /// see SharedTimerPrefix:
         ///   - the lock is read ONCE, before this kill, so every bounty judges the kill the same way;
         ///   - while it runs, a row WITH a cooldown does not count kills (no pre-hunting); a row with NO cooldown is outside it;
         ///   - rows of ONE bounty that complete on the same kill all pay;
@@ -198,11 +199,12 @@ namespace ACE.Server.Managers
                         payer = d.Bounty;
                     }
 
+                var sharedTimer = ServerConfig.bounty_shared_timer.Value;
                 var completed = new List<BountyEntry>();
                 foreach (var d in done)
                 {
                     var entry = progress[d.Key];
-                    if (d.Reward.CooldownSeconds > 0 && d.Bounty != payer)
+                    if (sharedTimer && d.Reward.CooldownSeconds > 0 && d.Bounty != payer)
                     {
                         // held one kill short: it pays on its first kill after the lock
                         entry.Kills = d.Reward.Kills - 1;
@@ -214,7 +216,7 @@ namespace ACE.Server.Managers
                     entry.LastAward = now;
                     progress[d.Key] = entry;
                     completed.Add(d.Reward);
-                    if (d.Reward.CooldownSeconds > 0)
+                    if (sharedTimer && d.Reward.CooldownSeconds > 0)
                         progress[SharedTimerPrefix + d.Key] = new Entry { LastAward = now };
                 }
 
@@ -257,6 +259,9 @@ namespace ACE.Server.Managers
         /// started it. 0 = none. Read live (CurrentCooldownSeconds), so an admin who shortens or removes the reward releases it.</summary>
         private static double SharedLockUntil(Dictionary<string, Entry> progress, double now)
         {
+            // OFF (the default): every bounty keeps only its own cooldown
+            if (!ServerConfig.bounty_shared_timer.Value)
+                return 0;
             double until = 0;
             foreach (var kv in progress)
             {
@@ -438,7 +443,7 @@ namespace ACE.Server.Managers
                 }
 
                 // the zone-wide bounty says so: its count and timer follow the player into every zone (owner 2026-10-05)
-                var where = areaKey == ZoneWideAreaKey ? "Bounty (all zones, one shared timer)" : "Bounty";
+                var where = areaKey == ZoneWideAreaKey ? "Bounty (all zones)" : "Bounty";
                 foreach (var reward in cfg.Entries)
                 {
                     if (reward == null || !reward.Valid) continue;
@@ -511,7 +516,7 @@ namespace ACE.Server.Managers
         /// <summary>The server-wide bounty's progress key (2026-10-06).</summary>
         public const string ServerAreaKey = "server";
 
-        /// <summary>The ONE SHARED TIMER (owner 2026-10-06, ruling 2b): "*:area#rowKey|0|awardUnix" - one entry per reward that
+        /// <summary>The ONE SHARED TIMER (only while the server setting bounty_shared_timer is ON - default off): "*:area#rowKey|0|awardUnix" - one entry per reward that
         /// paid with a cooldown. The lock lasts until award + that reward's CURRENT cooldown (SharedLockUntil), and no reward with
         /// a cooldown counts kills before it. Rows with no cooldown neither wait for it nor set it.</summary>
         private const string SharedTimerPrefix = "*:";
@@ -561,7 +566,7 @@ namespace ACE.Server.Managers
                 // the zone-wide bounty replaces every zone's own while it is on (owner 2026-10-05)
                 var zoneWide = ZoneControlManager.GetZoneWideBounty();
                 if (zoneWide.Active && ServerConfig.zonecontrol_enabled.Value)
-                    ShowArea("All zones (one shared timer)", ZoneWideAreaKey, zoneWide);
+                    ShowArea("All zones", ZoneWideAreaKey, zoneWide);
                 else
                     foreach (var z in ZoneControlManager.ActiveZoneBounties())
                         ShowArea(z.Name, ZoneAreaKey(z.Name), z.Reward);
