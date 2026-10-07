@@ -1047,10 +1047,10 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> dressing_room_fee_base { get; private set; } = new(100_000_000L, "Dressing Room: pyreals to lock in one piece in a wear slot never locked before, taken from banked pyreals first, then pyreal coins in the pack. 0 = free. Use /modifylong dressing_room_fee_base.");
 
         /// <summary>Fee multiplier for each earlier lock-in of the same wear slot on that character.</summary>
-        public static ConfigProperty<double> dressing_room_fee_growth { get; private set; } = new(2.0, "Dressing Room: the fee for a piece is multiplied by this for every earlier lock-in of the same wear slot on that character. Below 1 is treated as 1 (no growth). Use /modifydouble dressing_room_fee_growth.");
+        public static ConfigProperty<double> dressing_room_fee_growth { get; private set; } = new(1.1, "Dressing Room: the fee for a piece is multiplied by this for every earlier lock-in of the same wear slot on that character. Below 1 is treated as 1 (no growth). Use /modifydouble dressing_room_fee_growth.");
 
         /// <summary>The most one piece can ever cost. 0 = no cap.</summary>
-        public static ConfigProperty<long> dressing_room_fee_cap { get; private set; } = new(10_000_000_000L, "Dressing Room: the most one piece can cost however many times its slot has been locked. 0 = no cap. Use /modifylong dressing_room_fee_cap.");
+        public static ConfigProperty<long> dressing_room_fee_cap { get; private set; } = new(250_000_000L, "Dressing Room: the most one piece can cost however many times its slot has been locked. 0 = no cap. Use /modifylong dressing_room_fee_cap.");
     }
 
     public static class PropertyManager
