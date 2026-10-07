@@ -274,7 +274,8 @@ namespace ACE.Server.Network.Structure
             // output only, never persisted; only shows while the system is enabled and the item is
             // stamped (GetFlatBonus returns 0 otherwise). While WIELDED the green damage line
             // already includes the term (WeaponProfile), so the projection is for the unwielded case.
-            if (examiner != null && wo.Wielder == null)
+            // (gear / zone lock: no bonus damage where the examiner stands - the line is left out, like the flat term in combat)
+            if (examiner != null && wo.Wielder == null && !ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(wo, examiner))
             {
                 var projected = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFlatBonus(wo, examiner);
                 var floor = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFloorBonus(wo);
@@ -792,7 +793,9 @@ namespace ACE.Server.Network.Structure
                 var casterHolder = (wo.Wielder as Player) ?? examiner;
                 var enchantmentBonus = ResistMaskHelper.GetElementalDamageBonus(wo);
 
-                if (ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetCasterElementalMod(wo, casterHolder, out var gradedElemMod))
+                // gear / zone lock: combat uses the stock mod there (WorldObject_Weapon caster gate), so show that
+                if (!ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(wo, casterHolder)
+                    && ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetCasterElementalMod(wo, casterHolder, out var gradedElemMod))
                     // the same composition combat uses: the graded mod MULTIPLIES the aura, it does not add to it
                     PropertiesFloat[PropertyFloat.ElementalDamageMod] = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.ComposeCasterModifier(
                         gradedElemMod, enchantmentBonus, ACE.Server.Managers.WeaponScaling.WeaponScalingManager.Current.CasterAuraRescale);
@@ -991,7 +994,11 @@ namespace ACE.Server.Network.Structure
             // gone; a Tainted armour / jewelry piece always shows the Tainted line (weapons show it in Property Details)
             var worked = wo?.GetProperty(PropertyBool.GearEssenceWorked) == true;
             var showTainted = GearEssences.IsTainted(wo) && !GearEssences.IsWeapon(wo);   // Tainted implies Worked
-            if (!worked && ld.IndexOf(LegacyModifierMarker, StringComparison.Ordinal) < 0)
+            // an armour / jewelry piece with a record shows its block from the record even when the "Zone Cantrip:" text is
+            // gone - tailoring a look onto a piece replaces its LongDesc (2026-10-05: "T11 stats go poof", the stats were
+            // still on the piece, only this block was missing)
+            var fromRecord = resolved != null && resolved.Lines.Count > 0 && !GearEssences.IsWeapon(wo);
+            if (!worked && !fromRecord && ld.IndexOf(LegacyModifierMarker, StringComparison.Ordinal) < 0)
                 return;
 
             var cantrips = new List<string>();
@@ -1014,13 +1021,47 @@ namespace ACE.Server.Network.Structure
                     rest.Add(raw);
             }
 
+            // GEAR / ZONE LOCK (owner 2026-10-05: "Show the real value"): while THIS examiner stands where worn Zone gear is
+            // suppressed, each line shows what it gives there - 0 - instead of its rolled value. Armor Level (key 25) is
+            // stamped on the item and Reinforced sets protections; both stay on, so both keep their numbers.
+            // judged for the WEARER of worn gear (combat does), else the examiner - the same holder the weapon panel uses
+            var wornHolder = (wo?.Wielder as Player) ?? examiner;
+            var wornLocked = wo != null && wornHolder != null && ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo)
+                && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(wornHolder);
+
             if (resolved != null)
             {
                 var essenceLock = GearEssences.LockedKey(wo);
+                var tinker = ZoneStatResolver.ReadTinkerBonus(wo);
                 foreach (var line in resolved.Lines)
-                    cantrips.Add("- " + line.Text
+                {
+                    // the jewelry Cast on Strike is also off while Zone Control is off - combat says so (WorldObject.ZcProcSuppressed)
+                    var lineOff = (wornLocked && line.Record.Key != ACE.Server.Managers.ZoneControl.ZoneModifiers.ArmorLevelKey)
+                        || (line.Record.Key == ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcKey && !ServerConfig.zonecontrol_enabled.Value);
+                    // a tinker on the line's own prop (2026-10-05, e.g. Hematite on a Max Health line) shows next to it
+                    var tinkered = 0;
+                    if (!lineOff && tinker.Count > 0 && line.Def?.Ints != null)
+                        foreach (var (propId, _) in line.Def.Ints)
+                            if (tinker.TryGetValue(propId, out var add)) { tinkered = add; break; }
+                    var lineText = !lineOff ? line.Text
+                        : line.Def != null && line.Def.SlotSpecial && string.IsNullOrEmpty(line.Def.ValFmt) ? line.Name + " (off here)"
+                        : line.TextAt(0);
+                    // jewelry Cast on Strike (key 54, 2026-10-06): which spell and how often, next to the rolled power
+                    if (!lineOff && line.Record.Key == ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcKey && wo?.ProcSpell != null
+                        && ACE.Server.Managers.ZoneControl.ZoneLootMutator.IsJewelProcSpell(wo.ProcSpell.Value))   // only OUR proc
+                    {
+                        var procSpell = new ACE.Server.Entity.Spell(wo.ProcSpell.Value);
+                        lineText += $" - {(procSpell.NotFound ? "spell " + wo.ProcSpell.Value : procSpell.Name)}, {(wo.ProcSpellRate ?? 0) * 100:0.#}% per hit";
+                    }
+                    cantrips.Add("- " + lineText
+                        + (tinkered != 0 ? $" ({tinkered:+#;-#} tinkered)" : "")
                         + (!GearEssences.UsesASlot(line.Def) ? GearEssences.BuiltInMarker : "")   // a null Def = a legacy core resist: no slot either
                         + (line.Record.Key == essenceLock ? " (Locked)" : ""));
+                }
+                // Reinforced lives only as baked text; a piece that lost its text (tailored) still has the rank stamped
+                var rank = wo?.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.ReinforcedRank) ?? 0;
+                if (reinforced.Count == 0 && rank > 0 && ACE.Server.Managers.ZoneControl.ZoneModifiers.TryGet(ACE.Server.Managers.ZoneControl.ZoneModifiers.ReinforcedKey, out var reinforcedDef))
+                    reinforced.Add($"- {reinforcedDef.Name} +{rank} [{reinforcedDef.Min}-{reinforcedDef.Max}]");
                 cantrips.AddRange(reinforced);
             }
 
@@ -1039,15 +1080,17 @@ namespace ACE.Server.Network.Structure
             var propertiesLine = legacyText || GearEssences.IsWeapon(wo) ? null : GearEssences.PropertiesAppraisalLine(wo);
             if (propertiesLine != null)
                 cantrips.Insert(0, propertiesLine);
+            // Gear Grade (owner 2026-10-05, item 4): display only, armour / jewelry / clothing / cloak with a record - leads the block
+            // like Weapon Grade leads the weapon panel
+            var gradeLine = legacyText || GearEssences.IsWeapon(wo) ? null : ZoneStatResolver.GearGradeLine(wo);
+            if (gradeLine != null)
+                cantrips.Insert(0, gradeLine);
             if (cantrips.Count == 0)
                 return;
 
-            // Armor zone lock (owner 2026-08-30, wording approved): same rule as the weapon
-            // panel - the lines keep showing full power (items are compared in town), and this
-            // pinned line reconciles that with the dormant contribution while the examiner
-            // stands outside every authored area.
-            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo)
-                && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(examiner))
+            // Armor zone lock (owner 2026-08-30, wording approved): while the holder stands where worn Zone gear is suppressed, the
+            // lines above show what they give there (0, since 2026-10-05) and this pinned line says why.
+            if (wornLocked)
                 cantrips.Insert(0, ACE.Server.Managers.ZoneControl.ZoneControlManager.ZoneLockedAppraisalLine);
 
             // Collapse the blank runs the pulled lines leave behind: the slot-special stamp joins
@@ -1237,6 +1280,12 @@ namespace ACE.Server.Network.Structure
             // Add all the descriptive enhancements
             var effectDescriptions = new List<string>();
 
+            // GEAR / ZONE LOCK (owner 2026-10-05: "Show the real value"): while THIS examiner stands where the weapon's Zone
+            // power is suppressed, every card line below shows what it does there (the combat fallbacks in
+            // WorldObject_Weapon / DamageEvent), not the stamped value. Judged for the same holder the damage profile uses: the
+            // wielder of a worn weapon, else the examiner.
+            var zcLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, (weapon.Wielder as Player) ?? examiner);
+
             // Determine skill: explicit WeaponSkill, or fallback for Casters (Wands)
             var checkSkill = weapon.WeaponSkill;
             if (checkSkill == Skill.None && weapon is Caster)
@@ -1252,7 +1301,7 @@ namespace ACE.Server.Network.Structure
             var slayerAll = weapon.GetProperty(PropertyBool.SlayerAllCreatures) == true;
             if (weapon.SlayerCreatureType.HasValue || slayerAll)
             {
-                var bonus = weapon.SlayerDamageBonus ?? 1.0;
+                var bonus = zcLocked ? 1.0 : weapon.SlayerDamageBonus ?? 1.0;
                 var niceName = slayerAll
                     ? "All Creatures"
                     : CreatureNameRegex().Replace(weapon.SlayerCreatureType.ToString(), " $1");
@@ -1262,14 +1311,14 @@ namespace ACE.Server.Network.Structure
             // Biting Strike
             if (weapon.CriticalFrequency.HasValue)
             {
-                var val = weapon.CriticalFrequency.Value;
+                var val = zcLocked ? WorldObject.LockedCritFrequency(weapon) : weapon.CriticalFrequency.Value;   // locked: the combat fallback crit rate
                 effectDescriptions.Add($"- Biting Strike: +{val:P0} Crit Chance");
             }
 
             // Cleaving (multi-target): the raw prop stores TOTAL targets (extra + 1), so raw-prop
             // readouts look one higher than authored — this line shows the true extra-target count.
             if (weapon.IsCleaving)
-                effectDescriptions.Add($"- Cleaving: +{weapon.CleaveTargets} Targets");
+                effectDescriptions.Add($"- Cleaving: +{(zcLocked ? 0 : weapon.CleaveTargets)} Targets");
 
             // Resistance Cleaving (Fixed Resistance Modifier)
             if (weapon.ResistanceModifier.HasValue && weapon.ResistanceModifierType.HasValue)
@@ -1290,7 +1339,7 @@ namespace ACE.Server.Network.Structure
             // Split Arrow
             if (weapon.GetProperty(PropertyBool.SplitArrows) == true)
             {
-                var count = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? Creature.DEFAULT_SPLIT_ARROW_COUNT;
+                var count = zcLocked ? 0 : weapon.GetProperty(PropertyInt.SplitArrowCount) ?? Creature.DEFAULT_SPLIT_ARROW_COUNT;
                 var val = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? Creature.DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER;
                 effectDescriptions.Add($"- Split Arrow: +{count} Targets, {val:P0} Dmg");
             }
@@ -1299,7 +1348,7 @@ namespace ACE.Server.Network.Structure
             // player actually deals is prop + 1 (a stored 1.0 = normal 2x crit).
             if (weapon.GetProperty(PropertyFloat.CriticalMultiplier) > 1.0f)
             {
-                var val = weapon.GetProperty(PropertyFloat.CriticalMultiplier).Value + 1.0;
+                var val = zcLocked ? WorldObject.DefaultCritDamageMultiplier + 1.0 : weapon.GetProperty(PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (a plain 2x crit)
                 effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
             }
 
@@ -1326,7 +1375,8 @@ namespace ACE.Server.Network.Structure
             if (weapon.HasImbuedEffect(ImbuedEffectType.ArmorRending))
             {
                 var rendOverride = weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ArmorRendOverridePropId);
-                var ignored = rendOverride.HasValue
+                var ignored = zcLocked ? 0.0
+                    : rendOverride.HasValue
                     ? Math.Clamp(rendOverride.Value, 0.0, 1.0)
                     : 1.0 - WorldObject.GetArmorRendingMod(skill);
                 effectDescriptions.Add($"- {ImbuedEffectType.ArmorRending.DisplayName()}: {ignored:P1} Ignored");
@@ -1373,7 +1423,7 @@ namespace ACE.Server.Network.Structure
                     // there"). It shared a slot with the vuln multiplier internally - they are MAX'd,
                     // never stacked - but that is an implementation detail of the resist chain and has
                     // no business on a player-facing line. A rend is a rend.
-                    var bonusPct = (mod - 1.0);
+                    var bonusPct = zcLocked ? 0.0 : (mod - 1.0);   // locked: the rend is skipped in combat
                     effectDescriptions.Add($"- {type.DisplayName()}: +{bonusPct:P0} Dmg");
                 }
             }
@@ -1381,7 +1431,7 @@ namespace ACE.Server.Network.Structure
             // Shield Cleaving: fraction of the target's shield AL the weapon ignores. Stored directly on
             // the weapon (PropertyFloat.IgnoreShield); GetIgnoreShieldMod reads it at hit time.
             if (weapon.IgnoreShield.HasValue && weapon.IgnoreShield.Value > 0)
-                effectDescriptions.Add($"- Shield Cleaving: {Math.Clamp(weapon.IgnoreShield.Value, 0.0, 1.0):P0} Shield Ignored");
+                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(weapon.IgnoreShield.Value, 0.0, 1.0)):P0} Shield Ignored");
 
             // Phantom (hollow): the weapon bypasses the target's protective magic - Impen/Banes on armor
             // and Life prots. RETAIL ONLY as of 2026-08-25: our loot card was deleted, so every weapon
@@ -1442,7 +1492,7 @@ namespace ACE.Server.Network.Structure
                     // perfect roll, NOT the quality percentile, and family ladders have different
                     // spreads - a bow F- honestly deals 72% of a perfect bow. Without the word
                     // "damage" that read as a display bug ("how is the worst grade 72%?").
-                    effectDescriptions.Insert(0, $"- Weapon Grade: {wsGrade} ({wsPct}% of max damage)");
+                    effectDescriptions.Insert(0, zcLocked ? $"- Weapon Grade: {wsGrade} (no bonus damage here)" : $"- Weapon Grade: {wsGrade} ({wsPct}% of max damage)");
                 }
                 else
                     effectDescriptions.Insert(0, $"- Weapon Grade: {wsGrade}");
@@ -1454,13 +1504,10 @@ namespace ACE.Server.Network.Structure
             if (propertiesLine != null)
                 effectDescriptions.Insert(wsQuality != null ? 1 : 0, propertiesLine);
 
-            // Zone lock (owner 2026-08-30, "add the dormant line"): when the lock is ON and THIS
-            // examiner is standing outside every authored area, say so at the very top - the
-            // panel keeps showing the item's full power on purpose (players compare and trade in
-            // town, where gated numbers would make every drop read as junk), so this line is
-            // what reconciles the big numbers with the small hits. Absent when the lock is off,
-            // when the item is not ZC-stamped, or inside an authored area.
-            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, examiner))
+            // Zone lock (owner 2026-08-30, "add the dormant line"): when the weapon's Zone power is suppressed where its holder
+            // stands, say so at the very top - the card lines below show the locked values (since 2026-10-05) and this line says
+            // why. Absent when the lock is off, when the item is not ZC-stamped, or inside an authored area.
+            if (zcLocked)
                 effectDescriptions.Insert(0, ACE.Server.Managers.ZoneControl.ZoneControlManager.ZoneLockedAppraisalLine);
 
             // Cast on Strike (owner 2026-08-27: "Appraisal line should show Force Arc (13% proc chance)").
@@ -1473,24 +1520,20 @@ namespace ACE.Server.Network.Structure
             {
                 if (weapon.ProcSpell.HasValue &&
                     ACE.Server.Managers.ZoneControl.ZoneLootMutator.TryGetProcDisplayName(weapon.ProcSpell.Value, out var arcName))
-                    effectDescriptions.Add($"- Cast on Strike: {arcName} ({(weapon.ProcSpellRate ?? 0f) * 100f:0.#}% proc chance)");
+                    effectDescriptions.Add($"- Cast on Strike: {arcName} ({(zcLocked ? 0f : (weapon.ProcSpellRate ?? 0f)) * 100f:0.#}% proc chance)");
 
                 if (weapon.ProcSpell2.HasValue &&
                     ACE.Server.Managers.ZoneControl.ZoneLootMutator.TryGetProcDisplayName(weapon.ProcSpell2.Value, out var ringName))
-                    effectDescriptions.Add($"- Cast on Strike: {ringName} ({(weapon.ProcSpellRate2 ?? 0f) * 100f:0.#}% proc chance)");
+                    effectDescriptions.Add($"- Cast on Strike: {ringName} ({(zcLocked ? 0f : (weapon.ProcSpellRate2 ?? 0f)) * 100f:0.#}% proc chance)");
             }
 
             effectDescriptions.Add($"- Effective Melee Defense: {emdVal}");
 
-            if (weapon.WieldRequirements == WieldRequirement.Int64Stat &&
-                weapon.WieldSkillType == (int)PropertyInt64.LumAugItemCount)
-                effectDescriptions.Add($"- Wield requires: {weapon.WieldDifficulty ?? 0:N0} Item Augmentations");
-
-            // T16+ charm wield gates in slots 3/4 (owner 2026-08-15)
-            if (weapon.WieldRequirements3 == WieldRequirement.Int64Stat && weapon.WieldSkillType3 != null)
-                effectDescriptions.Add($"- Wield requires: {weapon.WieldDifficulty3 ?? 0:N0} {CharmCounterName((PropertyInt64)weapon.WieldSkillType3.Value)}");
-            if (weapon.WieldRequirements4 == WieldRequirement.Int64Stat && weapon.WieldSkillType4 != null)
-                effectDescriptions.Add($"- Wield requires: {weapon.WieldDifficulty4 ?? 0:N0} {CharmCounterName((PropertyInt64)weapon.WieldSkillType4.Value)}");
+            // the tier wield gates (owner 2026-10-05: Creature + Item + Life at T11-T15, Triune at T16+) - the same lines, in the
+            // same order, as the armour block (LootGenerationFactory.WieldLineFor)
+            foreach (var gate in ACE.Server.Factories.LootGenerationFactory.WieldLineFor(weapon).Split('\n'))
+                if (gate.Length > 0)
+                    effectDescriptions.Add("- " + gate);
 
             // Property Details renders via the LONG DESCRIPTION, not the Use string (owner
             // 2026-08-01): the client draws its native caster sections (Mana Conversion, "Damage
@@ -1505,20 +1548,6 @@ namespace ACE.Server.Network.Structure
 
             // item enchantments can also be on wielder currently
             AddEnchantments(weapon);
-        }
-
-        /// <summary>Display name for a growth-charm counter used as a T16+ wield gate.</summary>
-        private static string CharmCounterName(PropertyInt64 prop)
-        {
-            switch (prop)
-            {
-                case PropertyInt64.TriuneWeaveCount: return "Triune Weave";
-                case PropertyInt64.BattlemagesWrathCharmCount: return "Battlemage's Wrath";
-                case PropertyInt64.NetherVeilCharmCount: return "Nether Veil";
-                case PropertyInt64.CrashingSteelCharmCount: return "Crashing Steel";
-                case PropertyInt64.TrueShotCharmCount: return "True Shot";
-                default: return prop.ToString();
-            }
         }
 
         private void BuildHookProfile(WorldObject hookedItem)

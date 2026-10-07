@@ -156,7 +156,12 @@ namespace ACE.Server.Entity
 
             // 4. The main weapon's tinkers, back on top of the forged stats.
             var mainTinkers = TinkerReversal.Strip(main);
-            if (mainTinkers.Status != TinkerReversal.Status.Ok || !TinkerReversal.ReplayOnForgeStats(item, mainTinkers.Tinkers))
+            // On tier 11+ armour the armour level is Zone Control's: the resolve above already set it from the record PLUS
+            // what the piece's tinkers added (ZcTinkerBonus, or its Steel entries in the tinker log), so Steel is not replayed.
+            var zoneOwned = item.ArmorLevel.HasValue && ZoneStatResolver.Compute(item)?.ArmorLevel != null
+                ? new[] { (StatType.Int, (int)PropertyInt.ArmorLevel) }
+                : null;
+            if (mainTinkers.Status != TinkerReversal.Status.Ok || !TinkerReversal.ReplayOnForgeStats(item, mainTinkers.Tinkers, zoneOwned))
             {
                 // The half-built result is never handed over: release it, or its guid stays allocated until a restart.
                 // Only when this method made it - a caller's own factory (the offline audits) owns what it creates.

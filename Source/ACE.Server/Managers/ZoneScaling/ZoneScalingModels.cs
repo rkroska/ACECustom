@@ -123,6 +123,15 @@ namespace ACE.Server.Managers.ZoneScaling
         // Incantation) and Destructive Curse (I-VII + Incantation). Solved per tier x rank against a Corrosion tick. Unset = x1.
         public const string DotMultCorruption = "dot_mult_corruption";
         public const string DotMultDestructive = "dot_mult_destructive";
+        // MONSTER DAMAGE MULT (owner 2026-10-05): x EVERYTHING a monster in this zone / tier / rank deals to a player - melee and
+        // missile (normal + True Damage), spells, DoT ticks, harm / drain - on top of the per-monster `damagemult`. Same hooks as
+        // that one (ZoneControlManager.MonsterDamageMultFor). 1.2 = 20 pct harder. Unset = x1.
+        public const string MonsterDamageMult = "monster_damage_mult";
+        // MONSTER DAMAGE TAKEN MULT (owner 2026-10-05: "the exact same thing ... for their defense"): x EVERYTHING a monster in
+        // this zone / tier / rank takes - melee and missile (incl. the key-44 pct-HP special), spell projectiles, harm / drain,
+        // DoT ticks - from any attacker. The mirror of monster_damage_mult, and the "more HP" knob without touching the 1M HP
+        // (ZoneControlManager.MonsterDamageTakenMultFor). 0.8 = takes 20 pct less = fights last 1.25x. Unset = x1.
+        public const string MonsterDamageTakenMult = "monster_damage_taken_mult";
         // owner 2026-10-03: 1 = the monster takes NO damage from Rocky Shrapnel (6152) / Ring of Unspeakable Agony (2673).
         // Zone / Tier Default / rank / wcid like any stat; PropertyBool.ZcImmuneShrapnelAgony (50059) does the same per weenie.
         public const string ImmuneShrapnelAgony = "immune_shrapnel_agony";
@@ -368,6 +377,16 @@ namespace ACE.Server.Managers.ZoneScaling
         public const string CheatDeathImmunity = "cheatdeath_immunity";    // immunity window, seconds (default 5)
         public const string LifeOnHitCap = "lifeonhit_cap";                 // key 48: worn-total cap in pct of max HP per hit (default 25)
         public const string LifeOnHitCooldown = "lifeonhit_cooldown";       // key 48: per-character seconds between heals (default 3)
+        // key 54 Cast on Strike on JEWELRY (owner 2026-10-05): per-hit proc rate = rate + U(0, rand), clamped 0..1
+        public const string JewelryProcRate = "jewelry_proc_rate";           // base proc rate, fraction (default 0.10, max 1.0)
+        public const string JewelryProcRateRand = "jewelry_proc_rate_rand";  // random part added per drop, fraction (default 0.05)
+        public const string JewelryProcSpellcraft = "jewelry_proc_spellcraft"; // stamped ItemSpellcraft = the proc's resist roll (default 9999)
+        // Item spells on T11+ drops (owner 2026-10-05): random cantrips from a per-slot list; count and level per zone.
+        public const string ItemSpellCountMin = "item_spell_count_min";   // fewest spells per drop (default 1)
+        public const string ItemSpellCountMax = "item_spell_count_max";   // most spells per drop (default 3)
+        public const string ItemSpellLevelMin = "item_spell_level_min";   // 1 Minor, 2 Major, 3 Epic, 4 Legendary (default 4)
+        public const string ItemSpellLevelMax = "item_spell_level_max";   // (default 4)
+        public const string ItemSpellThirstChance = "item_spell_thirst_chance";   // weapon drop -> Blood / Spirit Thirst, fraction (default 0.02)
         // Worn-gear HARD caps (owner 2026-08-21: "everything we set at 2500 must cap at EXACTLY 2500, not
         // around 2500"). The flat per-piece bands overshoot the anchor by rounding (18 x 139 = 2502 at T25),
         // so the cap is enforced on the EQUIPPED SUM at read time - equipment term only, never enchantments /
@@ -497,6 +516,12 @@ namespace ACE.Server.Managers.ZoneScaling
         public const string LootWeightArmor = "loot_weight_armor";         //   (shield rides armor)
         public const string LootWeightJewelry = "loot_weight_jewelry";
         public const string LootWeightCloak = "loot_weight_cloak";
+        // Clothing on T11+ (owner 2026-10-05: "anything that could drop in T10, do that in T11 with the upgraded rolls"): shirts /
+        // pants from the retail clothing table (caps, cowls, shoes, gloves come through the armor slots), a slot like the cloak (default 1 per kill, budget weight 0.5 - retail T10
+        // drops clothing ~13 pct, about half of armor)
+        public const string LootSlotClothing = "loot_slot_clothing";
+        public const string LootSlotClothingMax = "loot_slot_clothing_max";
+        public const string LootWeightClothing = "loot_weight_clothing";
 
         // C5. ARMOR BASE VALUES (owner 2026-08-24, Armor_Base_Values_Plan_2026-08-24.md sections 2.1-2.3).
         // The three numbers a T11+ armour piece was built on that had no authoring surface at all.
@@ -658,6 +683,20 @@ namespace ACE.Server.Managers.ZoneScaling
             BagOdds, BagWeightForgetfulness, BagWeightMemory, BagWeightSecondThoughts, BagWeightTempering,
             BagWeightFortune, BagWeightRebirth, BagWeightLocking, BagWeightVengeance,
             BagWeightMadness, BagWeightTransmutation, BagWeightEmptiness, BagWeightExchange,
+            // zone-wide monster damage multiplier (2026-10-05) - APPEND-ONLY
+            MonsterDamageMult,
+            // zone-wide monster damage TAKEN multiplier (2026-10-05) - APPEND-ONLY
+            MonsterDamageTakenMult,
+            // Jewelry Cast on Strike, key 54 (2026-10-06) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            "modifier_chance_54", "modifier_chance_54_t25",
+            JewelryProcRate, "jewelry_proc_rate_t25", JewelryProcRateRand, "jewelry_proc_rate_rand_t25", JewelryProcSpellcraft, "jewelry_proc_spellcraft_t25",
+            // Item spells (2026-10-06) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            ItemSpellCountMin, "item_spell_count_min_t25", ItemSpellCountMax, "item_spell_count_max_t25",
+            ItemSpellLevelMin, "item_spell_level_min_t25", ItemSpellLevelMax, "item_spell_level_max_t25",
+            // Clothing drop slot (2026-10-06) - APPEND-ONLY
+            LootSlotClothing, LootSlotClothingMax, LootWeightClothing,
+            // Blood / Spirit Thirst chance (2026-10-06) - APPEND-ONLY
+            ItemSpellThirstChance, "item_spell_thirst_chance_t25",
         };
 
         /// <summary>

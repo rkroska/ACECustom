@@ -375,6 +375,12 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Tier 11+ gear in MY pack / worn (owner 2026-10-05): bring its wield gates up to the current tier row before it is
+            // shown, so the appraisal never lists an old requirement. Own items only - this player's thread owns them.
+            if (ACE.Server.Managers.ZoneControl.ZoneCraftGate.TierOf(wo) >= ACE.Server.Factories.LootGenerationFactory.ZoneLootSetMinTier   // incl. legacy WeaponAugScaleTier
+                && FindObject(objectGuid, SearchLocations.MyInventory | SearchLocations.MyEquippedItems) != null)
+                ACE.Server.Factories.LootGenerationFactory.RefreshWieldGate(wo, ACE.Server.Managers.ZoneControl.ZoneStatResolver.TierOf(wo));
+
             var currentTime = Time.GetUnixTime();
 
             // compare with previously requested appraisal target

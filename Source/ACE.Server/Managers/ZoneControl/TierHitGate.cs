@@ -2,6 +2,7 @@ using System;
 
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Server.Entity;
 using ACE.Server.Managers.WeaponScaling;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
@@ -141,6 +142,54 @@ namespace ACE.Server.Managers.ZoneControl
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// LOW-TIER PROC RESIST (owner 2026-10-06, correcting 10-05: "We want the PROCs from those items to get resisted, not all
+        /// damage and spells"). True = this harmful PROC on a governed v11+ monster comes from gear below T11, so the caller
+        /// treats it as resisted. The callers are the PROC paths only - hand-casts (any wand, bare hands) and gems are never
+        /// gated.
+        ///
+        /// <paramref name="item"/> is the proccing item. NULL means the item is unknown and the cast is left alone.
+        /// Aetheria surges are exempt: there is no T11 aetheria, so the rule would remove them outright.
+        /// </summary>
+        public static bool IsLowTierCast(WorldObject caster, WorldObject target, Spell spell, WorldObject item)
+        {
+            if (!ServerConfig.zc_low_tier_item_spell_resist.Value)
+                return false;
+            if (caster is not Player || target is not Creature targetCreature || target is Player)
+                return false;
+            if (spell == null || !spell.IsHarmful || spell.IsSelfTargeted)
+                return false;
+            // ResolveCombatProfile: null while zonecontrol_enabled is OFF - the master switch makes this inert like every combat gate
+            if (ZoneControlManager.ResolveCombatProfile(targetCreature) == null
+                || ZoneControlManager.GetEffectiveVariation(targetCreature) < MinGatedVariation)
+                return false;
+            // the allow list (owner 2026-10-06: "add / remove procs allowed via plugin, similar to craft components") - read after
+            // the profile resolve, which has initialised the zone store
+            if (ZoneControlManager.IsProcAllowed(spell.Id))
+                return false;
+
+            if (item == null || item is Creature)
+                return false;
+            if (Aetheria.IsAetheria(item.WeenieClassId))
+                return false;
+            return ZoneCraftGate.TierOf(item) < MinGatedVariation;
+        }
+
+        /// <summary>IsLowTierCast plus the normal resist feedback ("X resists your spell" + the resist sound).
+        /// Call it BEFORE the skill resist roll and before any Overpower check - Overpower must not land it.</summary>
+        public static bool BlockLowTierCast(WorldObject caster, WorldObject target, Spell spell, WorldObject item)
+        {
+            if (!IsLowTierCast(caster, target, spell, item))
+                return false;
+
+            if (caster is Player player && player.Session != null)
+            {
+                player.SendChatMessage(target, $"{target.Name} resists your spell", ChatMessageType.Magic);
+                player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.ResistSpell, 1.0f));
+            }
+            return true;
         }
     }
 }

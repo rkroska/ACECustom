@@ -127,6 +127,15 @@ namespace ACE.Server.WorldObjects
 
             var eo = clothesAndCloaks.Concat(sortedArmorItems).ToList();
 
+            // Dressing Room: a player with a locked-in look is drawn from it (Creature_DressingRoom.cs). Null - the
+            // feature off, no look, or anything going wrong in there - means carry on exactly as before.
+            if (this is Player dressingRoomPlayer)
+            {
+                var dressingRoomObjDesc = TryCalculateDressingRoomObjDesc(dressingRoomPlayer, eo, thisSetupId, showHelm, showCloak);
+                if (dressingRoomObjDesc != null)
+                    return dressingRoomObjDesc;
+            }
+
             if (eo.Count == 0)
             {
                 // Check if there is any defined ObjDesc in the Biota and, if so, apply them

@@ -398,6 +398,10 @@ namespace ACE.Server.WorldObjects
             var damageEvent = DamageEvent.CalculateDamage(this, target, damageSource);
             uint appliedDamage = 0;
 
+            // the hit as it reached the target, before a Mana Barrier ate part of it: the Explosive Arrow ring below keeps only
+            // the share that got through (a fully absorbed arrow blasts nothing)
+            var damageBeforeBarrier = damageEvent.Damage;
+
             if (damageEvent.HasDamage)
             {
                 OnDamageTarget(target, damageEvent.CombatType, damageEvent.IsCritical);
@@ -533,7 +537,11 @@ namespace ACE.Server.WorldObjects
             // NOTE: GetCombatType() checks the equipped weapon's wield slot, but if the player swaps weapons mid-flight
             // or split arrows hit while stabbing, we also check damageEvent's CombatType and DamageSource's Missile status.
             if (damageEvent.HasDamage && (GetCombatType() == CombatType.Missile || damageEvent.CombatType == CombatType.Missile || (damageEvent.DamageSource?.Missile ?? false)))
-                TryApplyExplosiveArrowProc(target, damageEvent.Damage, damageEvent.DamageType, damageEvent.DamageSource);
+                // the hit before the zone's taken multiplier and key 44 (the ring applies each creature's own, 2026-10-06), times
+                // the share a Mana Barrier let through
+                TryApplyExplosiveArrowProc(target,
+                    damageEvent.DamageBeforeZoneTaken * (damageBeforeBarrier > 0 ? damageEvent.Damage / damageBeforeBarrier : 0f),
+                    damageEvent.DamageType, damageEvent.DamageSource);
 
             return damageEvent;
         }

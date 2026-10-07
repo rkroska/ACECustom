@@ -164,6 +164,13 @@ namespace ACE.Server.Tests
                 problems.Add($"properties {string.Join(",", back.PoolKeys)} != chosen {string.Join(",", outcome.Result.PoolKeys)}");
             if (back.PropertyCount != outcome.Result.PropertyCount)
                 problems.Add($"property count {back.PropertyCount} != forged {outcome.Result.PropertyCount}");
+            // Zone Control's own answer for the piece (record + tinkers) is what it must carry: no stat rolled or replayed on top
+            var zc = ZoneStatResolver.Compute(item);
+            if (zc?.ArmorLevel != null && item.ArmorLevel != zc.ArmorLevel)
+                problems.Add($"armour level {item.ArmorLevel}, Zone Control resolves {zc.ArmorLevel}");
+            if (zc != null)
+                foreach (var (prop, value) in zc.Ints)
+                    if (item.GetProperty(prop) != value) problems.Add($"{prop} is {item.GetProperty(prop)?.ToString() ?? "none"}, Zone Control resolves {value}");
             if (back.PropertyCount > back.PropertyCap)
                 problems.Add($"{back.PropertyCount} properties, over the tier's limit of {back.PropertyCap}");
             propertyCounts.Add((m.PropertyCount, f.PropertyCount, back.PropertyCount));

@@ -390,7 +390,7 @@ namespace ACE.Server.Controllers
             return $"/api/icon/{icon.Value}" + (query.Count > 0 ? "?" + string.Join("&", query) : "");
         }
 
-        private static object SpotDto(LandblockInstance spawn)
+        internal static object SpotDto(LandblockInstance spawn)
         {
             var indoors = (spawn.ObjCellId & 0xFFFF) >= 0x100;
             var cell = spawn.ObjCellId;

@@ -9,16 +9,17 @@ namespace ACE.Server.WorldObjects
     /// a melee hit. Spell Armor is a LEVEL on the same curve as armor (SkillFormula.CalcArmorMod: 66.67 / (66.67 + level)),
     /// set per zone / tier / rank like any zone stat (plugin Defense tab, `spell_armor`). Unset or 0 = full damage.
     ///
-    /// Rules: player HAND casts only - Cast on Strike procs keep their own tuning (owner 10-04); only reduces damage, never a
+    /// Rules: every PLAYER spell - hand casts AND Cast on Strike procs (owner 10-04 after release: "Procs hit as hard as hand-cast
+    /// spells - no Spell Armor deduction is a bunch of 1 shots"; the proc exemption was removed 2026-10-05); only reduces damage, never a
     /// miss (landing stays magic_defense); Imperil and Armor Rend never touch it; players, pets and monster-on-monster never.
     /// Wired into SpellProjectile.CalculateDamage (both paths), Player_Magic ring damage and the DoT tick.
     /// </summary>
     partial class Creature
     {
         /// <summary>x damage this monster takes from a spell of <paramref name="source"/>; 1.0 when Spell Armor does not apply.</summary>
-        public float GetZcSpellArmorMod(WorldObject source, bool fromProc)
+        public float GetZcSpellArmorMod(WorldObject source)
         {
-            if (fromProc || !(source is Player) || this is Player || this is CombatPet)
+            if (!(source is Player) || this is Player || this is CombatPet)
                 return 1.0f;
 
             var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveCombatProfile(this);
@@ -39,8 +40,8 @@ namespace ACE.Server.WorldObjects
         /// (WeaponScalingCombat.GetSpellCritDamageBonus, added the same day). The same
         /// CDR then divided a ~4-10x spell crit by melee's ~13-533x stack: spell crits landed at 0.98x (T11) .. 0.06x (T25).
         /// True when both melee rules apply to this spell crit: a player HAND-casting with Zone Control gear at a Zone Control
-        /// monster. Retail (base world, retail gear), PvP, pets, monster casts and Cast on Strike procs (their own tuning, as
-        /// with Spell Armor) keep the stock spell crit.
+        /// monster. Retail (base world, retail gear), PvP, pets, monster casts and Cast on Strike procs (their own tuning) keep
+        /// the stock spell crit.
         /// </summary>
         public static bool ZcSpellCritMirrorsMelee(Creature caster, WorldObject weapon, Creature target, bool fromProc)
         {

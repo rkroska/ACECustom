@@ -430,6 +430,13 @@ namespace ACE.Entity.Enum.Properties
         /// on a piece a bag emptied. Server-only - not an assessment property.</summary>
         GearEssenceWorked = 51001,
 
+        /// <summary>Dressing Room (2026-10-05): on an NPC WEENIE, marks a dressing room attendant. Using it offers to lock
+        /// the pieces the player is wearing in as their look. Server-only - not an assessment property.</summary>
+        DressingRoomAttendant = 53000,
+        /// <summary>Dressing Room: on a CHARACTER, the player chose to show their real gear (/look hide). The saved look is
+        /// kept. Server-only - not an assessment property.</summary>
+        DressingRoomHidden = 53001,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }

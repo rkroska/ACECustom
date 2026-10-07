@@ -601,6 +601,8 @@ namespace ACE.Server.WorldObjects
             // add items to corpse
             foreach (var dropItem in dropItems)
             {
+                PyrealLedger.OnCurrencyItem(this, dropItem, dropItem.StackSize ?? 1, false, PyrealLedger.SrcDeath, corpse.Guid.Full.ToString(), corpse.Name);
+
                 // coins already removed from SpendCurrency
                 if (destroyCoins && dropItem.WeenieType == WeenieType.Coin)
                 {

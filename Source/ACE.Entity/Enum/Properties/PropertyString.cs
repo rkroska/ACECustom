@@ -128,7 +128,10 @@ namespace ACE.Entity.Enum.Properties
         // persists - 50100 is unchanged, so the 19 already-stamped items are untouched.
         ZcModifiers = 50100,
 
-        // 50101 skipped on purpose: the removed @texture_weapon prototype stored swaps there on dev servers.
+        /// <summary>Zone Control (2026-10-05): what TINKERING added on top of the record, for the props a Tier 11+ piece
+        /// re-stamps from its record (ArmorLevel, the Gear* / 502xx line ints) - "propId:delta;propId:delta". The resolver
+        /// adds it back, so a Steel tinker shows in the appraisal and survives a re-stamp. Server-only. See ZoneStatResolver.</summary>
+        ZcTinkerBonus = 50101,
 
         // Blacksmithing properties live at 52000+ in every property type (renumbered 2026-10-05: the first numbers,
         // taken next to the newest ones in use, collided with properties added on master the same week).
@@ -149,7 +152,7 @@ namespace ACE.Entity.Enum.Properties
         RoomAssignBounty = 50504,
 
         /// <summary>Bounty, on a CHARACTER: kills counted and the last award, per area and reward - "area#rId|kills|lastUnix;..."
-        /// (area = "zone:name" or "dungeon:WCIDvVARIATION", rId = the reward's permanent ID). Kept on the
+        /// (area = "zone:name", "dungeon:WCIDvVARIATION" or "zonewide", rId = the reward's permanent ID). Kept on the
         /// character so a relog or a restart can neither reset the cooldown nor lose progress. Server-only.
         /// Renamed from KillRewardProgress 2026-09-26 - the ID is what persists.</summary>
         BountyProgress = 50505,
@@ -158,5 +161,11 @@ namespace ACE.Entity.Enum.Properties
         /// there is room (checked on the player heartbeat). Never dropped. Server-only.
         /// Renamed from KillRewardOwed 2026-09-26 - the ID is what persists.</summary>
         BountyOwed = 50506,
+
+        /// <summary>Dressing Room (2026-10-05), on a CHARACTER: the locked-in look, as JSON - the appearance of each
+        /// sacrificed piece (clothing table, colour, layering) and how many times each wear slot has been locked, which
+        /// sets the next fee. Drawn in place of the real gear by Creature.CalculateObjDesc. Server-only - not an assessment
+        /// property, so it is never sent to a player. See DressingRoomLook.</summary>
+        DressingRoomLook = 53000,
     }
 }

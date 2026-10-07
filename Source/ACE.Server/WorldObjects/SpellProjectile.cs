@@ -47,6 +47,10 @@ namespace ACE.Server.WorldObjects
         /// <summary>True for Fork-spawned secondary projectiles — prevents recursive forking.</summary>
         public bool IsForkProjectile { get; set; }
 
+        /// <summary>A Fork projectile whose primary bolt was HAND-CAST. Forks always launch with FromProc (their proc-style damage
+        /// path), so the low-tier PROC resist reads this to leave a hand-cast's forks alone (a proc bolt's forks stay gated).</summary>
+        public bool HandCastFork { get; set; }
+
         /// <summary>[PetTrace] per-collision capture of CalculateDamage's terms; null when the trace is off.</summary>
         public PetTrace.SpellTrace Trace;
 
@@ -591,6 +595,14 @@ namespace ACE.Server.WorldObjects
 
             var resistSource = IsWeaponSpell ? weapon : source;
 
+            // T11+ LOW-TIER PROC RESIST (owner 2026-10-06): a PROC from gear below T11 (ProjectileLauncher = the proccing item),
+            // before the roll and Overpower, which must not land it. Hand-cast projectiles are never gated.
+            if (FromProc && !HandCastFork && ACE.Server.Managers.ZoneControl.TierHitGate.BlockLowTierCast(source, target, Spell, weapon))
+            {
+                if (tr != null) { tr.Resisted = true; tr.Reason = "resisted (item below T11)"; PetTrace.CombatSpellMiss(this, target, tr); }
+                return null;
+            }
+
             var resisted = source.TryResistSpell(target, Spell, resistSource, true);
             if (tr != null)
             {
@@ -624,7 +636,7 @@ namespace ACE.Server.WorldObjects
                 attackSkill = sourceCreature.GetCreatureSkill(Spell.School);
 
             // critical hit
-            var criticalChance = GetWeaponMagicCritFrequency(weapon, sourceCreature, attackSkill, target);
+            var criticalChance = GetWeaponMagicCritFrequency(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, attackSkill, target);
 
             var critRoll = ThreadSafeRandom.Next(0.0f, 1.0f);
             if (tr != null) { tr.CritChance = criticalChance; tr.CritRoll = critRoll; }
@@ -660,10 +672,10 @@ namespace ACE.Server.WorldObjects
             if (isPVP && Spell.IsHarmful)
                 Player.UpdatePKTimers(sourcePlayer, targetPlayer);
 
-            var elementalDamageMod = GetCasterElementalDamageModifier(weapon, sourceCreature, target, Spell.DamageType);
+            var elementalDamageMod = GetCasterElementalDamageModifier(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, target, Spell.DamageType);
 
             // Possible 2x + damage bonus for the slayer property
-            var slayerMod = GetWeaponCreatureSlayerModifier(weapon, sourceCreature, target);
+            var slayerMod = GetWeaponCreatureSlayerModifier(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, target);
 
             var attribBonus = 1.0f;
             if (sourcePlayer != null)
@@ -685,7 +697,7 @@ namespace ACE.Server.WorldObjects
                 // derived below, once the base is final (life aug term, zone replacement, variance).
                 if (criticalHit)
                 {
-                    weaponCritDamageMod = GetWeaponCritDamageMod(weapon, sourceCreature, attackSkill, target);
+                    weaponCritDamageMod = GetWeaponCritDamageMod(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, attackSkill, target);
                     // Zone Control spell crits mirror melee for LIFE projectiles too (owner 2026-10-04): the crit floor and the
                     // aug crit term with the caster's LIFE augs, as war / void take theirs below
                     if (zcCritMirror)
@@ -742,15 +754,15 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                weaponResistanceMod = GetWeaponResistanceModifier(weapon, sourceCreature, attackSkill, Spell.DamageType);
+                weaponResistanceMod = GetWeaponResistanceModifier(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, attackSkill, Spell.DamageType);
 
                 // if attacker/weapon has IgnoreMagicResist directly, do not transfer to spell projectile
                 // only pass if SpellProjectile has it directly, such as 2637 - Invoking Aun Tanua
 
                 resistanceMod = (float)Math.Max(0.0f, target.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
 
-                // Spell Armor (owner 2026-10-04): a T11+ monster's armor against player hand-cast spells (Creature_SpellArmor.cs)
-                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer, FromProc);
+                // Spell Armor (owner 2026-10-04): a T11+ monster's armor against player spells, hand-cast and proc'd (Creature_SpellArmor.cs)
+                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer);
 
                 // UNIFIED CRIT: CritX x the base the hit ACTUALLY uses - player and governed casters alike
                 if (criticalHit)
@@ -787,7 +799,7 @@ namespace ACE.Server.WorldObjects
                     // base (max roll + aug term + skill bonus) - computed AFTER the base is built,
                     // in the unified block below, so procs / zone bases / augs all crit in full.
                     // PvP keeps the retail halved-min rule, deliberately out of scope.
-                    weaponCritDamageMod = GetWeaponCritDamageMod(weapon, sourceCreature, attackSkill, target);
+                    weaponCritDamageMod = GetWeaponCritDamageMod(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, attackSkill, target);
 
                     if (isPVP) // PvP: 50% of the MIN damage added to normal damage roll
                         critDamageBonus = Spell.MinDamage * 0.5f * weaponCritDamageMod;
@@ -918,15 +930,15 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                weaponResistanceMod = GetWeaponResistanceModifier(weapon, sourceCreature, attackSkill, Spell.DamageType);
+                weaponResistanceMod = GetWeaponResistanceModifier(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, attackSkill, Spell.DamageType);
 
                 // if attacker/weapon has IgnoreMagicResist directly, do not transfer to spell projectile
                 // only pass if SpellProjectile has it directly, such as 2637 - Invoking Aun Tanua
 
                 resistanceMod = (float)Math.Max(0.0f, target.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
 
-                // Spell Armor (owner 2026-10-04): a T11+ monster's armor against player hand-cast spells (Creature_SpellArmor.cs)
-                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer, FromProc);
+                // Spell Armor (owner 2026-10-04): a T11+ monster's armor against player spells, hand-cast and proc'd (Creature_SpellArmor.cs)
+                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer);
 
                 if (sourcePlayer != null && targetPlayer != null && Spell.DamageType == DamageType.Nether)
                 {
@@ -991,6 +1003,15 @@ namespace ACE.Server.WorldObjects
                              $"rendMod={weaponResistanceMod:F3} resistMod={resistanceMod:F4} " +
                              $"attrib={attribBonus:F2} crit={criticalHit} preRating={finalDamage:F0} target={target.Name}");
             }
+            // jewelry Cast on Strike (key 54, owner 2026-10-05): a hand-cast of the spell x the piece's rolled power pct - life AND
+            // war / void projectiles, as the ring path does
+            if (FromProc && weapon != null)
+            {
+                var jewelPct = weapon.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0;
+                if (jewelPct > 0)
+                    finalDamage *= Math.Min(jewelPct, 100) / 100.0f;   // a power pct, never above 100
+            }
+
             // Fork Charm: reduce damage for fork projectiles based on tier multiplier.
             if (IsForkProjectile)
             {
@@ -1133,12 +1154,14 @@ namespace ACE.Server.WorldObjects
                     continue;
 
                 var forkVelocity = player.CalculateProjectileVelocity(Spell, forkTarget, SpellType, forkOrigins[0], hitTarget);
+                // the low-tier proc resist judges a fork by its PRIMARY bolt: a hand-cast's forks are hand-cast (set inside the
+                // launch, before AddObject - a fork can collide on entry)
                 player.LaunchSpellProjectiles(
                     Spell, forkTarget, SpellType,
                     ProjectileLauncher, IsWeaponSpell, fromProc: true,
                     forkOrigins, forkVelocity, LifeProjectileDamage,
                     originOverride: hitTarget, directionOverride: hitTarget,
-                    isForkProjectile: true, forkDamageMult: damageMult);
+                    isForkProjectile: true, forkDamageMult: damageMult, handCastFork: !FromProc);
             }
         }
 
@@ -1451,11 +1474,18 @@ namespace ACE.Server.WorldObjects
                 // Zone Control pct-HP damage special (key 44): flat pct of the mob's max HP, added AFTER
                 // every rating/mitigation step so nothing scales it (mirrors DamageEvent.cs). Player
                 // caster vs a zone-profiled monster only; NO-KILL + cooldown inside.
+                var pctHpAdd = 0f;
                 if (damage > 0 && sourcePlayer != null && targetPlayer == null)
                 {
-                    damage += sourcePlayer.ZcTryPctHpDamage(target);
+                    pctHpAdd = sourcePlayer.ZcTryPctHpDamage(target);
                     sourcePlayer.ZcTryLifeOnHit(target);             // key 48 Life on Hit (heals the caster; cooldown inside)
                 }
+
+                // DAMAGE TAKEN multiplier (owner 2026-10-05, mirrors DamageEvent): a harmful spell on a Zone Control monster. Key 44
+                // only ever scaled DOWN by it (its NO-KILL amount must never become a killing blow).
+                var spellTakenMult = damage > 0 && Spell.IsHarmful && targetPlayer == null
+                    ? ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(target) : 1f;
+                damage = damage * spellTakenMult + pctHpAdd * Math.Min(spellTakenMult, 1f);
 
                 // TRUE DAMAGE (owner 2026-10-01, mirrors DamageEvent): the zone's fixed amount, after every rating and
                 // mitigation step. Kept apart until after the cloak and Mana Barrier, which never act on it.

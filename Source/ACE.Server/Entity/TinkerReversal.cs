@@ -179,9 +179,14 @@ namespace ACE.Server.Entity
         /// effects. Effects on any other property are skipped: a forged weapon copies those from the main weapon, which
         /// already carries them (Gold's Value x1.25 must not land twice). Returns false when a tinker has no usable script.
         /// </summary>
-        public static bool ReplayOnForgeStats(WorldObject target, IEnumerable<MaterialType> tinkers)
+        /// <param name="skip">Forge stats to leave alone: on a tier 11+ piece Zone Control re-stamps some of them from the
+        /// record and adds the tinkers back itself (PropertyString.ZcTinkerBonus), so replaying them here would count
+        /// them twice.</param>
+        public static bool ReplayOnForgeStats(WorldObject target, IEnumerable<MaterialType> tinkers, IEnumerable<(StatType Type, int Idx)> skip = null)
         {
             var forgeStats = new HashSet<(StatType, int)>(ForgeStats);
+            if (skip != null)
+                forgeStats.ExceptWith(skip);
             foreach (var material in tinkers)
             {
                 if (!TryGetScript(material, out var scriptId))

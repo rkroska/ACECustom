@@ -313,6 +313,7 @@ namespace ACE.Server.Entity
             public string Text;                             // filled while applying: what the player is told
             public string Before;                           // Regrade: the property before, for the chat line
             public bool NoLower;                            // Fortune: never below the value the item holds (under no-nerf)
+            public EvaluatedProfile Profile;                // Add of key 54 (jewelry Cast on Strike): the zone stats for the proc rate
         }
 
         /// <summary>One planned use, chosen (including every random roll) BEFORE the essence is consumed.</summary>
@@ -827,6 +828,8 @@ namespace ACE.Server.Entity
                     continue;
                 if (!ZoneModifiers.SlotAllowed(ZoneModifiers.EffectiveSlotMask(def, p.ModifierSlots), piece))
                     continue;
+                if (def.Key == ZoneModifiers.JewelProcKey && target.ProcSpell != null)
+                    continue;   // the one proc slot is taken (retail / crafted proc)
                 var chance = ChanceAt(p, ZoneModifiers.LineChanceStat(def.Key), tier);
                 if (chance <= 0)
                     continue;
@@ -841,7 +844,7 @@ namespace ACE.Server.Entity
             }
 
             var pick = candidates[WeightedIndex(weights)];
-            return new Op { Action = OpAction.Add, Key = pick.Key, Def = pick, Grade = ZoneStatResolver.RollGrade(tier) };
+            return new Op { Action = OpAction.Add, Key = pick.Key, Def = pick, Grade = ZoneStatResolver.RollGrade(tier), Profile = p };
         }
 
         /// <summary>Lines an armour / jewelry / clothing piece carries, as a drop's armor_modifier_cap counts them: every line
@@ -1202,6 +1205,8 @@ namespace ACE.Server.Entity
                             foreach (var (propId, _) in op.Def.Ints)
                                 target.RemoveProperty((PropertyInt)propId);
                         ReplaceCantripLine(target, op.Def, null);
+                        if (op.Key == ZoneModifiers.JewelProcKey)
+                            ZoneLootMutator.ClearJewelProc(target);
                     }
                     return;
                 }
@@ -1224,6 +1229,8 @@ namespace ACE.Server.Entity
                     {
                         // the drop's own stamp: record, props and the "Zone Cantrip:" text line
                         ZoneModifiers.StampGraded(target, op.Def, op.Grade, ZoneStatResolver.EffectiveBand(op.Key, tier));
+                        if (op.Key == ZoneModifiers.JewelProcKey)
+                            ZoneLootMutator.StampJewelProc(target, op.Profile, tier);
                     }
                     return;
 
@@ -1242,13 +1249,20 @@ namespace ACE.Server.Entity
         /// </summary>
         private static void Resolve(WorldObject target, List<Op> ops)
         {
+            // a tinker on a removed line's prop goes with the line (2026-10-05); Steel on the piece stays
+            var removedProps = ops.Where(o => o.Action == OpAction.Remove && o.Def?.Ints != null)
+                                  .SelectMany(o => o.Def.Ints.Select(i => i.Item1)).ToList();
+            if (removedProps.Count > 0)
+                ZoneStatResolver.DropTinkerBonus(target, removedProps);
+
             var r = ZoneStatResolver.Compute(target);
             var tier = ZoneStatResolver.TierOf(target);
             if (r == null)
             {
-                // the record is now empty: a removed Armor Level line leaves the piece at its tier base
+                // the record is now empty: a removed Armor Level line leaves the piece at its tier base - plus any Steel tinkered on it
                 if (ops.Any(o => o.Action == OpAction.Remove && o.Def != null && IsArmorLevelLine(o.Def)) && target.ArmorLevel.HasValue)
-                    target.ArmorLevel = ZoneStatResolver.BaseArmorLevel(tier);
+                    target.ArmorLevel = ZoneStatResolver.BaseArmorLevel(tier)
+                        + (ZoneStatResolver.ReadTinkerBonus(target).TryGetValue((int)PropertyInt.ArmorLevel, out var steel) ? steel : 0);
                 return;
             }
 
@@ -1355,10 +1369,9 @@ namespace ACE.Server.Entity
             LootGenerationFactory.ApplyZoneElementTint(target);
             RenameForElement(target, element);
 
-            // a caster's T16+ charm gate follows its element (Nether Veil for a Nether caster, Battlemage's Wrath otherwise) -
-            // the drop stamps it once, so a transmuted caster must be re-stamped or it skips its own charm (review 2026-10-04)
-            if (target is Caster && target.WieldRequirements4 == WieldRequirement.Int64Stat)
-                target.WieldSkillType4 = (int)LootGenerationFactory.GetWieldCharmProperty(target);
+            // the wield gates from the tier row (slot 4 is the Life-aug gate since 2026-10-05; the old T16+ charm gate is retired) -
+            // re-stamped here because this path returns before the resolve that would
+            LootGenerationFactory.RefreshWieldGate(target, ZoneStatResolver.TierOf(target));
         }
 
         /// <summary>How a weapon kind names its damage type (from the retail weenie names, counted 2026-10-04): melee says
