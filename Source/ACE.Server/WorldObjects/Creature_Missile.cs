@@ -146,18 +146,14 @@ namespace ACE.Server.WorldObjects
             proj.EnqueueBroadcast(new GameMessageScript(proj.Guid, PlayScript.Launch, 0f));
 
             // Create split arrows if weapon has split property
-            // (zone lock: outside authored areas a ZC launcher's Split Arrows stamp reads as absent)
-            if (weapon != null && !ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, this))
+            // (zone lock, owner 2026-10-07: outside authored areas a ZC launcher fires the T10 split - its own count when it
+            // has Split Arrows, else +2 at the normal T10 damage, never written to the item; ZoneLockFallback.SplitFor)
+            if (weapon != null)
             {
-                var hasSplitArrows = weapon.GetProperty(PropertyBool.SplitArrows);
-                if (hasSplitArrows == true)
-                {
-                    var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? DEFAULT_SPLIT_ARROW_COUNT;
-                    if (splitCount > 0)
-                    {
-                        CreateSplitArrows(weapon, ammo, target, origin, orientation);
-                    }
-                }
+                var split = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon,
+                    ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, this));
+                if (split.On && split.Count > 0)
+                    CreateSplitArrows(weapon, ammo, target, origin, orientation, split.Count, split.Range, split.Damage);
             }
 
             // detonate point-blank projectiles immediately
@@ -515,7 +511,8 @@ namespace ACE.Server.WorldObjects
         /// <param name="target">The primary target</param>
         /// <param name="origin">Origin position for split arrows</param>
         /// <param name="orientation">Orientation for split arrows</param>
-        private void CreateSplitArrows(WorldObject weapon, WorldObject ammo, WorldObject target, Vector3 origin, Quaternion orientation)
+        private void CreateSplitArrows(WorldObject weapon, WorldObject ammo, WorldObject target, Vector3 origin, Quaternion orientation,
+            int splitCount, float splitRange, float damageMultiplier)
         {
             try
             {
@@ -546,10 +543,8 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                // Cache weapon properties to avoid repeated property lookups
-                var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? DEFAULT_SPLIT_ARROW_COUNT;
-                var splitRange = (float)(weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? DEFAULT_SPLIT_ARROW_RANGE);
-                var damageMultiplier = (float)(weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER);
+                // count / range / damage come from the caller (ZoneLockFallback.SplitFor - the launcher's own props, or the
+                // zone-lock T10 split)
                 
                 // Apply safety clamps to prevent invalid values
                 splitCount = Math.Clamp(splitCount, SPLIT_ARROW_COUNT_MIN, SPLIT_ARROW_COUNT_MAX);

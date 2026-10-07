@@ -54,12 +54,21 @@ namespace ACE.Server.Entity
             // item augs have actually unlocked (replace semantics — launchers scale through the
             // mod, never a flat term); authored DamageMod is the fallback whenever the system is
             // off or the launcher is unstamped legacy.
-            // (zone lock: outside authored areas the graded launcher mod is suppressed - the
-            // authored DamageMod fallback IS the base-stats behaviour the lock lands on)
-            var baseDamageMod = !Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, wielder)
-                    && Managers.WeaponScaling.WeaponScalingCombat.TryGetLauncherDamageMod(weapon, wielder as Player, out var gradedMod)
-                ? gradedMod
-                : (float)(weapon.GetProperty(PropertyFloat.DamageMod) ?? 1.0f);
+            // (zone lock, owner 2026-10-07: outside authored areas a ZC weapon fights at T10 level, not at its bare
+            // weenie stats - a launcher's mod is the best T10 launcher of its type +10 pct, a melee weapon's base the
+            // best T10 base of its type +10 pct. See ZoneLockFallback.)
+            var locked = Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, wielder);
+            var lockedT10 = locked && Managers.ZoneControl.ZoneLockFallback.Active;
+            float baseDamageMod;
+            if (lockedT10 && Managers.ZoneControl.ZoneLockFallback.LauncherDamageMod(weapon) is float lockedMod)
+                baseDamageMod = lockedMod;
+            else if (!locked && Managers.WeaponScaling.WeaponScalingCombat.TryGetLauncherDamageMod(weapon, wielder as Player, out var gradedMod))
+                baseDamageMod = gradedMod;
+            else
+                baseDamageMod = (float)(weapon.GetProperty(PropertyFloat.DamageMod) ?? 1.0f);
+
+            if (lockedT10 && weapon is MeleeWeapon && Managers.ZoneControl.ZoneLockFallback.MeleeDamage(weapon) is int lockedMax)
+                BaseDamage = new BaseDamage(lockedMax, BaseDamage.Variance);
 
             DamageMod = baseDamageMod + weapon.EnchantmentManager.GetDamageMod();
 

@@ -53,6 +53,12 @@ namespace ACE.Server.Network.Structure
             Damage = GetDamage(weapon);
             DamageVariance = GetDamageVariance(weapon);
 
+            // zone lock (owner 2026-10-07): a locked ZC melee weapon fights at its T10 base (BaseDamageMod) - show that base
+            if (weapon is MeleeWeapon && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active
+                && ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, (weapon.Wielder as Player) ?? examiner)
+                && ACE.Server.Managers.ZoneControl.ZoneLockFallback.MeleeDamage(weapon) is int lockedBase)
+                Damage = (uint)Math.Max(0, lockedBase + Enchantment_Damage);
+
             // Weapon aug-scaling: fold the scaling term into the displayed range. WIELDED = the
             // wielder's live value; UNWIELDED = the EXAMINER's own value (owner 2026-08-03), so a
             // drop in a corpse or pack reads as what it would do in YOUR hands — floored at the
@@ -147,11 +153,17 @@ namespace ACE.Server.Network.Structure
             // the owner compared a T11 and a T13 bow, saw identical +300% panels, and reasonably
             // concluded the weapons were identical.
             var holder = (weapon.Wielder as Player) ?? examiner;
-            // gear / zone lock: combat uses the authored DamageMod there (BaseDamageMod gate), so show that
-            var baseMultiplier = !ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, holder)
-                && ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetLauncherDamageMod(weapon, holder, out var gradedMod)
-                ? gradedMod
-                : weapon.GetProperty(PropertyFloat.DamageMod) ?? 1.0f;
+            // gear / zone lock: show what combat uses there (BaseDamageMod) - the T10 launcher mod while the zone lock holds,
+            // the authored DamageMod with the master switch off
+            var profileLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, holder);
+            double baseMultiplier;
+            if (profileLocked && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active
+                && ACE.Server.Managers.ZoneControl.ZoneLockFallback.LauncherDamageMod(weapon) is float lockedMod)
+                baseMultiplier = lockedMod;
+            else if (!profileLocked && ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetLauncherDamageMod(weapon, holder, out var gradedMod))
+                baseMultiplier = gradedMod;
+            else
+                baseMultiplier = weapon.GetProperty(PropertyFloat.DamageMod) ?? 1.0f;
             var damageMod = weapon.EnchantmentManager.GetDamageMod();
             var auraDamageMod = weapon.Wielder != null ? weapon.Wielder.EnchantmentManager.GetDamageMod() : 0.0f;
             Enchantment_DamageMod = weapon.IsEnchantable ? damageMod + auraDamageMod : damageMod;

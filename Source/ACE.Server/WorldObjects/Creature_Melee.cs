@@ -96,8 +96,10 @@ namespace ACE.Server.WorldObjects
 
             if (!weapon.IsCleaving) return null;
 
-            // zone lock: outside authored areas a ZC weapon's Cleave stamp reads as absent
-            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, this))
+            // zone lock (owner 2026-10-07): Cleave is something a T10 weapon can have, so a locked ZC weapon keeps it,
+            // held to the T10 ceiling (4 targets). Master switch OFF: inert, as before.
+            var cleaveLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, this);
+            if (cleaveLocked && !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
                 return null;
 
             // sort visible objects by ascending distance
@@ -105,7 +107,9 @@ namespace ACE.Server.WorldObjects
             visible.Sort(DistanceComparator);
 
             var cleaveTargets = new List<Creature>();
-            var totalCleaves = weapon.CleaveTargets;
+            var totalCleaves = cleaveLocked
+                ? Math.Min(weapon.CleaveTargets, ACE.Server.Managers.ZoneControl.ZoneLockFallback.CleaveCap)
+                : weapon.CleaveTargets;
 
             foreach (var obj in visible)
             {

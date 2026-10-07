@@ -559,16 +559,25 @@ namespace ACE.Server.WorldObjects
         public int GetEquippedItemsRatingSum(PropertyInt rating)
         {
             if (equippedItemsRatingCache == null)
+            {
+                // a locked ZC piece still counts at T10 (below) even when nothing worn carries a rating prop
+                if (equippedZcGearCount > 0 && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this))
+                    return ACE.Server.Managers.ZoneControl.ZoneLockFallback.WornRating(rating, equippedZcGearCount);
                 return 0;
+            }
 
             if (equippedItemsRatingCache.TryGetValue(rating, out var value))
             {
-                // armor zone lock: subtract exactly what the worn ZC pieces contributed - retail
-                // cloaks / aetheria keep counting, the ZC lines go dormant outside authored areas
-                if (value != 0 && equippedItemsZcRatingCache != null
-                    && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this)
-                    && equippedItemsZcRatingCache.TryGetValue(rating, out var zcPortion))
-                    value -= zcPortion;
+                // armor zone lock: what the worn ZC pieces contributed is swapped for the REAL T10 worn total
+                // (owner 2026-10-07: "same stats as T10 gear" - zeroing them left a locked T11 kit far below the
+                // T10 set it replaced). Retail cloaks / aetheria keep counting as they are.
+                if (equippedZcGearCount > 0
+                    && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this))
+                {
+                    if (equippedItemsZcRatingCache != null && equippedItemsZcRatingCache.TryGetValue(rating, out var zcPortion))
+                        value -= zcPortion;
+                    value += ACE.Server.Managers.ZoneControl.ZoneLockFallback.WornRating(rating, equippedZcGearCount);
+                }
                 return value;
             }
 

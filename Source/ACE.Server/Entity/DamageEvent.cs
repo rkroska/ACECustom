@@ -710,8 +710,12 @@ namespace ACE.Server.Entity
             // Apply split arrow damage multiplier if this is a split arrow
             if (DamageSource.GetProperty(PropertyBool.IsSplitArrow) == true)
             {
-                var splitMultiplier = (float)(DamageSource.ProjectileLauncher?.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ??
-                                             DefaultSplitArrowDamageMultiplier);
+                // the same reader the shot used (zone lock: a locked ZC launcher's split arrows hit at T10 damage)
+                var launcher = DamageSource.ProjectileLauncher;
+                var splitMultiplier = launcher != null
+                    ? ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(launcher,
+                        ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(launcher, attacker)).Damage
+                    : DefaultSplitArrowDamageMultiplier;
                 Damage *= splitMultiplier;
             }
 

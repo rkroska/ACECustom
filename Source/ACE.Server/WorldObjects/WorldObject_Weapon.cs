@@ -140,6 +140,7 @@ namespace ACE.Server.WorldObjects
             if (weapon.WeaponDefense > 0 && weapon.WeaponDefense < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 4) != 0)
                 baseWepDef += 1;
 
+            baseWepDef = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, wielder, PropertyFloat.WeaponDefense, baseWepDef);   // zone lock: T10 % (owner 2026-10-07)
             var defenseMod = baseWepDef + weapon.EnchantmentManager.GetDefenseMod();
 
             if (weapon.IsEnchantable)
@@ -163,6 +164,7 @@ namespace ACE.Server.WorldObjects
             var baseWepDef = (float)(weapon.WeaponMissileDefense ?? 1.0f);
             if (weapon.WeaponMissileDefense > 0 && weapon.WeaponMissileDefense < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 1) == 1)
                 baseWepDef += 1;
+            baseWepDef = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, wielder, PropertyFloat.WeaponMissileDefense, baseWepDef);   // zone lock: T10 % (owner 2026-10-07)
 
             return baseWepDef;
         }
@@ -187,6 +189,7 @@ namespace ACE.Server.WorldObjects
             // The issue is that the recipe system likely added 0.005 to 0 instead of 1, which is what *should* have happened.
             if (weapon.WeaponMissileDefense > 0 && weapon.WeaponMissileDefense < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 1) == 1)
                 baseWepDef += 1;
+            baseWepDef = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, wielder, PropertyFloat.WeaponMissileDefense, baseWepDef);   // zone lock: T10 % (owner 2026-10-07)
 
             // no enchantments?
             return baseWepDef;
@@ -207,6 +210,7 @@ namespace ACE.Server.WorldObjects
             var baseWepDef = (float)(weapon.WeaponMagicDefense ?? 1.0f);
             if (weapon.WeaponMagicDefense > 0 && weapon.WeaponMagicDefense < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 1) == 1)
                 baseWepDef += 1;
+            baseWepDef = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, wielder, PropertyFloat.WeaponMagicDefense, baseWepDef);   // zone lock: T10 % (owner 2026-10-07)
 
             return baseWepDef;
         }
@@ -231,6 +235,7 @@ namespace ACE.Server.WorldObjects
             // The issue is that the recipe system likely added 0.005 to 0 instead of 1, which is what *should* have happened.
             if (weapon.WeaponMagicDefense > 0 && weapon.WeaponMagicDefense < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 1) == 1)
                 baseWepDef += 1;
+            baseWepDef = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, wielder, PropertyFloat.WeaponMagicDefense, baseWepDef);   // zone lock: T10 % (owner 2026-10-07)
 
             // no enchantments?
             return baseWepDef;
@@ -279,7 +284,8 @@ namespace ACE.Server.WorldObjects
             if (weapon == null || weapon.IsRanged /* see note above */)
                 return defaultModifier;
 
-            var offenseMod = (float)(weapon.WeaponOffense ?? defaultModifier) + weapon.EnchantmentManager.GetAttackMod();
+            var offenseMod = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, wielder, PropertyFloat.WeaponOffense, (float)(weapon.WeaponOffense ?? defaultModifier))   // zone lock: T10 % (owner 2026-10-07)
+                + weapon.EnchantmentManager.GetAttackMod();
 
             if (weapon.IsEnchantable)
                 offenseMod += wielder.EnchantmentManager.GetAttackMod();
@@ -302,7 +308,7 @@ namespace ACE.Server.WorldObjects
                 // hermetic link / void
 
                 // base mod starts at 0
-                var baseMod = (float)(weapon.ManaConversionMod ?? 0.0f);
+                var baseMod = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, wielder, PropertyFloat.ManaConversionMod, (float)(weapon.ManaConversionMod ?? 0.0f));   // zone lock: T10 % (owner 2026-10-07)
 
                 // enchantments are multiplicative, so they are only effective if there is a base mod
                 var manaConvMod = weapon.EnchantmentManager.GetManaConvMod();
@@ -425,12 +431,35 @@ namespace ACE.Server.WorldObjects
         public static bool ZcPowerSuppressed(WorldObject weapon, Creature wielder)
             => ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, wielder);
 
-        /// <summary>The crit rate a weapon falls back to while its Zone power is suppressed (the appraisal shows it): a caster the
-        /// magic base - endgame 0.10 while Zone Control rules its gear, else retail 0.05 - every other weapon the physical base.</summary>
+        /// <summary>The crit rate a weapon falls back to while its Zone power is suppressed (the appraisal shows it). Owner
+        /// 2026-10-07: locked gear keeps what a T10 weapon can have - its Biting Strike, capped at the best T10 craft (0.33),
+        /// plus a Bandit Hilt's +0.25 - never below the base (a caster the magic base - endgame 0.10 while Zone Control rules
+        /// its gear, else retail 0.05 - every other weapon the physical base).</summary>
         internal static float LockedCritFrequency(WorldObject weapon)
-            => weapon is Caster
+        {
+            var floor = weapon is Caster
                 ? (ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon) ? DefaultMagicCritFrequency : RetailMagicCritFrequency)
                 : DefaultPhysicalCritFrequency;
+            var card = weapon?.GetProperty(PropertyFloat.CriticalFrequency);
+            if (card == null || !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
+                return floor;
+            var cap = ACE.Server.Managers.ZoneControl.ZoneLockFallback.BitingStrikeCap
+                + (ACE.Server.Managers.ZoneControl.ZoneLootMutator.HasBanditHilt(weapon) ? ACE.Server.Managers.ZoneControl.ZoneLootMutator.BanditHiltCritFrequencyBonus : 0.0);
+            return Math.Max(floor, (float)Math.Min(card.Value, cap));
+        }
+
+        /// <summary>The crit damage multiplier (stored / engine space) a weapon falls back to while locked (owner 2026-10-07):
+        /// its Crushing Blow capped at the best general T10 craft (Salvaged Turquoise, 2.45 stored = 3.45x) plus a Bandit
+        /// Hilt's +0.175 - never below the default.</summary>
+        internal static float LockedCritDamageMultiplier(WorldObject weapon)
+        {
+            var card = weapon?.GetProperty(PropertyFloat.CriticalMultiplier);
+            if (card == null || !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
+                return DefaultCritDamageMultiplier;
+            var cap = ACE.Server.Managers.ZoneControl.ZoneLockFallback.CrushingBlowCapStored
+                + (ACE.Server.Managers.ZoneControl.ZoneLootMutator.HasBanditHilt(weapon) ? ACE.Server.Managers.ZoneControl.ZoneLootMutator.BanditHiltCritMultiplierBonus : 0.0);
+            return Math.Max(DefaultCritDamageMultiplier, (float)Math.Min(card.Value, cap));
+        }
 
         /// <summary>Is this item's Cast on Strike suppressed (2026-10-06)? A JEWELRY Cast on Strike (key 54) is worn gear: the worn
         /// lock, and nothing at all while Zone Control is off (ruling 1, "fully inert"); every other proc: the weapon lock. Config
@@ -451,9 +480,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public static float GetWeaponCriticalChance(WorldObject weapon, Creature wielder, CreatureSkill skill, Creature target)
         {
-            // zone lock: outside authored areas a ZC weapon's Biting Strike stamp reads as absent
+            // zone lock: outside authored areas a ZC weapon's Biting Strike reads at T10 level (LockedCritFrequency)
             var critRate = ZcPowerSuppressed(weapon, wielder)
-                ? DefaultPhysicalCritFrequency
+                ? LockedCritFrequency(weapon)
                 : (float)(weapon?.CriticalFrequency ?? DefaultPhysicalCritFrequency);
 
             if (weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike)
@@ -564,10 +593,10 @@ namespace ACE.Server.WorldObjects
             // LOCATION. EndgameRulesApply picks the correct half per wielder.
             var endgameCast = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(wielder, weapon);
 
-            // zone lock: outside authored areas a ZC weapon's Biting Strike stamp reads as absent
+            // zone lock: outside authored areas a ZC weapon's Biting Strike reads at T10 level (LockedCritFrequency)
             var baseRate = endgameCast ? DefaultMagicCritFrequency : RetailMagicCritFrequency;
             var critRate = ZcPowerSuppressed(weapon, wielder)
-                ? baseRate
+                ? Math.Max(baseRate, LockedCritFrequency(weapon))
                 : (float)(weapon.GetProperty(PropertyFloat.CriticalFrequency) ?? baseRate);
 
             if (weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike)
@@ -602,12 +631,12 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public static float GetWeaponCritDamageMod(WorldObject weapon, Creature wielder, CreatureSkill skill, Creature target)
         {
-            // zone lock: outside authored areas a ZC weapon's Crushing Blow stamp AND its
-            // aug-scaling crit term both read as absent
+            // zone lock: outside authored areas a ZC weapon's Crushing Blow reads at T10 level (LockedCritDamageMultiplier)
+            // and its aug-scaling crit term is off
             var zcSuppressed = ZcPowerSuppressed(weapon, wielder);
 
             var critDamageMod = zcSuppressed
-                ? DefaultCritDamageMultiplier
+                ? LockedCritDamageMultiplier(weapon)
                 : (float)(weapon?.GetProperty(PropertyFloat.CriticalMultiplier) ?? DefaultCritDamageMultiplier);
 
             if (weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow)
@@ -677,11 +706,13 @@ namespace ACE.Server.WorldObjects
             // Replace semantics: the STOCK ADDITIVE path is the fallback whenever the system is
             // off or the caster is unstamped legacy — bit-for-bit pre-system behavior, so the
             // kill switch has a clean prediction.
-            // zone lock: outside authored areas the graded caster mod is suppressed - the stock
-            // additive fallback below IS the base-stats behaviour the lock lands on
+            // zone lock (owner 2026-10-07): outside authored areas a ZC caster fights at T10 level - the best T10
+            // caster mod +10 pct (ZoneLockFallback), additive with auras the retail way; the graded mod is off
             float modifier;
-            if (!ZcPowerSuppressed(weapon, wielder)
-                && ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetCasterElementalMod(weapon, wielder as Player, out var gradedMod))
+            var casterLocked = ZcPowerSuppressed(weapon, wielder);
+            if (casterLocked && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
+                modifier = ACE.Server.Managers.ZoneControl.ZoneLockFallback.CasterElementalMod + enchantments;
+            else if (!casterLocked && ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetCasterElementalMod(weapon, wielder as Player, out var gradedMod))
                 modifier = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.ComposeCasterModifier(
                     gradedMod, enchantments, ACE.Server.Managers.WeaponScaling.WeaponScalingManager.Current.CasterAuraRescale);
             else
@@ -726,9 +757,11 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public static float GetWeaponCreatureSlayerModifier(WorldObject weapon, Creature wielder, Creature target)
         {
-            // zone lock: outside authored areas a ZC weapon's Slayer stamp reads as absent
-            if (ZcPowerSuppressed(weapon, wielder))
-                return defaultModifier;
+            // zone lock (owner 2026-10-07): a slayer is something a T10 weapon can have, so a locked ZC weapon keeps its
+            // Slayer, held to the best T10 slayer (5.0x)
+            var slayerLocked = ZcPowerSuppressed(weapon, wielder);
+            if (slayerLocked && !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
+                return defaultModifier;   // master switch OFF: inert, as before
 
             if (weapon != null && weapon.SlayerDamageBonus != null && target != null
                 && ((weapon.SlayerCreatureType != null && weapon.SlayerCreatureType == target.CreatureType)
@@ -737,7 +770,9 @@ namespace ACE.Server.WorldObjects
                     || weapon.GetProperty(PropertyBool.SlayerAllCreatures) == true))
             {
                 // TODO: scale with base weapon skill?
-                return (float)weapon.SlayerDamageBonus;
+                return slayerLocked
+                    ? (float)Math.Min(weapon.SlayerDamageBonus.Value, ACE.Server.Managers.ZoneControl.ZoneLockFallback.SlayerCap)
+                    : (float)weapon.SlayerDamageBonus;
             }
             else
                 return defaultModifier;
@@ -815,10 +850,12 @@ namespace ACE.Server.WorldObjects
                 hasRending = true;
             }
 
-            // zone lock: outside authored areas a ZC weapon's Rend (and its rolled power) reads
-            // as absent - suppressed here, after eligibility, so retail/pet rends stay untouched
-            if (hasRending && ZcPowerSuppressed(weapon, wielder))
-                hasRending = false;
+            // zone lock (owner 2026-10-07): an elemental rend is something a T10 weapon can have, so a locked ZC weapon
+            // keeps its Rend at the RETAIL strength (the skill formula, cap 2.5) - only its rolled Zone power is off.
+            // Armor Rend is a different property and stays off while locked (owner: "a no no" - DamageEvent).
+            var rendLocked = hasRending && ZcPowerSuppressed(weapon, wielder);
+            if (rendLocked && !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
+                hasRending = false;   // master switch OFF: inert, as before
 
             if (hasRending && skill != null)
             {
@@ -827,7 +864,7 @@ namespace ACE.Server.WorldObjects
                 // Zone Control loot: per-weapon rend power override (ZoneLootMutator stamp) is a DIRECT
                 // vuln bonus (wire 1.5..10.0 = +150%..+1000%). rendingMod = 1 + override, REPLACING the
                 // skill-scaled formula and its 2.5 cap, so the drop's rolled strength is exactly 1000% max.
-                var rendOverride = weapon?.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId);
+                var rendOverride = rendLocked ? null : weapon?.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId);
                 if (rendOverride.HasValue && rendOverride.Value > 0)
                     rendingMod = 1.0f + (float)rendOverride.Value;
 
@@ -1172,10 +1209,12 @@ namespace ACE.Server.WorldObjects
         public float GetIgnoreShieldMod(WorldObject weapon)
         {
             var creatureMod = IgnoreShield ?? 0.0f;
-            // zone lock: outside authored areas a ZC weapon's Shield Cleaving stamp reads as
-            // absent (the attacker's own creature-side IgnoreShield is never gated)
+            // zone lock (owner 2026-10-07): Shield Cleaving is something a T10 weapon can have, so a locked ZC weapon
+            // keeps it, held to the T10 ceiling (1.0). The attacker's own creature-side IgnoreShield is never gated.
             var weaponMod = ZcPowerSuppressed(weapon, this as Creature)
-                ? 0.0
+                ? (ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active
+                    ? Math.Min(weapon?.IgnoreShield ?? 0.0, ACE.Server.Managers.ZoneControl.ZoneLockFallback.ShieldCleaveCap)
+                    : 0.0)
                 : weapon?.IgnoreShield ?? 0.0f;
 
             return 1.0f - (float)Math.Max(creatureMod, weaponMod);
@@ -1439,8 +1478,17 @@ namespace ACE.Server.WorldObjects
             // never fire. `this` is the proccing item, so cloaks/aetheria/player Ring Glyph
             // crafts are untouched - they never carry ZcTier. A JEWELRY Cast on Strike (key 54) follows the worn lock, the same
             // gate its appraisal line shows (ZcProcSuppressed, 2026-10-06).
+            // Owner 2026-10-07: a WEAPON proc is something a T10 weapon can have (Ring Glyph crafts), so a locked ZC weapon
+            // keeps its Cast on Strike - at the spell's own damage (the Zone proc damage keys off ZcPowerSuppressed and
+            // stays off) and at most the top T10 proc rate. Jewelry procs and the master switch OFF stay inert.
+            var procCap = 1.0;
             if (ZcProcSuppressed(this, attacker as Creature))
-                return;
+            {
+                var jewelryProc = (GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0) > 0;
+                if (jewelryProc || !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
+                    return;
+                procCap = ACE.Server.Managers.ZoneControl.ZoneLockFallback.ProcRateCap;
+            }
 
             // Slot 1 - the arc, and every pre-existing proc on the shard (cloaks, aetheria, the ~11,700
             // player Ring Glyph crafts). Aetheria's own rate curve applies here and only here.
@@ -1451,12 +1499,12 @@ namespace ACE.Server.WorldObjects
                 if (Aetheria.IsAetheria(WeenieClassId) && attacker is Creature wielder)
                     baseChance = Aetheria.CalcProcRate(this, wielder);
 
-                TryProcOneSpell(attacker, target, selfTarget, ProcSpell.Value, baseChance, chanceMultiplier);
+                TryProcOneSpell(attacker, target, selfTarget, ProcSpell.Value, Math.Min(baseChance, procCap), chanceMultiplier);
             }
 
             // Slot 2 - the ring. Rolled separately against its own rate.
             if (ProcSpell2 != null)
-                TryProcOneSpell(attacker, target, selfTarget, ProcSpell2.Value, ProcSpellRate2 ?? 0.0, chanceMultiplier);
+                TryProcOneSpell(attacker, target, selfTarget, ProcSpell2.Value, Math.Min(ProcSpellRate2 ?? 0.0, procCap), chanceMultiplier);
         }
 
         /// <summary>The body that was TryProcItem before the card gained a second slot - one roll, one

@@ -1275,6 +1275,9 @@ namespace ACE.Server.Network.Structure
             // WorldObject_Weapon / DamageEvent), not the stamped value. Judged for the same holder the damage profile uses: the
             // wielder of a worn weapon, else the examiner.
             var zcLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, (weapon.Wielder as Player) ?? examiner);
+            // locked WITH Zone Control on = the zone lock's T10 fallback (owner 2026-10-07, ZoneLockFallback); locked with the
+            // master switch OFF = inert, as before
+            var zcT10 = zcLocked && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active;
 
             // Determine skill: explicit WeaponSkill, or fallback for Casters (Wands)
             var checkSkill = weapon.WeaponSkill;
@@ -1291,7 +1294,9 @@ namespace ACE.Server.Network.Structure
             var slayerAll = weapon.GetProperty(PropertyBool.SlayerAllCreatures) == true;
             if (weapon.SlayerCreatureType.HasValue || slayerAll)
             {
-                var bonus = zcLocked ? 1.0 : weapon.SlayerDamageBonus ?? 1.0;
+                var bonus = !zcLocked ? weapon.SlayerDamageBonus ?? 1.0
+                    : zcT10 ? Math.Min(weapon.SlayerDamageBonus ?? 1.0, ACE.Server.Managers.ZoneControl.ZoneLockFallback.SlayerCap)
+                    : 1.0;
                 var niceName = slayerAll
                     ? "All Creatures"
                     : CreatureNameRegex().Replace(weapon.SlayerCreatureType.ToString(), " $1");
@@ -1308,7 +1313,7 @@ namespace ACE.Server.Network.Structure
             // Cleaving (multi-target): the raw prop stores TOTAL targets (extra + 1), so raw-prop
             // readouts look one higher than authored — this line shows the true extra-target count.
             if (weapon.IsCleaving)
-                effectDescriptions.Add($"- Cleaving: +{(zcLocked ? 0 : weapon.CleaveTargets)} Targets");
+                effectDescriptions.Add($"- Cleaving: +{(!zcLocked ? weapon.CleaveTargets : zcT10 ? Math.Min(weapon.CleaveTargets, ACE.Server.Managers.ZoneControl.ZoneLockFallback.CleaveCap) : 0)} Targets");
 
             // Resistance Cleaving (Fixed Resistance Modifier)
             if (weapon.ResistanceModifier.HasValue && weapon.ResistanceModifierType.HasValue)
@@ -1326,19 +1331,17 @@ namespace ACE.Server.Network.Structure
                 effectDescriptions.Add($"- Armor Cleaving: {reduction:P0} Armor Ignored");
             }
 
-            // Split Arrow
-            if (weapon.GetProperty(PropertyBool.SplitArrows) == true)
-            {
-                var count = zcLocked ? 0 : weapon.GetProperty(PropertyInt.SplitArrowCount) ?? Creature.DEFAULT_SPLIT_ARROW_COUNT;
-                var val = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? Creature.DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER;
-                effectDescriptions.Add($"- Split Arrow: +{count} Targets, {val:P0} Dmg");
-            }
+            // Split Arrow - the same reader combat uses, so a locked launcher shows its T10 split (its own count, or the +2
+            // a launcher without Split Arrows gets while locked)
+            var splitShown = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon, zcLocked);
+            if (weapon.GetProperty(PropertyBool.SplitArrows) == true || splitShown.On)
+                effectDescriptions.Add($"- Split Arrow: +{(splitShown.On ? splitShown.Count : 0)} Targets, {splitShown.Damage:P0} Dmg");
 
             // Crushing Blow: engine crit damage = 1 + CriticalMultiplier, so the true multiplier the
             // player actually deals is prop + 1 (a stored 1.0 = normal 2x crit).
             if (weapon.GetProperty(PropertyFloat.CriticalMultiplier) > 1.0f)
             {
-                var val = zcLocked ? WorldObject.DefaultCritDamageMultiplier + 1.0 : weapon.GetProperty(PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (a plain 2x crit)
+                var val = zcLocked ? WorldObject.LockedCritDamageMultiplier(weapon) + 1.0 : weapon.GetProperty(PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (T10 cap, or a plain 2x crit with the master switch off)
                 effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
             }
 
@@ -1405,7 +1408,7 @@ namespace ACE.Server.Network.Structure
                     // Zone Control loot: the rend power override substitutes for the skill formula
                     // (rendingMod = 1 + override), mirroring GetWeaponResistanceModifier, so the tooltip
                     // shows exactly the configured strength (e.g. wire 7.0 -> +700% Dmg).
-                    var rendOverride = weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId);
+                    var rendOverride = zcT10 ? null : weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId);
                     if (rendOverride.HasValue && rendOverride.Value > 0)
                         mod = 1.0f + (float)rendOverride.Value;
 
@@ -1413,7 +1416,7 @@ namespace ACE.Server.Network.Structure
                     // there"). It shared a slot with the vuln multiplier internally - they are MAX'd,
                     // never stacked - but that is an implementation detail of the resist chain and has
                     // no business on a player-facing line. A rend is a rend.
-                    var bonusPct = zcLocked ? 0.0 : (mod - 1.0);   // locked: the rend is skipped in combat
+                    var bonusPct = zcLocked && !zcT10 ? 0.0 : (mod - 1.0);   // locked: the retail rend (T10); master switch off: skipped
                     effectDescriptions.Add($"- {type.DisplayName()}: +{bonusPct:P0} Dmg");
                 }
             }
@@ -1421,7 +1424,7 @@ namespace ACE.Server.Network.Structure
             // Shield Cleaving: fraction of the target's shield AL the weapon ignores. Stored directly on
             // the weapon (PropertyFloat.IgnoreShield); GetIgnoreShieldMod reads it at hit time.
             if (weapon.IgnoreShield.HasValue && weapon.IgnoreShield.Value > 0)
-                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(weapon.IgnoreShield.Value, 0.0, 1.0)):P0} Shield Ignored");
+                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked && !zcT10 ? 0.0 : Math.Clamp(weapon.IgnoreShield.Value, 0.0, ACE.Server.Managers.ZoneControl.ZoneLockFallback.ShieldCleaveCap)):P0} Shield Ignored");
 
             // Phantom (hollow): the weapon bypasses the target's protective magic - Impen/Banes on armor
             // and Life prots. RETAIL ONLY as of 2026-08-25: our loot card was deleted, so every weapon
