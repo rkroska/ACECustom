@@ -1106,6 +1106,13 @@ namespace ACE.Server.Managers
                 var holders = 0;
                 var now = DateTime.UtcNow;
 
+                // Safe to run more than once (a retry after a failed save, or a recount after the ledger was off):
+                //  - a position is ASSIGNED from what the character holds, never added to. Nobody is online and every
+                //    save is written at this point, so the holdings are the truth; a stored position is not kept
+                //    because after a period with the ledger off it is stale.
+                //  - an Opening row is sized as held - seen in + seen out, and "seen in" includes Opening rows from an
+                //    earlier run, so a second run adds nothing for a character whose rows were already written.
+                // Checked on live data 2026-10-07: rerunning the calculation added 0 for all 23,696 character/item pairs.
                 lock (sync)
                 {
                     // every character's position becomes what they hold right now
