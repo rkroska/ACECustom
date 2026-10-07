@@ -48,6 +48,10 @@ namespace ACE.Server.Network.GameEvent.Events
                 {
                     altCurrencyCount += (session.Player.BankedWeaklyEnlightenedCoins ?? 0);
                 }
+                else if (vendor.AlternateCurrency.Value == ACE.Server.WorldObjects.Player.PRESTIGE_COIN_WCID) // Prestige Coin (2026-10-04)
+                {
+                    altCurrencyCount += (session.Player.BankedPrestigeCoins ?? 0);
+                }
 
                 // The amount of alt currency that was just spent on a transaction that led to this call.
                 // We need to re-add this amount, since the client will subtract the amount locally as well.

@@ -482,9 +482,10 @@ namespace ACE.Server.WorldObjects
                 if (zoneVar.HasValue)
                     zoneVar = Math.Clamp(zoneVar.Value, 0.0, 1.0);
 
-                // a negative authored attack_damage would roll negative hits (heals) - floor at 0
+                // a negative authored attack_damage would roll negative hits (heals) - floor at 0; and the swing is an int
+                // (BaseDamage.MaxDamage), so anything past int.MaxValue would wrap NEGATIVE - a heal (owner 2026-10-01: clamp)
                 if (zoneMax.HasValue)
-                    zoneMax = Math.Max(zoneMax.Value, 0.0);
+                    zoneMax = Math.Clamp(zoneMax.Value, 0.0, int.MaxValue);
             }
 
             if (CurrentAttack == CombatType.Missile && GetMissileAmmo() != null)
@@ -557,6 +558,11 @@ namespace ACE.Server.WorldObjects
         /// <param name="armors">The list of armor/clothing covering the targeted body part</param>
         public float GetArmorMod(Creature defender, DamageType damageType, List<WorldObject> armors, WorldObject weapon, float armorRendingMod = 1.0f)
         {
+            // Zone Control aug curves (owner 2026-10-02): a curves-on tier's monster hitting a player - armor with every buff at
+            // its base strength (no item-aug Impen / Banes, no life-aug Armor Self) x (1 - the tier's item curve)
+            if (defender is Player curvePlayer && ZoneAugCurveProfile(this) is ACE.Server.Managers.ZoneScaling.EvaluatedProfile curveProfile)
+                return ZoneArmorMod(this, curvePlayer, damageType, armors, weapon, armorRendingMod, curveProfile);
+
             var ignoreMagicArmor =  (weapon?.IgnoreMagicArmor ?? false)  || IgnoreMagicArmor;
             var ignoreMagicResist = (weapon?.IgnoreMagicResist ?? false) || IgnoreMagicResist;
 

@@ -154,7 +154,7 @@ namespace ACE.Server.WorldObjects.Managers
                 return result;
             }
 
-            result.BuildStack(entries, spell, caster, equip);
+            result.BuildStack(entries, spell, caster, equip, WorldObject);
 
             // handle cases:
             // surpassing: new spell is written to next layer
@@ -180,15 +180,31 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 // for multiple void casters casting the same DoT,
                 // we might want to sort by StatModValue in GetEnchantments_TopLayer()
+                // (on a T11+ monster the void stamp ranks them by the casters' void augs instead - see BuildEntry)
 
-                // for the same void caster re-casting the same DoT,
-                // should be update the StatModVal here?
+                // for the same void caster re-casting the same DoT on a T11+ monster, the value is rebuilt below (IsZcVoidHarmfulOnCompressed)
 
                 var duration = spell.Duration;
                 if (caster is Player player && (player.AugmentationIncreasedSpellDuration > 0 || (player.LuminanceAugmentSpellDurationCount ?? 0) > 0 || player.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.SpellDurationLevels) > 0) && spell.DotDuration == 0)
                 {
                     duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.05f)
                         + (player.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.SpellDurationLevels) * 0.2f);
+                }
+                // A void DoT re-cast on a T11+ monster REFRESHES since its entry carries the caster's void augs (BuildEntry) - before,
+                // every re-cast surpassed with a fresh entry. So that refresh gives what a fresh cast would: the DoT duration augs
+                // (BuildEntry's DotDuration branch) and the current damage per tick (a void DoT has nothing else baked into its
+                // value). ONLY that case: every other refresh keeps its value and duration exactly as before (review 2026-10-04 -
+                // a life DoT / HoT carries a life-aug bake that a rebuild from the raw spell would drop).
+                else if (caster is Player dotPlayer && spell.DotDuration > 0 && IsZcVoidHarmfulOnCompressed(spell))
+                {
+                    duration *= 1.0f + (dotPlayer.AugmentationIncreasedSpellDuration * 0.2f) + ((dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) * ServerConfig.void_dot_duration_aug_effect.Value)
+                        + (dotPlayer.GetZoneModifierBonus(ACE.Server.Managers.ZoneControl.ZoneModifiers.SpellDurationLevels) * 0.2f);
+                }
+                if (spell.IsDamageOverTime && caster != null && IsZcVoidHarmfulOnCompressed(spell))
+                {
+                    var heartbeatInterval = WorldObject.HeartbeatInterval ?? 5.0f;
+                    var baseTick = heartbeatInterval != 5.0f ? spell.GetDamagePerTick((float)heartbeatInterval) : spell.StatModVal;
+                    refreshSpell.StatModValue = caster.CalculateDotEnchantment_StatModValue(spell, WorldObject, weapon, baseTick);
                 }
 
                 var timeRemaining = refreshSpell.Duration + refreshSpell.StartTime;
@@ -208,6 +224,12 @@ namespace ACE.Server.WorldObjects.Managers
 
             return result;
         }
+
+        /// <summary>A harmful void spell (DoT or curse) on a T11+ debuff-compressed monster - the one case whose stacking this
+        /// branch changed (BuildEntry stamps the caster's void augs, so a re-cast refreshes instead of surpassing). Callers add
+        /// their own DoT check.</summary>
+        private bool IsZcVoidHarmfulOnCompressed(Spell spell)
+            => spell.School == MagicSchool.VoidMagic && spell.IsHarmful && WorldObject is Creature target && target.ZcDebuffCompressed;
 
         /// <summary>
         /// Builds an enchantment registry entry from a spell ID
@@ -330,6 +352,10 @@ namespace ACE.Server.WorldObjects.Managers
                         entry.AugmentationLevelWhenCast = player.EffectiveItemAugCount;
                     }                    
                 }
+                // owner 2026-10-04: a void DoT's bonus on a T11+ monster ramps on the caster's VOID augs (Creature_DebuffCompression).
+                // T11+ monster targets only - the stamp also drives stacking (AddEnchantmentResult), so retail / PvP keep retail stacking
+                if (spell.School == MagicSchool.VoidMagic && spell.IsHarmful && WorldObject is Creature zcTarget && zcTarget.ZcDebuffCompressed)
+                    entry.AugmentationLevelWhenCast = player.EffectiveVoidAugCount;
                 if (spell.School == MagicSchool.LifeMagic)
                 {
                     if (spell.IsBeneficial && spell.IsSelfTargeted) //buffs
@@ -382,6 +408,11 @@ namespace ACE.Server.WorldObjects.Managers
                         entry.AugmentationLevelWhenCast = wielder.EffectiveItemAugCount;
                     }
                 }
+
+                // Debuff compression (owner 2026-10-04): a vuln / Imperil cast BY an item counts like the wielder's cast - the
+                // bonus on a T11+ monster ramps on the WIELDER's life augs (Creature.GetZcDebuffBonus reads this field).
+                if (ProcDebuffAugLevel(spell, caster, WorldObject) is long procAugs)
+                    entry.AugmentationLevelWhenCast = procAugs;
             }
 
 
@@ -401,6 +432,9 @@ namespace ACE.Server.WorldObjects.Managers
                     entry.StatModValue = caster.CalculateDotEnchantment_StatModValue(spell, WorldObject, weapon, entry.StatModValue);
                 }
                 //Console.WriteLine($"enchantment_statModVal: {entry.StatModValue}");
+
+                // owner 2026-10-04: DoTs on their own (faster) ticker when dot_tick_seconds < 5
+                (WorldObject as Creature)?.EnsureDotTicker();
             }
 
             // handle equipment sets
@@ -1310,6 +1344,33 @@ namespace ACE.Server.WorldObjects.Managers
         }
 
         /// <summary>
+        /// Debuff compression (2026-10-04): the aug level a harmful Life spell cast BY AN ITEM carries - its wielder's life augs -
+        /// or null. Most procs never get here: a weapon / jewelry proc is cast through the wielder (TryProcItem ->
+        /// TryCastSpell -> CreateEnchantment with the player as caster), and the Creature branch of BuildEntry stamps the life
+        /// augs itself. This covers an item that is ITSELF the caster (a gem-class item). T11+ debuff-compressed monster targets
+        /// ONLY: the value also drives stacking (AddEnchantmentResult.BuildStack reads this same rule, so a repeat cast REFRESHES
+        /// instead of surpassing), and retail / PvP targets keep retail stacking (review 2026-10-04).
+        /// </summary>
+        internal static long? ProcDebuffAugLevel(Spell spell, WorldObject caster, WorldObject target)
+            => caster != null && !(caster is Creature) && spell.School == MagicSchool.LifeMagic && spell.IsHarmful
+               && caster.Wielder is Creature wielder && target is Creature t && t.ZcDebuffCompressed
+                ? wielder.EffectiveLifeAugCount : null;
+
+        /// <summary>Debuff compression (2026-10-04): the top-layer VULN entries (above 1.0) on this resistance - the same ones
+        /// GetVulnerabilityResistanceMod multiplies - so the bonus can read each one's spell and caster life augs.</summary>
+        public List<PropertiesEnchantmentRegistry> GetVulnerabilityEntries(DamageType damageType)
+        {
+            var typeFlags = EnchantmentTypeFlags.Float | EnchantmentTypeFlags.SingleStat | EnchantmentTypeFlags.Multiplicative;
+            return GetEnchantments_TopLayer(typeFlags, (uint)GetResistanceKey(damageType)).Where(e => e.StatModValue > 1.0f).ToList();
+        }
+
+        /// <summary>Debuff compression (2026-10-04): the top-layer NEGATIVE body-armor entries (Imperil).</summary>
+        public List<PropertiesEnchantmentRegistry> GetImperilEntries()
+        {
+            return GetEnchantments_TopLayer(EnchantmentTypeFlags.BodyArmorValue).Where(e => e.StatModValue < 0).ToList();
+        }
+
+        /// <summary>
         /// Gets the regeneration modifier for a vital type
         /// (regeneration / rejuvenation / mana renewal)
         /// </summary>
@@ -1465,6 +1526,85 @@ namespace ACE.Server.WorldObjects.Managers
             return GetMultiplicativeMod(PropertyFloat.DamageVariance);
         }
 
+        // ─────────────────────────────────────────────────────────────────────────────────────────────────────
+        // Zone Control aug curves (owner 2026-10-02, ZoneAugCurves_Plan): the same totals with the cast-time
+        // luminance-aug parts taken back OUT - a tier with aug_curves on applies its own curves instead.
+        // ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+        /// <summary>The protection multiplier for a damage type at each spell's BASE strength: the life-aug bonus a
+        /// self-cast protection got at cast (GetLifeAugProtectRating(AugmentationLevelWhenCast)) added back.</summary>
+        public float GetProtectionResistanceModNoAugs(DamageType damageType)
+        {
+            var typeFlags = EnchantmentTypeFlags.Float | EnchantmentTypeFlags.SingleStat | EnchantmentTypeFlags.Multiplicative;
+            var enchantments = GetEnchantments_TopLayer(typeFlags, (uint)GetResistanceKey(damageType));
+            var modifier = 1.0f;
+            foreach (var enchantment in enchantments)
+            {
+                var value = enchantment.StatModValue;
+                if (value < 1.0f && (enchantment.AugmentationLevelWhenCast ?? 0) > 0 && GotLifeAugBonus(enchantment))
+                    value += GetLifeAugProtectRating(enchantment.AugmentationLevelWhenCast.Value);
+                if (value < 1.0f)
+                    modifier *= value;
+            }
+            return Math.Max(modifier, 0f);
+        }
+
+        /// <summary>Impenetrability etc. without the +1 armor level per item aug a self-cast buff got.</summary>
+        public int GetArmorModNoAugs()
+        {
+            var modifier = 0;
+            foreach (var enchantment in GetEnchantments_TopLayer(EnchantmentTypeFlags.Additive, (uint)PropertyInt.ArmorLevel)
+                         .Where(e => (e.StatModType & EnchantmentTypeFlags.Skill) == 0))
+            {
+                var value = enchantment.StatModValue;
+                if (value > 0 && (enchantment.AugmentationLevelWhenCast ?? 0) > 0)
+                    value = Math.Max(0f, value - enchantment.AugmentationLevelWhenCast.Value);
+                modifier += (int)value;
+            }
+            return modifier;
+        }
+
+        /// <summary>Banes without the +0.01 per item aug a self-cast bane got.</summary>
+        public float GetArmorModVsTypeNoAugs(DamageType damageType)
+        {
+            var typeFlags = EnchantmentTypeFlags.Float | EnchantmentTypeFlags.SingleStat | EnchantmentTypeFlags.Additive;
+            var modifier = 0.0f;
+            foreach (var enchantment in GetEnchantments_TopLayer(typeFlags, (uint)GetImpenBaneKey(damageType)))
+            {
+                var value = enchantment.StatModValue;
+                if (value > 0 && (enchantment.AugmentationLevelWhenCast ?? 0) > 0)
+                    value = Math.Max(0f, value - enchantment.AugmentationLevelWhenCast.Value * 0.01f);
+                modifier += value;
+            }
+            return modifier;
+        }
+
+        /// <summary>Armor Self etc. without the +1 per life aug a self-cast buff got (debuffs stay as they are).</summary>
+        public int GetBodyArmorModNoAugs()
+        {
+            var modifier = 0;
+            foreach (var enchantment in GetEnchantments_TopLayer(EnchantmentTypeFlags.BodyArmorValue))
+            {
+                var value = enchantment.StatModValue;
+                if (value > 0 && (enchantment.AugmentationLevelWhenCast ?? 0) > 0 && GotLifeAugBonus(enchantment))
+                    value = Math.Max(0f, value - enchantment.AugmentationLevelWhenCast.Value);
+                modifier += (int)value;
+            }
+            return modifier;
+        }
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, bool> SelfBuffSpells = new();
+
+        /// <summary>BuildEntry stamps a Life spell's entry with the caster's life augs every time, but ADDS the aug bonus to its
+        /// value only for a beneficial self-targeted buff - an "Other" buff from another player carries the stamp without the
+        /// bonus, so there is nothing to back out (review 2026-10-04: Armor Other was erased, Protection Other weakened).</summary>
+        private static bool GotLifeAugBonus(PropertiesEnchantmentRegistry e)
+            => SelfBuffSpells.GetOrAdd(e.SpellId, id =>
+            {
+                var spell = new Spell((uint)id);
+                return !spell.NotFound && spell.IsBeneficial && spell.IsSelfTargeted;
+            });
+
         /// <summary>
         /// Returns the additive armor level modifier, ie. Impenetrability
         /// </summary>
@@ -1614,7 +1754,13 @@ namespace ACE.Server.WorldObjects.Managers
         {
             var topLayerEnchantments = WorldObject.Biota.PropertiesEnchantmentRegistry.GetEnchantmentsTopLayer(WorldObject.BiotaDatabaseLock, SpellSet.SetSpells);
 
-            HeartBeat_DamageOverTime(topLayerEnchantments);
+            // a T11+ monster on the DoT ticker (dot_tick_seconds < 5) takes its damage ticks there; heals over time stay here.
+            // Starting it from here covers DoTs that never went through BuildEntry (loaded, refreshed, setting changed).
+            var creature = WorldObject as Creature;
+            var onTicker = creature != null && creature.UsesDotTicker;
+            HeartBeat_DamageOverTime(topLayerEnchantments, includeDamage: !onTicker);
+            if (onTicker && Creature.HasDamageDot(topLayerEnchantments))
+                creature.EnsureDotTickerOnOwnThread();
 
             var expired = WorldObject.Biota.PropertiesEnchantmentRegistry.HeartBeatEnchantmentsAndReturnExpired(heartbeatInterval, WorldObject.BiotaDatabaseLock);
 
@@ -1626,7 +1772,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// Applies damage from DoTs every ~5 seconds
         /// </summary>
         /// <param name="enchantments">A list of active enchantments at the top layers</param>
-        public void HeartBeat_DamageOverTime(List<PropertiesEnchantmentRegistry> enchantments)
+        public void HeartBeat_DamageOverTime(List<PropertiesEnchantmentRegistry> enchantments, bool includeDamage = true, bool includeHeals = true, float tickScale = 1f)
         {
             var dots = new List<PropertiesEnchantmentRegistry>();
             var netherDots = new List<PropertiesEnchantmentRegistry>();
@@ -1651,17 +1797,17 @@ namespace ACE.Server.WorldObjects.Managers
             }
 
             // apply damage over time (DoTs)
-            if (dots.Count > 0)
-                ApplyDamageTick(dots, DamageType.Undef);
+            if (includeDamage && dots.Count > 0)
+                ApplyDamageTick(dots, DamageType.Undef, false, tickScale);
 
-            if (netherDots.Count > 0)
-                ApplyDamageTick(netherDots, DamageType.Nether);
+            if (includeDamage && netherDots.Count > 0)
+                ApplyDamageTick(netherDots, DamageType.Nether, false, tickScale);
 
-            if (aetheriaDots.Count > 0)
-                ApplyDamageTick(aetheriaDots, DamageType.Undef, true);
+            if (includeDamage && aetheriaDots.Count > 0)
+                ApplyDamageTick(aetheriaDots, DamageType.Undef, true, tickScale);
 
             // apply healing over time (HoTs)
-            if (heals.Count > 0)
+            if (includeHeals && heals.Count > 0)
                 ApplyHealingTick(heals);
         }
 
@@ -1697,7 +1843,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// Applies 1 tick of damage from a DoT spell
         /// </summary>
         /// <param name="enchantments">The damage over time (DoT) spells</param>
-        public void ApplyDamageTick(List<PropertiesEnchantmentRegistry> enchantments, DamageType damageType, bool aetheria = false)
+        public void ApplyDamageTick(List<PropertiesEnchantmentRegistry> enchantments, DamageType damageType, bool aetheria = false, float tickScale = 1f)
         {
             var creature = WorldObject as Creature;
             if (creature == null || creature.IsDead) return;
@@ -1706,6 +1852,9 @@ namespace ACE.Server.WorldObjects.Managers
             var damagers = new Dictionary<WorldObject, float>();
 
             var targetPlayer = WorldObject as Player;
+
+            // DAMAGE TAKEN multiplier (owner 2026-10-05): every DoT tick on a Zone Control monster - the same for each tick below
+            var dotTakenMult = targetPlayer == null ? ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(creature) : 1f;
 
             // [PetTrace] one record per tick; the parts list is only built when the trace is on.
             var traceParts = PetTrace.Enabled ? new List<PetTrace.DotPart>() : null;
@@ -1717,7 +1866,7 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 //var totalAmount = enchantment.StatModValue;
                 //var totalTicks = GetNumTicks(enchantment);
-                var tickAmount = enchantment.StatModValue;
+                var tickAmount = enchantment.StatModValue * tickScale;   // tickScale < 1 on the faster DoT ticker (dot_tick_seconds)
                 var traceBase = tickAmount;
 
                 // run tick amount through damage calculation functions?
@@ -1739,6 +1888,13 @@ namespace ACE.Server.WorldObjects.Managers
                     continue;
 
                 var resistanceMod = creature.GetResistanceMod(damageType, damager, null);
+
+                // Spell Armor (owner 2026-10-04): a player's DoT on a T11+ monster (Creature_SpellArmor.cs). The tick cannot tell a
+                // proc'd DoT from a cast one, so both are cut.
+                // NETHER DoTs (owner 2026-10-04): a PLAYER's DoT on a T11+ monster - DOT ARMOR replaces Spell Armor here and the
+                // Damage Resist / DoT Resist / nether resist ratings below (together they cut the tick to ~0.01 pct)
+                var zcDotTick = creature.ZcDebuffCompressed && damager is Player && targetPlayer == null && !(creature is CombatPet);
+                resistanceMod *= zcDotTick ? creature.GetZcDotArmorMod((uint)enchantment.SpellId) : creature.GetZcSpellArmorMod(damager);
 
                 var sourcePlayer = damager as Player;
 
@@ -1782,7 +1938,21 @@ namespace ACE.Server.WorldObjects.Managers
                 //Console.WriteLine("DRR: " + Creature.NegativeModToRating(damageResistRatingMod));
                 //Console.WriteLine("NRR: " + Creature.NegativeModToRating(netherResistRatingMod));
 
+                if (zcDotTick)
+                {
+                    damageResistRatingMod = 1.0f;
+                    dotResistRatingMod = 1.0f;
+                    netherResistRatingMod = 1.0f;
+                }
+
                 tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod * netherResistRatingMod;
+
+                // per-monster DAMAGE MULTIPLIER (owner 2026-10-03: "cover harm, drain and DoTs too"): a monster's DoT tick on a
+                // player (the caster is looked up above; a caster that is gone deals no tick at all, as before)
+                if (targetPlayer != null && damager is Creature dotCaster)
+                    tickAmount *= ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(dotCaster, targetPlayer);
+
+                tickAmount *= dotTakenMult;
 
                 // make sure the target's current health is not exceeded
                 if (tickAmountTotal + tickAmount >= creature.Health.Current)
@@ -1816,6 +1986,10 @@ namespace ACE.Server.WorldObjects.Managers
 
             if (!creature.IsAlive) return;
 
+            // ReceiveDamage emotes roll once per heartbeat interval on the faster ticker, for every damager of that tick (review
+            // 2026-10-04: per 1 s tick they fired ~5x as often as on retail); the retail heartbeat (tickScale 1) always rolls
+            var emotesDue = tickScale >= 1f || creature.DotEmotesDue();
+
             foreach (var kvp in damagers)
             {
                 var damager = kvp.Key;
@@ -1827,9 +2001,13 @@ namespace ACE.Server.WorldObjects.Managers
                 var damageSourcePlayer = damager as Player;
                 if (damageSourcePlayer != null)
                 {
-                    creature.TakeDamageOverTime_NotifySource(damageSourcePlayer, damageType, amount, aetheria);
+                    // the faster DoT ticker (tickScale < 1) sends no DoT chat line at all - periodic, nether or Surge (owner
+                    // 2026-10-04: at 1 s it was 5x the retail spam); damage and kill credit are unchanged, and the hit sound is
+                    // throttled to once per heartbeat in TakeDamageOverTime
+                    if (tickScale >= 1f)
+                        creature.TakeDamageOverTime_NotifySource(damageSourcePlayer, damageType, amount, aetheria);
 
-                    if (creature.IsAlive)
+                    if (emotesDue && creature.IsAlive)
                         creature.EmoteManager.OnDamage(damageSourcePlayer, damageType);
                 }
             }

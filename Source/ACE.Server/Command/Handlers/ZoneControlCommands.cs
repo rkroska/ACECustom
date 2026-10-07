@@ -140,7 +140,7 @@ namespace ACE.Server.Command.Handlers
             + "appearance <name> <palette|shade|scale|translucency|shiny|setup|clothing|palettebase|motion|sound|icon> <value> [--wcid <id>] | clearappearance <name> [field] [--wcid <id>] | copylook <name> <donorWcid> [--wcid <id>] | draftslot <name> [release] | copydraft <name> <destWcid> | becomemob <donorWcid> --wcid <id> | seticon <wcid> <iconDid|clear> [layer] | "
             + "modifier <name> <add|remove|list|catalog|band|slots|special|chance> [args] [--wcid <id>] | "
             + "currency <name> <add|remove|list> [itemWcid] [amount] [chance] [direct|corpse] [--wcid <id>] | "
-            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | bounty <name> <show|on|off|add|set|remove> | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
+            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | bounty <name> <show|on|off|add|set|remove> | zonebounty <show|on|off|add|set|remove> | procallow [list|add|remove] <spell id> | gearlock [list|here|add|remove] | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
             + "mobinfo <wcid> | geninfo <wcid> | genlist [zone] | genedit <wcid> delay|radius|stagger|init|max <value> | "
             + "craft <material> <itemtype> auto|allow|deny | craft list|get|test|enabled|mintier|components | "
             + "effect <name> [dot on|off | dmg <amount> | type <name|percent> | interval <secs>] | reload")]
@@ -190,6 +190,9 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /zonecontrol currency <name> add <itemWcid> <amount> [chance 0..1] [direct|corpse] | remove <itemWcid> | list   [--wcid <id>]   (per-kill bonus-currency drop table; direct = into the killer's inventory)");
                 Msg("  /zonecontrol boundary <name> <on|off|show>   (bounded: players at the zone's variation may only roam bounded-zone landblocks; variation 11+ only)");
                 Msg("  /zonecontrol zoneshare <name> <on|off|show>   (Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship; only while the zone is enabled)");
+                Msg("  /zonecontrol gearlock [list] | here [any] | add|remove <landblock hex> [variation|any]   (T11+ gear is suppressed on these landblocks)");
+                Msg("  /zonecontrol procallow [list] | add <spell id> | remove <spell id>   (proc spells T11+ monsters never resist for being on gear below T11)");
+                Msg("  /zonecontrol zonebounty <show|on|off|add|set|remove>   (ONE bounty, one count and one cooldown across every T11-T25 zone; replaces the zone bounties while on)");
                 Msg("  /zonecontrol bounty <name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>   (Bounty: items every N kills per player, at most once per cooldown; v11+ only)");
                 Msg("  /zonecontrol survey <name> [lbHex]   (per-landblock content: generator + creature summary; lbHex = full detail for one landblock)");
                 Msg("  /zonecontrol quests <name>   (quest registry for the plugin Quests tab; throttled to one pull per 60s)");
@@ -303,7 +306,13 @@ namespace ACE.Server.Command.Handlers
                     {
                         // Bare get = the GM Tools state alone (session flags + shard-combat rules).
                         // Those are not zone state, so the plugin asks for them zoneless.
-                        if (args.Count < 2) { Msg(BuildSessionPayload(session)); return; }
+                        // chunked like every payload: the bounty / proc tags can make it longer than one chat line should be
+                        if (args.Count < 2)
+                        {
+                            if (session != null) SendChunked(session, BuildSessionPayload(session));
+                            else Msg(BuildSessionPayload(session));
+                            return;
+                        }
                         var getPayload = BuildZonePayload(args[1], wcid, session, includeLive: true);
                         SendChunked(session, getPayload);
                         // seed the change detector (2026-09-03): a live watch on the same target need not re-push this.
@@ -335,7 +344,7 @@ namespace ACE.Server.Command.Handlers
                             .Append("|wcid=").Append(wcid?.ToString() ?? "")
                             .Append("|found=").Append(area != null ? 1 : 0)
                             .Append("|override=").Append(hasOverride ? 1 : 0);
-                        foreach (var stat in new[] { ZoneStat.PercentHpBase, ZoneStat.SpellDamage, ZoneStat.SpellVariance, ZoneStat.CritDamageRating })
+                        foreach (var stat in new[] { ZoneStat.PercentHpBase, ZoneStat.SpellDamage, ZoneStat.SpellVariance, ZoneStat.CritDamageRating, ZoneStat.TrueDamage })   // true_damage appended 2026-10-01 (name-matched)
                         {
                             int defined = 0;
                             double value = 0;
@@ -429,7 +438,8 @@ namespace ACE.Server.Command.Handlers
                             variation = ZoneControlManager.GetEffectiveVariation(session.Player);
                         else
                             int.TryParse(args[varIdx].TrimStart('v', 'V'), out variation);
-                        if (variation < 0) { Msg($"variation must be >= 0 (you're at v{variation} - zones can't be created on rift design variations)."); return; }
+                        // owner 2026-10-04 (review): a zone on v0-v10 put Zone Control combat on retail monsters - zones live on v11+
+                        if (variation < VariationManager.EndgameMinVariation) { Msg($"Zones live on v{VariationManager.EndgameMinVariation} and above (you asked for v{variation}; v0-v10 is retail and Zone Control never touches it)."); return; }
 
                         ushort lb;
                         if (args.Count >= varIdx + 2)
@@ -492,15 +502,135 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
+                    case "gearlock":
+                    {
+                        // gearlock [list] | gearlock here [any] | gearlock add|remove <landblock hex> [variation|any]
+                        // (owner 2026-10-05: "a list of landblocks we can add, that auto suppressed the gear in those areas").
+                        // A listed spot suppresses T11+ gear exactly like zc_weapon_zone_lock + zc_armor_zone_lock, with
+                        // both locks off. Plugin: GM Tools > Shard Combat > Gear Lock Landblocks.
+                        const string glUsage = "Usage: gearlock [list] | gearlock here [any] | gearlock add|remove <landblock hex> [variation|any]   (no variation = every variation)";
+                        static string GlVar(int v) => v < 0 ? "every variation" : "variation " + v;
+                        var glOp = args.Count >= 2 ? args[1].ToLowerInvariant() : "list";
+                        if (glOp == "list")
+                        {
+                            var spots = ZoneControlManager.ListGearLock();
+                            if (spots.Count == 0) { Msg("Gear lock: no landblocks listed - T11+ gear works wherever the Zone Locks allow."); return; }
+                            Msg($"Gear lock: T11+ gear is suppressed in {spots.Count} spot(s):");
+                            foreach (var (glLb, glV) in spots) Msg($"  {glLb:X4}  {GlVar(glV)}");
+                            return;
+                        }
+                        int glLandblock, glVariation;
+                        if (glOp == "here")
+                        {
+                            var glPlayer = session?.Player;
+                            if (glPlayer?.Location == null) { Msg("gearlock here needs a character in the world."); return; }
+                            glLandblock = glPlayer.Location.LandblockId.Landblock;
+                            glVariation = args.Count >= 3 && args[2].Equals("any", StringComparison.OrdinalIgnoreCase)
+                                ? -1 : ZoneControlManager.GetEffectiveVariation(glPlayer);
+                            if (glVariation < -1 || glVariation > ZoneControlManager.GearLockMaxVariation)
+                            { Msg($"Gear lock: this layer (variation {glVariation}) cannot be listed - 0-{ZoneControlManager.GearLockMaxVariation} only, or 'here any'."); return; }
+                            glOp = "add";
+                        }
+                        else if (glOp == "add" || glOp == "remove")
+                        {
+                            var lbArg = args.Count >= 3 ? args[2].Replace("0x", "").Replace("0X", "") : "";
+                            if (lbArg.Length == 8) lbArg = lbArg.Substring(0, 4);   // a full cell id (8B040021) -> its landblock
+                            else if (lbArg.Length != 4) { Msg(glUsage); return; }   // a typo of another length is never guessed at
+                            if (!int.TryParse(lbArg, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out glLandblock) || glLandblock <= 0 || glLandblock > 0xFFFF)
+                            { Msg(glUsage); return; }
+                            glVariation = -1;
+                            if (args.Count >= 4 && !args[3].Equals("any", StringComparison.OrdinalIgnoreCase)
+                                && (!int.TryParse(args[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out glVariation) || glVariation < 0 || glVariation > ZoneControlManager.GearLockMaxVariation))
+                            { Msg(glUsage); return; }
+                        }
+                        else { Msg(glUsage); return; }
+
+                        var glOn = glOp == "add";
+                        var glChanged = ZoneControlManager.SetGearLock(glLandblock, glVariation, glOn);
+                        Msg(glChanged
+                            ? $"Gear lock {(glOn ? "ADDED" : "removed")}: {glLandblock:X4} {GlVar(glVariation)} - T11+ gear is {(glOn ? "suppressed" : "normal again")} there. Live at once."
+                            : $"Gear lock: {glLandblock:X4} {GlVar(glVariation)} was {(glOn ? "already listed" : "not listed")}.");
+                        if (glChanged)
+                            PlayerManager.BroadcastToAuditChannel(session?.Player, $"gearlock {(glOn ? "add" : "remove")} {glLandblock:X4} {GlVar(glVariation)}");
+                        return;
+                    }
+
+                    case "procallow":
+                    {
+                        // procallow [list] | add <spellId> | remove <spellId> (owner 2026-10-06): proc spells T11+ monsters do NOT
+                        // force-resist from gear below T11. Plugin: GM Tools > Shard Combat > under "Old Gear Proc Resist".
+                        const string paUsage = "Usage: procallow [list] | procallow add <spell id> | procallow remove <spell id>";
+                        var paOp = args.Count >= 2 ? args[1].ToLowerInvariant() : "list";
+                        if (paOp == "list")
+                        {
+                            var ids = ZoneControlManager.ListProcAllow();
+                            if (ids.Count == 0) { Msg("Allowed procs: none - every proc from gear below T11 is resisted by T11+ monsters (while Old Gear Proc Resist is on)."); return; }
+                            Msg($"Allowed procs ({ids.Count}) - never resisted for being on gear below T11:");
+                            foreach (var id in ids) Msg($"  {id}  {SpellName(id)}");
+                            return;
+                        }
+                        if ((paOp != "add" && paOp != "remove") || args.Count < 3 || !uint.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var paId) || paId == 0)
+                        { Msg(paUsage); return; }
+                        if (paOp == "add" && new ACE.Server.Entity.Spell(paId).NotFound) { Msg($"No spell {paId}. Nothing changed."); return; }
+                        var paName = SpellName(paId);   // a removed id may have no spell data left
+                        var paOn = paOp == "add";
+                        var paChanged = ZoneControlManager.SetProcAllow(paId, paOn);
+                        Msg(paChanged
+                            ? $"Allowed procs: {paName} ({paId}) {(paOn ? "ADDED - no longer resisted from old gear" : "removed - resisted from old gear again")}. Live at once."
+                            : $"Allowed procs: {paName} ({paId}) was {(paOn ? "already listed" : "not listed")}.");
+                        if (paChanged)
+                            PlayerManager.BroadcastToAuditChannel(session?.Player, $"procallow {paOp} {paId} {paName}");
+                        return;
+                    }
+
+                    case "damagemult":
+                    {
+                        // damagemult <wcid> <factor|clear> | damagemult list   (owner 2026-10-03, Bestiary "Damage Multiplier")
+                        // One factor per MONSTER on all the damage it deals to players - melee + spells, normal + True
+                        // Damage - at every tier and in every zone (never retail). 1.0 = unchanged; 2 = double; 0.5 = half.
+                        if (args.Count >= 2 && args[1].Equals("list", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var all = ZoneControlManager.ListDamageMults();
+                            if (all.Count == 0) { Msg("No monster has a damage multiplier (every monster is 1.0)."); return; }
+                            foreach (var kv in all)
+                            {
+                                var wn = ACE.Database.DatabaseManager.World.GetCachedWeenie(kv.Key)?.GetName() ?? "?";
+                                Msg($"  {kv.Key} {wn}: x{kv.Value.ToString("0.###", CultureInfo.InvariantCulture)}");
+                            }
+                            return;
+                        }
+                        if (args.Count < 3 || !uint.TryParse(args[1], out var dmWcid))
+                        { Msg(FormattableString.Invariant($"Usage: damagemult <wcid> <factor {ZoneControlManager.DamageMultMin:0.0}-{ZoneControlManager.DamageMultMax:0}|clear> | damagemult list   (1.0 = unchanged)")); return; }
+                        var dmName = ACE.Database.DatabaseManager.World.GetCachedWeenie(dmWcid)?.GetName();
+                        if (dmName == null) { Msg($"No weenie {dmWcid}."); return; }
+                        double? dmValue = null;
+                        if (!args[2].Equals("clear", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!double.TryParse(args[2].TrimStart('x', 'X'), NumberStyles.Float, CultureInfo.InvariantCulture, out var dv)
+                                || !double.IsFinite(dv) || dv < ZoneControlManager.DamageMultMin || dv > ZoneControlManager.DamageMultMax)
+                            { Msg(FormattableString.Invariant($"factor must be {ZoneControlManager.DamageMultMin:0.0} to {ZoneControlManager.DamageMultMax:0} (1.0 = unchanged), or 'clear'.")); return; }
+                            dmValue = dv;
+                        }
+                        var dmWas = ZoneControlManager.GetDamageMult(dmWcid);
+                        ZoneControlManager.SetDamageMult(dmWcid, dmValue);
+                        var dmNow = ZoneControlManager.GetDamageMult(dmWcid);
+                        Msg($"{dmName} ({dmWcid}) damage multiplier: x{dmWas.ToString("0.###", CultureInfo.InvariantCulture)} -> x{dmNow.ToString("0.###", CultureInfo.InvariantCulture)} - all its damage to players inside an enabled Zone Control zone, every tier. Live at once.");
+                        PlayerManager.BroadcastToAuditChannel(session?.Player, $"damagemult {dmWcid} {dmName}: x{dmWas.ToString("0.###", CultureInfo.InvariantCulture)} -> x{dmNow.ToString("0.###", CultureInfo.InvariantCulture)}");
+                        return;
+                    }
+
                     case "setvar":
                     {
-                        if (args.Count < 3) { Msg("Usage: setvar <name> <variation>   (0 = normal world, 11+ = variants; use 'here' to read yours)"); return; }
+                        if (args.Count < 3) { Msg("Usage: setvar <name> <variation>   (11+ only - v0-v10 is retail; use 'here' to read yours)"); return; }
                         var name = args[1];
                         int variation;
                         if (args[2].Equals("here", StringComparison.OrdinalIgnoreCase))
                             variation = ZoneControlManager.GetEffectiveVariation(session.Player);
-                        else if (!int.TryParse(args[2].TrimStart('v', 'V'), out variation) || variation < 0)
-                        { Msg("variation must be a number >= 0 (or 'here')."); return; }
+                        else if (!int.TryParse(args[2].TrimStart('v', 'V'), out variation))
+                        { Msg($"variation must be a number >= {VariationManager.EndgameMinVariation} (or 'here')."); return; }
+                        // owner 2026-10-04 (review): v0-v10 is retail - a zone there would put Zone Control combat on retail monsters
+                        if (variation < VariationManager.EndgameMinVariation)
+                        { Msg($"Zones live on v{VariationManager.EndgameMinVariation} and above (v{variation} is retail - Zone Control never touches it)."); return; }
                         if (!ZoneControlManager.SetVariation(name, variation)) { Msg($"No zone '{name}'."); return; }
                         Msg($"'{name}' Variation set to v{variation}. Now governs monsters/effects at that variation.");
                         // A boundary can't live on a retail variation â€” moving a bounded zone to <= 10 drops it.
@@ -627,7 +757,7 @@ namespace ACE.Server.Command.Handlers
                         if (args.Count < 4 || !uint.TryParse(args[1], out var genWcid))
                         { Msg("Usage: genedit <wcid> delay|radius|stagger|init|max <value>"); return; }
                         var genField = args[2].ToLowerInvariant();
-                        if (!float.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var genVal) || genVal < 0)
+                        if (!float.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var genVal) || !float.IsFinite(genVal) || genVal < 0)
                         { Msg("Value must be a non-negative number."); return; }
                         if (ACE.Database.DatabaseManager.World.GetCachedWeenie(genWcid) == null)
                         { Msg($"No weenie {genWcid}."); return; }
@@ -886,15 +1016,21 @@ namespace ACE.Server.Command.Handlers
                             if (args.Count < opIdx + 3
                                 || !int.TryParse(args[opIdx + 1], out var lineKey)
                                 || !ZoneModifiers.TryGet(lineKey, out var lineDef) || lineDef.SlotSpecial
-                                || !double.TryParse(args[opIdx + 2], NumberStyles.Float, CultureInfo.InvariantCulture, out var c11) || c11 < 0 || c11 > 1)
+                                || !TryFiniteNumber(args[opIdx + 2], out var c11) || c11 < 0 || c11 > 1)
                             { Msg("Usage: modifier <name> chance <catalog key> <t11 chance 0..1> [t25 chance 0..1]"); return; }
-                            SetStat(ZoneModifiers.LineChanceStat(lineKey), c11);
-                            if (args.Count > opIdx + 3
-                                && double.TryParse(args[opIdx + 3], NumberStyles.Float, CultureInfo.InvariantCulture, out var c25)
-                                && c25 >= 0 && c25 <= 1)
+                            // a T25 value that is given but not a valid 0..1 number refuses the whole command (it used to be dropped silently)
+                            double? c25 = null;
+                            if (args.Count > opIdx + 3)
                             {
-                                SetStat(ZoneModifiers.LineChanceStat(lineKey) + "_t25", c25);
-                                Msg($"{scopeTag} {lineDef.Name} chance: {c11:0.###} at T11 -> {c25:0.###} at T25.");
+                                if (!TryFiniteNumber(args[opIdx + 3], out var t25) || t25 < 0 || t25 > 1)
+                                { Msg("Usage: modifier <name> chance <catalog key> <t11 chance 0..1> [t25 chance 0..1]"); return; }
+                                c25 = t25;
+                            }
+                            SetStat(ZoneModifiers.LineChanceStat(lineKey), c11);
+                            if (c25 != null)
+                            {
+                                SetStat(ZoneModifiers.LineChanceStat(lineKey) + "_t25", c25.Value);
+                                Msg($"{scopeTag} {lineDef.Name} chance: {c11:0.###} at T11 -> {c25.Value:0.###} at T25.");
                             }
                             else
                                 Msg($"{scopeTag} {lineDef.Name} chance: {c11:0.###} (flat, every tier).");
@@ -979,7 +1115,7 @@ namespace ACE.Server.Command.Handlers
                         var spellLabel = spellCheck.NotFound ? "#" + ruleSpellId : spellCheck.Name;
 
                         double? chanceArg = null;
-                        if (args.Count >= 5 && double.TryParse(args[4], System.Globalization.NumberStyles.Any, CultureInfo.InvariantCulture, out var chanceVal))
+                        if (args.Count >= 5 && TryFiniteNumber(args[4], out var chanceVal))
                             chanceArg = Math.Clamp(chanceVal, 0.0, 100.0);
 
                         switch (op)
@@ -2339,6 +2475,26 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
+                    case "zonebounty":
+                    {
+                        // ZONE-WIDE BOUNTY (owner 2026-10-05): one bounty + one timer per character across every T11-T25 zone.
+                        // Same verbs as a zone's bounty (BountyManager.Edit); while on it replaces the per-zone bounties.
+                        if (args.Count < 2) { Msg("Usage: zonebounty show | " + BountyManager.EditUsage); return; }
+                        var op = args[1].ToLowerInvariant();
+                        var edited = ZoneControlManager.GetZoneWideBounty();
+                        if (op != "show")
+                        {
+                            // the server console has no session and counts as admin
+                            if (session != null && session.AccessLevel < AccessLevel.Admin) { Msg("Changing a Bounty needs Admin access (the same as a dungeon's)."); return; }
+                            edited = ZoneControlManager.EditZoneWideBounty(c => BountyManager.Edit(c, op, args, 2), out var err);
+                            if (err != null) { Msg($"Zone-wide bounty: {err}"); return; }
+                            PlayerManager.BroadcastToAuditChannel(session?.Player, $"zonebounty {string.Join(" ", args.Skip(1))} -> {BountyManager.Describe(edited)}");
+                        }
+                        Msg($"Zone-wide Bounty (every T11+ zone: one count, one cooldown) {BountyManager.Describe(edited)}"
+                            + (edited.Active ? " - zone bounties are replaced while it is on." : "."));
+                        return;
+                    }
+
                     case "zoneshare":
                     {
                         // Zone Share (owner 2026-09-23): everyone in the zone shares kill XP, luminance and kill tasks as one
@@ -2488,6 +2644,14 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
+                    case "clonelayer":
+                    {
+                        // copy the zone's own placement layer onto other tiers - never touches rows it did not create or adopt
+                        // (ZoneControlCloneLayer.cs, owner 2026-10-03)
+                        ZoneControlCloneLayer.Run(session, args, Msg);
+                        return;
+                    }
+
                     case "clonezone":
                     {
                         // clonezone <src> <variation|lo-hi>
@@ -2517,7 +2681,7 @@ namespace ACE.Server.Command.Handlers
                             czHi = czLo;
                         }
 
-                        if (czLo < 0 || czHi < czLo || czHi - czLo > 50) { Msg("Bad variation range."); return; }
+                        if (czLo < VariationManager.EndgameMinVariation || czHi < czLo || czHi - czLo > 50) { Msg($"Bad variation range (v{VariationManager.EndgameMinVariation} and above, at most 50 at a time)."); return; }
 
                         var czMade = new List<string>();
                         var czSkipped = new List<string>();
@@ -2963,9 +3127,9 @@ namespace ACE.Server.Command.Handlers
                   .Append(sp.IgnorePortalRestrictions ? 1 : 0);
         }
 
-        /// <summary>"|combatdefs=..." â€” live combat-rule bool states so the plugin's GM Tools toggles
+        /// <summary>"|combatdefs=..." - live shard bool states so the plugin's GM Tools toggles
         /// show truth. Fixed order: missile_power_bar, zonecontrol_enabled, zc_weapon_zone_lock,
-        /// zc_pertier_authoring, zc_armor_zone_lock. APPEND-ONLY: the plugin indexes positionally.</summary>
+        /// zc_pertier_authoring, zc_armor_zone_lock, audit_short_numbers, zc_low_tier_item_spell_resist. APPEND-ONLY: the plugin indexes positionally.</summary>
         private static void AppendCombatDefs(StringBuilder sb)
         {
             sb.Append("|combatdefs=")
@@ -2973,7 +3137,47 @@ namespace ACE.Server.Command.Handlers
               .Append(ServerConfig.zonecontrol_enabled.Value ? '1' : '0').Append(',')
               .Append(ServerConfig.zc_weapon_zone_lock.Value ? '1' : '0').Append(',')
               .Append(ServerConfig.zc_pertier_authoring.Value ? '1' : '0').Append(',')
-              .Append(ServerConfig.zc_armor_zone_lock.Value ? '1' : '0');
+              .Append(ServerConfig.zc_armor_zone_lock.Value ? '1' : '0').Append(',')
+              .Append(ServerConfig.audit_short_numbers.Value ? '1' : '0').Append(',')
+              .Append(ServerConfig.zc_low_tier_item_spell_resist.Value ? '1' : '0');   // [6] 2026-10-06
+        }
+
+        /// <summary>A spell's name, or "spell N" when the id has no spell data (Spell.Name throws then) - a stale allow-list entry
+        /// must never break a payload or a command.</summary>
+        private static string SpellName(uint id)
+        {
+            var spell = new ACE.Server.Entity.Spell(id);
+            return spell.NotFound ? "spell " + id : spell.Name;
+        }
+
+        /// <summary>"|procallow=id~name;id~name" - the allowed proc spells (owner 2026-10-06). Always present (possibly empty) so
+        /// the plugin can tell "none" from "older server". APPEND-ONLY.</summary>
+        private static void AppendProcAllow(StringBuilder sb)
+        {
+            sb.Append("|procallow=").Append(string.Join(";", ZoneControlManager.ListProcAllow().Select(id =>
+                id + "~" + RoomAssignManager.BuilderWireName(SpellName(id)))));
+        }
+
+        /// <summary>"|zonebounty=1|zonebountylist=id:wcid:amount:kills:minutes:name+..." - the zone-wide bounty (owner 2026-10-05) for the
+        /// plugin's Bounty card. Always present so the plugin can tell "off" from "older server". APPEND-ONLY.</summary>
+        private static void AppendZoneBounty(StringBuilder sb)
+        {
+            var zb = ZoneControlManager.GetZoneWideBounty();
+            sb.Append("|zonebounty=").Append(zb.Enabled ? 1 : 0).Append("|zonebountylist=").Append(BountyManager.Wire(zb));
+        }
+
+        /// <summary>"|gearlock=LLLL~V;LLLL~*" - the gear lock landblocks (owner 2026-10-05) for GM Tools > Shard Combat.
+        /// Always present (possibly empty) so the plugin can tell "none" from "older server". APPEND-ONLY.</summary>
+        private static void AppendGearLock(StringBuilder sb)
+        {
+            sb.Append("|gearlock=");
+            var first = true;
+            foreach (var (lb, v) in ZoneControlManager.ListGearLock())
+            {
+                if (!first) sb.Append(';');
+                first = false;
+                sb.Append(lb.ToString("X4", CultureInfo.InvariantCulture)).Append('~').Append(v < 0 ? "*" : v.ToString(CultureInfo.InvariantCulture));
+            }
         }
 
         /// <summary>"|missilepower=fast,full,mid" - the missile power ladder (owner 2026-09-12) so the Bow Power Bar
@@ -3002,6 +3206,9 @@ namespace ACE.Server.Command.Handlers
             AppendCombatDefs(sb);
             AppendLadder(sb);   // APPEND-ONLY (2026-08-22): ladder apply versions, last so older plugins ignore it
             AppendMissilePower(sb);   // APPEND-ONLY (2026-09-12): the missile power ladder, after the ladder tag
+            AppendGearLock(sb);       // APPEND-ONLY (2026-10-05): gear lock landblocks, after the missile power ladder
+            AppendZoneBounty(sb);     // APPEND-ONLY (2026-10-06): the zone-wide bounty, after the gear lock
+            AppendProcAllow(sb);      // APPEND-ONLY (2026-10-06): the allowed proc spells, after the zone-wide bounty
             return sb.ToString();
         }
 
@@ -3049,80 +3256,6 @@ namespace ACE.Server.Command.Handlers
             if (!isDefaultScope) { Msg("  (zone band: new drops in this zone only - existing gear follows the tier Default)"); return; }
             if (defaultVar < 11 || defaultVar > 25) return;
             LadderApplyNow(session, defaultVar, Msg);
-        }
-
-        /// <summary>
-        /// `ladder bench [n]` (owner 2026-08-23: "nothing has ever been tested at scale"): in-process timing of
-        /// the hot paths. Mints ONE T11 armor piece and ONE T11 melee weapon through the real producers (so they
-        /// carry a record / a quality stamp), then times n iterations of: armor Compute (the appraisal cost),
-        /// armor Compute+Apply (the equip / ladder-apply cost, no DB), weapon TryResolve x3 (one swing's worth of
-        /// WeaponScalingCombat lookups). Single thread, so it measures CPU per op - not lock contention.
-        /// Both objects are destroyed afterwards; nothing is saved.
-        /// </summary>
-        private static void LadderBench(Session session, List<string> args, Action<string> Msg)
-        {
-            var n = 10000;
-            if (args.Count >= 3 && int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var nn) && nn > 0)
-                n = Math.Min(nn, 1_000_000);
-
-            var player = session?.Player;
-            var p = player != null ? ZoneControlManager.ResolveZoneDefaultForPlayer(player) : null;
-
-            // armor: Iron Celdon Breastplate; weapon: Iron Spada (same wcids the plugin Preview uses)
-            var armor = ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject("breastplatecelodoniron")
-                     ?? ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject(37);
-            var weapon = ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject("swordspada")
-                      ?? ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject(30571);
-            if (armor == null || weapon == null) { Msg("bench: could not create the sample items."); return; }
-            if (!(weapon is ACE.Server.WorldObjects.MeleeWeapon)) { Msg($"bench: '{weapon.Name}' is not a melee weapon - weapon timings would be the bail-out path."); armor.Destroy(); weapon.Destroy(); return; }
-
-            try
-            {
-                ACE.Server.Factories.LootGenerationFactory.ApplyT11GearStats(armor, 11, p: p);
-                if (p != null) ZoneLootMutator.MutateLootItem(armor, p, null, 11);
-                // guarantee at least one graded line on the piece regardless of the zone's roll
-                if (ZoneModifiers.TryGet(28, out var dr))
-                    ZoneModifiers.StampGraded(armor, dr, 500, ZoneStatResolver.EffectiveBand(28, 11));
-                ACE.Server.Factories.LootGenerationFactory.ApplyWeaponAugScaleStamp(weapon, 11);
-
-                var rec = ZoneStatResolver.Read(armor).Count;
-                Msg($"bench: armor '{armor.Name}' record {rec} entries (\"{armor.GetProperty(PropertyString.ZcModifiers)}\"), weapon '{weapon.Name}' quality {weapon.GetProperty(PropertyInt.WeaponAugScaleQuality)}; n = {n:N0}");
-
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                for (var i = 0; i < n; i++) ZoneStatResolver.Compute(armor);
-                sw.Stop();
-                Msg($"  armor Compute (appraisal):        {sw.Elapsed.TotalMilliseconds * 1000.0 / n,8:0.00} us/op  ({sw.ElapsedMilliseconds} ms total)");
-
-                sw.Restart();
-                for (var i = 0; i < n; i++) ZoneStatResolver.Apply(armor, ZoneStatResolver.Compute(armor));
-                sw.Stop();
-                var equipUs = sw.Elapsed.TotalMilliseconds * 1000.0 / n;
-                Msg($"  armor Compute+Apply (equip):      {equipUs,8:0.00} us/op  ({sw.ElapsedMilliseconds} ms total, no DB)");
-
-                sw.Restart();
-                for (var i = 0; i < n; i++) ZoneStatResolver.ApplyIfStale(armor);
-                sw.Stop();
-                Msg($"  armor ApplyIfStale (login, current): {sw.Elapsed.TotalMilliseconds * 1000.0 / n,5:0.00} us/op  (the no-op path every login takes)");
-
-                var sink = 0f;
-                sw.Restart();
-                for (var i = 0; i < n; i++)
-                {
-                    sink += ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFlatBonus(weapon, player);
-                    sink += ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetCritDamageBonus(weapon, player);
-                    ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetEffectiveVariance(weapon, out var v); sink += (float)v;
-                }
-                sw.Stop();
-                Msg($"  weapon swing (3 resolves):        {sw.Elapsed.TotalMilliseconds * 1000.0 / n,8:0.00} us/swing  ({sw.ElapsedMilliseconds} ms total, sink {sink:0})");
-
-                var hits = 400 * 2;
-                Msg($"  at 400 players x 2 hits/s: weapons ~{sw.Elapsed.TotalMilliseconds / n * hits:0.0} ms CPU per second; one ladder apply = {400 * 18:N0} armor resolves ~{equipUs * 400 * 18 / 1000.0:0.0} ms CPU total.");
-            }
-            finally
-            {
-                armor.Destroy();
-                weapon.Destroy();
-            }
         }
 
         /// <summary>
@@ -3475,34 +3608,53 @@ namespace ACE.Server.Command.Handlers
                 // exempt=1 (2026-09-03, APPEND-ONLY, SPARSE): the master switch is OFF for this monster here.
                 if (area.Profile.ExemptWcids != null && area.Profile.ExemptWcids.Contains(wcid.Value))
                     sb.Append("|exempt=1");
+                // dmult= (2026-10-03, APPEND-ONLY, SPARSE): this monster's damage multiplier (absent = 1.0) - global per
+                // monster, not per zone; the Bestiary Offense tab shows and sets it (/zonecontrol damagemult).
+                var dmult = ZoneControlManager.GetDamageMult(wcid.Value);
+                if (dmult != 1.0)
+                    sb.Append("|dmult=").Append(dmult.ToString(CultureInfo.InvariantCulture));
             }
 
-            // Live server-wide relief-curve defaults (v11_relief_* config, /modify-tunable) so the
+            // Live server-wide relief-curve defaults (zc_relief_* config, /modify-tunable) so the
             // plugin's Curves tab hints/graphs/simulator never drift from what combat actually uses
             // when a zone doesn't author its own anchors. Fixed order: aug s,m,c,b | dr | critdr.
             sb.Append("|reliefdefs=")
-              .Append(ServerConfig.v11_relief_aug_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_aug_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_aug_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_aug_bend.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_dr_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_dr_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_dr_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_dr_bend.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_critdr_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_critdr_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_critdr_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_relief_critdr_bend.Value.ToString(CultureInfo.InvariantCulture));
+              .Append(ServerConfig.zc_relief_aug_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_aug_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_aug_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_aug_bend.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_dr_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_dr_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_dr_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_dr_bend.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_critdr_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_critdr_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_critdr_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_relief_critdr_bend.Value.ToString(CultureInfo.InvariantCulture));
 
             // Live shard-wide tuning defaults for the plugin's Curves Server-defaults view
             // (owner-approved 2026-07-28). Fixed order: pcthp variance, pcthp crit mult,
             // vuln effectiveness, vuln cap, vuln enabled (1/0).
             sb.Append("|tunedefs=")
-              .Append(ServerConfig.v11_pcthp_variance.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_pcthp_crit_mult.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_vuln_effectiveness.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_vuln_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(ServerConfig.v11_vuln_enabled.Value ? '1' : '0');
+              .Append(ServerConfig.zc_pcthp_variance.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_pcthp_crit_mult.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_vuln_effectiveness.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_vuln_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_vuln_enabled.Value ? '1' : '0');
+
+            // Aug curves + True Damage server defaults (owner 2026-10-02, APPEND-ONLY new key). Fixed order: protections
+            // (life) start, max, cap, bend | armor (item) start, max, cap, bend | True Damage crit mult, variance.
+            sb.Append("|augcurvedefs=")
+              .Append(ServerConfig.zc_aug_prot_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_prot_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_prot_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_prot_bend.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_armor_start.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_armor_max.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_armor_cap.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_aug_armor_bend.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_true_damage_crit_mult.Value.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(ServerConfig.zc_true_damage_variance.Value.ToString(CultureInfo.InvariantCulture));
 
             // Live diagnostics-bool states so the plugin's Log-section toggles show truth.
             // Fixed order: damage_event_debug_server_log, damage_event_debug_only_nonplayer_attackers,
@@ -3786,7 +3938,7 @@ namespace ACE.Server.Command.Handlers
 
             AppendLadder(sb);   // APPEND-ONLY (2026-08-22): ladder apply versions, last so older plugins ignore it
             AppendMissilePower(sb);   // APPEND-ONLY (2026-09-12): the missile power ladder, after the ladder tag
-            // APPEND-ONLY (2026-08-25), and genuinely last in the [[ZC]] payload. ðŸ”´ vp here is
+            // APPEND-ONLY (2026-08-25). ðŸ”´ vp here is
             // ResolveProfileForDisplay - the EVALUATED view after the Default -> zone -> wcid merge, which is
             // the convention every other layered tag in this payload already uses (the stat rows, cantrips=,
             // ctslots=, ctspoff=). So wpnoff at zone scope answers "which cards are OFF FOR THIS ZONE",
@@ -3796,10 +3948,46 @@ namespace ACE.Server.Command.Handlers
             // what this one means, because the two readings disagree only in the inherited case, which is
             // the case nobody tests.
             AppendWeaponCardsOff(sb, vp?.CustomWeaponCards);
-            // LAST tag in the [[ZC]] payload - APPEND-ONLY (2026-08-29). Same evaluated-view rule as
-            // wpnoff above: this answers "which stats are OFF FOR THIS SCOPE", inherited included.
+            // APPEND-ONLY (2026-08-29). Same evaluated-view rule as wpnoff above: this answers "which stats are OFF FOR
+            // THIS SCOPE", inherited included.
             AppendStatOffs(sb, vp?.StatToggles);
+            // APPEND-ONLY (2026-10-04, D8): zone scope only.
+            if (!wcid.HasValue && area != null)
+                AppendBagRanks(sb, area.Name);
+            // APPEND-ONLY (2026-10-05/06): the shard-wide tags, after everything older (the plugin matches tags by key)
+            AppendGearLock(sb);
+            AppendZoneBounty(sb);
+            AppendProcAllow(sb);
             return sb.ToString();
+        }
+
+        /// <summary>The Salvage Bag drop stats (bag_odds + bag_weight_*), in ZoneStat.All order.</summary>
+        private static readonly string[] BagStats = ZoneStat.All.Where(s => s == ZoneStat.BagOdds || s.StartsWith("bag_weight_", StringComparison.Ordinal)).ToArray();
+
+        /// <summary>
+        /// "|bagrank=&lt;rank&gt;:&lt;stat&gt;:&lt;value&gt;;..." (D8, 2026-10-04): the bag drop stats a kill of each rank (default /
+        /// regular / leader / boss) REALLY reads in this zone - ZoneControlManager.ResolveZoneRankForDisplay, the same
+        /// layer-by-layer merge combat uses. Sparse: an unset stat is absent. Always sent at zone scope (even empty), so the
+        /// plugin knows the server resolves per rank. Plain decimal, never exponent.
+        /// </summary>
+        private static void AppendBagRanks(StringBuilder sb, string zoneName)
+        {
+            sb.Append("|bagrank=");
+            var first = true;
+            foreach (var rank in ZoneRank.All)
+            {
+                var p = ZoneControlManager.ResolveZoneRankForDisplay(zoneName, rank);
+                if (p == null) continue;
+                var key = ZoneRank.Key(rank);
+                foreach (var stat in BagStats)
+                {
+                    if (!p.Has(stat)) continue;
+                    if (!first) sb.Append(';');
+                    first = false;
+                    sb.Append(key).Append(':').Append(stat).Append(':')
+                      .Append(p.Get(stat).ToString("0.##########", CultureInfo.InvariantCulture));
+                }
+            }
         }
 
         private static double? GetLiveStatValue(ACE.Server.WorldObjects.Creature creature, string stat)
@@ -3998,8 +4186,27 @@ namespace ACE.Server.Command.Handlers
             return int.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
         }
 
+        /// <summary>A finite number - NaN / Infinity would poison every reader of the stat (review 2026-10-04: a NaN bag_odds
+        /// dropped a bag on every kill, a NaN loot_grade_floor forced every grade to 0). Thousands separators are allowed only
+        /// as real 3-digit groups after a non-zero lead ("151,200" for odds): "0,5" used to read as 5 (x10 a vuln cap or a DoT
+        /// multiplier) and is now refused, like "0,500", currency signs and parentheses (review 2026-10-04).</summary>
         private static bool TryDouble(string s, out double value)
-            => double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out value);
+        {
+            value = 0;
+            s = s?.Trim();
+            if (string.IsNullOrEmpty(s) || (s.Contains(',') && !ThousandsGroups.IsMatch(s)))
+                return false;
+            return double.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out value)
+                && double.IsFinite(value);
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex ThousandsGroups =
+            new System.Text.RegularExpressions.Regex(@"^[+-]?[1-9]\d{0,2}(,\d{3})+(\.\d*)?([eE][+-]?\d+)?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        /// <summary>A finite plain number - no thousands separators ("0,1" is refused, never read as 1), no currency or
+        /// parentheses. For values where a comma can only be a mistyped decimal point (chances, tier anchors).</summary>
+        private static bool TryFiniteNumber(string s, out double value)
+            => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && double.IsFinite(value);
 
         /// <summary>Strip the wire's separator chars from a value so it can't break payload parsing.</summary>
         // â”€â”€ live stat resolution: /zonecontrol ladder ... (2026-08-22) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -4061,10 +4268,6 @@ namespace ACE.Server.Command.Handlers
 
                 case "migrate":
                     LadderMigrate(session, args, Msg);
-                    return;
-
-                case "bench":
-                    LadderBench(session, args, Msg);
                     return;
 
                 case "show":
@@ -4165,8 +4368,15 @@ namespace ACE.Server.Command.Handlers
                     return;
 
                 case "get":
-                    Msg(BuildCraftGatePayload());
+                {
+                    // Chunked since 2026-10-05: the full tinker/imbue catalog put compcat= alone at ~4 KB, and
+                    // one long chat line freezes the client (see ChatChunkChars). The plugin reassembles [[ZC+]]
+                    // through the same tag table, so [[ZCCG]] parses unchanged.
+                    var payload = BuildCraftGatePayload();
+                    if (session != null) SendChunked(session, payload);
+                    else Msg(payload);
                     return;
+                }
 
                 case "reload":
                     ZoneCraftGateStore.Reload();
@@ -4261,7 +4471,7 @@ namespace ACE.Server.Command.Handlers
 
         private const string CraftComponentsUsage =
             "Usage: craft components   |   craft components true|false   |   craft components add <wcid>   |   "
-          + "craft components remove <wcid>   |   craft components reset";
+          + "craft components remove <wcid>   |   craft components addgroup|removegroup <group>   |   craft components reset";
 
         /// <summary>`craft components ...`: LAYER 0, the flat list of SALVAGE WCIDs that may never be
         /// applied to a MinTier+ item, plus the toggle that turns the layer off without clearing it.
@@ -4299,6 +4509,27 @@ namespace ACE.Server.Command.Handlers
                     }
                     foreach (var w in list)
                         Msg($"  {w}  {ACE.Database.DatabaseManager.World.GetCachedWeenie(w)?.GetName() ?? "(no such weenie)"}");
+                    return;
+                }
+
+                case "addgroup":
+                case "removegroup":
+                {
+                    // One catalog group (Rend, Imbue, Tinker, Amber, Special, ...) in one shard write - the
+                    // plugin's "Block all" / "Allow all" buttons on each Components group.
+                    var group = args.Count > 3 ? args[3] : "";
+                    var ids = ZoneCraftGateStore.CatalogGroup(group);
+                    if (ids.Count == 0)
+                    {
+                        Msg($"No catalog group '{group}'. Groups: "
+                            + string.Join(", ", ZoneCraftGateStore.ComponentCatalogRows().Select(e => e.Group).Distinct()));
+                        return;
+                    }
+                    var block = op == "addgroup";
+                    var changed = ZoneCraftGateStore.SetComponents(ids, block);
+                    Msg(block
+                        ? $"{group}: {changed} of {ids.Count} newly blocked on Tier {ZoneCraftGateStore.MinTier}+ items ({ids.Count - changed} already were)."
+                        : $"{group}: {changed} of {ids.Count} allowed again ({ids.Count - changed} were not blocked).");
                     return;
                 }
 
@@ -4449,8 +4680,11 @@ namespace ACE.Server.Command.Handlers
             {
                 if (!firstComp) sb.Append(';');
                 firstComp = false;
-                sb.Append(w).Append('~')
-                  .Append(CleanWire(ACE.Database.DatabaseManager.World.GetCachedWeenie(w)?.GetName() ?? ""));
+                // Name only for a WCID outside the catalog (added by command): the plugin labels catalog rows
+                // itself, and ~300 names would add ~7 KB to the payload. An empty name is already legal here.
+                sb.Append(w).Append('~');
+                if (!ZoneCraftGateStore.InCatalog(w))
+                    sb.Append(CleanWire(ACE.Database.DatabaseManager.World.GetCachedWeenie(w)?.GetName() ?? ""));
             }
 
             // â”€â”€ APPENDED 2026-08-26: the layer-0 CANDIDATE catalog, for the per-component toggles â”€â”€
@@ -4458,8 +4692,8 @@ namespace ACE.Server.Command.Handlers
             // UNTICKED row - the store records only the blocked set, so without this there is nothing to
             // draw an allowed component from.
             //
-            // wcid~group ONLY, deliberately. This whole payload is ONE unchunked chat line (Msg at the
-            // `craft get` verb), the 49 blocked names already measure 907 characters, and adding a prose
+            // wcid~group ONLY, deliberately. This whole payload is chat (chunked since 2026-10-05), the
+            // 49 blocked names already measured 907 characters, and adding a prose
             // description per row would put ~4.7 KB more on that same line. The plugin owns the display
             // name and the explanation, compiled in. It has to anyway: TWELVE of these weenies are named
             // exactly "Foolproof" in the world DB and three more are named "Salvage", so wire names could
@@ -4472,6 +4706,10 @@ namespace ACE.Server.Command.Handlers
                 firstCat = false;
                 sb.Append(e.Wcid).Append('~').Append(CleanWire(e.Group));
             }
+
+            // APPENDED 2026-10-05: this server has `craft components addgroup|removegroup`. A server without the
+            // field (live before this build) gets one `craft components add|remove <wcid>` per row instead.
+            sb.Append("|groupcmd=1");
 
             return sb.ToString();
         }
@@ -5263,8 +5501,8 @@ namespace ACE.Server.Command.Handlers
             var stat = NormalizeStat(verb);
             if (stat == null) { Msg($"Unknown stat '{verb}'. See 'statlist'."); return; }
             if (args.Count < 4
-                || !double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var v11)
-                || !double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var v25))
+                || !TryFiniteNumber(args[2], out var v11)
+                || !TryFiniteNumber(args[3], out var v25))
             { Msg("Usage: tier <stat> <t11value> <t25value> [--curve augs|linear]"); return; }
 
             var useAugs = true;
@@ -5489,7 +5727,8 @@ namespace ACE.Server.Command.Handlers
                 ZoneStat.MeleeDefense, ZoneStat.MissileDefense, ZoneStat.MagicDefense,
                 ZoneStat.ArmorLevel, ZoneStat.AttackDamage,
                 // offense coverage (2026-09-02, mob->player lane): what makes a T11 monster HIT like one
-                ZoneStat.DamageRating, ZoneStat.CritRating, ZoneStat.CritDamageRating, ZoneStat.PercentHpBase,
+                // 2026-10-01: True Damage is the main monster damage; the %HP floor is optional, so it is not core
+                ZoneStat.DamageRating, ZoneStat.CritRating, ZoneStat.CritDamageRating, ZoneStat.TrueDamage,
             };
             r.CoreTotal = core.Length;
             r.CoreMissing = core.Where(c => !Has(c)).ToList();

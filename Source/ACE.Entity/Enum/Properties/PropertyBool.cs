@@ -396,10 +396,23 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         OnlyCombatPetsCanDamage = 50057,
 
+        /// <summary>Zone Control (owner 2026-10-03): this creature takes NO damage from Rocky Shrapnel (6152) or Ring of
+        /// Unspeakable Agony (2673) - the two fast-casting bludgeon rings the Shrapnel / Agony charms give players. Works on
+        /// any monster anywhere (it is checked on the target itself); the zone stat immune_shrapnel_agony does the same per
+        /// zone / tier / rank / wcid. Server-only. 50058 is taken on test/integration (IsTestFiller).</summary>
+        ZcImmuneShrapnelAgony = 50059,
+
         /// <summary>Room Assign, Zone Share (owner 2026-09-23): on a room-source WEENIE (the one carrying RoomAssignRooms), everyone
         /// standing in that dungeon shares kill XP, kill luminance and kill-task credit as if they were all in one fellowship.
         /// Server-only - not an assessment property. Numbered beside the other Room Assign properties (50500-50502).</summary>
         RoomAssignZoneShare = 50503,
+
+        /// <summary>Salvage Bags (2026-10-02, code name Gear Essences): a Bag of Madness was used on this item; no bag works
+        /// on it again. Server-only - not an assessment property.</summary>
+        GearEssenceTainted = 51000,
+        /// <summary>Salvage Bags: a bag has changed this item. The appraisal keeps the Modifiers block (and the Tainted line)
+        /// on a piece a bag emptied. Server-only - not an assessment property.</summary>
+        GearEssenceWorked = 51001,
 
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }

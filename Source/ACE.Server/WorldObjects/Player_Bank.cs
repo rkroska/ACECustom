@@ -32,6 +32,8 @@ namespace ACE.Server.WorldObjects
         private const int PYREAL_MAX_STACK = 25000;
         private const int ENLIGHTENED_COIN_MAX_STACK = 25000;
         private const int WEAKLY_ENLIGHTENED_COIN_MAX_STACK = 25000;
+        private const int PRESTIGE_COIN_MAX_STACK = 25000;
+        public const uint PRESTIGE_COIN_WCID = 19860000;
         private const int TRADE_NOTE_MAX_STACK = 250;
         private const int MMD_TRADE_NOTE_MAX_STACK = 5000;
 
@@ -719,6 +721,134 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        /// <summary>
+        /// ILT LUM TOKENS (owner 2026-10-05: "make those items bankable and auto convert to lum, just like how peas auto convert to
+        /// pyreals"): each token and the NPC that pays for it. ILT tokens only - their NPC turn-in is a FLAT IncrementInt64Stat on
+        /// BankedLuminance, so the bank can pay exactly the same. Retail lum gems stay NPC-only: their AwardLuminance turn-in is
+        /// multiplied by quest count / enlightenment, which a flat bank deposit would quietly undercut.
+        /// </summary>
+        private static readonly (uint Token, uint Npc)[] LumTokens =
+        {
+            (227190187, 12050),     // Thaelaryn Token of Greater Luminance -> Agent of the Arcanum
+            (300101211, 12050),     // Thaelaryn Token of Luminance -> Agent of the Arcanum
+            (867530211, 12050),     // ILT Token of Luminance - Event Reward -> Agent of the Arcanum
+            (867530194, 12050),     // ILT Token of Luminance -> Agent of the Arcanum
+            (64454972, 64454916),   // Researcher's Token of Luminance -> Red Underrly
+        };
+
+        /// <summary>The lum one token pays at its NPC: the NPC's own Give emote for that wcid, its IncrementInt64Stat on
+        /// BankedLuminance. Read from the cached weenie, so the bank always pays what the NPC pays (0 = not found - never deposited).</summary>
+        public static long LumTokenValue(uint tokenWcid)
+        {
+            foreach (var (token, npc) in LumTokens)
+            {
+                if (token != tokenWcid) continue;
+                var emotes = DatabaseManager.World.GetCachedWeenie(npc)?.PropertiesEmote;
+                if (emotes == null) return 0;
+                foreach (var e in emotes)
+                    if (e.Category == EmoteCategory.Give && e.WeenieClassId == tokenWcid)
+                        foreach (var a in e.PropertiesEmoteAction)
+                            if (a.Type == (uint)EmoteType.IncrementInt64Stat && a.Stat == (int)PropertyInt64.BankedLuminance && (a.Amount64 ?? 0) > 0)
+                                return a.Amount64.Value;
+                return 0;
+            }
+            return 0;
+        }
+
+        /// <summary>True when this item, or any container it sits in, is in this player's open trade window.</summary>
+        private bool InTradeWindow(WorldObject item)
+        {
+            if (!IsTrading) return false;
+            for (var wo = item; wo != null; wo = wo.Container)
+                if (ItemsInTradeWindow.Contains(wo.Guid))
+                    return true;
+            return false;
+        }
+
+        /// <summary>`/b lum` and deposit-all: every ILT lum token in the packs is consumed and its NPC value goes to BankedLuminance.
+        /// Saves at once (the token is gone from the shard the moment it is consumed, so the lum must not wait for the 10-minute save).
+        /// Returns the lum deposited. <paramref name="quietIfNone"/>: no "none found" line (deposit-all); <paramref name="showTotal"/>:
+        /// a tokens-total line before Ending Banked Lum.</summary>
+        public long DepositLuminanceTokens(bool quietIfNone = false, bool showTotal = false)
+        {
+            long total = 0, tokensTotal = 0;
+            long before = 0, after = 0;
+            var lines = new List<string>();
+            var skipped = new List<string>();
+            lock (balanceLock)
+            {
+                var oldBalance = BankedLuminance ?? 0;
+                before = oldBalance;
+                // one walk of the packs for every token kind; never a token in an open trade window, nor inside a pack that is
+                // there - banking it would hand the trade partner nothing for it
+                var tokenWcids = new HashSet<uint>(LumTokens.Select(t => t.Token));
+                var tokensHeld = GetAllPossessionsDeep().Where(i => tokenWcids.Contains(i.WeenieClassId) && i.Wielder == null).ToList();
+                foreach (var traded in tokensHeld.Where(InTradeWindow))
+                    skipped.Add($"{(long)(traded.StackSize ?? 1):N0} x {traded.Name} (in your trade window)");
+                var byWcid = tokensHeld.Where(i => !InTradeWindow(i))
+                    .GroupBy(i => i.WeenieClassId)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+                foreach (var (token, _) in LumTokens)
+                {
+                    if (!byWcid.TryGetValue(token, out var items)) continue;
+                    var value = LumTokenValue(token);
+                    if (value <= 0) continue;
+                    long count = 0, tokenLum = 0;
+                    string name = null;
+                    foreach (var item in items)
+                    {
+                        var stack = (long)(item.StackSize ?? 1);
+                        name ??= item.Name;
+                        // checked BEFORE the token is consumed: an emote value x stack that would wrap the balance leaves the
+                        // token in the pack (a mis-authored Amount64 must never turn the bank negative)
+                        long add;
+                        try { add = checked(value * stack); _ = checked((BankedLuminance ?? 0) + add); }
+                        catch (OverflowException)
+                        {
+                            log.Warn($"[Bank] {Name}: lum token {token} x {stack} at {value} each would overflow the bank - not deposited");
+                            skipped.Add($"{stack:N0} x {item.Name}");
+                            continue;
+                        }
+                        var ok = TryConsumeFromInventoryWithNetworking(item);
+                        LogItemConsumption("DepositLuminanceTokens", item, ok, $"Lum each: {value} | Stack: {stack}");
+                        if (!ok)
+                        {
+                            skipped.Add($"{stack:N0} x {item.Name}");
+                            continue;
+                        }
+                        BankedLuminance = (BankedLuminance ?? 0) + add;
+                        total += add;
+                        tokenLum += add;
+                        count += stack;
+                        tokensTotal += stack;
+                    }
+                    if (count > 0)
+                        lines.Add($"Deposited {count:N0} x {name}: {ACE.Server.Command.ShortNumber.Amount(tokenLum, "Lum")}");
+                }
+                after = BankedLuminance ?? 0;   // read under the lock, with the deposits it reports
+                if (total > 0)
+                    LogBankChange("DepositLuminanceTokens", "Luminance", total, oldBalance, after, string.Join(" | ", lines));
+            }
+
+            if (total > 0)
+                this.SavePlayerToDatabase();
+
+            // owner 2026-10-06: Starting Banked Lum, every token line, Ending Banked Lum - in that order
+            if (total > 0)
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Starting Banked Lum: {ACE.Server.Command.ShortNumber.Both(before)}", ChatMessageType.System));
+            foreach (var l in lines)
+                Session.Network.EnqueueSend(new GameMessageSystemChat(l, ChatMessageType.System));
+            if (total > 0 && showTotal)
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {tokensTotal:N0} token{(tokensTotal == 1 ? "" : "s")} total: {ACE.Server.Command.ShortNumber.Amount(total, "Lum")}", ChatMessageType.System));
+            if (total > 0)
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Ending Banked Lum: {ACE.Server.Command.ShortNumber.Both(after)}", ChatMessageType.System));
+            if (total == 0 && !quietIfNone && skipped.Count == 0)
+                Session.Network.EnqueueSend(new GameMessageSystemChat("No luminance tokens found to deposit", ChatMessageType.System));
+            if (skipped.Count > 0)
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Not deposited (left in your pack): {string.Join(", ", skipped)}", ChatMessageType.System));
+            return total;
+        }
+
         public void DepositEnlightenedCoins(bool suppressChat = false)
         {
             if (BankedEnlightenedCoins == null)
@@ -801,6 +931,42 @@ namespace ACE.Server.WorldObjects
 
 
         /// <summary>
+        /// Deposit all Prestige Coins (owner 2026-10-04). Counted by STACK SIZE, not Value: the coin is worth 0 (unsellable),
+        /// so summing Value like the Enlightened Coin deposit would bank nothing.
+        /// </summary>
+        public void DepositPrestigeCoins(bool suppressChat = false)
+        {
+            if (BankedPrestigeCoins == null)
+            {
+                BankedPrestigeCoins = 0;
+            }
+            lock (balanceLock)
+            {
+                long totalDeposited = 0;
+                var coins = this.GetInventoryItemsOfWCID(PRESTIGE_COIN_WCID);
+                foreach (var coin in coins)
+                {
+                    int count = coin.StackSize ?? 1;
+                    if (count > 0 && this.TryConsumeFromInventoryWithNetworking(coin))
+                    {
+                        BankedPrestigeCoins += count;
+                        totalDeposited += count;
+                    }
+                }
+
+                if (!suppressChat)
+                {
+                    if (totalDeposited > 0)
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} prestige coins", ChatMessageType.System));
+                    else
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("No prestige coins found to deposit", ChatMessageType.System));
+                }
+            }
+
+            this.SavePlayerToDatabase();
+        }
+
+        /// <summary>
         /// Deposit all luminance
         /// </summary>
         public void DepositLuminance(bool suppressChat = false)
@@ -863,7 +1029,7 @@ namespace ACE.Server.WorldObjects
             
             if (actualAmount > 0 && !suppressChat)
             {
-                Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {actualAmount:N0} luminance", ChatMessageType.System));
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Deposited " + ACE.Server.Command.ShortNumber.Amount(actualAmount, "Lum"), ChatMessageType.System));
             }
             else if (!suppressChat)
             {
@@ -974,11 +1140,11 @@ namespace ACE.Server.WorldObjects
             
             if (actualWithdraw == Amount)
             {
-                Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {actualWithdraw:N0} luminance", ChatMessageType.System));
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Withdrew " + ACE.Server.Command.ShortNumber.Amount(actualWithdraw, "Lum"), ChatMessageType.System));
             }
             else
             {
-                Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {actualWithdraw:N0} luminance (partial - insufficient capacity for remaining {Amount - actualWithdraw:N0})", ChatMessageType.System));
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {ACE.Server.Command.ShortNumber.Amount(actualWithdraw, "Lum")} - partial: no capacity for the remaining {ACE.Server.Command.ShortNumber.Amount(Amount - actualWithdraw, "Lum")}", ChatMessageType.System));
             }
             
             Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, this.AvailableLuminance ?? 0));
@@ -1522,6 +1688,75 @@ namespace ACE.Server.WorldObjects
             else
             {
                 Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create weakly enlightened coins - check pack space. Withdrawal cancelled.", ChatMessageType.System));
+            }
+        }
+
+        /// <summary>Mints Prestige Coin stacks (Bonded + Attuned come from the weenie) into the pack; returns how many were made.</summary>
+        private long CreatePrestigeCoins(long Amount)
+        {
+            long remaining = Amount;
+            long successfullyCreated = 0;
+            var createdItems = new List<WorldObject>();
+
+            while (remaining > 0)
+            {
+                int stackSize = (int)Math.Min(remaining, (long)PRESTIGE_COIN_MAX_STACK);
+
+                WorldObject wo = WorldObjectFactory.CreateNewWorldObject(PRESTIGE_COIN_WCID);
+                if (wo == null)
+                    break;
+
+                wo.SetStackSize(stackSize);
+
+                if (!this.TryAddToInventory(wo, out _))
+                {
+                    LogDebug($"[BANK_DEBUG] Player: {Name} | Failed to create prestige coin stack of {stackSize} - insufficient pack space");
+                    break;
+                }
+
+                createdItems.Add(wo);
+                successfullyCreated += stackSize;
+                remaining -= stackSize;
+            }
+
+            foreach (var item in createdItems)
+                Session.Network.EnqueueSend(new GameMessageCreateObject(item));
+
+            return successfullyCreated;
+        }
+
+        /// <summary>Withdraw Prestige Coins from the bank (owner 2026-10-04). There is deliberately NO TransferPrestigeCoins.</summary>
+        public void WithdrawPrestigeCoins(long Amount)
+        {
+            if (Amount <= 0)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Amount must be greater than zero", ChatMessageType.System));
+                return;
+            }
+
+            if (BankedPrestigeCoins < Amount)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You don't have enough prestige coins banked. Need {Amount:N0} coins but only have {BankedPrestigeCoins:N0}.", ChatMessageType.System));
+                return;
+            }
+
+            long successfullyCreated = CreatePrestigeCoins(Amount);
+
+            if (successfullyCreated > 0)
+            {
+                lock (balanceLock)
+                {
+                    BankedPrestigeCoins -= successfullyCreated;
+                }
+
+                if (successfullyCreated == Amount)
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} prestige coins", ChatMessageType.System));
+                else
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} prestige coins (partial - insufficient pack space for remaining {Amount - successfullyCreated:N0} prestige coins)", ChatMessageType.System));
+            }
+            else
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create prestige coins - check pack space. Withdrawal cancelled.", ChatMessageType.System));
             }
         }
 
@@ -2343,6 +2578,11 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins) ?? 0;
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedWeaklyEnlightenedCoins); else SetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins, value.Value); }
+        }
+        public long? BankedPrestigeCoins
+        {
+            get => GetProperty(PropertyInt64.BankedPrestigeCoins) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPrestigeCoins); else SetProperty(PropertyInt64.BankedPrestigeCoins, value.Value); }
         }
         public long? BankedMythicalKeys
         {

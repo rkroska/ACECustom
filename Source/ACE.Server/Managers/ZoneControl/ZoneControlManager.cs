@@ -198,6 +198,34 @@ namespace ACE.Server.Managers.ZoneControl
             /// <summary>Live stat resolution (2026-08-22): per-TIER ladder apply state. Absent / empty =
             /// version 0 everywhere = no apply has ever run. See <see cref="GetLadderVersion"/>.</summary>
             public Dictionary<int, LadderApply> LadderApplies { get; set; } = new();
+
+            /// <summary>Per-MONSTER damage multipliers (owner 2026-10-03, "Damage Multiplier" in the Bestiary): wcid ->
+            /// factor on ALL the damage that monster deals to players (melee + spells, normal + True Damage), at every
+            /// tier and in every zone. Absent = 1.0. Evens out a slow swinger (the Kraken) or softens a monster.</summary>
+            public Dictionary<uint, double> DamageMults { get; set; } = new();
+
+            /// <summary>GEAR LOCK LANDBLOCKS (owner 2026-10-05): spots where T11+ gear is suppressed exactly like the two
+            /// zone locks (weapons + worn gear), with the locks themselves off. Absent / empty = nowhere.</summary>
+            public List<GearLockSpot> GearLockSpots { get; set; } = new();
+
+            /// <summary>ZONE-WIDE BOUNTY (owner 2026-10-05): ONE bounty and ONE timer per character across every T11-T25 zone, so
+            /// hopping tiers or zones cannot restart the cooldown. While on it replaces the per-zone bounties at v11+ (a room
+            /// dungeon's own Bounty still wins inside the dungeon). Absent = off.</summary>
+            public BountyConfig ZoneWideBounty { get; set; } = new();
+
+            /// <summary>ALLOWED PROCS (owner 2026-10-06): proc spell ids that T11+ monsters do NOT force-resist even from gear below
+            /// T11 (TierHitGate.IsLowTierCast). Edited with /zonecontrol procallow and the plugin. Absent / empty = none allowed.</summary>
+            public List<uint> AllowedProcSpells { get; set; } = new();
+        }
+
+        /// <summary>The highest variation a gear lock spot names (the command, SetGearLock and Load share it).</summary>
+        public const int GearLockMaxVariation = 1000;
+
+        /// <summary>One gear lock spot: a landblock (0x0001-0xFFFF) and a variation 0-<see cref="GearLockMaxVariation"/>, -1 = every variation.</summary>
+        public class GearLockSpot
+        {
+            public int Landblock { get; set; }
+            public int Variation { get; set; } = -1;
         }
 
         /// <summary>One `ladder apply` state for a tier. Version is a counter an item compares its
@@ -214,6 +242,25 @@ namespace ACE.Server.Managers.ZoneControl
         // tier -> ladder apply state. Guarded by _lock; read through the volatile copy below (hot equip path).
         private static readonly Dictionary<int, LadderApply> _ladderApplies = new();
         private static volatile Dictionary<int, LadderApply> _ladderSnapshot = new();
+
+        // wcid -> damage multiplier. Guarded by _lock; read through the volatile copy (every monster hit on a player).
+        private static readonly Dictionary<uint, double> _damageMults = new();
+        private static volatile Dictionary<uint, double> _damageMultSnapshot = new();
+        public const double DamageMultMin = 0.1, DamageMultMax = 10.0;
+
+        // gear lock spots as keys ((variation + 1) << 16 | landblock; variation -1 = every variation -> high half 0).
+        // Guarded by _lock; read through the volatile copy (every gear-power gate read, so the empty case must be free).
+        private static readonly HashSet<uint> _gearLock = new();
+        private static volatile HashSet<uint> _gearLockSnapshot = new();
+        private static uint GearLockKey(int landblock, int variation) => ((uint)(variation + 1) << 16) | (uint)(landblock & 0xFFFF);
+
+        // the zone-wide bounty. Guarded by _lock; read through the volatile copy (every kill in a T11+ zone).
+        private static BountyConfig _zoneWideBounty = new();
+        private static volatile BountyConfig _zoneWideBountySnapshot = new();
+
+        // allowed proc spell ids. Guarded by _lock; read through the volatile copy (every proc on a T11+ monster from old gear).
+        private static readonly HashSet<uint> _procAllow = new();
+        private static volatile HashSet<uint> _procAllowSnapshot = new();
 
         // variation -> Default layer. Guarded by _lock; copied into the lock-free snapshot at rebuild.
         private static readonly Dictionary<int, VariationDefault> _variationDefaults = new();
@@ -329,6 +376,25 @@ namespace ACE.Server.Managers.ZoneControl
                     if (kv.Value != null)
                         ladderApplies[kv.Key] = kv.Value;
 
+            var damageMults = new Dictionary<uint, double>();
+            if (store.DamageMults != null)
+                foreach (var kv in store.DamageMults)
+                    if (kv.Value >= DamageMultMin && kv.Value <= DamageMultMax && kv.Value != 1.0)
+                        damageMults[kv.Key] = kv.Value;
+
+            var gearLock = new HashSet<uint>();
+            if (store.GearLockSpots != null)
+                foreach (var g in store.GearLockSpots)
+                {
+                    if (g != null && g.Landblock > 0 && g.Landblock <= 0xFFFF && g.Variation >= -1 && g.Variation <= GearLockMaxVariation)
+                        gearLock.Add(GearLockKey(g.Landblock, g.Variation));
+                    else if (g != null)
+                        log.Warn($"[ZoneControl] gear lock spot {g.Landblock:X4} variation {g.Variation} is out of range - dropped (the next save removes it)");
+                }
+
+            var zoneWideBounty = store.ZoneWideBounty ?? new BountyConfig();
+            var procAllow = new HashSet<uint>((store.AllowedProcSpells ?? new List<uint>()).Where(id => id != 0));
+
             // ── commit: from here on nothing can throw ──
             _areas.Clear();
             foreach (var kv in areas) _areas[kv.Key] = kv.Value;
@@ -338,6 +404,17 @@ namespace ACE.Server.Managers.ZoneControl
             foreach (var kv in ladderApplies) _ladderApplies[kv.Key] = kv.Value;
             _evalCache.Clear();
             _ladderSnapshot = new Dictionary<int, LadderApply>(_ladderApplies);
+            _damageMults.Clear();
+            foreach (var kv in damageMults) _damageMults[kv.Key] = kv.Value;
+            _damageMultSnapshot = new Dictionary<uint, double>(_damageMults);
+            _gearLock.Clear();
+            foreach (var k in gearLock) _gearLock.Add(k);
+            _gearLockSnapshot = new HashSet<uint>(_gearLock);
+            _zoneWideBounty = zoneWideBounty;
+            _zoneWideBountySnapshot = zoneWideBounty.Clone();
+            _procAllow.Clear();
+            foreach (var id in procAllow) _procAllow.Add(id);
+            _procAllowSnapshot = new HashSet<uint>(_procAllow);
 
             RebuildIndexes();
         }
@@ -445,6 +522,10 @@ namespace ACE.Server.Managers.ZoneControl
                 Areas = _areas.Values.ToList(),
                 VariationDefaults = new Dictionary<int, VariationDefault>(_variationDefaults),
                 LadderApplies = new Dictionary<int, LadderApply>(_ladderApplies),
+                DamageMults = new Dictionary<uint, double>(_damageMults),
+                GearLockSpots = _gearLock.OrderBy(k => k).Select(k => new GearLockSpot { Landblock = (int)(k & 0xFFFF), Variation = (int)(k >> 16) - 1 }).ToList(),
+                ZoneWideBounty = _zoneWideBounty,
+                AllowedProcSpells = _procAllow.OrderBy(x => x).ToList(),
             };
             _ladderSnapshot = new Dictionary<int, LadderApply>(_ladderApplies);
             var jsonOut = JsonConvert.SerializeObject(store);
@@ -854,6 +935,15 @@ namespace ACE.Server.Managers.ZoneControl
             || ExemptBoolOf(creature);   // cached bool read - no biota lock on the per-hit path (2026-09-04)
 
         /// <summary>
+        /// The zone profile for a COMBAT-MODEL read (True Damage, the damage multiplier, aug curves, Spell Armor, DoT armor /
+        /// multipliers, the debuff bonus, the Shrapnel / Agony immunity): <see cref="ResolveForCreature"/>, but null while
+        /// zonecontrol_enabled is OFF - RULING 1, "fully inert", like every other combat gate (CodeRabbit #539: the damage
+        /// multiplier still applied with it off).
+        /// </summary>
+        public static EvaluatedProfile ResolveCombatProfile(Creature creature)
+            => ServerConfig.zonecontrol_enabled.Value ? ResolveForCreature(creature) : null;
+
+        /// <summary>
         /// Resolves the winning zone for a creature and evaluates its stat profile. Returns null when the
         /// creature should NOT be zone-controlled: it's a player, it's a pet, it's exempt, no enabled zone
         /// covers its landblock, or no covering zone's Variation matches the creature's current variation.
@@ -884,6 +974,10 @@ namespace ACE.Server.Managers.ZoneControl
                 return null;
 
             var effVar = GetEffectiveVariation(creature);
+            // never retail (owner 2026-10-04, review): a zone left on v0-v10 from before setvar / create refused it governs
+            // nothing - Zone Control combat, loot, effects and looks stay off retail monsters
+            if (effVar < VariationManager.EndgameMinVariation)
+                return null;
 
             ZoneRef best = null;
             foreach (var zr in list)
@@ -1108,6 +1202,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// (ZcTier 11+; retail items never carry the stamp, so they can never be suppressed) +
         /// the player is NOT inside an enabled authored area at their effective variation
         /// (ResolveZoneDefaultForPlayer == null - lock-free snapshot read, rating-hot-path safe).
+        /// Also suppressed, lock on or off: a GEAR LOCK spot (InGearLockSpot, 2026-10-05).
         ///
         /// Read at every card/scaling COMBAT site; appraisal deliberately stays ungated - the
         /// panel describes the item, the lock describes the location.
@@ -1120,7 +1215,9 @@ namespace ACE.Server.Managers.ZoneControl
             // and the ZcTier read below takes the item's biota lock. In the default configuration (Zone
             // Control on, lock off) the answer is "not suppressed" without touching the item at all.
             var zcOn = ServerConfig.zonecontrol_enabled.Value;
-            if (zcOn && !ServerConfig.zc_weapon_zone_lock.Value)
+            var lockOn = ServerConfig.zc_weapon_zone_lock.Value;
+            // the gear lock list (2026-10-05) can suppress with the lock OFF - an empty list keeps this free
+            if (zcOn && !lockOn && _gearLockSnapshot.Count == 0)
                 return false;
             if ((weapon.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ZcTier) ?? 0) < 11)
                 return false;
@@ -1131,7 +1228,9 @@ namespace ACE.Server.Managers.ZoneControl
             // weapon stats are the fallback, same as the zone lock.
             if (!zcOn)
                 return true;
-            return ResolveZoneDefaultForPlayer(player) == null;
+            if (InGearLockSpot(player))
+                return true;
+            return lockOn && ResolveZoneDefaultForPlayer(player) == null;
         }
 
         /// <summary>
@@ -1142,17 +1241,65 @@ namespace ACE.Server.Managers.ZoneControl
         /// Reinforced rank - frozen into the piece at drop) stay, mirroring the weapon rule's
         /// base-stats fallback. Per-WEARER, not per-item: the caches isolate the ZC portion at
         /// equip time (only ZcTier 11+ items feed it), so the read-time test needs no item.
+        /// Also suppressed, lock on or off: a GEAR LOCK spot (InGearLockSpot, 2026-10-05) - but only while Zone Control is on.
         /// NOTE: the master zonecontrol_enabled toggle is NOT part of this gate - armor already
         /// re-prices onto the T10 fallback ladder when that is off (live stat resolution), and
-        /// zeroing lines on top would double-punish.
+        /// zeroing lines on top would double-punish (the gear lock spots included).
         /// </summary>
         public static bool WornPowerSuppressed(Creature wearer)
         {
-            if (!ServerConfig.zc_armor_zone_lock.Value)
+            var lockOn = ServerConfig.zc_armor_zone_lock.Value;
+            if (!lockOn && _gearLockSnapshot.Count == 0)
                 return false;
             if (!(wearer is Player player))
                 return false;
-            return ResolveZoneDefaultForPlayer(player) == null;
+            if (ServerConfig.zonecontrol_enabled.Value && InGearLockSpot(player))
+                return true;
+            return lockOn && ResolveZoneDefaultForPlayer(player) == null;
+        }
+
+        /// <summary>True while ANY power gate can suppress something: Zone Control off, a zone lock on, or a gear lock spot listed.
+        /// Config only - a hot path asks this before reading anything off an item.</summary>
+        public static bool AnyPowerGate => !ServerConfig.zonecontrol_enabled.Value || ServerConfig.zc_weapon_zone_lock.Value
+                                           || ServerConfig.zc_armor_zone_lock.Value || _gearLockSnapshot.Count > 0;
+
+        /// <summary>GEAR LOCK LANDBLOCKS (owner 2026-10-05): true when the player stands in a listed landblock - at that
+        /// variation, or a landblock listed for every variation. Lock-free; an empty list returns before touching anything.
+        /// Feeds both power gates above, so a listed spot suppresses T11+ weapons AND worn gear exactly like the zone locks.</summary>
+        public static bool InGearLockSpot(Player player)
+        {
+            var spots = _gearLockSnapshot;
+            if (spots.Count == 0) return false;
+            var loc = player?.Location;
+            if (loc == null) return false;
+            var lb = loc.LandblockId.Landblock;
+            return spots.Contains(GearLockKey(lb, -1)) || spots.Contains(GearLockKey(lb, GetEffectiveVariation(player)));
+        }
+
+        /// <summary>`/zonecontrol gearlock add|remove`: one spot (variation -1 = every variation). Persists. Returns false
+        /// when nothing changed.</summary>
+        public static bool SetGearLock(int landblock, int variation, bool on)
+        {
+            if (landblock <= 0 || landblock > 0xFFFF)
+                throw new ArgumentOutOfRangeException(nameof(landblock), landblock, "landblock 0001-FFFF");
+            if (variation < -1 || variation > GearLockMaxVariation)
+                throw new ArgumentOutOfRangeException(nameof(variation), variation, $"variation -1 (any) or 0-{GearLockMaxVariation}");
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var key = GearLockKey(landblock, variation);
+                if (on ? !_gearLock.Add(key) : !_gearLock.Remove(key)) return false;
+                _gearLockSnapshot = new HashSet<uint>(_gearLock);
+                Save();
+                return true;
+            }
+        }
+
+        /// <summary>The gear lock spots, sorted - (landblock, variation), variation -1 = every variation.</summary>
+        public static List<(int Landblock, int Variation)> ListGearLock()
+        {
+            EnsureInitialized();
+            return _gearLockSnapshot.Select(k => ((int)(k & 0xFFFF), (int)(k >> 16) - 1)).OrderBy(e => e.Item1).ThenBy(e => e.Item2).ToList();
         }
 
         /// <summary>Is this item ZC-stamped gear (ZcTier 11+) - the cache-build test that feeds
@@ -1315,6 +1462,10 @@ namespace ACE.Server.Managers.ZoneControl
                 return null;
 
             var effVar = GetEffectiveVariation(creature);
+            // never retail (owner 2026-10-04, review): a zone left on v0-v10 from before setvar / create refused it governs
+            // nothing - Zone Control combat, loot, effects and looks stay off retail monsters
+            if (effVar < VariationManager.EndgameMinVariation)
+                return null;
 
             ZoneRef best = null;
             foreach (var zr in list)
@@ -1618,6 +1769,37 @@ namespace ACE.Server.Managers.ZoneControl
         /// SAME numbers combat resolves. Merges VariationDefault -&gt; zone -&gt; wcid. Null if no such zone.
         /// </summary>
         public static ZoneVariantProfile ResolveProfileForDisplay(string name, uint? wcid = null)
+            => ResolveProfileForDisplayCore(name, wcid);
+
+        /// <summary>
+        /// D8 (2026-10-04): the EVALUATED profile a kill of <paramref name="rank"/> reads in this zone - built exactly as the
+        /// snapshot builds ZoneRef.ByRank (each layer flattened for the rank, then merged), but for any zone, enabled or not.
+        /// The plugin's Salvage Bags tab shows these per-rank values; the merged rows it gets otherwise cannot reproduce the
+        /// per-layer rule (a layer's own Default beats a lower layer's rank row). Null if no such zone.
+        /// </summary>
+        public static EvaluatedProfile ResolveZoneRankForDisplay(string name, ZcRank rank)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var area = FindArea(name);
+                if (area == null)
+                    return null;
+                // the SAME cache key Evaluate uses for a zone-wide (no per-monster bucket) profile of this rank - the same
+                // computation, so the two share one entry; _evalCache is cleared on every save. The [[ZC]] push rebuilds
+                // its payload every 2 s, so this must not re-merge four profiles each time (review 2026-10-04).
+                var cacheKey = area.Name + "|default|r" + (int)rank;
+                if (_evalCache.TryGetValue(cacheKey, out var cached))
+                    return cached;
+                var defProfile = AnchoredDefaultProfileFor(area.Variation, rank);
+                var zoneLayer = area.Profile.Minion?.ForRank(rank);
+                var eval = EvaluateVariant(area.Name, ZoneVariantProfile.Merge(defProfile, zoneLayer));
+                _evalCache[cacheKey] = eval;
+                return eval;
+            }
+        }
+
+        private static ZoneVariantProfile ResolveProfileForDisplayCore(string name, uint? wcid)
         {
             EnsureInitialized();
             lock (_lock)
@@ -1907,6 +2089,71 @@ namespace ACE.Server.Managers.ZoneControl
             return bumped;
         }
 
+        // ── per-monster damage multipliers (owner 2026-10-03) ──
+
+        /// <summary>Lock-free: the damage multiplier for a monster wcid, 1.0 when none is set.</summary>
+        public static double GetDamageMult(uint wcid)
+        {
+            EnsureInitialized();
+            return _damageMultSnapshot.TryGetValue(wcid, out var m) ? m : 1.0;
+        }
+
+        /// <summary>The factor on a monster's damage to a PLAYER: its multiplier when the monster is governed by Zone
+        /// Control (an enabled zone resolves it - never retail), else 1.0. Called on every monster hit / spell on a
+        /// player, so the empty-map case returns before any resolve.</summary>
+        public static float MonsterDamageMultFor(Creature attacker, Creature defender)
+        {
+            if (!ServerConfig.zonecontrol_enabled.Value || attacker == null || attacker is Player || defender is not Player) return 1f;
+            var profile = ResolveCombatProfile(attacker);
+            if (profile == null) return 1f;
+
+            // the monster's own multiplier (`damagemult <wcid>`), then the zone / tier / rank one (stat monster_damage_mult,
+            // owner 2026-10-05: "a zone wide damage multi") - they stack
+            var m = _damageMultSnapshot.TryGetValue(attacker.WeenieClassId, out var own) ? own : 1.0;
+            if (profile.Has(ZoneStat.MonsterDamageMult))
+            {
+                var zone = profile.Get(ZoneStat.MonsterDamageMult);
+                if (double.IsFinite(zone) && zone >= DamageMultMin && zone <= DamageMultMax)
+                    m *= zone;
+            }
+            return (float)m;
+        }
+
+        /// <summary>The factor on damage a Zone Control MONSTER takes, from any attacker (stat monster_damage_taken_mult, owner
+        /// 2026-10-05: the defense twin of monster_damage_mult). 1.0 for players, combat pets, retail monsters and when unset.
+        /// Same bounds as the damage multiplier; an out-of-range stored value is ignored rather than applied.</summary>
+        public static float MonsterDamageTakenMultFor(Creature defender)
+        {
+            if (!ServerConfig.zonecontrol_enabled.Value || defender == null || defender is Player || defender is CombatPet) return 1f;
+            var profile = ResolveCombatProfile(defender);
+            if (profile == null || !profile.Has(ZoneStat.MonsterDamageTakenMult)) return 1f;
+            var m = profile.Get(ZoneStat.MonsterDamageTakenMult);
+            return double.IsFinite(m) && m >= DamageMultMin && m <= DamageMultMax ? (float)m : 1f;
+        }
+
+        /// <summary>`/zonecontrol damagemult`: set (or clear with null / 1.0) one monster's multiplier. Persists.</summary>
+        public static void SetDamageMult(uint wcid, double? value)
+        {
+            // the same bounds Load keeps, so no caller can store a value a restart would drop (NaN, Infinity, out of range)
+            if (value.HasValue && (!double.IsFinite(value.Value) || value.Value < DamageMultMin || value.Value > DamageMultMax))
+                throw new ArgumentOutOfRangeException(nameof(value), value, $"damage multiplier must be {DamageMultMin}-{DamageMultMax}");
+            EnsureInitialized();
+            lock (_lock)
+            {
+                if (value == null || value.Value == 1.0) _damageMults.Remove(wcid);
+                else _damageMults[wcid] = value.Value;
+                _damageMultSnapshot = new Dictionary<uint, double>(_damageMults);
+                Save();
+            }
+        }
+
+        /// <summary>Every monster with a multiplier, by wcid.</summary>
+        public static List<KeyValuePair<uint, double>> ListDamageMults()
+        {
+            EnsureInitialized();
+            return _damageMultSnapshot.OrderBy(kv => kv.Key).ToList();
+        }
+
         /// <summary>Variations that currently have an authored Default, ascending.</summary>
         public static List<int> ListVariationDefaults()
         {
@@ -2085,6 +2332,65 @@ namespace ACE.Server.Managers.ZoneControl
             return list;
         }
 
+        /// <summary>The ZONE-WIDE bounty (owner 2026-10-05) when it is on and this object stands in an enabled Zone Control zone at
+        /// v11+ (EndgameZoneRef - also nothing while the master switch is off), else null. Lock-free snapshot read.</summary>
+        public static BountyConfig ResolveZoneWideBounty(WorldObject wo)
+        {
+            var cfg = _zoneWideBountySnapshot;
+            if (cfg == null || !cfg.Active)
+                return null;
+            return EndgameZoneRef(wo) != null ? cfg : null;
+        }
+
+        /// <summary>ALLOWED PROCS (owner 2026-10-06): true = this proc spell is never force-resisted for being on gear below T11.
+        /// Lock-free snapshot read.</summary>
+        public static bool IsProcAllowed(uint spellId) => _procAllowSnapshot.Contains(spellId);
+
+        public static List<uint> ListProcAllow()
+        {
+            EnsureInitialized();
+            return _procAllowSnapshot.OrderBy(x => x).ToList();
+        }
+
+        /// <summary>Adds (on) or removes a proc spell id from the allow list; false when nothing changed.</summary>
+        public static bool SetProcAllow(uint spellId, bool on)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var changed = on ? _procAllow.Add(spellId) : _procAllow.Remove(spellId);
+                if (!changed) return false;
+                _procAllowSnapshot = new HashSet<uint>(_procAllow);
+                Save();
+                return true;
+            }
+        }
+
+        /// <summary>A copy of the zone-wide bounty's settings (for /zonecontrol zonebounty show and the plugin wire).</summary>
+        public static BountyConfig GetZoneWideBounty()
+        {
+            EnsureInitialized();
+            return (_zoneWideBountySnapshot ?? new BountyConfig()).Clone();
+        }
+
+        /// <summary>One locked read-change-write of the zone-wide bounty (the same shape as EditBounty for a zone).</summary>
+        public static BountyConfig EditZoneWideBounty(Func<BountyConfig, string> edit, out string refused)
+        {
+            refused = null;
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var cfg = (_zoneWideBounty ?? new BountyConfig()).Clone();
+                refused = edit(cfg);
+                if (refused != null)
+                    return (_zoneWideBounty ?? new BountyConfig()).Clone();
+                _zoneWideBounty = cfg;
+                _zoneWideBountySnapshot = cfg.Clone();
+                Save();
+                return cfg.Clone();
+            }
+        }
+
         /// <summary>
         /// Bounty (owner 2026-09-23): the governing zone's reward where this object stands - its name and settings - or
         /// null. Same rules as Zone Share: the most specific zone decides, enabled zones at v11+ only, nothing while the master
@@ -2179,6 +2485,15 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 return FindArea(name);
             }
+        }
+
+        /// <summary>A copy of an area's landblocks taken under the manager lock - the area object is live, and addlb / removelb
+        /// change its set while a caller iterates it.</summary>
+        public static List<ushort> SnapshotLandblocks(ControlledArea area)
+        {
+            if (area == null) return new List<ushort>();
+            lock (_lock)
+                return area.Landblocks.ToList();
         }
 
         public static IReadOnlyList<ControlledArea> ListAreas()

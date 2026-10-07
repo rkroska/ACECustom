@@ -20,7 +20,9 @@ namespace ACE.Server.Managers
     /// <summary>
     /// BOUNTY (owner 2026-09-23; called Kill Reward until 2026-09-26): an item every N kills, but never more often than once per cooldown - a per-area toggle
     /// on any Zone Control zone (ControlledArea.Bounty) and any room dungeon (PropertyString.RoomAssignBounty on its
-    /// source weenie). The dungeon is checked first: it is the smaller, more specific area.
+    /// source weenie). The dungeon is checked first: it is the smaller, more specific area. The ALL-ZONES bounty (2026-10-05,
+    /// /zonecontrol zonebounty): while on, every enabled Zone Control zone at v11+ shares ONE bounty - one count and one cooldown
+    /// per character, so hopping tiers cannot restart it - and it replaces the zones' own bounties. Dungeons keep their own.
     ///
     /// Owner rules:
     ///   - each player's OWN kills count (the kill's top damager - the player the corpse and its loot belong to; a pet's kill
@@ -181,7 +183,7 @@ namespace ACE.Server.Managers
             if (victim.IsOnNoDeathXPLandblock || victim.DamageHistory.TotalHealth == 0)
                 return false;
 
-            var xp = (long)(victim.XpOverride ?? 0);
+            var xp = victim.WeenieKillXp;   // the same read OnDeath_GrantXP uses
             long lum = victim.LuminanceAward ?? 0;
 
             var profile = ZoneControlManager.ResolveForCreature(victim);
@@ -223,6 +225,16 @@ namespace ACE.Server.Managers
             if (RoomAssignManager.IsInRoomDungeon(location))
                 return false;
 
+            // ALL-ZONES BOUNTY (owner 2026-10-05): one bounty + one timer per character across every v11+ zone - the progress key
+            // is the same in every zone and tier, so hopping cannot restart a cooldown. While it is on it replaces the zones' own.
+            var zoneWide = ZoneControlManager.ResolveZoneWideBounty(wo);
+            if (zoneWide != null)
+            {
+                areaKey = ZoneWideAreaKey;
+                cfg = zoneWide;
+                return true;
+            }
+
             var zone = ZoneControlManager.ResolveBounty(wo);
             if (zone == null)
                 return false;
@@ -258,10 +270,12 @@ namespace ACE.Server.Managers
                 var now = Time.GetUnixTime();
                 var progress = LoadProgress(player);
 
+                // the all-zones bounty says so: its count and timer follow the player into every zone (owner 2026-10-05)
+                var where = areaKey == ZoneWideAreaKey ? "Bounty (all zones)" : "Bounty";
                 foreach (var reward in cfg.Entries)
                 {
                     if (reward == null || !reward.Valid) continue;
-                    Tell(player, $"Bounty: {RewardText(reward)} - {StatusText(progress, areaKey, reward, now)}.");
+                    Tell(player, $"{where}: {RewardText(reward)} - {StatusText(progress, areaKey, reward, now)}.");
                 }
 
                 if (heldLine != null) Tell(player, "Bounty: " + heldLine);
@@ -291,6 +305,9 @@ namespace ACE.Server.Managers
 
         /// <summary>The same area key TryResolve builds for a zone (progress is saved under it).</summary>
         private static string ZoneAreaKey(string zoneName) => "zone:" + Clean(zoneName).ToLowerInvariant();
+
+        /// <summary>The all-zones bounty's progress key - one per character for every v11+ zone (owner 2026-10-05).</summary>
+        public const string ZoneWideAreaKey = "zonewide";
 
         /// <summary>
         /// /bounty list (owner 2026-09-27): every bounty that can pay right now - each Vaulted Dungeon's, then each zone's -
@@ -330,8 +347,13 @@ namespace ACE.Server.Managers
                     ShowArea(multiLayer.Contains(d.SourceWcid) ? $"{d.Name} (layer {d.Variation})" : d.Name,
                         RoomAssignManager.DungeonAreaKey(d.SourceWcid, d.Variation), d.Bounty);
 
-                foreach (var z in ZoneControlManager.ActiveZoneBounties())
-                    ShowArea(z.Name, ZoneAreaKey(z.Name), z.Reward);
+                // the all-zones bounty replaces every zone's own while it is on (owner 2026-10-05)
+                var zoneWide = ZoneControlManager.GetZoneWideBounty();
+                if (zoneWide.Active && ServerConfig.zonecontrol_enabled.Value)
+                    ShowArea("All zones", ZoneWideAreaKey, zoneWide);
+                else
+                    foreach (var z in ZoneControlManager.ActiveZoneBounties())
+                        ShowArea(z.Name, ZoneAreaKey(z.Name), z.Reward);
 
                 if (shown == 0)
                     Tell(player, "Bounty: there are no bounties anywhere right now.");

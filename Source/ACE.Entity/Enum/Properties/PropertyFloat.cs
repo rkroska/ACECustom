@@ -287,25 +287,27 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         PercentHpDamageOverride = 9049,
         /// <summary>
-        /// v11+ percent-HP floor: per-weenie override for the life-aug reduction cap (default from v11_pcthp_reduction_cap).
+        /// v11+ percent-HP floor: per-weenie override for the life-aug reduction cap (default from zc_pcthp_reduction_cap).
         /// </summary>
         PercentHpReductionCapOverride = 9050,
         /// <summary>
-        /// v11+ percent-HP floor: per-weenie override for the reduction curve constant r (default from v11_pcthp_reduction_r).
+        /// v11+ percent-HP floor: per-weenie override for the reduction curve constant r (default from zc_pcthp_reduction_r).
         /// </summary>
         PercentHpReductionROverride = 9051,
         /// <summary>
-        /// v11+ vuln compression: per-weenie override for the vuln effectiveness (default from v11_vuln_effectiveness).
+        /// v11+ vuln compression: per-weenie override for the vuln effectiveness (default from zc_vuln_effectiveness).
         /// Fraction of the vuln BONUS that lands against this monster. 1.0 = uncompressed (vanilla vulns), 0.0 = vulns do nothing.
+        /// Not read for a T11+ debuff-compressed monster (Creature.ZcDebuffCompressed): its vuln runs through the debuff bonus.
         /// </summary>
         VulnEffectivenessOverride = 9052,
         /// <summary>
-        /// v11+ vuln compression: per-weenie override for the max total vuln multiplier cap (default from v11_vuln_cap).
+        /// v11+ vuln compression: per-weenie override for the max total vuln multiplier cap (default from zc_vuln_cap).
         /// Set high (e.g. 999) together with VulnEffectivenessOverride = 1.0 to exempt this monster entirely.
+        /// Not read for a T11+ debuff-compressed monster (Creature.ZcDebuffCompressed): its vuln runs through the debuff bonus.
         /// </summary>
         VulnCapOverride = 9053,
         /// <summary>
-        /// v11+ mob damage-taken mitigation: per-weenie override for the incoming-damage multiplier (default from v11_mob_dmg_taken_mult).
+        /// v11+ mob damage-taken mitigation: per-weenie override for the incoming-damage multiplier (default from zc_mob_dmg_taken_mult).
         /// Lower = the monster takes less damage (tankier). 1.0 = takes full damage (exempt). Multiplied by the boss factor if IsEmpowerSource.
         /// </summary>
         MobDmgTakenOverride = 9054,

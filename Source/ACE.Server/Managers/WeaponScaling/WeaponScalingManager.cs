@@ -27,14 +27,22 @@ namespace ACE.Server.Managers.WeaponScaling
         // (Crashing Steel melee / True Shot launchers / Battlemage's Wrath elemental casters /
         // Nether Veil nether casters). 0 = no charm gate (all tiers through T15).
         /// <summary>
-        /// CREATURE aug requirement for the T11+ hit gate (owner 2026-08-31). Unlike MinWieldAugs this
-        /// is NOT a wield requirement - nothing stops you equipping the gear. It gates whether your
-        /// swings and spells can LAND on a monster at this variation (TierHitGate).
+        /// CREATURE aug requirement (owner 2026-08-31) for the T11+ hit gate - whether your swings and spells can LAND on a
+        /// monster at this variation (TierHitGate) - and, since 2026-10-05, also a WIELD requirement on T11-T15 zone gear
+        /// (wield slot 3, LootGenerationFactory_ZoneSet). 0 at T11+ = unset (Normalize re-seeds it; the command refuses 0).
         /// 4,000 at T11, +500/tier, frozen at the 6,000 purchase cap from T15 - above which TRIUNE
         /// carries the ladder, exactly as it does for the item-aug wield gate.
         /// </summary>
         public int MinWieldCreature { get; set; }
+
+        /// <summary>LIFE aug wield requirement (owner 2026-10-05): T11-T15 gear asks Creature + Item + Life augs, the same numbers
+        /// as that tier's portal gem (Life 2,000 at T11, +500/tier, 4,000 at T15). T16+ gear asks Triune only, so a T16+ row's
+        /// value is shown but never stamped. 0 at T11+ = unset (Normalize re-seeds it; the command refuses 0).</summary>
+        public int MinWieldLife { get; set; }
         public int MinWieldTriune { get; set; }
+
+        /// <summary>RETIRED 2026-10-05 (owner: T16+ gear asks Triune only): the weapon-family charm count. Kept so stored configs and
+        /// older plugins still load it; no drop stamps it any more.</summary>
         public int MinWieldSkillCharm { get; set; }
     }
 
@@ -276,7 +284,7 @@ namespace ACE.Server.Managers.WeaponScaling
             // Tiers T11..T25: cap = 2500 + 500 * (tier - 11); minWieldAugs = previous tier's cap.
             // T11's floor is the PRE-EXISTING live gate (2,000 item augs, owner 2026-07-20,
             // LootGenerationFactory.ZoneLootSetWieldItemAugs) — not 0: every T11+ drop already
-            // requires it, and ApplyT11WieldRequirement now reads this table per tier.
+            // requires it, and ApplyZoneWieldRequirement now reads this table per tier.
             for (var tier = 11; tier <= 25; tier++)
             {
                 // Item augs purchase-cap at 4,000 (EmoteManager.AugmentationCaps), which the
@@ -289,6 +297,7 @@ namespace ACE.Server.Managers.WeaponScaling
                     Cap = 2500 + 500 * (tier - 11),
                     MinWieldAugs = tier == 11 ? 2000 : Math.Min(4000, 2500 + 500 * (tier - 12)),
                     MinWieldCreature = Math.Min(6000, 4000 + 500 * (tier - 11)),
+                    MinWieldLife = DefaultMinWieldLife(tier),
                     MinWieldTriune = tier >= 16 ? 500 * (tier - 15) : 0,
                     MinWieldSkillCharm = tier >= 16 ? 500 * (tier - 15) : 0,
                 });
@@ -509,31 +518,54 @@ namespace ACE.Server.Managers.WeaponScaling
         public static string GetQualitySubGrade(int quality) => GetSubGradeBand(quality).Grade;
 
         /// <summary>Roll a drop's quality: weighted grade pick, then uniform inside the band.
-        /// Falls back to the legacy uniform 0-1000 roll when no weights are authored.</summary>
-        public static int RollQuality()
+        /// Falls back to the legacy uniform 0-1000 roll when no weights are authored.
+        /// Rank loot (owner 2026-09-29): <paramref name="sOdds"/> &gt; 0 = S (the single perfect roll) is its OWN
+        /// 1-in-N roll and the weights table picks among A-F only; <paramref name="floor"/> (0-0.9) then squeezes
+        /// the non-S roll into the top (1 - floor) of 0-999 - never up to 1000, so a floor can not mint an S.</summary>
+        public static int RollQuality(double floor = 0.0, int sOdds = 0)
         {
             Initialize();
+            int q;
+            if (sOdds > 0)
+            {
+                if (ACE.Common.ThreadSafeRandom.Next(1, Math.Min(sOdds, int.MaxValue - 1)) == 1)
+                    return QualityMax;
+                q = RollQualityCore(excludeS: true);
+            }
+            else
+                q = RollQualityCore(excludeS: false);
+
+            floor = double.IsFinite(floor) ? Math.Clamp(floor, 0.0, 0.9) : 0.0;
+            if (q >= QualityMax || floor <= 0.0)
+                return q;
+            return Math.Min(QualityMax - 1, (int)Math.Round(floor * QualityMax + q * (1.0 - floor)));
+        }
+
+        private static int RollQualityCore(bool excludeS)
+        {
             var weights = _current.GradeWeights;
 
             var total = 0.0;
             if (weights != null)
                 foreach (var b in GradeBands)
-                    if (weights.TryGetValue(b.Grade, out var w) && w > 0)
+                    if ((!excludeS || b.QMin < QualityMax) && weights.TryGetValue(b.Grade, out var w) && w > 0)
                         total += w;
             if (total <= 0)
-                return ACE.Common.ThreadSafeRandom.Next(0, QualityMax);   // legacy uniform
+                return ACE.Common.ThreadSafeRandom.Next(0, excludeS ? QualityMax - 1 : QualityMax);   // legacy uniform
 
             var pick = ACE.Common.ThreadSafeRandom.Next(0f, (float)total);
             var acc = 0.0;
             foreach (var b in GradeBands)
             {
+                if (excludeS && b.QMin >= QualityMax)
+                    continue;
                 if (!weights.TryGetValue(b.Grade, out var w) || w <= 0)
                     continue;
                 acc += w;
                 if (pick <= acc)
                     return b.QMin >= b.QMax ? b.QMin : ACE.Common.ThreadSafeRandom.Next(b.QMin, b.QMax);
             }
-            return QualityMax;   // float edge: pick landed exactly on total
+            return excludeS ? QualityMax - 1 : QualityMax;   // float edge: pick landed exactly on total
         }
 
         /// <summary>Deserialized dictionaries lose the case-insensitive comparer, and hand-edited
@@ -552,6 +584,7 @@ namespace ACE.Server.Managers.WeaponScaling
                 t.Cap = Math.Max(0, t.Cap);
                 t.MinWieldAugs = Math.Max(0, t.MinWieldAugs);
                 t.MinWieldCreature = Math.Max(0, t.MinWieldCreature);
+                t.MinWieldLife = Math.Max(0, t.MinWieldLife);
                 t.MinWieldTriune = Math.Max(0, t.MinWieldTriune);
                 t.MinWieldSkillCharm = Math.Max(0, t.MinWieldSkillCharm);
 
@@ -574,10 +607,14 @@ namespace ACE.Server.Managers.WeaponScaling
                 // 2026-09-01 when `tier curves` printed a creature column of zeros and a suspiciously
                 // straight interpolation.
                 // 0 is read as UNSET rather than as an authored "no requirement", same assumption the
-                // charm migration above makes: the field was never reachable from any command, so no
-                // stored 0 can be deliberate.
+                // charm migration above makes: no stored 0 can be deliberate - /weaponscale tier <t> minwieldcreature
+                // (and minwieldlife, 2026-10-05) refuse 0 at T11+.
                 if (t.Tier >= 11 && t.MinWieldCreature == 0)
                     t.MinWieldCreature = Math.Min(6000, 4000 + 500 * (t.Tier - 11));
+
+                // Same migration for MinWieldLife (added 2026-10-05): a stored 0 is UNSET - seed the portal-gem ladder.
+                if (t.Tier >= 11 && t.MinWieldLife == 0)
+                    t.MinWieldLife = DefaultMinWieldLife(t.Tier);
             }
 
             var scripts = new Dictionary<string, WeaponScalingScript>(StringComparer.OrdinalIgnoreCase);
@@ -665,6 +702,9 @@ namespace ACE.Server.Managers.WeaponScaling
         }
 
         // ── Resolve helpers (consumed by the step-3 combat wire-in; pure math is static for tests) ──
+
+        /// <summary>The Tou Tou portal gem's Life aug requirement for a tier: 2,000 at T11, +500/tier, 4,000 from T15.</summary>
+        public static int DefaultMinWieldLife(int tier) => tier < 11 ? 0 : Math.Min(4000, 2000 + 500 * (tier - 11));
 
         public static WeaponScalingTier GetTier(int tier)
         {

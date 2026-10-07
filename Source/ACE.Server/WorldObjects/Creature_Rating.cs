@@ -278,7 +278,8 @@ namespace ACE.Server.WorldObjects
 
             // nether DoTs as negative DRR?
             // TODO: this should be factored in as a separate nether damage rating...
-            var netherDotDamageRating = directDamage ? EnchantmentManager.GetNetherDotDamageRating() : 0;
+            // owner 2026-10-04: on a T11+ monster the void DoTs give the compressed bonus instead (Creature_DebuffCompression)
+            var netherDotDamageRating = directDamage && !ZcDebuffCompressed ? EnchantmentManager.GetNetherDotDamageRating() : 0;
 
             var augBonus = 0;
             var lumAugBonus = 0;

@@ -398,6 +398,10 @@ namespace ACE.Server.WorldObjects
             var damageEvent = DamageEvent.CalculateDamage(this, target, damageSource);
             uint appliedDamage = 0;
 
+            // the hit as it reached the target, before a Mana Barrier ate part of it: the Explosive Arrow ring below keeps only
+            // the share that got through (a fully absorbed arrow blasts nothing)
+            var damageBeforeBarrier = damageEvent.Damage;
+
             if (damageEvent.HasDamage)
             {
                 OnDamageTarget(target, damageEvent.CombatType, damageEvent.IsCritical);
@@ -533,7 +537,11 @@ namespace ACE.Server.WorldObjects
             // NOTE: GetCombatType() checks the equipped weapon's wield slot, but if the player swaps weapons mid-flight
             // or split arrows hit while stabbing, we also check damageEvent's CombatType and DamageSource's Missile status.
             if (damageEvent.HasDamage && (GetCombatType() == CombatType.Missile || damageEvent.CombatType == CombatType.Missile || (damageEvent.DamageSource?.Missile ?? false)))
-                TryApplyExplosiveArrowProc(target, damageEvent.Damage, damageEvent.DamageType, damageEvent.DamageSource);
+                // the hit before the zone's taken multiplier and key 44 (the ring applies each creature's own, 2026-10-06), times
+                // the share a Mana Barrier let through
+                TryApplyExplosiveArrowProc(target,
+                    damageEvent.DamageBeforeZoneTaken * (damageBeforeBarrier > 0 ? damageEvent.Damage / damageBeforeBarrier : 0f),
+                    damageEvent.DamageType, damageEvent.DamageSource);
 
             return damageEvent;
         }
@@ -946,9 +954,13 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        /// <summary>The largest single hit a player takes (owner 2026-10-02): keeps the uint / int casts of the damage path
+        /// from wrapping, so an over-sized hit still kills instead of doing nothing.</summary>
+        public const float MaxSingleHit = 1_000_000_000f;
+
         public int TakeDamage(WorldObject source, DamageEvent damageEvent)
         {
-            var result = TakeDamageInternal(source, damageEvent.DamageType, damageEvent.Damage, damageEvent.BodyPart, out var absorbed, damageEvent.IsCritical, damageEvent.AttackConditions);
+            var result = TakeDamageInternal(source, damageEvent.DamageType, damageEvent.Damage, damageEvent.BodyPart, out var absorbed, damageEvent.IsCritical, damageEvent.AttackConditions, damageEvent.TrueDamage);
             // ILT: TakeDamageInternal rounds the float to uint before Mana Barrier runs,
             // so subtract from the rounded value to avoid fractional mismatches in attacker messaging.
             damageEvent.Damage = Math.Max(0, (float)Math.Round(damageEvent.Damage) - absorbed);
@@ -964,7 +976,14 @@ namespace ACE.Server.WorldObjects
             return TakeDamageInternal(source, damageType, _amount, bodyPart, out _, crit, attackConditions);
         }
 
-        private int TakeDamageInternal(WorldObject source, DamageType damageType, float _amount, BodyPart bodyPart, out uint amountAbsorbed, bool crit, AttackConditions attackConditions)
+        /// <param name="trueDamage">the True Damage part of _amount (owner 2026-10-01): the cloak proc and Mana Barrier act
+        /// only on the rest, and the cloak's proc chance is rolled on the rest too.</param>
+        public int TakeDamage(WorldObject source, DamageType damageType, float _amount, BodyPart bodyPart, bool crit, AttackConditions attackConditions, float trueDamage)
+        {
+            return TakeDamageInternal(source, damageType, _amount, bodyPart, out _, crit, attackConditions, trueDamage);
+        }
+
+        private int TakeDamageInternal(WorldObject source, DamageType damageType, float _amount, BodyPart bodyPart, out uint amountAbsorbed, bool crit, AttackConditions attackConditions, float trueDamage = 0f)
         {
             amountAbsorbed = 0;
             if (ZcDamageImmune && !Invincible && !IsDead) ZcAnnounceAbsorb(source, $"{Math.Round(_amount):N0} {damageType.ToString().ToLowerInvariant()} damage");
@@ -980,17 +999,25 @@ namespace ACE.Server.WorldObjects
                 return 0;
             }
 
-            if (_amount < 0)
+            if (_amount < 0 || float.IsNaN(_amount))
             {
                 //log.Error($"{Name}.TakeDamage({source?.Name} ({source?.Guid}), {damageType}, {_amount}) - negative damage, this shouldn't happen");
                 return 0;
             }
+            // owner 2026-10-02: an endgame swing that gets past a MISSING buff can be astronomically large (the normal part is
+            // sized to survive ~a million-to-one cut). Past uint range the casts below would wrap to 0 - no damage instead
+            // of death - so a single hit is capped at a billion (still far beyond any max health).
+            if (_amount > MaxSingleHit)
+                _amount = MaxSingleHit;
 
-            var amount = (uint)Math.Round(_amount);
+            var isVitalDrainDamage = damageType == DamageType.Stamina || damageType == DamageType.Mana;
+            // True Damage (owner 2026-10-01) is set aside first: the cloak and Mana Barrier below act on the rest only
+            var total = (uint)Math.Round(_amount);
+            var trueAmount = isVitalDrainDamage || trueDamage <= 0f ? 0u : Math.Min(total, (uint)Math.Round(trueDamage));
+            var amount = total - trueAmount;
             var targetVital = GetDefenderVitalForDamageType(this, damageType) ?? Health;
             var targetVitalMax = targetVital.MaxValue;
             var percent = targetVitalMax > 0 ? (float)amount / targetVitalMax : 0.0f;
-            var isVitalDrainDamage = damageType == DamageType.Stamina || damageType == DamageType.Mana;
 
             var equippedCloak = EquippedCloak;
 
@@ -1005,12 +1032,20 @@ namespace ACE.Server.WorldObjects
             }
 
             var mbResult = new ManaBarrierResult();
-            var preAbsorbAmount = amount; // preserve original for messaging when fully absorbed
+            var preAbsorbAmount = amount + trueAmount; // preserve original for messaging when fully absorbed
             uint damageTaken;
             if (damageType == DamageType.Stamina)
                 damageTaken = (uint)-UpdateVitalDelta(Stamina, (int)-amount);
             else if (damageType == DamageType.Mana)
                 damageTaken = (uint)-UpdateVitalDelta(Mana, (int)-amount);
+            else if (amount == 0 && trueAmount > 0)
+            {
+                // nothing for the barrier to act on: the hit is all True Damage
+                amount = ZcTryCheatDeath(source, trueAmount);
+                damageTaken = (uint)-UpdateVitalDelta(Health, (int)-amount);
+                DamageHistory.Add(source, damageType, damageTaken);
+                ZcTryBattleMend(source);
+            }
             else
             {
                 // G��G�� Mana Barrier G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��
@@ -1018,9 +1053,12 @@ namespace ACE.Server.WorldObjects
                 amountAbsorbed = mbResult.AmountAbsorbed;
                 // G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��
 
+                // True Damage goes back on after the barrier (owner 2026-10-01: the barrier never absorbs it)
+                amount += trueAmount;
+
                 // update health (skip if fully absorbed, but don't early-return so messages still fire)
                 damageTaken = 0;
-                if (!mbResult.FullyAbsorbed)
+                if (!mbResult.FullyAbsorbed || trueAmount > 0)
                 {
                     // Zone Control Cheat Death (key 45): lethal hit -> land on 1 HP + immunity window
                     amount = ZcTryCheatDeath(source, amount);

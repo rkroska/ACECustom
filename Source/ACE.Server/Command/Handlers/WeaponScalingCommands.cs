@@ -143,7 +143,7 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("weaponscale", AccessLevel.Developer, CommandHandlerFlag.None, 0,
             "Weapon Scaling config (plugin fallback).",
-            "show | enable on|off | tier <t> cap|minwield|minwieldtriune|minwieldskillcharm <n> | tier add <t> [cap] [minwield] | tier remove <t> | "
+            "show | enable on|off | tier <t> cap|minwield|minwieldcreature|minwieldlife|minwieldtriune|minwieldskillcharm <n> | tier add <t> [cap] [minwield] | tier remove <t> | "
             + "script <name> kmin|kmax <v> | script add <name> [kmin] [kmax] | script remove <name> | "
             + "kc min|max <v> | sync on|off | reset | reload")]
         public static void HandleWeaponScale(Session session, params string[] parameters)
@@ -157,8 +157,10 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /weaponscale enable on|off       master switch; off = static-base-only combat (current behavior)");
                 Msg("  /weaponscale tier <t> cap <n>    scaling stops growing at n item augs for tier-t weapons");
                 Msg("  /weaponscale tier <t> minwield <n>   item augs required to WIELD tier-t weapons (economy gate)");
+                Msg("  /weaponscale tier <t> minwieldcreature <n> Creature augs required to wield (T11-T15; also the hit gate)");
+                Msg("  /weaponscale tier <t> minwieldlife <n>     Life augs required to wield (T11-T15)");
                 Msg("  /weaponscale tier <t> minwieldtriune <n>   Triune Weave count required to wield (T16+ charm gate)");
-                Msg("  /weaponscale tier <t> minwieldskillcharm <n>   weapon-family charm count required to wield (T16+)");
+                Msg("  /weaponscale tier <t> minwieldskillcharm <n>   weapon-family charm count (RETIRED 2026-10-05: no longer stamped)");
                 Msg("  /weaponscale tier add <t> [cap] [minwield] | tier remove <t>");
                 Msg("  /weaponscale script <name> kmin <v> | kmax <v> | variance <v>   per-loot-script k range + Scheme C family variance");
                 Msg("  /weaponscale script <name> ladder <anchorS> | ladder clear   seed/drop the 16-rung grade ladder (+18 pct per grade)");
@@ -200,9 +202,9 @@ namespace ACE.Server.Command.Handlers
                     var cfg = WeaponScalingManager.Current;
                     var sb = new StringBuilder();
                     sb.AppendLine($"Weapon Scaling: {(cfg.Enabled ? "Enabled" : "Disabled")} (kc {cfg.KcMin:0.###}-{cfg.KcMax:0.###}, tighten {cfg.TightenStrength:0.###})");
-                    sb.AppendLine("  tier | cap | minwield | triune | skillcharm");
+                    sb.AppendLine("  tier | cap | item | creature | life | triune | skillcharm");
                     foreach (var t in cfg.Tiers)
-                        sb.AppendLine($"  T{t.Tier} | {t.Cap:N0} | {t.MinWieldAugs:N0} | {t.MinWieldTriune:N0} | {t.MinWieldSkillCharm:N0}");
+                        sb.AppendLine($"  T{t.Tier} | {t.Cap:N0} | {t.MinWieldAugs:N0} | {t.MinWieldCreature:N0} | {t.MinWieldLife:N0} | {t.MinWieldTriune:N0} | {t.MinWieldSkillCharm:N0}");
                     sb.AppendLine("  script | kmin | kmax | variance | ladder");
                     foreach (var s in cfg.Scripts.OrderBy(s => s.Key, StringComparer.OrdinalIgnoreCase))
                         sb.AppendLine($"  {s.Key} | {s.Value.KMin:0.###} | {s.Value.KMax:0.###} | {s.Value.Variance:0.###} | "
@@ -308,13 +310,33 @@ namespace ACE.Server.Command.Handlers
                     }
                     if (args.Length < 4 || !int.TryParse(args[1], out var tier) || !int.TryParse(args[3], out var value))
                     {
-                        Msg("Usage: /weaponscale tier <t> cap|minwield <n>  |  tier add <t> [cap] [minwield]  |  tier remove <t>");
+                        Msg("Usage: /weaponscale tier <t> cap|minwield|minwieldcreature|minwieldlife|minwieldtriune|minwieldskillcharm <n>  |  tier add <t> [cap] [minwield]  |  tier remove <t>");
                         return;
                     }
                     var field = args[2].ToLowerInvariant();
-                    if (field != "cap" && field != "minwield" && field != "minwieldtriune" && field != "minwieldskillcharm")
+                    if (field != "cap" && field != "minwield" && field != "minwieldcreature" && field != "minwieldlife" && field != "minwieldtriune" && field != "minwieldskillcharm")
                     {
-                        Msg("tier: field must be cap, minwield, minwieldtriune, or minwieldskillcharm.");
+                        Msg("tier: field must be cap, minwield, minwieldcreature, minwieldlife, minwieldtriune, or minwieldskillcharm.");
+                        return;
+                    }
+                    if (value < 0)
+                    {
+                        Msg($"tier: {field} must be 0 or more.");
+                        return;
+                    }
+                    // a stored 0 means UNSET for these two at T11+ (WeaponScalingManager.Normalize re-seeds the ladder), so it is refused
+                    // rather than reported as set and silently undone
+                    // the same at T16+: Normalize re-seeds a T16+ row whose Triune AND (retired) charm are both 0
+                    var t16Row = tier >= 16 ? WeaponScalingManager.GetTier(tier) : null;
+                    if (value < 1 && t16Row != null
+                        && ((field == "minwieldtriune" && t16Row.MinWieldSkillCharm == 0) || (field == "minwieldskillcharm" && t16Row.MinWieldTriune == 0)))
+                    {
+                        Msg($"tier: at T16+ minwieldtriune and minwieldskillcharm cannot both be 0 (read as unset and re-seeded to the default ladder).");
+                        return;
+                    }
+                    if ((field == "minwieldcreature" || field == "minwieldlife") && tier >= 11 && value < 1)
+                    {
+                        Msg($"tier: {field} must be 1 or more at T11+ (0 is read as unset and re-seeded to the default ladder).");
                         return;
                     }
                     var found = false;
@@ -325,6 +347,8 @@ namespace ACE.Server.Command.Handlers
                         found = true;
                         if (field == "cap") row.Cap = value;
                         else if (field == "minwield") row.MinWieldAugs = value;
+                        else if (field == "minwieldcreature") row.MinWieldCreature = value;
+                        else if (field == "minwieldlife") row.MinWieldLife = value;
                         else if (field == "minwieldtriune") row.MinWieldTriune = value;
                         else row.MinWieldSkillCharm = value;
                     });
@@ -543,7 +567,7 @@ namespace ACE.Server.Command.Handlers
 
         private static bool TryParseDouble(string s, out double v)
         {
-            return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v);
+            return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v) && double.IsFinite(v);   // never NaN / Infinity
         }
 
         /// <summary>Matched-quality test weapons for cross-family tuning (owner 2026-08-01): one
@@ -556,9 +580,9 @@ namespace ACE.Server.Command.Handlers
         // One representative base weenie per scaling family (all verified in the world DB 08-01:
         // W_WeaponType + MultiStrike/thrust flags resolve to exactly the intended GetFamilyKey).
         // TWType = the loot pipeline's weapon type for this class, used by the tier-10 forge
-        // path to run the bench weenie through the SAME mutation scripts a real T10 drop rolls
+        // path to run the forge weenie through the SAME mutation scripts a real T10 drop rolls
         // (owner 2026-08-15: T10 forge output must match the existing T10 loot table range).
-        private static readonly (string Key, uint Wcid, string CleanName, ACE.Server.Factories.Enum.TreasureWeaponType TWType)[] ForgeClasses =
+        internal static readonly (string Key, uint Wcid, string CleanName, ACE.Server.Factories.Enum.TreasureWeaponType TWType)[] ForgeClasses =
         {
             ("sword",     30566, "Sword", ACE.Server.Factories.Enum.TreasureWeaponType.Sword),      // swordsabra — single strike
             ("sword_ms",   6853, "Rapier", ACE.Server.Factories.Enum.TreasureWeaponType.SwordMS),   // swordrapier — multi-strike
@@ -581,7 +605,7 @@ namespace ACE.Server.Command.Handlers
             ("wand",      29265, "Sceptre", ACE.Server.Factories.Enum.TreasureWeaponType.Caster),       // wandslashing (gets EDM 1.5)
         };
 
-        private static DamageType? ParseElement(string s)
+        internal static DamageType? ParseElement(string s)
         {
             return s?.ToLowerInvariant() switch
             {
@@ -995,7 +1019,7 @@ namespace ACE.Server.Command.Handlers
             if (tier == 10 && twType != ACE.Server.Factories.Enum.TreasureWeaponType.Undef)
             {
                 // T10 = the SAME range as the existing tier-10 loot table (owner 2026-08-15). The
-                // bench weenie runs through the real loot pipeline with a synthetic tier-10
+                // forge weenie runs through the real loot pipeline with a synthetic tier-10
                 // profile, so its damage rolls from the same mutation-script ranges as a live T10
                 // drop. It also gets NO quality/tier stamp below - a real T10 drop carries none,
                 // so a forged one gets no aug-scaling term and the quality arg is ignored here.
@@ -1016,13 +1040,13 @@ namespace ACE.Server.Command.Handlers
             ACE.Server.Factories.LootGenerationFactory.StripWieldRequirements(wo);
             // Standard T10+ mods: 20 pct attack / 20 pct melee d (wands +20 pct mana c), same as
             // every loot drop (owner 2026-08-15). The T10 CreateAndMutateWcid path already stamped
-            // them in mutation; this covers the T11+ bench path.
+            // them in mutation; this covers the T11+ forge path.
             ACE.Server.Factories.LootGenerationFactory.ApplyStandardWeaponMods(wo, tier);
             // T10 = the basic tier, no aug wield gate (same rule as /asforge armor). A minwield-0
-            // tier row would NOT give that: ApplyT11WieldRequirement falls back to the global gate.
+            // tier row would NOT give that: ApplyZoneWieldRequirement falls back to the global gate.
             if (tier >= 11)
             {
-                ACE.Server.Factories.LootGenerationFactory.ApplyT11WieldRequirement(wo, tier);
+                ACE.Server.Factories.LootGenerationFactory.ApplyZoneWieldRequirement(wo, tier);
                 wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.WeaponAugScaleQuality, quality);
                 wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.WeaponAugScaleTier, tier);
             }

@@ -140,6 +140,15 @@ namespace ACE.Server.Entity
 
         public float Damage;
 
+        /// <summary>The landed hit BEFORE the zone's damage-taken multiplier and the key-44 pct-HP add (2026-10-06): the base a
+        /// splash of this hit (Explosive Arrow) starts from, so each creature it reaches takes ITS OWN multiplier and the pct-HP
+        /// add (with its no-kill rule) stays on the creature it was rolled for.</summary>
+        public float DamageBeforeZoneTaken;
+
+        /// <summary>The True Damage part of <see cref="Damage"/> (owner 2026-10-01): added after every defense step, so
+        /// the cloak proc and Mana Barrier leave it alone too (Player.TakeDamage).</summary>
+        public float TrueDamage;
+
         public bool GeneralFailure;
 
         /// <summary>Flat luminance melee/missile damage bonus added to base damage (for diagnostics).</summary>
@@ -321,6 +330,7 @@ namespace ACE.Server.Entity
 
                     BaseDamage = Damage; // Set after multiplier so ShowInfo() is consistent
                     DamageMitigated = 0.0f; // Intentional — nothing was mitigated in this path
+                    DamageBeforeZoneTaken = Damage;   // the fixed capture damage: no zone multiplier on this path
                     return Damage;
                 }
             }
@@ -622,6 +632,16 @@ namespace ACE.Server.Entity
                 var resistanceType = Creature.GetResistanceType(DamageType);
                 ResistanceMod = (float)Math.Max(0.0f, defender.GetResistanceMod(resistanceType, Attacker, Weapon, WeaponResistanceMod));
 
+                // Debuff compression (owner 2026-10-04): Imperil's capped bonus for melee / missile, ADDED to the vuln's -
+                // GetResistanceMod already applied x (1 + vuln), so this lifts it to x (1 + vuln + imperil): both maxed = +100 pct.
+                // Hollow skips it (owner 10-04): hollow ignored Imperil before, and GetResistanceMod early-returns for it.
+                if (defender.ZcDebuffCompressed && !IgnoreMagicResist)
+                {
+                    var (zcVuln, zcImperil, zcDot) = defender.GetZcDebuffBonus(DamageType, true);
+                    if (zcImperil > 0f)
+                        ResistanceMod *= (1f + zcVuln + zcDot + zcImperil) / (1f + zcVuln + zcDot);
+                }
+
                 // Combat pets can optionally borrow the owner's player resistance pipeline.
                 // This helps align pet damage taken with the owner's buffs (prots/vulns/natural resist), avoiding brute-force global multipliers.
                 if (defender is CombatPet pet
@@ -700,8 +720,8 @@ namespace ACE.Server.Entity
                 //Console.WriteLine($"[DEBUG] Final Mob Defender Enrage Damage Reduction Applied: {damageReduction * 100}%, Final Damage: {Damage}");
             }
 
-            // v11+ percent-HP floor: a high-variation monster always deals at least a %HP chunk to a player,
-            // bypassing life-aug damage reduction. Whichever is larger — normal mitigated damage or the floor — wins.
+            // Zone Control percent-HP floor (an option since 2026-10-01 - True Damage below is the main mechanic): a
+            // monster deals at least a %HP chunk to a player. Whichever is larger - normal mitigated damage or the floor - wins.
             // Stamina/Mana guard FIXED 2026-08-21 (owner ruling): the magic path already
             // excludes vital-drain damage types (SpellProjectile.cs) but this one did not, so
             // a mob whose melee attack is Stamina- or Mana-typed applied a HEALTH-percent
@@ -748,15 +768,43 @@ namespace ACE.Server.Entity
 
             DamageMitigated = DamageBeforeMitigation - Damage;
 
+            // TRUE DAMAGE (owner 2026-10-01, the main Zone Control monster damage): the zone's fixed amount on top of the
+            // landed hit, after every defense step and after DamageMitigated is booked (same pattern as key 44 below).
+            // Only life augs (incl. Triune) reduce it - inside GetTrueDamage. Health hits only, like the %HP floor.
+            if (defender is Player truePlayer && attacker != null && !(attacker is Player)
+                && DamageType != DamageType.Stamina && DamageType != DamageType.Mana)
+            {
+                TrueDamage = Creature.GetTrueDamage(attacker, truePlayer, IsCritical);
+                Damage += TrueDamage;
+
+                // per-monster DAMAGE MULTIPLIER (owner 2026-10-03, Bestiary): the whole landed hit, normal + True Damage
+                // (a slow swinger like the Kraken hits harder per swing; < 1 softens a monster). 1.0 unless set.
+                var damageMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(attacker, truePlayer);
+                if (damageMult != 1f)
+                {
+                    Damage *= damageMult;
+                    TrueDamage *= damageMult;
+                }
+            }
+
             // Zone Control pct-HP damage special (key 44, gauntlets): flat pct of the defender's max HP,
             // added AFTER DamageMitigated is booked so no crit/armor/DRR/pet mitigation touches it (and the
             // mitigation figure does not go negative). Player attacker vs a zone-profiled monster only;
             // the NO-KILL rule, immune bool and per-character cooldown live in Player.ZcTryPctHpDamage.
+            var pctHpAdd = 0f;
             if (Damage > 0 && playerAttacker != null && playerDefender == null)
             {
-                Damage += playerAttacker.ZcTryPctHpDamage(defender);
+                pctHpAdd = playerAttacker.ZcTryPctHpDamage(defender);
                 playerAttacker.ZcTryLifeOnHit(defender);            // key 48 Life on Hit (heals the attacker; cooldown inside)
             }
+
+            // zone / tier / rank DAMAGE TAKEN multiplier (owner 2026-10-05, stat monster_damage_taken_mult): the whole landed hit
+            // on a Zone Control monster, key 44 included - the "more HP" knob. 1.0 unless set. Key 44 is only ever scaled DOWN
+            // by it: above 1 its NO-KILL amount would become a killing blow.
+            var takenMult = Damage > 0 && playerDefender == null
+                ? ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(defender) : 1f;
+            DamageBeforeZoneTaken = Damage;
+            Damage = Damage * takenMult + pctHpAdd * Math.Min(takenMult, 1f);
 
             //Console.WriteLine($"[DEBUG] Final Damage: {Damage}");
             return Damage;
@@ -851,9 +899,9 @@ namespace ACE.Server.Entity
             EffectiveAttackSkill = attacker.GetEffectiveAttackSkill();
 
             // v11+ attack-skill floor: ensure endgame monsters can land hits vs very high player defense.
-            if (defender is Player v11Player)
+            if (defender is Player zcPlayer)
             {
-                var skillFloor = Creature.GetV11AttackSkillFloor(attacker, v11Player);
+                var skillFloor = Creature.GetZoneAttackSkillFloor(attacker, zcPlayer);
                 if (skillFloor > EffectiveAttackSkill)
                     EffectiveAttackSkill = skillFloor;
             }
@@ -1251,7 +1299,10 @@ namespace ACE.Server.Entity
             sb.AppendLine($"defenderHealth: current={defender.Health.Current} max={defender.Health.MaxValue}");
             // mob->player only (2026-09-02): the pct-of-max-HP floor, the pre-floor damage, and whether the floor won
             if (defender is Player)
-                sb.AppendLine($"pctHpFloor: value={DebugPctHpFloor:F2} preFloor={DebugPreFloorDamage:F2} won={DebugPctHpFloorWon}");
+                sb.AppendLine($"pctHpFloor: value={DebugPctHpFloor:F2} preFloor={DebugPreFloorDamage:F2} won={DebugPctHpFloorWon} trueDamage={TrueDamage:F2}");
+            // aug curves (owner 2026-10-02): whether this tier replaced the aug parts, and the cut each curve gave
+            if (defender is Player curveP && Creature.ZoneAugCurveProfile(attacker) is ACE.Server.Managers.ZoneScaling.EvaluatedProfile curveZp)
+                sb.AppendLine($"augCurves: on lifeCut={Creature.ZoneLifeAugCut(curveZp, curveP):F4} itemCut={Creature.ZoneItemAugCut(curveZp, curveP):F4} (life {curveP.EffectiveLifeAugCount}, item {curveP.EffectiveItemAugCount})");
 
             AppendLuminanceCombatSnapshot(sb, "Attacker luminance", attacker);
             AppendLuminanceCombatSnapshot(sb, "Defender luminance", defender);

@@ -447,6 +447,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Mythical Keys: {session.Player.BankedMythicalKeys:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightened Coins: {session.Player.BankedEnlightenedCoins:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Weakly Enlightened Coins: {session.Player.BankedWeaklyEnlightenedCoins:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Prestige Coins: {session.Player.BankedPrestigeCoins:N0} (bound to you - deposit / withdraw only)", ChatMessageType.System));
                 return;
             }
 
@@ -465,7 +466,9 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit mythicalkeys (or /b d mk) - Deposit all mythical keys", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit enlightenedcoins (or /b d e) - Deposit all enlightened coins", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit weaklyenlightenedcoins (or /b d we) - Deposit all weakly enlightened coins", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit prestigecoins (or /b d pc) - Deposit all prestige coins", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit notes (or /b d n) - Deposit all trade notes", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b lum - Bank your luminance tokens (Thaelaryn, ILT, Researcher's) as luminance - deposit all does this too", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"WITHDRAWAL COMMANDS:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw pyreals <amount> (or /b w p <amount>) - Withdraw pyreals as coins", ChatMessageType.System));
@@ -476,6 +479,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw mythicalkeys <amount> (or /b w mk <amount>) - Withdraw mythical keys", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw enlightenedcoins <amount> (or /b w e <amount>) - Withdraw enlightened coins", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw weaklyenlightenedcoins <amount> (or /b w we <amount>) - Withdraw weakly enlightened coins", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw prestigecoins <amount> (or /b w pc <amount>) - Withdraw prestige coins (they cannot be transferred)", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"OTHER COMMANDS:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank balance (or /b b) - Show bank balance", ChatMessageType.System));
@@ -498,6 +502,27 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b t n mmd 50 PlayerName - Transfer 50x 250k notes worth (12.5M pyreals)", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.System));
 
+                return;
+            }
+
+            // `/b lum` (owner 2026-10-05): bank the ILT luminance tokens in your packs - each pays what its NPC pays
+            if (parameters[0].Equals("lum", StringComparison.OrdinalIgnoreCase))
+            {
+                if (session.Player.IsBusy)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot deposit while teleporting or busy. Complete your movement and try again!", ChatMessageType.System));
+                    return;
+                }
+                var lumLimit = ServerConfig.bank_command_limit.Value;
+                if ((DateTime.UtcNow - session.LastBankCommandTime).TotalSeconds < lumLimit)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[Deposit] This command may only be run once every {lumLimit} seconds.", ChatMessageType.Broadcast);
+                    return;
+                }
+                session.LastBankCommandTime = DateTime.UtcNow;
+                if (session.Player.BankedLuminance < 0)
+                    session.Player.BankedLuminance = 0;   // the same cleanup every other deposit runs first
+                session.Player.DepositLuminanceTokens();
                 return;
             }
 
@@ -526,6 +551,10 @@ namespace ACE.Server.Command.Handlers
             if (session.Player.BankedWeaklyEnlightenedCoins < 0)
             {
                 session.Player.BankedWeaklyEnlightenedCoins = 0;
+            }
+            if (session.Player.BankedPrestigeCoins < 0)
+            {
+                session.Player.BankedPrestigeCoins = 0;
             }
 
             int iType = 0;
@@ -568,6 +597,10 @@ namespace ACE.Server.Command.Handlers
                 if (parameters[1] == "Weaklyenlightenedcoins" || parameters[1] == "we")
                 {
                     iType = 8;
+                }
+                if (parameters[1].Equals("prestigecoins", StringComparison.OrdinalIgnoreCase) || parameters[1].Equals("pc", StringComparison.OrdinalIgnoreCase))
+                {
+                    iType = 9;   // Prestige Coins (owner 2026-10-04): deposit / withdraw / balance - never transfer
                 }
             }
 
@@ -625,8 +658,12 @@ namespace ACE.Server.Command.Handlers
                     session.Player.DepositPeas(true);
                     session.Player.DepositEnlightenedCoins(true);
                     session.Player.DepositWeaklyEnlightenedCoins(true);
+                    session.Player.DepositPrestigeCoins(true);
                     session.Player.DepositMythicalKeys(true);
                     session.Player.DepositTradeNotes(true);
+                    // ILT lum tokens (owner 2026-10-05): per-token lines like /b lum, between Starting and Ending Banked Lum (owner
+                    // 2026-10-06) - read after the plain lum deposit above, so Starting + the tokens = Ending
+                    session.Player.DepositLuminanceTokens(quietIfNone: true, showTotal: true);
 
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all currencies!", ChatMessageType.System));
                     return;
@@ -682,6 +719,9 @@ namespace ACE.Server.Command.Handlers
                     case 8:
                         session.Player.DepositWeaklyEnlightenedCoins();
                         session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all weakly enlightened coins!", ChatMessageType.System));
+                        break;
+                    case 9:
+                        session.Player.DepositPrestigeCoins();
                         break;
                     default:
                         break;
@@ -744,6 +784,9 @@ namespace ACE.Server.Command.Handlers
                         break;
                     case 8:
                         session.Player.WithdrawWeaklyEnlightenedCoins(amount);
+                        break;
+                    case 9:
+                        session.Player.WithdrawPrestigeCoins(amount);
                         break;
                     default:
                         break;
@@ -840,6 +883,10 @@ namespace ACE.Server.Command.Handlers
                     case 8:
                         session.Player.TransferWeaklyEnlightenedCoins(amount, transferTargetName);
                         break;
+                    case 9:
+                        // Prestige Coins are a personal currency (owner 2026-10-04): banked and withdrawn, never moved to anyone
+                        session.Network.EnqueueSend(new GameMessageSystemChat("[BANK] Prestige Coins are bound to you and cannot be transferred.", ChatMessageType.System));
+                        break;
                 }
             }
             if (parameters[0] == "balance" || parameters[0] == "b")
@@ -851,6 +898,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Mythical Keys: {session.Player.BankedMythicalKeys:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightened Coins: {session.Player.BankedEnlightenedCoins:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Weakly Enlightened Coins: {session.Player.BankedWeaklyEnlightenedCoins:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Prestige Coins: {session.Player.BankedPrestigeCoins:N0} (bound to you - deposit / withdraw only)", ChatMessageType.System));
             }
         }
 

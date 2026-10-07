@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using ACE.Common;
 using ACE.Entity.Enum;
@@ -276,9 +277,43 @@ namespace ACE.Server.Managers.ZoneControl
         /// T25 10/30/60). forceMax = 1000. The producers roll THIS and derive the value with
         /// <see cref="ValueFor"/>, so the grade is the truth and the value its projection.
         /// </summary>
-        public static int RollGrade(int tier, bool forceMax = false)
+        public static int RollGrade(int tier, bool forceMax = false, double floor = 0.0)
         {
             if (forceMax) return GradeMax;
+            var g = RollGradeCore(tier);
+            // rank loot (owner 2026-09-29): squeeze into the top (1 - floor) of the band; the top stays the top
+            floor = double.IsFinite(floor) ? Math.Clamp(floor, 0.0, 0.9) : 0.0;
+            return floor <= 0.0 ? g : (int)Math.Round(floor * GradeMax + g * (1.0 - floor));
+        }
+
+        /// <summary>Rank loot (owner 2026-09-29): the drop profile's grade floor, 0 when unset / no profile.</summary>
+        public static double GradeFloorOf(EvaluatedProfile p)
+        {
+            var floor = p == null ? 0.0 : p.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootGradeFloor, 0.0);
+            return double.IsFinite(floor) ? Math.Clamp(floor, 0.0, 0.9) : 0.0;   // Math.Clamp passes NaN through
+        }
+
+        /// <summary>A "1 in N" stat as a safe int for ThreadSafeRandom.Next(1, N): 0 (= never / off) when it is unset, below 1
+        /// or not finite, and at most int.MaxValue - 1 (Next(1, int.MaxValue) overflows inside Random.Next and throws, which on
+        /// the kill path aborted the corpse - review 2026-10-04).</summary>
+        public static int OddsToInt(double odds)
+            => !double.IsFinite(odds) || odds < 1.0 ? 0 : (int)Math.Min(Math.Round(odds), int.MaxValue - 1);
+
+        /// <summary>The grade floor of the kill whose loot is being generated on THIS thread - for the value rolls
+        /// that run inside item creation with no profile in hand (the T11 weapon Damage / Crit Damage rating).
+        /// Set around CreateZoneLootSet by Creature_Death; 0 everywhere else.</summary>
+        [ThreadStatic] private static double _dropFloor;
+        public static double DropFloor => _dropFloor;
+        public static DropFloorScope ScopeDropFloor(double floor) => new DropFloorScope(floor);
+        public readonly struct DropFloorScope : IDisposable
+        {
+            private readonly double _prev;
+            public DropFloorScope(double floor) { _prev = _dropFloor; _dropFloor = floor; }
+            public void Dispose() => _dropFloor = _prev;
+        }
+
+        private static int RollGradeCore(int tier)
+        {
             var (wLo, wMid, wHi) = ZoneModifiers.TierThirds(tier);
             var pick = ThreadSafeRandom.Next(0, wLo + wMid + wHi - 1);
             if (pick < wLo) return ThreadSafeRandom.Next(0, 333);
@@ -453,7 +488,7 @@ namespace ACE.Server.Managers.ZoneControl
         public static int LadderArmorLevel(int tier) => 1100 + 100 * (tier - 11);
 
         /// <summary>
-        /// The per-tier armor base (ApplyT11GearStats + Compute). Three-step chain, owner 2026-08-24
+        /// The per-tier armor base (ApplyZoneGearStats + Compute). Three-step chain, owner 2026-08-24
         /// (Armor_Base_Values_Plan_2026-08-24.md section 2.1):
         ///   zonecontrol_enabled OFF          -> the flat T10 fallback, and NOTHING authored is consulted
         ///                                       (same rule as EffectiveBand, owner 2026-08-23)
@@ -542,7 +577,7 @@ namespace ACE.Server.Managers.ZoneControl
 
         /// <summary>
         /// The item's ladder row. ARMOUR, clothing and jewelry carry ZcTier; WEAPONS DO NOT -
-        /// LootGenerationFactory.ApplyT11GearStats returns at its `default:` case for weapons/casters
+        /// LootGenerationFactory.ApplyZoneGearStats returns at its `default:` case for weapons/casters
         /// BEFORE <see cref="StampIdentity"/> ever runs, so a weapon's tier lives in
         /// PropertyInt.WeaponAugScaleTier (stamped by ApplyWeaponAugScaleStamp later in the same
         /// Creature_Death sweep). Reading only ZcTier - which is what this did before 2026-08-25 -
@@ -577,6 +612,29 @@ namespace ACE.Server.Managers.ZoneControl
         {
             var raw = wo?.GetProperty(PropertyString.ZcModifiers);
             return !string.IsNullOrEmpty(raw) && raw.IndexOf('-') >= 0;
+        }
+
+        /// <summary>
+        /// Gear Grade (owner 2026-10-05, item 4: "grading on armor / jewelry like Weapon Grade - display only ... average of all rolls,
+        /// possibly excluding some bad mods"). The plain average of the piece's rolled line GRADES (0-1000, the same number each line's
+        /// value is resolved from) on the Weapon Grade letter scale (S / A+ .. F-). Left out: Trash-class lines (Armor Level, Spell
+        /// Duration - the "bad mods": a great roll of a weak line should not lift the piece, a poor one should not sink it), the
+        /// slot specials (a fixed effect per slot, not a rolled stat) and Reinforced (earned and frozen, never in the record). Always Rolled resists ARE rolls and count. Changes nothing on the item.
+        /// Null when the piece has no graded line.
+        /// </summary>
+        public static string GearGradeLine(WorldObject wo)
+        {
+            if (wo == null)
+                return null;
+            var grades = Read(wo)
+                .Where(r => !(ZoneModifiers.TryGet(r.Key, out var d) && (d.Class == ZoneModifiers.ModifierClass.Trash || d.SlotSpecial)))
+                .Select(r => Math.Clamp(r.Grade, 0, GradeMax))
+                .ToList();
+            if (grades.Count == 0)
+                return null;
+            // floored: S is the single perfect 1000, so only an all-perfect piece may show it (999.5 must not round up into S)
+            var avg = (int)Math.Floor(grades.Average());
+            return $"- Gear Grade: {ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetQualitySubGrade(avg)} (average of {grades.Count} rolled line{(grades.Count == 1 ? "" : "s")})";
         }
 
         /// <summary>Parse the record. Unknown / malformed entries are skipped, never thrown on.</summary>
@@ -729,7 +787,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// WeaponAugScaleTier and never branch on which is present, and the only code that decides
         /// "is this armour" is <see cref="Compute"/>, which keys on ItemType + ArmorLevel. The rule
         /// was a convention that had documented itself as a constraint.
-        /// Weapons now DO carry ZcTier (owner 2026-08-25, stamped in ApplyT11GearStats' default case)
+        /// Weapons now DO carry ZcTier (owner 2026-08-25, stamped in ApplyZoneGearStats' default case)
         /// so the crafting gate cannot be switched off by a single missing stamp.
         /// This method still writes only the VERSION, because the version must be stamped after the
         /// weapon's grades are recorded - which is here, not at gear-stat time.
@@ -751,21 +809,22 @@ namespace ACE.Server.Managers.ZoneControl
             public int Min, Max, Value;
             public string Name => Def?.Name ?? (IsCoreKey(Record.Key) ? CoreName(Record.Key) : $"Modifier {Record.Key}");
             /// <summary>The appraisal text for this line, in the stamp format ("Damage Rating +41 [14-69]").</summary>
-            public string Text
+            public string Text => TextAt(Value);
+
+            /// <summary>The same text with another value in place of the rolled one - the gear lock shows a suppressed line
+            /// at what it actually gives there (owner 2026-10-05: "Show the real value").</summary>
+            public string TextAt(int value)
             {
-                get
-                {
-                    if (Def == null)
-                        return $"{Name} +{Value} [{Min}-{Max}]";
-                    // Both args, always: key 44 (Pct HP Damage, the Gauntlets special) is the one ValFmt with a
-                    // SECOND placeholder - "{0} ({1:0.#} pct of max HP per hit)" - and string.Format throws
-                    // FormatException on a missing index, which killed the whole appraisal packet. The four call
-                    // sites in ZoneModifiers (641, 643, 673, 704) always passed both; this one did not.
-                    // Extra args are ignored by string.Format, so every other ValFmt is unaffected.
-                    if (Def.SlotSpecial)
-                        return string.IsNullOrEmpty(Def.ValFmt) ? Name : $"{Name} {string.Format(Def.ValFmt, Value, Value / 10.0)}";
-                    return $"{Name} {string.Format(Def.ValFmt ?? "+{0}", Value, Value / 10.0)} [{Min}-{Max}]";
-                }
+                if (Def == null)
+                    return $"{Name} +{value} [{Min}-{Max}]";
+                // Both args, always: key 44 (Pct HP Damage, the Gauntlets special) is the one ValFmt with a
+                // SECOND placeholder - "{0} ({1:0.#} pct of max HP per hit)" - and string.Format throws
+                // FormatException on a missing index, which killed the whole appraisal packet. The four call
+                // sites in ZoneModifiers (641, 643, 673, 704) always passed both; this one did not.
+                // Extra args are ignored by string.Format, so every other ValFmt is unaffected.
+                if (Def.SlotSpecial)
+                    return string.IsNullOrEmpty(Def.ValFmt) ? Name : $"{Name} {string.Format(Def.ValFmt, value, value / 10.0)}";
+                return $"{Name} {string.Format(Def.ValFmt ?? "+{0}", value, value / 10.0)} [{Min}-{Max}]";
             }
         }
 
@@ -800,7 +859,8 @@ namespace ACE.Server.Managers.ZoneControl
             var tier = TierOf(wo);
             if (tier <= 0) tier = 11;
             var r = new Resolved { Tier = tier };
-            var hasArmor = wo.ArmorLevel.HasValue && wo.ItemType == ItemType.Armor;
+            // armor, or a cap / glove / shoe from the clothing table that fills an armor slot (2026-10-06)
+            var hasArmor = wo.ArmorLevel.HasValue && (wo.ItemType == ItemType.Armor || ACE.Server.Factories.LootGenerationFactory.IsArmorSlotClothing(wo));
             var alBonus = 0;
 
             // The tier Default's Stats, fetched AT MOST ONCE per resolve and only when the record
@@ -898,7 +958,124 @@ namespace ACE.Server.Managers.ZoneControl
             // reads the tier Default (armor_base_level), and that is a locked snapshot read.
             if (hasArmor)
                 r.ArmorLevel = BaseArmorLevel(tier) + alBonus;
+
+            // TINKERING on top of the record (2026-10-05): a Steel tinker raised the item's AL, but the appraisal showed this
+            // resolved AL and the next re-stamp SET it back - the tinker was invisible, then lost. Add it back here, so both
+            // read the record PLUS the tinker. Only props this resolve owns; any other tinkered prop lives on the item as-is.
+            foreach (var kv in ReadTinkerBonus(wo))
+            {
+                if (kv.Key == (int)PropertyInt.ArmorLevel)
+                {
+                    if (r.ArmorLevel.HasValue)
+                        r.ArmorLevel += kv.Value;
+                }
+                else if (r.Ints.TryGetValue((PropertyInt)kv.Key, out var cur))
+                    r.Ints[(PropertyInt)kv.Key] = cur + kv.Value;
+            }
             return r;
+        }
+
+        // ── tinkering on Zone gear (2026-10-05) ─────────────────────────────────
+
+        private const int SteelMaterial = (int)ACE.Entity.Enum.MaterialType.Steel;   // the TinkerLog entry a Steel tinker leaves
+        private const int SteelArmorLevel = 20;         // what the Steel tinker adds (retail recipe, measured 1100 -> 1120)
+
+        /// <summary>
+        /// What tinkering added on top of the record: propId -> delta (PropertyString.ZcTinkerBonus). A piece tinkered BEFORE
+        /// this existed has no entry yet; its Steel tinkers are read back from TinkerLog (each one is +20 AL), so the fix
+        /// also brings back the AL of pieces players already tinkered - as long as no re-stamp has run on them since.
+        /// </summary>
+        public static Dictionary<int, int> ReadTinkerBonus(WorldObject wo)
+        {
+            var d = new Dictionary<int, int>();
+            if (wo == null) return d;
+            var raw = wo.GetProperty(PropertyString.ZcTinkerBonus);
+            if (raw == null)
+            {
+                var log = wo.TinkerLog;
+                if (!string.IsNullOrEmpty(log) && wo.ArmorLevel.HasValue)
+                {
+                    var steel = log.Split(',').Count(t => int.TryParse(t.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var m) && m == SteelMaterial);
+                    if (steel > 0) d[(int)PropertyInt.ArmorLevel] = steel * SteelArmorLevel;
+                }
+                return d;
+            }
+            foreach (var part in raw.Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var i = part.IndexOf(':');
+                if (i <= 0) continue;
+                if (int.TryParse(part.Substring(0, i), NumberStyles.Integer, CultureInfo.InvariantCulture, out var prop)
+                    && int.TryParse(part.Substring(i + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var delta)
+                    && delta != 0)
+                    d[prop] = d.TryGetValue(prop, out var have) ? have + delta : delta;
+            }
+            return d;
+        }
+
+        /// <summary>Taken BEFORE a recipe: the props this resolve SETS on a re-stamp (ArmorLevel + the record's line ints), and
+        /// the tinker bonus as it stood - the recipe writes its own TinkerLog entry before RecordTinker runs, so reading the
+        /// bonus afterwards would count a Steel tinker twice (once from the log, once as the delta).</summary>
+        public class TinkerSnapshot
+        {
+            public Dictionary<int, int> Owned = new();
+            public Dictionary<int, int> Bonus = new();
+        }
+
+        public static TinkerSnapshot SnapshotOwnedInts(WorldObject wo)
+        {
+            var r = Compute(wo);
+            if (r == null) return null;
+            var snap = new TinkerSnapshot { Bonus = ReadTinkerBonus(wo) };
+            if (r.ArmorLevel.HasValue && wo.ArmorLevel.HasValue)
+                snap.Owned[(int)PropertyInt.ArmorLevel] = wo.ArmorLevel.Value;
+            foreach (var key in r.Ints.Keys)
+                snap.Owned[(int)key] = wo.GetProperty(key) ?? 0;
+            return snap;
+        }
+
+        /// <summary>
+        /// After a successful recipe on a Tier 11+ piece: every owned prop that moved is a tinker - add the move to
+        /// ZcTinkerBonus, starting from the bonus as it stood BEFORE the recipe (older Steel tinkers kept, this one counted once).
+        /// </summary>
+        public static void RecordTinker(WorldObject wo, TinkerSnapshot before)
+        {
+            if (wo == null || before == null || before.Owned.Count == 0) return;
+            var bonus = new Dictionary<int, int>(before.Bonus);
+            var changed = false;
+            foreach (var kv in before.Owned)
+            {
+                var now = kv.Key == (int)PropertyInt.ArmorLevel ? wo.ArmorLevel ?? kv.Value : wo.GetProperty((PropertyInt)kv.Key) ?? 0;
+                var delta = now - kv.Value;
+                if (delta == 0) continue;
+                bonus[kv.Key] = bonus.TryGetValue(kv.Key, out var have) ? have + delta : delta;
+                changed = true;
+            }
+            if (!changed) return;
+            WriteTinkerBonus(wo, bonus);
+        }
+
+        /// <summary>Store the bonus. An empty one is stored as "" (not removed) so the TinkerLog fallback stays off for good.</summary>
+        public static void WriteTinkerBonus(WorldObject wo, Dictionary<int, int> bonus)
+        {
+            var text = string.Join(";", bonus.Where(kv => kv.Value != 0)
+                .Select(kv => kv.Key.ToString(CultureInfo.InvariantCulture) + ":" + kv.Value.ToString(CultureInfo.InvariantCulture)));
+            wo.SetProperty(PropertyString.ZcTinkerBonus, text);
+        }
+
+        /// <summary>
+        /// A Salvage Bag removed a line: a tinker on that line's own prop goes with it (otherwise it would come back, labelled
+        /// "tinkered", if the same line is ever rolled again). ArmorLevel is never dropped - Steel is on the piece, not on a line.
+        /// </summary>
+        public static void DropTinkerBonus(WorldObject wo, IEnumerable<int> props)
+        {
+            if (wo == null) return;
+            var bonus = ReadTinkerBonus(wo);
+            var dropped = false;
+            foreach (var p in props)
+                if (p != (int)PropertyInt.ArmorLevel && bonus.Remove(p))
+                    dropped = true;
+            if (dropped || (wo.GetProperty(PropertyString.ZcTinkerBonus) == null && bonus.Count > 0))
+                WriteTinkerBonus(wo, bonus);
         }
 
         /// <summary>
@@ -976,12 +1153,21 @@ namespace ACE.Server.Managers.ZoneControl
             if (tier <= 0) return false;
             var ladder = ZoneControlManager.GetLadderVersion(tier);
             var seen = wo.GetProperty(PropertyInt.ZcResolvedVersion) ?? 0;
-            if (seen == ResolveStamp(tier, HasWeaponKey(wo)))
+            // a piece Steel-tinkered BEFORE ZcTinkerBonus existed (2026-10-05): its bonus is only read back from TinkerLog, so the
+            // appraisal could show a Steel an earlier re-stamp already wiped off the item. Re-stamp it once now - that puts the
+            // Steel back on the item - and write the bonus out, so the fallback never runs for it again.
+            var migrate = wo.GetProperty(PropertyString.ZcTinkerBonus) == null && ReadTinkerBonus(wo).Count > 0;
+            if (seen == ResolveStamp(tier, HasWeaponKey(wo)) && !migrate)
                 return false;
             var r = Compute(wo);
             if (r == null) return false;
             var allowNerf = ladder.AllowNerf || !ServerConfig.zonecontrol_enabled.Value;
             var changed = Apply(wo, r, allowNerf);
+            if (migrate)
+            {
+                WriteTinkerBonus(wo, ReadTinkerBonus(wo));
+                changed++;
+            }
             wo.ChangesDetected = true;
             if (changed > 0)
                 wo.SaveBiotaToDatabase();
