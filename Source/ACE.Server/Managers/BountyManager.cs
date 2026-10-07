@@ -624,6 +624,8 @@ namespace ACE.Server.Managers
             if (!IsGivableItem(wcid))
                 return DeliverResult.Broken;
 
+            using var ledgerScope = PyrealLedger.Begin(PyrealLedger.SrcKillReward, wcid.ToString(), "Bounty");
+
             var guard = 0;
 
             while (given < amount && guard++ < 64)

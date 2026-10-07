@@ -2110,7 +2110,7 @@ namespace ACE.Server.WorldObjects
                     "You restore one charge on your summoning essence at no cost.",
                     ChatMessageType.Broadcast));
             }
-            else if (!player.TrySpendPyreals(finalCost))
+            else if (!player.TrySpendPyreals(finalCost, PyrealLedger.SrcPetDevice, WeenieClassId.ToString(), Name))
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(
                     $"You need {finalCost:N0} pyreals to auto-replenish your summoning essence. You do not have enough pyreals.",

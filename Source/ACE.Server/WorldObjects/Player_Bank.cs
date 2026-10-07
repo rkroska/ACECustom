@@ -215,7 +215,9 @@ namespace ACE.Server.WorldObjects
             
             long oldBalance = BankedPyreals ?? 0;
             LogInfo($"[BANK_DEBUG] Player: {Name} | Current BankedPyreals: {oldBalance:N0} | Requested Amount: {Amount:N0}");
-            
+
+            using var ledgerScope = PyrealLedger.Begin(PyrealLedger.SrcDeposit, "", "", this);
+
             lock (balanceLock)
             {
                 var pyrealsList = this.GetInventoryItemsOfWCID(273);
@@ -235,6 +237,7 @@ namespace ACE.Server.WorldObjects
                         if (this.TryRemoveFromInventory(item.Guid, out var removedItem))
                         {
                             itemsToRemove.Add(removedItem);
+                            PyrealLedger.OnCurrencyItem(this, 273, PYREAL_MAX_STACK, false);
                             BankedPyreals += PYREAL_MAX_STACK;
                             totalDeposited += PYREAL_MAX_STACK;
                             LogItemConsumption("DepositPyreals_FullStack", item, true, $"{PYREAL_MAX_STACK} pyreals");
@@ -257,6 +260,7 @@ namespace ACE.Server.WorldObjects
                             
                             itemsToRemove.Add(removedItem);
                             Amount -= toConsume;
+                            PyrealLedger.OnCurrencyItem(this, 273, toConsume, false);
                             BankedPyreals += toConsume;
                             totalDeposited += toConsume;
                             LogItemConsumption("DepositPyreals_PartialStack", item, true, $"Amount: {toConsume:N0}");
@@ -504,6 +508,8 @@ namespace ACE.Server.WorldObjects
 
         public void DepositPeas(bool suppressChat = false)
         {
+            using var ledgerScope = PyrealLedger.Begin(PyrealLedger.SrcDeposit, "", "", this);
+
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             LogAndPrint($"[BANK_DEBUG] Player: {Name} | Starting DepositPeas operation with performance improvements");
             
@@ -601,6 +607,7 @@ namespace ACE.Server.WorldObjects
                         
                         if (success)
                         {
+                            PyrealLedger.OnDepositItem(this, pyreal, val);
                             BankedPyreals += val;
                             totalDeposited += val;
                             pyrealsProcessed++;
@@ -623,6 +630,7 @@ namespace ACE.Server.WorldObjects
                         
                         if (success)
                         {
+                            PyrealLedger.OnDepositItem(this, goldItem, val);
                             BankedPyreals += val;
                             totalDeposited += val;
                             goldProcessed++;
@@ -645,6 +653,7 @@ namespace ACE.Server.WorldObjects
                         
                         if (success)
                         {
+                            PyrealLedger.OnDepositItem(this, silverItem, val);
                             BankedPyreals += val;
                             totalDeposited += val;
                             silverProcessed++;
@@ -667,6 +676,7 @@ namespace ACE.Server.WorldObjects
                         
                         if (success)
                         {
+                            PyrealLedger.OnDepositItem(this, copperItem, val);
                             BankedPyreals += val;
                             totalDeposited += val;
                             copperProcessed++;
@@ -1035,6 +1045,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void DepositTradeNotes(bool suppressChat = false)
         {
+            using var ledgerScope = PyrealLedger.Begin(PyrealLedger.SrcDeposit, "", "", this);
+
             if (BankedPyreals == null)
             {
                 BankedPyreals = 0;
@@ -1052,6 +1064,7 @@ namespace ACE.Server.WorldObjects
                     {
                         if (this.TryRemoveFromInventory(note.Guid, out var removedNote))
                         {
+                            PyrealLedger.OnDepositItem(this, note, val);
                             BankedPyreals += val;
                             totalDeposited += val;
                             itemsToRemove.Add(removedNote);
@@ -1233,9 +1246,12 @@ namespace ACE.Server.WorldObjects
                 return;
             }
             
+            using var ledgerScope = PyrealLedger.Begin(PyrealLedger.SrcWithdraw, "", "", this);
+
             // Create pyreal coins for the requested amount (outside lock)
             LogInfo($"[BANK_DEBUG] Player: {Name} | Creating {Amount:N0} pyreal coins");
             long successfullyCreated = CreatePyreals(Amount);
+            PyrealLedger.OnCurrencyItem(this, 273, successfullyCreated, true);
             LogDebug($"[BANK_DEBUG] Player: {Name} | Pyreal coin creation | Requested: {Amount:N0} | Successfully Created: {successfullyCreated:N0}");
             
             // Update balance atomically (only lock for balance mutation)
@@ -1751,6 +1767,9 @@ namespace ACE.Server.WorldObjects
         /// <param name="count">Number of trade notes to withdraw (default 1)</param>
         public void WithdrawTradeNotes(string denomination, int count = 1)
         {
+            // the notes are saved as they are created, the debit with the next character save
+            using var ledgerScope = PyrealLedger.Begin(PyrealLedger.SrcWithdraw, "", "", this, counterpartSaved: true);
+
             if (string.IsNullOrWhiteSpace(denomination))
             {
                 Session.Network.EnqueueSend(new GameMessageSystemChat("Denomination cannot be empty", ChatMessageType.System));
@@ -1928,7 +1947,7 @@ namespace ACE.Server.WorldObjects
             
             long oldBalance = BankedPyreals ?? 0;
             long targetOldBalance = 0;
-            
+
             // Get target player's current balance
             if (tarplayer is Player onlinePlayerCheck)
             {
@@ -1938,7 +1957,10 @@ namespace ACE.Server.WorldObjects
             {
                 targetOldBalance = offlinePlayerCheck.BankedPyreals ?? 0;
             }
-            
+
+            // an offline recipient is saved immediately, the sender's debit with the next character save
+            using var ledgerScope = PyrealLedger.Begin(PyrealLedger.SrcTransfer, tarplayer.Guid.Full.ToString(), tarplayer.Name, this, counterpartSaved: tarplayer is OfflinePlayer);
+
             try
             {
                 if (tarplayer is OfflinePlayer)
