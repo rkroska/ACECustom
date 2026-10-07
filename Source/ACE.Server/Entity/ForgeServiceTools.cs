@@ -371,6 +371,22 @@ namespace ACE.Server.Entity
                 w.RemoveProperty(PropertyInt64.ForgeDyePreviewUntil);
             }
 
+            // The price of a dye is the price of a TRY (owner, 2026-10-07): the pyreals go when the colour is put on,
+            // per piece, and are spent whether the player then keeps it or not. Taken before the popup so a logout or a
+            // dropped link cannot turn a try into a free look. forge_dye_charge_on_try FALSE restores the older rule,
+            // where trying is free and only a kept colour is paid for.
+            var chargeOnTry = ServerConfig.forge_dye_charge_on_try.Value;
+            if (chargeOnTry)
+            {
+                if (!Charge(player, fee))
+                {
+                    Unlock(player);
+                    Say(player, null, "You cannot cover the cost.");
+                    return;
+                }
+                player.SaveBiotaToDatabase();
+            }
+
             // Try it on: drawn until the preview runs out, kept only on Yes.
             var seconds = Math.Max(5, ServerConfig.forge_dye_preview_seconds.Value);
             foreach (var item in items)
@@ -382,10 +398,17 @@ namespace ACE.Server.Entity
 
             var ids = items.Select(i => i.Guid.Full).ToList();
             var previewed = (int)palette.Value;
-            var question = (suit
-                ? $"Keep this colour on the {items.Count} piece{(items.Count == 1 ? "" : "s")} you are wearing for {fee:N0} pyreals ({each:N0} each)?"
-                : $"Keep this colour on {items[0].Name} for {fee:N0} pyreals?")
-                + "\n\nNo washes it out at no cost. You can try as many colours as you like.";
+            string question;
+            if (chargeOnTry)
+                question = (suit
+                    ? $"You paid {fee:N0} pyreals ({each:N0} each) to try this colour on the {items.Count} piece{(items.Count == 1 ? "" : "s")} you are wearing. Keep it?"
+                    : $"You paid {fee:N0} pyreals to try this colour on {items[0].Name}. Keep it?")
+                    + "\n\nNo washes it out. The pyreals are spent either way.";
+            else
+                question = (suit
+                    ? $"Keep this colour on the {items.Count} piece{(items.Count == 1 ? "" : "s")} you are wearing for {fee:N0} pyreals ({each:N0} each)?"
+                    : $"Keep this colour on {items[0].Name} for {fee:N0} pyreals?")
+                    + "\n\nNo washes it out at no cost. You can try as many colours as you like.";
             var sent = player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (yes, timedOut) =>
             {
                 try
@@ -399,14 +422,24 @@ namespace ACE.Server.Entity
                     var kept = false;
                     if (yes && !timedOut && keep.Count > 0)
                     {
-                        var again = CheckFee(player, paid);
-                        if (again != null)
-                            Say(player, null, again);
-                        else if (Charge(player, paid))
+                        if (chargeOnTry)
                         {
+                            // already paid for when the colour went on
                             foreach (var w in keep)
                                 w.ForgeDyePalette = previewed;
                             kept = true;
+                        }
+                        else
+                        {
+                            var again = CheckFee(player, paid);
+                            if (again != null)
+                                Say(player, null, again);
+                            else if (Charge(player, paid))
+                            {
+                                foreach (var w in keep)
+                                    w.ForgeDyePalette = previewed;
+                                kept = true;
+                            }
                         }
                     }
                     foreach (var w in found)
@@ -415,8 +448,11 @@ namespace ACE.Server.Entity
                     Redraw(player, found, kept);
                     if (kept)
                         player.SaveBiotaToDatabase();
-                    log.Info($"[Dye] {player.Name}: {string.Join(", ", found.Select(w => $"{w.Name} (0x{w.Guid.Full:X8})"))} palette 0x{previewed:X8} family {family} fee {(kept ? paid : 0)} kept {kept}");
-                    Say(player, null, kept ? $"The colour holds. You paid {paid:N0} pyreals." : "The dye washes out.");
+                    log.Info($"[Dye] {player.Name}: {string.Join(", ", found.Select(w => $"{w.Name} (0x{w.Guid.Full:X8})"))} palette 0x{previewed:X8} family {family} fee {(chargeOnTry ? fee : kept ? paid : 0)} {(chargeOnTry ? "paid on try" : "paid on keep")} kept {kept}");
+                    if (chargeOnTry)
+                        Say(player, null, kept ? $"The colour holds. This try cost {fee:N0} pyreals." : $"The dye washes out. This try cost {fee:N0} pyreals.");
+                    else
+                        Say(player, null, kept ? $"The colour holds. You paid {paid:N0} pyreals." : "The dye washes out.");
                 }
                 finally
                 {
@@ -430,6 +466,13 @@ namespace ACE.Server.Entity
                 foreach (var item in items)
                     ClearPreview(item);
                 Redraw(player, items, false);
+                if (chargeOnTry && fee > 0)
+                {
+                    // the colour was never offered, so the try is not owed: back to the bank, whichever purse paid
+                    player.BankedPyreals = (player.BankedPyreals ?? 0) + fee;
+                    player.SaveBiotaToDatabase();
+                    log.Info($"[Dye] {player.Name}: popup could not be shown; {fee} pyreals returned to the bank");
+                }
                 Say(player, null, "Answer the popup you already have open first.");
             }
         }

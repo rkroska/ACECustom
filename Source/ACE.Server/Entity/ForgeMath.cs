@@ -74,6 +74,12 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>The stat lines of a weapon, in the order the forge rolls them. Fixed: a logged forge replays by draw order.</summary>
+        /// <summary>ImbuedEffectType bits of the eight elemental rends (slash, pierce, bludgeon, acid, cold, electric, fire, nether).</summary>
+        public const int RendMask = 0x0008 | 0x0010 | 0x0020 | 0x0040 | 0x0080 | 0x0100 | 0x0200 | 0x4000;
+
+        /// <summary>True when two weapons may be forged as far as rends go: at most one carries a rend, or both carry the same.</summary>
+        public static bool RendsCompatible(int mainRend, int feederRend) => mainRend == 0 || feederRend == 0 || mainRend == feederRend;
+
         public static readonly ForgeLine[] InheritOrder =
         {
             ForgeLine.MaxDamage, ForgeLine.Variance, ForgeLine.Speed, ForgeLine.AttackMod, ForgeLine.MeleeDefense,
@@ -179,8 +185,26 @@ namespace ACE.Server.Entity
             public int? Quality;
             /// <summary>Base (untinkered, unhoned) value of each line the weapon has.</summary>
             public Dictionary<ForgeLine, double> Lines = new();
-            /// <summary>Zone Control record: key -> grade 0-1000. A key only one parent has counts as 0 on the other.</summary>
+            /// <summary>Zone Control record: key -> grade 0-1000, every key the item carries.</summary>
             public SortedDictionary<int, int> ZcGrades = new();
+            /// <summary>
+            /// Tier 11+ PROPERTIES the forge may keep, drop or take from the other item: the record keys that use one of the
+            /// item's property slots (what the appraisal's "Properties: X of Y" counts) and are free to move. A subset of
+            /// <see cref="ZcGrades"/>'s keys. Every other record key (the built-in resists, slot specials, a weapon's rend)
+            /// stays with the main item.
+            /// </summary>
+            public SortedSet<int> PoolKeys = new();
+            /// <summary>Property slots used by things the forge never moves (Reinforced, a weapon's rend, Cast on Strike, a locked property...).</summary>
+            public int FixedSlots;
+            /// <summary>Record keys whose grade the forge never changes on the main item: the property a Bag of Locking locked.</summary>
+            public SortedSet<int> FrozenKeys = new();
+            /// <summary>The tier's limit on properties for an item of this tier; int.MaxValue = no limit.</summary>
+            public int PropertyCap = int.MaxValue;
+            /// <summary>How many properties the item has, as its appraisal counts them.</summary>
+            public int PropertyCount => PoolKeys.Count + FixedSlots;
+            /// <summary>Stat lines the forge leaves exactly as the main item has them (tier 11+ armour: its armour level,
+            /// protections and ratings belong to its properties, not to a roll).</summary>
+            public HashSet<ForgeLine> LockedLines = new();
             /// <summary>Spells keyed by family.</summary>
             public SortedDictionary<uint, SpellEntry> Spells = new();
             public SortedDictionary<int, TraitPackage> Packages = new();
@@ -193,6 +217,13 @@ namespace ACE.Server.Entity
             public int TinkerCount;
             public string TinkerLog;
             public int ImbuedEffect;
+            /// <summary>
+            /// The elemental rends this weapon carries (ImbuedEffectType bits within <see cref="RendMask"/>, over all its
+            /// imbue slots); 0 = none. A rend is an imbue, so the result has the MAIN weapon's. Two rules follow from it
+            /// (owner, 2026-10-07): two weapons that both carry a rend must carry the same one, and a main weapon with a
+            /// rend keeps its own element, so the rend always matches the weapon it ends up on.
+            /// </summary>
+            public int Rend;
             public int? DyePalette;
 
             public int ForgeCount;
@@ -213,6 +244,11 @@ namespace ACE.Server.Entity
                     Quality = Quality,
                     Lines = new Dictionary<ForgeLine, double>(Lines),
                     ZcGrades = new SortedDictionary<int, int>(ZcGrades),
+                    PoolKeys = new SortedSet<int>(PoolKeys),
+                    FixedSlots = FixedSlots,
+                    FrozenKeys = new SortedSet<int>(FrozenKeys),
+                    PropertyCap = PropertyCap,
+                    LockedLines = new HashSet<ForgeLine>(LockedLines),
                     Spells = new SortedDictionary<uint, SpellEntry>(Spells.ToDictionary(kv => kv.Key, kv => new SpellEntry { Family = kv.Value.Family, SpellId = kv.Value.SpellId, Level = kv.Value.Level })),
                     Packages = new SortedDictionary<int, TraitPackage>(Packages.ToDictionary(kv => kv.Key, kv => new TraitPackage { Key = kv.Value.Key, Score = kv.Value.Score, Value = kv.Value.Value })),
                     WieldDifficulty = new SortedDictionary<int, int>(WieldDifficulty),
@@ -221,6 +257,7 @@ namespace ACE.Server.Entity
                     TinkerCount = TinkerCount,
                     TinkerLog = TinkerLog,
                     ImbuedEffect = ImbuedEffect,
+                    Rend = Rend,
                     DyePalette = DyePalette,
                     ForgeCount = ForgeCount,
                 };
@@ -345,6 +382,10 @@ namespace ACE.Server.Entity
             public double SparkRoll;
             /// <summary>Every draw consumed, in order. Replaying them reproduces this outcome exactly.</summary>
             public List<double> RngDraws = new();
+            /// <summary>Tier 11+ properties of the result that only the second item had (record keys).</summary>
+            public List<int> PropertiesGained = new();
+            /// <summary>Tier 11+ properties the main item had that the result does not (record keys).</summary>
+            public List<int> PropertiesLost = new();
         }
 
         /// <summary>
@@ -393,6 +434,10 @@ namespace ACE.Server.Entity
             var r = main.Clone();
             r.Lines.Clear();
             r.ZcGrades.Clear();
+            r.PoolKeys.Clear();
+            var lockedLines = new HashSet<ForgeLine>(main.LockedLines);
+            lockedLines.UnionWith(feeder.LockedLines);
+            r.LockedLines = lockedLines;
             r.Spells.Clear();
             r.Packages.Clear();
 
@@ -404,6 +449,13 @@ namespace ACE.Server.Entity
                 var feederHas = feeder.Lines.TryGetValue(line, out var fv);
                 if (!mainHas && !feederHas)
                     continue;
+                if (lockedLines.Contains(line))
+                {
+                    // not the forge's to roll: the main item's value stands (the draw above is still spent)
+                    if (mainHas)
+                        r.Lines[line] = mv;
+                    continue;
+                }
 
                 var lower = LowerIsBetter(line);
                 bool fromMain;
@@ -444,14 +496,68 @@ namespace ACE.Server.Entity
                     r.Quality = null;
             }
 
-            // 3. Zone Control grades: a key the chosen parent lacks lands as grade 0.
-            foreach (var key in main.ZcGrades.Keys.Union(feeder.ZcGrades.Keys).OrderBy(k => k))
+            // 3. Tier 11+ properties (owner, 2026-10-07): the forge is its own gamble, separate from the salvage bags.
+            //    Every property either item has goes into one pool; the result gets a random NUMBER of them, anywhere
+            //    from the smaller of the two items' counts to the larger (never past the tier's limit), picked at random
+            //    from the pool. A property both had rolls its grade between the two; one only one had keeps its grade.
+            //    Record keys that are not movable properties stay with the main item, graded between the two when
+            //    the second item carries the same key.
             {
-                var roll = Draw();
-                var mg = main.ZcGrades.TryGetValue(key, out var a) ? a : 0;
-                var fg = feeder.ZcGrades.TryGetValue(key, out var b) ? b : 0;
-                r.ZcGrades[key] = (int)Math.Round(RollNumeric(mg, fg, false, config, roll, out var fromMain), MidpointRounding.AwayFromZero);
-                o.Picks.Add(new ForgePick { Kind = PickKind.Grade, Key = key, Roll = roll, FromMain = fromMain, Blended = config.RollMode != RollMode.Pick, MainIsBetter = mg >= fg, MainValue = mg.ToString(), FeederValue = fg.ToString() });
+                var mainFixed = main.ZcGrades.Keys.Where(k => !main.PoolKeys.Contains(k)).OrderBy(k => k).ToList();
+                foreach (var key in mainFixed)
+                {
+                    var mg = main.ZcGrades[key];
+                    if (!main.FrozenKeys.Contains(key) && feeder.ZcGrades.TryGetValue(key, out var fg) && !feeder.PoolKeys.Contains(key))
+                    {
+                        var roll = Draw();
+                        r.ZcGrades[key] = (int)Math.Round(RollNumeric(mg, fg, false, config, roll, out var fromMain), MidpointRounding.AwayFromZero);
+                        o.Picks.Add(new ForgePick { Kind = PickKind.Grade, Key = key, Roll = roll, FromMain = fromMain, Blended = config.RollMode != RollMode.Pick, MainIsBetter = mg >= fg, MainValue = mg.ToString(), FeederValue = fg.ToString() });
+                    }
+                    else
+                        r.ZcGrades[key] = mg;
+                }
+
+                // a key the main item holds as fixed is never also drawn from the pool
+                var pool = main.PoolKeys.Union(feeder.PoolKeys).Where(k => !mainFixed.Contains(k)).OrderBy(k => k).ToList();
+                r.FixedSlots = main.FixedSlots;
+                r.PropertyCap = (feeder.Tier > main.Tier ? feeder : main).PropertyCap;
+                if (pool.Count > 0)
+                {
+                    var lo = Math.Min(main.PropertyCount, feeder.PropertyCount);
+                    var hi = Math.Max(main.PropertyCount, feeder.PropertyCount);
+                    var count = lo + PickIndex(Draw(), hi - lo + 1);
+                    count = Math.Min(count, r.PropertyCap);
+                    var free = Math.Max(0, Math.Min(count - main.FixedSlots, pool.Count));
+
+                    var remaining = new List<int>(pool);
+                    var chosen = new List<int>();
+                    for (var i = 0; i < free; i++)
+                    {
+                        var index = PickIndex(Draw(), remaining.Count);
+                        chosen.Add(remaining[index]);
+                        remaining.RemoveAt(index);
+                    }
+
+                    foreach (var key in chosen.OrderBy(k => k))
+                    {
+                        var mainHas = main.PoolKeys.Contains(key) && main.ZcGrades.TryGetValue(key, out _);
+                        var feederHas = feeder.PoolKeys.Contains(key) && feeder.ZcGrades.TryGetValue(key, out _);
+                        var mg = mainHas ? main.ZcGrades[key] : 0;
+                        var fg = feederHas ? feeder.ZcGrades[key] : 0;
+                        if (mainHas && feederHas)
+                        {
+                            var roll = Draw();
+                            r.ZcGrades[key] = (int)Math.Round(RollNumeric(mg, fg, false, config, roll, out var fromMain), MidpointRounding.AwayFromZero);
+                            o.Picks.Add(new ForgePick { Kind = PickKind.Grade, Key = key, Roll = roll, FromMain = fromMain, Blended = config.RollMode != RollMode.Pick, MainIsBetter = mg >= fg, MainValue = mg.ToString(), FeederValue = fg.ToString() });
+                        }
+                        else
+                            r.ZcGrades[key] = mainHas ? mg : fg;
+                        r.PoolKeys.Add(key);
+                        if (!mainHas)
+                            o.PropertiesGained.Add(key);
+                    }
+                    o.PropertiesLost.AddRange(main.PoolKeys.Where(k => !r.PoolKeys.Contains(k) && !mainFixed.Contains(k)));
+                }
             }
 
             // 4. Spells, per family: higher level is better; a family the chosen parent lacks is lost.
@@ -502,7 +608,9 @@ namespace ACE.Server.Entity
             // main model's version in that element (ForgeGroups.FindElementVariant).
             {
                 var roll = Draw();
-                var fromMain = roll < 0.5;
+                // A main weapon with a rend keeps its element: the rend stays on the result, and a fire bow with an acid
+                // rend is what a free roll would make of it. The draw is still taken, so the sequence does not shift.
+                var fromMain = main.Rend != 0 || roll < 0.5;
                 r.Element = fromMain ? main.Element : feeder.Element;
                 o.Picks.Add(new ForgePick { Kind = PickKind.Element, Roll = roll, FromMain = fromMain, MainIsBetter = true, MainValue = main.Element.ToString(), FeederValue = feeder.Element.ToString() });
             }

@@ -342,6 +342,10 @@ namespace ACE.Server.Entity
                 sb.Append(item.WeenieClassId != main.WeenieClassId ? $"  The element changed: it is now a {item.Name}.\n" : "  The element stayed: this model has no version in the other one.\n");
             foreach (var family in m.Spells.Keys.Union(f.Spells.Keys).Where(k => !outcome.Result.Spells.ContainsKey(k)))
                 sb.Append($"  {ForgeWeaponReader.FamilyName(family)} was lost to the fire.\n");
+            if (outcome.PropertiesGained.Count > 0)
+                sb.Append($"  Gained from the {feederName}: {string.Join(", ", outcome.PropertiesGained.Select(GearEssences.ForgePropertyName))}.\n");
+            if (outcome.PropertiesLost.Count > 0)
+                sb.Append($"  Lost to the fire: {string.Join(", ", outcome.PropertiesLost.Select(GearEssences.ForgePropertyName))}.\n");
             if (outcome.Spark)
                 sb.Append($"  SPARK! The steel takes an edge: +1 hone on {ForgeMath.LineName(outcome.SparkLine)}.\n");
             if (fee > 0 && charged)

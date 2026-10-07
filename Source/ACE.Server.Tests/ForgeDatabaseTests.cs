@@ -36,6 +36,7 @@ namespace ACE.Server.Tests
         private static string notReady = "set ACE_FORGE_DB_TESTS=1 to run the database-backed forge tests (scripts/run-forge-tests.ps1)";
         private static uint nextGuid = 0xFFFF0000;
         private static int forgedWithSpells;
+        private static readonly List<(int Main, int Feeder, int Result)> propertyCounts = new();
 
         [ClassInitialize]
         public static void Setup(TestContext context)
@@ -124,6 +125,8 @@ namespace ACE.Server.Tests
             if (TinkerReversal.Strip(item).Status != TinkerReversal.Status.Ok) problems.Add("result tinkers do not reverse");
             foreach (var line in ForgeMath.OrderFor(m.IsArmor))
             {
+                // tier 11+ armour: these follow from its properties, checked below, not from a roll
+                if (outcome.Result.LockedLines.Contains(line)) continue;
                 var want = outcome.Result.Lines.TryGetValue(line, out var w) ? w : (double?)null;
                 var got = back.Lines.TryGetValue(line, out var g) ? g : (double?)null;
                 var tol = ForgeMath.IsWholeNumber(line) ? 0.5 : 1e-6;
@@ -153,7 +156,17 @@ namespace ACE.Server.Tests
             if (back.Tier != Math.Max(m.Tier, f.Tier)) problems.Add($"tier {back.Tier} != {Math.Max(m.Tier, f.Tier)}");
             if (back.Quality != outcome.Result.Quality) problems.Add($"quality reads {back.Quality}, forged {outcome.Result.Quality}");
             foreach (var (key, grade) in outcome.Result.ZcGrades)
-                if (!back.ZcGrades.TryGetValue(key, out var bg) || bg != grade) problems.Add($"grade {key}: forged {grade}");
+                if (!back.ZcGrades.TryGetValue(key, out var bg) || bg != grade) problems.Add($"grade {key}: forged {grade}, item has {(back.ZcGrades.TryGetValue(key, out var x) ? x.ToString() : "none")}");
+            // tier 11+ properties: exactly the ones the forge chose, counted as the appraisal counts them, within the limit
+            foreach (var key in back.ZcGrades.Keys.Where(k => !outcome.Result.ZcGrades.ContainsKey(k)))
+                problems.Add($"record carries {key}, which the forge did not choose");
+            if (!back.PoolKeys.SetEquals(outcome.Result.PoolKeys))
+                problems.Add($"properties {string.Join(",", back.PoolKeys)} != chosen {string.Join(",", outcome.Result.PoolKeys)}");
+            if (back.PropertyCount != outcome.Result.PropertyCount)
+                problems.Add($"property count {back.PropertyCount} != forged {outcome.Result.PropertyCount}");
+            if (back.PropertyCount > back.PropertyCap)
+                problems.Add($"{back.PropertyCount} properties, over the tier's limit of {back.PropertyCap}");
+            propertyCounts.Add((m.PropertyCount, f.PropertyCount, back.PropertyCount));
 
             // no wield requirement of either input may be missing or weaker; arcane lore never lower
             var slots = new[]
@@ -680,6 +693,52 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void Armor_Tier11_RealPairs_PropertiesStayWithinTheTwoItems_AndTheLimit()
+        {
+            Need();
+            var rng = new Random(20261007);
+            var buckets = new Dictionary<string, List<WorldObject>>();
+            foreach (var id in IdsWithInt((int)PropertyInt.ZcTier, 11, 60000).OrderBy(_ => rng.Next()).Take(1500))
+            {
+                var wo = LoadAny(id);
+                if (wo == null || !ForgeWeaponReader.IsArmorKind(wo) || ForgeWeaponReader.RefusalReason(wo) != null) continue;
+                var g = ForgeGroups.GetGroup(wo);
+                if (!buckets.TryGetValue(g, out var list)) buckets[g] = list = new List<WorldObject>();
+                list.Add(wo);
+            }
+            var groups = buckets.Values.Where(l => l.Count >= 2).ToList();
+            if (groups.Count == 0)
+                Assert.Inconclusive("no two forgeable tier 11+ armour pieces of one group in this shard database");
+
+            var failures = new List<string>();
+            var ran = 0;
+            var first = propertyCounts.Count;
+            var modes = new[] { ForgeMath.RollMode.Between, ForgeMath.RollMode.Pick, ForgeMath.RollMode.BestOfTwo };
+            for (var i = 0; i < 400; i++)
+            {
+                var list = groups[rng.Next(groups.Count)];
+                var main = list[rng.Next(list.Count)];
+                var feeder = list[rng.Next(list.Count)];
+                if (main == feeder) continue;
+                ran++;
+                var alBefore = main.ArmorLevel;
+                var problems = ForgeAndCheck(main, feeder, modes[i % modes.Length], rng, 0);
+                if (main.ArmorLevel != alBefore) problems.Add("the main piece itself was changed");
+                if (problems.Count > 0)
+                    failures.Add($"[{modes[i % modes.Length]}] {main.Name} + {feeder.Name}: {string.Join("; ", problems)}");
+            }
+            var mine = propertyCounts.Skip(first).ToList();
+            foreach (var (a, b, r) in mine)
+                if (r < Math.Min(a, b) - 0 && r < Math.Min(a, b)) { }   // (bounds are asserted below, per forge)
+            var outOfRange = mine.Count(x => x.Result > Math.Max(x.Main, x.Feeder));
+            Console.WriteLine($"tier 11+ armour forges: {ran} over {groups.Count} groups; result property counts: " +
+                              string.Join(", ", mine.GroupBy(x => x.Result).OrderBy(g => g.Key).Select(g => $"{g.Key}: {g.Count()}")) +
+                              $"; more than either input: {outOfRange}");
+            Assert.AreEqual(0, outOfRange, "a result has more properties than either item it was made from");
+            AssertNone(failures, ran);
+        }
+
+        [TestMethod]
         public void DyeBottles_DrawTheIconOfTheirColourOption_UnlessToldToKeepTheirOwn()
         {
             Need();
@@ -785,6 +844,10 @@ namespace ACE.Server.Tests
                 Assert.AreEqual(false, B(id, PropertyBool.IsSellable), $"{id} must not be sellable to vendors");
                 Assert.AreEqual(id >= 78780420 ? 33025 | 2 | 4 | 16 : id == 78780419 ? 33025 | 2 | 4 : 33025, I(id, PropertyInt.TargetType), $"{id} must target weapons (dyes: also armour, clothing and yourself)");
                 Assert.IsTrue((I(id, PropertyInt.Value) ?? 0) > 0, $"{id} has no price");
+                // A dye can be used on yourself, and the CLIENT decides that from ItemUseable before the server hears of it:
+                // it needs SourceContainedTargetSelfOrContained. Every other tool only ever targets an item.
+                Assert.AreEqual(id >= 78780420 ? (int)Usable.SourceContainedTargetSelfOrContained : (int)Usable.SourceContainedTargetContained,
+                    I(id, PropertyInt.ItemUseable), $"{id}: wrong ItemUseable");
                 foreach (var text in W(id).PropertiesString.Values)
                     Assert.IsTrue(text.All(c => c >= 32 && c < 127), $"{id}: non-ASCII text '{text}'");
             }

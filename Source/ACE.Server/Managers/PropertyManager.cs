@@ -690,8 +690,9 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> forge_unbind_fraction { get; private set; } = new(0.25, "Unbind fee as a fraction of the expected pyreals sunk into the weapon's hone levels.");
         public static ConfigProperty<long> forge_unbind_min_fee { get; private set; } = new(25_000_000, "Minimum pyreal fee to unbind a forged or honed weapon.");
         public static ConfigProperty<double> forge_flux_bonus { get; private set; } = new(0.10, "Hone chance added by one Smith's Flux. One is used per attempt when the player carries any.");
-        public static ConfigProperty<long> forge_dye_fee_pyreals { get; private set; } = new(100_000, "Pyreals to keep a colour from an any-colour dye. Trying a colour on is free.");
-        public static ConfigProperty<long> forge_dye_family_fee_pyreals { get; private set; } = new(500_000, "Pyreals to keep a colour from a colour-family dye (Crimson, Azure...).");
+        public static ConfigProperty<long> forge_dye_fee_pyreals { get; private set; } = new(2_500_000, "Pyreals per piece for one try of an any-colour dye (10 MMD notes). With forge_dye_charge_on_try FALSE: the price to KEEP a colour instead.");
+        public static ConfigProperty<long> forge_dye_family_fee_pyreals { get; private set; } = new(2_500_000, "Pyreals per piece for one try of a colour-family dye (Crimson, Azure...). With forge_dye_charge_on_try FALSE: the price to KEEP a colour instead.");
+        public static ConfigProperty<bool> forge_dye_charge_on_try { get; private set; } = new(true, "TRUE = a dye is paid for when the colour is put on, per piece, and the pyreals are spent whether the player keeps it or not. FALSE = trying is free and only a kept colour is paid for.");
         public static ConfigProperty<long> forge_dye_preview_seconds { get; private set; } = new(60, "How long a tried-on dye shows before it washes out unless kept.");
         public static ConfigProperty<double> forge_station_range { get; private set; } = new(15.0, "How close (metres) a player must stand to a grindstone or dye vat to use hone stones or dyes.");
         public static ConfigProperty<long> pet_strain_potency_threshold { get; private set; } = new(50, "No bond strain at or below this active potency.");

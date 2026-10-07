@@ -61,9 +61,33 @@ namespace ACE.Server.Entity
             => wo != null && !ForgeGroups.IsWeapon(wo)
                && ((wo.ValidLocations ?? ACE.Entity.Enum.EquipMask.None) & (ACE.Entity.Enum.EquipMask.Armor | ACE.Entity.Enum.EquipMask.Extremity | ACE.Entity.Enum.EquipMask.Shield)) != 0;
 
+        /// <summary>The elemental rends on a weapon, over all five imbue slots (ImbuedEffectType bits); 0 for none and for armour.</summary>
+        public static int RendOf(WorldObject wo)
+        {
+            if (wo == null || !ForgeGroups.IsWeapon(wo))
+                return 0;
+            var all = (wo.GetProperty(PropertyInt.ImbuedEffect) ?? 0) | (wo.GetProperty(PropertyInt.ImbuedEffect2) ?? 0) | (wo.GetProperty(PropertyInt.ImbuedEffect3) ?? 0)
+                    | (wo.GetProperty(PropertyInt.ImbuedEffect4) ?? 0) | (wo.GetProperty(PropertyInt.ImbuedEffect5) ?? 0);
+            return all & RendMask;
+        }
+
+        /// <summary>ASCII name of a rend value: "Acid Rending", or several joined with " and ".</summary>
+        public static string RendName(int rend)
+        {
+            var names = System.Enum.GetValues(typeof(ACE.Entity.Enum.ImbuedEffectType)).Cast<ACE.Entity.Enum.ImbuedEffectType>()
+                .Where(t => ((int)t & RendMask) != 0 && (rend & (int)t) != 0)
+                .Select(t => SplitWords(t.ToString()));
+            return string.Join(" and ", names);
+        }
+
         /// <summary>Null when the two may be forged together, else an ASCII reason.</summary>
         public static string PairRefusalReason(WorldObject main, WorldObject feeder)
         {
+            var mainRend = RendOf(main);
+            var feederRend = RendOf(feeder);
+            if (!RendsCompatible(mainRend, feederRend))
+                return $"Both carry a rend, so the rends must match: {main.Name} has {RendName(mainRend)}, {feeder.Name} has {RendName(feederRend)}.";
+
             var a = ForgeGroups.GetGroup(main);
             var b = ForgeGroups.GetGroup(feeder);
             if (a != b)
@@ -96,6 +120,7 @@ namespace ACE.Server.Entity
                 TinkerCount = wo.NumTimesTinkered,
                 TinkerLog = wo.TinkerLog,
                 ImbuedEffect = wo.GetProperty(PropertyInt.ImbuedEffect) ?? 0,
+                Rend = RendOf(wo),
                 DyePalette = wo.ForgeDyePalette,
                 ForgeCount = wo.GetProperty(PropertyInt.ForgeCount) ?? 0,
                 HoneMisfortune = wo.GetProperty(PropertyInt.ForgeHoneMisfortune) ?? 0,
@@ -143,6 +168,22 @@ namespace ACE.Server.Entity
 
             foreach (var rec in ZoneStatResolver.Read(wo))
                 w.ZcGrades[rec.Key] = rec.Grade;
+
+            // Tier 11+: which of those are properties the forge may move, and how many slots the item has in use.
+            var properties = GearEssences.ForgeProperties(wo);
+            foreach (var key in properties.PoolKeys)
+                if (w.ZcGrades.ContainsKey(key))
+                    w.PoolKeys.Add(key);
+            w.FixedSlots = properties.FixedSlots;
+            w.PropertyCap = properties.Cap;
+            // a locked property is the main item's to keep, exactly as it is
+            if (GearEssences.LockedKey(wo) is int locked && w.ZcGrades.ContainsKey(locked))
+                w.FrozenKeys.Add(locked);
+            // On tier 11+ armour the armour level, protections and ratings are what its properties make them (Armor Level,
+            // Reinforced, Damage Rating...), so they are never rolled as stats: the properties are rolled instead.
+            if (w.IsArmor && w.Tier >= ACE.Server.Factories.LootGenerationFactory.ZoneLootSetMinTier)
+                foreach (var line in ArmorOrder.Where(l => l != ForgeLine.Spellcraft && l != ForgeLine.MaxMana))
+                    w.LockedLines.Add(line);
 
             // Spells grouped by category: the retail grouping that decides which of two spells wins when both are up.
             foreach (var id in wo.Biota.GetKnownSpellsIds(wo.BiotaDatabaseLock))

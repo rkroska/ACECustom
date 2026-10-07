@@ -282,7 +282,9 @@ namespace ACE.Server.Command.Handlers
 
             // Element: a plain 50/50; a changed element turns the main weapon into its model's version in that element.
             var feederElementWcid = ForgeGroups.FindElementVariant(main.WeenieClassId, (ACE.Entity.Enum.DamageType)f.Element);
-            if (m.Element != f.Element)
+            if (m.Element != f.Element && m.Rend != 0)
+                sb.Append($"Element: {(ACE.Entity.Enum.DamageType)m.Element} / {(ACE.Entity.Enum.DamageType)f.Element} -> stays {(ACE.Entity.Enum.DamageType)m.Element}: the main weapon carries {ForgeWeaponReader.RendName(m.Rend)}.\n");
+            else if (m.Element != f.Element)
             {
                 var flipName = feederElementWcid.HasValue ? DatabaseName(feederElementWcid.Value) : null;
                 sb.Append($"Element: {(ACE.Entity.Enum.DamageType)m.Element} / {(ACE.Entity.Enum.DamageType)f.Element} -> 50% each. " +

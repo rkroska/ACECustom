@@ -185,6 +185,118 @@ namespace ACE.Server.Entity
             return $"- Locked: {(card == ZoneStatResolver.SpecRendPower ? RendName(wo) : card.Name)}";
         }
 
+        // -- blacksmithing --------------------------------------------------------------------------
+        // The forge (ForgeMath / ForgeWeaponWriter) decides for itself which tier 11+ properties a forged item ends up with:
+        // it is not a bag and follows none of a bag's rules. It does go through the SAME add / remove / regrade steps as the
+        // bags below, so the record, the stats, the baked text and the "Properties: X of Y" count can never disagree.
+
+        /// <summary>A property the forge leaves with the item it is on: a weapon's rend (the rend belongs to the weapon's
+        /// element), Biting Strike / Crushing Blow under a Bandit Hilt (the hilt adds onto them), and the property a Bag
+        /// of Locking locked (owner, 2026-10-07: the forge respects locks).</summary>
+        private static bool ForgePinned(WorldObject wo, Unit u)
+            => u.Card == ZoneStatResolver.SpecRendPower
+               || u.Key == LockedKey(wo)
+               || (ZoneLootMutator.HasBanditHilt(wo) && (u.Card == ZoneStatResolver.SpecBite || u.Card == ZoneStatResolver.SpecCrush));
+
+        /// <summary>
+        /// What the forge needs to know about a tier 11+ item's properties: the record keys it may keep, drop or hand to
+        /// another item; how many slots are used by properties it never moves; and the tier's limit (int.MaxValue = none).
+        /// The two counts add up to exactly what the appraisal shows as X in "Properties: X of Y". Empty below tier 11.
+        /// </summary>
+        internal static (List<int> PoolKeys, int FixedSlots, int Cap) ForgeProperties(WorldObject wo)
+        {
+            var tier = ZoneStatResolver.TierOf(wo);
+            if (wo == null || tier < LootGenerationFactory.ZoneLootSetMinTier)
+                return (new List<int>(), 0, int.MaxValue);
+            var weapon = IsWeapon(wo);
+            var pool = AllUnits(wo).Where(u => !ForgePinned(wo, u)).Select(u => u.Key).ToList();
+            var count = weapon ? CardCount(wo) : LineCount(wo);
+            var cap = CapAt(TierDefaultProfile(tier), weapon ? ZoneStat.WeaponModifierCap : ZoneStat.ArmorModifierCap, tier);
+            return (pool, Math.Max(0, count - pool.Count), cap);
+        }
+
+        /// <summary>ASCII name of a property by its record key, for the forge's chat line.</summary>
+        internal static string ForgePropertyName(int key)
+        {
+            if (ZoneStatResolver.TryGetWeapon(key, out var card))
+                return card == ZoneStatResolver.SpecRendPower ? "Rending" : card.Name;
+            return ZoneModifiers.TryGet(key, out var def) ? def.Name : $"Modifier {key}";
+        }
+
+        /// <summary>
+        /// Makes <paramref name="target"/>'s movable properties exactly <paramref name="want"/> (record key -> grade), and
+        /// sets the grades in <paramref name="regrade"/> on record lines it already carries. <paramref name="target"/> is a
+        /// forged item that starts as a copy of the main item; <paramref name="donor"/> is the second item, the source of
+        /// anything a gained property needs beyond its grade (a Slayer's creature type).
+        /// </summary>
+        internal static void ForgeApplyProperties(WorldObject target, IReadOnlyDictionary<int, int> want, IReadOnlyDictionary<int, int> regrade, WorldObject donor)
+        {
+            var tier = ZoneStatResolver.TierOf(target);
+            if (tier < LootGenerationFactory.ZoneLootSetMinTier)
+                return;
+            var weapon = IsWeapon(target);
+            var ops = new List<Op>();
+            var have = AllUnits(target).Where(u => !ForgePinned(target, u)).ToList();
+
+            foreach (var u in have.Where(u => !want.ContainsKey(u.Key)))
+            {
+                var op = RemoveOp(u);
+                ApplyOp(target, op);
+                ops.Add(op);
+            }
+
+            foreach (var (key, grade) in want)
+            {
+                var i = have.FindIndex(u => u.Key == key);
+                if (i >= 0)
+                {
+                    var op = new Op { Action = OpAction.Regrade, Key = key, Def = have[i].Def, Card = have[i].Card, Grade = grade };
+                    ApplyOp(target, op);
+                    ops.Add(op);
+                    continue;
+                }
+
+                var add = new Op { Action = OpAction.Add, Key = key, Grade = grade };
+                if (weapon)
+                {
+                    add.Card = EssenceWeaponCards.FirstOrDefault(c => c.Key == key);
+                    if (add.Card == null || add.Card == ZoneStatResolver.SpecRendPower)
+                        continue;   // not a card the forge moves
+                }
+                else if (!ZoneModifiers.TryGet(key, out add.Def) || IsProtected(add.Def))
+                    continue;
+                ApplyOp(target, add);
+                ops.Add(add);
+
+                if (add.Card == ZoneStatResolver.SpecSlayer && donor != null)
+                {
+                    // a Slayer is a strength AND a prey: the prey comes from the weapon the card came from
+                    if (donor.GetProperty(PropertyInt.SlayerCreatureType) is int prey) target.SetProperty(PropertyInt.SlayerCreatureType, prey);
+                    else target.RemoveProperty(PropertyInt.SlayerCreatureType);
+                    if (donor.GetProperty(PropertyBool.SlayerAllCreatures) == true) target.SetProperty(PropertyBool.SlayerAllCreatures, true);
+                    else target.RemoveProperty(PropertyBool.SlayerAllCreatures);
+                }
+            }
+
+            // grades of lines the item keeps whatever the forge decides (the built-in resists, a weapon's rend)
+            foreach (var (key, grade) in regrade)
+            {
+                if (!ZoneStatResolver.Read(target).Any(l => l.Key == key))
+                    continue;
+                SetGradeInPlace(target, key, grade);
+                if (ZoneStatResolver.TryGetWeapon(key, out var card))
+                    ops.Add(new Op { Action = OpAction.Regrade, Key = key, Card = card, Grade = grade });
+                else if (ZoneModifiers.TryGet(key, out var def))
+                    ops.Add(new Op { Action = OpAction.Regrade, Key = key, Def = def, Grade = grade });
+            }
+
+            Resolve(target, ops);
+
+            // a lock on a property that is gone means nothing
+            if (LockedKey(target) is int locked && !ZoneStatResolver.Read(target).Any(l => l.Key == locked))
+                target.RemoveProperty(PropertyInt.GearEssenceLockedKey);
+        }
+
         // -- planning types ------------------------------------------------------------------------
 
         private enum OpAction { Remove, Add, Regrade }

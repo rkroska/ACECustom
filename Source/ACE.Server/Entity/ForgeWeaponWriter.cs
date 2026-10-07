@@ -136,15 +136,15 @@ namespace ACE.Server.Entity
             }
             if (result.Quality.HasValue) item.SetProperty(PropertyInt.WeaponAugScaleQuality, result.Quality.Value);
             else item.RemoveProperty(PropertyInt.WeaponAugScaleQuality);
-            if (result.ZcGrades.Count > 0)
+            // The item is a copy of the main one, record included. Its tier 11+ properties become what the forge rolled,
+            // through the same add / remove / regrade steps a salvage bag takes, so the stats, the baked text and the
+            // "Properties: X of Y" count all follow the record.
+            if (ZoneStatResolver.HasRecord(main) || ZoneStatResolver.HasRecord(feeder))
             {
-                item.SetProperty(PropertyString.ZcModifiers, ZoneStatResolver.Format(result.ZcGrades.Select(kv => new ZoneStatResolver.LineRecord { Key = kv.Key, Grade = kv.Value })));
-                var resolved = ZoneStatResolver.Compute(item);
-                if (resolved != null)
-                    ZoneStatResolver.Apply(item, resolved, true);
+                var want = result.ZcGrades.Where(kv => result.PoolKeys.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+                var regrade = result.ZcGrades.Where(kv => !result.PoolKeys.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+                GearEssences.ForgeApplyProperties(item, want, regrade, feeder);
             }
-            else
-                item.RemoveProperty(PropertyString.ZcModifiers);
 
             // 3f. Forge state.
             item.SetProperty(PropertyInt.ForgeCount, result.ForgeCount);

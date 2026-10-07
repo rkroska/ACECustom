@@ -265,15 +265,17 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void Forge_ZcGradeOnlyOnOneParent_LandsAsZeroOnTheWorseBranch()
+        public void Forge_RecordKeyThatIsNotAMovableProperty_StaysWithTheMainItem()
         {
             var main = Dagger(20, 0.5, 1.1);
-            main.ZcGrades[-11] = 700;
+            main.ZcGrades[-13] = 700;                      // e.g. a weapon's rend: on the record, not in the pool
             var feeder = Dagger(20, 0.5, 1.1);
+            feeder.ZcGrades[50] = 900;                     // a fixed key only the second item has is not taken
 
-            var r = Forge(main, feeder, Config(), Script(With(new[] { Worse }))).Result;
+            var r = Forge(main, feeder, Config(), Script(Rolls(Better))).Result;
 
-            Assert.AreEqual(0, r.ZcGrades[-11]);
+            Assert.AreEqual(700, r.ZcGrades[-13], "unchanged: the second item has no such key, so nothing is rolled");
+            Assert.IsFalse(r.ZcGrades.ContainsKey(50));
         }
 
         [TestMethod]
@@ -637,6 +639,177 @@ namespace ACE.Server.Tests
                 Assert.AreEqual(ForgeConfig.ServerStepFor(line), config.StepFor(line), $"{line}");
             Assert.AreEqual(0.0, ForgeConfig.ServerStepFor(ForgeLine.Spellcraft), "not honable");
             Assert.AreEqual(0.0, ForgeConfig.ServerStepFor(ForgeLine.ArmorLevel), "armour is not honable");
+        }
+
+        // ---------------------------------------------------------------- rends
+
+        [TestMethod]
+        public void Rends_BothCarryOne_MustMatch_OtherwiseAnythingGoes()
+        {
+            const int acid = 0x0040, fire = 0x0200;
+            Assert.IsTrue(RendsCompatible(0, 0), "neither has a rend");
+            Assert.IsTrue(RendsCompatible(acid, 0), "only the main has one");
+            Assert.IsTrue(RendsCompatible(0, fire), "only the second has one");
+            Assert.IsTrue(RendsCompatible(acid, acid), "the same rend");
+            Assert.IsFalse(RendsCompatible(acid, fire), "two different rends");
+            Assert.AreEqual(acid, acid & RendMask);
+            Assert.AreEqual(0, 0x0004 & RendMask, "Armor Rending is not an elemental rend");
+            Assert.AreEqual(0, 0x0001 & RendMask, "Critical Strike is not a rend");
+        }
+
+        [TestMethod]
+        public void Forge_MainWithARend_KeepsItsElement_AndStillTakesTheDraw()
+        {
+            var main = Dagger(20, 0.5, 1.1);
+            main.Rend = 0x0200;                       // Fire Rending on a fire weapon
+            var feeder = Dagger(20, 0.5, 1.1);
+            feeder.Element = Frost;
+
+            var o = Forge(main, feeder, Config(), Script(Rolls(Better, element: FeederElement)));
+            Assert.AreEqual(Fire, o.Result.Element, "the roll said the other element, but the rend holds the main weapon's");
+            Assert.AreEqual(InheritOrder.Length + 3, o.RngDraws.Count, "the element draw is still consumed");
+            Assert.AreEqual(0x0200, o.Result.Rend, "the rend is the main weapon's");
+        }
+
+        [TestMethod]
+        public void Forge_OnlyTheSecondHasARend_ElementStillRolls_AndTheResultHasNoRend()
+        {
+            var main = Dagger(20, 0.5, 1.1);
+            var feeder = Dagger(20, 0.5, 1.1);
+            feeder.Element = Frost;
+            feeder.Rend = 0x0080;                     // Cold Rending, lost with the second weapon
+
+            var o = Forge(main, feeder, Config(), Script(Rolls(Better, element: FeederElement)));
+            Assert.AreEqual(Frost, o.Result.Element, "a main weapon without a rend rolls its element as before");
+            Assert.AreEqual(0, o.Result.Rend);
+        }
+
+        // ---------------------------------------------------------------- tier 11+ properties
+
+        /// <summary>A tier 11 piece whose movable properties are <paramref name="pool"/> (key, grade).</summary>
+        private static ForgeWeapon Zone(int cap, int fixedSlots, params (int Key, int Grade)[] pool)
+        {
+            var w = Dagger(20, 0.5, 1.1);
+            w.Tier = 11;
+            w.PropertyCap = cap;
+            w.FixedSlots = fixedSlots;
+            foreach (var (key, grade) in pool)
+            {
+                w.ZcGrades[key] = grade;
+                w.PoolKeys.Add(key);
+            }
+            return w;
+        }
+
+        [TestMethod]
+        public void Properties_HowMany_IsBetweenTheTwoItemsCounts()
+        {
+            var main = Zone(4, 0, (28, 500));
+            var feeder = Zone(4, 0, (19, 100), (29, 200), (31, 300), (32, 400));
+            // count draw 0 -> the smaller count (1); 0.999 -> the larger (4); the picks all take the first left in the pool
+            Assert.AreEqual(1, Forge(main, feeder, Config(), Script(With(new[] { 0.0, 0.0 }))).Result.PropertyCount);
+            Assert.AreEqual(4, Forge(main, feeder, Config(), Script(With(new[] { 0.999, 0.0, 0.0, 0.0, 0.0 }))).Result.PropertyCount);
+            Assert.AreEqual(2, Forge(main, feeder, Config(), Script(With(new[] { 0.3, 0.0, 0.0 }))).Result.PropertyCount, "1 + floor(0.3 x 4)");
+        }
+
+        [TestMethod]
+        public void Properties_Which_ArePickedFromBothItems_AndKeepOrBlendTheirGrades()
+        {
+            var c = Config();
+            c.RollMode = RollMode.Between;
+            var main = Zone(4, 0, (28, 800), (29, 100));
+            var feeder = Zone(4, 0, (28, 400), (31, 650));
+            // pool sorted: 28, 29, 31. count draw 0 -> 2. picks: index 0 of [28,29,31] = 28, then index 1 of [29,31] = 31.
+            // then one grade draw for 28, which both have: half way between 400 and 800.
+            var o = Forge(main, feeder, c, Script(With(new[] { 0.0, 0.0, 0.5, 0.5 })));
+            var r = o.Result;
+
+            CollectionAssert.AreEquivalent(new[] { 28, 31 }, r.PoolKeys.ToList());
+            Assert.AreEqual(600, r.ZcGrades[28], "both had it: between the two grades");
+            Assert.AreEqual(650, r.ZcGrades[31], "only the second item had it: its grade, unchanged");
+            Assert.IsFalse(r.ZcGrades.ContainsKey(29));
+            CollectionAssert.AreEqual(new[] { 31 }, o.PropertiesGained);
+            CollectionAssert.AreEqual(new[] { 29 }, o.PropertiesLost);
+        }
+
+        [TestMethod]
+        public void Properties_NeverPastTheTiersLimit_AndFixedSlotsCount()
+        {
+            // 3 + 4 distinct properties under a limit of 4, with one slot of the main item taken by something fixed
+            var main = Zone(4, 1, (28, 500), (29, 500));           // 3 properties: two movable and Reinforced, say
+            var feeder = Zone(4, 0, (19, 500), (31, 500), (32, 500), (43, 500));
+            var rng = new Random(99);
+            for (var i = 0; i < 2000; i++)
+            {
+                var r = Forge(main, feeder, Config(), () => rng.NextDouble()).Result;
+                Assert.IsTrue(r.PropertyCount <= 4, $"over the limit: {r.PropertyCount}");
+                Assert.IsTrue(r.PropertyCount >= 3, $"under the smaller count: {r.PropertyCount}");
+                Assert.AreEqual(1, r.FixedSlots);
+                Assert.IsTrue(r.PoolKeys.All(k => r.ZcGrades.ContainsKey(k)));
+            }
+        }
+
+        [TestMethod]
+        public void Properties_EveryCountInTheRangeTurnsUp()
+        {
+            var main = Zone(4, 0, (28, 500));
+            var feeder = Zone(4, 0, (19, 500), (29, 500), (31, 500), (32, 500));
+            var rng = new Random(5);
+            var seen = new HashSet<int>();
+            for (var i = 0; i < 500; i++)
+                seen.Add(Forge(main, feeder, Config(), () => rng.NextDouble()).Result.PropertyCount);
+            CollectionAssert.AreEquivalent(new[] { 1, 2, 3, 4 }, seen.ToList());
+        }
+
+        [TestMethod]
+        public void Properties_BuiltInKeysBothCarry_RollBetween_AndAreNotCounted()
+        {
+            var c = Config();
+            c.RollMode = RollMode.Between;
+            var main = Zone(4, 0, (28, 500));
+            main.ZcGrades[50] = 200;                                 // a built-in resist: on the record, not a property
+            var feeder = Zone(4, 0, (28, 500));
+            feeder.ZcGrades[50] = 600;
+            // draws after quality: the built-in's grade, the count, one pick, the shared property's grade
+            var r = Forge(main, feeder, c, Script(With(new[] { 0.5, 0.0, 0.0, 0.5 }))).Result;
+
+            Assert.AreEqual(400, r.ZcGrades[50]);
+            Assert.AreEqual(1, r.PropertyCount, "the built-in line uses no slot");
+        }
+
+        [TestMethod]
+        public void LockedLines_KeepTheMainItemsValue_AndStillSpendTheirDraw()
+        {
+            var main = Dagger(20, 0.5, 1.1);
+            main.LockedLines.Add(ForgeLine.MaxDamage);
+            var feeder = Dagger(40, 0.5, 1.1);
+
+            var o = Forge(main, feeder, Config(), Script(Rolls(Better)));
+
+            Assert.AreEqual(20, o.Result.Lines[ForgeLine.MaxDamage], "not rolled: the better value on the second item is ignored");
+            Assert.IsFalse(o.Picks.Any(pk => pk.Kind == PickKind.Line && pk.Key == (int)ForgeLine.MaxDamage));
+            Assert.AreEqual(InheritOrder.Length + 3, o.RngDraws.Count);
+        }
+
+        [TestMethod]
+        public void Properties_ALockedPropertyOnTheMainItem_IsAlwaysKept_Unchanged()
+        {
+            var c = Config();
+            c.RollMode = RollMode.Between;
+            // the reader takes a locked property out of the pool: it is a fixed slot and a frozen key
+            var main = Zone(4, 1, (28, 500));
+            main.ZcGrades[29] = 300;
+            main.FrozenKeys.Add(29);
+            var feeder = Zone(4, 0, (29, 900), (19, 400), (31, 400), (32, 400));
+            var rng = new Random(3);
+            for (var i = 0; i < 1000; i++)
+            {
+                var o = Forge(main, feeder, c, () => rng.NextDouble());
+                Assert.AreEqual(300, o.Result.ZcGrades[29], "kept, and never regraded, even though the second item has it stronger");
+                Assert.IsFalse(o.Result.PoolKeys.Contains(29), "not drawn a second time from the second item");
+                Assert.IsFalse(o.PropertiesLost.Contains(29));
+                Assert.IsTrue(o.Result.PropertyCount <= 4);
+            }
         }
     }
 }
