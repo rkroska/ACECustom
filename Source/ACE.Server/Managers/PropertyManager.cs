@@ -1043,6 +1043,19 @@ namespace ACE.Server.Managers
 
         /// <summary>Hour (UTC, 0–23) at which the weekly draw fires. Default 2 (2 AM UTC).</summary>
         public static ConfigProperty<long> powerball_draw_hour_utc { get; private set; } = new(2L, "Hour of the day (UTC, 0–23) when the weekly Powerball draw fires. Default 2 = 2 AM UTC. Use /modifylong powerball_draw_hour_utc.");
+
+        // -- Dressing Room (2026-10-05) -------------------------------------------------------------
+        /// <summary>Master switch for the Dressing Room. FALSE: every character is drawn in their real gear, attendants refuse, /look reports it closed. Saved looks are kept.</summary>
+        public static ConfigProperty<bool> dressing_room_enabled { get; private set; } = new(false, "If TRUE, saved Dressing Room looks are drawn in place of real armour and clothing, and attendants lock in new looks. FALSE shows everyone in their real gear; saved looks are kept. A change shows on a character the next time their appearance is sent (equip change, relog, coming into view). Use /modifybool dressing_room_enabled.");
+
+        /// <summary>Pyreals to lock in one piece in a wear slot that has never been locked before.</summary>
+        public static ConfigProperty<long> dressing_room_fee_base { get; private set; } = new(100_000_000L, "Dressing Room: pyreals to lock in one piece in a wear slot never locked before, taken from banked pyreals first, then pyreal coins in the pack. 0 = free. Use /modifylong dressing_room_fee_base.");
+
+        /// <summary>Fee multiplier for each earlier lock-in of the same wear slot on that character.</summary>
+        public static ConfigProperty<double> dressing_room_fee_growth { get; private set; } = new(1.1, "Dressing Room: the fee for a piece is multiplied by this for every earlier lock-in of the same wear slot on that character. Below 1 is treated as 1 (no growth). Use /modifydouble dressing_room_fee_growth.");
+
+        /// <summary>The most one piece can ever cost. 0 = no cap.</summary>
+        public static ConfigProperty<long> dressing_room_fee_cap { get; private set; } = new(250_000_000L, "Dressing Room: the most one piece can cost however many times its slot has been locked. 0 = no cap. Use /modifylong dressing_room_fee_cap.");
     }
 
     public static class PropertyManager

@@ -31,6 +31,7 @@ import PlayerList from './components/PlayerList'
 import CombatCalculator from './components/CombatCalculator'
 import PetBreedingCalculator from './components/PetBreedingCalculator'
 import PetGuide from './components/pet-guide/PetGuide'
+import DressingRoomGuide from './components/dressing-room/DressingRoomGuide'
 
 import QuestBuilder from './components/quest-builder/QuestBuilder'
 
@@ -125,7 +126,7 @@ function App() {
 
   const isPetGuidePath = normalizedPath === '/pets' || normalizedPath.startsWith('/pets/');
 
-  if (!isAuthenticated && (normalizedPath === '/map' || normalizedPath === '/pet-breeding' || isPetGuidePath)) {
+  if (!isAuthenticated && (normalizedPath === '/map' || normalizedPath === '/pet-breeding' || normalizedPath === '/dressing-room' || isPetGuidePath)) {
     return (
       <MainLayout>
         <Routes>
@@ -134,6 +135,7 @@ function App() {
           } />
           <Route path="/pet-breeding" element={<PetBreedingCalculator />} />
           <Route path="/pets/:section?" element={<PetGuide />} />
+          <Route path="/dressing-room" element={<DressingRoomGuide />} />
           <Route path="*" element={<Navigate to="/map" replace />} />
         </Routes>
       </MainLayout>
@@ -359,6 +361,12 @@ function App() {
         <Route path="/pets/:section?" element={
           <ProtectedRoute pageKey="pet-guide">
             <PetGuide />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/dressing-room" element={
+          <ProtectedRoute pageKey="dressing-room">
+            <DressingRoomGuide />
           </ProtectedRoute>
         } />
 

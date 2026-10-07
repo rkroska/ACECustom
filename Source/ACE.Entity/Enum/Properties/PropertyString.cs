@@ -154,5 +154,11 @@ namespace ACE.Entity.Enum.Properties
         /// there is room (checked on the player heartbeat). Never dropped. Server-only.
         /// Renamed from KillRewardOwed 2026-09-26 - the ID is what persists.</summary>
         BountyOwed = 50506,
+
+        /// <summary>Dressing Room (2026-10-05), on a CHARACTER: the locked-in look, as JSON - the appearance of each
+        /// sacrificed piece (clothing table, colour, layering) and how many times each wear slot has been locked, which
+        /// sets the next fee. Drawn in place of the real gear by Creature.CalculateObjDesc. Server-only - not an assessment
+        /// property, so it is never sent to a player. See DressingRoomLook.</summary>
+        DressingRoomLook = 53000,
     }
 }
