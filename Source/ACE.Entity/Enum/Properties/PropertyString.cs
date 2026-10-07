@@ -145,8 +145,7 @@ namespace ACE.Entity.Enum.Properties
         RoomAssignBounty = 50504,
 
         /// <summary>Bounty, on a CHARACTER: kills counted and the last award, per area and reward - "area#rId|kills|lastUnix;..."
-        /// (area = "zone:name", "dungeon:WCIDvVARIATION", "zonewide" or "server", rId = the reward's permanent ID), plus
-        /// "*|0|unlockUnix" = the one shared timer across every bounty (2026-10-06). Kept on the
+        /// (area = "zone:name", "dungeon:WCIDvVARIATION" or "zonewide", rId = the reward's permanent ID). Kept on the
         /// character so a relog or a restart can neither reset the cooldown nor lose progress. Server-only.
         /// Renamed from KillRewardProgress 2026-09-26 - the ID is what persists.</summary>
         BountyProgress = 50505,

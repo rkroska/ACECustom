@@ -219,7 +219,8 @@ namespace ACE.Server.Factories
             var maxBase = GetMaxBaseMana(wo);
             wo.ItemMaxMana = Math.Max(wo.ItemMaxMana ?? 0, ZoneSpellMana);
             wo.ItemCurMana = wo.ItemMaxMana;
-            wo.ManaRate = CalculateManaRate(maxBase);
+            var rate = CalculateManaRate(maxBase);
+            wo.ManaRate = wo.ManaRate.HasValue ? Math.Min(wo.ManaRate.Value, rate) : rate;   // the faster (more negative) drain wins
             wo.ItemSpellcraft = Math.Max(wo.ItemSpellcraft ?? 0, GetMaxSpellPower(wo));
             wo.ItemDifficulty = null;
             if (!(wo is MeleeWeapon) && !(wo is MissileLauncher) && !(wo is Caster) && (wo.UiEffects ?? UiEffects.Undef) == UiEffects.Undef)

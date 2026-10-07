@@ -1772,17 +1772,11 @@ namespace ACE.Server.Command.Handlers
                     }
                     if (!PremadeKeyAllowed(k, wo, tier))
                         continue;
-                    // a jewelry Cast on Strike line needs a free proc slot, as on a drop and a Salvage Bag add
-                    if (k == ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcKey && wo.ProcSpell != null)
-                        continue;
                     var (bMin, bMax) = PremadeBand(k, tier);
                     var grade = bis ? ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax
                                     : ACE.Server.Managers.ZoneControl.ZoneStatResolver.GradeMax / 2;
                     ACE.Server.Managers.ZoneControl.ZoneModifiers.StampGraded(wo, def, grade,
                         ((int)Math.Round(bMin), (int)Math.Round(bMax)));
-                    // jewelry Cast on Strike: the line needs its proc, as on a drop (ZoneLootMutator) and a Salvage Bag add
-                    if (k == ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcKey)
-                        ACE.Server.Managers.ZoneControl.ZoneLootMutator.StampJewelProc(wo, null, tier);
                     lines++;
                 }
 

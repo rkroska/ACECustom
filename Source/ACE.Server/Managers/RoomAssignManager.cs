@@ -228,20 +228,7 @@ namespace ACE.Server.Managers
         /// or '#', which the Bounty progress string on the character uses as separators.
         /// </summary>
         public static string DungeonAreaKey(uint sourceWcid, int? variation)
-            => DungeonAreaKeyPrefix + sourceWcid.ToString(CultureInfo.InvariantCulture) + "v" + (VariationManager.NormalizeBase(variation)?.ToString(CultureInfo.InvariantCulture) ?? "0");
-
-        private const string DungeonAreaKeyPrefix = "dungeon:";
-
-        /// <summary>The source WCID back out of a DungeonAreaKey ("dungeon:WCIDvVARIATION"); false for any other key.</summary>
-        public static bool TryParseDungeonAreaKey(string areaKey, out uint sourceWcid)
-        {
-            sourceWcid = 0;
-            if (areaKey == null || !areaKey.StartsWith(DungeonAreaKeyPrefix, StringComparison.Ordinal))
-                return false;
-            var v = areaKey.IndexOf('v', DungeonAreaKeyPrefix.Length);
-            return v > DungeonAreaKeyPrefix.Length
-                && uint.TryParse(areaKey.AsSpan(DungeonAreaKeyPrefix.Length, v - DungeonAreaKeyPrefix.Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out sourceWcid);
-        }
+            => "dungeon:" + sourceWcid.ToString(CultureInfo.InvariantCulture) + "v" + (VariationManager.NormalizeBase(variation)?.ToString(CultureInfo.InvariantCulture) ?? "0");
 
         // ---------------------------------------------------------------------------------------------------------
         // Room lists: parsed from the weenie cache, last good list kept per source WCID

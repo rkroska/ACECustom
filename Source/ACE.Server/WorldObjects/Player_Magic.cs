@@ -2118,7 +2118,7 @@ namespace ACE.Server.WorldObjects
 
                     // Crit chance — 10% base since 2026-08-29 (unified with melee/missile) + player
                     // crit rating, mitigated by target resist rating.
-                    var critChance = GetWeaponMagicCritFrequency(weapon, this as Creature, attackSkill, creature);
+                    var critChance = GetWeaponMagicCritFrequency(HandCastParityWeapon(weapon, this), this as Creature, attackSkill, creature);
                     if (ThreadSafeRandom.Next(0.0f, 1.0f) < critChance)
                     {
                         // AugmentationCriticalDefense check (PvP only — 5% per aug rank vs player attacker).
@@ -2141,7 +2141,7 @@ namespace ACE.Server.WorldObjects
                             // only the life / PvP branches use the mod here; the war/void PvE crit reads it
                             // once in the unified block below (review 2026-09-04: it was computed twice)
                             var earlyMod = isLifeProjectile || isPvP
-                                ? GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature)
+                                ? GetWeaponCritDamageMod(HandCastParityWeapon(weapon, this), this as Creature, attackSkill, creature)
                                 : 0f;
                             // Zone Control spell crits mirror melee for LIFE rings too (owner 2026-10-04): the crit floor and the
                             // aug crit term with the caster's life augs (war / void rings take theirs in the block below)
@@ -2246,7 +2246,7 @@ namespace ACE.Server.WorldObjects
                     var elementalMod = GetCasterElementalDamageModifier(HandCastParityWeapon(weapon, this), this as Creature, creature, spell.DamageType);
 
                     // Slayer modifier — respects wand/creature slayer properties.
-                    var slayerMod = GetWeaponCreatureSlayerModifier(weapon, this as Creature, creature);
+                    var slayerMod = GetWeaponCreatureSlayerModifier(HandCastParityWeapon(weapon, this), this as Creature, creature);
 
                     // Weapon resistance mod — applies rending on wand to target resistance.
                     // The wand is deliberately NOT passed as the `weapon` arg below: SpellProjectile
@@ -2302,7 +2302,7 @@ namespace ACE.Server.WorldObjects
                     var zcCritMirror = Creature.ZcSpellCritMirrorsMelee(this, weapon, creature, fromProc);
                     if (criticalHit && !isLifeProjectile && !isPvP)
                     {
-                        var ringCritDamageMod = GetWeaponCritDamageMod(weapon, this as Creature, attackSkill, creature);
+                        var ringCritDamageMod = GetWeaponCritDamageMod(HandCastParityWeapon(weapon, this), this as Creature, attackSkill, creature);
                         if (zcCritMirror)
                         {
                             ringCritDamageMod = Math.Max(ringCritDamageMod,

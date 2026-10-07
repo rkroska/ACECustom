@@ -184,9 +184,6 @@ namespace ACE.Server.Managers.ZoneControl
 
         private static volatile Snapshot _snapshot = Snapshot.Empty;
 
-        // every zone's Bounty (enabled or not), sanitized copies by zone name - published with the indexes, read lock-free
-        private static volatile Dictionary<string, BountyConfig> _zoneBountyByName = new(StringComparer.OrdinalIgnoreCase);
-
         private static readonly object _lock = new object();
         private static volatile bool _initialized;
 
@@ -219,10 +216,6 @@ namespace ACE.Server.Managers.ZoneControl
             /// <summary>ALLOWED PROCS (owner 2026-10-06): proc spell ids that T11+ monsters do NOT force-resist even from gear below
             /// T11 (TierHitGate.IsLowTierCast). Edited with /zonecontrol procallow and the plugin. Absent / empty = none allowed.</summary>
             public List<uint> AllowedProcSpells { get; set; } = new();
-
-            /// <summary>SERVER-WIDE BOUNTY (owner 2026-10-06): one bounty, earned by killing its target WCIDs (TargetWcids; empty =
-            /// any kill that pays XP / luminance) ANYWHERE - every area, every variation, retail too. Absent = off.</summary>
-            public BountyConfig ServerWideBounty { get; set; } = new();
         }
 
         /// <summary>The highest variation a gear lock spot names (the command, SetGearLock and Load share it).</summary>
@@ -264,10 +257,6 @@ namespace ACE.Server.Managers.ZoneControl
         // the zone-wide bounty. Guarded by _lock; read through the volatile copy (every kill in a T11+ zone).
         private static BountyConfig _zoneWideBounty = new();
         private static volatile BountyConfig _zoneWideBountySnapshot = new();
-
-        // the server-wide bounty. Guarded by _lock; read through the volatile copy (every creature death on the server).
-        private static BountyConfig _serverWideBounty = new();
-        private static volatile BountyConfig _serverWideBountySnapshot = new();
 
         // allowed proc spell ids. Guarded by _lock; read through the volatile copy (every proc on a T11+ monster from old gear).
         private static readonly HashSet<uint> _procAllow = new();
@@ -405,7 +394,6 @@ namespace ACE.Server.Managers.ZoneControl
 
             var zoneWideBounty = store.ZoneWideBounty ?? new BountyConfig();
             var procAllow = new HashSet<uint>((store.AllowedProcSpells ?? new List<uint>()).Where(id => id != 0));
-            var serverWideBounty = store.ServerWideBounty ?? new BountyConfig();
 
             // ── commit: from here on nothing can throw ──
             _areas.Clear();
@@ -424,8 +412,6 @@ namespace ACE.Server.Managers.ZoneControl
             _gearLockSnapshot = new HashSet<uint>(_gearLock);
             _zoneWideBounty = zoneWideBounty;
             _zoneWideBountySnapshot = zoneWideBounty.Clone();
-            _serverWideBounty = serverWideBounty;
-            _serverWideBountySnapshot = serverWideBounty.Clone().FreezeTargets();
             _procAllow.Clear();
             foreach (var id in procAllow) _procAllow.Add(id);
             _procAllowSnapshot = new HashSet<uint>(_procAllow);
@@ -540,7 +526,6 @@ namespace ACE.Server.Managers.ZoneControl
                 GearLockSpots = _gearLock.OrderBy(k => k).Select(k => new GearLockSpot { Landblock = (int)(k & 0xFFFF), Variation = (int)(k >> 16) - 1 }).ToList(),
                 ZoneWideBounty = _zoneWideBounty,
                 AllowedProcSpells = _procAllow.OrderBy(x => x).ToList(),
-                ServerWideBounty = _serverWideBounty,
             };
             _ladderSnapshot = new Dictionary<int, LadderApply>(_ladderApplies);
             var jsonOut = JsonConvert.SerializeObject(store);
@@ -672,12 +657,6 @@ namespace ACE.Server.Managers.ZoneControl
 
             var previous = _snapshot;
             _snapshot = new Snapshot(enabledLbs, byLb, boundedByVar, terrOvByVar, terrDonorsByVar); // volatile publish
-
-            var bountyByName = new Dictionary<string, BountyConfig>(StringComparer.OrdinalIgnoreCase);
-            foreach (var area in _areas.Values)
-                if (area?.Bounty != null && !string.IsNullOrEmpty(area.Name))
-                    bountyByName[area.Name] = area.Bounty.Clone();   // Clone sanitizes: the same reward ids the kill path sees
-            _zoneBountyByName = bountyByName;                       // volatile publish
 
             // Boundary perimeter upkeep: markers spawn at landblock load, so when a mutation changes any
             // variation's bounded union, already-loaded landblocks at that variation must re-derive their
@@ -2363,38 +2342,6 @@ namespace ACE.Server.Managers.ZoneControl
             return EndgameZoneRef(wo) != null ? cfg : null;
         }
 
-        /// <summary>The SERVER-WIDE bounty when it is on, else null (master switch ignored: it is not Zone Control gear power, it
-        /// is a server-wide event). Lock-free snapshot read - every creature death asks.</summary>
-        public static BountyConfig ActiveServerWideBounty()
-        {
-            var cfg = _serverWideBountySnapshot;
-            return cfg != null && cfg.Active ? cfg : null;
-        }
-
-        public static BountyConfig GetServerWideBounty()
-        {
-            EnsureInitialized();
-            return (_serverWideBountySnapshot ?? new BountyConfig()).Clone();
-        }
-
-        /// <summary>One locked read-change-write of the server-wide bounty.</summary>
-        public static BountyConfig EditServerWideBounty(Func<BountyConfig, string> edit, out string refused)
-        {
-            refused = null;
-            EnsureInitialized();
-            lock (_lock)
-            {
-                var cfg = (_serverWideBounty ?? new BountyConfig()).Clone();
-                refused = edit(cfg);
-                if (refused != null)
-                    return (_serverWideBounty ?? new BountyConfig()).Clone();
-                _serverWideBounty = cfg;
-                _serverWideBountySnapshot = cfg.Clone().FreezeTargets();
-                Save();
-                return cfg.Clone();
-            }
-        }
-
         /// <summary>ALLOWED PROCS (owner 2026-10-06): true = this proc spell is never force-resisted for being on gear below T11.
         /// Lock-free snapshot read.</summary>
         public static bool IsProcAllowed(uint spellId) => _procAllowSnapshot.Contains(spellId);
@@ -2449,10 +2396,6 @@ namespace ACE.Server.Managers.ZoneControl
         /// null. Same rules as Zone Share: the most specific zone decides, enabled zones at v11+ only, nothing while the master
         /// switch is off. Asked for both the killer and the victim (they must be in the same area). Lock-free snapshot read.
         /// </summary>
-        /// <summary>Every zone's Bounty by zone name - enabled or not, switched on or not - as sanitized copies (the same reward
-        /// ids the kill path sees). Lock-free; the shared bounty timer asks it for a reward's current cooldown.</summary>
-        public static IReadOnlyDictionary<string, BountyConfig> ZoneBountiesByName => _zoneBountyByName;
-
         public static (string Name, BountyConfig Reward)? ResolveBounty(WorldObject wo)
         {
             var best = EndgameZoneRef(wo);

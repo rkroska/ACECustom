@@ -406,7 +406,7 @@ namespace ACE.Server.Managers
             // SET recipe would record against the older resolution.
             ZoneControl.ZoneStatResolver.TinkerSnapshot zcOwned = null;
             var zcRestamped = false;
-            if (success && ZoneControl.ZoneControlManager.IsZcGear(target))
+            if (success && ZoneControl.ZoneCraftGate.TierOf(target) >= Factories.LootGenerationFactory.ZoneLootSetMinTier)   // ZcTier or a legacy WeaponAugScaleTier
             {
                 // never re-stamped while worn: that runs through the equip path, which keeps the worn caches in step
                 zcRestamped = target.Wielder == null && ZoneControl.ZoneStatResolver.ApplyIfStale(target);

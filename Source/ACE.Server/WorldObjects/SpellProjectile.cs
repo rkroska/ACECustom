@@ -636,7 +636,7 @@ namespace ACE.Server.WorldObjects
                 attackSkill = sourceCreature.GetCreatureSkill(Spell.School);
 
             // critical hit
-            var criticalChance = GetWeaponMagicCritFrequency(weapon, sourceCreature, attackSkill, target);
+            var criticalChance = GetWeaponMagicCritFrequency(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, attackSkill, target);
 
             var critRoll = ThreadSafeRandom.Next(0.0f, 1.0f);
             if (tr != null) { tr.CritChance = criticalChance; tr.CritRoll = critRoll; }
@@ -675,7 +675,7 @@ namespace ACE.Server.WorldObjects
             var elementalDamageMod = GetCasterElementalDamageModifier(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, target, Spell.DamageType);
 
             // Possible 2x + damage bonus for the slayer property
-            var slayerMod = GetWeaponCreatureSlayerModifier(weapon, sourceCreature, target);
+            var slayerMod = GetWeaponCreatureSlayerModifier(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, target);
 
             var attribBonus = 1.0f;
             if (sourcePlayer != null)
@@ -697,7 +697,7 @@ namespace ACE.Server.WorldObjects
                 // derived below, once the base is final (life aug term, zone replacement, variance).
                 if (criticalHit)
                 {
-                    weaponCritDamageMod = GetWeaponCritDamageMod(weapon, sourceCreature, attackSkill, target);
+                    weaponCritDamageMod = GetWeaponCritDamageMod(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, attackSkill, target);
                     // Zone Control spell crits mirror melee for LIFE projectiles too (owner 2026-10-04): the crit floor and the
                     // aug crit term with the caster's LIFE augs, as war / void take theirs below
                     if (zcCritMirror)
@@ -799,7 +799,7 @@ namespace ACE.Server.WorldObjects
                     // base (max roll + aug term + skill bonus) - computed AFTER the base is built,
                     // in the unified block below, so procs / zone bases / augs all crit in full.
                     // PvP keeps the retail halved-min rule, deliberately out of scope.
-                    weaponCritDamageMod = GetWeaponCritDamageMod(weapon, sourceCreature, attackSkill, target);
+                    weaponCritDamageMod = GetWeaponCritDamageMod(HandCastParityWeapon(weapon, sourceCreature), sourceCreature, attackSkill, target);
 
                     if (isPVP) // PvP: 50% of the MIN damage added to normal damage roll
                         critDamageBonus = Spell.MinDamage * 0.5f * weaponCritDamageMod;

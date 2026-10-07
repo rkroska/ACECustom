@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using ACE.Server.Managers.ZoneScaling;
 
 namespace ACE.Server.Managers.ZoneControl
@@ -92,32 +91,6 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Several rewards per area (owner 2026-09-23: "may use multiple rewards in some zones"). Each counts on its own.</summary>
         public List<BountyEntry> Entries { get; set; } = new();
 
-        /// <summary>SERVER-WIDE bounty only (owner 2026-10-06: "a single bounty, that can be achieved by killing the wcids (multiple,
-        /// optional) anywhere"): the creature WCIDs whose kills count. Empty = any kill that pays XP / luminance.</summary>
-        public List<uint> TargetWcids { get; set; } = new();
-
-        /// <summary>The most target WCIDs one bounty holds (the edit refuses more; a hand-edited store is cut here). Kept small:
-        /// the target list rides the admin payload with every name.</summary>
-        public const int MaxTargets = 50;
-
-        // set once by FreezeTargets on the PUBLISHED snapshot (never edited after); an unfrozen copy - one being edited - reads the list
-        private HashSet<uint> _frozenTargets;
-
-        /// <summary>Builds the target lookup set. Call it only on a copy that is published and never edited again (the server-wide
-        /// snapshot); returns this.</summary>
-        public BountyConfig FreezeTargets()
-        {
-            _frozenTargets = new HashSet<uint>(TargetWcids ?? new List<uint>());
-            return this;
-        }
-
-        /// <summary>Is this creature WCID one of the targets - asked on every creature death while targets are set: a set lookup on
-        /// the frozen snapshot, the list otherwise.</summary>
-        public bool IsTarget(uint wcid) => _frozenTargets?.Contains(wcid) ?? TargetWcids?.Contains(wcid) ?? false;
-
-        /// <summary>Does this bounty have targets at all - read from the same frozen set IsTarget uses, when there is one.</summary>
-        public bool HasTargets => (_frozenTargets?.Count ?? TargetWcids?.Count ?? 0) > 0;
-
         /// <summary>On, with at least one complete reward - the only state that awards anything.</summary>
         public bool Active => Enabled && Entries != null && Entries.Exists(e => e != null && e.Valid);
 
@@ -155,7 +128,6 @@ namespace ACE.Server.Managers.ZoneControl
                 Enabled = Enabled,
                 NextId = NextId,
                 Entries = Entries?.ConvertAll(e => e?.Clone()) ?? new List<BountyEntry>(),
-                TargetWcids = TargetWcids?.Where(w => w != 0).Distinct().Take(MaxTargets).ToList() ?? new List<uint>(),
             };
             copy.Sanitize();
             return copy;

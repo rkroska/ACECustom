@@ -574,10 +574,12 @@ namespace ACE.Server.WorldObjects
                     tryBoost = (int)Math.Round(tryBoost * (double)harmMult);
             }
             // DAMAGE TAKEN multiplier (owner 2026-10-05): any Harm on a Zone Control monster - not the capture wand's fixed cap
-            // (useHarmCap), which stays unmodified like the melee UseDamageCap path
-            else if (tryBoost < 0 && spell.VitalDamageType == DamageType.Health && !useHarmCap && !(targetCreature is Player))
+            // (useHarmCap), which stays unmodified like the melee UseDamageCap path. The life-aug bonus below is scaled by it too.
+            var harmTakenMult = 1f;
+            if (!(tryBoost < 0 && spell.VitalDamageType == DamageType.Health && player == null && creature != null && targetCreature is Player)
+                && tryBoost < 0 && spell.VitalDamageType == DamageType.Health && !useHarmCap && !(targetCreature is Player))
             {
-                var harmTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(targetCreature);
+                harmTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(targetCreature);
                 if (harmTakenMult != 1f)
                     tryBoost = (int)Math.Round(tryBoost * (double)harmTakenMult);
             }
@@ -625,7 +627,8 @@ namespace ACE.Server.WorldObjects
             }
             if (!useHarmCap && player != null && tryBoost < 0)
             {
-                tryBoost -= (int)player.EffectiveLifeAugCount;
+                // scaled by the zone's damage-taken multiplier like the rest of the Harm (1.0 everywhere else)
+                tryBoost -= (int)Math.Round(player.EffectiveLifeAugCount * (double)harmTakenMult);
             }
 
             string srcVital;
@@ -938,6 +941,8 @@ namespace ACE.Server.WorldObjects
             if (spell.TransferCap != 0 && srcVitalChange > spell.TransferCap)
                 srcVitalChange = (uint)spell.TransferCap;
 
+            var drainTakenMult = 1f;
+
             // per-monster DAMAGE MULTIPLIER (owner 2026-10-03: "cover harm, drain and DoTs too"): a monster's Drain Health on a
             // player, after the spell's cap, never more than the player has
             if (isDrain && spell.Source == PropertyAttribute2nd.Health && srcVitalChange > 0 && transferSource is Player drainedPlayer && this is Creature drainer)
@@ -946,10 +951,11 @@ namespace ACE.Server.WorldObjects
                 if (drainMult != 1f)
                     srcVitalChange = (uint)Math.Min(Math.Round(srcVitalChange * (double)drainMult), drainedPlayer.Health.Current);
             }
-            // DAMAGE TAKEN multiplier (owner 2026-10-05): any Drain Health on a Zone Control monster
+            // DAMAGE TAKEN multiplier (owner 2026-10-05): any Drain Health on a Zone Control monster (the life-aug bonus added to
+            // the drain below is scaled by it too)
             else if (isDrain && spell.Source == PropertyAttribute2nd.Health && srcVitalChange > 0 && !(transferSource is Player))
             {
-                var drainTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(transferSource);
+                drainTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(transferSource);
                 if (drainTakenMult != 1f)
                     srcVitalChange = (uint)Math.Min(Math.Round(srcVitalChange * (double)drainTakenMult), transferSource.Health.Current);
                 // the spell's TransferCap still caps the drain (and with it the heal below)
@@ -1014,7 +1020,7 @@ namespace ACE.Server.WorldObjects
                 // Only boost a transfer that is actually moving something. These are unsigned
                 // magnitudes, so subtracting from a zero change wraps to ~uint.MaxValue.
                 if (srcVitalChange > 0)
-                    srcVitalChange += (uint)player.EffectiveLifeAugCount;
+                    srcVitalChange += (uint)Math.Round(player.EffectiveLifeAugCount * (double)drainTakenMult);   // 1.0 off Zone Control monsters
 
                 if (destVitalChange > 0)
                     destVitalChange += (uint)player.EffectiveLifeAugCount;

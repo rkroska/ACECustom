@@ -40,7 +40,8 @@ namespace ACE.Server.Command.Handlers
             Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", nameParts));
             if (target == null) return;
             target.SendToJail(jailTime);
-            var howLong = jailTime.HasValue ? $" for {jailTime.Value.GetFriendlyLongString()}" : "";
+            // the REQUESTED sentence: a longer one already running is kept (SendToJail)
+            var howLong = jailTime.HasValue ? $" (requested {jailTime.Value.GetFriendlyLongString()})" : "";
             PlayerManager.BroadcastToAuditChannel(session.Player, $"[Jail] Player {target.Name} was sent to jail{howLong} by {session.Player.Name}");
         }
 

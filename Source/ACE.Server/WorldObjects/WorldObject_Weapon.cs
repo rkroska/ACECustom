@@ -640,7 +640,8 @@ namespace ACE.Server.WorldObjects
         public static readonly float ElementalDamageBonusPvPReduction = 0.5f;
 
         /// <summary>Jewelry Cast on Strike (key 54, owner 2026-10-05: damage "like a hand-cast of that spell by the wearer"): the
-        /// wand-derived terms (elemental mod, rend) come from the WEARER's equipped caster, exactly as their own hand-cast would -
+        /// wand-derived terms (elemental mod, rend, crit chance, crit damage, slayer) come from the WEARER's equipped caster, exactly
+        /// as their own hand-cast would -
         /// none held = 1.0, as a bare-hand cast. Any other launcher is returned unchanged.</summary>
         public static WorldObject HandCastParityWeapon(WorldObject launcher, Creature wielder)
         {
