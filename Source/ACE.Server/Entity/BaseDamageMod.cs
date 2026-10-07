@@ -71,6 +71,9 @@ namespace ACE.Server.Entity
                 BaseDamage = new BaseDamage(lockedMax, BaseDamage.Variance);
 
             DamageMod = baseDamageMod + weapon.EnchantmentManager.GetDamageMod();
+            // zone lock: every locked weapon fights with Legendary Blood Thirst (ZoneLockFallback.ThirstTopUp)
+            if (lockedT10)
+                DamageMod += Managers.ZoneControl.ZoneLockFallback.ThirstTopUp(weapon);
 
             if (weapon.IsEnchantable)
             {

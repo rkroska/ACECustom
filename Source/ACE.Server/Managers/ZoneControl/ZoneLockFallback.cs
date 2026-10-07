@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Entity.Models;
 using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Managers.ZoneControl
@@ -32,19 +33,22 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>A full worn kit - the worn ratings below are the total a full locked T11 kit lands on.</summary>
         public const int FullKitPieces = 18;
 
-        /// <summary>Real T10 worn totals (Drexel / Nerd Parade): GearDamage 211/198, DR 92/83, Crit 40/40, CritResist 19/19,
-        /// CritDamage 196/202, CDR 73/73, HealBoost 355/355, Nether 142/144, MaxHealth 1,810/1,675.</summary>
+        /// <summary>Real T10 worn totals of NORMAL players - the average of Grumpy Old Man / Good Grief (owner 2026-10-07: Drexel and
+        /// Nerd Parade "have a ton of paragon items and enchants. Thats not normal"): GearDamage 128/104, DR 33/39, Crit 23/21,
+        /// CritResist 4/0, CritDamage 121/110, CDR 25/17, HealBoost 195/50, Nether 102/90, MaxHealth 1,045/385. Aetheria
+        /// EXCLUDED (owner 2026-10-07): they are not Zone Control gear, so a locked player's aetheria keep counting on their
+        /// own - every real aetheria carries +4 Crit, which put GOM / GG at 23 / 21 and would have counted twice (11 / 9 without).</summary>
         private static readonly Dictionary<PropertyInt, int> WornTotals = new()
         {
-            { PropertyInt.GearDamage, 205 },
-            { PropertyInt.GearDamageResist, 88 },
-            { PropertyInt.GearCrit, 40 },
-            { PropertyInt.GearCritResist, 19 },
-            { PropertyInt.GearCritDamage, 199 },
-            { PropertyInt.GearCritDamageResist, 73 },
-            { PropertyInt.GearHealingBoost, 355 },
-            { PropertyInt.GearNetherResist, 143 },
-            { PropertyInt.GearMaxHealth, 1742 },
+            { PropertyInt.GearDamage, 116 },
+            { PropertyInt.GearDamageResist, 36 },
+            { PropertyInt.GearCrit, 10 },
+            { PropertyInt.GearCritResist, 2 },
+            { PropertyInt.GearCritDamage, 116 },
+            { PropertyInt.GearCritDamageResist, 21 },
+            { PropertyInt.GearHealingBoost, 123 },
+            { PropertyInt.GearNetherResist, 96 },
+            { PropertyInt.GearMaxHealth, 715 },
         };
 
         /// <summary>What the worn ZC pieces are worth for one rating while locked: the real T10 total, scaled by how much of a
@@ -87,25 +91,27 @@ namespace ACE.Server.Managers.ZoneControl
         // DoubleSlash .. TripleThrust and the offhand doubles / triples - the same mask the bench query used
         private const int MultiStrikeMask = 0x79E0;
 
-        /// <summary>Locked launcher damage mod (bow 4.11, crossbow 3.20, atlatl 3.16) +10 pct.</summary>
+        /// <summary>Locked launcher damage mod (bow 3.44, crossbow 3.20, atlatl 3.16 - the top value at least 20 T10 launchers
+        /// carry; Grumpy Old Man's bow is 3.39) +10 pct.</summary>
         public static float? LauncherDamageMod(WorldObject weapon) => weapon?.W_WeaponType switch
         {
-            WeaponType.Bow => (float)(4.11 * OverBestT10),
+            WeaponType.Bow => (float)(3.44 * OverBestT10),
             WeaponType.Crossbow => (float)(3.20 * OverBestT10),
             WeaponType.Thrown => (float)(3.16 * OverBestT10),
             _ => null,
         };
 
-        /// <summary>Locked caster elemental damage mod: T10 best 1.58 +10 pct.</summary>
-        public const float CasterElementalMod = (float)(1.58 * OverBestT10);
+        /// <summary>Locked caster elemental damage mod: T10 best 1.50 (the top value at least 20 T10 casters carry; Good Grief's
+        /// sceptre is 1.245) +10 pct.</summary>
+        public const float CasterElementalMod = (float)(1.50 * OverBestT10);
 
         /// <summary>Biting Strike while locked: capped at the best T10 crit-chance craft (0.33 - Bag of Abyssal-Touched Gems /
         /// Salvaged Yellow Garnet), plus a Bandit Hilt's +0.25 when the weapon carries one (a T10 weapon can have both).</summary>
         public const double BitingStrikeCap = 0.33;
 
-        /// <summary>Crushing Blow while locked, STORED (engine) space: capped at the best general T10 craft, Salvaged Turquoise
-        /// 2.45 (3.45x in combat), plus a Bandit Hilt's +0.175.</summary>
-        public const double CrushingBlowCapStored = 2.45;
+        /// <summary>Crushing Blow while locked, STORED (engine) space: capped at the common T10 craft both normal players carry
+        /// (Bag of Abyssal-Touched Gems, 2.25 = 3.25x in combat), plus a Bandit Hilt's +0.175.</summary>
+        public const double CrushingBlowCapStored = 2.25;
 
         /// <summary>Slayer while locked: the best T10 slayer on the shard (5.0x, 263 weapons).</summary>
         public const double SlayerCap = 5.0;
@@ -127,6 +133,28 @@ namespace ACE.Server.Managers.ZoneControl
         public const int SplitBonusCount = 2;
         public const float SplitBonusDamage = 0.33f, SplitBonusRange = 8f;
         public const float SplitDamageCap = 0.95f, SplitRangeCap = 10f;
+
+        /// <summary>Blood Thirst / Spirit Thirst while locked (owner 2026-10-07: "add blood thirst and spirit thirst to all weapons",
+        /// locked only - both real T10 sets measured carry Legendary Blood Thirst, T11 drops roll it 2 pct of the time). Every
+        /// locked weapon fights as if it had the LEGENDARY cantrip: Blood Thirst +0.10 damage mod (melee / missile), Spirit
+        /// Thirst +0.07 elemental mod (casters). Cantrips of one family do not stack, so a weapon with its own Thirst gets only
+        /// the difference up to Legendary (its own spell already counts through its enchantments). Never written to the item.</summary>
+        private static readonly (int Id, double Value)[] BloodThirstSpells = { (2598, 0.02), (2486, 0.03), (2586, 0.04), (4661, 0.07), (6089, 0.10) };
+        private static readonly (int Id, double Value)[] SpiritThirstSpells = { (3251, 0.01), (3252, 0.02), (3250, 0.03), (4670, 0.05), (6098, 0.07) };
+        public const double LegendaryBloodThirst = 0.10, LegendarySpiritThirst = 0.07;
+
+        /// <summary>The Thirst top-up a locked weapon adds to its damage mod (Blood) or elemental mod (Spirit, casters).</summary>
+        public static float ThirstTopUp(WorldObject weapon)
+        {
+            if (weapon == null)
+                return 0f;
+            var caster = weapon is Caster;
+            var own = 0.0;
+            foreach (var (id, value) in caster ? SpiritThirstSpells : BloodThirstSpells)
+                if (value > own && weapon.Biota.SpellIsKnown(id, weapon.BiotaDatabaseLock))
+                    own = value;
+            return (float)Math.Max(0.0, (caster ? LegendarySpiritThirst : LegendaryBloodThirst) - own);
+        }
 
         /// <summary>A weapon's % stats while locked (owner 2026-10-07: "% attack and % melee d and % magic d etc, need to be t10
         /// tuned"): the best real T10 value per weapon class - the top value at least 20 T10 weapons carry (shard, wield 275+).

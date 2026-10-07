@@ -711,7 +711,8 @@ namespace ACE.Server.WorldObjects
             float modifier;
             var casterLocked = ZcPowerSuppressed(weapon, wielder);
             if (casterLocked && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
-                modifier = ACE.Server.Managers.ZoneControl.ZoneLockFallback.CasterElementalMod + enchantments;
+                modifier = ACE.Server.Managers.ZoneControl.ZoneLockFallback.CasterElementalMod + enchantments
+                    + ACE.Server.Managers.ZoneControl.ZoneLockFallback.ThirstTopUp(weapon);   // + Legendary Spirit Thirst
             else if (!casterLocked && ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetCasterElementalMod(weapon, wielder as Player, out var gradedMod))
                 modifier = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.ComposeCasterModifier(
                     gradedMod, enchantments, ACE.Server.Managers.WeaponScaling.WeaponScalingManager.Current.CasterAuraRescale);

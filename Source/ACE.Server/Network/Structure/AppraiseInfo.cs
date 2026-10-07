@@ -1485,7 +1485,7 @@ namespace ACE.Server.Network.Structure
                     // perfect roll, NOT the quality percentile, and family ladders have different
                     // spreads - a bow F- honestly deals 72% of a perfect bow. Without the word
                     // "damage" that read as a display bug ("how is the worst grade 72%?").
-                    effectDescriptions.Insert(0, zcLocked ? $"- Weapon Grade: {wsGrade} (no bonus damage here)" : $"- Weapon Grade: {wsGrade} ({wsPct}% of max damage)");
+                    effectDescriptions.Insert(0, zcLocked ? (zcT10 ? $"- Weapon Grade: {wsGrade} (T10 damage here)" : $"- Weapon Grade: {wsGrade} (no bonus damage here)") : $"- Weapon Grade: {wsGrade} ({wsPct}% of max damage)");
                 }
                 else
                     effectDescriptions.Insert(0, $"- Weapon Grade: {wsGrade}");
@@ -1513,11 +1513,11 @@ namespace ACE.Server.Network.Structure
             {
                 if (weapon.ProcSpell.HasValue &&
                     ACE.Server.Managers.ZoneControl.ZoneLootMutator.TryGetProcDisplayName(weapon.ProcSpell.Value, out var arcName))
-                    effectDescriptions.Add($"- Cast on Strike: {arcName} ({(zcLocked ? 0f : (weapon.ProcSpellRate ?? 0f)) * 100f:0.#}% proc chance)");
+                    effectDescriptions.Add($"- Cast on Strike: {arcName} ({(!zcLocked ? (weapon.ProcSpellRate ?? 0f) : zcT10 ? (float)Math.Min(weapon.ProcSpellRate ?? 0f, ACE.Server.Managers.ZoneControl.ZoneLockFallback.ProcRateCap) : 0f) * 100f:0.#}% proc chance)");
 
                 if (weapon.ProcSpell2.HasValue &&
                     ACE.Server.Managers.ZoneControl.ZoneLootMutator.TryGetProcDisplayName(weapon.ProcSpell2.Value, out var ringName))
-                    effectDescriptions.Add($"- Cast on Strike: {ringName} ({(zcLocked ? 0f : (weapon.ProcSpellRate2 ?? 0f)) * 100f:0.#}% proc chance)");
+                    effectDescriptions.Add($"- Cast on Strike: {ringName} ({(!zcLocked ? (weapon.ProcSpellRate2 ?? 0f) : zcT10 ? (float)Math.Min(weapon.ProcSpellRate2 ?? 0f, ACE.Server.Managers.ZoneControl.ZoneLockFallback.ProcRateCap) : 0f) * 100f:0.#}% proc chance)");
             }
 
             effectDescriptions.Add($"- Effective Melee Defense: {emdVal}");

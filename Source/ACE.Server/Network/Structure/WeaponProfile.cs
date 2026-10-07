@@ -159,7 +159,7 @@ namespace ACE.Server.Network.Structure
             double baseMultiplier;
             if (profileLocked && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active
                 && ACE.Server.Managers.ZoneControl.ZoneLockFallback.LauncherDamageMod(weapon) is float lockedMod)
-                baseMultiplier = lockedMod;
+                baseMultiplier = lockedMod + ACE.Server.Managers.ZoneControl.ZoneLockFallback.ThirstTopUp(weapon);   // + Legendary Blood Thirst
             else if (!profileLocked && ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetLauncherDamageMod(weapon, holder, out var gradedMod))
                 baseMultiplier = gradedMod;
             else
