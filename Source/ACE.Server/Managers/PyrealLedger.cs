@@ -1037,11 +1037,17 @@ namespace ACE.Server.Managers
             return true;
         }
 
-        /// <summary>Final flush. Call after the shard save queue has drained.</summary>
-        public static void Shutdown()
+        /// <summary>
+        /// Final flush. Call after the shard save queue has drained. Returns false if any final write failed; the
+        /// shutdown marker is then left at "not clean", so the next startup's flags say the stored rows may be behind.
+        /// The result is informational: the ledger never holds up or changes a server shutdown.
+        /// </summary>
+        public static bool Shutdown()
         {
             if (!initialized)
-                return;
+                return true;
+
+            var allWritten = false;
 
             try
             {
@@ -1056,12 +1062,20 @@ namespace ACE.Server.Managers
                     waited += 50;
                 }
 
-                FlushBuckets(force: true);
-                FlushStates();
-                FlushFlags();
+                // run all three even if one fails
+                var bucketsWritten = FlushBuckets(force: true);
+                var statesWritten = FlushStates();
+                var flagsWritten = FlushFlags();
 
-                SaveMeta(new Dictionary<string, string> { ["clean_shutdown"] = "1" });
-                log.Info("[PyrealLedger] Final flush complete");
+                if (bucketsWritten && statesWritten && flagsWritten)
+                {
+                    SaveMeta(new Dictionary<string, string> { ["clean_shutdown"] = "1" });
+                    allWritten = true;
+                    log.Info("[PyrealLedger] Final flush complete");
+                }
+                else
+                    log.Warn($"[PyrealLedger] Final flush incomplete (hourly rows {(bucketsWritten ? "ok" : "FAILED")}, balances {(statesWritten ? "ok" : "FAILED")}, flags {(flagsWritten ? "ok" : "FAILED")}). " +
+                             "The shutdown stays marked not clean, so the next startup notes that on anything it flags.");
             }
             catch (Exception ex)
             {
@@ -1073,6 +1087,8 @@ namespace ACE.Server.Managers
                 ShardDatabase.BankedPyrealsSaved = null;
                 Interlocked.Exchange(ref flushRunning, 0);
             }
+
+            return allWritten;
         }
 
         private static void TimerTick()
@@ -1417,7 +1433,8 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
             return true;
         }
 
-        private static void FlushBuckets(bool force)
+        /// <summary>Returns false if the write failed (the rows are kept for the next flush).</summary>
+        private static bool FlushBuckets(bool force)
         {
             Dictionary<BucketKey, Bucket> toWrite;
 
@@ -1426,7 +1443,7 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
                 if (buckets.Count == 0)
                 {
                     lastBucketFlush = DateTime.UtcNow;
-                    return;
+                    return true;
                 }
                 toWrite = buckets;
                 buckets = new Dictionary<BucketKey, Bucket>();
@@ -1492,17 +1509,21 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
                     }
                 }
                 log.Error($"[PyrealLedger] FlushBuckets failed ({toWrite.Count} rows), will retry: {ex.Message}");
+                return false;
             }
+
+            return true;
         }
 
-        private static void FlushFlags()
+        /// <summary>Returns false if the write failed (the flags are kept for the next flush).</summary>
+        private static bool FlushFlags()
         {
             List<FlagRow> toWrite;
 
             lock (sync)
             {
                 if (pendingFlags.Count == 0)
-                    return;
+                    return true;
                 toWrite = pendingFlags;
                 pendingFlags = new List<FlagRow>();
             }
@@ -1547,7 +1568,10 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
                 lock (sync)
                     pendingFlags.InsertRange(0, toWrite);
                 log.Error($"[PyrealLedger] FlushFlags failed ({toWrite.Count} rows), will retry: {ex.Message}");
+                return false;
             }
+
+            return true;
         }
     }
 }
