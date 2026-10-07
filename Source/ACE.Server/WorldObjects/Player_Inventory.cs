@@ -4362,6 +4362,11 @@ namespace ACE.Server.WorldObjects
 
                 return;
             }
+
+            // pyreal ledger: EmoteManager runs this from a delayed action, after ExecuteEmote's own scope has closed,
+            // so the NPC is labeled here; otherwise every quest reward of coins or notes would be Unattributed
+            using var ledgerScope = PyrealLedger.BeginFor(PyrealLedger.SrcEmote, emoter);
+
             var itemsToReceive = new ItemsToReceive(this);
 
             itemsToReceive.Add(weenieClassId, amount);

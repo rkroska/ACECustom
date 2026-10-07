@@ -1437,9 +1437,14 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
                 using var ctx = new ShardDbContext();
                 var con = OpenConnection(ctx);
 
+                // one transaction for every chunk: a failure rolls all of them back, so the retry below cannot add
+                // an already written chunk a second time
+                using var tx = con.BeginTransaction();
+
                 foreach (var batch in toWrite.Chunk(BatchRows))
                 {
                     using var cmd = NewCommand(con);
+                    cmd.Transaction = tx;
                     var sb = new StringBuilder("INSERT INTO `pyreal_ledger_hourly` (`hour_utc`,`char_id`,`kind`,`source`,`detail_key`,`account_id`,`char_name`,`detail_name`,`events`,`amount_in`,`amount_out`,`units`) VALUES ");
                     for (var i = 0; i < batch.Length; i++)
                     {
@@ -1465,12 +1470,12 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
                     cmd.ExecuteNonQuery();
                 }
 
+                tx.Commit();
                 lastBucketFlush = DateTime.UtcNow;
             }
             catch (Exception ex)
             {
-                // merge back so nothing is lost; a partially written batch may double count on retry, which is
-                // preferable to dropping rows
+                // nothing was committed (the transaction rolled back), so merge everything back for the next flush
                 lock (sync)
                 {
                     foreach (var kv in toWrite)
@@ -1507,9 +1512,14 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
                 using var ctx = new ShardDbContext();
                 var con = OpenConnection(ctx);
 
+                // one transaction for every chunk: a failure rolls all of them back, so the retry below cannot add
+                // an already written chunk a second time
+                using var tx = con.BeginTransaction();
+
                 foreach (var batch in toWrite.Chunk(BatchRows))
                 {
                     using var cmd = NewCommand(con);
+                    cmd.Transaction = tx;
                     var sb = new StringBuilder("INSERT INTO `pyreal_ledger_flags` (`utc`,`char_id`,`account_id`,`char_name`,`flag`,`amount`,`expected`,`actual`,`detail`) VALUES ");
                     for (var i = 0; i < batch.Length; i++)
                     {
@@ -1529,6 +1539,8 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_meta` (
                     cmd.CommandText = sb.ToString();
                     cmd.ExecuteNonQuery();
                 }
+
+                tx.Commit();
             }
             catch (Exception ex)
             {
