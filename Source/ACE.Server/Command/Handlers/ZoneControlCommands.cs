@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
@@ -140,7 +140,7 @@ namespace ACE.Server.Command.Handlers
             + "appearance <name> <palette|shade|scale|translucency|shiny|setup|clothing|palettebase|motion|sound|icon> <value> [--wcid <id>] | clearappearance <name> [field] [--wcid <id>] | copylook <name> <donorWcid> [--wcid <id>] | draftslot <name> [release] | copydraft <name> <destWcid> | becomemob <donorWcid> --wcid <id> | seticon <wcid> <iconDid|clear> [layer] | "
             + "modifier <name> <add|remove|list|catalog|band|slots|special|chance> [args] [--wcid <id>] | "
             + "currency <name> <add|remove|list> [itemWcid] [amount] [chance] [direct|corpse] [--wcid <id>] | "
-            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | bounty <name> <show|on|off|add|set|remove> | zonebounty <show|on|off|add|set|remove> | serverbounty <show|on|off|add|set|remove|target> | procallow [list|add|remove] <spell id> | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
+            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | bounty <name> <show|on|off|add|set|remove> | zonebounty <show|on|off|add|set|remove> | serverbounty <show|on|off|add|set|remove|target> | procallow [list|add|remove] <spell id> | gearlock [list|here|add|remove] | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
             + "mobinfo <wcid> | geninfo <wcid> | genlist [zone] | genedit <wcid> delay|radius|stagger|init|max <value> | "
             + "craft <material> <itemtype> auto|allow|deny | craft list|get|test|enabled|mintier|components | "
             + "effect <name> [dot on|off | dmg <amount> | type <name|percent> | interval <secs>] | reload")]
@@ -190,9 +190,10 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /zonecontrol currency <name> add <itemWcid> <amount> [chance 0..1] [direct|corpse] | remove <itemWcid> | list   [--wcid <id>]   (per-kill bonus-currency drop table; direct = into the killer's inventory)");
                 Msg("  /zonecontrol boundary <name> <on|off|show>   (bounded: players at the zone's variation may only roam bounded-zone landblocks; variation 11+ only)");
                 Msg("  /zonecontrol zoneshare <name> <on|off|show>   (Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship; only while the zone is enabled)");
-            Msg("  /zonecontrol procallow [list] | add <spell id> | remove <spell id>   (proc spells T11+ monsters never resist for being on gear below T11)");
-            Msg("  /zonecontrol serverbounty <show|on|off|add|set|remove> | target add|remove <creature wcid> | target clear   (ONE bounty for killing the target WCIDs ANYWHERE; one timer shared with every bounty)");
-            Msg("  /zonecontrol zonebounty <show|on|off|add|set|remove>   (ONE bounty + ONE timer per character across every T11-T25 zone; replaces the zone bounties while on)");
+                Msg("  /zonecontrol gearlock [list] | here [any] | add|remove <landblock hex> [variation|any]   (T11+ gear is suppressed on these landblocks)");
+                Msg("  /zonecontrol procallow [list] | add <spell id> | remove <spell id>   (proc spells T11+ monsters never resist for being on gear below T11)");
+                Msg("  /zonecontrol serverbounty <show|on|off|add|set|remove> | target add|remove <creature wcid> | target clear   (ONE bounty for killing the target WCIDs ANYWHERE; one timer shared with every bounty)");
+                Msg("  /zonecontrol zonebounty <show|on|off|add|set|remove>   (ONE bounty across every T11-T25 zone, one timer shared with every bounty; replaces the zone bounties while on)");
                 Msg("  /zonecontrol bounty <name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>   (Bounty: items every N kills per player, at most once per cooldown; v11+ only)");
                 Msg("  /zonecontrol survey <name> [lbHex]   (per-landblock content: generator + creature summary; lbHex = full detail for one landblock)");
                 Msg("  /zonecontrol quests <name>   (quest registry for the plugin Quests tab; throttled to one pull per 60s)");
@@ -306,7 +307,13 @@ namespace ACE.Server.Command.Handlers
                     {
                         // Bare get = the GM Tools state alone (session flags + shard-combat rules).
                         // Those are not zone state, so the plugin asks for them zoneless.
-                        if (args.Count < 2) { Msg(BuildSessionPayload(session)); return; }
+                        // chunked like every payload: the bounty / proc tags can make it longer than one chat line should be
+                        if (args.Count < 2)
+                        {
+                            if (session != null) SendChunked(session, BuildSessionPayload(session));
+                            else Msg(BuildSessionPayload(session));
+                            return;
+                        }
                         var getPayload = BuildZonePayload(args[1], wcid, session, includeLive: true);
                         SendChunked(session, getPayload);
                         // seed the change detector (2026-09-03): a live watch on the same target need not re-push this.
@@ -521,17 +528,20 @@ namespace ACE.Server.Command.Handlers
                             glLandblock = glPlayer.Location.LandblockId.Landblock;
                             glVariation = args.Count >= 3 && args[2].Equals("any", StringComparison.OrdinalIgnoreCase)
                                 ? -1 : ZoneControlManager.GetEffectiveVariation(glPlayer);
+                            if (glVariation < -1 || glVariation > ZoneControlManager.GearLockMaxVariation)
+                            { Msg($"Gear lock: this layer (variation {glVariation}) cannot be listed - 0-{ZoneControlManager.GearLockMaxVariation} only, or 'here any'."); return; }
                             glOp = "add";
                         }
                         else if (glOp == "add" || glOp == "remove")
                         {
                             var lbArg = args.Count >= 3 ? args[2].Replace("0x", "").Replace("0X", "") : "";
-                            if (lbArg.Length > 4) lbArg = lbArg.Substring(0, 4);   // a full cell id (8B040021) -> its landblock
+                            if (lbArg.Length == 8) lbArg = lbArg.Substring(0, 4);   // a full cell id (8B040021) -> its landblock
+                            else if (lbArg.Length != 4) { Msg(glUsage); return; }   // a typo of another length is never guessed at
                             if (!int.TryParse(lbArg, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out glLandblock) || glLandblock <= 0 || glLandblock > 0xFFFF)
                             { Msg(glUsage); return; }
                             glVariation = -1;
                             if (args.Count >= 4 && !args[3].Equals("any", StringComparison.OrdinalIgnoreCase)
-                                && (!int.TryParse(args[3], out glVariation) || glVariation < 0 || glVariation > 1000))
+                                && (!int.TryParse(args[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out glVariation) || glVariation < 0 || glVariation > ZoneControlManager.GearLockMaxVariation))
                             { Msg(glUsage); return; }
                         }
                         else { Msg(glUsage); return; }
@@ -557,20 +567,20 @@ namespace ACE.Server.Command.Handlers
                             var ids = ZoneControlManager.ListProcAllow();
                             if (ids.Count == 0) { Msg("Allowed procs: none - every proc from gear below T11 is resisted by T11+ monsters (while Old Gear Proc Resist is on)."); return; }
                             Msg($"Allowed procs ({ids.Count}) - never resisted for being on gear below T11:");
-                            foreach (var id in ids) Msg($"  {id}  {new ACE.Server.Entity.Spell(id).Name}");
+                            foreach (var id in ids) Msg($"  {id}  {SpellName(id)}");
                             return;
                         }
-                        if ((paOp != "add" && paOp != "remove") || args.Count < 3 || !uint.TryParse(args[2], out var paId) || paId == 0)
+                        if ((paOp != "add" && paOp != "remove") || args.Count < 3 || !uint.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var paId) || paId == 0)
                         { Msg(paUsage); return; }
-                        var paSpell = new ACE.Server.Entity.Spell(paId);
-                        if (paOp == "add" && paSpell.NotFound) { Msg($"No spell {paId}. Nothing changed."); return; }
+                        if (paOp == "add" && new ACE.Server.Entity.Spell(paId).NotFound) { Msg($"No spell {paId}. Nothing changed."); return; }
+                        var paName = SpellName(paId);   // a removed id may have no spell data left
                         var paOn = paOp == "add";
                         var paChanged = ZoneControlManager.SetProcAllow(paId, paOn);
                         Msg(paChanged
-                            ? $"Allowed procs: {paSpell.Name} ({paId}) {(paOn ? "ADDED - no longer resisted from old gear" : "removed - resisted from old gear again")}. Live at once."
-                            : $"Allowed procs: {paSpell.Name} ({paId}) was {(paOn ? "already listed" : "not listed")}.");
+                            ? $"Allowed procs: {paName} ({paId}) {(paOn ? "ADDED - no longer resisted from old gear" : "removed - resisted from old gear again")}. Live at once."
+                            : $"Allowed procs: {paName} ({paId}) was {(paOn ? "already listed" : "not listed")}.");
                         if (paChanged)
-                            PlayerManager.BroadcastToAuditChannel(session?.Player, $"procallow {paOp} {paId} {paSpell.Name}");
+                            PlayerManager.BroadcastToAuditChannel(session?.Player, $"procallow {paOp} {paId} {paName}");
                         return;
                     }
 
@@ -2470,14 +2480,17 @@ namespace ACE.Server.Command.Handlers
                     {
                         // SERVER-WIDE BOUNTY (owner 2026-10-06): one bounty, earned by killing its target WCIDs ANYWHERE (empty target list
                         // = any kill that pays XP / luminance). Same reward verbs as a zone's bounty, plus target add|remove|clear.
-                        if (args.Count < 2) { Msg("Usage: serverbounty show | " + BountyManager.EditUsage + " | target add <creature wcid> | target remove <creature wcid> | target clear"); return; }
+                        if (args.Count < 2) { Msg("Usage: serverbounty show | " + BountyManager.EditUsage + " | " + BountyManager.TargetUsage); return; }
                         var op = args[1].ToLowerInvariant();
                         var edited = ZoneControlManager.GetServerWideBounty();
                         if (op != "show")
                         {
-                            if (session.AccessLevel < AccessLevel.Admin) { Msg("Changing a Bounty needs Admin access (the same as a dungeon's)."); return; }
-                            edited = ZoneControlManager.EditServerWideBounty(c => BountyManager.Edit(c, op, args, 2), out var err);
+                            // the server console has no session and counts as admin
+                            if (session != null && session.AccessLevel < AccessLevel.Admin) { Msg("Changing a Bounty needs Admin access (the same as a dungeon's)."); return; }
+                            edited = ZoneControlManager.EditServerWideBounty(c => BountyManager.Edit(c, op, args, 2, allowTargets: true), out var err);
                             if (err != null) { Msg($"Server bounty: {err}"); return; }
+                            // it hands items to every player on the shard: every change is on the audit channel
+                            PlayerManager.BroadcastToAuditChannel(session?.Player, $"serverbounty {string.Join(" ", args.Skip(1))} -> {BountyManager.Describe(edited)}");
                         }
                         Msg($"Server Bounty (kills anywhere; one timer shared with every bounty) {BountyManager.Describe(edited)}"
                             + (edited.TargetWcids.Count == 0 ? " - no targets: any kill that pays XP / luminance counts." : "."));
@@ -2493,9 +2506,11 @@ namespace ACE.Server.Command.Handlers
                         var edited = ZoneControlManager.GetZoneWideBounty();
                         if (op != "show")
                         {
-                            if (session.AccessLevel < AccessLevel.Admin) { Msg("Changing a Bounty needs Admin access (the same as a dungeon's)."); return; }
+                            // the server console has no session and counts as admin
+                            if (session != null && session.AccessLevel < AccessLevel.Admin) { Msg("Changing a Bounty needs Admin access (the same as a dungeon's)."); return; }
                             edited = ZoneControlManager.EditZoneWideBounty(c => BountyManager.Edit(c, op, args, 2), out var err);
                             if (err != null) { Msg($"Zone-wide bounty: {err}"); return; }
+                            PlayerManager.BroadcastToAuditChannel(session?.Player, $"zonebounty {string.Join(" ", args.Skip(1))} -> {BountyManager.Describe(edited)}");
                         }
                         Msg($"Zone-wide Bounty (every T11-T25 zone; one timer shared with every bounty) {BountyManager.Describe(edited)}"
                             + (edited.Active ? " - zone bounties are replaced while it is on." : "."));
@@ -3149,34 +3164,42 @@ namespace ACE.Server.Command.Handlers
               .Append(ServerConfig.zc_low_tier_item_spell_resist.Value ? '1' : '0');   // [6] 2026-10-06
         }
 
-        /// <summary>"|gearlock=LLLL~V;LLLL~*" - the gear lock landblocks (owner 2026-10-05) for GM Tools > Shard Combat.
-        /// Always present (possibly empty) so the plugin can tell "none" from "older server". APPEND-ONLY.</summary>
-        /// <summary>"|zonebounty=1|zonebountylist=id:wcid:amount:kills:minutes:name+..." - the zone-wide bounty (owner 2026-10-05) for the
-        /// plugin's Bounty card. Always present so the plugin can tell "off" from "older server". APPEND-ONLY.</summary>
-        /// <summary>"|procallow=id~name;id~name" - the allowed proc spells (owner 2026-10-06). Always present (possibly empty) so
-        /// the plugin can tell "none" from "older server". APPEND-ONLY.</summary>
+        /// <summary>A spell's name, or "spell N" when the id has no spell data (Spell.Name throws then) - a stale allow-list entry
+        /// must never break a payload or a command.</summary>
+        private static string SpellName(uint id)
+        {
+            var spell = new ACE.Server.Entity.Spell(id);
+            return spell.NotFound ? "spell " + id : spell.Name;
+        }
+
         /// <summary>"|serverbounty=0/1|serverbountylist=...|serverbountytargets=wcid~name;..." - the server-wide bounty (2026-10-06).
         /// Always present so the plugin can tell "off" from "older server". APPEND-ONLY.</summary>
         private static void AppendServerBounty(StringBuilder sb)
         {
-            var sb2 = ZoneControlManager.GetServerWideBounty();
-            sb.Append("|serverbounty=").Append(sb2.Enabled ? 1 : 0).Append("|serverbountylist=").Append(BountyManager.Wire(sb2))
-              .Append("|serverbountytargets=").Append(string.Join(";", sb2.TargetWcids.Select(w =>
-                  w + "~" + (RoomAssignManager.ItemName(w) ?? "").Replace(";", " ").Replace("~", " ").Replace("|", " "))));
+            var serverBounty = ZoneControlManager.GetServerWideBounty();
+            sb.Append("|serverbounty=").Append(serverBounty.Enabled ? 1 : 0).Append("|serverbountylist=").Append(BountyManager.Wire(serverBounty))
+              .Append("|serverbountytargets=").Append(string.Join(";", serverBounty.TargetWcids.Select(w =>
+                  w + "~" + RoomAssignManager.BuilderWireName(RoomAssignManager.ItemName(w)))));
         }
 
+        /// <summary>"|procallow=id~name;id~name" - the allowed proc spells (owner 2026-10-06). Always present (possibly empty) so
+        /// the plugin can tell "none" from "older server". APPEND-ONLY.</summary>
         private static void AppendProcAllow(StringBuilder sb)
         {
             sb.Append("|procallow=").Append(string.Join(";", ZoneControlManager.ListProcAllow().Select(id =>
-                id + "~" + (new ACE.Server.Entity.Spell(id).Name ?? "").Replace(";", " ").Replace("~", " ").Replace("|", " "))));
+                id + "~" + RoomAssignManager.BuilderWireName(SpellName(id)))));
         }
 
+        /// <summary>"|zonebounty=1|zonebountylist=id:wcid:amount:kills:minutes:name+..." - the zone-wide bounty (owner 2026-10-05) for the
+        /// plugin's Bounty card. Always present so the plugin can tell "off" from "older server". APPEND-ONLY.</summary>
         private static void AppendZoneBounty(StringBuilder sb)
         {
             var zb = ZoneControlManager.GetZoneWideBounty();
             sb.Append("|zonebounty=").Append(zb.Enabled ? 1 : 0).Append("|zonebountylist=").Append(BountyManager.Wire(zb));
         }
 
+        /// <summary>"|gearlock=LLLL~V;LLLL~*" - the gear lock landblocks (owner 2026-10-05) for GM Tools > Shard Combat.
+        /// Always present (possibly empty) so the plugin can tell "none" from "older server". APPEND-ONLY.</summary>
         private static void AppendGearLock(StringBuilder sb)
         {
             sb.Append("|gearlock=");
@@ -3948,10 +3971,6 @@ namespace ACE.Server.Command.Handlers
 
             AppendLadder(sb);   // APPEND-ONLY (2026-08-22): ladder apply versions, last so older plugins ignore it
             AppendMissilePower(sb);   // APPEND-ONLY (2026-09-12): the missile power ladder, after the ladder tag
-            AppendGearLock(sb);       // APPEND-ONLY (2026-10-05): gear lock landblocks, after the missile power ladder
-            AppendZoneBounty(sb);     // APPEND-ONLY (2026-10-06): the zone-wide bounty, after the gear lock
-            AppendProcAllow(sb);      // APPEND-ONLY (2026-10-06): the allowed proc spells, after the zone-wide bounty
-            AppendServerBounty(sb);   // APPEND-ONLY (2026-10-06): the server-wide bounty, after the allowed procs
             // APPEND-ONLY (2026-08-25). ðŸ”´ vp here is
             // ResolveProfileForDisplay - the EVALUATED view after the Default -> zone -> wcid merge, which is
             // the convention every other layered tag in this payload already uses (the stat rows, cantrips=,
@@ -3965,9 +3984,14 @@ namespace ACE.Server.Command.Handlers
             // APPEND-ONLY (2026-08-29). Same evaluated-view rule as wpnoff above: this answers "which stats are OFF FOR
             // THIS SCOPE", inherited included.
             AppendStatOffs(sb, vp?.StatToggles);
-            // LAST tag in the [[ZC]] payload - APPEND-ONLY (2026-10-04, D8): zone scope only.
+            // APPEND-ONLY (2026-10-04, D8): zone scope only.
             if (!wcid.HasValue && area != null)
                 AppendBagRanks(sb, area.Name);
+            // APPEND-ONLY (2026-10-05/06): the shard-wide tags, after everything older (the plugin matches tags by key)
+            AppendGearLock(sb);
+            AppendZoneBounty(sb);
+            AppendProcAllow(sb);
+            AppendServerBounty(sb);
             return sb.ToString();
         }
 

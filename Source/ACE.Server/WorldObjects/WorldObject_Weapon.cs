@@ -425,7 +425,26 @@ namespace ACE.Server.WorldObjects
         public static bool ZcPowerSuppressed(WorldObject weapon, Creature wielder)
             => ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, wielder);
 
-        private const float defaultPhysicalCritFrequency = 0.1f;    // 10% base chance
+        /// <summary>The crit rate a weapon falls back to while its Zone power is suppressed (the appraisal shows it): a caster the
+        /// magic base - endgame 0.10 while Zone Control rules its gear, else retail 0.05 - every other weapon the physical base.</summary>
+        internal static float LockedCritFrequency(WorldObject weapon)
+            => weapon is Caster
+                ? (ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon) ? DefaultMagicCritFrequency : RetailMagicCritFrequency)
+                : DefaultPhysicalCritFrequency;
+
+        /// <summary>Is this item's Cast on Strike suppressed (2026-10-06)? A JEWELRY Cast on Strike (key 54) is worn gear: the worn
+        /// lock, and nothing at all while Zone Control is off (ruling 1, "fully inert"); every other proc: the weapon lock. Config
+        /// first, so the common no-lock setup reads nothing off the item.</summary>
+        public static bool ZcProcSuppressed(WorldObject item, Creature wielder)
+        {
+            if (item == null || !ACE.Server.Managers.ZoneControl.ZoneControlManager.AnyPowerGate)
+                return false;
+            if ((item.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0) > 0)
+                return !ACE.Server.Managers.ServerConfig.zonecontrol_enabled.Value || ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(wielder);
+            return ZcPowerSuppressed(item, wielder);
+        }
+
+        internal const float DefaultPhysicalCritFrequency = 0.1f;    // 10% base chance (also the locked appraisal value)
 
         /// <summary>
         /// Returns the critical chance for the attack weapon
@@ -434,8 +453,8 @@ namespace ACE.Server.WorldObjects
         {
             // zone lock: outside authored areas a ZC weapon's Biting Strike stamp reads as absent
             var critRate = ZcPowerSuppressed(weapon, wielder)
-                ? defaultPhysicalCritFrequency
-                : (float)(weapon?.CriticalFrequency ?? defaultPhysicalCritFrequency);
+                ? DefaultPhysicalCritFrequency
+                : (float)(weapon?.CriticalFrequency ?? DefaultPhysicalCritFrequency);
 
             if (weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike)
                 && !CritImbuesSuppressed(wielder, weapon))   // owner 2026-08-25: Biting Strike is the only crit-chance source on a player weapon
@@ -497,7 +516,7 @@ namespace ACE.Server.WorldObjects
         // chance comes up from retail's speculative 0.05 to match melee/missile's 0.10, so Biting
         // Strike means the same thing on every school. The retail note this shadowed was itself
         // speculation ("what this was actually increased to ... was never stated").
-        private const float defaultMagicCritFrequency = 0.10f;
+        internal const float DefaultMagicCritFrequency = 0.10f;
 
         /// <summary>
         /// RETAIL magic crit chance, restored for ungoverned content (owner 2026-09-10).
@@ -506,7 +525,7 @@ namespace ACE.Server.WorldObjects
         /// ~1.6x crit DAMAGE from the SpellProjectile rewrite. The unified value stays for governed
         /// content; anything below variation 11, and any player on retail gear, reads retail again.
         /// </summary>
-        private const float retailMagicCritFrequency = 0.05f;
+        internal const float RetailMagicCritFrequency = 0.05f;
 
 
         /// <summary>
@@ -529,9 +548,9 @@ namespace ACE.Server.WorldObjects
                 // crits resistable - but it shipped inside the series and changed base-world behavior,
                 // so it is now GOVERNED-ONLY. Revisit when the series is re-landed properly.
                 if (!ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToMonster(wielder))
-                    return retailMagicCritFrequency;
+                    return RetailMagicCritFrequency;
 
-                var wandlessRate = GetZoneCritChanceOverride(wielder) ?? defaultMagicCritFrequency;
+                var wandlessRate = GetZoneCritChanceOverride(wielder) ?? DefaultMagicCritFrequency;
                 return wandlessRate * Creature.GetNegativeRatingMod(target.GetCritResistRating());
             }
 
@@ -546,7 +565,7 @@ namespace ACE.Server.WorldObjects
             var endgameCast = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(wielder, weapon);
 
             // zone lock: outside authored areas a ZC weapon's Biting Strike stamp reads as absent
-            var baseRate = endgameCast ? defaultMagicCritFrequency : retailMagicCritFrequency;
+            var baseRate = endgameCast ? DefaultMagicCritFrequency : RetailMagicCritFrequency;
             var critRate = ZcPowerSuppressed(weapon, wielder)
                 ? baseRate
                 : (float)(weapon.GetProperty(PropertyFloat.CriticalFrequency) ?? baseRate);
@@ -576,7 +595,7 @@ namespace ACE.Server.WorldObjects
             return critRate;
         }
 
-        private const float defaultCritDamageMultiplier = 1.0f;
+        internal const float DefaultCritDamageMultiplier = 1.0f;
 
         /// <summary>
         /// Returns the critical damage multiplier for the attack weapon
@@ -588,8 +607,8 @@ namespace ACE.Server.WorldObjects
             var zcSuppressed = ZcPowerSuppressed(weapon, wielder);
 
             var critDamageMod = zcSuppressed
-                ? defaultCritDamageMultiplier
-                : (float)(weapon?.GetProperty(PropertyFloat.CriticalMultiplier) ?? defaultCritDamageMultiplier);
+                ? DefaultCritDamageMultiplier
+                : (float)(weapon?.GetProperty(PropertyFloat.CriticalMultiplier) ?? DefaultCritDamageMultiplier);
 
             if (weapon != null && weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow)
                 && !CritImbuesSuppressed(wielder, weapon))   // owner 2026-08-25: Crushing Blow is the only crit-damage source on a player weapon
@@ -620,9 +639,6 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public static readonly float ElementalDamageBonusPvPReduction = 0.5f;
 
-        /// <summary>
-        /// Returns a multiplicative elemental damage modifier for the magic caster weapon type
-        /// </summary>
         /// <summary>Jewelry Cast on Strike (key 54, owner 2026-10-05: damage "like a hand-cast of that spell by the wearer"): the
         /// wand-derived terms (elemental mod, rend) come from the WEARER's equipped caster, exactly as their own hand-cast would -
         /// none held = 1.0, as a bare-hand cast. Any other launcher is returned unchanged.</summary>
@@ -633,6 +649,9 @@ namespace ACE.Server.WorldObjects
             return wielder?.GetEquippedWand() as Caster;
         }
 
+        /// <summary>
+        /// Returns a multiplicative elemental damage modifier for the magic caster weapon type
+        /// </summary>
         public static float GetCasterElementalDamageModifier(WorldObject weapon, Creature wielder, Creature target, DamageType damageType)
         {
             if (wielder == null || !(weapon is Caster) || weapon.W_DamageType != damageType)
@@ -943,7 +962,7 @@ namespace ACE.Server.WorldObjects
 
         /// <param name="endgameGear">
         /// True only when the wielder's caster is ZC-stamped (the gear half of the canonical gate).
-        /// Added 2026-09-10 after review: the magic FLOOR below reads defaultMagicCritFrequency, which
+        /// Added 2026-09-10 after review: the magic FLOOR below reads DefaultMagicCritFrequency, which
         /// the series raised 0.05 -> 0.10. Because this method is ungated, a RETAIL caster carrying a
         /// Critical Strike imbue was floored at 10 pct instead of the baseline 5 pct whenever its base
         /// magic skill was low enough for the floor to win - and GetWeaponMagicCritFrequency then takes
@@ -994,7 +1013,7 @@ namespace ACE.Server.WorldObjects
             // which is exactly equal to the minimum base skill for CS Missile becoming effective.
 
             // CS Magic is slightly different from all the other skill/imbue combinations, in that the MinCriticalStrikeMagicMod
-            // is different from the defaultMagicCritFrequency (5% vs. 2%)
+            // is different from the DefaultMagicCritFrequency (5% vs. 2%)
 
             // If we simply clamp to min. 5% here, then a player will be getting a +3% bonus from from base skill 0-90 in PvE,
             // and base skill 0-120 in PvP
@@ -1002,16 +1021,16 @@ namespace ACE.Server.WorldObjects
             // This code is checking if the player has reached the skill threshold for receiving the 5% bonus
             // (base skill 90 in PvE, base skill 120 in PvP)
 
-            /*var criticalStrikeMod = skillType == ImbuedSkillType.Magic ? defaultMagicCritFrequency : defaultPhysicalCritFrequency;
+            /*var criticalStrikeMod = skillType == ImbuedSkillType.Magic ? DefaultMagicCritFrequency : DefaultPhysicalCritFrequency;
 
-            var minEffective = skillType == ImbuedSkillType.Magic ? MinCriticalStrikeMagicMod : defaultPhysicalCritFrequency;
+            var minEffective = skillType == ImbuedSkillType.Magic ? MinCriticalStrikeMagicMod : DefaultPhysicalCritFrequency;
 
             if (baseMod >= minEffective)
                 criticalStrikeMod = baseMod;*/
 
             var defaultCritFrequency = skillType == ImbuedSkillType.Magic
-                ? (endgameGear ? defaultMagicCritFrequency : retailMagicCritFrequency)
-                : defaultPhysicalCritFrequency;   // physical floor is 0.1f at baseline and now - untouched
+                ? (endgameGear ? DefaultMagicCritFrequency : RetailMagicCritFrequency)
+                : DefaultPhysicalCritFrequency;   // physical floor is 0.1f at baseline and now - untouched
 
             var criticalStrikeMod = Math.Max(defaultCritFrequency, baseMod);
 
@@ -1417,8 +1436,9 @@ namespace ACE.Server.WorldObjects
         {
             // zone lock: outside authored areas a ZC weapon's Cast on Strike slots (arc AND ring)
             // never fire. `this` is the proccing item, so cloaks/aetheria/player Ring Glyph
-            // crafts are untouched - they never carry ZcTier.
-            if (ZcPowerSuppressed(this, attacker as Creature))
+            // crafts are untouched - they never carry ZcTier. A JEWELRY Cast on Strike (key 54) follows the worn lock, the same
+            // gate its appraisal line shows (ZcProcSuppressed, 2026-10-06).
+            if (ZcProcSuppressed(this, attacker as Creature))
                 return;
 
             // Slot 1 - the arc, and every pre-existing proc on the shard (cloaks, aetheria, the ~11,700
@@ -1506,6 +1526,10 @@ namespace ACE.Server.WorldObjects
                     // TODO: spell.NonComponentTargetType should probably always go through TryCastSpell_WithItemRedirects,
                     // however i don't feel like testing every possible known type of item procspell in the current db to ensure there are no regressions
                     // current test case: 33990 Composite Bow casting Tattercoat
+                    // T11+ low-tier PROC resist (2026-10-06): judged ONCE on the creature here - the redirect casts on each piece
+                    // of its armor (target = an item), which the per-cast gate in TryCastSpell_Inner cannot see
+                    if (ACE.Server.Managers.ZoneControl.TierHitGate.BlockLowTierCast(attacker, spellTarget, spell, itemCaster))
+                        return;
                     attacker.TryCastSpell_WithRedirects(spell, spellTarget, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
                 }
                 else

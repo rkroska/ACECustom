@@ -58,7 +58,7 @@ namespace ACE.Server.Factories
             public int Shield;
             public int Amulet, Ring, Bracelet, Trinket;
             public int Cloak;
-            public int Clothing;   // shirts / pants / robes from the retail clothing table (2026-10-06)
+            public int Clothing;   // shirts / pants (undergarment coverage) from the retail clothing table (2026-10-06)
 
             /// <summary>BUDGET MODE only: the exact weapon families to create, one weapon each. Null in
             /// legacy mode, where Weapons is instead a MULTIPLIER over every family (1 = all nine).</summary>
@@ -106,6 +106,16 @@ namespace ACE.Server.Factories
         // accepted/rejected by slot WITHOUT instantiating a WorldObject for each attempt.
         private static readonly ConcurrentDictionary<WeenieClassName, ACE.Entity.Enum.CoverageMask> zoneSetCoverage = new();
 
+        /// <summary>Clothing that fills an ARMOR slot (owner 2026-10-06: "they would fall into the armor bucket"): a cap / cowl / hat
+        /// (head only), gloves (hands only) or shoes (feet only) from the retail clothing table - drawn into the helm / glove / boot
+        /// slots and priced and resolved as T11 armor. Robes and every other multi-area piece are not (a T11 robe would be one
+        /// piece doing the work of five, owner to rule).</summary>
+        public static bool IsArmorSlotClothing(WorldObject wo)
+            => wo != null && wo.ItemType == ACE.Entity.Enum.ItemType.Clothing && IsArmorSlotCoverage((uint)(wo.ClothingPriority ?? 0));
+
+        private static bool IsArmorSlotCoverage(uint coverage)
+            => (coverage & ~(uint)ACE.Entity.Enum.CoverageMaskHelper.Extremities) == 0 && System.Numerics.BitOperations.IsPow2(coverage);   // exactly one of head / hands / feet
+
         private static ACE.Entity.Enum.CoverageMask GetZoneSetCoverage(WeenieClassName wcid)
         {
             return zoneSetCoverage.GetOrAdd(wcid, w =>
@@ -115,28 +125,23 @@ namespace ACE.Server.Factories
             });
         }
 
-        /// <summary>
-        /// Removes ALL wield requirements from a tier-11+ drop (owner 2026-07-20: level reqs first,
-        /// then ALL reqs -- an item-augmentation wield requirement will replace them later).
-        ///
-        /// This is a final sweep rather than a fix at each producer, because a requirement can
-        /// arrive from three independent places: a mutation script, factory code (e.g.
-        /// MutateCloak's ItemMaxLevel -> WieldDifficulty, SetWieldT10's MeleeDefense gate), or the
-        /// BASE WEENIE itself -- cloaks in particular ship with WieldRequirements = Level already
-        /// set, which no mutation ever clears. Patching producers one at a time misses that.
-        /// </summary>
         /// <summary>Item augmentations required to wield any tier-11+ drop (owner 2026-07-20).</summary>
         public const int ZoneLootSetWieldItemAugs = 2000;
 
-        /// <summary>Share of each armor-slot draw taken from the retail CLOTHING table (owner 2026-10-06: robes, cowls, caps, shoes
-        /// and gloves belong to the armor slots they cover). The draw is still rejected unless it covers that slot.</summary>
+        /// <summary>Chance that one HELM / GLOVE / BOOT draw ATTEMPT uses the retail CLOTHING table (owner 2026-10-06: cowls, caps,
+        /// shoes and gloves belong to the armor slots they cover; robes take none - IsArmorSlotClothing). The share of drops that
+        /// end up clothing also depends on how often each table yields that slot (rejected attempts re-roll).</summary>
         private const float ZoneSetClothingInArmorShare = 0.25f;
 
+        /// <summary>The clothing slot's default budget weight (loot_weight_clothing): retail T10 drops clothing ~13 pct, about half
+        /// of armor's 24 (TreasureItemTypeChances).</summary>
+        public const double ZoneLootClothingWeightDefault = 0.5;
+
         /// <summary>
-        /// The tier-11+ wield gate: item augmentations (LumAugItemCount), replacing every
-        /// requirement StripWieldRequirements removed. Validated server-side by the
+        /// The tier-11+ wield gates (StampTierGates: item / Creature / Life augs at T11-T15, Triune Weave from T16), replacing
+        /// every requirement StripWieldRequirements removed. Validated server-side by the
         /// WieldRequirement.Int64Stat case. The client cannot render this requirement type, so
-        /// the LongDesc block appends the line instead.
+        /// the LongDesc block carries the lines instead (non-weapons; weapons show them in Property Details).
         ///
         /// PER-TIER (T11 weapon relevance plan §7.10): the floor comes from the weaponscaling_data
         /// tier table (minWieldAugs — the market-segmentation gate: minWield(Tn) = cap(Tn-1)),
@@ -159,10 +164,11 @@ namespace ACE.Server.Factories
                 AppendLongDescLine(wo, WieldLineFor(wo));
         }
 
-        /// <summary>LIVE re-stamp of a recorded NON-weapon's wield gates from the current tier row (owner 2026-08-23:
+        /// <summary>LIVE re-stamp of a recorded piece's wield gates from the current tier row (owner 2026-08-23:
         /// "change live and for existing pieces"). Called from ZoneStatResolver.Apply so every equip / login /
-        /// ladder apply refreshes slot 1 (item augs) and slot 3 (T16+ Triune Weave) and rewrites the LongDesc
-        /// line. Weapons are left to the weapon-scaling system. Returns the number of properties changed.</summary>
+        /// ladder apply refreshes slots 1, 3 and 4 (StampTierGates: item / Creature / Life augs at T11-T15, Triune Weave
+        /// from T16) - weapons too since 2026-10-05 - and, for non-weapons, rewrites the LongDesc gate block. Returns the
+        /// number of properties changed.</summary>
         public static int RefreshWieldGate(WorldObject wo, int tier)
         {
             if (wo == null)
@@ -177,23 +183,42 @@ namespace ACE.Server.Factories
             // never rechecked, because they are already wearing it. They keep it until they choose to
             // unequip. Keeping the gate costs only cosmetics (a T25 piece asks 5,000 Triune while its stats
             // read T10 in fallback); clearing it costs a hole. DO NOT re-add the clearing branch.
+            // no weaponscaling row for this tier (deleted, or an empty config): the gates on the piece stay as they are - the
+            // T11-T15 fallback in StampTierGates is for NEW drops only, never a re-stamp that would lower a T16+ gate
+            if (ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(tier) == null)
+                return 0;
             var changed = StampTierGates(wo, tier);
 
             // weapons show their gates in Property Details (built live in the appraisal) - no LongDesc block to keep in step
             if (wo is MeleeWeapon || wo is MissileLauncher || wo is Caster)
                 return changed;
 
-            // rewrite the LongDesc gate block so the appraisal matches the live gate. The block sits in
-            // its own paragraph (blank line before it) and each requirement has its own line (owner 2026-08-23).
+            // rewrite the LongDesc gate block so the appraisal matches the live gate, each requirement on its own line (owner
+            // 2026-08-23). The WHOLE gate block is compared: a substring test missed a stale extra line ("4,000 Item Augmentations" above
+            // the T16+ Triune line it already contained)
             var want = WieldLineFor(wo);
-            var cur = wo.LongDesc ?? string.Empty;
-            if (!cur.Contains(want))
+            var lines = (wo.LongDesc ?? string.Empty).Split('\n').ToList();
+            bool IsGateLine(string l) => l.StartsWith("Wield requires:", System.StringComparison.Ordinal);
+            var curBlock = string.Join("\n", lines.Where(IsGateLine));
+            if (curBlock != want)
             {
-                var kept = cur.Split('\n').Where(l => !l.StartsWith("Wield requires:")).ToList();
-                // drop the blank lines that separated the old gate block so we don't stack paragraphs
-                while (kept.Count > 0 && kept[^1].Trim().Length == 0) kept.RemoveAt(kept.Count - 1);
-                var head = string.Join("\n", kept).Trim('\n');
-                wo.LongDesc = head.Length > 0 ? head + "\n\n" + want : want;
+                var at = lines.FindIndex(IsGateLine);
+                if (at >= 0)
+                {
+                    // replaced IN PLACE: whatever follows the old block (the provenance paragraph, which stays last) keeps its spot
+                    lines.RemoveAll(IsGateLine);
+                    if (want.Length > 0)
+                        lines.InsertRange(at, want.Split('\n'));
+                    var text = string.Join("\n", lines).Trim('\n');
+                    while (text.Contains("\n\n\n")) text = text.Replace("\n\n\n", "\n\n");
+                    wo.LongDesc = text.Length > 0 ? text : null;
+                }
+                else
+                {
+                    // no block yet (a piece from before the gate lines): it goes in its own paragraph at the end
+                    var head = string.Join("\n", lines).Trim('\n');
+                    wo.LongDesc = head.Length > 0 ? head + "\n\n" + want : want;
+                }
                 changed++;
             }
             return changed;
@@ -206,7 +231,7 @@ namespace ACE.Server.Factories
             var lines = new List<string>();
             foreach (var (req, skill, diff) in Gates(wo).OrderBy(g => GateOrder(g.Skill)))
                 if (req == ACE.Entity.Enum.WieldRequirement.Int64Stat && (diff ?? 0) > 0 && GateName(skill) is string name)
-                    lines.Add($"Wield requires: {diff ?? 0:N0} {name}");
+                    lines.Add("Wield requires: " + (diff ?? 0).ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " " + name);
             return string.Join("\n", lines);
         }
 
@@ -248,8 +273,9 @@ namespace ACE.Server.Factories
         ///   T11-T15 (a tier row with no Triune): Item augs (slot 1) + Creature augs (slot 3) + Life augs (slot 4) - the same
         ///           numbers as the tier's portal gem, from the weaponscaling tier row (minwield / minwieldcreature / minwieldlife).
         ///   T16+   (a tier row with Triune):    Triune Weave only (slot 3); slots 1 and 4 are cleared.
-        /// Slot 2 is never touched (the forge's training requirement lives there). A slot is only cleared when it holds one of
-        /// OUR gates, never an unrelated requirement. Returns the number of slots that changed.
+        /// Slot 2 is never touched (the forge's training requirement lives there). Setting a gate takes its slot whatever it held
+        /// (the tier gate must never be missing); CLEARING a slot only removes one of OUR gates, never an unrelated requirement.
+        /// Returns the number of slots that changed.
         /// </summary>
         public static int StampTierGates(WorldObject wo, int tier)
         {
@@ -317,20 +343,6 @@ namespace ACE.Server.Factories
             wo.WeaponDefense = 1.20;
             if (wo is Caster)
                 wo.ManaConversionMod = 0.20;
-        }
-
-        /// <summary>The weapon-family growth charm whose counter gates T16+ wield (owner
-        /// 2026-08-15): melee = Crashing Steel, launchers = True Shot, nether casters =
-        /// Nether Veil, every other caster = Battlemage's Wrath.</summary>
-        public static PropertyInt64 GetWieldCharmProperty(WorldObject wo)
-        {
-            if (wo is MissileLauncher)
-                return PropertyInt64.TrueShotCharmCount;
-            if (wo is Caster)
-                return wo.W_DamageType == ACE.Entity.Enum.DamageType.Nether
-                    ? PropertyInt64.NetherVeilCharmCount
-                    : PropertyInt64.BattlemagesWrathCharmCount;
-            return PropertyInt64.CrashingSteelCharmCount;
         }
 
         /// <summary>Append one line to an item's LongDesc (the LIVE description path - the
@@ -413,6 +425,16 @@ namespace ACE.Server.Factories
             wo.LongDesc = keep.Length > 0 ? keep.ToString() : null;
         }
 
+        /// <summary>
+        /// Removes ALL wield requirements from a tier-11+ drop (owner 2026-07-20: level reqs first,
+        /// then ALL reqs -- an item-augmentation wield requirement will replace them later).
+        ///
+        /// This is a final sweep rather than a fix at each producer, because a requirement can
+        /// arrive from three independent places: a mutation script, factory code (e.g.
+        /// MutateCloak's ItemMaxLevel -> WieldDifficulty, SetWieldT10's MeleeDefense gate), or the
+        /// BASE WEENIE itself -- cloaks in particular ship with WieldRequirements = Level already
+        /// set, which no mutation ever clears. Patching producers one at a time misses that.
+        /// </summary>
         public static void StripWieldRequirements(WorldObject wo)
         {
             if (wo == null)
@@ -446,13 +468,6 @@ namespace ACE.Server.Factories
         };
 
         /// <summary>
-        /// Equalizes a tier-11+ armor piece's eight resistance multipliers to their mean (owner
-        /// 2026-07-20: one uniform protection value instead of eight per-element spreads). Budget-
-        /// neutral: the mean of the rolled mods, applied to every mod the piece actually has.
-        /// The stock client panel now renders its eight per-element lines with one identical
-        /// value each (panel takeover reverted 2026-07-21).
-        /// </summary>
-        /// <summary>
         /// Tier-11+ deterministic gear budget (owner plan 2026-08-20/21): every non-weapon
         /// piece of zone-set loot and /asforge gear carries the same fixed per-slot stats,
         /// doubling per tier - "fixed base, variable extras", all drop variance lives in
@@ -460,7 +475,8 @@ namespace ACE.Server.Factories
         /// layer only; the cantrip stamps run AFTER this and layer on top (the armor_al_* zone knobs were removed 2026-08-23).
         /// Shared by Creature_Death (loot sweep) and TestCharacterCommands (/asforge) so
         /// premades match drops exactly. Classifier is ItemType: Armor=2 covers body armor
-        /// AND shields; Clothing=4 is shirt/pants/cloak (never authored AL); Jewelry=8
+        /// AND shields; Clothing=4 is shirt/pants/cloak (never authored AL) - except a cap / glove / shoe drawn into an armor
+        /// slot, priced as armor (IsArmorSlotClothing, 2026-10-06); Jewelry=8
         /// contributes no AL by engine rule (only WeenieType.Clothing is an armor layer).
         /// </summary>
         /// <param name="alwaysRolledFollows">The caller stamps the Always Rolled resists itself right after this (the /testchar
@@ -507,6 +523,12 @@ namespace ACE.Server.Factories
                     break;
 
                 case ACE.Entity.Enum.ItemType.Clothing:
+                    // a cap / glove / shoe drawn into an armor slot is priced as armor (IsArmorSlotClothing); shirts, pants and
+                    // cloaks keep no AL
+                    if (IsArmorSlotClothing(wo))
+                        goto case ACE.Entity.Enum.ItemType.Armor;
+                    break;
+
                 case ACE.Entity.Enum.ItemType.Jewelry:
                     break;
 
@@ -583,6 +605,8 @@ namespace ACE.Server.Factories
         }
 
         /// <summary>
+        /// Equalizes a tier-11+ armor piece's eight resistance multipliers to their mean (owner 2026-07-20: one uniform protection
+        /// value instead of eight per-element spreads) - budget-neutral: the mean of the rolled mods, on every mod the piece has.
         /// Gated on armor_prot_equalize since 2026-08-24 (default ON = the historical behaviour). OFF means
         /// the elements keep whatever they rolled, so Poor and Unparalleled both survive instead of being
         /// averaged toward the middle - that averaging, not any explicit exclusion, is why every T11+ piece
@@ -656,7 +680,7 @@ namespace ACE.Server.Factories
         /// an ordinary ZoneLootSetCounts, so every existing creation path downstream is reused unchanged.
         ///
         /// For each of <paramref name="budget"/> items: weighted-pick a CATEGORY (weapon / armor /
-        /// jewelry / cloak - shield rides armor), then weighted-pick a SLOT inside it using the
+        /// jewelry / cloak / clothing - shield rides armor), then weighted-pick a SLOT inside it using the
         /// per-slot weights carried on <paramref name="w"/>. Per-item sampling is what makes "on
         /// average 3 armor" true: the split varies kill to kill and converges on the weights.
         ///
@@ -672,9 +696,11 @@ namespace ACE.Server.Factories
         /// abdomen + upper arms) can satisfy several sampled slots with a single item, so the corpse
         /// can land under budget. That is intended - the owner asked for "max drops".
         /// </summary>
+        /// <param name="wClothing">The clothing (shirts / pants) category weight - loot_weight_clothing, default
+        /// ZoneLootClothingWeightDefault. Required: a missing weight must never silently drop clothing.</param>
         public static ZoneLootSetCounts RollBudgetedCounts(
             ZoneLootSetCounts w, int budget,
-            double wWeapon, double wArmor, double wJewelry, double wCloak, double wClothing = 0)
+            double wWeapon, double wArmor, double wJewelry, double wCloak, double wClothing)
         {
             var result = new ZoneLootSetCounts { WeaponFamilyPicks = new List<int>() };
             if (budget <= 0)
@@ -820,7 +846,7 @@ namespace ACE.Server.Factories
                         result.Cloak++;
                         break;
 
-                    default:  // clothing (2026-10-06)
+                    case 4:   // clothing (2026-10-06)
                         result.Clothing++;
                         break;
                 }
@@ -883,8 +909,9 @@ namespace ACE.Server.Factories
             for (var i = 0; i < counts.Cloak; i++)
                 AddZoneSetGearPiece(items, profile, TreasureItemType_Orig.Cloak);
 
-            // clothing (owner 2026-10-05): the retail clothing table T10 drops from (ClothingWcids - shirts, pants, robes ...),
-            // blank like every zone-set piece; the zone stats, lines, item spells and gates layer on in Creature_Death
+            // clothing (owner 2026-10-05): the retail clothing table T10 drops from (ClothingWcids - shirts and pants here;
+            // caps / cowls / shoes / gloves come through the armor slots), blank like every zone-set piece; the zone stats, lines,
+            // item spells and gates layer on in Creature_Death
             for (var i = 0; i < counts.Clothing; i++)
                 AddZoneSetClothingPiece(items, profile);
 
@@ -928,9 +955,10 @@ namespace ACE.Server.Factories
 
                     for (var attempt = 0; attempt < 50; attempt++)
                     {
-                        // owner 2026-10-06: robes, cowls, caps, shoes and gloves from the retail clothing table "fall into the armor
-                        // bucket" - a share of each slot's draws comes from that table, still accepted only for the slot it covers
-                        var clothingDraw = ThreadSafeRandom.Next(0.0f, 1.0f) < ZoneSetClothingInArmorShare;
+                        // owner 2026-10-06: cowls, caps, shoes and gloves from the retail clothing table "fall into the armor bucket" - a
+                        // share of each slot's draws comes from that table, accepted only for the one slot it covers
+                        var clothingDraw = ((uint)slots[s].mask & (uint)ACE.Entity.Enum.CoverageMaskHelper.Extremities) != 0
+                                           && ThreadSafeRandom.Next(0.0f, 1.0f) < ZoneSetClothingInArmorShare;
                         var candidateType = TreasureArmorType.Undef;
                         WeenieClassName candidate;
                         if (clothingDraw)
@@ -950,6 +978,8 @@ namespace ACE.Server.Factories
 
                         if ((candidateCoverage & slots[s].mask) == 0)
                             continue;   // wrong slot (or a shield / non-clothing entry)
+                        if (clothingDraw && !IsArmorSlotCoverage((uint)candidateCoverage))
+                            continue;   // only a single head / hands / feet piece - never a robe (see IsArmorSlotClothing)
 
                         armorType = candidateType;
                         wcid = candidate;
@@ -1294,10 +1324,8 @@ namespace ACE.Server.Factories
                 if (wcid == WeenieClassName.undef)
                     continue;
                 var cov = GetZoneSetCoverage(wcid);
-                const uint outerwear = 0x0001FF00;   // outerwear arms / legs / chest / abdomen + head, hands, feet
-                const uint underwear = 0x0000007E;   // underwear legs / chest / abdomen / arms
-                if (((uint)cov & outerwear) != 0 || ((uint)cov & underwear) == 0)
-                    continue;   // a robe / cap / shoe / glove belongs to an armor slot
+                if (((uint)cov & (uint)ACE.Entity.Enum.CoverageMaskHelper.Outerwear) != 0 || ((uint)cov & (uint)ACE.Entity.Enum.CoverageMaskHelper.Underwear) == 0)
+                    continue;   // a cowl / cap / shoe / glove (any outerwear) belongs to an armor slot
                 var wo = CreateAndMutateWcid(profile, new TreasureRoll(TreasureItemType_Orig.Clothing) { Wcid = wcid }, false);
                 if (wo != null)
                 {

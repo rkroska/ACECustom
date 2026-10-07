@@ -517,7 +517,7 @@ namespace ACE.Server.Managers.ZoneScaling
         public const string LootWeightJewelry = "loot_weight_jewelry";
         public const string LootWeightCloak = "loot_weight_cloak";
         // Clothing on T11+ (owner 2026-10-05: "anything that could drop in T10, do that in T11 with the upgraded rolls"): shirts /
-        // pants / robes etc. from the retail clothing table, a slot like the cloak (default 1 per kill, budget weight 0.5 - retail T10
+        // pants from the retail clothing table (caps, cowls, shoes, gloves come through the armor slots), a slot like the cloak (default 1 per kill, budget weight 0.5 - retail T10
         // drops clothing ~13 pct, about half of armor)
         public const string LootSlotClothing = "loot_slot_clothing";
         public const string LootSlotClothingMax = "loot_slot_clothing_max";

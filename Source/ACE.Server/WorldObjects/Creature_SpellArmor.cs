@@ -40,8 +40,8 @@ namespace ACE.Server.WorldObjects
         /// (WeaponScalingCombat.GetSpellCritDamageBonus, added the same day). The same
         /// CDR then divided a ~4-10x spell crit by melee's ~13-533x stack: spell crits landed at 0.98x (T11) .. 0.06x (T25).
         /// True when both melee rules apply to this spell crit: a player HAND-casting with Zone Control gear at a Zone Control
-        /// monster. Retail (base world, retail gear), PvP, pets, monster casts and Cast on Strike procs (their own tuning, as
-        /// with Spell Armor) keep the stock spell crit.
+        /// monster. Retail (base world, retail gear), PvP, pets, monster casts and Cast on Strike procs (their own tuning) keep
+        /// the stock spell crit.
         /// </summary>
         public static bool ZcSpellCritMirrorsMelee(Creature caster, WorldObject weapon, Creature target, bool fromProc)
         {

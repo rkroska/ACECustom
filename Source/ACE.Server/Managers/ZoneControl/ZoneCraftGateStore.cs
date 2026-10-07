@@ -112,10 +112,10 @@ namespace ACE.Server.Managers.ZoneControl
         /// from. The toggle UI needs the CANDIDATES, not just the current answer.
         ///
         /// WHY ONLY (Wcid, Group) AND NO DISPLAY TEXT. This table is published on the [[ZCCG]] wire
-        /// (ZoneControlCommands.BuildCraftGatePayload; chunked since 2026-10-05, ~300 rows). The 49
-        /// names alone measure 907 characters and a prose description per row would add ~4.7 KB to that
-        /// single line. So the wire carries wcid~group (~1 KB) and the PLUGIN owns the display name and
-        /// the one-line explanation, compiled in - the same split the cantrip catalog already uses.
+        /// (ZoneControlCommands.BuildCraftGatePayload, chunked since 2026-10-05 - a few hundred rows). When it
+        /// first shipped, the 49 names alone measured 907 characters and a prose description per row would have
+        /// added ~4.7 KB to one line. So the wire carries only wcid~group and the PLUGIN owns the display name
+        /// and the one-line explanation, compiled in - the same split the cantrip catalog already uses.
         ///
         /// The DB names could not have served anyway, which is the other half of the reason: TWELVE of
         /// these weenies are named exactly "Foolproof" and three more are named "Salvage" (measured
@@ -138,7 +138,8 @@ namespace ACE.Server.Managers.ZoneControl
         /// it - under "Other" - or the block would be invisible in the UI.
         ///
         /// Source: Component_Block_WCIDs_2026-08-25.md, applied 2026-08-26 as the 47-WCID list plus the
-        /// two entries in <see cref="DefaultBlockedComponents"/>.</summary>
+        /// two entries in <see cref="DefaultBlockedComponents"/>; groups added since (2026-10-05/06: the T10
+        /// vendor proc tools ProcInscription and ParagonGem among them) are candidates only - blocked once ticked.</summary>
         public static readonly ComponentCatalogEntry[] ComponentCatalog =
         {
             // The two originals: crit bonuses written with ModificationOperation.Add, which layer 2 is
@@ -826,6 +827,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// AddComponent saves per call). Returns how many actually changed; 0 writes nothing.</summary>
         public static int SetComponents(IEnumerable<uint> wcids, bool blocked)
         {
+            ArgumentNullException.ThrowIfNull(wcids);
             EnsureInitialized();
             lock (_lock)
             {

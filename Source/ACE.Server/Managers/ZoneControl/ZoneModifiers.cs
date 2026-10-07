@@ -35,10 +35,18 @@ namespace ACE.Server.Managers.ZoneControl
         // 2026-08-22 additions (owner cantrip walkthrough)
         public const int PctMaxHealthPct = 50232;     // key 47 Pct Max Health: percentage POINTS of max HP, SUMMED across worn pieces
         public const int LifeOnHitPct = 50233;        // key 48 Life on Hit: pct of the wielder's MAX HP healed per landed hit, SUMMED, worn cap lifeonhit_cap (25)
-        public const int JewelProcKey = 54;           // catalog key of the jewelry Cast on Strike line
-        public const int JewelProcPowerPct = 50235;   // key 54 Cast on Strike (jewelry): proc damage = a hand-cast of the spell x this pct (the rolled band)
         public const int ReinforcedRank = 50234;      // key 49 Reinforced: the protection rank stamped on the piece (1 Superior / 2 Excellent / 3 Unparalleled) - display/bookkeeping only
+        public const int JewelProcPowerPct = 50235;   // key 54 Cast on Strike (jewelry): proc damage = a hand-cast of the spell x this pct (the rolled band)
         public const int SkillBonusBase = 50300;      // + (int)Skill => 50300+.. (flat skill, post-vitae)
+
+        /// <summary>The catalog key (not a property id) of the jewelry Cast on Strike line (2026-10-05).</summary>
+        public const int JewelProcKey = 54;
+
+        /// <summary>The catalog key (not a property id) of the Armor Level line - stamped on the piece, so no lock zeroes it.</summary>
+        public const int ArmorLevelKey = 25;
+
+        /// <summary>The catalog key (not a property id) of the Reinforced line (protection rank, never in the record).</summary>
+        public const int ReinforcedKey = 49;
 
         /// <summary>
         /// Per-line slot rule (owner 2026-08-22, "a way to specify live in game which slots the cantrip

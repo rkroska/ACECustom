@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using ACE.Common;
 using ACE.Entity.Enum;
@@ -352,10 +353,6 @@ namespace ACE.Server.Managers.ZoneControl
             (DamageType.Nether,   5369, 5361),  // Nether Arc I       / Clouded Soul (the VOID one)
         };
 
-        /// <summary>The arc/ring pair matching the weapon's own damage type, in the same fixed order
-        /// GetMatchingRends uses so a multi-type weapon picks the same element for both cards. Returns
-        /// false for a weapon with no resolvable element (a plain bow takes its element from the ammo,
-        /// a generic caster has none) - those roll no proc, exactly as they roll no rend.</summary>
         // key 54 Cast on Strike on JEWELRY (owner 2026-10-05): "spells = ring + streak + arc, random element", damage "like a
         // hand-cast of that spell by the wearer" - so the level-8 streak / arc a caster hand-casts (no B value: the projectile and
         // ring paths fall through to the spell's own base + the wearer's augs), and the same ring a weapon proc uses.
@@ -386,23 +383,45 @@ namespace ACE.Server.Managers.ZoneControl
                 case 1: spell = (uint)row.Arc; break;
                 default: spell = TryGetProcSpells(row.Dt, out _, out var ring) ? ring : (uint)row.Arc; break;
             }
-            var rate = p?.GetT(ZoneStat.JewelryProcRate, 0.10, tier) ?? 0.10;
-            var rand = Math.Max(0.0, p?.GetT(ZoneStat.JewelryProcRateRand, 0.05, tier) ?? 0.05);
+            // a non-finite stat (a hand-edited store) reads as its default
+            static double Finite(double v, double fallback) => double.IsFinite(v) ? v : fallback;
+            var rate = Finite(p?.GetT(ZoneStat.JewelryProcRate, 0.10, tier) ?? 0.10, 0.10);
+            var rand = Math.Max(0.0, Finite(p?.GetT(ZoneStat.JewelryProcRateRand, 0.05, tier) ?? 0.05, 0.05));
+            var spellcraft = Math.Clamp(Finite(p?.GetT(ZoneStat.JewelryProcSpellcraft, 9999, tier) ?? 9999, 9999), 0.0, int.MaxValue);
             wo.ProcSpell = spell;
             wo.ProcSpellSelfTargeted = false;
             wo.ProcSpellRate = Math.Clamp(rate + rand * ThreadSafeRandom.Next(0.0f, 1.0f), 0.0, 1.0);
-            wo.ItemSpellcraft = (int)Math.Round(Math.Max(0.0, p?.GetT(ZoneStat.JewelryProcSpellcraft, 9999, tier) ?? 9999));
+            // only ever raised: the item spells' own spellcraft (LootGenerationFactory.ApplyZoneSpells) stays the floor
+            wo.ItemSpellcraft = Math.Max(wo.ItemSpellcraft ?? 0, (int)Math.Round(spellcraft));
             return true;
         }
 
-        /// <summary>The Salvage Bag removed key 54: the proc goes with the line.</summary>
+        /// <summary>The Salvage Bag removed key 54: the proc goes with the line, and so does its resist spellcraft - back to the
+        /// piece's item spells' own (none = no spellcraft), so a proc put on the piece later does not inherit the 9999.</summary>
         public static void ClearJewelProc(WorldObject wo)
         {
+            // only OUR proc: a retail / crafted proc is never touched (StampJewelProc never overwrites one either)
+            if (wo?.ProcSpell == null || !IsJewelProcSpell(wo.ProcSpell.Value))
+                return;
             wo.ProcSpell = null;
             wo.ProcSpellRate = null;
             wo.RemoveProperty(PropertyBool.ProcSpellSelfTargeted);
+            // the item spells' power, read under the biota lock (a live, player-held piece)
+            var spellPower = wo.Biota.GetKnownSpellsIds(wo.BiotaDatabaseLock).Select(id => (int)new ACE.Server.Entity.Spell((uint)id).Power).DefaultIfEmpty(0).Max();
+            var own = Math.Max(ACE.Database.DatabaseManager.World.GetCachedWeenie(wo.WeenieClassId)?.GetProperty(PropertyInt.ItemSpellcraft) ?? 0, spellPower);
+            if (own > 0) wo.ItemSpellcraft = own;
+            else wo.RemoveProperty(PropertyInt.ItemSpellcraft);
         }
 
+        /// <summary>Is this one of the jewelry Cast on Strike spells (a level-8 streak / arc, or an element's proc ring)?</summary>
+        public static bool IsJewelProcSpell(uint spellId)
+            => JewelProcSpells.Any(r => (uint)r.Streak == spellId || (uint)r.Arc == spellId)
+               || ProcSpellsByElement.Any(r => r.Ring == spellId);
+
+        /// <summary>The arc/ring pair matching the weapon's own damage type, in the same fixed order
+        /// GetMatchingRends uses so a multi-type weapon picks the same element for both cards. Returns
+        /// false for a weapon with no resolvable element (a plain bow takes its element from the ammo,
+        /// a generic caster has none) - those roll no proc, exactly as they roll no rend.</summary>
         public static bool TryGetProcSpells(DamageType dt, out uint arc, out uint ring)
         {
             foreach (var row in ProcSpellsByElement)
@@ -596,7 +615,7 @@ namespace ACE.Server.Managers.ZoneControl
                     if (gotRing)
                         craft = Math.Max(craft, p.GetT(ZoneStat.WeaponProcRingSpellcraft, 9999, lootTier));
                     if ((int)Math.Round(craft) > 0)
-                        wo.ItemSpellcraft = (int)Math.Round(craft);
+                        wo.ItemSpellcraft = Math.Max(wo.ItemSpellcraft ?? 0, (int)Math.Round(craft));   // never below the item spells' own
                 }
             }
 

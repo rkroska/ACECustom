@@ -1257,10 +1257,9 @@ namespace ACE.Server.Entity
             LootGenerationFactory.ApplyZoneElementTint(target);
             RenameForElement(target, element);
 
-            // a caster's T16+ charm gate follows its element (Nether Veil for a Nether caster, Battlemage's Wrath otherwise) -
-            // the drop stamps it once, so a transmuted caster must be re-stamped or it skips its own charm (review 2026-10-04)
-            if (target is Caster && target.WieldRequirements4 == WieldRequirement.Int64Stat)
-                target.WieldSkillType4 = (int)LootGenerationFactory.GetWieldCharmProperty(target);
+            // the wield gates from the tier row (slot 4 is the Life-aug gate since 2026-10-05; the old T16+ charm gate is retired) -
+            // re-stamped here because this path returns before the resolve that would
+            LootGenerationFactory.RefreshWieldGate(target, ZoneStatResolver.TierOf(target));
         }
 
         /// <summary>How a weapon kind names its damage type (from the retail weenie names, counted 2026-10-04): melee says

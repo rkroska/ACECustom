@@ -400,13 +400,16 @@ namespace ACE.Server.Managers
 
             // Tier 11+ piece (2026-10-05): a tinker on a prop the piece re-stamps from its record (ArmorLevel, line ints) is
             // remembered in ZcTinkerBonus, or the appraisal hides it and the next re-stamp wipes it (the Steel bug)
-            // The piece is re-stamped first (what an equip does), so the change is measured against its CURRENT resolution: a
-            // recipe that SETS a prop and one that ADDS to it are then both recorded exactly, even on a piece left stale by a
-            // ladder change.
+            // A piece in the pack is re-stamped first (what an equip does), so the change is measured against its CURRENT
+            // resolution: a recipe that SETS a prop and one that ADDS to it are then both recorded exactly. A WORN piece is not
+            // re-stamped here (the equip path owns its caches); it is current unless a ladder change left it stale, where only a
+            // SET recipe would record against the older resolution.
             ZoneControl.ZoneStatResolver.TinkerSnapshot zcOwned = null;
+            var zcRestamped = false;
             if (success && ZoneControl.ZoneControlManager.IsZcGear(target))
             {
-                ZoneControl.ZoneStatResolver.ApplyIfStale(target);
+                // never re-stamped while worn: that runs through the equip path, which keeps the worn caches in step
+                zcRestamped = target.Wielder == null && ZoneControl.ZoneStatResolver.ApplyIfStale(target);
                 zcOwned = ZoneControl.ZoneStatResolver.SnapshotOwnedInts(target);
             }
 
@@ -415,15 +418,22 @@ namespace ACE.Server.Managers
             // null == the craft was aborted before anything was consumed (missing result weenie, or the
             // player has no room for the result). Stop here so no skill XP is granted for a no-op craft.
             if (modified == null)
+            {
+                // the re-stamp above still changed the piece - show it
+                if (zcRestamped)
+                    UpdateObj(player, target);
                 return;
+            }
 
-            if (zcOwned != null)
+            // a recipe that consumed the target leaves nothing to record on
+            // (a recipe that would replace a tier wield gate never gets here - ZoneCraftGate refuses it up front)
+            if (zcOwned != null && !target.IsDestroyed)
                 ZoneControl.ZoneStatResolver.RecordTinker(target, zcOwned);
 
             if (modified.Contains(source.Guid.Full))
                 UpdateObj(player, source);
 
-            if (modified.Contains(target.Guid.Full))
+            if (modified.Contains(target.Guid.Full) || (zcRestamped && !target.IsDestroyed))
                 UpdateObj(player, target);
 
             if (success && recipe.Skill > 0 && recipe.Difficulty > 0)

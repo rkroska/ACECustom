@@ -27,18 +27,22 @@ namespace ACE.Server.Managers.WeaponScaling
         // (Crashing Steel melee / True Shot launchers / Battlemage's Wrath elemental casters /
         // Nether Veil nether casters). 0 = no charm gate (all tiers through T15).
         /// <summary>
-        /// CREATURE aug requirement for the T11+ hit gate (owner 2026-08-31). Unlike MinWieldAugs this
-        /// is NOT a wield requirement - nothing stops you equipping the gear. It gates whether your
-        /// swings and spells can LAND on a monster at this variation (TierHitGate).
+        /// CREATURE aug requirement (owner 2026-08-31) for the T11+ hit gate - whether your swings and spells can LAND on a
+        /// monster at this variation (TierHitGate) - and, since 2026-10-05, also a WIELD requirement on T11-T15 zone gear
+        /// (wield slot 3, LootGenerationFactory_ZoneSet). 0 at T11+ = unset (Normalize re-seeds it; the command refuses 0).
         /// 4,000 at T11, +500/tier, frozen at the 6,000 purchase cap from T15 - above which TRIUNE
         /// carries the ladder, exactly as it does for the item-aug wield gate.
         /// </summary>
         public int MinWieldCreature { get; set; }
 
         /// <summary>LIFE aug wield requirement (owner 2026-10-05): T11-T15 gear asks Creature + Item + Life augs, the same numbers
-        /// as that tier's portal gem (Life 2,000 at T11, +500/tier, 4,000 at T15). T16+ gear asks Triune only. 0 = no gate.</summary>
+        /// as that tier's portal gem (Life 2,000 at T11, +500/tier, 4,000 at T15). T16+ gear asks Triune only, so a T16+ row's
+        /// value is shown but never stamped. 0 at T11+ = unset (Normalize re-seeds it; the command refuses 0).</summary>
         public int MinWieldLife { get; set; }
         public int MinWieldTriune { get; set; }
+
+        /// <summary>RETIRED 2026-10-05 (owner: T16+ gear asks Triune only): the weapon-family charm count. Kept so stored configs and
+        /// older plugins still load it; no drop stamps it any more.</summary>
         public int MinWieldSkillCharm { get; set; }
     }
 
@@ -603,8 +607,8 @@ namespace ACE.Server.Managers.WeaponScaling
                 // 2026-09-01 when `tier curves` printed a creature column of zeros and a suspiciously
                 // straight interpolation.
                 // 0 is read as UNSET rather than as an authored "no requirement", same assumption the
-                // charm migration above makes: the field was never reachable from any command, so no
-                // stored 0 can be deliberate.
+                // charm migration above makes: no stored 0 can be deliberate - /weaponscale tier <t> minwieldcreature
+                // (and minwieldlife, 2026-10-05) refuse 0 at T11+.
                 if (t.Tier >= 11 && t.MinWieldCreature == 0)
                     t.MinWieldCreature = Math.Min(6000, 4000 + 500 * (t.Tier - 11));
 

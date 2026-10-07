@@ -74,7 +74,7 @@ namespace ACE.Server.WorldObjects
             // a weapon / jewelry / cloak PROC from gear below T11 is always resisted by a governed v11+ monster - regardless of
             // tryResist (cloaks skip it). Hand-casts and gems are never touched. Projectile procs are judged where they land
             // (SpellProjectile.CalculateDamage, ApplyRingSpellAreaDamage).
-            if (fromProc && spell.NumProjectiles == 0 && (itemCaster ?? weapon) != null
+            if (fromProc && spell.NumProjectiles == 0
                 && ACE.Server.Managers.ZoneControl.TierHitGate.BlockLowTierCast(this, target, spell, itemCaster ?? weapon))
                 return;
 
@@ -573,8 +573,9 @@ namespace ACE.Server.WorldObjects
                 if (harmMult != 1f)
                     tryBoost = (int)Math.Round(tryBoost * (double)harmMult);
             }
-            // DAMAGE TAKEN multiplier (owner 2026-10-05): any Harm on a Zone Control monster
-            else if (tryBoost < 0 && spell.VitalDamageType == DamageType.Health && targetCreature != null && !(targetCreature is Player))
+            // DAMAGE TAKEN multiplier (owner 2026-10-05): any Harm on a Zone Control monster - not the capture wand's fixed cap
+            // (useHarmCap), which stays unmodified like the melee UseDamageCap path
+            else if (tryBoost < 0 && spell.VitalDamageType == DamageType.Health && !useHarmCap && !(targetCreature is Player))
             {
                 var harmTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(targetCreature);
                 if (harmTakenMult != 1f)
@@ -951,6 +952,9 @@ namespace ACE.Server.WorldObjects
                 var drainTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(transferSource);
                 if (drainTakenMult != 1f)
                     srcVitalChange = (uint)Math.Min(Math.Round(srcVitalChange * (double)drainTakenMult), transferSource.Health.Current);
+                // the spell's TransferCap still caps the drain (and with it the heal below)
+                if (spell.TransferCap != 0 && srcVitalChange > spell.TransferCap)
+                    srcVitalChange = (uint)spell.TransferCap;
             }
 
             // should healing resistances be applied here?
@@ -1236,7 +1240,7 @@ namespace ACE.Server.WorldObjects
                 // so the four arguments can never disagree with each other again.
                 var zcProc = fromProc
                     && ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon)
-                    && !ZcPowerSuppressed(weapon, ringPlayer);
+                    && !ZcProcSuppressed(weapon, ringPlayer);   // jewelry: the worn lock (2026-10-06), as in TryProcItem
 
                 var zcRingB = zcProc
                     ? (weapon?.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcRingDamagePropId) ?? 0)
@@ -1273,7 +1277,7 @@ namespace ACE.Server.WorldObjects
                     losExempt: fromProc && !ringPlayer.RingProcTriggerUnreached ? (target ?? ringPlayer.RingProcTrigger) : null,
                     // T11+ low-tier PROC resist (owner 2026-10-06): PROCS only - the real proccing item, separate from procWeapon,
                     // which stays null for a retail proc ring by design (see zcProc above). A hand-cast ring is never gated.
-                    lowTierGate: fromProc, lowTierItem: weapon, lowTierBareHands: false);
+                    lowTierItem: fromProc ? weapon : null);
             }
 
             if (spell.School == MagicSchool.LifeMagic)
@@ -2230,7 +2234,7 @@ namespace ACE.Server.WorldObjects
             return dir * speed;
         }
 
-        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f)
+        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f, bool handCastFork = false)
         {
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -2322,6 +2326,7 @@ namespace ACE.Server.WorldObjects
                 // Fork state — set before AddObject so IsProjectileVisible-killed bolts have correct flags.
                 sp.IsForkProjectile = isForkProjectile;
                 sp.ForkDamageMult   = forkDamageMult;
+                sp.HandCastFork     = handCastFork;   // a projectile can collide inside AddObject, so the low-tier gate needs it now
 
                 if (!LandblockManager.AddObject(sp))
                 {

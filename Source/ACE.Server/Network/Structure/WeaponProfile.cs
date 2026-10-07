@@ -64,10 +64,13 @@ namespace ACE.Server.Network.Structure
             // term, max = staticMax + term — without this the client applies the weapon's
             // variance to the whole and understates min ~2x.
             // gear / zone lock (owner 2026-10-05: "Show the real value"): no aug term where the holder stands - combat adds none
-            var augTerm = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, (weapon.Wielder as Player) ?? examiner) ? 0
-                : weapon.Wielder is Player wielderPlayer
-                ? (int)ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFlatBonus(weapon, wielderPlayer)
-                : (int)ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetExamineBonus(weapon, examiner);
+            int augTerm;
+            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, (weapon.Wielder as Player) ?? examiner))
+                augTerm = 0;
+            else if (weapon.Wielder is Player wielderPlayer)
+                augTerm = (int)ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFlatBonus(weapon, wielderPlayer);
+            else
+                augTerm = (int)ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetExamineBonus(weapon, examiner);
             if (augTerm > 0)
             {
                 if (ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetEffectiveVariance(weapon, out var vEff))

@@ -745,61 +745,97 @@ namespace ACE.Server.WorldObjects
             return 0;
         }
 
+        /// <summary>True when this item, or any container it sits in, is in this player's open trade window.</summary>
+        private bool InTradeWindow(WorldObject item)
+        {
+            if (!IsTrading) return false;
+            for (var wo = item; wo != null; wo = wo.Container)
+                if (ItemsInTradeWindow.Contains(wo.Guid))
+                    return true;
+            return false;
+        }
+
         /// <summary>`/b lum` and deposit-all: every ILT lum token in the packs is consumed and its NPC value goes to BankedLuminance.
         /// Saves at once (the token is gone from the shard the moment it is consumed, so the lum must not wait for the 10-minute save).
-        /// Returns the lum deposited.</summary>
-        public long DepositLuminanceTokens(bool suppressChat = false, bool quietIfNone = false, long? startingBalance = null, bool showTotal = false)
+        /// Returns the lum deposited. <paramref name="quietIfNone"/>: no "none found" line (deposit-all); <paramref name="showTotal"/>:
+        /// a tokens-total line before Ending Banked Lum.</summary>
+        public long DepositLuminanceTokens(bool quietIfNone = false, bool showTotal = false)
         {
-            long total = 0;
-            long before = 0;
+            long total = 0, tokensTotal = 0;
+            long before = 0, after = 0;
             var lines = new List<string>();
+            var skipped = new List<string>();
             lock (balanceLock)
             {
                 var oldBalance = BankedLuminance ?? 0;
                 before = oldBalance;
+                // one walk of the packs for every token kind; never a token in an open trade window, nor inside a pack that is
+                // there - banking it would hand the trade partner nothing for it
+                var tokenWcids = new HashSet<uint>(LumTokens.Select(t => t.Token));
+                var tokensHeld = GetAllPossessionsDeep().Where(i => tokenWcids.Contains(i.WeenieClassId) && i.Wielder == null).ToList();
+                foreach (var traded in tokensHeld.Where(InTradeWindow))
+                    skipped.Add($"{(long)(traded.StackSize ?? 1):N0} x {traded.Name} (in your trade window)");
+                var byWcid = tokensHeld.Where(i => !InTradeWindow(i))
+                    .GroupBy(i => i.WeenieClassId)
+                    .ToDictionary(g => g.Key, g => g.ToList());
                 foreach (var (token, _) in LumTokens)
                 {
+                    if (!byWcid.TryGetValue(token, out var items)) continue;
                     var value = LumTokenValue(token);
                     if (value <= 0) continue;
-                    var items = GetAllPossessionsDeep().Where(i => i.WeenieClassId == token && i.Wielder == null).ToList();
-                    long count = 0;
+                    long count = 0, tokenLum = 0;
                     string name = null;
                     foreach (var item in items)
                     {
                         var stack = (long)(item.StackSize ?? 1);
                         name ??= item.Name;
+                        // checked BEFORE the token is consumed: an emote value x stack that would wrap the balance leaves the
+                        // token in the pack (a mis-authored Amount64 must never turn the bank negative)
+                        long add;
+                        try { add = checked(value * stack); _ = checked((BankedLuminance ?? 0) + add); }
+                        catch (OverflowException)
+                        {
+                            log.Warn($"[Bank] {Name}: lum token {token} x {stack} at {value} each would overflow the bank - not deposited");
+                            skipped.Add($"{stack:N0} x {item.Name}");
+                            continue;
+                        }
                         var ok = TryConsumeFromInventoryWithNetworking(item);
                         LogItemConsumption("DepositLuminanceTokens", item, ok, $"Lum each: {value} | Stack: {stack}");
-                        if (!ok) continue;
-                        BankedLuminance = (BankedLuminance ?? 0) + value * stack;
-                        total += value * stack;
+                        if (!ok)
+                        {
+                            skipped.Add($"{stack:N0} x {item.Name}");
+                            continue;
+                        }
+                        BankedLuminance = (BankedLuminance ?? 0) + add;
+                        total += add;
+                        tokenLum += add;
                         count += stack;
+                        tokensTotal += stack;
                     }
                     if (count > 0)
-                        lines.Add($"{count:N0} x {name}: {ACE.Server.Command.ShortNumber.Amount(value * count, "Lum deposited")}");
+                        lines.Add($"Deposited {count:N0} x {name}: {ACE.Server.Command.ShortNumber.Amount(tokenLum, "Lum")}");
                 }
+                after = BankedLuminance ?? 0;   // read under the lock, with the deposits it reports
                 if (total > 0)
-                    LogBankChange("DepositLuminanceTokens", "Luminance", total, oldBalance, BankedLuminance ?? 0, string.Join(" | ", lines));
+                    LogBankChange("DepositLuminanceTokens", "Luminance", total, oldBalance, after, string.Join(" | ", lines));
             }
 
             if (total > 0)
                 this.SavePlayerToDatabase();
 
-            if (!suppressChat)
-            {
-                // owner 2026-10-06: Starting Banked Lum, every token line, Ending Banked Lum - in that order. /b d passes its
-                // own starting balance (taken before any of its deposits) and asks for the tokens total line.
-                if (total > 0)
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Starting Banked Lum: {ACE.Server.Command.ShortNumber.Both(startingBalance ?? before)}", ChatMessageType.System));
-                foreach (var l in lines)
-                    Session.Network.EnqueueSend(new GameMessageSystemChat(l, ChatMessageType.System));
-                if (total > 0 && showTotal)
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Luminance tokens total: {ACE.Server.Command.ShortNumber.Amount(total, "Lum deposited")}", ChatMessageType.System));
-                if (total > 0)
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Ending Banked Lum: {ACE.Server.Command.ShortNumber.Both(BankedLuminance ?? 0)}", ChatMessageType.System));
-                if (total == 0 && !quietIfNone)
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("No luminance tokens found to deposit", ChatMessageType.System));
-            }
+            // owner 2026-10-06: Starting Banked Lum, every token line, Ending Banked Lum - in that order
+            if (total > 0)
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Starting Banked Lum: {ACE.Server.Command.ShortNumber.Both(before)}", ChatMessageType.System));
+            foreach (var l in lines)
+                Session.Network.EnqueueSend(new GameMessageSystemChat(l, ChatMessageType.System));
+            if (total > 0 && showTotal)
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {tokensTotal:N0} token{(tokensTotal == 1 ? "" : "s")} total: {ACE.Server.Command.ShortNumber.Amount(total, "Lum")}", ChatMessageType.System));
+            if (total > 0)
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Ending Banked Lum: {ACE.Server.Command.ShortNumber.Both(after)}", ChatMessageType.System));
+            if (total == 0 && !quietIfNone && skipped.Count == 0)
+                Session.Network.EnqueueSend(new GameMessageSystemChat("No luminance tokens found to deposit", ChatMessageType.System));
+            if (skipped.Count > 0)
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Not deposited (left in your pack): {string.Join(", ", skipped)}", ChatMessageType.System));
             return total;
         }
 
@@ -983,7 +1019,7 @@ namespace ACE.Server.WorldObjects
             
             if (actualAmount > 0 && !suppressChat)
             {
-                Session.Network.EnqueueSend(new GameMessageSystemChat(ACE.Server.Command.ShortNumber.Amount(actualAmount, "Lum deposited"), ChatMessageType.System));
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Deposited " + ACE.Server.Command.ShortNumber.Amount(actualAmount, "Lum"), ChatMessageType.System));
             }
             else if (!suppressChat)
             {
@@ -1091,11 +1127,11 @@ namespace ACE.Server.WorldObjects
             
             if (actualWithdraw == Amount)
             {
-                Session.Network.EnqueueSend(new GameMessageSystemChat(ACE.Server.Command.ShortNumber.Amount(actualWithdraw, "Lum withdrawn"), ChatMessageType.System));
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Withdrew " + ACE.Server.Command.ShortNumber.Amount(actualWithdraw, "Lum"), ChatMessageType.System));
             }
             else
             {
-                Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {actualWithdraw:N0} luminance (partial - insufficient capacity for remaining {Amount - actualWithdraw:N0})", ChatMessageType.System));
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {ACE.Server.Command.ShortNumber.Amount(actualWithdraw, "Lum")} - partial: no capacity for the remaining {ACE.Server.Command.ShortNumber.Amount(Amount - actualWithdraw, "Lum")}", ChatMessageType.System));
             }
             
             Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, this.AvailableLuminance ?? 0));

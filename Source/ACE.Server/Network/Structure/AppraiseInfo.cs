@@ -1014,8 +1014,10 @@ namespace ACE.Server.Network.Structure
             // GEAR / ZONE LOCK (owner 2026-10-05: "Show the real value"): while THIS examiner stands where worn Zone gear is
             // suppressed, each line shows what it gives there - 0 - instead of its rolled value. Armor Level (key 25) is
             // stamped on the item and Reinforced sets protections; both stay on, so both keep their numbers.
-            var wornLocked = wo != null && examiner != null && ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo)
-                && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(examiner);
+            // judged for the WEARER of worn gear (combat does), else the examiner - the same holder the weapon panel uses
+            var wornHolder = (wo?.Wielder as Player) ?? examiner;
+            var wornLocked = wo != null && wornHolder != null && ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo)
+                && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(wornHolder);
 
             if (resolved != null)
             {
@@ -1023,7 +1025,9 @@ namespace ACE.Server.Network.Structure
                 var tinker = ZoneStatResolver.ReadTinkerBonus(wo);
                 foreach (var line in resolved.Lines)
                 {
-                    var lineOff = wornLocked && line.Record.Key != 25;
+                    // the jewelry Cast on Strike is also off while Zone Control is off - combat says so (WorldObject.ZcProcSuppressed)
+                    var lineOff = (wornLocked && line.Record.Key != ACE.Server.Managers.ZoneControl.ZoneModifiers.ArmorLevelKey)
+                        || (line.Record.Key == ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcKey && !ServerConfig.zonecontrol_enabled.Value);
                     // a tinker on the line's own prop (2026-10-05, e.g. Hematite on a Max Health line) shows next to it
                     var tinkered = 0;
                     if (!lineOff && tinker.Count > 0 && line.Def?.Ints != null)
@@ -1033,8 +1037,12 @@ namespace ACE.Server.Network.Structure
                         : line.Def != null && line.Def.SlotSpecial && string.IsNullOrEmpty(line.Def.ValFmt) ? line.Name + " (off here)"
                         : line.TextAt(0);
                     // jewelry Cast on Strike (key 54, 2026-10-06): which spell and how often, next to the rolled power
-                    if (line.Record.Key == ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcKey && wo?.ProcSpell != null)
-                        lineText += $" - {new ACE.Server.Entity.Spell(wo.ProcSpell.Value).Name}, {(wo.ProcSpellRate ?? 0) * 100:0.#}% per hit";
+                    if (!lineOff && line.Record.Key == ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcKey && wo?.ProcSpell != null
+                        && ACE.Server.Managers.ZoneControl.ZoneLootMutator.IsJewelProcSpell(wo.ProcSpell.Value))   // only OUR proc
+                    {
+                        var procSpell = new ACE.Server.Entity.Spell(wo.ProcSpell.Value);
+                        lineText += $" - {(procSpell.NotFound ? "spell " + wo.ProcSpell.Value : procSpell.Name)}, {(wo.ProcSpellRate ?? 0) * 100:0.#}% per hit";
+                    }
                     cantrips.Add("- " + lineText
                         + (tinkered != 0 ? $" ({tinkered:+#;-#} tinkered)" : "")
                         + (!GearEssences.UsesASlot(line.Def) ? GearEssences.BuiltInMarker : "")   // a null Def = a legacy core resist: no slot either
@@ -1042,7 +1050,7 @@ namespace ACE.Server.Network.Structure
                 }
                 // Reinforced lives only as baked text; a piece that lost its text (tailored) still has the rank stamped
                 var rank = wo?.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.ReinforcedRank) ?? 0;
-                if (reinforced.Count == 0 && rank > 0 && ACE.Server.Managers.ZoneControl.ZoneModifiers.TryGet(49, out var reinforcedDef))
+                if (reinforced.Count == 0 && rank > 0 && ACE.Server.Managers.ZoneControl.ZoneModifiers.TryGet(ACE.Server.Managers.ZoneControl.ZoneModifiers.ReinforcedKey, out var reinforcedDef))
                     reinforced.Add($"- {reinforcedDef.Name} +{rank} [{reinforcedDef.Min}-{reinforcedDef.Max}]");
                 cantrips.AddRange(reinforced);
             }
@@ -1070,12 +1078,9 @@ namespace ACE.Server.Network.Structure
             if (cantrips.Count == 0)
                 return;
 
-            // Armor zone lock (owner 2026-08-30, wording approved): same rule as the weapon
-            // panel - the lines keep showing full power (items are compared in town), and this
-            // pinned line reconciles that with the dormant contribution while the examiner
-            // stands outside every authored area.
-            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo)
-                && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(examiner))
+            // Armor zone lock (owner 2026-08-30, wording approved): while the holder stands where worn Zone gear is suppressed, the
+            // lines above show what they give there (0, since 2026-10-05) and this pinned line says why.
+            if (wornLocked)
                 cantrips.Insert(0, ACE.Server.Managers.ZoneControl.ZoneControlManager.ZoneLockedAppraisalLine);
 
             // Collapse the blank runs the pulled lines leave behind: the slot-special stamp joins
@@ -1267,8 +1272,9 @@ namespace ACE.Server.Network.Structure
 
             // GEAR / ZONE LOCK (owner 2026-10-05: "Show the real value"): while THIS examiner stands where the weapon's Zone
             // power is suppressed, every card line below shows what it does there (the combat fallbacks in
-            // WorldObject_Weapon / DamageEvent), not the stamped value.
-            var zcLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, examiner);
+            // WorldObject_Weapon / DamageEvent), not the stamped value. Judged for the same holder the damage profile uses: the
+            // wielder of a worn weapon, else the examiner.
+            var zcLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, (weapon.Wielder as Player) ?? examiner);
 
             // Determine skill: explicit WeaponSkill, or fallback for Casters (Wands)
             var checkSkill = weapon.WeaponSkill;
@@ -1295,7 +1301,7 @@ namespace ACE.Server.Network.Structure
             // Biting Strike
             if (weapon.CriticalFrequency.HasValue)
             {
-                var val = zcLocked ? 0.10 : weapon.CriticalFrequency.Value;   // locked: the endgame base crit rate
+                var val = zcLocked ? WorldObject.LockedCritFrequency(weapon) : weapon.CriticalFrequency.Value;   // locked: the combat fallback crit rate
                 effectDescriptions.Add($"- Biting Strike: +{val:P0} Crit Chance");
             }
 
@@ -1332,7 +1338,7 @@ namespace ACE.Server.Network.Structure
             // player actually deals is prop + 1 (a stored 1.0 = normal 2x crit).
             if (weapon.GetProperty(PropertyFloat.CriticalMultiplier) > 1.0f)
             {
-                var val = zcLocked ? 2.0 : weapon.GetProperty(PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: a plain 2x crit
+                var val = zcLocked ? WorldObject.DefaultCritDamageMultiplier + 1.0 : weapon.GetProperty(PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (a plain 2x crit)
                 effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
             }
 
@@ -1488,13 +1494,10 @@ namespace ACE.Server.Network.Structure
             if (propertiesLine != null)
                 effectDescriptions.Insert(wsQuality != null ? 1 : 0, propertiesLine);
 
-            // Zone lock (owner 2026-08-30, "add the dormant line"): when the lock is ON and THIS
-            // examiner is standing outside every authored area, say so at the very top - the
-            // panel keeps showing the item's full power on purpose (players compare and trade in
-            // town, where gated numbers would make every drop read as junk), so this line is
-            // what reconciles the big numbers with the small hits. Absent when the lock is off,
-            // when the item is not ZC-stamped, or inside an authored area.
-            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, examiner))
+            // Zone lock (owner 2026-08-30, "add the dormant line"): when the weapon's Zone power is suppressed where its holder
+            // stands, say so at the very top - the card lines below show the locked values (since 2026-10-05) and this line says
+            // why. Absent when the lock is off, when the item is not ZC-stamped, or inside an authored area.
+            if (zcLocked)
                 effectDescriptions.Insert(0, ACE.Server.Managers.ZoneControl.ZoneControlManager.ZoneLockedAppraisalLine);
 
             // Cast on Strike (owner 2026-08-27: "Appraisal line should show Force Arc (13% proc chance)").

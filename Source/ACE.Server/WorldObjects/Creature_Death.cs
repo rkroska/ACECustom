@@ -1103,7 +1103,7 @@ namespace ACE.Server.WorldObjects
                     if (perSlotTotal > ZoneCorpseItemCap)
                     {
                         log.Warn($"[ZoneLoot] {Name} (0x{Guid}): per-slot counts total {perSlotTotal}, above the corpse cap {ZoneCorpseItemCap}; rolling a capped budget instead.");
-                        slotCounts = LootGenerationFactory.RollBudgetedCounts(slotCounts, ZoneCorpseItemCap, 1.0, 1.0, 1.0, 1.0, 0.5);
+                        slotCounts = LootGenerationFactory.RollBudgetedCounts(slotCounts, ZoneCorpseItemCap, 1.0, 1.0, 1.0, 1.0, LootGenerationFactory.ZoneLootClothingWeightDefault);
                     }
                 }
 
@@ -1134,7 +1134,7 @@ namespace ACE.Server.WorldObjects
                         zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightJewelry, 1.0),
                         zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightCloak, 1.0),
                         // 0.5 by default: retail T10 drops clothing ~13 pct, about half of armor's 24 (TreasureItemTypeChances)
-                        zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightClothing, 0.5));
+                        zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightClothing, LootGenerationFactory.ZoneLootClothingWeightDefault));
                 }
 
                 // rank loot (owner 2026-09-29): the kill's grade floor reaches the value rolls inside item creation

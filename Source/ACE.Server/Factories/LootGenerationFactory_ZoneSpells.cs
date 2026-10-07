@@ -15,10 +15,10 @@ namespace ACE.Server.Factories
     /// <summary>
     /// Item spells on T11+ drops (owner 2026-10-05: "Items need spells - wards / minors / Blood Thirst / Spirit Thirst etc.",
     /// ruled "random from a per-slot list like retail loot; count AND level = zone stats, defaults 1-3 spells, Legendary").
-    /// The list is in ZoneControl\Plan_Next_2026-10-06.md section 8 for the owner's review. Every pick is a CANTRIP family
+    /// The per-slot lists are below (owner review pending). Every pick is a CANTRIP family
     /// (4 levels: 1 Minor, 2 Major, 3 Epic, 4 Legendary), one per family per piece. Rolled once, at drop - existing items
     /// never change. Called from Creature_Death right after ApplyZoneGearStats, before ZoneLootMutator (whose Cast on Strike
-    /// stamps the higher proc spellcraft over ours).
+    /// stamps set the proc's own resist spellcraft).
     /// </summary>
     public static partial class LootGenerationFactory
     {
@@ -149,14 +149,21 @@ namespace ACE.Server.Factories
         public static SpellId ThirstFamily(WorldObject wo)
         {
             if (wo is Caster)
-                return wo.W_DamageType != DamageType.Undef && wo.W_DamageType != 0 ? SpellId.CantripSpiritThirst1 : SpellId.Undef;
+                return wo.W_DamageType != DamageType.Undef ? SpellId.CantripSpiritThirst1 : SpellId.Undef;
             if (wo is MeleeWeapon || wo is MissileLauncher)
                 return SpellId.CANTRIPBLOODTHIRST1;
             return SpellId.Undef;
         }
 
+        /// <summary>The mana every item-spell piece carries (as /asforge), enough to activate and run for hours.</summary>
+        private const int ZoneSpellMana = 3500;
+
+        /// <summary>A zone stat as a whole number; a non-finite value (a hand-edited store) reads as the fallback.</summary>
         private static int ZsStat(EvaluatedProfile p, string stat, int fallback, int tier)
-            => (int)Math.Round(p?.GetT(stat, fallback, tier) ?? fallback, MidpointRounding.AwayFromZero);
+        {
+            var v = p?.GetT(stat, fallback, tier) ?? fallback;
+            return double.IsFinite(v) ? (int)Math.Round(Math.Clamp(v, int.MinValue, int.MaxValue), MidpointRounding.AwayFromZero) : fallback;
+        }
 
         /// <summary>Rolls the piece's item spells (see the class summary). Returns how many were added.</summary>
         public static int ApplyZoneSpells(WorldObject wo, int tier, EvaluatedProfile p)
@@ -176,21 +183,23 @@ namespace ACE.Server.Factories
             // Blood Thirst (melee / missile) / Spirit Thirst (elemental caster) - their own rare roll (owner 2026-10-06: "It should be
             // way more rare"), outside the slot pool; a hit takes one of this drop's spell slots, so the count never grows
             var thirst = ThirstFamily(wo);
-            var thirstHit = thirst != SpellId.Undef
-                && ThreadSafeRandom.Next(0.0f, 1.0f) < Math.Clamp(p?.GetT(ZoneStat.ItemSpellThirstChance, 0.02, tier) ?? 0.02, 0.0, 1.0);
+            var thirstChance = p?.GetT(ZoneStat.ItemSpellThirstChance, 0.02, tier) ?? 0.02;
+            var thirstHit = thirst != SpellId.Undef && double.IsFinite(thirstChance)
+                && ThreadSafeRandom.Next(0.0f, 1.0f) < Math.Clamp(thirstChance, 0.0, 1.0);
 
-            // one per family: the families already on the base weenie are skipped
+            // one per family: the families already on the base weenie are skipped (read under the biota lock)
             var have = new HashSet<SpellId>();
-            if (wo.Biota.PropertiesSpellBook != null)
-                foreach (var id in wo.Biota.PropertiesSpellBook.Keys)
-                {
-                    var fam = SpellLevelProgression.GetSpellLevels((SpellId)id);
-                    if (fam != null && fam.Count > 0) have.Add(fam[0]);
-                }
+            foreach (var id in wo.Biota.GetKnownSpellsIds(wo.BiotaDatabaseLock))
+            {
+                var fam = SpellLevelProgression.GetSpellLevels((SpellId)id);
+                if (fam != null && fam.Count > 0) have.Add(fam[0]);
+            }
+            // a base that already carries the Thirst family keeps its full count of other spells
+            thirstHit &= !have.Contains(thirst);
 
             var added = 0;
             var picks = pool.Where(s => !have.Contains(s)).OrderBy(_ => ThreadSafeRandom.Next(0, int.MaxValue - 1)).Take(thirstHit ? count - 1 : count).ToList();
-            if (thirstHit && !have.Contains(thirst))
+            if (thirstHit)
                 picks.Insert(0, thirst);
             foreach (var minor in picks)
             {
@@ -208,7 +217,7 @@ namespace ACE.Server.Factories
             // spellcraft of the strongest spell (a Cast on Strike stamp later only raises it), NO Arcane Lore requirement
             // (a T11 drop must never be blocked by it), and the magical glow on pieces that carry no element tint
             var maxBase = GetMaxBaseMana(wo);
-            wo.ItemMaxMana = Math.Max(wo.ItemMaxMana ?? 0, 3500);
+            wo.ItemMaxMana = Math.Max(wo.ItemMaxMana ?? 0, ZoneSpellMana);
             wo.ItemCurMana = wo.ItemMaxMana;
             wo.ManaRate = CalculateManaRate(maxBase);
             wo.ItemSpellcraft = Math.Max(wo.ItemSpellcraft ?? 0, GetMaxSpellPower(wo));

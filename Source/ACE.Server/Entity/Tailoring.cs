@@ -137,7 +137,7 @@ namespace ACE.Server.Entity
             // from, and its stats with it - only the look moves. Players read that as "T11 stats go poof". A look can still be
             // put ONTO Zone gear (an intermediate on it), which keeps every stat.
             if ((source.WeenieClassId == ArmorTailoringKit || source.WeenieClassId == WeaponTailoringKit)
-                && ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(target))
+                && ACE.Server.Managers.ZoneControl.ZoneCraftGate.TierOf(target) >= LootGenerationFactory.ZoneLootSetMinTier)   // ZcTier or a legacy WeaponAugScaleTier
             {
                 player.Session?.Network.EnqueueSend(new GameMessageSystemChat($"Your {target.Name} is Tier 11+ gear - cutting its look off would destroy it and its stats. Put a look ONTO it instead.", ChatMessageType.Craft));
                 return WeenieError.YouDoNotPassCraftingRequirements;
@@ -583,7 +583,7 @@ namespace ACE.Server.Entity
         {
             // Tier 11+ Zone gear takes the LOOK only (2026-10-05): its LongDesc carries the "Zone Cantrip:" stat lines and its
             // MaterialType is the one its drop rolled (what it salvages into) - a new look must not replace either
-            var zoneGear = ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(target);
+            var zoneGear = ACE.Server.Managers.ZoneControl.ZoneCraftGate.TierOf(target) >= LootGenerationFactory.ZoneLootSetMinTier;   // ZcTier or a legacy WeaponAugScaleTier
 
             player.UpdateProperty(target, PropertyInt.PaletteTemplate, source.PaletteTemplate);
             //player.UpdateProperty(target, PropertyInt.UiEffects, (int?)source.UiEffects);

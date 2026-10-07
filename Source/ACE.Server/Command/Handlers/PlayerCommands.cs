@@ -520,6 +520,8 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
                 session.LastBankCommandTime = DateTime.UtcNow;
+                if (session.Player.BankedLuminance < 0)
+                    session.Player.BankedLuminance = 0;   // the same cleanup every other deposit runs first
                 session.Player.DepositLuminanceTokens();
                 return;
             }
@@ -649,7 +651,6 @@ namespace ACE.Server.Command.Handlers
                 if (parameters.Length == 1 || (parameters.Length == 2 && parameters[1] == "a"))
                 {
                     //deposit all - suppress individual messages
-                    var lumBefore = session.Player.BankedLuminance ?? 0;   // owner 2026-10-06: before / after when tokens bank
                     session.Player.DepositPyreals(true);
                     session.Player.DepositLuminance(true);
                     session.Player.DepositLegendaryKeys(true);
@@ -659,7 +660,9 @@ namespace ACE.Server.Command.Handlers
                     session.Player.DepositPrestigeCoins(true);
                     session.Player.DepositMythicalKeys(true);
                     session.Player.DepositTradeNotes(true);
-                    session.Player.DepositLuminanceTokens(quietIfNone: true, startingBalance: lumBefore, showTotal: true);   // ILT lum tokens (owner 2026-10-05); per-token lines like /b lum (owner 2026-10-06)
+                    // ILT lum tokens (owner 2026-10-05): per-token lines like /b lum, between Starting and Ending Banked Lum (owner
+                    // 2026-10-06) - read after the plain lum deposit above, so Starting + the tokens = Ending
+                    session.Player.DepositLuminanceTokens(quietIfNone: true, showTotal: true);
 
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all currencies!", ChatMessageType.System));
                     return;

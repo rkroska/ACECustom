@@ -1264,6 +1264,10 @@ namespace ACE.Server.WorldObjects
             }
 
             var flatDmg = (float)(arrowDamage * ThreadSafeRandom.Next(minMult, maxMult));
+            // nothing to blast with (an invincible or fully immune target took 0): a 0 flatDamage would make the ring roll its OWN
+            // spell damage instead
+            if (flatDmg <= 0f)
+                return;
 
             // Delay between arrow hit and ring detonation (tunable via /charm explosivearrow delay <seconds>)
             var actionChain = new ActionChain();
@@ -1908,7 +1912,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         internal static readonly float RingSightHeightFactor = ProjHeight;
 
-        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0, WorldObject losOrigin = null, WorldObject losExempt = null, bool lowTierGate = false, WorldObject lowTierItem = null, bool lowTierBareHands = false)
+        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0, WorldObject losOrigin = null, WorldObject losExempt = null, WorldObject lowTierItem = null)
         {
             var center = centerOverride ?? Location;
             if (center == null) return;
@@ -2060,6 +2064,14 @@ namespace ACE.Server.WorldObjects
                     continue;
                 }
 
+                // T11+ low-tier PROC resist (owner 2026-10-06): lowTierItem = the proccing item of a PROC ring (null for a hand-cast
+                // ring). Once per creature, before the roll and Overpower, which must not land it.
+                if (lowTierItem != null && ACE.Server.Managers.ZoneControl.TierHitGate.BlockLowTierCast(this, creature, spell, lowTierItem))
+                {
+                    dbgResist++;
+                    continue;
+                }
+
                 // Run the loop for multi-procs
                 for (var procIdx = 0; procIdx < procCount; procIdx++)
                 {
@@ -2073,13 +2085,6 @@ namespace ACE.Server.WorldObjects
                     // resistSource - passing null here rolled the PLAYER's own War/Void skill, the
                     // precise failure the spellcraft stamp exists to prevent (fixed 2026-08-28, the
                     // sixth everything-must-be-done-TWICE bug). Hand-cast rings keep null = own skill.
-                    // T11+ low-tier caster resist (owner 2026-10-05) - before the roll and Overpower, which must not land it
-                    if (lowTierGate && ACE.Server.Managers.ZoneControl.TierHitGate.BlockLowTierCast(this, creature, spell, lowTierItem, lowTierBareHands))
-                    {
-                        dbgResist++;
-                        continue;
-                    }
-
                     // a jewelry Cast on Strike ring (key 54) has no B value but its own spellcraft stamp - it resists on that too,
                     // not the wearer's own War / Void skill (2026-10-06)
                     var jewelProc = fromProc && (weapon?.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0) > 0;
@@ -2354,7 +2359,7 @@ namespace ACE.Server.WorldObjects
                         {
                             var jewelPct = weapon.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0;
                             if (jewelPct > 0)
-                                finalDamage *= jewelPct / 100.0f;
+                                finalDamage *= Math.Min(jewelPct, 100) / 100.0f;   // a power pct, never above 100
                         }
                     }
 
@@ -2370,6 +2375,17 @@ namespace ACE.Server.WorldObjects
                     {
                         var petMit = combatPet.GetSpellProjectileDamageTakenMultiplier();
                         if (petMit < 1.0f) finalDamage *= petMit;
+                    }
+
+                    // DAMAGE TAKEN multiplier (owner 2026-10-05, mirrors SpellProjectile / DamageEvent): a harmful ring on a Zone
+                    // Control monster - the ring AoE never reaches SpellProjectile.DamageTarget. 1.0 for players and pets. An
+                    // Explosive Arrow ring (flatDamage) starts from the arrow's hit BEFORE the multiplier (DamageBeforeZoneTaken),
+                    // so each creature in it takes its own here.
+                    if (finalDamage > 0 && spell.IsHarmful)
+                    {
+                        var ringTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(creature);
+                        if (ringTakenMult != 1f)
+                            finalDamage *= ringTakenMult;
                     }
 
                     if (finalDamage <= 0) continue;

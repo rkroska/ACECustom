@@ -150,11 +150,10 @@ namespace ACE.Server.Managers.ZoneControl
         /// treats it as resisted. The callers are the PROC paths only - hand-casts (any wand, bare hands) and gems are never
         /// gated.
         ///
-        /// <paramref name="item"/> is the proccing item. NULL means the item is unknown and the cast is left alone
-        /// (<paramref name="bareHandsKnown"/> is kept for the signature; every caller passes false since 10-06).
+        /// <paramref name="item"/> is the proccing item. NULL means the item is unknown and the cast is left alone.
         /// Aetheria surges are exempt: there is no T11 aetheria, so the rule would remove them outright.
         /// </summary>
-        public static bool IsLowTierCast(WorldObject caster, WorldObject target, Spell spell, WorldObject item, bool bareHandsKnown)
+        public static bool IsLowTierCast(WorldObject caster, WorldObject target, Spell spell, WorldObject item)
         {
             if (!ServerConfig.zc_low_tier_item_spell_resist.Value)
                 return false;
@@ -162,15 +161,17 @@ namespace ACE.Server.Managers.ZoneControl
                 return false;
             if (spell == null || !spell.IsHarmful || spell.IsSelfTargeted)
                 return false;
-            // the allow list (owner 2026-10-06: "add / remove procs allowed via plugin, similar to craft components")
-            if (ZoneControlManager.IsProcAllowed(spell.Id))
-                return false;
-            if (ZoneControlManager.ResolveForCreature(targetCreature) == null
+            // ResolveCombatProfile: null while zonecontrol_enabled is OFF - the master switch makes this inert like every combat gate
+            if (ZoneControlManager.ResolveCombatProfile(targetCreature) == null
                 || ZoneControlManager.GetEffectiveVariation(targetCreature) < MinGatedVariation)
+                return false;
+            // the allow list (owner 2026-10-06: "add / remove procs allowed via plugin, similar to craft components") - read after
+            // the profile resolve, which has initialised the zone store
+            if (ZoneControlManager.IsProcAllowed(spell.Id))
                 return false;
 
             if (item == null || item is Creature)
-                return bareHandsKnown;
+                return false;
             if (Aetheria.IsAetheria(item.WeenieClassId))
                 return false;
             return ZoneCraftGate.TierOf(item) < MinGatedVariation;
@@ -178,9 +179,9 @@ namespace ACE.Server.Managers.ZoneControl
 
         /// <summary>IsLowTierCast plus the normal resist feedback ("X resists your spell" + the resist sound).
         /// Call it BEFORE the skill resist roll and before any Overpower check - Overpower must not land it.</summary>
-        public static bool BlockLowTierCast(WorldObject caster, WorldObject target, Spell spell, WorldObject item, bool bareHandsKnown = false)
+        public static bool BlockLowTierCast(WorldObject caster, WorldObject target, Spell spell, WorldObject item)
         {
-            if (!IsLowTierCast(caster, target, spell, item, bareHandsKnown))
+            if (!IsLowTierCast(caster, target, spell, item))
                 return false;
 
             if (caster is Player player && player.Session != null)

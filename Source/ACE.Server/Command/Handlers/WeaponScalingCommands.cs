@@ -160,7 +160,7 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /weaponscale tier <t> minwieldcreature <n> Creature augs required to wield (T11-T15; also the hit gate)");
                 Msg("  /weaponscale tier <t> minwieldlife <n>     Life augs required to wield (T11-T15)");
                 Msg("  /weaponscale tier <t> minwieldtriune <n>   Triune Weave count required to wield (T16+ charm gate)");
-                Msg("  /weaponscale tier <t> minwieldskillcharm <n>   weapon-family charm count required to wield (T16+)");
+                Msg("  /weaponscale tier <t> minwieldskillcharm <n>   weapon-family charm count (RETIRED 2026-10-05: no longer stamped)");
                 Msg("  /weaponscale tier add <t> [cap] [minwield] | tier remove <t>");
                 Msg("  /weaponscale script <name> kmin <v> | kmax <v> | variance <v>   per-loot-script k range + Scheme C family variance");
                 Msg("  /weaponscale script <name> ladder <anchorS> | ladder clear   seed/drop the 16-rung grade ladder (+18 pct per grade)");
@@ -310,13 +310,33 @@ namespace ACE.Server.Command.Handlers
                     }
                     if (args.Length < 4 || !int.TryParse(args[1], out var tier) || !int.TryParse(args[3], out var value))
                     {
-                        Msg("Usage: /weaponscale tier <t> cap|minwield <n>  |  tier add <t> [cap] [minwield]  |  tier remove <t>");
+                        Msg("Usage: /weaponscale tier <t> cap|minwield|minwieldcreature|minwieldlife|minwieldtriune|minwieldskillcharm <n>  |  tier add <t> [cap] [minwield]  |  tier remove <t>");
                         return;
                     }
                     var field = args[2].ToLowerInvariant();
                     if (field != "cap" && field != "minwield" && field != "minwieldcreature" && field != "minwieldlife" && field != "minwieldtriune" && field != "minwieldskillcharm")
                     {
                         Msg("tier: field must be cap, minwield, minwieldcreature, minwieldlife, minwieldtriune, or minwieldskillcharm.");
+                        return;
+                    }
+                    if (value < 0)
+                    {
+                        Msg($"tier: {field} must be 0 or more.");
+                        return;
+                    }
+                    // a stored 0 means UNSET for these two at T11+ (WeaponScalingManager.Normalize re-seeds the ladder), so it is refused
+                    // rather than reported as set and silently undone
+                    // the same at T16+: Normalize re-seeds a T16+ row whose Triune AND (retired) charm are both 0
+                    var t16Row = tier >= 16 ? WeaponScalingManager.GetTier(tier) : null;
+                    if (value < 1 && t16Row != null
+                        && ((field == "minwieldtriune" && t16Row.MinWieldSkillCharm == 0) || (field == "minwieldskillcharm" && t16Row.MinWieldTriune == 0)))
+                    {
+                        Msg($"tier: at T16+ minwieldtriune and minwieldskillcharm cannot both be 0 (read as unset and re-seeded to the default ladder).");
+                        return;
+                    }
+                    if ((field == "minwieldcreature" || field == "minwieldlife") && tier >= 11 && value < 1)
+                    {
+                        Msg($"tier: {field} must be 1 or more at T11+ (0 is read as unset and re-seeded to the default ladder).");
                         return;
                     }
                     var found = false;

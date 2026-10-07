@@ -614,13 +614,12 @@ namespace ACE.Server.Managers.ZoneControl
             return !string.IsNullOrEmpty(raw) && raw.IndexOf('-') >= 0;
         }
 
-        /// <summary>Parse the record. Unknown / malformed entries are skipped, never thrown on.</summary>
         /// <summary>
         /// Gear Grade (owner 2026-10-05, item 4: "grading on armor / jewelry like Weapon Grade - display only ... average of all rolls,
         /// possibly excluding some bad mods"). The plain average of the piece's rolled line GRADES (0-1000, the same number each line's
         /// value is resolved from) on the Weapon Grade letter scale (S / A+ .. F-). Left out: Trash-class lines (Armor Level, Spell
-        /// Duration - the "bad mods": a great roll of a weak line should not lift the piece, a poor one should not sink it) and
-        /// Reinforced (earned and frozen, never in the record). Always Rolled resists ARE rolls and count. Changes nothing on the item.
+        /// Duration - the "bad mods": a great roll of a weak line should not lift the piece, a poor one should not sink it), the
+        /// slot specials (a fixed effect per slot, not a rolled stat) and Reinforced (earned and frozen, never in the record). Always Rolled resists ARE rolls and count. Changes nothing on the item.
         /// Null when the piece has no graded line.
         /// </summary>
         public static string GearGradeLine(WorldObject wo)
@@ -629,14 +628,16 @@ namespace ACE.Server.Managers.ZoneControl
                 return null;
             var grades = Read(wo)
                 .Where(r => !(ZoneModifiers.TryGet(r.Key, out var d) && (d.Class == ZoneModifiers.ModifierClass.Trash || d.SlotSpecial)))
-                .Select(r => Math.Clamp(r.Grade, 0, 1000))
+                .Select(r => Math.Clamp(r.Grade, 0, GradeMax))
                 .ToList();
             if (grades.Count == 0)
                 return null;
-            var avg = (int)Math.Round(grades.Average(), MidpointRounding.AwayFromZero);
+            // floored: S is the single perfect 1000, so only an all-perfect piece may show it (999.5 must not round up into S)
+            var avg = (int)Math.Floor(grades.Average());
             return $"- Gear Grade: {ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetQualitySubGrade(avg)} (average of {grades.Count} rolled line{(grades.Count == 1 ? "" : "s")})";
         }
 
+        /// <summary>Parse the record. Unknown / malformed entries are skipped, never thrown on.</summary>
         public static List<LineRecord> Read(WorldObject wo)
         {
             var list = new List<LineRecord>();
@@ -858,7 +859,8 @@ namespace ACE.Server.Managers.ZoneControl
             var tier = TierOf(wo);
             if (tier <= 0) tier = 11;
             var r = new Resolved { Tier = tier };
-            var hasArmor = wo.ArmorLevel.HasValue && wo.ItemType == ItemType.Armor;
+            // armor, or a cap / glove / shoe from the clothing table that fills an armor slot (2026-10-06)
+            var hasArmor = wo.ArmorLevel.HasValue && (wo.ItemType == ItemType.Armor || ACE.Server.Factories.LootGenerationFactory.IsArmorSlotClothing(wo));
             var alBonus = 0;
 
             // The tier Default's Stats, fetched AT MOST ONCE per resolve and only when the record
@@ -975,7 +977,7 @@ namespace ACE.Server.Managers.ZoneControl
 
         // ── tinkering on Zone gear (2026-10-05) ─────────────────────────────────
 
-        private const int SteelMaterial = 64;           // MaterialType.Steel - the TinkerLog entry a Steel tinker leaves
+        private const int SteelMaterial = (int)ACE.Entity.Enum.MaterialType.Steel;   // the TinkerLog entry a Steel tinker leaves
         private const int SteelArmorLevel = 20;         // what the Steel tinker adds (retail recipe, measured 1100 -> 1120)
 
         /// <summary>
@@ -1072,7 +1074,7 @@ namespace ACE.Server.Managers.ZoneControl
             foreach (var p in props)
                 if (p != (int)PropertyInt.ArmorLevel && bonus.Remove(p))
                     dropped = true;
-            if (dropped || wo.GetProperty(PropertyString.ZcTinkerBonus) == null && bonus.Count > 0)
+            if (dropped || (wo.GetProperty(PropertyString.ZcTinkerBonus) == null && bonus.Count > 0))
                 WriteTinkerBonus(wo, bonus);
         }
 

@@ -2017,7 +2017,8 @@ namespace ACE.Server.WorldObjects
 
             // Tier 11+ gear (owner 2026-10-05): bring the item's wield gates up to the CURRENT tier row before they are checked,
             // so a gate change (Creature / Item / Life at T11-T15, Triune at T16+) applies to gear already in players' packs
-            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(item))
+            // ZcTier OR a legacy WeaponAugScaleTier (older T11 weapons carry only that one)
+            if (ACE.Server.Managers.ZoneControl.ZoneCraftGate.TierOf(item) >= ACE.Server.Factories.LootGenerationFactory.ZoneLootSetMinTier)
                 ACE.Server.Factories.LootGenerationFactory.RefreshWieldGate(item, ACE.Server.Managers.ZoneControl.ZoneStatResolver.TierOf(item));
 
             var wieldError = CheckWieldRequirements(item);
