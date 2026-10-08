@@ -3191,8 +3191,12 @@ namespace ACE.Server.Command.Handlers
             var zb = ZoneControlManager.GetZoneWideBounty();
             sb.Append("|zonebounty=").Append(zb.Enabled ? 1 : 0).Append("|zonebountylist=").Append(BountyManager.Wire(zb));
             sb.Append("|bountyqb=1");
+        }
 
-            // REGION BOUNTIES (2026-10-07): "|regionbounty_vod=0|regionbountylist_vod=..." per region. APPEND-ONLY.
+        /// <summary>REGION BOUNTIES (2026-10-07): "|regionbounty_vod=0|regionbountylist_vod=..." per region (same list format as
+        /// zonebountylist). Sent LAST on both [[ZC]] and [[ZCSESS]]; an older plugin ignores the unknown keys. APPEND-ONLY.</summary>
+        private static void AppendRegionBounty(StringBuilder sb)
+        {
             foreach (var r in ZoneControlManager.BountyRegions)
             {
                 var rb = ZoneControlManager.GetRegionBounty(r.Key);
@@ -3244,6 +3248,7 @@ namespace ACE.Server.Command.Handlers
             AppendGearLock(sb);       // APPEND-ONLY (2026-10-05): gear lock landblocks, after the missile power ladder
             AppendZoneBounty(sb);     // APPEND-ONLY (2026-10-06): the zone-wide bounty, after the gear lock
             AppendProcAllow(sb);      // APPEND-ONLY (2026-10-06): the allowed proc spells, after the zone-wide bounty
+            AppendRegionBounty(sb);   // APPEND-ONLY (2026-10-07): Valley of Death / Thaelaryn Island bounties, after the procs
             return sb.ToString();
         }
 
@@ -3993,6 +3998,7 @@ namespace ACE.Server.Command.Handlers
             AppendGearLock(sb);
             AppendZoneBounty(sb);
             AppendProcAllow(sb);
+            AppendRegionBounty(sb);
             return sb.ToString();
         }
 

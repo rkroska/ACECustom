@@ -207,7 +207,8 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// The Bounty area this object stands in: a dungeon first, else the governing Zone Control zone. Asked for the
+        /// The Bounty area this object stands in: a dungeon first, else the all-zones bounty, else the governing Zone Control
+        /// zone (those three at v11+ only for zones), else a region bounty below T11 (Valley of Death, Thaelaryn Island). Asked for the
         /// victim (on its thread) and for the killer (on theirs); the two keys must match. A dungeon's key carries its
         /// variation, so two copies of one dungeon are two areas.
         /// </summary>

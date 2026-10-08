@@ -2485,6 +2485,12 @@ namespace ACE.Server.Managers.ZoneControl
             refused = null;
             EnsureInitialized();
             key = (key ?? "").ToLowerInvariant();
+            // only a region the loader keeps (CodeRabbit 2026-10-07): an unknown key would save, then vanish on the next load
+            if (FindBountyRegion(key) == null)
+            {
+                refused = $"unknown region '{key}'.";
+                return new BountyConfig();
+            }
             lock (_lock)
             {
                 var cfg = _regionBounties.TryGetValue(key, out var current) ? current.Clone() : new BountyConfig();
