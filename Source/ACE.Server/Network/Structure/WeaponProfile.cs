@@ -35,9 +35,13 @@ namespace ACE.Server.Network.Structure
 
         public double Enchantment_WeaponDefense;    // gets sent elsewhere, calculating here for consistency
 
+        // whose location decides the zone lock for the % stats (2026-10-07): the wielder of a worn weapon, else the examiner
+        private readonly Player pctHolder;
+
         public WeaponProfile(WorldObject weapon, Player examiner = null)
         {
             Weapon = weapon;
+            pctHolder = (weapon.Wielder as Player) ?? examiner;
 
             WeaponDefense = GetWeaponDefense(weapon);
 
@@ -164,6 +168,9 @@ namespace ACE.Server.Network.Structure
                 baseMultiplier = gradedMod;
             else
                 baseMultiplier = weapon.GetProperty(PropertyFloat.DamageMod) ?? 1.0f;
+            // a locked MELEE weapon fights with Legendary Blood Thirst too (BaseDamageMod) - show it
+            if (profileLocked && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active && weapon is MeleeWeapon)
+                baseMultiplier += ACE.Server.Managers.ZoneControl.ZoneLockFallback.ThirstTopUp(weapon);
             var damageMod = weapon.EnchantmentManager.GetDamageMod();
             var auraDamageMod = weapon.Wielder != null ? weapon.Wielder.EnchantmentManager.GetDamageMod() : 0.0f;
             Enchantment_DamageMod = weapon.IsEnchantable ? damageMod + auraDamageMod : damageMod;
@@ -177,7 +184,7 @@ namespace ACE.Server.Network.Structure
         {
             if (weapon is Ammunition) return 1.0f;
 
-            var baseOffense = weapon.GetProperty(PropertyFloat.WeaponOffense) ?? 1.0f;
+            var baseOffense = (double)ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, pctHolder, PropertyFloat.WeaponOffense, (float)(weapon.GetProperty(PropertyFloat.WeaponOffense) ?? 1.0f));   // zone lock: T10 %
             var offenseMod = !weapon.IsRanged ? weapon.EnchantmentManager.GetAttackMod(): 0.0f;
             var auraOffenseMod = weapon.Wielder != null && !weapon.IsRanged ? weapon.Wielder.EnchantmentManager.GetAttackMod() : 0.0f;
             Enchantment_WeaponOffense = weapon.IsEnchantable ? offenseMod + auraOffenseMod : offenseMod;
@@ -199,6 +206,8 @@ namespace ACE.Server.Network.Structure
             // The issue is that the recipe system likely added 0.01 to 0 instead of 1, which is what *should* have happened.
             if (weapon.WeaponDefense.HasValue && weapon.WeaponDefense.Value > 0 && weapon.WeaponDefense.Value < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 4) != 0)
                 baseDefense += 1;
+
+            baseDefense = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, pctHolder, PropertyFloat.WeaponDefense, (float)baseDefense);   // zone lock: T10 %
 
             var defenseMod = weapon.EnchantmentManager.GetDefenseMod();
             var auraDefenseMod = weapon.Wielder != null ? weapon.Wielder.EnchantmentManager.GetDefenseMod() : 0.0f;

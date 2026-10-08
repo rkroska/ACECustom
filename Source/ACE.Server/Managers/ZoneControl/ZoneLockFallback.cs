@@ -10,27 +10,31 @@ namespace ACE.Server.Managers.ZoneControl
 {
     /// <summary>
     /// What T11+ Zone Control gear is worth while the ZONE LOCK suppresses it (zc_armor_zone_lock / zc_weapon_zone_lock, a
-    /// player outside every enabled area). Owner 2026-10-07: locked T11 gear must act like "the same stats as T10 gear" -
+    /// player outside every enabled area - or standing on a gear-lock spot, which the same gates cover). Owner 2026-10-07: locked T11 gear must act like "the same stats as T10 gear" -
     /// before this the lock dropped it to ZERO, and a full T11 kit outside a zone dealt ~4.3x less and took ~1.6x more than
     /// a real T10 set (bench, C:\AI\ZoneControl\Plan_ZoneLock_T10Fallback_2026-10-07.md).
     ///
     /// Every number is measured from REAL T10 gear on the shard (ilt1003, the 10-03 copy of live), never from a premade:
-    ///   worn ratings  = the average of the two best-geared T10 characters' worn totals (Drexel, Nerd Parade);
+    ///   worn ratings  = the average of two NORMAL T10 characters' worn totals (Grumpy Old Man, Good Grief - the best-geared
+    ///                   Drexel / Nerd Parade carry paragon items and enchants, owner: "Thats not normal"); aetheria excluded;
     ///   weapons       = the top loot cluster per weapon type (one-off admin items ignored) +10 pct (owner: "roughly 10%
     ///                   higher than the best in slot t10 for each weapon type");
     ///   weapon extras = the T10 ceiling of each property a T10 weapon can drop with or have applied.
     /// NOT the master-switch fallback (<see cref="ZoneFallback"/>): that one re-prices items while Zone Control is OFF and
-    /// its rating anchors were calibrated before Max Health was a T10 rating (its line shrink gives ~100 HP; real T10 sets
-    /// carry ~1,750).
+    /// its rating anchors were calibrated before Max Health was a T10 rating (its line shrink gives ~100 HP; a normal T10 set
+    /// carries ~715).
     /// </summary>
     public static class ZoneLockFallback
     {
-        /// <summary>The fallback is the ZONE LOCK's answer only. WeaponPowerSuppressed is also true while zonecontrol_enabled is
-        /// OFF, and that switch keeps its own meaning (ruling 1, "fully inert": base stats only) - so every read site asks
-        /// this first and keeps its old behaviour when it is false.</summary>
+        /// <summary>True = the zone lock's T10 fallback may apply (it is just zonecontrol_enabled). WeaponPowerSuppressed is also
+        /// true while zonecontrol_enabled is OFF, and the armor lock (WornPowerSuppressed) ignores that switch; the switch keeps
+        /// its own meaning (ruling 1, "fully inert") - so every read site asks this first and keeps its old behaviour when it
+        /// is false.</summary>
         public static bool Active => ServerConfig.zonecontrol_enabled.Value;
 
-        /// <summary>A full worn kit - the worn ratings below are the total a full locked T11 kit lands on.</summary>
+        /// <summary>A full worn kit: 9 armor + shirt + pants + cloak + necklace + 2 rings + 2 bracelets + trinket (the /asforge
+        /// roster). Only WORN ZC pieces count (Creature_Equipment.equippedZcWornCount) - never a weapon, caster, shield or ammo -
+        /// and a multi-slot piece counts once, so a kit of multi-slot armor lands a little under the full totals.</summary>
         public const int FullKitPieces = 18;
 
         /// <summary>Real T10 worn totals of NORMAL players - the average of Grumpy Old Man / Good Grief (owner 2026-10-07: Drexel and
@@ -116,14 +120,14 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Slayer while locked: the best T10 slayer on the shard (5.0x, 263 weapons).</summary>
         public const double SlayerCap = 5.0;
 
-        /// <summary>Cleave while locked: T10 weapons cleave up to 4 targets (1,320 weapons; 2 is retail two-handers).</summary>
-        public const int CleaveCap = 4;
+        /// <summary>Cleave while locked, in EXTRA targets (WorldObject.CleaveTargets = the raw Cleaving prop - 1): T10 weapons
+        /// carry a raw Cleaving of up to 4 (1,320+ weapons; raw 2 is retail two-handers), i.e. 3 extra targets.</summary>
+        public const int CleaveCap = 3;
 
-        /// <summary>Shield Cleaving while locked: T10 tops out at 1.0 (322 weapons).</summary>
-        public const double ShieldCleaveCap = 1.0;
-
-        /// <summary>Cast on Strike while locked: fires at most this often per hit - the top T10 weapon proc rate (0.60, 601
-        /// weapons). Its damage is the spell's own (the Zone Control proc damage override stays off while locked).</summary>
+        /// <summary>Cast on Strike while locked: each slot's proc RATE is capped at the top T10 weapon proc rate (0.60, 601
+        /// weapons). Its damage is the spell's own (the Zone Control proc damage override stays off while locked). NOTE: outside
+        /// T11 zones the wielded weapon is rolled twice per hit (WorldObject_Combat dedupeProcs) - a BUG re-added 09-10 that the
+        /// owner wants fixed separately (10-07); a T10 weapon gets the same double roll today.</summary>
         public const double ProcRateCap = 0.60;
 
         /// <summary>Split Arrows while locked (owner 2026-10-07): a bow / crossbow / atlatl WITHOUT its own Split Arrows shoots
@@ -186,11 +190,12 @@ namespace ACE.Server.Managers.ZoneControl
         /// Locked: see <see cref="SplitBonusCount"/>.</summary>
         public static (bool On, int Count, float Range, float Damage) SplitFor(WorldObject launcher, bool locked)
         {
-            // master switch OFF: the old lock behaviour - a suppressed launcher fires no split at all
-            if (locked && !Active)
-                return (false, 0, 0f, 0f);
             if (launcher == null)
                 return (false, 0, 0f, 0f);
+            // master switch OFF: the old lock behaviour - a suppressed launcher fires no split at all (its own damage value
+            // kept for the appraisal line, as before)
+            if (locked && !Active)
+                return (false, 0, 0f, (float)(launcher.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? Creature.DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER));
             var own = launcher.GetProperty(PropertyBool.SplitArrows) == true;
             var count = launcher.GetProperty(PropertyInt.SplitArrowCount) ?? Creature.DEFAULT_SPLIT_ARROW_COUNT;
             var range = (float)(launcher.GetProperty(PropertyFloat.SplitArrowRange) ?? Creature.DEFAULT_SPLIT_ARROW_RANGE);

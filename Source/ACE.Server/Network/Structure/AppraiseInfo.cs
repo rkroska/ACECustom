@@ -742,6 +742,16 @@ namespace ACE.Server.Network.Structure
             else
                 PropertiesInt.Remove(PropertyInt.AppraisalItemSkill);
 
+            // zone lock (2026-10-07): a locked ZC weapon's % stats are the T10 values combat uses (ZoneLockFallback.WeaponPercent;
+            // unchanged when not locked) - before the enchantment additions below, exactly as combat adds them
+            if (wo is MeleeWeapon || wo is MissileLauncher || wo is Caster)
+            {
+                var pctHolder = (wo.Wielder as Player) ?? examiner;
+                foreach (var pctProp in new[] { PropertyFloat.WeaponOffense, PropertyFloat.WeaponDefense, PropertyFloat.WeaponMissileDefense, PropertyFloat.WeaponMagicDefense, PropertyFloat.ManaConversionMod })
+                    if (PropertiesFloat.TryGetValue(pctProp, out var pctOwn))
+                        PropertiesFloat[pctProp] = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(wo, pctHolder, pctProp, (float)pctOwn);
+            }
+
             if (PropertiesFloat.ContainsKey(PropertyFloat.WeaponDefense) && !(wo is Ammunition))
             {
                 var defenseMod = wo.EnchantmentManager.GetDefenseMod();
@@ -783,8 +793,12 @@ namespace ACE.Server.Network.Structure
                 var casterHolder = (wo.Wielder as Player) ?? examiner;
                 var enchantmentBonus = ResistMaskHelper.GetElementalDamageBonus(wo);
 
-                // gear / zone lock: combat uses the stock mod there (WorldObject_Weapon caster gate), so show that
-                if (!ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(wo, casterHolder)
+                // gear / zone lock: show what combat uses there (WorldObject_Weapon caster gate) - the T10 caster mod + Spirit Thirst
+                // while the zone lock holds (2026-10-07), the stock mod with the master switch off
+                var casterLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(wo, casterHolder);
+                if (casterLocked && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
+                    PropertiesFloat[PropertyFloat.ElementalDamageMod] = ACE.Server.Managers.ZoneControl.ZoneLockFallback.CasterElementalMod + enchantmentBonus + ACE.Server.Managers.ZoneControl.ZoneLockFallback.ThirstTopUp(wo);
+                else if (!casterLocked
                     && ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetCasterElementalMod(wo, casterHolder, out var gradedElemMod))
                     // the same composition combat uses: the graded mod MULTIPLIES the aura, it does not add to it
                     PropertiesFloat[PropertyFloat.ElementalDamageMod] = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.ComposeCasterModifier(
@@ -1424,7 +1438,7 @@ namespace ACE.Server.Network.Structure
             // Shield Cleaving: fraction of the target's shield AL the weapon ignores. Stored directly on
             // the weapon (PropertyFloat.IgnoreShield); GetIgnoreShieldMod reads it at hit time.
             if (weapon.IgnoreShield.HasValue && weapon.IgnoreShield.Value > 0)
-                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked && !zcT10 ? 0.0 : Math.Clamp(weapon.IgnoreShield.Value, 0.0, ACE.Server.Managers.ZoneControl.ZoneLockFallback.ShieldCleaveCap)):P0} Shield Ignored");
+                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(weapon.IgnoreShield.Value, 0.0, 1.0)):P0} Shield Ignored");   // locked: off (owner 2026-10-07)
 
             // Phantom (hollow): the weapon bypasses the target's protective magic - Impen/Banes on armor
             // and Life prots. RETAIL ONLY as of 2026-08-25: our loot card was deleted, so every weapon
@@ -1438,6 +1452,7 @@ namespace ACE.Server.Network.Structure
             var wepMeleeDef = (float)(weapon.WeaponDefense ?? 1.0f);
             if (weapon.WeaponDefense > 0 && weapon.WeaponDefense < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 4) != 0)
                 wepMeleeDef += 1;
+            wepMeleeDef = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, (weapon.Wielder as Player) ?? examiner, PropertyFloat.WeaponDefense, wepMeleeDef);   // zone lock: T10 %
 
             var meleeMod = wepMeleeDef + weapon.EnchantmentManager.GetDefenseMod();
             if (weapon.IsEnchantable)

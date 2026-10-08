@@ -1977,7 +1977,9 @@ namespace ACE.Server.Command.Handlers
             // the cache applies two rules the raw item sums do not: zone-lock suppression (everything reads 0) and the
             // gear cap on cap-line props (the cache may be LOWER than the raw sum, never higher)
             if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(p))
-                Msg("Zone lock: worn power is SUPPRESSED here (outside an authored zone) - the cache reads 0 by design.");
+                Msg(ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active
+                    ? "Zone lock: worn power is SUPPRESSED here (outside an authored zone) - the ZC lines read 0 and the Gear* ratings read the T10 worn totals (ZoneLockFallback)."
+                    : "Zone lock: worn power is SUPPRESSED here (outside an authored zone) - the cache reads 0 by design.");
             else if (rawFortifyMax != fortify || pctHp > rawPct)
                 Msg("MISMATCH: the cantrip cache does not match what is worn - equip/dequip hook missed (report this).");
             else if (pctHp < rawPct)

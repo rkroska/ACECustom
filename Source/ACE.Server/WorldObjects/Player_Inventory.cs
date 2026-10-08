@@ -447,7 +447,9 @@ namespace ACE.Server.WorldObjects
                 new GameEventWieldItem(Session, item.Guid.Full, wieldedLocation),
                 new GameMessageSound(Guid, Sound.WieldObject));
 
-            if (item.GearMaxHealth != null)
+            // zone lock (2026-10-07): while the armor lock holds, every ZC piece moves the T10 Max Health share, rated or not
+            if (item.GearMaxHealth != null
+                || (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(item) && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this)))
                 HandleMaxHealthUpdate();
 
             TryShuffleStance(wieldedLocation);
@@ -554,7 +556,9 @@ namespace ACE.Server.WorldObjects
             if (item.HasItemSet)
                 DequipItemFromSet(item);
 
-            if (item.GearMaxHealth != null)
+            // zone lock (2026-10-07): while the armor lock holds, every ZC piece moves the T10 Max Health share, rated or not
+            if (item.GearMaxHealth != null
+                || (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(item) && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this)))
                 HandleMaxHealthUpdate();
 
             if (dequipObjectAction == DequipObjectAction.ToCorpseOnDeath || dequipObjectAction == DequipObjectAction.TradeItem)

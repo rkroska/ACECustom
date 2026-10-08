@@ -546,6 +546,11 @@ namespace ACE.Server.WorldObjects
                 // count / range / damage come from the caller (ZoneLockFallback.SplitFor - the launcher's own props, or the
                 // zone-lock T10 split)
                 
+                // the damage the split arrows HIT with, fixed at the shot (2026-10-07): stamped on each split arrow below, so a
+                // player stepping into a zone (or the master switch flipping) while it flies cannot change it. Unclamped on
+                // purpose - the hit always used the launcher's raw value.
+                var shotSplitDamage = damageMultiplier;
+
                 // Apply safety clamps to prevent invalid values
                 splitCount = Math.Clamp(splitCount, SPLIT_ARROW_COUNT_MIN, SPLIT_ARROW_COUNT_MAX);
                 splitRange = Math.Clamp(splitRange, SPLIT_ARROW_RANGE_MIN, SPLIT_ARROW_RANGE_MAX);
@@ -602,6 +607,7 @@ namespace ACE.Server.WorldObjects
                 // Mark as split arrow for special handling
                 // This enables death message modification to prevent VirindiTank kill attribution issues
                 splitProj.SetProperty(PropertyBool.IsSplitArrow, true);
+                splitProj.SetProperty(PropertyFloat.SplitArrowDamageMultiplier, shotSplitDamage);
                     
                     // Calculate velocity to new target using the SAME method as main arrows
                     // Each split arrow needs its own aim level and spawn origin based on its target distance

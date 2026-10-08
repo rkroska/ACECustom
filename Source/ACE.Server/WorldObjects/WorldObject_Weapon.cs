@@ -433,12 +433,14 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>The crit rate a weapon falls back to while its Zone power is suppressed (the appraisal shows it). Owner
         /// 2026-10-07: locked gear keeps what a T10 weapon can have - its Biting Strike, capped at the best T10 craft (0.33),
-        /// plus a Bandit Hilt's +0.25 - never below the base (a caster the magic base - endgame 0.10 while Zone Control rules
-        /// its gear, else retail 0.05 - every other weapon the physical base).</summary>
+        /// plus a Bandit Hilt's +0.25 - never below the base (a caster the retail magic base 0.05 - with the master switch off,
+        /// the old rule: endgame 0.10 for ZC gear - every other weapon the physical base).</summary>
         internal static float LockedCritFrequency(WorldObject weapon)
         {
+            // a locked caster is T10 gear (retail rules, EndgameRulesApply): the retail 0.05 magic base. Master switch off: as before.
             var floor = weapon is Caster
-                ? (ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon) ? DefaultMagicCritFrequency : RetailMagicCritFrequency)
+                ? (!ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active && ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon)
+                    ? DefaultMagicCritFrequency : RetailMagicCritFrequency)
                 : DefaultPhysicalCritFrequency;
             var card = weapon?.GetProperty(PropertyFloat.CriticalFrequency);
             if (card == null || !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
@@ -449,8 +451,8 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>The crit damage multiplier (stored / engine space) a weapon falls back to while locked (owner 2026-10-07):
-        /// its Crushing Blow capped at the best general T10 craft (Salvaged Turquoise, 2.45 stored = 3.45x) plus a Bandit
-        /// Hilt's +0.175 - never below the default.</summary>
+        /// its Crushing Blow capped at the common T10 craft (Bag of Abyssal-Touched Gems, 2.25 stored = 3.25x - what normal
+        /// T10 weapons carry) plus a Bandit Hilt's +0.175 - never below the default.</summary>
         internal static float LockedCritDamageMultiplier(WorldObject weapon)
         {
             var card = weapon?.GetProperty(PropertyFloat.CriticalMultiplier);
@@ -594,13 +596,16 @@ namespace ACE.Server.WorldObjects
             var endgameCast = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(wielder, weapon);
 
             // zone lock: outside authored areas a ZC weapon's Biting Strike reads at T10 level (LockedCritFrequency)
+            var magicLocked = ZcPowerSuppressed(weapon, wielder);
             var baseRate = endgameCast ? DefaultMagicCritFrequency : RetailMagicCritFrequency;
-            var critRate = ZcPowerSuppressed(weapon, wielder)
-                ? Math.Max(baseRate, LockedCritFrequency(weapon))
+            var critRate = magicLocked
+                ? LockedCritFrequency(weapon)
                 : (float)(weapon.GetProperty(PropertyFloat.CriticalFrequency) ?? baseRate);
 
+            // the imbue gate is the GEAR half (a ZC caster never uses a Critical Strike imbue), exactly as before the zone-lock
+            // change and as the physical path and the appraisal read it - endgameCast is false for a locked ZC caster now
             if (weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike)
-                && !CritImbuesSuppressed(wielder, endgameCast))   // same ruling on the magic path
+                && !CritImbuesSuppressed(wielder, endgameCast || magicLocked))   // same ruling on the magic path
             {
                 var isPvP = wielder is Player && target is Player;
 
@@ -1210,12 +1215,10 @@ namespace ACE.Server.WorldObjects
         public float GetIgnoreShieldMod(WorldObject weapon)
         {
             var creatureMod = IgnoreShield ?? 0.0f;
-            // zone lock (owner 2026-10-07): Shield Cleaving is something a T10 weapon can have, so a locked ZC weapon
-            // keeps it, held to the T10 ceiling (1.0). The attacker's own creature-side IgnoreShield is never gated.
+            // zone lock: outside authored areas a ZC weapon's Shield Cleaving stays OFF (owner 2026-10-07: "its not in t10 normal
+            // gear" - like Armor Rend, it does not carry down). The attacker's own creature-side IgnoreShield is never gated.
             var weaponMod = ZcPowerSuppressed(weapon, this as Creature)
-                ? (ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active
-                    ? Math.Min(weapon?.IgnoreShield ?? 0.0, ACE.Server.Managers.ZoneControl.ZoneLockFallback.ShieldCleaveCap)
-                    : 0.0)
+                ? 0.0
                 : weapon?.IgnoreShield ?? 0.0f;
 
             return 1.0f - (float)Math.Max(creatureMod, weaponMod);

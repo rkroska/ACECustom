@@ -72,7 +72,8 @@ namespace ACE.Server.Entity
 
             DamageMod = baseDamageMod + weapon.EnchantmentManager.GetDamageMod();
             // zone lock: every locked weapon fights with Legendary Blood Thirst (ZoneLockFallback.ThirstTopUp)
-            if (lockedT10)
+            // (weapons only - a punch / kick passes the GLOVES / BOOTS here as `weapon`, and armor never carries a Thirst)
+            if (lockedT10 && (weapon is MeleeWeapon || weapon is MissileLauncher))
                 DamageMod += Managers.ZoneControl.ZoneLockFallback.ThirstTopUp(weapon);
 
             if (weapon.IsEnchantable)
