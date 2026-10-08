@@ -221,6 +221,56 @@ namespace ACE.Server.Tests
         }
 
         /// <summary>
+        /// QB bounty (2026-10-07): a reward's MinQb survives the zone store (JSON) and the dungeon string; data saved before it
+        /// (no MinQb in the JSON, a 5-field dungeon row) reads 0 = everyone, and a row without one is written exactly as before.
+        /// </summary>
+        [TestMethod]
+        public void Bounty_MinQb_RoundTrips_And_OldDataReadsZero()
+        {
+            const string json = @"{ ""Name"": ""Quarry"", ""Bounty"": { ""Enabled"": true, ""NextId"": 3,
+                ""Entries"": [ { ""Id"": 1, ""Wcid"": 273, ""Amount"": 50, ""Kills"": 96, ""CooldownMinutes"": 40 },
+                               { ""Id"": 2, ""Wcid"": 273, ""Amount"": 5, ""Kills"": 10, ""CooldownMinutes"": 0, ""MinQb"": 500 } ] } }";
+
+            var area = JsonConvert.DeserializeObject<ControlledArea>(json);
+            Assert.AreEqual(0, area.Bounty.Entries[0].MinQb, "a row saved before the QB bounty is open to everyone");
+            Assert.AreEqual(500, area.Bounty.Entries[1].MinQb);
+            Assert.AreEqual(500, JsonConvert.DeserializeObject<ControlledArea>(JsonConvert.SerializeObject(area)).Bounty.Entries[1].MinQb);
+            Assert.AreEqual(500, area.Bounty.Clone().Entries[1].MinQb, "the kill hook reads clones");
+
+            // dungeon string: an old 5-field row reads 0 and is written back unchanged; a QB row keeps its 6th field
+            var old = BountyConfig.Parse("1;#2;273|50|96|40|1");
+            Assert.AreEqual(0, old.Entries[0].MinQb);
+            Assert.AreEqual("1;#2;273|50|96|40|1", old.Format());
+            var qb = BountyConfig.Parse("1;#3;273|50|96|40|1;273|5|10|0|2|500");
+            Assert.AreEqual(500, qb.Entries[1].MinQb);
+            Assert.AreEqual(500, BountyConfig.Parse(qb.Format()).Entries[1].MinQb);
+
+            // review 2026-10-07: a row at 0 writes no MinQb to the zone store (a store without QB rows saves as before)
+            var saved = JsonConvert.SerializeObject(area);
+            Assert.AreEqual(1, Regex.Matches(saved, "\"MinQb\"").Count, "only the QB row writes MinQb");
+        }
+
+        /// <summary>QB bounty edge cases (review 2026-10-07): hand-edited data cannot store a QB outside 0..MaxQb, and a bad 6th
+        /// field in a dungeon row fails CLOSED at MaxQb (never opens a QB reward to everyone) while keeping the row.</summary>
+        [TestMethod]
+        public void Bounty_MinQb_ClampedAndBadFieldsReadZero()
+        {
+            const string json = @"{ ""Name"": ""Quarry"", ""Bounty"": { ""Enabled"": true, ""NextId"": 3,
+                ""Entries"": [ { ""Id"": 1, ""Wcid"": 273, ""Amount"": 1, ""Kills"": 1, ""CooldownMinutes"": 0, ""MinQb"": -5 },
+                               { ""Id"": 2, ""Wcid"": 273, ""Amount"": 1, ""Kills"": 1, ""CooldownMinutes"": 0, ""MinQb"": 2000000 } ] } }";
+            var safe = JsonConvert.DeserializeObject<ControlledArea>(json).Bounty.Clone();   // the kill hook only reads clones
+            Assert.AreEqual(0, safe.Entries[0].MinQb);
+            Assert.AreEqual(ACE.Server.Managers.BountyManager.MaxQb, safe.Entries[1].MinQb);
+
+            var parsed = BountyConfig.Parse("1;#5;273|1|1|0|1|abc;273|1|1|0|2|-5;273|1|1|0|3|2000000;273|1|1|0|4|");
+            Assert.AreEqual(4, parsed.Entries.Count, "a bad QB field never drops the row");
+            Assert.AreEqual(ACE.Server.Managers.BountyManager.MaxQb, parsed.Entries[0].MinQb, "junk fails closed");
+            Assert.AreEqual(ACE.Server.Managers.BountyManager.MaxQb, parsed.Entries[1].MinQb, "negative fails closed");
+            Assert.AreEqual(ACE.Server.Managers.BountyManager.MaxQb, parsed.Entries[2].MinQb, "over the max is clamped");
+            Assert.AreEqual(0, parsed.Entries[3].MinQb, "an empty field = no requirement");
+        }
+
+        /// <summary>
         /// The load path's key upgrade (UpgradeLegacyStoreKeys), read through Store's "Areas" shape: a store saved before the
         /// rename keeps its zone bounties (review 2026-09-26: carried over, not silently dropped).
         /// </summary>

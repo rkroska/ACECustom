@@ -144,6 +144,7 @@ namespace ACE.Server.Managers.ZoneControl
                 e.Amount = Math.Clamp(e.Amount, 1, BountyManager.MaxAmount);
                 e.Kills = Math.Clamp(e.Kills, 1, BountyManager.MaxKills);
                 e.CooldownMinutes = double.IsFinite(e.CooldownMinutes) ? Math.Clamp(e.CooldownMinutes, 0, BountyManager.MaxCooldownMinutes) : 5;
+                e.MinQb = Math.Clamp(e.MinQb, 0, BountyManager.MaxQb);
             }
 
             var seen = new HashSet<int>();
@@ -154,7 +155,7 @@ namespace ACE.Server.Managers.ZoneControl
             EnsureIds();
         }
 
-        /// <summary>For a dungeon source's weenie: "on;#nextId;wcid|amount|kills|minutes|id;...".</summary>
+        /// <summary>For a dungeon source's weenie: "on;#nextId;wcid|amount|kills|minutes|id[|minqb];...".</summary>
         public string Format()
         {
             var sb = new System.Text.StringBuilder(Enabled ? "1" : "0");
@@ -210,6 +211,11 @@ namespace ACE.Server.Managers.ZoneControl
         public int Amount { get; set; } = 1;
         public int Kills { get; set; } = 100;
         public double CooldownMinutes { get; set; } = 5;
+        /// <summary>QB bounty (owner 2026-10-07): the least QB (the account's quest-bonus count, as /qb shows it - BountyManager.QbOf)
+        /// a player needs for their kills to count toward this reward. 0 = everyone, always the default; rows from before read 0, and
+        /// 0 is not written to the zone store (DefaultValueHandling.Ignore), so a store without QB rows saves exactly as before.</summary>
+        [Newtonsoft.Json.JsonProperty(DefaultValueHandling = Newtonsoft.Json.DefaultValueHandling.Ignore)]
+        public int MinQb { get; set; }
 
         public bool Valid => Wcid != 0 && Amount > 0 && Kills > 0;
 
@@ -220,7 +226,7 @@ namespace ACE.Server.Managers.ZoneControl
         public double CooldownSeconds
             => (double.IsNaN(CooldownMinutes) ? 5 : Math.Clamp(CooldownMinutes, 0, BountyManager.MaxCooldownMinutes)) * 60.0;
 
-        public BountyEntry Clone() => new BountyEntry { Id = Id, Wcid = Wcid, Amount = Amount, Kills = Kills, CooldownMinutes = CooldownMinutes };
+        public BountyEntry Clone() => new BountyEntry { Id = Id, Wcid = Wcid, Amount = Amount, Kills = Kills, CooldownMinutes = CooldownMinutes, MinQb = MinQb };
 
         /// <summary>
         /// Its own progress on a character, by its permanent ID (review 2026-09-24): two rows for the same item and count keep
@@ -230,7 +236,8 @@ namespace ACE.Server.Managers.ZoneControl
         public string ProgressKey => Id > 0 ? "r" + Id : Wcid + "x" + Kills;
 
         public string Format()
-            => Wcid + "|" + Amount + "|" + Kills + "|" + CooldownMinutes.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "|" + Id;
+            => Wcid + "|" + Amount + "|" + Kills + "|" + CooldownMinutes.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "|" + Id
+               + (MinQb > 0 ? "|" + MinQb.ToString(System.Globalization.CultureInfo.InvariantCulture) : "");
 
         public static BountyEntry Parse(string raw)
         {
@@ -245,6 +252,12 @@ namespace ACE.Server.Managers.ZoneControl
             if (f.Length > 2 && int.TryParse(f[2], System.Globalization.NumberStyles.Integer, inv, out var k) && k > 0) e.Kills = Math.Min(k, BountyManager.MaxKills);
             if (f.Length > 3 && double.TryParse(f[3], System.Globalization.NumberStyles.Float, inv, out var m) && double.IsFinite(m) && m >= 0) e.CooldownMinutes = Math.Min(m, BountyManager.MaxCooldownMinutes);
             if (f.Length > 4 && int.TryParse(f[4], System.Globalization.NumberStyles.Integer, inv, out var id) && id > 0) e.Id = id;
+            // QB bounty: a missing 6th field (a row from before) = 0, everyone. A PRESENT field that is not a QB (junk, negative) fails
+            // CLOSED at the max (CodeRabbit 2026-10-07) - a corrupt row must not open a QB reward to everyone; it stays visible
+            // ("needs 1,000,000 QB") for an admin to fix rather than being dropped.
+            if (f.Length > 5 && f[5].Trim().Length > 0)
+                e.MinQb = int.TryParse(f[5], System.Globalization.NumberStyles.Integer, inv, out var qb) && qb >= 0
+                    ? Math.Min(qb, BountyManager.MaxQb) : BountyManager.MaxQb;
             return e;
         }
     }

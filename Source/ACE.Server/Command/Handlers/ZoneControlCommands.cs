@@ -192,8 +192,8 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /zonecontrol zoneshare <name> <on|off|show>   (Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship; only while the zone is enabled)");
                 Msg("  /zonecontrol gearlock [list] | here [any] | add|remove <landblock hex> [variation|any]   (T11+ gear is suppressed on these landblocks)");
                 Msg("  /zonecontrol procallow [list] | add <spell id> | remove <spell id>   (proc spells T11+ monsters never resist for being on gear below T11)");
-                Msg("  /zonecontrol zonebounty <show|on|off|add|set|remove>   (ONE bounty, one count and one cooldown across every T11-T25 zone; replaces the zone bounties while on)");
-                Msg("  /zonecontrol bounty <name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>   (Bounty: items every N kills per player, at most once per cooldown; v11+ only)");
+                Msg("  /zonecontrol zonebounty show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>   (ONE bounty, one count and one cooldown across every T11-T25 zone; replaces the zone bounties while on)");
+                Msg("  /zonecontrol bounty <name> show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>   (Bounty: items every N kills per player, at most once per cooldown; qb=N = only players with at least N QB count; v11+ only)");
                 Msg("  /zonecontrol survey <name> [lbHex]   (per-landblock content: generator + creature summary; lbHex = full detail for one landblock)");
                 Msg("  /zonecontrol quests <name>   (quest registry for the plugin Quests tab; throttled to one pull per 60s)");
                 Msg("  /zonecontrol terrain <name> <hex> <type|clear>   (override the map terrain color for one landblock; type = " + string.Join("/", ZoneControlManager.TerrainTags) + "; display-only)");
@@ -3158,12 +3158,15 @@ namespace ACE.Server.Command.Handlers
                 id + "~" + RoomAssignManager.BuilderWireName(SpellName(id)))));
         }
 
-        /// <summary>"|zonebounty=1|zonebountylist=id:wcid:amount:kills:minutes:name+..." - the zone-wide bounty (owner 2026-10-05) for the
-        /// plugin's Bounty card. Always present so the plugin can tell "off" from "older server". APPEND-ONLY.</summary>
+        /// <summary>"|zonebounty=1|zonebountylist=id:wcid:amount:kills:minutes:name[:minqb]+...|bountyqb=1" - the zone-wide bounty (owner
+        /// 2026-10-05) for the plugin's Bounty card. Always present so the plugin can tell "off" from "older server". bountyqb=1 (QB
+        /// bounty, 2026-10-07): this server understands a reward's qb=N - a server before it silently ignores the argument, so the
+        /// plugin shows its QB column only when this is present. APPEND-ONLY.</summary>
         private static void AppendZoneBounty(StringBuilder sb)
         {
             var zb = ZoneControlManager.GetZoneWideBounty();
             sb.Append("|zonebounty=").Append(zb.Enabled ? 1 : 0).Append("|zonebountylist=").Append(BountyManager.Wire(zb));
+            sb.Append("|bountyqb=1");
         }
 
         /// <summary>"|gearlock=LLLL~V;LLLL~*" - the gear lock landblocks (owner 2026-10-05) for GM Tools > Shard Combat.
