@@ -395,6 +395,15 @@ namespace ACE.Server.Entity
                 player.BankedPyreals = (player.BankedPyreals ?? 0) + plan.Total;
                 player.RefreshCoinValueAfterBankChange();
                 log.Error($"{Tag} {player.Name} (0x{player.Guid.Full:X8}): the look could not be written; the fee of {plan.Total} was refunded to the bank and the look left as it was: {ex}");
+                // any pack coins the fee took are already gone from the database, so store the bank credit now too
+                try
+                {
+                    player.SavePlayerToDatabase();
+                }
+                catch (Exception saveEx)
+                {
+                    log.Error($"{Tag} {player.Name} (0x{player.Guid.Full:X8}): the refund of {plan.Total} could not be saved at once (the next ordinary save will store it): {saveEx}");
+                }
                 Say(player, attendant, plan.Total > 0
                     ? "Something went wrong, so I changed nothing. Your pyreals are back in your bank."
                     : "Something went wrong, so I changed nothing.");

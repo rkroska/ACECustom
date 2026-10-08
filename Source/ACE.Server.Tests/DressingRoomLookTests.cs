@@ -405,7 +405,7 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void Fee_AtTheShippedSettings_ReachesOneThousandMmdOnTheEleventhLock()
+        public void Fee_AtTheShippedSettings_ReachesTheCapOnTheEleventhLock()
         {
             const long baseFee = 100_000_000, cap = 250_000_000;
             Assert.AreEqual(100_000_000, DressingRoomLook.Fee(0, baseFee, 1.1, cap));

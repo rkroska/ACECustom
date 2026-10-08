@@ -262,6 +262,9 @@ namespace ACE.Server.Entity
                     add.Card = EssenceWeaponCards.FirstOrDefault(c => c.Key == key);
                     if (add.Card == null || add.Card == ZoneStatResolver.SpecRendPower)
                         continue;   // not a card the forge moves
+                    // ForgeMath never draws this (ForgeWeapon.NoGainKeys); held here too so the pairing cannot be made
+                    if (add.Card == ZoneStatResolver.SpecArmorRend && !ForgeCanGainArmorRend(target))
+                        continue;
                 }
                 else if (!ZoneModifiers.TryGet(key, out add.Def) || IsProtected(add.Def))
                     continue;
@@ -872,6 +875,33 @@ namespace ACE.Server.Entity
             return count;
         }
 
+        /// <summary>
+        /// True when the weapon carries an imbue the player put on it themselves: Critical Strike, Crippling Blow and the
+        /// like, or an Armor Rending / rend imbue bit with no card behind it in the record (<paramref name="present"/> is
+        /// the record's keys). The one test both a bag and the forge use before adding a card that sets an imbue bit.
+        /// </summary>
+        private static bool HasOwnImbue(ImbuedEffectType imbues, ICollection<int> present)
+        {
+            var ownOther = (imbues & ~(DamageRends | ImbuedEffectType.ArmorRending)) != 0;
+            var ownArmorRend = (imbues & ImbuedEffectType.ArmorRending) != 0 && !present.Contains(ZoneStatResolver.SpecArmorRend.Key);
+            var ownRend = (imbues & DamageRends) != 0 && !present.Contains(ZoneStatResolver.SpecRendPower.Key);
+            return ownOther || ownArmorRend || ownRend;
+        }
+
+        /// <summary>
+        /// False when forging must not hand <paramref name="main"/> the Armor Rending property from the other weapon: it
+        /// carries the player's own imbue. The record does not say which imbue bit a card added, so an Armor Rending
+        /// card next to the player's own Armor Rending would take the imbue with it when the card is later lost - the
+        /// reason a bag never makes this pairing either (PlanAddCard). A weapon that already has the card is not asked.
+        /// </summary>
+        internal static bool ForgeCanGainArmorRend(WorldObject main)
+        {
+            if (main == null || !IsWeapon(main))
+                return true;
+            var present = ZoneStatResolver.Read(main).Select(r => r.Key).ToHashSet();
+            return !HasOwnImbue(main.GetImbuedEffects(), present);
+        }
+
         private static Op PlanAddCard(WorldObject target, EvaluatedProfile p, int tier, int removingKey, out string refusal)
         {
             refusal = null;
@@ -893,10 +923,7 @@ namespace ACE.Server.Entity
             // a bag must not add one of those cards next to an imbue either (review 2026-10-04: an own Armor Rending + a Rending
             // card = 4 effects on a 3-slot weapon).
             var imbues = target.GetImbuedEffects();
-            var ownOther = (imbues & ~(DamageRends | ImbuedEffectType.ArmorRending)) != 0;
-            var ownArmorRend = (imbues & ImbuedEffectType.ArmorRending) != 0 && !present.Contains(ZoneStatResolver.SpecArmorRend.Key);
-            var ownRend = (imbues & DamageRends) != 0 && !present.Contains(ZoneStatResolver.SpecRendPower.Key);
-            var ownImbue = ownOther || ownArmorRend || ownRend;
+            var ownImbue = HasOwnImbue(imbues, present);
             var rends = ownImbue || (imbues & DamageRends) != 0 ? new List<ImbuedEffectType>() : ZoneLootMutator.GetMatchingRends(target.W_DamageType);
             var armorRendFree = !ownImbue && (imbues & ImbuedEffectType.ArmorRending) == 0;
 

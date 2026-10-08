@@ -198,6 +198,11 @@ namespace ACE.Server.Entity
             public int FixedSlots;
             /// <summary>Record keys whose grade the forge never changes on the main item: the property a Bag of Locking locked.</summary>
             public SortedSet<int> FrozenKeys = new();
+            /// <summary>
+            /// Properties this item, as the MAIN item, can never be handed by the other one (it may still keep one it has).
+            /// Armor Rending on a weapon carrying the player's own imbue: the pairing would cost them the imbue later.
+            /// </summary>
+            public SortedSet<int> NoGainKeys = new();
             /// <summary>The tier's limit on properties for an item of this tier; int.MaxValue = no limit.</summary>
             public int PropertyCap = int.MaxValue;
             /// <summary>How many properties the item has, as its appraisal counts them.</summary>
@@ -247,6 +252,7 @@ namespace ACE.Server.Entity
                     PoolKeys = new SortedSet<int>(PoolKeys),
                     FixedSlots = FixedSlots,
                     FrozenKeys = new SortedSet<int>(FrozenKeys),
+                    NoGainKeys = new SortedSet<int>(NoGainKeys),
                     PropertyCap = PropertyCap,
                     LockedLines = new HashSet<ForgeLine>(LockedLines),
                     Spells = new SortedDictionary<uint, SpellEntry>(Spells.ToDictionary(kv => kv.Key, kv => new SpellEntry { Family = kv.Value.Family, SpellId = kv.Value.SpellId, Level = kv.Value.Level })),
@@ -386,6 +392,8 @@ namespace ACE.Server.Entity
             public List<int> PropertiesGained = new();
             /// <summary>Tier 11+ properties the main item had that the result does not (record keys).</summary>
             public List<int> PropertiesLost = new();
+            /// <summary>Properties of the second item left out of the draw because the main item cannot be handed them.</summary>
+            public List<int> PropertiesBlocked = new();
         }
 
         /// <summary>
@@ -517,8 +525,10 @@ namespace ACE.Server.Entity
                         r.ZcGrades[key] = mg;
                 }
 
-                // a key the main item holds as fixed is never also drawn from the pool
-                var pool = main.PoolKeys.Union(feeder.PoolKeys).Where(k => !mainFixed.Contains(k)).OrderBy(k => k).ToList();
+                // a key the main item holds as fixed is never also drawn from the pool, and neither is a property the
+                // main item cannot be handed (it is filtered here, before the draw, so the count and the picks never see it)
+                o.PropertiesBlocked.AddRange(feeder.PoolKeys.Where(k => main.NoGainKeys.Contains(k) && !main.PoolKeys.Contains(k) && !mainFixed.Contains(k)).OrderBy(k => k));
+                var pool = main.PoolKeys.Union(feeder.PoolKeys).Where(k => !mainFixed.Contains(k) && !o.PropertiesBlocked.Contains(k)).OrderBy(k => k).ToList();
                 r.FixedSlots = main.FixedSlots;
                 r.PropertyCap = (feeder.Tier > main.Tier ? feeder : main).PropertyCap;
                 if (pool.Count > 0)

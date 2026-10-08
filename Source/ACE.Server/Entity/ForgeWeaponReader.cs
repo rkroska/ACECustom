@@ -179,6 +179,9 @@ namespace ACE.Server.Entity
             // a locked property is the main item's to keep, exactly as it is
             if (GearEssences.LockedKey(wo) is int locked && w.ZcGrades.ContainsKey(locked))
                 w.FrozenKeys.Add(locked);
+            // a weapon with the player's own imbue cannot be handed Armor Rending by the other weapon
+            if (!w.IsArmor && !GearEssences.ForgeCanGainArmorRend(wo))
+                w.NoGainKeys.Add(ACE.Server.Managers.ZoneControl.ZoneStatResolver.SpecArmorRend.Key);
             // On tier 11+ armour the armour level, protections and ratings are what its properties make them (Armor Level,
             // Reinforced, Damage Rating...), so they are never rolled as stats: the properties are rolled instead.
             if (w.IsArmor && w.Tier >= ACE.Server.Factories.LootGenerationFactory.ZoneLootSetMinTier)

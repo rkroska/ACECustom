@@ -36,7 +36,7 @@ namespace ACE.Server.Tests
         private static string notReady = "set ACE_FORGE_DB_TESTS=1 to run the database-backed forge tests (scripts/run-forge-tests.ps1)";
         private static uint nextGuid = 0xFFFF0000;
         private static int forgedWithSpells;
-        private static readonly List<(int Main, int Feeder, int Result)> propertyCounts = new();
+        private static readonly List<(int Main, int Feeder, int Result, int Cap)> propertyCounts = new();
 
         [ClassInitialize]
         public static void Setup(TestContext context)
@@ -173,7 +173,7 @@ namespace ACE.Server.Tests
                     if (item.GetProperty(prop) != value) problems.Add($"{prop} is {item.GetProperty(prop)?.ToString() ?? "none"}, Zone Control resolves {value}");
             if (back.PropertyCount > back.PropertyCap)
                 problems.Add($"{back.PropertyCount} properties, over the tier's limit of {back.PropertyCap}");
-            propertyCounts.Add((m.PropertyCount, f.PropertyCount, back.PropertyCount));
+            propertyCounts.Add((m.PropertyCount, f.PropertyCount, back.PropertyCount, back.PropertyCap));
 
             // no wield requirement of either input may be missing or weaker; arcane lore never lower
             var slots = new[]
@@ -735,13 +735,14 @@ namespace ACE.Server.Tests
                     failures.Add($"[{modes[i % modes.Length]}] {main.Name} + {feeder.Name}: {string.Join("; ", problems)}");
             }
             var mine = propertyCounts.Skip(first).ToList();
-            foreach (var (a, b, r) in mine)
-                if (r < Math.Min(a, b) - 0 && r < Math.Min(a, b)) { }   // (bounds are asserted below, per forge)
+            // never fewer than the item with fewer had, unless the tier's limit is lower still
+            var tooFew = mine.Count(x => x.Result < Math.Min(Math.Min(x.Main, x.Feeder), x.Cap));
             var outOfRange = mine.Count(x => x.Result > Math.Max(x.Main, x.Feeder));
             Console.WriteLine($"tier 11+ armour forges: {ran} over {groups.Count} groups; result property counts: " +
                               string.Join(", ", mine.GroupBy(x => x.Result).OrderBy(g => g.Key).Select(g => $"{g.Key}: {g.Count()}")) +
                               $"; more than either input: {outOfRange}");
             Assert.AreEqual(0, outOfRange, "a result has more properties than either item it was made from");
+            Assert.AreEqual(0, tooFew, "a result has fewer properties than either item it was made from, with room under the limit");
             AssertNone(failures, ran);
         }
 

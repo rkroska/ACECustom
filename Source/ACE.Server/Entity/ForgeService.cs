@@ -346,6 +346,8 @@ namespace ACE.Server.Entity
                 sb.Append($"  Gained from the {feederName}: {string.Join(", ", outcome.PropertiesGained.Select(GearEssences.ForgePropertyName))}.\n");
             if (outcome.PropertiesLost.Count > 0)
                 sb.Append($"  Lost to the fire: {string.Join(", ", outcome.PropertiesLost.Select(GearEssences.ForgePropertyName))}.\n");
+            if (outcome.PropertiesBlocked.Count > 0)
+                sb.Append($"  Would not take next to your {mainName}'s own imbue: {string.Join(", ", outcome.PropertiesBlocked.Select(GearEssences.ForgePropertyName))}.\n");
             if (outcome.Spark)
                 sb.Append($"  SPARK! The steel takes an edge: +1 hone on {ForgeMath.LineName(outcome.SparkLine)}.\n");
             if (fee > 0 && charged)

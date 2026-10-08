@@ -637,6 +637,22 @@ namespace ACE.Server.Tests
             var config = ForgeConfig.FromServerConfig();
             foreach (var line in HonableLines)
                 Assert.AreEqual(ForgeConfig.ServerStepFor(line), config.StepFor(line), $"{line}");
+
+            // each line against the setting it is meant to read, so a line mapped to the wrong setting fails here
+            var settings = new Dictionary<ForgeLine, double>
+            {
+                [ForgeLine.MaxDamage] = ACE.Server.Managers.ServerConfig.forge_hone_step_damage.Value,
+                [ForgeLine.Variance] = ACE.Server.Managers.ServerConfig.forge_hone_step_variance.Value,
+                [ForgeLine.Speed] = ACE.Server.Managers.ServerConfig.forge_hone_step_speed.Value,
+                [ForgeLine.AttackMod] = ACE.Server.Managers.ServerConfig.forge_hone_step_attack.Value,
+                [ForgeLine.MeleeDefense] = ACE.Server.Managers.ServerConfig.forge_hone_step_defense.Value,
+                [ForgeLine.MissileDefense] = ACE.Server.Managers.ServerConfig.forge_hone_step_defense.Value,
+                [ForgeLine.MagicDefense] = ACE.Server.Managers.ServerConfig.forge_hone_step_defense.Value,
+                [ForgeLine.DamageMod] = ACE.Server.Managers.ServerConfig.forge_hone_step_damage_mod.Value,
+            };
+            CollectionAssert.AreEquivalent(HonableLines.ToList(), settings.Keys.ToList(), "a honable line with no setting listed here");
+            foreach (var (line, step) in settings)
+                Assert.AreEqual(step, ForgeConfig.ServerStepFor(line), $"{line} reads the wrong setting");
             Assert.AreEqual(0.0, ForgeConfig.ServerStepFor(ForgeLine.Spellcraft), "not honable");
             Assert.AreEqual(0.0, ForgeConfig.ServerStepFor(ForgeLine.ArmorLevel), "armour is not honable");
         }
@@ -775,6 +791,58 @@ namespace ACE.Server.Tests
 
             Assert.AreEqual(400, r.ZcGrades[50]);
             Assert.AreEqual(1, r.PropertyCount, "the built-in line uses no slot");
+        }
+
+        [TestMethod]
+        public void Properties_AKeyTheMainItemCannotBeHanded_IsNeverGained_AndIsReported()
+        {
+            // 29 stands for Armor Rending on a weapon carrying the player's own imbue (the reader sets NoGainKeys)
+            var main = Zone(4, 0, (28, 500));
+            main.NoGainKeys.Add(29);
+            var feeder = Zone(4, 0, (29, 900), (31, 400), (32, 400));
+            var rng = new Random(7);
+            var gainedOther = false;
+            for (var i = 0; i < 1000; i++)
+            {
+                var o = Forge(main, feeder, Config(), () => rng.NextDouble());
+                Assert.IsFalse(o.Result.PoolKeys.Contains(29), "handed a property it cannot take");
+                Assert.IsFalse(o.Result.ZcGrades.ContainsKey(29));
+                Assert.IsFalse(o.PropertiesGained.Contains(29));
+                CollectionAssert.AreEqual(new[] { 29 }, o.PropertiesBlocked);
+                Assert.IsTrue(o.Result.PropertyCount <= 3 && o.Result.PropertyCount >= 1);
+                gainedOther |= o.PropertiesGained.Count > 0;
+            }
+            Assert.IsTrue(gainedOther, "the other properties still carry over");
+        }
+
+        [TestMethod]
+        public void Properties_AKeyTheMainItemAlreadyHas_IsStillItsToKeep_EvenIfItCouldNotBeHandedIt()
+        {
+            var main = Zone(4, 0, (28, 500), (29, 300));
+            main.NoGainKeys.Add(29);
+            var feeder = Zone(4, 0, (29, 900), (31, 400));
+            var rng = new Random(8);
+            var kept = 0;
+            for (var i = 0; i < 500; i++)
+            {
+                var o = Forge(main, feeder, Config(), () => rng.NextDouble());
+                Assert.AreEqual(0, o.PropertiesBlocked.Count, "nothing is blocked: the main item has it already");
+                if (o.Result.PoolKeys.Contains(29)) kept++;
+            }
+            Assert.IsTrue(kept > 0, "a property the main item already has can still be kept");
+        }
+
+        [TestMethod]
+        public void Properties_WithNothingBlocked_TheDrawsAreExactlyAsBefore()
+        {
+            // the same script as Properties_Which_ArePickedFromBothItems: an empty NoGainKeys changes no draw
+            var c = Config();
+            c.RollMode = RollMode.Between;
+            var main = Zone(4, 0, (28, 800), (29, 100));
+            var feeder = Zone(4, 0, (28, 400), (31, 650));
+            var o = Forge(main, feeder, c, Script(With(new[] { 0.0, 0.0, 0.5, 0.5 })));
+            CollectionAssert.AreEquivalent(new[] { 28, 31 }, o.Result.PoolKeys.ToList());
+            Assert.AreEqual(0, o.PropertiesBlocked.Count);
         }
 
         [TestMethod]
