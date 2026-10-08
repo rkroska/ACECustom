@@ -1488,8 +1488,9 @@ namespace ACE.Server.WorldObjects
             var procCap = 1.0;
             if (ZcProcSuppressed(this, attacker as Creature))
             {
-                var jewelryProc = (GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0) > 0;
-                if (jewelryProc || !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
+                // only a WEAPON's proc carries down (PR #544 review): a ZC cloak or jewelry proc stays off while locked, as before
+                var isWeapon = this is MeleeWeapon || this is MissileLauncher || this is Caster;
+                if (!isWeapon || !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
                     return;
                 procCap = ACE.Server.Managers.ZoneControl.ZoneLockFallback.ProcRateCap;
             }

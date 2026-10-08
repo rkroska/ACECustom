@@ -254,6 +254,9 @@ namespace ACE.Server.WorldObjects
         /// share, and the weapon lock governs weapons. Maintained beside equippedZcGearCount.</summary>
         private int equippedZcWornCount;
 
+        /// <summary>Equipped worn ZC kit pieces (read by the player heartbeat's zone-lock max-health refresh).</summary>
+        internal int EquippedZcWornCount => equippedZcWornCount;
+
         private static bool IsZcWornPiece(WorldObject wo)
             => ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo)
                && !(wo is MeleeWeapon || wo is MissileLauncher || wo is Caster || wo is Ammunition || wo.IsShield);

@@ -169,6 +169,23 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Called every ~5 seconds for Players
         /// </summary>
+        // zone lock (PR #544 review): the armor lock's state for this wearer at the last heartbeat
+        private bool zoneLockWornSuppressed;
+
+        /// <summary>Walking across a zone border flips the armor zone lock - and with it the worn ZC gear's Max Health (the T10
+        /// fallback share outside, the real lines inside) - but no equip / dequip happens, so nothing refreshed the client or
+        /// clamped Current. Re-send max health whenever the state flips. Cheap: config + snapshot reads, and only while a ZC
+        /// kit piece is worn.</summary>
+        private void ZoneLockMaxHealthTick()
+        {
+            var suppressed = EquippedZcWornCount > 0 && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this);
+            if (suppressed == zoneLockWornSuppressed)
+                return;
+            zoneLockWornSuppressed = suppressed;
+            if (Session != null)
+                HandleMaxHealthUpdate();
+        }
+
         public override void Heartbeat(double currentUnixTime)
         {
             NotifyLandblocks();
@@ -177,6 +194,8 @@ namespace ACE.Server.WorldObjects
             BountyManager.TryDeliverOwed(this);
 
             ValidateCurrentLandblockTick();
+
+            ZoneLockMaxHealthTick();
 
             ManaConsumersTick();
 
