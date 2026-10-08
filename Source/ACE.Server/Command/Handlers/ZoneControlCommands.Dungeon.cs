@@ -341,7 +341,7 @@ namespace ACE.Server.Command.Handlers
                         Msg("  /zonecontrol dungeon monster here          - the room's generator exactly where you stand");
                         Msg("  /zonecontrol dungeon nudge <guid> <east> <north> [turn] - move a placed wall or generator a little");
                         Msg("  /zonecontrol dungeon zoneshare on|off      - everyone in the dungeon shares kills as one fellowship");
-                        Msg("  /zonecontrol dungeon bounty on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id> - items every N kills per player");
+                        Msg("  /zonecontrol dungeon bounty on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id> - items every N kills per player (qb=N: only players with at least N QB count)");
                         Msg("  /zonecontrol dungeon state | map           - data lines for the plugin's Dungeons tab");
                         Msg("Writes and test tools need Admin. Test tools (need server property room_assign_test_tools = true; memory only):");
                         Msg("  /zonecontrol dungeon admin on|off          - admins count as players");

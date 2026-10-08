@@ -120,8 +120,9 @@ namespace ACE.Server.Command.Handlers
 
             // ── Sharing + rewards (zones at v11+; dungeons have their own below) ──
             E("Rewards", "/zonecontrol zoneshare", "<name> on|off|show", "Zone Share: everyone in the zone shares kill XP, luminance and kill tasks as one fellowship (one character per account, everyone in the zone except staff). v11+ only. Changing it needs Admin."),
-            E("Rewards", "/zonecontrol bounty", "<name> show | on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>", "Bounty: items every N of a player's own kills, at most once per cooldown. v11+ only. Changing it needs Admin."),
-            E("Rewards", "/bounty", "[list|all]", "Any player: the bounties where you stand - kills so far, or how long until the next one unlocks - and anything held for you. list/all: every bounty on the server and your progress on each."),
+            E("Rewards", "/zonecontrol bounty", "<name> show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>", "Bounty: items every N of a player's own kills, at most once per cooldown. qb=N: only players with at least N QB count toward that reward (0 = everyone; set without qb= keeps it). v11+ only. Changing it needs Admin."),
+            E("Rewards", "/zonecontrol regionbounty", "<vod|t10> show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>", "Bounty for Valley of Death or Thaelaryn Island (T10): items every N of a player's own kills, at most once per cooldown. Below T11 only. qb=N: only players with at least N QB count toward that reward. Changing it needs Admin."),
+            E("Rewards", "/bounty", "[list|all]", "Any player: the bounties where you stand - kills so far, how long until the next one unlocks, or the QB a reward needs - and anything held for you. list/all: every bounty on the server and your progress on each."),
 
             // ── Readiness ─────────────────────────────────────────────────────
             E("Readiness", "/zonecontrol mobcheck", "[<zone>] [<wcid>]", "Is this monster ready in this zone? No wcid = the creature you have selected."),
@@ -143,7 +144,7 @@ namespace ACE.Server.Command.Handlers
             E("Dungeons", "/zonecontrol dungeon nudge", "<guid> <east> <north> [turn degrees]", "Move a placed wall or generator by a small step, or turn it - the Nudge pop-out in the plugin. Admin."),
             E("Dungeons", "/zonecontrol dungeon doors", "", "Every door weenie the Door pin can use ([[ZCDGD]] lines for the plugin's door picker)."),
             E("Dungeons", "/zonecontrol dungeon zoneshare", "on|off", "Everyone in this dungeon shares kill XP, luminance and kill tasks as one fellowship (one character per account). Admin."),
-            E("Dungeons", "/zonecontrol dungeon bounty", "on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>", "Bounty for this dungeon: items every N of a player's own kills, at most once per cooldown. Admin."),
+            E("Dungeons", "/zonecontrol dungeon bounty", "on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>", "Bounty for this dungeon: items every N of a player's own kills, at most once per cooldown. qb=N: only players with at least N QB count toward that reward. Admin."),
             E("Dungeons", "/zonecontrol dungeon state", "", "The [[ZCDG]] data line for the plugin's Dungeons tab."),
             E("Dungeons", "/zonecontrol dungeon map", "", "The [[ZCDGM]] map lines for the plugin's Dungeons tab."),
             E("Dungeons", "/zonecontrol dungeon admin", "on|off", "TEST TOOL: admins count as players. Needs room_assign_test_tools. Admin."),

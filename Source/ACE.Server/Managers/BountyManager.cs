@@ -23,6 +23,7 @@ namespace ACE.Server.Managers
     /// source weenie). The dungeon is checked first: it is the smaller, more specific area. The ALL-ZONES bounty (2026-10-05,
     /// /zonecontrol zonebounty): while on, every enabled Zone Control zone at v11+ shares ONE bounty - one count and one cooldown
     /// per character, so hopping tiers cannot restart it - and it replaces the zones' own bounties. Dungeons keep their own.
+    /// REGION bounties (2026-10-07, /zonecontrol regionbounty): Valley of Death and Thaelaryn Island (T10), below T11 only.
     ///
     /// Owner rules:
     ///   - each player's OWN kills count (the kill's top damager - the player the corpse and its loot belong to; a pet's kill
@@ -49,6 +50,8 @@ namespace ACE.Server.Managers
         public const int MaxAmount = 10_000;
         public const int MaxKills = 1_000_000;
         public const double MaxCooldownMinutes = 525_600;   // one year
+        /// <summary>QB bounty (2026-10-07): the highest Min QB a reward can ask for.</summary>
+        public const int MaxQb = 1_000_000;
 
         /// <summary>How long a delivery that handed nothing over waits before the next try (full pack, over burden, a broken WCID).</summary>
         private const double DeliveryRetrySeconds = 30;
@@ -117,6 +120,11 @@ namespace ACE.Server.Managers
                 foreach (var reward in cfg.Entries)
                 {
                     if (reward == null || !reward.Valid) continue;
+
+                    // QB bounty (owner 2026-10-07): below the reward's Min QB a kill does not count toward it at all - the
+                    // player's other rewards here still count. /bounty tells them what they need.
+                    if (!MeetsQb(player, reward))
+                        continue;
 
                     var key = areaKey + "#" + reward.ProgressKey;
                     progress.TryGetValue(key, out var entry);
@@ -199,7 +207,8 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// The Bounty area this object stands in: a dungeon first, else the governing Zone Control zone. Asked for the
+        /// The Bounty area this object stands in: a dungeon first, else the all-zones bounty, else the governing Zone Control
+        /// zone (those three at v11+ only for zones), else a region bounty below T11 (Valley of Death, Thaelaryn Island). Asked for the
         /// victim (on its thread) and for the killer (on theirs); the two keys must match. A dungeon's key carries its
         /// variation, so two copies of one dungeon are two areas.
         /// </summary>
@@ -236,12 +245,22 @@ namespace ACE.Server.Managers
             }
 
             var zone = ZoneControlManager.ResolveBounty(wo);
-            if (zone == null)
+            if (zone != null)
+            {
+                areaKey = ZoneAreaKey(zone.Value.Name);
+                cfg = zone.Value.Reward;
+                return cfg.Active;
+            }
+
+            // REGION BOUNTY (owner 2026-10-07): Valley of Death and Thaelaryn Island (T10), below T11 only - so it never meets a
+            // zone's or the all-zones bounty, which are v11+ only.
+            var region = ZoneControlManager.ResolveRegionBounty(wo);
+            if (region == null)
                 return false;
 
-            areaKey = ZoneAreaKey(zone.Value.Name);
-            cfg = zone.Value.Reward;
-            return cfg.Active;
+            areaKey = RegionAreaKey(region.Value.Key);
+            cfg = region.Value.Reward;
+            return true;
         }
 
         // ── /bounty (owner 2026-09-23) ───────────────────────────────────────
@@ -271,11 +290,12 @@ namespace ACE.Server.Managers
                 var progress = LoadProgress(player);
 
                 // the all-zones bounty says so: its count and timer follow the player into every zone (owner 2026-10-05)
-                var where = areaKey == ZoneWideAreaKey ? "Bounty (all zones)" : "Bounty";
+                var where = areaKey == ZoneWideAreaKey ? "Bounty (all zones)"
+                    : RegionNameOf(areaKey) is string regionName ? $"Bounty ({regionName})" : "Bounty";
                 foreach (var reward in cfg.Entries)
                 {
                     if (reward == null || !reward.Valid) continue;
-                    Tell(player, $"{where}: {RewardText(reward)} - {StatusText(progress, areaKey, reward, now)}.");
+                    Tell(player, $"{where}: {RewardText(reward)} - {QbText(player, reward) ?? StatusText(progress, areaKey, reward, now)}.");
                 }
 
                 if (heldLine != null) Tell(player, "Bounty: " + heldLine);
@@ -285,6 +305,24 @@ namespace ACE.Server.Managers
                 log.Error($"[Bounty] /bounty: {ex}");
             }
         }
+
+        /// <summary>
+        /// The player's QB as /qb and the QB leaderboard count it: the ACCOUNT's quest-bonus count, from the account's quest
+        /// list held in memory since login (AuthenticationHandler loads it; quest stamps keep it current). Review 2026-10-07:
+        /// the character's own QuestCompletionCount is only refreshed when that character stamps a quest new to the account
+        /// (or types /bonus), so an alt read a stale number - 0 for a new character on a 5,000-QB account. That copy is the
+        /// fallback only when the account is not loaded.
+        /// </summary>
+        private static long QbOf(Player player)
+            => player.Account?.CachedQuestBonusCount ?? player.QuestCompletionCount ?? 0;
+
+        /// <summary>QB bounty (2026-10-07): the player's QB is at least the reward's Min QB (0 = everyone).</summary>
+        private static bool MeetsQb(Player player, BountyEntry reward)
+            => reward.MinQb <= 0 || QbOf(player) >= reward.MinQb;
+
+        /// <summary>"needs 500 QB (you have 320)" for a reward the player's QB is below, else null.</summary>
+        private static string QbText(Player player, BountyEntry reward)
+            => MeetsQb(player, reward) ? null : $"needs {reward.MinQb:N0} QB (you have {QbOf(player):N0})";
 
         /// <summary>"3 Pyreal Nugget" - one reward's item and amount.</summary>
         private static string RewardText(BountyEntry reward) => $"{reward.Amount:N0} {RoomAssignManager.ItemName(reward.Wcid)}";
@@ -308,6 +346,14 @@ namespace ACE.Server.Managers
 
         /// <summary>The all-zones bounty's progress key - one per character for every v11+ zone (owner 2026-10-05).</summary>
         public const string ZoneWideAreaKey = "zonewide";
+
+        /// <summary>A region bounty's progress key (owner 2026-10-07): one per region, every variation below T11.</summary>
+        private static string RegionAreaKey(string regionKey) => "region:" + regionKey.ToLowerInvariant();
+
+        /// <summary>The region's name for a region area key, else null.</summary>
+        private static string RegionNameOf(string areaKey)
+            => areaKey != null && areaKey.StartsWith("region:", StringComparison.Ordinal)
+                ? ZoneControlManager.FindBountyRegion(areaKey.Substring("region:".Length))?.Name : null;
 
         /// <summary>
         /// /bounty list (owner 2026-09-27): every bounty that can pay right now - each Vaulted Dungeon's, then each zone's -
@@ -337,7 +383,7 @@ namespace ACE.Server.Managers
                         var cooldown = reward.CooldownSeconds > 0
                             ? $" (at most every {FormatWait((int)Math.Ceiling(Math.Min(reward.CooldownSeconds, int.MaxValue)))})" : "";
                         Tell(player, $"  {where}: {RewardText(reward)} every {KillsText(reward.Kills)}{cooldown}"
-                            + $" - you: {StatusText(progress, areaKey, reward, now)}.");
+                            + $" - you: {QbText(player, reward) ?? StatusText(progress, areaKey, reward, now)}.");
                     }
                 }
 
@@ -355,6 +401,10 @@ namespace ACE.Server.Managers
                     foreach (var z in ZoneControlManager.ActiveZoneBounties())
                         ShowArea(z.Name, ZoneAreaKey(z.Name), z.Reward);
 
+                // the region bounties below T11 (owner 2026-10-07) - the all-zones bounty never replaces them
+                foreach (var r in ZoneControlManager.ActiveRegionBounties())
+                    ShowArea(r.Name, RegionAreaKey(r.Key), r.Reward);
+
                 if (shown == 0)
                     Tell(player, "Bounty: there are no bounties anywhere right now.");
                 else
@@ -368,7 +418,7 @@ namespace ACE.Server.Managers
 
         // ── Editing (the zone and dungeon commands share this) ───────────────
 
-        public const string EditUsage = "on | off | add <wcid> <amount> <kills> <minutes> | set <id> <wcid> <amount> <kills> <minutes> | remove <id>";
+        public const string EditUsage = "on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>";
 
         /// <summary>
         /// Applies one edit to a copy of an area's Bounty: on / off / add / set &lt;id&gt; / remove &lt;id&gt;. Rewards are named by
@@ -382,9 +432,12 @@ namespace ACE.Server.Managers
             var inv = CultureInfo.InvariantCulture;
             cfg.EnsureIds();
 
-            string ReadEntry(int from, out BountyEntry entry)
+            // QB bounty (2026-10-07): an optional "qb=N" after the four numbers - the reward's Min QB. Absent on "set" = keep the
+            // row's current one (an older plugin edits a row without knowing about it).
+            string ReadEntry(int from, out BountyEntry entry, out bool qbGiven)
             {
                 entry = null;
+                qbGiven = false;
                 if (args.Count < from + 4
                     || !uint.TryParse(args[from], NumberStyles.Integer, inv, out var wcid) || wcid == 0
                     || !int.TryParse(args[from + 1], NumberStyles.Integer, inv, out var amount) || amount < 1 || amount > MaxAmount
@@ -400,6 +453,17 @@ namespace ACE.Server.Managers
                     return $"WCID {wcid} is a {weenie.WeenieType}, not an item a player can carry.";
 
                 entry = new BountyEntry { Wcid = wcid, Amount = amount, Kills = kills, CooldownMinutes = minutes };
+                if (args.Count > from + 5)
+                    return "Too many arguments - after <minutes> only qb=N.";
+                if (args.Count > from + 4)
+                {
+                    var extra = args[from + 4];
+                    if (!extra.StartsWith("qb=", StringComparison.OrdinalIgnoreCase)
+                        || !int.TryParse(extra.Substring(3), NumberStyles.Integer, inv, out var qb) || qb < 0 || qb > MaxQb)
+                        return $"After <minutes> only qb=<0-{MaxQb:N0}> (the least QB a player needs for the reward to count their kills).";
+                    entry.MinQb = qb;
+                    qbGiven = true;
+                }
                 return null;
             }
 
@@ -427,7 +491,7 @@ namespace ACE.Server.Managers
 
                 case "add":
                 {
-                    var err = ReadEntry(at, out var entry);
+                    var err = ReadEntry(at, out var entry, out _);
                     if (err != null) return err;
                     entry.Id = cfg.NextId++;
                     cfg.Entries.Add(entry);
@@ -438,8 +502,9 @@ namespace ACE.Server.Managers
                 {
                     var err = ReadId(at, out var index);
                     if (err != null) return err;
-                    err = ReadEntry(at + 1, out var entry);
+                    err = ReadEntry(at + 1, out var entry, out var qbGiven);
                     if (err != null) return err;
+                    if (!qbGiven) entry.MinQb = cfg.Entries[index].MinQb;
                     entry.Id = cfg.Entries[index].Id;   // the same reward, edited: last save wins, its progress kept
                     cfg.Entries[index] = entry;
                     return null;
@@ -514,12 +579,14 @@ namespace ACE.Server.Managers
                 return (cfg?.Enabled == true ? "ON" : "off") + ": no rewards";
 
             var list = string.Join("; ", cfg.Entries.Where(e => e != null).Select(e =>
-                $"[{e.Id}] {e.Amount}x {RoomAssignManager.ItemName(e.Wcid)} every {e.Kills} kills ({e.CooldownMinutes.ToString("0.##", CultureInfo.InvariantCulture)} min)"));
+                $"[{e.Id}] {e.Amount}x {RoomAssignManager.ItemName(e.Wcid)} every {e.Kills} kills ({e.CooldownMinutes.ToString("0.##", CultureInfo.InvariantCulture)} min)"
+                + (e.MinQb > 0 ? $" needs {e.MinQb:N0} QB" : "")));
             return (cfg.Enabled ? "ON" : "off") + ": " + list;
         }
 
         /// <summary>
-        /// The rewards for the plugin: entries joined by '+', each "id:wcid:amount:kills:minutes:name" - the name with every
+        /// The rewards for the plugin: entries joined by '+', each "id:wcid:amount:kills:minutes:name[:minqb]" (minqb only on a
+        /// row that has one, QB bounty 2026-10-07) - the name with every
         /// separator the zone list or the dungeon line uses taken out. The id is what the plugin's edits name. Works on a copy:
         /// reading the list never changes the live settings (IDs for old data are given the same way Edit gives them).
         /// </summary>
@@ -530,7 +597,9 @@ namespace ACE.Server.Managers
             copy.EnsureIds();
             return string.Join("+", copy.Entries.Where(e => e != null).Select(e =>
                 e.Id + ":" + e.Wcid + ":" + e.Amount + ":" + e.Kills + ":" + e.CooldownMinutes.ToString("0.###", CultureInfo.InvariantCulture) + ":"
-                + RoomAssignManager.BuilderWireName(RoomAssignManager.ItemName(e.Wcid))));
+                + RoomAssignManager.BuilderWireName(RoomAssignManager.ItemName(e.Wcid))
+                // QB bounty (2026-10-07): APPENDED, and only on a row that has one - a plugin before it reads every other row unchanged
+                + (e.MinQb > 0 ? ":" + e.MinQb.ToString(CultureInfo.InvariantCulture) : "")));
         }
 
         // ── Delivery ─────────────────────────────────────────────────────────
