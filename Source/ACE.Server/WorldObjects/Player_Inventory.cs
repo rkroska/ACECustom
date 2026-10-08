@@ -4003,6 +4003,14 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Blacksmithing: a forge smith never takes the weapon. It notes it as the main weapon, or offers the forge.
+            if (target.GetProperty(PropertyBool.ForgeSmith) == true)
+            {
+                Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+                ACE.Server.Entity.ForgeService.HandleGive(this, target, item);
+                return;
+            }
+
             var acceptAll = target.AiAcceptEverything && !item.IsStickyAttunedOrContainsStickyAttuned;
 
             if (target.HasGiveOrRefuseEmoteForItem(Session, item, out var emoteResult) || acceptAll)

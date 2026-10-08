@@ -128,7 +128,11 @@ namespace ACE.Server.Managers.WeaponScaling
         /// which back then resolved flat per sub-grade — now that k interpolates BETWEEN rungs
         /// (see WeaponScalingManager.ResolveScriptK), a snapped variance would be the thing out of
         /// step instead, freezing the min while the max slid. Continuous on every family again.</summary>
-        public static bool TryGetEffectiveVariance(WorldObject weapon, out double vEff)
+        public static bool TryGetEffectiveVariance(WorldObject weapon, out double vEff) => TryGetEffectiveVariance(weapon, out vEff, true);
+
+        /// <summary>As above; <paramref name="honed"/> false gives the variance before any blacksmithing hone, which is
+        /// what the EV normalization must use - normalizing on the honed value would hand the gain straight back.</summary>
+        private static bool TryGetEffectiveVariance(WorldObject weapon, out double vEff, bool honed)
         {
             vEff = 0;
 
@@ -143,7 +147,48 @@ namespace ACE.Server.Managers.WeaponScaling
             var quality = weapon.GetProperty(PropertyInt.WeaponAugScaleQuality) ?? 0;
 
             vEff = WeaponScalingManager.EffectiveVariance(script.Variance, cfg.TightenStrength, quality);
+            if (honed)
+                vEff *= HoneFactor(weapon, ACE.Server.Entity.ForgeMath.ForgeLine.Variance);
             return vEff > 0;
+        }
+
+        /// <summary>
+        /// Blacksmithing hones on a quality-scaled weapon (2026-10-04). Combat takes this weapon's damage, variance and
+        /// damage modifier from its QUALITY, not from the stored stats a hone writes, so without this a Damage, Variance
+        /// or Damage Modifier hone on a tier 11+ weapon would do nothing. Each level therefore scales the quality-derived
+        /// value by the same step it applies to a normal weapon's stat: x (1 + step x levels), or for variance
+        /// x (1 - step x levels), never below 0. The step is read live from ServerConfig (forge_hone_step_*), so unlike
+        /// a normal weapon's stored hone a retune applies to existing tier 11+ hones too. 1.0 for an unhoned weapon.
+        /// </summary>
+        public static double HoneFactor(WorldObject weapon, ACE.Server.Entity.ForgeMath.ForgeLine line)
+        {
+            var text = weapon?.GetProperty(PropertyString.ForgeHoneLevels);
+            if (string.IsNullOrEmpty(text))
+                return 1.0;
+            if (!ACE.Server.Entity.ForgeHones.Parse(text).Levels.TryGetValue(line, out var levels) || levels <= 0)
+                return 1.0;
+            // one setting read: this runs on every hit of a honed weapon, so no config object is built here
+            var step = ACE.Server.Entity.ForgeMath.ForgeConfig.ServerStepFor(line) * levels;
+            return ACE.Server.Entity.ForgeMath.LowerIsBetter(line) ? Math.Max(0.0, 1.0 - step) : 1.0 + step;
+        }
+
+        /// <summary>
+        /// True when a hone on <paramref name="line"/> reaches this weapon through <see cref="HoneFactor"/> rather than
+        /// through its stored stat: Damage and Variance on a scaled melee weapon, Damage Modifier on a scaled launcher
+        /// or caster. The hone stone uses it to allow those lines even when the stored stat is 0.
+        /// </summary>
+        public static bool HoneScalesQuality(WorldObject weapon, ACE.Server.Entity.ForgeMath.ForgeLine line)
+        {
+            if (!TryResolve(weapon, out _, out _))
+                return false;
+            var modLane = weapon is MissileLauncher || weapon is Caster;
+            return line switch
+            {
+                ACE.Server.Entity.ForgeMath.ForgeLine.MaxDamage => !modLane,
+                ACE.Server.Entity.ForgeMath.ForgeLine.Variance => !modLane && TryGetEffectiveVariance(weapon, out _, false),
+                ACE.Server.Entity.ForgeMath.ForgeLine.DamageMod => modLane,
+                _ => false,
+            };
         }
 
         /// <summary>The per-strike flat damage term: k(quality) x min(wielder's item augs, tier cap).
@@ -159,7 +204,7 @@ namespace ACE.Server.Managers.WeaponScaling
                 return 0f;
 
             var augs = wielder.EffectiveItemAugCount;   // gems + Triune Weave, matching the aug-caps rule everywhere else
-            return (float)(k * Math.Min(augs, tierRow.Cap)) * EvNormalization(weapon);
+            return (float)(k * Math.Min(augs, tierRow.Cap) * HoneFactor(weapon, ACE.Server.Entity.ForgeMath.ForgeLine.MaxDamage)) * EvNormalization(weapon);
         }
 
         /// <summary>LIVE EV normalization (owner 2026-08-03): editing a family's Variance
@@ -171,7 +216,7 @@ namespace ACE.Server.Managers.WeaponScaling
         /// 1.0 for zero-variance weapons (launchers/casters/legacy) = exact old behavior.</summary>
         private static float EvNormalization(WorldObject weapon)
         {
-            if (!TryGetEffectiveVariance(weapon, out var vEff))
+            if (!TryGetEffectiveVariance(weapon, out var vEff, false))
                 return 1f;
             return (float)WeaponScalingManager.EvNormalization(vEff);
         }
@@ -262,7 +307,7 @@ namespace ACE.Server.Managers.WeaponScaling
                 k *= 1.0 + tierStep * LauncherTierSteps(WeaponScalingManager.Current, tierRow, augs);
             }
 
-            mod = (float)k;
+            mod = (float)(k * HoneFactor(weapon, ACE.Server.Entity.ForgeMath.ForgeLine.DamageMod));
             return true;
         }
 
@@ -305,7 +350,7 @@ namespace ACE.Server.Managers.WeaponScaling
             if (weapon is MissileLauncher || weapon is Caster || !TryResolve(weapon, out var k, out var tierRow))
                 return 0f;
 
-            return (float)(k * Math.Min(tierRow.MinWieldAugs, tierRow.Cap)) * EvNormalization(weapon);
+            return (float)(k * Math.Min(tierRow.MinWieldAugs, tierRow.Cap) * HoneFactor(weapon, ACE.Server.Entity.ForgeMath.ForgeLine.MaxDamage)) * EvNormalization(weapon);
         }
 
         /// <summary>The UNWIELDED examine value (owner 2026-08-03): read the term off the

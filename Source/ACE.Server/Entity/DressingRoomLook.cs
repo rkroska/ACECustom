@@ -8,21 +8,22 @@ using System.Text.Json.Serialization;
 namespace ACE.Server.Entity
 {
     /// <summary>
-    /// One sacrificed piece of a Dressing Room look: everything Creature.CalculateObjDesc reads off a worn item to draw
-    /// it, plus what it was (for staff, should a look ever need restoring by hand). The item itself no longer exists.
+    /// One piece of a Dressing Room look: a copy of everything Creature.CalculateObjDesc reads off a worn item to draw
+    /// it, plus what it was copied from. The item itself stays with the player (pieces locked in before 2026-10-07 were
+    /// destroyed instead).
     /// </summary>
     public sealed class DressingRoomPiece
     {
-        /// <summary>Weenie class id of the sacrificed item.</summary>
+        /// <summary>Weenie class id of the item the look was copied from.</summary>
         [JsonPropertyName("w")] public uint Wcid { get; set; }
 
-        /// <summary>Its name when it was sacrificed.</summary>
+        /// <summary>Its name when it was locked in.</summary>
         [JsonPropertyName("n")] public string Name { get; set; }
 
-        /// <summary>Its object guid when it was sacrificed (it is gone; this only ties the look to the log line).</summary>
+        /// <summary>Its object guid when it was locked in (this only ties the look to the log line).</summary>
         [JsonPropertyName("g")] public uint Guid { get; set; }
 
-        /// <summary>EquipMask it was worn in. Decides which real gear it hides and which pieces it replaces.</summary>
+        /// <summary>EquipMask it was worn in. Names the slots in chat, and applies the Show Helm / Show Cloak options.</summary>
         [JsonPropertyName("l")] public uint Location { get; set; }
 
         /// <summary>ItemType (Armor or Clothing), which picks the layering group as it does for a worn item.</summary>
@@ -35,13 +36,21 @@ namespace ACE.Server.Entity
 
         [JsonPropertyName("s")] public double? Shade { get; set; }
 
-        /// <summary>CoverageMask from PropertyInt.ClothingPriority: the sort key for clothing.</summary>
+        /// <summary>CoverageMask from PropertyInt.ClothingPriority: the sort key for clothing, and - as in the game's own
+        /// equip rule - what decides which real gear the piece hides, which saved pieces it replaces, and its fee.</summary>
         [JsonPropertyName("cp")] public uint? ClothingPriority { get; set; }
 
         /// <summary>CoverageMask the item reported as WorldObject.VisualClothingPriority: the sort key for armour.</summary>
         [JsonPropertyName("vp")] public uint? VisualPriority { get; set; }
 
         [JsonPropertyName("tl")] public bool? TopLayer { get; set; }
+
+        /// <summary>
+        /// The blacksmithing dye the piece wore when it was locked in (a 0x04 palette id), so the look keeps the colour
+        /// the player saw. Only a dye that had been kept, never one still being tried on. Absent for an undyed piece and
+        /// for every piece locked in before 2026-10-07.
+        /// </summary>
+        [JsonPropertyName("d")] public int? ForgeDye { get; set; }
 
         /// <summary>Unix time (seconds) it was locked in.</summary>
         [JsonPropertyName("at")] public long LockedAt { get; set; }
@@ -67,18 +76,30 @@ namespace ACE.Server.Entity
         /// </summary>
         public const uint SlotMask = 0x08007FFF;
 
-        /// <summary>A stored look with more pieces than there are slots is corrupt; it is not drawn.</summary>
-        public const int MaxPieces = 16;
+        /// <summary>
+        /// A stored look with more pieces than this is corrupt; it is not drawn. Saved pieces never share a body area, and
+        /// there are 18 areas at most (the 17 CoverageMask bits and the cloak), so no real look can exceed it.
+        /// </summary>
+        public const int MaxPieces = 18;
 
         [JsonPropertyName("v")] public int Version { get; set; } = CurrentVersion;
 
         [JsonPropertyName("pieces")] public List<DressingRoomPiece> Pieces { get; set; } = new();
 
         /// <summary>
-        /// How many times each wear slot has been locked in, keyed by the slot's EquipMask bit in hex. It only ever
-        /// grows - removing a look does not reset it - and it sets the fee for the next piece worn in that slot.
+        /// How many times each body area has been locked in, keyed by its CoverageMask bit in hex (the bits of a piece's
+        /// ClothingPriority). It only ever grows - removing a look does not reset it - and it sets the fee for the next
+        /// piece covering that area.
         /// </summary>
-        [JsonPropertyName("locks")] public Dictionary<string, int> Locks { get; set; } = new();
+        [JsonPropertyName("cover")] public Dictionary<string, int> Cover { get; set; }
+
+        /// <summary>
+        /// Counts as first stored (2026-10-05 to 07): keyed by EquipMask bit. Only read, to build <see cref="Cover"/> for
+        /// a record that has none, and never written again. Those keys could not price fairly because clothes worn
+        /// together share EquipMask bits - a shirt and trousers both claim the waist, trousers and boots both claim the
+        /// lower leg - so one outfit counted the shared slot twice.
+        /// </summary>
+        [JsonPropertyName("locks")] public Dictionary<string, int> LegacyLocks { get; set; }
 
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
@@ -94,13 +115,36 @@ namespace ACE.Server.Entity
                     yield return bit;
         }
 
-        public static bool Overlaps(uint locationA, uint locationB) => (locationA & locationB & SlotMask) != 0;
+        private static IEnumerable<uint> Bits(uint mask)
+        {
+            for (var i = 0; i < 32; i++)
+                if ((mask & (1u << i)) != 0)
+                    yield return 1u << i;
+        }
 
-        private static string LockKey(uint bit) => bit.ToString("X", CultureInfo.InvariantCulture);
+        /// <summary>
+        /// True when two pieces could not be worn together, by the game's own rule for armour and clothing
+        /// (Creature.GetEquippedItems): their coverage (ClothingPriority) overlaps. It is NOT their EquipMask - pieces worn
+        /// together share EquipMask bits all the time (shirt and trousers at the waist, trousers and boots at the lower
+        /// leg). Only when a piece has no coverage at all does its wielded location decide.
+        /// </summary>
+        public static bool Conflicts(uint coverageA, uint locationA, uint coverageB, uint locationB)
+            => coverageA != 0 && coverageB != 0
+                ? (coverageA & coverageB) != 0
+                : (locationA & locationB & SlotMask) != 0;
+
+        public static bool Conflicts(DressingRoomPiece a, DressingRoomPiece b)
+            => Conflicts(a.ClothingPriority ?? 0, a.Location, b.ClothingPriority ?? 0, b.Location);
+
+        private static string Key(uint bit) => bit.ToString("X", CultureInfo.InvariantCulture);
 
         /// <summary>
         /// Reads a stored look. Never throws: text that is not a usable look gives null, and the character is then drawn
         /// in their real gear exactly as if they had no look.
+        ///
+        /// It checks only what the draw code needs from each piece. It deliberately does not judge whether the pieces
+        /// "fit together": a too-strict check of exactly that kind rejected every look containing a shirt and trousers
+        /// on 2026-10-07, after the gear and the fee had been taken.
         /// </summary>
         public static DressingRoomLook Parse(string stored)
         {
@@ -112,17 +156,14 @@ namespace ACE.Server.Entity
                 if (look == null || look.Version != CurrentVersion)
                     return null;
                 look.Pieces ??= new();
-                look.Locks ??= new();
                 if (look.Pieces.Count > MaxPieces)
                     return null;
                 foreach (var piece in look.Pieces)
                     if (piece == null || piece.ClothingBase == 0 || (piece.Location & SlotMask) == 0)
                         return null;
-                // two saved pieces can never share a slot: WithLocked evicts on overlap
-                for (var i = 0; i < look.Pieces.Count; i++)
-                    for (var j = i + 1; j < look.Pieces.Count; j++)
-                        if (Overlaps(look.Pieces[i].Location, look.Pieces[j].Location))
-                            return null;
+
+                look.Cover ??= CoverFromLegacy(look.Pieces, look.LegacyLocks);
+                look.LegacyLocks = null;
                 return look;
             }
             catch (Exception)
@@ -131,14 +172,38 @@ namespace ACE.Server.Entity
             }
         }
 
+        /// <summary>
+        /// Builds coverage counts for a record stored with EquipMask-keyed counts. Each saved piece was locked as many
+        /// times as its LEAST-counted slot (the slots it shared with another piece of the same outfit were counted more
+        /// than once), and never fewer than once since it is saved. Counts for pieces no longer in the look cannot be
+        /// recovered and start again from nothing.
+        /// </summary>
+        private static Dictionary<string, int> CoverFromLegacy(List<DressingRoomPiece> pieces, Dictionary<string, int> legacy)
+        {
+            var cover = new Dictionary<string, int>();
+            foreach (var piece in pieces)
+            {
+                var times = int.MaxValue;
+                foreach (var slot in SlotBits(piece.Location))
+                    times = Math.Min(times, legacy != null && legacy.TryGetValue(Key(slot), out var count) ? count : 1);
+                if (times == int.MaxValue || times < 1)
+                    times = 1;
+                foreach (var bit in Bits(piece.ClothingPriority ?? 0))
+                    cover[Key(bit)] = Math.Max(times, cover.TryGetValue(Key(bit), out var had) ? had : 0);
+            }
+            return cover;
+        }
+
         public string Serialize() => JsonSerializer.Serialize(this, JsonOptions);
 
-        /// <summary>How many times the most-locked slot under <paramref name="location"/> has been locked in before.</summary>
-        public int PriorLocks(uint location)
+        /// <summary>How many times the most-locked body area under <paramref name="coverage"/> (a piece's ClothingPriority) has been locked in before.</summary>
+        public int PriorLocks(uint coverage)
         {
             var most = 0;
-            foreach (var bit in SlotBits(location))
-                if (Locks.TryGetValue(LockKey(bit), out var count) && count > most)
+            if (Cover == null)
+                return most;
+            foreach (var bit in Bits(coverage))
+                if (Cover.TryGetValue(Key(bit), out var count) && count > most)
                     most = count;
             return most;
         }
@@ -183,34 +248,34 @@ namespace ACE.Server.Entity
             return Fee(priorLocks, baseFee, growth, cap) >= (long)FeeLimit(cap);
         }
 
-        /// <summary>The saved pieces a newly locked piece worn in <paramref name="location"/> would replace.</summary>
-        public List<DressingRoomPiece> ReplacedBy(uint location) => Pieces.Where(p => Overlaps(p.Location, location)).ToList();
+        /// <summary>The saved pieces that newly locked <paramref name="piece"/> would replace.</summary>
+        public List<DressingRoomPiece> ReplacedBy(DressingRoomPiece piece) => Pieces.Where(p => Conflicts(p, piece)).ToList();
 
         /// <summary>
-        /// A new look with <paramref name="locked"/> added. A new piece replaces every saved piece it shares a slot with,
-        /// whole: a breastplate locked over a saved hauberk removes the hauberk, sleeves included. Each slot a new piece
-        /// occupies has its lock count raised by one.
+        /// A new look with <paramref name="locked"/> added. A new piece replaces every saved piece it conflicts with,
+        /// whole: a breastplate locked over a saved hauberk removes the hauberk, sleeves included. Each body area the new
+        /// pieces cover has its count raised by one - once per lock-in, however many of the pieces cover it.
         /// </summary>
         public DressingRoomLook WithLocked(IReadOnlyCollection<DressingRoomPiece> locked)
         {
             var next = new DressingRoomLook
             {
-                Pieces = Pieces.Where(p => !locked.Any(n => Overlaps(p.Location, n.Location))).ToList(),
-                Locks = new Dictionary<string, int>(Locks),
+                Pieces = Pieces.Where(p => !locked.Any(n => Conflicts(p, n))).ToList(),
+                Cover = Cover == null ? new Dictionary<string, int>() : new Dictionary<string, int>(Cover),
             };
+            uint covered = 0;
             foreach (var piece in locked)
             {
                 next.Pieces.Add(piece);
-                foreach (var bit in SlotBits(piece.Location))
-                {
-                    var key = LockKey(bit);
-                    next.Locks[key] = (next.Locks.TryGetValue(key, out var count) ? count : 0) + 1;
-                }
+                covered |= piece.ClothingPriority ?? 0;
             }
+            foreach (var bit in Bits(covered))
+                next.Cover[Key(bit)] = (next.Cover.TryGetValue(Key(bit), out var count) ? count : 0) + 1;
             return next;
         }
 
-        /// <summary>A new look with no pieces. The lock counts are kept, so removing a look never makes the next one cheaper.</summary>
-        public DressingRoomLook WithoutPieces() => new() { Locks = new Dictionary<string, int>(Locks) };
+        /// <summary>A new look with no pieces. The counts are kept, so removing a look never makes the next one cheaper.</summary>
+        public DressingRoomLook WithoutPieces()
+            => new() { Cover = Cover == null ? new Dictionary<string, int>() : new Dictionary<string, int>(Cover) };
     }
 }

@@ -899,7 +899,10 @@ namespace ACE.Server.WorldObjects
             AddBaseModelData(objDesc);
 
             if (!ClothingBase.HasValue || !DatManager.PortalDat.TryReadClothingTable((uint)ClothingBase, out item))
+            {
+                ApplyForgeDye(objDesc, null);
                 return objDesc;
+            }
 
             ClothingBaseEffect clothingBaseEffect = null;
             if (!item.ClothingBaseEffects.TryGetValue(SetupTableId, out clothingBaseEffect))
@@ -962,7 +965,134 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            ApplyForgeDye(objDesc, item);
             return objDesc;
+        }
+
+        /// <summary>
+        /// Full-colour textures that ignore palettes, mapped to a palette-indexed twin with the same layout
+        /// (found 2026-09-28 by ranking every indexed 256x256 DAT texture against them). These are the only
+        /// textures that stop a loot weapon taking a dye: Great Axe, Magari Yari and Great Star Mace. A dyed
+        /// weapon draws the twin instead, so the dye reaches the whole model; an undyed one keeps its look.
+        /// </summary>
+        private static readonly Dictionary<uint, uint> DyeableTwins = new()
+        {
+            [0x0500275A] = 0x05002959,   // Great Axe: the same atlas those models already use elsewhere
+            [0x0500275B] = 0x0500270C,   // Magari Yari / Great Star Mace blade and grip (likeness 0.032)
+        };
+
+        /// <summary>Per setup: the (part, texture) pairs a dye must swap for their twin. Cached; DAT data never changes at runtime.</summary>
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, List<(byte Part, uint Old, uint New)>> dyeTwinCache = new();
+
+        public static List<(byte Part, uint Old, uint New)> GetDyeTwinSwaps(uint setupId)
+        {
+            return dyeTwinCache.GetOrAdd(setupId, id =>
+            {
+                var swaps = new List<(byte, uint, uint)>();
+                var setup = DatManager.PortalDat.ReadFromDat<SetupModel>(id);
+                if (setup?.Parts == null)
+                    return swaps;
+                for (var i = 0; i < setup.Parts.Count && i <= byte.MaxValue; i++)
+                {
+                    var gfx = DatManager.PortalDat.ReadFromDat<GfxObj>(setup.Parts[i]);
+                    if (gfx?.Surfaces == null)
+                        continue;
+                    foreach (var s in gfx.Surfaces)
+                    {
+                        var tex = DatManager.PortalDat.ReadFromDat<Surface>(s)?.OrigTextureId ?? 0;
+                        if (DyeableTwins.TryGetValue(tex, out var twin) && !swaps.Contains(((byte)i, tex, twin)))
+                            swaps.Add(((byte)i, tex, twin));
+                    }
+                }
+                return swaps;
+            });
+        }
+
+        public int? ForgeDyePalette
+        {
+            get => GetProperty(PropertyInt.ForgeDyePalette);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.ForgeDyePalette); else SetProperty(PropertyInt.ForgeDyePalette, value.Value); }
+        }
+
+        /// <summary>
+        /// The dye to draw: one being tried on at a dye vat while its preview lasts, otherwise the kept one. The preview
+        /// ends by the clock, so a logout or crash mid-preview cannot leave a colour that was never paid for.
+        /// </summary>
+        public int? ActiveForgeDye()
+        {
+            var preview = GetProperty(PropertyInt.ForgeDyePreview);
+            if (preview.HasValue && (GetProperty(PropertyInt64.ForgeDyePreviewUntil) ?? 0) > ACE.Common.Time.GetUnixTime())
+                return preview;
+            return ForgeDyePalette;
+        }
+
+        /// <summary>
+        /// Paints the blacksmithing dye (a full 0x04 palette) over the ObjDesc. Two modes, picked live by
+        /// ServerConfig.forge_dye_mode ('full' is the default the owner chose in game, 2026-09-28):
+        ///   ranges - replace only the ranges the weapon's own ClothingBase colour option recolours, so the dye
+        ///            lands where a retail recolour would and hilts / wraps keep their look.
+        ///   full   - cover the whole 2048-colour palette, as bred pets do. Also the fallback for a weapon with
+        ///            no ClothingBase or no colour options.
+        /// Ranges go out as a byte count of 8-colour blocks, so a 2048-colour range (256 blocks) must be split
+        /// into 255 + 1: sent whole it serializes as 0 and the client drops the layer.
+        /// </summary>
+        private void ApplyForgeDye(ACE.Entity.ObjDesc objDesc, ClothingTable item)
+        {
+            var dye = ActiveForgeDye();
+            if (!dye.HasValue || ((uint)dye.Value & 0xFF000000) != 0x04000000)
+                return;
+
+            var pal = (ushort)(dye.Value & 0xFFFF);
+
+            // A full-colour texture ignores any palette, so trade it for its indexed twin before painting.
+            foreach (var (part, oldTex, newTex) in GetDyeTwinSwaps(SetupTableId))
+            {
+                objDesc.TextureChanges.RemoveAll(t => t.PartIndex == part && t.OldTexture == oldTex);
+                objDesc.TextureChanges.Add(new PropertiesTextureMap { PartIndex = part, OldTexture = oldTex, NewTexture = newTex });
+            }
+
+            CloSubPalEffect option = null;
+            if (item != null && item.ClothingSubPalEffects.Count > 0)
+            {
+                // Same option the retail path above picked: the PaletteTemplate's entry, else the first.
+                var palOption = (uint)(PaletteTemplate ?? 0);
+                option = item.ClothingSubPalEffects.TryGetValue(palOption, out var o) ? o : item.ClothingSubPalEffects[item.ClothingSubPalEffects.Keys.ElementAt(0)];
+            }
+
+            // Armour and clothing always paint by ranges, whatever the mode: that is how the piece is drawn when
+            // worn (Creature.CalculateObjDesc), so it looks the same on the ground as on the body.
+            var isWeapon = this is MeleeWeapon || this is MissileLauncher || this is Caster;
+
+            var blocks = new List<(int Offset, int Length)>();
+            if (option != null && (!isWeapon || !"full".Equals(ServerConfig.forge_dye_mode.Value, StringComparison.OrdinalIgnoreCase)))
+            {
+                foreach (var sp in option.CloSubPalettes)
+                    foreach (var r in sp.Ranges)
+                        blocks.Add(((int)(r.Offset / 8), (int)(r.NumColors / 8)));
+            }
+            if (blocks.Count == 0 && !isWeapon)
+                return;
+            if (blocks.Count == 0)
+                blocks.Add((0, 256));
+
+            // The dye replaces the retail layers; leaving them in would let a later layer paint over it.
+            objDesc.SubPalettes.Clear();
+
+            if (objDesc.PaletteID == 0)
+                objDesc.PaletteID = 0x04000000u | pal;
+
+            foreach (var (offset, length) in blocks)
+            {
+                var start = offset;
+                var remaining = length;
+                while (remaining > 0)
+                {
+                    var chunk = Math.Min(remaining, 255);
+                    objDesc.SubPalettes.Add(new PropertiesPalette { SubPaletteId = pal, Offset = (ushort)start, Length = (ushort)chunk });
+                    start += chunk;
+                    remaining -= chunk;
+                }
+            }
         }
 
         protected void AddBaseModelData(ACE.Entity.ObjDesc objDesc)

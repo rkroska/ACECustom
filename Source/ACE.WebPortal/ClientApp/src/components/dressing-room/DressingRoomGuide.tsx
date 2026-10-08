@@ -62,46 +62,46 @@ function Guide({ data }: { data: DressingRoomGuideData }) {
         id="how"
         title="How it works"
         icon={<Sparkles className="w-5 h-5" />}
-        lead="A look is the appearance of the armour and clothing you choose. Once it is locked in, that is how your character is drawn for you and for everyone else, no matter what you really have equipped. Your real gear still gives all of its armour, spells and bonuses."
+        lead="A look is a copy of how the armour and clothing you are wearing appears, colours and dyes included. Once it is locked in, that is how your character is drawn for you and for everyone else, no matter what you really have equipped. Your real gear still gives all of its armour, spells and bonuses."
       >
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Card title="Locking in a look" icon={<Shirt className="w-4 h-4 text-violet-300" />} accent="violet">
             <Steps steps={[
-              <>Take off your real gear and put on the armour and clothing you want to look like. Wear <strong className="text-neutral-100">only</strong> those pieces.</>,
+              <>Put on the armour and clothing you want to look like.</>,
               <>Use {attendantName}. He lists each piece and its fee in chat.</>,
-              <>Answer <strong className="text-neutral-100">Yes</strong> to both confirmation boxes. If you say No, or wait too long, nothing happens.</>,
-              <>The pieces are taken and the fee is paid. Put your real gear back on: you keep the look.</>,
+              <>Answer <strong className="text-neutral-100">Yes</strong> to the confirmation box. If you say No, or wait too long, nothing happens.</>,
+              <>The fee is paid and the look is saved. You keep everything you were wearing.</>,
             ]} />
           </Card>
 
-          <Card title="What it costs you" icon={<Trash2 className="w-4 h-4 text-rose-300" />} accent="rose">
-            <p><strong className="text-rose-200">The pieces you lock in are destroyed for good.</strong> They are not stored anywhere and cannot be returned, even if you remove the look later.</p>
-            <p>You also pay a pyreal fee for every piece{firstFee > 0 ? <>, starting at <strong className="text-neutral-100">{num(firstFee)} pyreals</strong></> : null}. It is taken from your banked pyreals first, then from pyreal coins in your pack.</p>
-            <p>To change your look you need to find new pieces and lock those in.</p>
+          <Card title="What it costs you" icon={<Coins className="w-4 h-4 text-amber-300" />} accent="amber">
+            <p><strong className="text-neutral-100">Only pyreals.</strong> The attendant copies how each piece looks. Your gear is not taken, changed or used up.</p>
+            <p>You pay a fee for every piece{firstFee > 0 ? <>, starting at <strong className="text-neutral-100">{num(firstFee)} pyreals</strong></> : null}. It is taken from your banked pyreals first, then from pyreal coins in your pack.</p>
+            <p>To change your look, wear something different and lock that in.</p>
           </Card>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card title="Taken" icon={<Trash2 className="w-4 h-4 text-rose-300" />}>
-            <p>Every piece of armour and clothing you are wearing when you say Yes, including your cloak.</p>
+          <Card title="Part of a look" icon={<Shirt className="w-4 h-4 text-violet-300" />}>
+            <p>Every piece of armour and clothing you are wearing when you say Yes, including your cloak and anything under your armour.</p>
             <p className="text-neutral-400">Slots a look can hold: {data.slots.join(', ')}.</p>
           </Card>
-          <Card title="Never taken" icon={<Ban className="w-4 h-4 text-emerald-300" />}>
-            <p>Weapons, shields, wands and bows, jewellery and trinkets, and anything in your packs. They are not part of a look and are left exactly as they are.</p>
+          <Card title="Not part of a look" icon={<Ban className="w-4 h-4 text-emerald-300" />}>
+            <p>Weapons, shields, wands and bows, jewellery and trinkets. They always show as what you really hold and wear.</p>
           </Card>
         </div>
 
-        <Tip>The attendant takes everything wearable that you have on. Check what you are wearing before you say Yes, and read the piece names in the confirmation box.</Tip>
+        <Tip>You are charged for every piece that goes into the look, including ones you cannot see, such as a shirt under a breastplate. Take off anything you do not want to pay for before you ask.</Tip>
       </Section>
 
       <Section
         id="cost"
         title="The fee"
         icon={<Coins className="w-5 h-5" />}
-        lead="Each piece is priced by its wear slots. The first time a slot is locked it costs the base fee; every later lock of that same slot on that character costs more. A piece covering several slots is priced by whichever of them you have locked the most."
+        lead="Each piece is priced by the part of the body it covers. The first time a body area is locked it costs the base fee; every later lock of that same area on that character costs more. A piece covering several areas is priced by whichever of them you have locked the most."
       >
         <FeeTable data={data} />
-        <Tip>Removing your look does not reset the price. The count of how many times each slot has been locked stays with the character for good.</Tip>
+        <Tip>Removing your look does not reset the price. The count of how many times each body area has been locked stays with the character for good.</Tip>
       </Section>
 
       <Section
@@ -111,30 +111,29 @@ function Guide({ data }: { data: DressingRoomGuideData }) {
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card title="Saved pieces always show" icon={<Eye className="w-4 h-4 text-violet-300" />}>
-            <p>A saved piece is drawn in its slots whether you have something equipped there or nothing at all.</p>
+            <p>A saved piece is drawn on the part of the body it covers whether you have something equipped there or nothing at all.</p>
             <p>The Show Helm and Show Cloak character options still work on a saved helm or cloak.</p>
           </Card>
           <Card title="Real gear under a saved piece is hidden" icon={<Layers className="w-4 h-4 text-violet-300" />}>
-            <p>Any real piece that shares a slot with a saved piece is hidden <strong className="text-neutral-100">whole</strong>.</p>
+            <p>A real piece that covers any of the same body area as a saved piece is hidden <strong className="text-neutral-100">whole</strong>. Pieces you could normally wear together, such as a shirt with trousers or underclothes with armour, do not hide each other.</p>
             <p className="text-neutral-400">Example: with only a breastplate saved, a real hauberk is hidden completely, so your arms show whatever is under it.</p>
           </Card>
-          <Card title="Other slots show your real gear" icon={<Shirt className="w-4 h-4 text-violet-300" />}>
-            <p>Slots your look does not cover are drawn from what you really wear. A look of just a helm leaves the rest of you as normal.</p>
+          <Card title="Everywhere else shows your real gear" icon={<Shirt className="w-4 h-4 text-violet-300" />}>
+            <p>Parts of the body your look does not cover are drawn from what you really wear. A look of just a helm leaves the rest of you as normal.</p>
           </Card>
           <Card title="A new piece replaces what it overlaps" icon={<Trash2 className="w-4 h-4 text-violet-300" />}>
-            <p>Locking in a new piece removes every saved piece it shares a slot with, completely. The attendant tells you which saved pieces will be replaced before you confirm.</p>
+            <p>Locking in a new piece removes every saved piece that covers any of the same body area, completely. The attendant tells you which saved pieces will be replaced before you confirm.</p>
             <p className="text-neutral-400">Example: locking a breastplate over a saved hauberk removes the whole hauberk, sleeves included.</p>
           </Card>
         </div>
       </Section>
 
-      <Section id="refused" title="What the attendant will not take" icon={<Ban className="w-5 h-5" />}
-        lead="If any one piece is refused, nothing is taken and nothing is charged. Take that piece off and ask again.">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card title="Retained items">Remove the retained mark first if you really want it taken.</Card>
-          <Card title="Pieces your body cannot show">See the table below. The attendant names the piece.</Card>
-          <Card title="Items in a trade">Finish or cancel the trade first.</Card>
+      <Section id="refused" title="When the attendant says no" icon={<Ban className="w-5 h-5" />}
+        lead="Nothing is ever taken from you except the fee, and the fee is only taken when you say Yes.">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <Card title="Pieces your body cannot show">Left out of the look and not charged. The attendant names them. See the table below.</Card>
           <Card title="Not enough pyreals">The attendant tells you the total and what you have.</Card>
+          <Card title="Busy or trading">Finish what you are doing and ask again.</Card>
         </div>
       </Section>
 
@@ -143,7 +142,7 @@ function Guide({ data }: { data: DressingRoomGuideData }) {
           <Card><Cmd>/look</Cmd> lists your saved pieces and whether the look is showing.</Card>
           <Card><Cmd>/look hide</Cmd> shows your real gear. Free, and the look stays saved.</Card>
           <Card><Cmd>/look show</Cmd> brings the saved look back. Free.</Card>
-          <Card accent="rose"><Cmd>/look clear</Cmd> removes the saved look for good. Nothing is returned or refunded, and it does not lower your next fee.</Card>
+          <Card accent="rose"><Cmd>/look clear</Cmd> removes the saved look for good. The fee is not refunded, and it does not lower your next fee.</Card>
         </div>
       </Section>
 
@@ -163,7 +162,7 @@ function Guide({ data }: { data: DressingRoomGuideData }) {
         id="bodies"
         title="What each body can show"
         icon={<Users className="w-5 h-5" />}
-        lead="Not every body has a model for every kind of gear. The table counts, for each part of the body, how many of the pieces a human can wear there also show on that heritage. The attendant refuses a piece that would not show, so nothing is lost by trying."
+        lead="Not every body has a model for every kind of gear. The table counts, for each part of the body, how many of the pieces a human can wear there also show on that heritage. The attendant leaves out a piece that would not show and does not charge for it."
       >
         <BodyTable bodies={data.bodies} />
       </Section>
@@ -182,7 +181,7 @@ function FeeTable({ data }: { data: DressingRoomGuideData }) {
   const lastCoversLater = scheduleComplete && schedule.length > 1
 
   if (schedule[0] <= 0)
-    return <Card accent="emerald">Locking in a look is currently free. You still lose the pieces.</Card>
+    return <Card accent="emerald">Locking in a look is currently free. You keep the pieces.</Card>
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -190,7 +189,7 @@ function FeeTable({ data }: { data: DressingRoomGuideData }) {
         <table className="w-full text-[13px] tabular-nums">
           <thead>
             <tr className="text-[10px] uppercase tracking-widest text-neutral-500 text-left">
-              <th className="py-1 font-bold">Lock of that slot</th>
+              <th className="py-1 font-bold">Lock of that body area</th>
               <th className="py-1 font-bold text-right">Pyreals</th>
             </tr>
           </thead>
@@ -222,7 +221,7 @@ function FeeTable({ data }: { data: DressingRoomGuideData }) {
             />
           </label>
           <label className="space-y-1 block">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">For these slots this is your</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">For these pieces this is your</span>
             <select
               id="dr-prior"
               value={prior}
@@ -237,7 +236,7 @@ function FeeTable({ data }: { data: DressingRoomGuideData }) {
           <Stat label="Per piece" value={`${num(perPiece)}`} />
           <Stat label="Whole outfit" value={`${num(perPiece * pieces)} pyreals`} />
         </div>
-        <p className="text-neutral-400">This assumes every slot in the outfit has been locked the same number of times. A mixed outfit is the sum of each piece's own fee, which the attendant lists before you confirm.</p>
+        <p className="text-neutral-400">This assumes every piece in the outfit covers areas locked the same number of times. A mixed outfit is the sum of each piece's own fee, which the attendant lists before you confirm.</p>
       </Card>
     </div>
   )

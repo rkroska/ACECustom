@@ -954,6 +954,32 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Gear Essences: on a Bag of Vengeance, the CreatureType of the monster that dropped it -
         /// the Slayer type it gives. Server-only - not an assessment property.</summary>
         GearEssenceHuntCreatureType = 51001,
+
+        // Blacksmithing properties live at 52000+ in every property type (renumbered 2026-10-05: the first numbers,
+        // taken next to the newest ones in use, collided with properties added on master the same week).
+        /// <summary>Blacksmithing dye (2026-09-28 prototype): a full 0x04 DAT palette id painted over a weapon
+        /// at render time (WorldObject.CalculateObjDesc). Kept apart from PaletteTemplate so the retail colour
+        /// option, its icon and every existing reader stay untouched; removing this restores the retail look.</summary>
+        ForgeDyePalette = 52000,
+
+        /// <summary>Blacksmithing: how many forges went into this weapon (the higher input's count + 1).</summary>
+        ForgeCount = 52001,
+
+        /// <summary>Blacksmithing: consecutive failed hone attempts; each adds to the next attempt's chance, reset on success.</summary>
+        ForgeHoneMisfortune = 52002,
+
+        /// <summary>Blacksmithing: a dye being tried on (a 0x04 palette id). It is drawn instead of ForgeDyePalette until
+        /// PropertyInt64.ForgeDyePreviewUntil passes; "keep" copies it to ForgeDyePalette. Expiring by time means a logout or
+        /// crash during a preview can never leave a free colour behind.</summary>
+        ForgeDyePreview = 52003,
+
+        /// <summary>Blacksmithing: on an item, the kind of forge tool it is (ForgeService.ForgeTool: 1 hone stone, 2 dye,
+        /// 3 flux, 4 unbinding oil). Using such an item on a weapon goes to ForgeService, not to a recipe.</summary>
+        ForgeTool = 52004,
+
+        /// <summary>Blacksmithing: what the tool is for. Hone stone: the ForgeMath.ForgeLine number it hones. Dye: the colour
+        /// family (ForgeDyes.Family; 0 = any).</summary>
+        ForgeToolArg = 52005,
     }
 
     public static class PropertyIntExtensions

@@ -259,6 +259,9 @@ namespace ACE.Server.Factories.Tables.Wcids
             }
         }
 
+        /// <summary>Every wcid this table can roll (read-only; the blacksmithing forge groups weapons by these tables).</summary>
+        public static IEnumerable<WeenieClassName> All => _combined;
+
         public static bool Contains(WeenieClassName wcid)
         {
             return _combined.Contains(wcid);

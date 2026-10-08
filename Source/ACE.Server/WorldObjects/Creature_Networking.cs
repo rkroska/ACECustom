@@ -241,6 +241,13 @@ namespace ACE.Server.WorldObjects
 
                                 ushort itemPal = (ushort)itemPalSet.GetPaletteID(shade);
 
+                                // Blacksmithing dye on a worn piece: the same ranges the piece already recolours,
+                                // filled from the dye palette. Never the whole palette - the wearer's skin, hair
+                                // and other pieces share it.
+                                var forgeDye = w.ActiveForgeDye();
+                                if (forgeDye.HasValue && ((uint)forgeDye.Value & 0xFF000000) == 0x04000000)
+                                    itemPal = (ushort)(forgeDye.Value & 0xFFFF);
+
                                 for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
                                 {
                                     ushort palOffset = (ushort)(itemSubPal.CloSubPalettes[i].Ranges[j].Offset / 8);

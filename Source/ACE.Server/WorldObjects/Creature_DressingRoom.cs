@@ -111,6 +111,7 @@ namespace ACE.Server.WorldObjects
             public readonly bool? TopLayer;
             public readonly uint? VisualPriority;
             public readonly uint? ClothingPriority;
+            public readonly int? ForgeDye;              // blacksmithing dye to paint the piece with, if any
 
             public DressingRoomVisual(WorldObject item)
             {
@@ -123,6 +124,7 @@ namespace ACE.Server.WorldObjects
                 TopLayer = item.TopLayerPriority;
                 VisualPriority = (uint?)item.VisualClothingPriority;
                 ClothingPriority = (uint?)item.ClothingPriority;
+                ForgeDye = item.ActiveForgeDye();
             }
 
             public DressingRoomVisual(DressingRoomPiece piece)
@@ -136,6 +138,7 @@ namespace ACE.Server.WorldObjects
                 TopLayer = piece.TopLayer;
                 VisualPriority = piece.VisualPriority;
                 ClothingPriority = piece.ClothingPriority;
+                ForgeDye = piece.ForgeDye;
             }
 
             /// <summary>The armour layering group of CalculateObjDesc: armour, and anything on the head, hands or feet.</summary>
@@ -149,7 +152,7 @@ namespace ACE.Server.WorldObjects
         /// Builds the ObjDesc for a player showing a Dressing Room look, or returns null to mean "draw the ordinary way".
         ///
         /// What is drawn is exactly what CalculateObjDesc would draw if the player were wearing the saved pieces plus
-        /// whichever of their real pieces share no slot with a saved one. That is always a set of pieces that could be
+        /// whichever of their real pieces could be worn alongside every saved one. That is always a set of pieces that could be
         /// worn together, so the layering rules it goes through are the ones the game already uses.
         ///
         /// <paramref name="worn"/> is the ordinary path's own sorted list of worn items (clothing first, then armour),
@@ -166,7 +169,6 @@ namespace ACE.Server.WorldObjects
                 // A saved piece with no model for this body (the character changed race or body style since) is left
                 // out, and so hides nothing: the real gear in that slot shows instead.
                 var saved = new List<DressingRoomVisual>(look.Pieces.Count);
-                uint savedSlots = 0;
                 foreach (var piece in look.Pieces)
                 {
                     if (!DressingRoomPieceDraws(piece.ClothingBase, thisSetupId))
@@ -175,15 +177,20 @@ namespace ACE.Server.WorldObjects
                     if (!visual.IsArmourGroup && !visual.IsClothingGroup)
                         continue;
                     saved.Add(visual);
-                    savedSlots |= piece.Location & DressingRoomLook.SlotMask;
                 }
                 if (saved.Count == 0)
                     return null;
 
+                // A real piece is hidden when it could not be worn together with a saved one, by the game's own equip
+                // rule: overlapping coverage, not overlapping EquipMask (trousers share an EquipMask bit with boots and
+                // with a shirt, and are worn with both).
                 var visuals = new List<DressingRoomVisual>(saved.Count + worn.Count);
                 foreach (var w in worn)
-                    if (!DressingRoomLook.Overlaps((uint)(w.CurrentWieldedLocation ?? EquipMask.None), savedSlots))
-                        visuals.Add(new DressingRoomVisual(w));
+                {
+                    var real = new DressingRoomVisual(w);
+                    if (!saved.Any(s => DressingRoomLook.Conflicts(real.ClothingPriority ?? 0, (uint)real.Location, s.ClothingPriority ?? 0, (uint)s.Location)))
+                        visuals.Add(real);
+                }
                 visuals.AddRange(saved);
 
                 // the same order CalculateObjDesc builds: clothing by ClothingPriority, then armour with
@@ -254,6 +261,12 @@ namespace ACE.Server.WorldObjects
                             continue;
 
                         ushort itemPal = (ushort)itemPalSet.GetPaletteID(shade);
+
+                        // Blacksmithing dye, painted exactly as the ordinary path paints a worn piece: a real piece by
+                        // its current dye, a saved piece by the dye it wore when it was locked in.
+                        var forgeDye = w.ForgeDye;
+                        if (forgeDye.HasValue && ((uint)forgeDye.Value & 0xFF000000) == 0x04000000)
+                            itemPal = (ushort)(forgeDye.Value & 0xFFFF);
 
                         for (int j = 0; j < itemSubPal.CloSubPalettes[i].Ranges.Count; j++)
                         {

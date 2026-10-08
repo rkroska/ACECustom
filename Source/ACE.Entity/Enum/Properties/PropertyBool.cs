@@ -402,6 +402,22 @@ namespace ACE.Entity.Enum.Properties
         /// zone / tier / rank / wcid. Server-only. 50058 is taken on test/integration (IsTestFiller).</summary>
         ZcImmuneShrapnelAgony = 50059,
 
+        // Blacksmithing properties live at 52000+ in every property type (renumbered 2026-10-05: the first numbers,
+        // taken next to the newest ones in use, collided with properties added on master the same week).
+        /// <summary>Blacksmithing: on an NPC, makes it a forge smith. A weapon handed to it is never taken; the smith notes
+        /// it as the main weapon, and the next one handed over is offered as a forge (ForgeService.HandleGive).</summary>
+        ForgeSmith = 52000,
+
+        /// <summary>Blacksmithing: on a world object, marks a grindstone. A weapon can only be honed near one.</summary>
+        ForgeGrindstone = 52001,
+
+        /// <summary>Blacksmithing: on a world object, marks a dye vat. A weapon can only be dyed near one.</summary>
+        ForgeDyeVat = 52002,
+
+        /// <summary>Blacksmithing: on a weapon whose binding was bought off. It trades freely until it is next wielded, which
+        /// makes it Attuned and Bonded again and clears this.</summary>
+        ForgeRebindOnWield = 52003,
+
         /// <summary>Room Assign, Zone Share (owner 2026-09-23): on a room-source WEENIE (the one carrying RoomAssignRooms), everyone
         /// standing in that dungeon shares kill XP, kill luminance and kill-task credit as if they were all in one fellowship.
         /// Server-only - not an assessment property. Numbered beside the other Room Assign properties (50500-50502).</summary>

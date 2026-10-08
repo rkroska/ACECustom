@@ -80,6 +80,9 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         BankedPrestigeCoins    = 50601,
 
+        /// <summary>Blacksmithing: Unix time (seconds) until which PropertyInt.ForgeDyePreview is the colour drawn.</summary>
+        ForgeDyePreviewUntil    = 52000,
+
         // Pet Bonding System (Combat Pet Devices) — [AssessmentProperty] for identify + plugin PublicUpdateProperty*
         /// <summary>Current bond XP toward next level on a PetDevice.</summary>
         [AssessmentProperty]

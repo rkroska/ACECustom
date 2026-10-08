@@ -133,6 +133,13 @@ namespace ACE.Entity.Enum.Properties
         /// adds it back, so a Steel tinker shows in the appraisal and survives a re-stamp. Server-only. See ZoneStatResolver.</summary>
         ZcTinkerBonus = 50101,
 
+        // Blacksmithing properties live at 52000+ in every property type (renumbered 2026-10-05: the first numbers,
+        // taken next to the newest ones in use, collided with properties added on master the same week).
+        /// <summary>Blacksmithing hone levels: "line:levels:delta;..." (ForgeMath.ForgeLine number, level count, and the exact
+        /// amount those levels added to the stat, invariant culture). The delta is stored rather than recomputed so a later
+        /// change to the per-level step can never mis-read an already honed weapon.</summary>
+        ForgeHoneLevels = 52000,
+
         /// <summary>Room Assign (RoomAssignManager): every one-player room, on one line -
         /// "room|0xCELL [x y z] qw qx qy qz|0xCELL,0xCELL;room|...". On a Portal or PressurePlate WEENIE it makes that
         /// weenie a room source. Server-only - not an assessment property, so it is never sent to a player.
