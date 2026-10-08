@@ -752,6 +752,16 @@ namespace ACE.Server.Network.Structure
             else
                 PropertiesInt.Remove(PropertyInt.AppraisalItemSkill);
 
+            // zone lock (2026-10-07): a locked ZC weapon's % stats are the T10 values combat uses (ZoneLockFallback.WeaponPercent;
+            // unchanged when not locked) - before the enchantment additions below, exactly as combat adds them
+            if (wo is MeleeWeapon || wo is MissileLauncher || wo is Caster)
+            {
+                var pctHolder = (wo.Wielder as Player) ?? examiner;
+                foreach (var pctProp in new[] { PropertyFloat.WeaponOffense, PropertyFloat.WeaponDefense, PropertyFloat.WeaponMissileDefense, PropertyFloat.WeaponMagicDefense, PropertyFloat.ManaConversionMod })
+                    if (PropertiesFloat.TryGetValue(pctProp, out var pctOwn))
+                        PropertiesFloat[pctProp] = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(wo, pctHolder, pctProp, (float)pctOwn);
+            }
+
             if (PropertiesFloat.ContainsKey(PropertyFloat.WeaponDefense) && !(wo is Ammunition))
             {
                 var defenseMod = wo.EnchantmentManager.GetDefenseMod();
@@ -793,8 +803,12 @@ namespace ACE.Server.Network.Structure
                 var casterHolder = (wo.Wielder as Player) ?? examiner;
                 var enchantmentBonus = ResistMaskHelper.GetElementalDamageBonus(wo);
 
-                // gear / zone lock: combat uses the stock mod there (WorldObject_Weapon caster gate), so show that
-                if (!ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(wo, casterHolder)
+                // gear / zone lock: show what combat uses there (WorldObject_Weapon caster gate) - the T10 caster mod + Spirit Thirst
+                // while the zone lock holds (2026-10-07), the stock mod with the master switch off
+                var casterLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(wo, casterHolder);
+                if (casterLocked && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
+                    PropertiesFloat[PropertyFloat.ElementalDamageMod] = ACE.Server.Managers.ZoneControl.ZoneLockFallback.CasterElementalMod + enchantmentBonus + ACE.Server.Managers.ZoneControl.ZoneLockFallback.ThirstTopUp(wo);
+                else if (!casterLocked
                     && ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.TryGetCasterElementalMod(wo, casterHolder, out var gradedElemMod))
                     // the same composition combat uses: the graded mod MULTIPLIES the aura, it does not add to it
                     PropertiesFloat[PropertyFloat.ElementalDamageMod] = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.ComposeCasterModifier(
@@ -1285,6 +1299,9 @@ namespace ACE.Server.Network.Structure
             // WorldObject_Weapon / DamageEvent), not the stamped value. Judged for the same holder the damage profile uses: the
             // wielder of a worn weapon, else the examiner.
             var zcLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, (weapon.Wielder as Player) ?? examiner);
+            // locked WITH Zone Control on = the zone lock's T10 fallback (owner 2026-10-07, ZoneLockFallback); locked with the
+            // master switch OFF = inert, as before
+            var zcT10 = zcLocked && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active;
 
             // Determine skill: explicit WeaponSkill, or fallback for Casters (Wands)
             var checkSkill = weapon.WeaponSkill;
@@ -1301,7 +1318,9 @@ namespace ACE.Server.Network.Structure
             var slayerAll = weapon.GetProperty(PropertyBool.SlayerAllCreatures) == true;
             if (weapon.SlayerCreatureType.HasValue || slayerAll)
             {
-                var bonus = zcLocked ? 1.0 : weapon.SlayerDamageBonus ?? 1.0;
+                var bonus = !zcLocked ? weapon.SlayerDamageBonus ?? 1.0
+                    : zcT10 ? Math.Min(weapon.SlayerDamageBonus ?? 1.0, ACE.Server.Managers.ZoneControl.ZoneLockFallback.SlayerCap)
+                    : 1.0;
                 var niceName = slayerAll
                     ? "All Creatures"
                     : CreatureNameRegex().Replace(weapon.SlayerCreatureType.ToString(), " $1");
@@ -1318,7 +1337,7 @@ namespace ACE.Server.Network.Structure
             // Cleaving (multi-target): the raw prop stores TOTAL targets (extra + 1), so raw-prop
             // readouts look one higher than authored — this line shows the true extra-target count.
             if (weapon.IsCleaving)
-                effectDescriptions.Add($"- Cleaving: +{(zcLocked ? 0 : weapon.CleaveTargets)} Targets");
+                effectDescriptions.Add($"- Cleaving: +{(!zcLocked ? weapon.CleaveTargets : zcT10 ? Math.Min(weapon.CleaveTargets, ACE.Server.Managers.ZoneControl.ZoneLockFallback.CleaveCap) : 0)} Targets");
 
             // Resistance Cleaving (Fixed Resistance Modifier)
             if (weapon.ResistanceModifier.HasValue && weapon.ResistanceModifierType.HasValue)
@@ -1336,19 +1355,17 @@ namespace ACE.Server.Network.Structure
                 effectDescriptions.Add($"- Armor Cleaving: {reduction:P0} Armor Ignored");
             }
 
-            // Split Arrow
-            if (weapon.GetProperty(PropertyBool.SplitArrows) == true)
-            {
-                var count = zcLocked ? 0 : weapon.GetProperty(PropertyInt.SplitArrowCount) ?? Creature.DEFAULT_SPLIT_ARROW_COUNT;
-                var val = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? Creature.DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER;
-                effectDescriptions.Add($"- Split Arrow: +{count} Targets, {val:P0} Dmg");
-            }
+            // Split Arrow - the same reader combat uses, so a locked launcher shows its T10 split (its own count, or the +2
+            // a launcher without Split Arrows gets while locked)
+            var splitShown = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon, zcLocked);
+            if (weapon.GetProperty(PropertyBool.SplitArrows) == true || splitShown.On)
+                effectDescriptions.Add($"- Split Arrow: +{(splitShown.On ? splitShown.Count : 0)} Targets, {splitShown.Damage:P0} Dmg");
 
             // Crushing Blow: engine crit damage = 1 + CriticalMultiplier, so the true multiplier the
             // player actually deals is prop + 1 (a stored 1.0 = normal 2x crit).
             if (weapon.GetProperty(PropertyFloat.CriticalMultiplier) > 1.0f)
             {
-                var val = zcLocked ? WorldObject.DefaultCritDamageMultiplier + 1.0 : weapon.GetProperty(PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (a plain 2x crit)
+                var val = zcLocked ? WorldObject.LockedCritDamageMultiplier(weapon) + 1.0 : weapon.GetProperty(PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (T10 cap, or a plain 2x crit with the master switch off)
                 effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
             }
 
@@ -1415,7 +1432,7 @@ namespace ACE.Server.Network.Structure
                     // Zone Control loot: the rend power override substitutes for the skill formula
                     // (rendingMod = 1 + override), mirroring GetWeaponResistanceModifier, so the tooltip
                     // shows exactly the configured strength (e.g. wire 7.0 -> +700% Dmg).
-                    var rendOverride = weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId);
+                    var rendOverride = zcT10 ? null : weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId);
                     if (rendOverride.HasValue && rendOverride.Value > 0)
                         mod = 1.0f + (float)rendOverride.Value;
 
@@ -1423,7 +1440,7 @@ namespace ACE.Server.Network.Structure
                     // there"). It shared a slot with the vuln multiplier internally - they are MAX'd,
                     // never stacked - but that is an implementation detail of the resist chain and has
                     // no business on a player-facing line. A rend is a rend.
-                    var bonusPct = zcLocked ? 0.0 : (mod - 1.0);   // locked: the rend is skipped in combat
+                    var bonusPct = zcLocked && !zcT10 ? 0.0 : (mod - 1.0);   // locked: the retail rend (T10); master switch off: skipped
                     effectDescriptions.Add($"- {type.DisplayName()}: +{bonusPct:P0} Dmg");
                 }
             }
@@ -1431,7 +1448,7 @@ namespace ACE.Server.Network.Structure
             // Shield Cleaving: fraction of the target's shield AL the weapon ignores. Stored directly on
             // the weapon (PropertyFloat.IgnoreShield); GetIgnoreShieldMod reads it at hit time.
             if (weapon.IgnoreShield.HasValue && weapon.IgnoreShield.Value > 0)
-                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(weapon.IgnoreShield.Value, 0.0, 1.0)):P0} Shield Ignored");
+                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(weapon.IgnoreShield.Value, 0.0, 1.0)):P0} Shield Ignored");   // locked: off (owner 2026-10-07)
 
             // Phantom (hollow): the weapon bypasses the target's protective magic - Impen/Banes on armor
             // and Life prots. RETAIL ONLY as of 2026-08-25: our loot card was deleted, so every weapon
@@ -1445,6 +1462,7 @@ namespace ACE.Server.Network.Structure
             var wepMeleeDef = (float)(weapon.WeaponDefense ?? 1.0f);
             if (weapon.WeaponDefense > 0 && weapon.WeaponDefense < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 4) != 0)
                 wepMeleeDef += 1;
+            wepMeleeDef = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, (weapon.Wielder as Player) ?? examiner, PropertyFloat.WeaponDefense, wepMeleeDef);   // zone lock: T10 %
 
             var meleeMod = wepMeleeDef + weapon.EnchantmentManager.GetDefenseMod();
             if (weapon.IsEnchantable)
@@ -1492,7 +1510,7 @@ namespace ACE.Server.Network.Structure
                     // perfect roll, NOT the quality percentile, and family ladders have different
                     // spreads - a bow F- honestly deals 72% of a perfect bow. Without the word
                     // "damage" that read as a display bug ("how is the worst grade 72%?").
-                    effectDescriptions.Insert(0, zcLocked ? $"- Weapon Grade: {wsGrade} (no bonus damage here)" : $"- Weapon Grade: {wsGrade} ({wsPct}% of max damage)");
+                    effectDescriptions.Insert(0, zcLocked ? (zcT10 ? $"- Weapon Grade: {wsGrade} (T10 damage here)" : $"- Weapon Grade: {wsGrade} (no bonus damage here)") : $"- Weapon Grade: {wsGrade} ({wsPct}% of max damage)");
                 }
                 else
                     effectDescriptions.Insert(0, $"- Weapon Grade: {wsGrade}");
@@ -1520,11 +1538,11 @@ namespace ACE.Server.Network.Structure
             {
                 if (weapon.ProcSpell.HasValue &&
                     ACE.Server.Managers.ZoneControl.ZoneLootMutator.TryGetProcDisplayName(weapon.ProcSpell.Value, out var arcName))
-                    effectDescriptions.Add($"- Cast on Strike: {arcName} ({(zcLocked ? 0f : (weapon.ProcSpellRate ?? 0f)) * 100f:0.#}% proc chance)");
+                    effectDescriptions.Add($"- Cast on Strike: {arcName} ({(!zcLocked ? (weapon.ProcSpellRate ?? 0f) : zcT10 ? (float)Math.Min(weapon.ProcSpellRate ?? 0f, ACE.Server.Managers.ZoneControl.ZoneLockFallback.ProcRateCap) : 0f) * 100f:0.#}% proc chance)");
 
                 if (weapon.ProcSpell2.HasValue &&
                     ACE.Server.Managers.ZoneControl.ZoneLootMutator.TryGetProcDisplayName(weapon.ProcSpell2.Value, out var ringName))
-                    effectDescriptions.Add($"- Cast on Strike: {ringName} ({(zcLocked ? 0f : (weapon.ProcSpellRate2 ?? 0f)) * 100f:0.#}% proc chance)");
+                    effectDescriptions.Add($"- Cast on Strike: {ringName} ({(!zcLocked ? (weapon.ProcSpellRate2 ?? 0f) : zcT10 ? (float)Math.Min(weapon.ProcSpellRate2 ?? 0f, ACE.Server.Managers.ZoneControl.ZoneLockFallback.ProcRateCap) : 0f) * 100f:0.#}% proc chance)");
             }
 
             effectDescriptions.Add($"- Effective Melee Defense: {emdVal}");

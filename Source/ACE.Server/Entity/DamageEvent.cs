@@ -710,8 +710,12 @@ namespace ACE.Server.Entity
             // Apply split arrow damage multiplier if this is a split arrow
             if (DamageSource.GetProperty(PropertyBool.IsSplitArrow) == true)
             {
-                var splitMultiplier = (float)(DamageSource.ProjectileLauncher?.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ??
-                                             DefaultSplitArrowDamageMultiplier);
+                // the damage fixed at the SHOT (Creature_Missile stamps it on each split arrow - zone lock 2026-10-07: a locked ZC
+                // launcher's bonus split hits at T10 damage even if the player steps into a zone mid-flight); an arrow without the
+                // stamp reads the launcher as before
+                var splitMultiplier = (float)(DamageSource.GetProperty(PropertyFloat.SplitArrowDamageMultiplier)
+                    ?? DamageSource.ProjectileLauncher?.GetProperty(PropertyFloat.SplitArrowDamageMultiplier)
+                    ?? DefaultSplitArrowDamageMultiplier);
                 Damage *= splitMultiplier;
             }
 

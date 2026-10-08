@@ -1976,7 +1976,9 @@ namespace ACE.Server.WorldObjects
             // math anywhere. A ring's damage is applied by THIS method and never reaches
             // SpellProjectile.CalculateDamage, so the unified crit had to be gated here separately -
             // without it, hand-cast rings kept critting for ~2x in the base world.
-            var endgameCrit = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon);
+            // zone lock (2026-10-07): a LOCKED ZC caster is T10 gear - retail ring math, matching the ring's crit chance
+            // (GetWeaponMagicCritFrequency) and every other cast path; EndgameRulesApply == the gear half otherwise
+            var endgameCrit = ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApply(this, weapon);
 
             var isLifeProjectile = spell.MetaSpellType == ACE.Entity.Enum.SpellType.LifeProjectile;
 

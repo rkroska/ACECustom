@@ -249,6 +249,18 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private int equippedZcGearCount;
 
+        /// <summary>How many of the equipped ZC items are WORN kit pieces - armor, clothing, jewelry, cloak; not a weapon, caster,
+        /// shield or ammo (zone lock 2026-10-07, review): the T10 worn totals the armor zone lock swaps in are a per-18-piece kit
+        /// share, and the weapon lock governs weapons. Maintained beside equippedZcGearCount.</summary>
+        private int equippedZcWornCount;
+
+        /// <summary>Equipped worn ZC kit pieces (read by the player heartbeat's zone-lock max-health refresh).</summary>
+        internal int EquippedZcWornCount => equippedZcWornCount;
+
+        private static bool IsZcWornPiece(WorldObject wo)
+            => ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo)
+               && !(wo is MeleeWeapon || wo is MissileLauncher || wo is Caster || wo is Ammunition || wo.IsShield);
+
         private static readonly PropertyInt[] RatingCacheProps =
         {
             PropertyInt.GearDamage, PropertyInt.GearDamageResist, PropertyInt.GearCritDamage,
@@ -288,6 +300,8 @@ namespace ACE.Server.WorldObjects
             // contribute no Gear* rating at all, and it still counts as ZC gear.
             if (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo))
                 equippedZcGearCount++;
+            if (IsZcWornPiece(wo))
+                equippedZcWornCount++;
 
             var any = false;
             foreach (var p in RatingCacheProps)
@@ -313,6 +327,8 @@ namespace ACE.Server.WorldObjects
             // that carry no Gear* rating.
             if (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo))
                 equippedZcGearCount = Math.Max(0, equippedZcGearCount - 1);
+            if (IsZcWornPiece(wo))
+                equippedZcWornCount = Math.Max(0, equippedZcWornCount - 1);
 
             if (equippedItemsRatingCache == null)
                 return;
@@ -559,16 +575,27 @@ namespace ACE.Server.WorldObjects
         public int GetEquippedItemsRatingSum(PropertyInt rating)
         {
             if (equippedItemsRatingCache == null)
+            {
+                // a locked ZC piece still counts at T10 (below) even when nothing worn carries a rating prop
+                if (equippedZcWornCount > 0 && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active
+                    && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this))
+                    return ACE.Server.Managers.ZoneControl.ZoneLockFallback.WornRating(rating, equippedZcWornCount);
                 return 0;
+            }
 
             if (equippedItemsRatingCache.TryGetValue(rating, out var value))
             {
-                // armor zone lock: subtract exactly what the worn ZC pieces contributed - retail
-                // cloaks / aetheria keep counting, the ZC lines go dormant outside authored areas
-                if (value != 0 && equippedItemsZcRatingCache != null
-                    && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this)
-                    && equippedItemsZcRatingCache.TryGetValue(rating, out var zcPortion))
-                    value -= zcPortion;
+                // armor zone lock: what the worn ZC pieces contributed is swapped for the REAL T10 worn total
+                // (owner 2026-10-07: "same stats as T10 gear" - zeroing them left a locked T11 kit far below the
+                // T10 set it replaced). Retail cloaks / aetheria keep counting as they are.
+                // Master switch OFF (ZoneLockFallback.Active false): the old behaviour - the ZC portion is subtracted, nothing added.
+                if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this))
+                {
+                    if (equippedItemsZcRatingCache != null && equippedItemsZcRatingCache.TryGetValue(rating, out var zcPortion))
+                        value -= zcPortion;
+                    if (ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
+                        value += ACE.Server.Managers.ZoneControl.ZoneLockFallback.WornRating(rating, equippedZcWornCount);
+                }
                 return value;
             }
 

@@ -1424,8 +1424,11 @@ namespace ACE.Server.Managers.ZoneControl
         /// This is the call nearly every damage site should make.
         /// </summary>
         public static bool EndgameRulesApply(Creature actor, WorldObject weapon)
-            => actor is Player
-                ? EndgameRulesApplyToPlayerGear(weapon)
+            => actor is Player player
+                // zone lock (owner 2026-10-07): a ZC weapon the lock holds IS T10 gear for that swing / cast - the retail crit
+                // and proc rules, not the endgame ones (the endgame crit folds the luminance flat into the crit base, which
+                // put locked crits at ~27x a normal hit against ~10-17x for real T10 weapons)
+                ? EndgameRulesApplyToPlayerGear(weapon) && !WeaponPowerSuppressed(weapon, player)
                 : EndgameRulesApplyToMonster(actor);
 
         /// <summary>
