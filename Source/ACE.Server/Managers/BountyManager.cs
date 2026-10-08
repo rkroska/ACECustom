@@ -23,6 +23,7 @@ namespace ACE.Server.Managers
     /// source weenie). The dungeon is checked first: it is the smaller, more specific area. The ALL-ZONES bounty (2026-10-05,
     /// /zonecontrol zonebounty): while on, every enabled Zone Control zone at v11+ shares ONE bounty - one count and one cooldown
     /// per character, so hopping tiers cannot restart it - and it replaces the zones' own bounties. Dungeons keep their own.
+    /// REGION bounties (2026-10-07, /zonecontrol regionbounty): Valley of Death and Thaelaryn Island (T10), below T11 only.
     ///
     /// Owner rules:
     ///   - each player's OWN kills count (the kill's top damager - the player the corpse and its loot belong to; a pet's kill
@@ -243,12 +244,22 @@ namespace ACE.Server.Managers
             }
 
             var zone = ZoneControlManager.ResolveBounty(wo);
-            if (zone == null)
+            if (zone != null)
+            {
+                areaKey = ZoneAreaKey(zone.Value.Name);
+                cfg = zone.Value.Reward;
+                return cfg.Active;
+            }
+
+            // REGION BOUNTY (owner 2026-10-07): Valley of Death and Thaelaryn Island (T10), below T11 only - so it never meets a
+            // zone's or the all-zones bounty, which are v11+ only.
+            var region = ZoneControlManager.ResolveRegionBounty(wo);
+            if (region == null)
                 return false;
 
-            areaKey = ZoneAreaKey(zone.Value.Name);
-            cfg = zone.Value.Reward;
-            return cfg.Active;
+            areaKey = RegionAreaKey(region.Value.Key);
+            cfg = region.Value.Reward;
+            return true;
         }
 
         // ── /bounty (owner 2026-09-23) ───────────────────────────────────────
@@ -278,7 +289,8 @@ namespace ACE.Server.Managers
                 var progress = LoadProgress(player);
 
                 // the all-zones bounty says so: its count and timer follow the player into every zone (owner 2026-10-05)
-                var where = areaKey == ZoneWideAreaKey ? "Bounty (all zones)" : "Bounty";
+                var where = areaKey == ZoneWideAreaKey ? "Bounty (all zones)"
+                    : RegionNameOf(areaKey) is string regionName ? $"Bounty ({regionName})" : "Bounty";
                 foreach (var reward in cfg.Entries)
                 {
                     if (reward == null || !reward.Valid) continue;
@@ -334,6 +346,14 @@ namespace ACE.Server.Managers
         /// <summary>The all-zones bounty's progress key - one per character for every v11+ zone (owner 2026-10-05).</summary>
         public const string ZoneWideAreaKey = "zonewide";
 
+        /// <summary>A region bounty's progress key (owner 2026-10-07): one per region, every variation below T11.</summary>
+        private static string RegionAreaKey(string regionKey) => "region:" + regionKey.ToLowerInvariant();
+
+        /// <summary>The region's name for a region area key, else null.</summary>
+        private static string RegionNameOf(string areaKey)
+            => areaKey != null && areaKey.StartsWith("region:", StringComparison.Ordinal)
+                ? ZoneControlManager.FindBountyRegion(areaKey.Substring("region:".Length))?.Name : null;
+
         /// <summary>
         /// /bounty list (owner 2026-09-27): every bounty that can pay right now - each Vaulted Dungeon's, then each zone's -
         /// with its rewards and this player's progress on each, so players can choose where to go. Read-only. Lists active
@@ -379,6 +399,10 @@ namespace ACE.Server.Managers
                 else
                     foreach (var z in ZoneControlManager.ActiveZoneBounties())
                         ShowArea(z.Name, ZoneAreaKey(z.Name), z.Reward);
+
+                // the region bounties below T11 (owner 2026-10-07) - the all-zones bounty never replaces them
+                foreach (var r in ZoneControlManager.ActiveRegionBounties())
+                    ShowArea(r.Name, RegionAreaKey(r.Key), r.Reward);
 
                 if (shown == 0)
                     Tell(player, "Bounty: there are no bounties anywhere right now.");

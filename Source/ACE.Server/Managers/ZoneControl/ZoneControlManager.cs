@@ -213,6 +213,10 @@ namespace ACE.Server.Managers.ZoneControl
             /// dungeon's own Bounty still wins inside the dungeon). Absent = off.</summary>
             public BountyConfig ZoneWideBounty { get; set; } = new();
 
+            /// <summary>REGION BOUNTIES (owner 2026-10-07): one bounty per fixed outdoor region below T11 - Valley of Death and
+            /// Thaelaryn Island (T10) - keyed by BountyRegions' key. Absent = off.</summary>
+            public Dictionary<string, BountyConfig> RegionBounties { get; set; } = new();
+
             /// <summary>ALLOWED PROCS (owner 2026-10-06): proc spell ids that T11+ monsters do NOT force-resist even from gear below
             /// T11 (TierHitGate.IsLowTierCast). Edited with /zonecontrol procallow and the plugin. Absent / empty = none allowed.</summary>
             public List<uint> AllowedProcSpells { get; set; } = new();
@@ -257,6 +261,21 @@ namespace ACE.Server.Managers.ZoneControl
         // the zone-wide bounty. Guarded by _lock; read through the volatile copy (every kill in a T11+ zone).
         private static BountyConfig _zoneWideBounty = new();
         private static volatile BountyConfig _zoneWideBountySnapshot = new();
+
+        /// <summary>
+        /// REGION BOUNTIES (owner 2026-10-07: "We need both Valley of Death and T10 to allow bounties"): fixed outdoor regions
+        /// below T11, each with its own bounty. The landblocks are the full-fellowship-share lists Fellowship.GetDistanceScalar
+        /// already uses (LandblockCollections). Key = the command / store / wire name; never rename one (stored progress uses it).
+        /// </summary>
+        public static readonly (string Key, string Name, HashSet<ushort> Landblocks)[] BountyRegions =
+        {
+            ("vod", "Valley of Death", ACE.Server.Entity.LandblockCollections.ValleyOfDeathLandblocks),
+            ("t10", "Thaelaryn Island", ACE.Server.Entity.LandblockCollections.ThaelarynIslandLandblocks),
+        };
+
+        // the region bounties by key. Guarded by _lock; read through the volatile copy (every kill in one of the regions).
+        private static readonly Dictionary<string, BountyConfig> _regionBounties = new(StringComparer.OrdinalIgnoreCase);
+        private static volatile Dictionary<string, BountyConfig> _regionBountySnapshot = new(StringComparer.OrdinalIgnoreCase);
 
         // allowed proc spell ids. Guarded by _lock; read through the volatile copy (every proc on a T11+ monster from old gear).
         private static readonly HashSet<uint> _procAllow = new();
@@ -393,6 +412,11 @@ namespace ACE.Server.Managers.ZoneControl
                 }
 
             var zoneWideBounty = store.ZoneWideBounty ?? new BountyConfig();
+            var regionBounties = new Dictionary<string, BountyConfig>(StringComparer.OrdinalIgnoreCase);
+            if (store.RegionBounties != null)
+                foreach (var kv in store.RegionBounties)
+                    if (kv.Value != null && FindBountyRegion(kv.Key) != null)
+                        regionBounties[kv.Key.ToLowerInvariant()] = kv.Value.Clone();
             var procAllow = new HashSet<uint>((store.AllowedProcSpells ?? new List<uint>()).Where(id => id != 0));
 
             // ── commit: from here on nothing can throw ──
@@ -412,6 +436,9 @@ namespace ACE.Server.Managers.ZoneControl
             _gearLockSnapshot = new HashSet<uint>(_gearLock);
             _zoneWideBounty = zoneWideBounty;
             _zoneWideBountySnapshot = zoneWideBounty.Clone();
+            _regionBounties.Clear();
+            foreach (var kv in regionBounties) _regionBounties[kv.Key] = kv.Value;
+            _regionBountySnapshot = CloneRegionBounties();
             _procAllow.Clear();
             foreach (var id in procAllow) _procAllow.Add(id);
             _procAllowSnapshot = new HashSet<uint>(_procAllow);
@@ -525,6 +552,7 @@ namespace ACE.Server.Managers.ZoneControl
                 DamageMults = new Dictionary<uint, double>(_damageMults),
                 GearLockSpots = _gearLock.OrderBy(k => k).Select(k => new GearLockSpot { Landblock = (int)(k & 0xFFFF), Variation = (int)(k >> 16) - 1 }).ToList(),
                 ZoneWideBounty = _zoneWideBounty,
+                RegionBounties = new Dictionary<string, BountyConfig>(_regionBounties),
                 AllowedProcSpells = _procAllow.OrderBy(x => x).ToList(),
             };
             _ladderSnapshot = new Dictionary<int, LadderApply>(_ladderApplies);
@@ -2389,6 +2417,82 @@ namespace ACE.Server.Managers.ZoneControl
                     return (_zoneWideBounty ?? new BountyConfig()).Clone();
                 _zoneWideBounty = cfg;
                 _zoneWideBountySnapshot = cfg.Clone();
+                Save();
+                return cfg.Clone();
+            }
+        }
+
+        /// <summary>A deep copy of the region bounties for the volatile snapshot. Call under _lock.</summary>
+        private static Dictionary<string, BountyConfig> CloneRegionBounties()
+        {
+            var copy = new Dictionary<string, BountyConfig>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _regionBounties) copy[kv.Key] = kv.Value.Clone();
+            return copy;
+        }
+
+        /// <summary>The region (BountyRegions) a key names, or null for an unknown key.</summary>
+        public static (string Key, string Name, HashSet<ushort> Landblocks)? FindBountyRegion(string key)
+        {
+            foreach (var r in BountyRegions)
+                if (string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase))
+                    return r;
+            return null;
+        }
+
+        /// <summary>
+        /// REGION BOUNTY (owner 2026-10-07): the active region bounty where this object stands - Valley of Death or Thaelaryn
+        /// Island - or null. Below T11 only (a v11+ copy of those landblocks belongs to the Zone Control zones and their bounties),
+        /// and nothing while the Zone Control master switch is off, like every other Bounty. Lock-free snapshot read.
+        /// </summary>
+        public static (string Key, string Name, BountyConfig Reward)? ResolveRegionBounty(WorldObject wo)
+        {
+            var snap = _regionBountySnapshot;
+            if (snap.Count == 0 || wo?.Location == null || !ServerConfig.zonecontrol_enabled.Value)
+                return null;
+            if (GetEffectiveVariation(wo) >= VariationManager.EndgameMinVariation)
+                return null;
+
+            var landblock = (ushort)wo.Location.Landblock;
+            foreach (var r in BountyRegions)
+                if (r.Landblocks.Contains(landblock) && snap.TryGetValue(r.Key, out var cfg) && cfg.Active)
+                    return (r.Key, r.Name, cfg);
+            return null;
+        }
+
+        /// <summary>Every active region bounty, in BountyRegions order (for /bounty list).</summary>
+        public static List<(string Key, string Name, BountyConfig Reward)> ActiveRegionBounties()
+        {
+            var list = new List<(string Key, string Name, BountyConfig Reward)>();
+            if (!ServerConfig.zonecontrol_enabled.Value)
+                return list;
+            var snap = _regionBountySnapshot;
+            foreach (var r in BountyRegions)
+                if (snap.TryGetValue(r.Key, out var cfg) && cfg.Active)
+                    list.Add((r.Key, r.Name, cfg));
+            return list;
+        }
+
+        /// <summary>A copy of one region bounty's settings (for /zonecontrol regionbounty show and the plugin wire).</summary>
+        public static BountyConfig GetRegionBounty(string key)
+        {
+            EnsureInitialized();
+            return _regionBountySnapshot.TryGetValue(key ?? "", out var cfg) ? cfg.Clone() : new BountyConfig();
+        }
+
+        /// <summary>One locked read-change-write of a region bounty (the same shape as EditZoneWideBounty).</summary>
+        public static BountyConfig EditRegionBounty(string key, Func<BountyConfig, string> edit, out string refused)
+        {
+            refused = null;
+            EnsureInitialized();
+            key = (key ?? "").ToLowerInvariant();
+            lock (_lock)
+            {
+                var cfg = _regionBounties.TryGetValue(key, out var current) ? current.Clone() : new BountyConfig();
+                refused = edit(cfg);
+                if (refused != null)
+                    return current?.Clone() ?? new BountyConfig();
+                _regionBounties[key] = cfg;
+                _regionBountySnapshot = CloneRegionBounties();
                 Save();
                 return cfg.Clone();
             }

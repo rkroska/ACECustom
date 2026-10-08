@@ -140,7 +140,7 @@ namespace ACE.Server.Command.Handlers
             + "appearance <name> <palette|shade|scale|translucency|shiny|setup|clothing|palettebase|motion|sound|icon> <value> [--wcid <id>] | clearappearance <name> [field] [--wcid <id>] | copylook <name> <donorWcid> [--wcid <id>] | draftslot <name> [release] | copydraft <name> <destWcid> | becomemob <donorWcid> --wcid <id> | seticon <wcid> <iconDid|clear> [layer] | "
             + "modifier <name> <add|remove|list|catalog|band|slots|special|chance> [args] [--wcid <id>] | "
             + "currency <name> <add|remove|list> [itemWcid] [amount] [chance] [direct|corpse] [--wcid <id>] | "
-            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | bounty <name> <show|on|off|add|set|remove> | zonebounty <show|on|off|add|set|remove> | procallow [list|add|remove] <spell id> | gearlock [list|here|add|remove] | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
+            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | bounty <name> <show|on|off|add|set|remove> | zonebounty <show|on|off|add|set|remove> | regionbounty <vod|t10> <show|on|off|add|set|remove> | procallow [list|add|remove] <spell id> | gearlock [list|here|add|remove] | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
             + "mobinfo <wcid> | geninfo <wcid> | genlist [zone] | genedit <wcid> delay|radius|stagger|init|max <value> | "
             + "craft <material> <itemtype> auto|allow|deny | craft list|get|test|enabled|mintier|components | "
             + "effect <name> [dot on|off | dmg <amount> | type <name|percent> | interval <secs>] | reload")]
@@ -193,6 +193,7 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /zonecontrol gearlock [list] | here [any] | add|remove <landblock hex> [variation|any]   (T11+ gear is suppressed on these landblocks)");
                 Msg("  /zonecontrol procallow [list] | add <spell id> | remove <spell id>   (proc spells T11+ monsters never resist for being on gear below T11)");
                 Msg("  /zonecontrol zonebounty show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>   (ONE bounty, one count and one cooldown across every T11-T25 zone; replaces the zone bounties while on)");
+                Msg("  /zonecontrol regionbounty <vod|t10> show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>   (Bounty for Valley of Death / Thaelaryn Island (T10), below T11 only)");
                 Msg("  /zonecontrol bounty <name> show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>   (Bounty: items every N kills per player, at most once per cooldown; qb=N = only players with at least N QB count; v11+ only)");
                 Msg("  /zonecontrol survey <name> [lbHex]   (per-landblock content: generator + creature summary; lbHex = full detail for one landblock)");
                 Msg("  /zonecontrol quests <name>   (quest registry for the plugin Quests tab; throttled to one pull per 60s)");
@@ -2495,6 +2496,29 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
+                    case "regionbounty":
+                    {
+                        // REGION BOUNTY (owner 2026-10-07): Valley of Death and Thaelaryn Island (T10) - each its own bounty, below
+                        // T11 only. Same verbs as a zone's bounty (BountyManager.Edit).
+                        var keys = string.Join("|", ZoneControlManager.BountyRegions.Select(r => r.Key));
+                        if (args.Count < 3) { Msg($"Usage: regionbounty <{keys}> show | " + BountyManager.EditUsage); return; }
+                        var region = ZoneControlManager.FindBountyRegion(args[1]);
+                        if (region == null) { Msg($"Unknown region '{args[1]}' - one of: {keys}."); return; }
+                        var op = args[2].ToLowerInvariant();
+                        var edited = ZoneControlManager.GetRegionBounty(region.Value.Key);
+                        if (op != "show")
+                        {
+                            // the server console has no session and counts as admin
+                            if (session != null && session.AccessLevel < AccessLevel.Admin) { Msg("Changing a Bounty needs Admin access (the same as a dungeon's)."); return; }
+                            edited = ZoneControlManager.EditRegionBounty(region.Value.Key, c => BountyManager.Edit(c, op, args, 3), out var err);
+                            if (err != null) { Msg($"{region.Value.Name} bounty: {err}"); return; }
+                            PlayerManager.BroadcastToAuditChannel(session?.Player, $"regionbounty {string.Join(" ", args.Skip(1))} -> {BountyManager.Describe(edited)}");
+                        }
+                        Msg($"{region.Value.Name} Bounty (below T11) {BountyManager.Describe(edited)}"
+                            + (edited.Active && !ServerConfig.zonecontrol_enabled.Value ? " - inactive while Zone Control is off." : "."));
+                        return;
+                    }
+
                     case "zoneshare":
                     {
                         // Zone Share (owner 2026-09-23): everyone in the zone shares kill XP, luminance and kill tasks as one
@@ -3167,6 +3191,14 @@ namespace ACE.Server.Command.Handlers
             var zb = ZoneControlManager.GetZoneWideBounty();
             sb.Append("|zonebounty=").Append(zb.Enabled ? 1 : 0).Append("|zonebountylist=").Append(BountyManager.Wire(zb));
             sb.Append("|bountyqb=1");
+
+            // REGION BOUNTIES (2026-10-07): "|regionbounty_vod=0|regionbountylist_vod=..." per region. APPEND-ONLY.
+            foreach (var r in ZoneControlManager.BountyRegions)
+            {
+                var rb = ZoneControlManager.GetRegionBounty(r.Key);
+                sb.Append("|regionbounty_").Append(r.Key).Append('=').Append(rb.Enabled ? 1 : 0)
+                  .Append("|regionbountylist_").Append(r.Key).Append('=').Append(BountyManager.Wire(rb));
+            }
         }
 
         /// <summary>"|gearlock=LLLL~V;LLLL~*" - the gear lock landblocks (owner 2026-10-05) for GM Tools > Shard Combat.
