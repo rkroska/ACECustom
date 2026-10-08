@@ -14,7 +14,7 @@ namespace ACE.Server.Command.Handlers
             "(no argument) lists your saved look\n"
             + "hide - show your real gear; the look stays saved\n"
             + "show - show your saved look again\n"
-            + "clear - remove your saved look for good (nothing is returned)")]
+            + "clear - remove your saved look for good (the fee is not refunded)")]
         public static void HandleLook(Session session, params string[] parameters)
         {
             var player = session?.Player;

@@ -8,33 +8,52 @@ namespace ACE.Server.Tests
 {
     /// <summary>
     /// The Dressing Room rules that need no running server: what a stored look round-trips to, which saved pieces a new
-    /// piece replaces, how the per-slot lock counts grow, and what a piece costs.
+    /// piece replaces, how the per-area lock counts grow, and what a piece costs.
     /// </summary>
     [TestClass]
     public class DressingRoomLookTests
     {
-        private const uint Chest = (uint)EquipMask.ChestArmor;
-        private const uint Abdomen = (uint)EquipMask.AbdomenArmor;
-        private const uint UpperArms = (uint)EquipMask.UpperArmArmor;
-        private const uint LowerArms = (uint)EquipMask.LowerArmArmor;
-        private const uint Head = (uint)EquipMask.HeadWear;
-        private const uint Hauberk = Chest | Abdomen | UpperArms | LowerArms;
+        // Wielded locations and coverage as real items carry them (values taken from the server log, 2026-10-06/07).
+        private const uint HeadLoc = (uint)EquipMask.HeadWear;
+        private const uint ChestLoc = (uint)EquipMask.ChestArmor;
+        private const uint HauberkLoc = (uint)(EquipMask.ChestArmor | EquipMask.AbdomenArmor | EquipMask.UpperArmArmor | EquipMask.LowerArmArmor);
+        private const uint BracersLoc = (uint)EquipMask.LowerArmArmor;
+        private const uint ShirtLoc = 0xE;      // ChestWear | AbdomenWear | UpperArmWear
+        private const uint TrousersLoc = 0x44;  // AbdomenWear | UpperLegWear  - shares AbdomenWear with the shirt
+        private const uint BootsLoc = 0x180;    // LowerLegWear | FootWear
 
-        private static DressingRoomPiece Piece(string name, uint location, uint clothingBase = 0x10000001) => new()
+        private const uint HeadCov = (uint)CoverageMask.Head;
+        private const uint ChestCov = (uint)CoverageMask.OuterwearChest;
+        private const uint HauberkCov = (uint)(CoverageMask.OuterwearChest | CoverageMask.OuterwearAbdomen | CoverageMask.OuterwearUpperArms | CoverageMask.OuterwearLowerArms);
+        private const uint UpperArmsCov = (uint)CoverageMask.OuterwearUpperArms;
+        private const uint BracersCov = (uint)CoverageMask.OuterwearLowerArms;
+        private const uint ShirtCov = 40;       // UnderwearChest | UnderwearUpperArms
+        private const uint TrousersCov = 19;    // UnderwearUpperLegs | UnderwearAbdomen | Unknown
+        private const uint BootsCov = (uint)CoverageMask.Feet;
+
+        private static DressingRoomPiece Piece(string name, uint location, uint coverage) => new()
         {
             Wcid = 1234,
             Name = name,
             Guid = 0x80001234,
             Location = location,
             ItemType = (uint)ItemType.Armor,
-            ClothingBase = clothingBase,
+            ClothingBase = 0x10000001,
             PaletteTemplate = 14,
             Shade = 0.25,
-            ClothingPriority = (uint)CoverageMask.OuterwearChest,
-            VisualPriority = (uint)CoverageMask.OuterwearChest,
+            ClothingPriority = coverage,
+            VisualPriority = coverage,
             LockedAt = 1_760_000_000,
             Fee = 100,
         };
+
+        private static DressingRoomPiece Helm(string name = "Helm") => Piece(name, HeadLoc, HeadCov);
+        private static DressingRoomPiece Breastplate(string name = "Breastplate") => Piece(name, ChestLoc, ChestCov);
+        private static DressingRoomPiece Hauberk(string name = "Hauberk") => Piece(name, HauberkLoc, HauberkCov);
+        private static DressingRoomPiece Bracers(string name = "Bracers") => Piece(name, BracersLoc, BracersCov);
+        private static DressingRoomPiece Shirt(string name = "Shirt") => Piece(name, ShirtLoc, ShirtCov);
+        private static DressingRoomPiece Trousers(string name = "Trousers") => Piece(name, TrousersLoc, TrousersCov);
+        private static DressingRoomPiece Boots(string name = "Boots") => Piece(name, BootsLoc, BootsCov);
 
         // ---- slot mask ------------------------------------------------------------------------
 
@@ -59,16 +78,43 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void SlotBits_ListsEachSlotOnce_LowestFirst()
         {
-            CollectionAssert.AreEqual(new[] { Chest, Abdomen, UpperArms, LowerArms }, DressingRoomLook.SlotBits(Hauberk).ToArray());
+            CollectionAssert.AreEqual(
+                new[] { (uint)EquipMask.ChestArmor, (uint)EquipMask.AbdomenArmor, (uint)EquipMask.UpperArmArmor, (uint)EquipMask.LowerArmArmor },
+                DressingRoomLook.SlotBits(HauberkLoc).ToArray());
             CollectionAssert.AreEqual(new[] { (uint)EquipMask.Cloak }, DressingRoomLook.SlotBits((uint)EquipMask.Cloak).ToArray());
             Assert.AreEqual(0, DressingRoomLook.SlotBits((uint)EquipMask.MeleeWeapon).Count());
         }
 
+        // ---- which pieces conflict ------------------------------------------------------------
+
         [TestMethod]
-        public void ArmourAndUnderclothes_OnTheSameBodyPart_DoNotOverlap()
+        public void PiecesWornTogether_DoNotConflict_EvenWhenTheyShareAnEquipMaskBit()
         {
-            Assert.IsFalse(DressingRoomLook.Overlaps((uint)EquipMask.ChestWear, Chest));
-            Assert.IsTrue(DressingRoomLook.Overlaps(Hauberk, Chest));
+            // the bug of 2026-10-07: these pairs share an EquipMask bit and are worn together every day
+            Assert.AreNotEqual(0u, ShirtLoc & TrousersLoc, "shirt and trousers both claim the waist");
+            Assert.AreNotEqual(0u, 0xC4u & BootsLoc, "long trousers and boots both claim the lower leg");
+
+            Assert.IsFalse(DressingRoomLook.Conflicts(Shirt(), Trousers()));
+            Assert.IsFalse(DressingRoomLook.Conflicts(Piece("Long trousers", 0xC4, 22), Boots()));
+            Assert.IsFalse(DressingRoomLook.Conflicts(Shirt(), Breastplate()), "underclothes go under armour");
+        }
+
+        [TestMethod]
+        public void PiecesCoveringTheSameArea_Conflict()
+        {
+            Assert.IsTrue(DressingRoomLook.Conflicts(Hauberk(), Breastplate()));
+            Assert.IsTrue(DressingRoomLook.Conflicts(Hauberk(), Bracers()));
+            Assert.IsTrue(DressingRoomLook.Conflicts(Helm("a"), Helm("b")));
+            Assert.IsFalse(DressingRoomLook.Conflicts(Helm(), Breastplate()));
+        }
+
+        [TestMethod]
+        public void APieceWithNoCoverage_FallsBackToItsWieldedLocation()
+        {
+            var bare = Piece("No coverage", ChestLoc, 0);
+            Assert.IsTrue(DressingRoomLook.Conflicts(bare, Breastplate()));
+            Assert.IsTrue(DressingRoomLook.Conflicts(bare, Hauberk()));
+            Assert.IsFalse(DressingRoomLook.Conflicts(bare, Helm()));
         }
 
         // ---- storage --------------------------------------------------------------------------
@@ -76,26 +122,54 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void Look_RoundTrips()
         {
-            var look = new DressingRoomLook().WithLocked(new[] { Piece("Diforsa Hauberk", Hauberk), Piece("Olthoi Helm", Head) });
+            var look = new DressingRoomLook().WithLocked(new[] { Hauberk("Diforsa Hauberk"), Helm("Olthoi Helm") });
 
             var back = DressingRoomLook.Parse(look.Serialize());
 
             Assert.IsNotNull(back);
             Assert.AreEqual(2, back.Pieces.Count);
             var hauberk = back.Pieces.Single(p => p.Name == "Diforsa Hauberk");
-            Assert.AreEqual(Hauberk, hauberk.Location);
+            Assert.AreEqual(HauberkLoc, hauberk.Location);
+            Assert.AreEqual(HauberkCov, hauberk.ClothingPriority);
             Assert.AreEqual(0x10000001u, hauberk.ClothingBase);
             Assert.AreEqual(14, hauberk.PaletteTemplate);
             Assert.AreEqual(0.25, hauberk.Shade);
             Assert.IsNull(hauberk.TopLayer);
-            Assert.AreEqual(1, back.PriorLocks(Chest));
-            Assert.AreEqual(1, back.PriorLocks(Head));
+            Assert.AreEqual(1, back.PriorLocks(ChestCov));
+            Assert.AreEqual(1, back.PriorLocks(HeadCov));
+        }
+
+        [TestMethod]
+        public void APiecesForgeDye_RoundTrips_AndIsAbsentWhenUndyed()
+        {
+            var dyed = Breastplate("Dyed");
+            dyed.ForgeDye = 0x04000478;
+            var look = new DressingRoomLook().WithLocked(new[] { dyed, Helm("Plain") });
+
+            var stored = look.Serialize();
+            var back = DressingRoomLook.Parse(stored);
+
+            Assert.AreEqual(0x04000478, back.Pieces.Single(p => p.Name == "Dyed").ForgeDye);
+            Assert.IsNull(back.Pieces.Single(p => p.Name == "Plain").ForgeDye);
+            Assert.AreEqual(1, System.Text.RegularExpressions.Regex.Matches(stored, "\"d\":").Count, "an undyed piece stores no dye field");
+        }
+
+        [TestMethod]
+        public void AFullOutfit_WithShirtTrousersAndBoots_IsReadBackAfterSaving()
+        {
+            // exactly what an attendant writes for an ordinary outfit; it must always be readable again
+            var look = new DressingRoomLook().WithLocked(new[] { Helm(), Shirt(), Trousers(), Boots(), Breastplate(), Bracers() });
+
+            var back = DressingRoomLook.Parse(look.Serialize());
+
+            Assert.IsNotNull(back, "a look the attendant just wrote could not be read");
+            Assert.AreEqual(6, back.Pieces.Count);
         }
 
         [TestMethod]
         public void StoredLook_IsPlainAscii_EvenForANonAsciiName()
         {
-            var look = new DressingRoomLook().WithLocked(new[] { Piece("Café — Robe", Chest) });
+            var look = new DressingRoomLook().WithLocked(new[] { Breastplate("Café — Robe") });
             var stored = look.Serialize();
             Assert.IsTrue(stored.All(c => c < 128), stored);
             Assert.AreEqual("Café — Robe", DressingRoomLook.Parse(stored).Pieces[0].Name);
@@ -114,7 +188,15 @@ namespace ACE.Server.Tests
             Assert.IsNull(DressingRoomLook.Parse("{\"v\":1,\"pieces\":[null]}"));
             Assert.IsNull(DressingRoomLook.Parse("{\"v\":1,\"pieces\":[{\"l\":512,\"c\":0}]}"), "no clothing table");
             Assert.IsNull(DressingRoomLook.Parse("{\"v\":1,\"pieces\":[{\"l\":1048576,\"c\":268435457}]}"), "a weapon slot");
-            Assert.IsNull(DressingRoomLook.Parse("{\"v\":1,\"pieces\":[{\"l\":512,\"c\":268435457},{\"l\":1536,\"c\":268435457}]}"), "two pieces in one slot");
+        }
+
+        [TestMethod]
+        public void Parse_DoesNotJudgeWhetherPiecesFitTogether()
+        {
+            // two pieces on the same slot: odd, but every piece is drawable, so the look is kept rather than thrown away
+            var look = DressingRoomLook.Parse("{\"v\":1,\"pieces\":[{\"l\":512,\"c\":268435457,\"cp\":1024},{\"l\":1536,\"c\":268435457,\"cp\":3072}]}");
+            Assert.IsNotNull(look);
+            Assert.AreEqual(2, look.Pieces.Count);
         }
 
         [TestMethod]
@@ -123,7 +205,7 @@ namespace ACE.Server.Tests
             var look = DressingRoomLook.Parse("{\"v\":1,\"pieces\":null,\"locks\":null}");
             Assert.IsNotNull(look);
             Assert.AreEqual(0, look.Pieces.Count);
-            Assert.AreEqual(0, look.PriorLocks(Chest));
+            Assert.AreEqual(0, look.PriorLocks(ChestCov));
         }
 
         [TestMethod]
@@ -133,49 +215,126 @@ namespace ACE.Server.Tests
             Assert.IsNull(DressingRoomLook.Parse("{\"v\":1,\"pieces\":[" + pieces + "]}"));
         }
 
-        // ---- replacing ------------------------------------------------------------------------
+        // ---- records written before 2026-10-07 --------------------------------------------------
+
+        // The two records from the production log of 2026-10-07 18:49, verbatim. Both were refused as unreadable because a
+        // shirt and trousers share an EquipMask bit; the players had already paid and lost the pieces.
+        private const string GaryStored = """{"v":1,"pieces":[{"w":2595,"n":"Baggy Tunic","g":4026535031,"l":14,"t":4,"c":268435715,"p":10,"s":0.32456434827723013,"cp":40,"vp":40,"at":1791413359,"f":100000000},{"w":2603,"n":"Baggy Breeches","g":4026535032,"l":68,"t":4,"c":268435704,"p":18,"s":0.5116122928556169,"cp":19,"vp":19,"at":1791413359,"f":100000000},{"w":115,"n":"Leather Boots","g":4026535033,"l":384,"t":2,"c":268435463,"p":17,"s":0.9734183782464064,"cp":65536,"vp":66048,"at":1791413359,"f":100000000}],"locks":{"2":1,"4":2,"8":1,"40":1,"80":1,"100":1}}""";
+
+        private const string LegolasStored = """{"v":1,"pieces":[{"w":5901,"n":"Empowered Helm of the Perfect Light","g":4026553840,"l":1,"t":4,"c":268437279,"cp":16384,"vp":16384,"at":1791413363,"f":100000000},{"w":2587,"n":"Lace Shirt","g":2152926613,"l":30,"t":4,"c":268436918,"p":90,"s":0.6596986286620138,"cp":104,"vp":104,"at":1791413363,"f":100000000},{"w":27222,"n":"Olthoi Gauntlets","g":4033237463,"l":32,"t":2,"c":268437270,"p":90,"s":0.8932576338053513,"cp":32768,"vp":32768,"at":1791413363,"f":100000000},{"w":28606,"n":"Viamontian Pants","g":4030506104,"l":196,"t":4,"c":268436914,"p":7,"s":0.3616772807956102,"cp":22,"vp":22,"at":1791413363,"f":100000000},{"w":28611,"n":"Sollerets of Grace","g":4035990823,"l":384,"t":2,"c":268436752,"p":20,"s":0.66,"cp":65536,"vp":65536,"at":1791413363,"f":100000000},{"w":27221,"n":"Empowered Breastplate of the Perfect Light","g":4029768687,"l":512,"t":2,"c":268437235,"cp":1024,"vp":1024,"at":1791413363,"f":100000000},{"w":28620,"n":"Olthoi Amuli Leggings","g":2148393663,"l":1024,"t":2,"c":268437291,"p":20,"s":0.36837588640319924,"cp":2048,"vp":2816,"at":1791413363,"f":100000000},{"w":88,"n":"Empowered Pauldrons of the Perfect Light","g":4027329344,"l":2048,"t":2,"c":268437236,"cp":4096,"vp":4096,"at":1791413363,"f":100000000},{"w":105,"n":"Empowered Bracers of the Perfect Light","g":4026797483,"l":4096,"t":2,"c":268437234,"cp":8192,"vp":8192,"at":1791413363,"f":100000000},{"w":108,"n":"Chainmail Tassets","g":4034195358,"l":8192,"t":2,"c":268436439,"p":20,"s":0.773973815503518,"cp":256,"vp":256,"at":1791413363,"f":100000000},{"w":80,"n":"Chainmail Leggings","g":2156292183,"l":16384,"t":2,"c":268435477,"p":2,"s":0.014741573955277714,"cp":512,"vp":768,"at":1791413363,"f":100000000},{"w":227190032,"n":"Rynthid Tentacles of Defense","g":2154378596,"l":134217728,"t":4,"c":268437766,"p":9,"s":1,"cp":131072,"vp":131072,"at":1791413363,"f":100000000}],"locks":{"1":1,"2":1,"4":2,"8":1,"10":1,"20":1,"40":1,"80":2,"100":1,"200":1,"400":1,"800":1,"1000":1,"2000":1,"4000":1,"8000000":1}}""";
 
         [TestMethod]
-        public void NewPiece_ReplacesEverySavedPieceItOverlaps_Whole()
+        public void TheLooksRefusedOnProduction_AreReadable()
         {
-            var look = new DressingRoomLook().WithLocked(new[] { Piece("Hauberk", Hauberk), Piece("Helm", Head) });
+            var gary = DressingRoomLook.Parse(GaryStored);
+            Assert.IsNotNull(gary);
+            CollectionAssert.AreEqual(new[] { "Baggy Tunic", "Baggy Breeches", "Leather Boots" }, gary.Pieces.Select(p => p.Name).ToArray());
 
-            var next = look.WithLocked(new[] { Piece("Breastplate", Chest) });
-
-            CollectionAssert.AreEquivalent(new[] { "Helm", "Breastplate" }, next.Pieces.Select(p => p.Name).ToArray());
-            CollectionAssert.AreEqual(new[] { "Hauberk" }, look.ReplacedBy(Chest).Select(p => p.Name).ToArray());
+            var legolas = DressingRoomLook.Parse(LegolasStored);
+            Assert.IsNotNull(legolas);
+            Assert.AreEqual(12, legolas.Pieces.Count);
         }
 
         [TestMethod]
-        public void NewPiece_InAFreeSlot_ReplacesNothing()
+        public void TheLooksRefusedOnProduction_HoldNoConflictingPieces()
         {
-            var look = new DressingRoomLook().WithLocked(new[] { Piece("Breastplate", Chest) });
+            foreach (var stored in new[] { GaryStored, LegolasStored })
+            {
+                var pieces = DressingRoomLook.Parse(stored).Pieces;
+                for (var i = 0; i < pieces.Count; i++)
+                    for (var j = i + 1; j < pieces.Count; j++)
+                        Assert.IsFalse(DressingRoomLook.Conflicts(pieces[i], pieces[j]), $"{pieces[i].Name} / {pieces[j].Name}");
+            }
+        }
 
-            var next = look.WithLocked(new[] { Piece("Helm", Head) });
+        [TestMethod]
+        public void AnOldRecord_CountsEachSavedPieceOnce_NotTheSharedSlotTwice()
+        {
+            // the old counts had "4":2 and "80":2 only because two pieces of ONE outfit shared those EquipMask bits
+            foreach (var stored in new[] { GaryStored, LegolasStored })
+            {
+                var look = DressingRoomLook.Parse(stored);
+                foreach (var piece in look.Pieces)
+                    Assert.AreEqual(1, look.PriorLocks(piece.ClothingPriority ?? 0), piece.Name);
+            }
+        }
+
+        [TestMethod]
+        public void AnOldRecord_KeepsARealRepeatCount()
+        {
+            // a helm locked three times under the old keys: head slot (EquipMask 0x1) = 3
+            var look = DressingRoomLook.Parse("{\"v\":1,\"pieces\":[{\"l\":1,\"c\":268435501,\"cp\":16384}],\"locks\":{\"1\":3}}");
+            Assert.AreEqual(3, look.PriorLocks(HeadCov));
+            Assert.AreEqual(0, look.PriorLocks(ChestCov));
+        }
+
+        [TestMethod]
+        public void AnOldRecord_IsRewrittenWithCoverageCountsOnly()
+        {
+            var look = DressingRoomLook.Parse(GaryStored);
+
+            var stored = look.Serialize();
+
+            StringAssert.Contains(stored, "\"cover\":");
+            Assert.IsFalse(stored.Contains("\"locks\":"), stored);
+            var again = DressingRoomLook.Parse(stored);
+            Assert.AreEqual(3, again.Pieces.Count);
+            Assert.AreEqual(1, again.PriorLocks(ShirtCov));
+        }
+
+        // ---- replacing ------------------------------------------------------------------------
+
+        [TestMethod]
+        public void NewPiece_ReplacesEverySavedPieceItConflictsWith_Whole()
+        {
+            var look = new DressingRoomLook().WithLocked(new[] { Hauberk(), Helm() });
+
+            var next = look.WithLocked(new[] { Breastplate() });
+
+            CollectionAssert.AreEquivalent(new[] { "Helm", "Breastplate" }, next.Pieces.Select(p => p.Name).ToArray());
+            CollectionAssert.AreEqual(new[] { "Hauberk" }, look.ReplacedBy(Breastplate()).Select(p => p.Name).ToArray());
+        }
+
+        [TestMethod]
+        public void NewPiece_InAFreeArea_ReplacesNothing()
+        {
+            var look = new DressingRoomLook().WithLocked(new[] { Breastplate() });
+
+            var next = look.WithLocked(new[] { Helm() });
 
             Assert.AreEqual(2, next.Pieces.Count);
-            Assert.AreEqual(0, look.ReplacedBy(Head).Count);
+            Assert.AreEqual(0, look.ReplacedBy(Helm()).Count);
+        }
+
+        [TestMethod]
+        public void NewShirt_DoesNotReplaceSavedTrousers()
+        {
+            var look = new DressingRoomLook().WithLocked(new[] { Shirt("Old shirt"), Trousers(), Boots() });
+
+            var next = look.WithLocked(new[] { Shirt("New shirt") });
+
+            CollectionAssert.AreEquivalent(new[] { "Trousers", "Boots", "New shirt" }, next.Pieces.Select(p => p.Name).ToArray());
         }
 
         [TestMethod]
         public void WithLocked_LeavesTheOriginalLookUntouched()
         {
-            var look = new DressingRoomLook().WithLocked(new[] { Piece("Hauberk", Hauberk) });
+            var look = new DressingRoomLook().WithLocked(new[] { Hauberk() });
             var stored = look.Serialize();
 
-            look.WithLocked(new[] { Piece("Breastplate", Chest) });
+            look.WithLocked(new[] { Breastplate() });
             look.WithoutPieces();
 
             Assert.AreEqual(stored, look.Serialize());
         }
 
         [TestMethod]
-        public void ALookNeverHoldsTwoPiecesInOneSlot()
+        public void ALookNeverHoldsTwoConflictingPieces()
         {
             var look = new DressingRoomLook()
-                .WithLocked(new[] { Piece("Hauberk", Hauberk) })
-                .WithLocked(new[] { Piece("Breastplate", Chest), Piece("Bracers", LowerArms) })
-                .WithLocked(new[] { Piece("Hauberk again", Hauberk) });
+                .WithLocked(new[] { Hauberk() })
+                .WithLocked(new[] { Breastplate(), Bracers() })
+                .WithLocked(new[] { Hauberk("Hauberk again") });
 
             CollectionAssert.AreEqual(new[] { "Hauberk again" }, look.Pieces.Select(p => p.Name).ToArray());
             Assert.IsNotNull(DressingRoomLook.Parse(look.Serialize()));
@@ -184,30 +343,51 @@ namespace ACE.Server.Tests
         // ---- lock counts ----------------------------------------------------------------------
 
         [TestMethod]
-        public void LockCounts_GrowPerSlot_AndAMultiSlotPieceTakesItsHighest()
+        public void LockCounts_GrowPerArea_AndAMultiAreaPieceTakesItsHighest()
         {
             var look = new DressingRoomLook()
-                .WithLocked(new[] { Piece("Breastplate", Chest) })
-                .WithLocked(new[] { Piece("Breastplate 2", Chest) });
+                .WithLocked(new[] { Breastplate() })
+                .WithLocked(new[] { Breastplate("Breastplate 2") });
 
-            Assert.AreEqual(2, look.PriorLocks(Chest));
-            Assert.AreEqual(0, look.PriorLocks(UpperArms));
-            Assert.AreEqual(0, look.PriorLocks(Head));
-            Assert.AreEqual(2, look.PriorLocks(Hauberk), "a hauberk covers the chest, which has been locked twice");
+            Assert.AreEqual(2, look.PriorLocks(ChestCov));
+            Assert.AreEqual(0, look.PriorLocks(UpperArmsCov));
+            Assert.AreEqual(0, look.PriorLocks(HeadCov));
+            Assert.AreEqual(2, look.PriorLocks(HauberkCov), "a hauberk covers the chest, which has been locked twice");
 
-            var next = look.WithLocked(new[] { Piece("Hauberk", Hauberk) });
-            Assert.AreEqual(3, next.PriorLocks(Chest));
-            Assert.AreEqual(1, next.PriorLocks(UpperArms));
+            var next = look.WithLocked(new[] { Hauberk() });
+            Assert.AreEqual(3, next.PriorLocks(ChestCov));
+            Assert.AreEqual(1, next.PriorLocks(UpperArmsCov));
+        }
+
+        [TestMethod]
+        public void LockCounts_AFirstOutfitCountsEveryAreaOnce()
+        {
+            var look = new DressingRoomLook().WithLocked(new[] { Shirt(), Trousers(), Boots(), Helm() });
+
+            foreach (var piece in look.Pieces)
+                Assert.AreEqual(1, look.PriorLocks(piece.ClothingPriority ?? 0), piece.Name);
+        }
+
+        [TestMethod]
+        public void LockCounts_RelockingTheShirt_DoesNotRaiseTheTrousers()
+        {
+            var look = new DressingRoomLook()
+                .WithLocked(new[] { Shirt(), Trousers() })
+                .WithLocked(new[] { Shirt("Shirt 2") })
+                .WithLocked(new[] { Shirt("Shirt 3") });
+
+            Assert.AreEqual(3, look.PriorLocks(ShirtCov));
+            Assert.AreEqual(1, look.PriorLocks(TrousersCov));
         }
 
         [TestMethod]
         public void ClearingALook_KeepsTheLockCounts()
         {
-            var look = new DressingRoomLook().WithLocked(new[] { Piece("Breastplate", Chest) }).WithoutPieces();
+            var look = new DressingRoomLook().WithLocked(new[] { Breastplate() }).WithoutPieces();
 
             Assert.AreEqual(0, look.Pieces.Count);
-            Assert.AreEqual(1, look.PriorLocks(Chest));
-            Assert.AreEqual(1, DressingRoomLook.Parse(look.Serialize()).PriorLocks(Chest));
+            Assert.AreEqual(1, look.PriorLocks(ChestCov));
+            Assert.AreEqual(1, DressingRoomLook.Parse(look.Serialize()).PriorLocks(ChestCov));
         }
 
         // ---- fee ------------------------------------------------------------------------------
@@ -222,6 +402,16 @@ namespace ACE.Server.Tests
             Assert.AreEqual(6_400_000_000, DressingRoomLook.Fee(6, baseFee, 2.0, cap));
             Assert.AreEqual(cap, DressingRoomLook.Fee(7, baseFee, 2.0, cap));
             Assert.AreEqual(cap, DressingRoomLook.Fee(5000, baseFee, 2.0, cap));
+        }
+
+        [TestMethod]
+        public void Fee_AtTheShippedSettings_ReachesOneThousandMmdOnTheEleventhLock()
+        {
+            const long baseFee = 100_000_000, cap = 250_000_000;
+            Assert.AreEqual(100_000_000, DressingRoomLook.Fee(0, baseFee, 1.1, cap));
+            Assert.AreEqual(110_000_000, DressingRoomLook.Fee(1, baseFee, 1.1, cap));
+            Assert.AreEqual(235_794_769, DressingRoomLook.Fee(9, baseFee, 1.1, cap));
+            Assert.AreEqual(cap, DressingRoomLook.Fee(10, baseFee, 1.1, cap));
         }
 
         [TestMethod]
