@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -103,9 +105,9 @@ namespace ACE.Server.Managers.ZoneControl
             // Requirements the player already MEETS are left out, and so is any counter this tier does
             // not ask for at all (MinWieldTriune is 0 below T16 - printing "0 of 0" is noise). The list
             // is exactly what is still to do.
-            var needCreature = row.MinWieldCreature > 0 && creature < row.MinWieldCreature;
-            var needItem = row.MinWieldAugs > 0 && item < row.MinWieldAugs;
-            var needTriune = row.MinWieldTriune > 0 && triune < row.MinWieldTriune;
+            var needCreature = Short(creature, row.MinWieldCreature);
+            var needItem = Short(item, row.MinWieldAugs);
+            var needTriune = Short(triune, row.MinWieldTriune);
 
             if (!needCreature && !needItem && !needTriune)
                 return true;
@@ -119,6 +121,63 @@ namespace ACE.Server.Managers.ZoneControl
             if (needTriune) sb.Append('\n').Append($"Triune Weave: {triune:N0} of {row.MinWieldTriune:N0}");
             reason = sb.ToString();
             return false;
+        }
+
+        /// <summary>One counter against one requirement. A requirement of 0 means this tier does not ask for that counter.</summary>
+        private static bool Short(long have, int need) => need > 0 && have < need;
+
+        /// <summary>
+        /// Do these counters meet this tier row's gate? The same three comparisons CanHit makes, so "which tier is this
+        /// player" and "can this player hit that monster" can never drift apart. The counts are the EFFECTIVE ones
+        /// (luminance augs + Triune Weave) for Creature and Item, and the raw Triune Weave count.
+        /// </summary>
+        internal static bool MeetsTier(long creature, long item, long triune, WeaponScalingTier row)
+        {
+            return row != null
+                && !Short(creature, row.MinWieldCreature)
+                && !Short(item, row.MinWieldAugs)
+                && !Short(triune, row.MinWieldTriune);
+        }
+
+        /// <summary>
+        /// The highest tier these counters qualify for, 0 when they do not reach T11. Climbs the rows from T11 upward and
+        /// stops at the first one that is not met, or at a gap in the table - a tier is only earned through the ones below it.
+        /// Rows under T11 (the stored table carries a T10 row) are ignored, and so are rows past the top of the ladder
+        /// (the tier-add command accepts any number): no player is ever a tier that has no content.
+        /// </summary>
+        internal static int HighestTier(long creature, long item, long triune, IEnumerable<WeaponScalingTier> rows)
+        {
+            if (rows == null)
+                return 0;
+
+            var best = 0;
+            var expected = MinGatedVariation;
+            foreach (var row in rows.Where(r => r != null && r.Tier >= MinGatedVariation && r.Tier <= ZoneRare.MaxTier).OrderBy(r => r.Tier))
+            {
+                if (row.Tier != expected || !MeetsTier(creature, item, triune, row))
+                    break;
+
+                best = row.Tier;
+                expected++;
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// The highest tier this player can fight: the top variation whose monsters their swings and spells can land on.
+        /// 0 = not yet T11. Life augs are NOT part of it - they gate wielding T11-T15 gear and the portal gems, never the
+        /// hit gate - so this is "what can you fight", not "what can you wear".
+        /// </summary>
+        public static int PlayerTier(Player player)
+        {
+            if (player == null)
+                return 0;
+
+            return HighestTier(
+                player.EffectiveCreatureAugCount,
+                player.EffectiveItemAugCount,
+                player.GetProperty(PropertyInt64.TriuneWeaveCount) ?? 0,
+                WeaponScalingManager.Current.Tiers);
         }
 
         /// <summary>

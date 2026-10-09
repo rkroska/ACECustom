@@ -955,6 +955,19 @@ namespace ACE.Entity.Enum.Properties
         /// the Slayer type it gives. Server-only - not an assessment property.</summary>
         GearEssenceHuntCreatureType = 51001,
 
+        /// <summary>T11+ RARES (owner 2026-10-08): which rare this item is, as (int)ZoneRareTier - 1 Pristine, 2 Ascendant.
+        /// Absent = an ordinary drop. Outside the 50200-50399 cantrip block on purpose - that block is summed on equip.</summary>
+        // [AssessmentProperty], like ZcTier: sent in appraisal so a loot rule can test for a rare numerically
+        [AssessmentProperty]
+        ZcRare = 51100,
+
+        /// <summary>T11+ RARES, Ascendant (owner 2026-10-09): the tier the item DROPPED in, whose wield requirements it carries
+        /// instead of its own (higher) tier's - ZoneRare.GateTier. Absent on every other item. Its real tier stays in ZcTier /
+        /// WeaponAugScaleTier. Outside the 50200-50399 cantrip block on purpose - that block is summed on equip.</summary>
+        // [AssessmentProperty], like ZcTier and ZcRare: sent in appraisal so a loot rule can read the drop tier
+        [AssessmentProperty]
+        ZcRareGateTier = 51101,
+
         // Blacksmithing properties live at 52000+ in every property type (renumbered 2026-10-05: the first numbers,
         // taken next to the newest ones in use, collided with properties added on master the same week).
         /// <summary>Blacksmithing dye (2026-09-28 prototype): a full 0x04 DAT palette id painted over a weapon

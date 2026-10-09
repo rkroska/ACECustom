@@ -289,6 +289,11 @@ namespace ACE.Server.Managers.ZoneControl
         // equip path. See GetAnchoredDefaultProfile for why this exists.
         private static volatile Dictionary<int, ZoneVariantProfile> _anchoredDefaults = new();
 
+        // The endgame tiers (variations 11-25) that have at least one ENABLED saved zone with a landblock, ascending
+        // (T11+ rares, 2026-10-08). Rebuilt under _lock in RebuildIndexes and published volatile as a fresh array that
+        // is never written again, so the per-kill rare roll reads it with no lock and no scan. See EnabledZoneTiers.
+        private static volatile int[] _enabledZoneTiers = Array.Empty<int>();
+
         #region init / persistence
 
         /// <summary>Public init hook for boot-time callers outside the command surface (e.g. landblock load
@@ -608,6 +613,7 @@ namespace ACE.Server.Managers.ZoneControl
             var boundedByVar = new Dictionary<int, HashSet<ushort>>();
             var terrOvByVar = new Dictionary<int, Dictionary<ushort, string>>();
             var terrDonorsByVar = new Dictionary<int, Dictionary<string, List<ushort>>>();
+            var enabledTiers = new SortedSet<int>();
             foreach (var area in _areas.Values)
             {
                 // Boundary allowlist: union the landblocks of every BOUNDED zone per variation —
@@ -647,6 +653,12 @@ namespace ACE.Server.Managers.ZoneControl
                 if (!area.Enabled)
                     continue;
 
+                // a tier "has a zone" when a saved, enabled zone at that variation covers at least one landblock.
+                // Runtime zones (3) are left out on purpose: a rift run coming and going must not move a player's
+                // own tier - and with it their rare odds - from one kill to the next.
+                if (area.Variation >= MinBoundedVariation && area.Variation <= MaxEndgameVariation && area.Landblocks.Count > 0)
+                    enabledTiers.Add(area.Variation);
+
                 var zr = BuildZoneRef(area);
                 foreach (var lb in area.Landblocks)
                 {
@@ -656,6 +668,7 @@ namespace ACE.Server.Managers.ZoneControl
                     list.Add(zr);
                 }
             }
+            _enabledZoneTiers = enabledTiers.ToArray();       // volatile publish
 
             // (3) Runtime zones (never persisted, not in the display index): same snapshot treatment as (2).
             foreach (var area in _runtimeAreas.Values)
@@ -2049,6 +2062,25 @@ namespace ACE.Server.Managers.ZoneControl
             EnsureInitialized();
             return _anchoredDefaults.TryGetValue(variation, out var p) ? p : null;
         }
+
+        /// <summary>
+        /// The tier Default as a drop would read it when its zone adds nothing of its own: <see cref="GetAnchoredDefaultProfile"/>
+        /// flattened by the same <see cref="EvaluateVariant"/> the zone snapshot uses, so it carries everything a zone profile
+        /// does - stats, line bands, slot rules, special and weapon-card toggles. For callers that make a T11+ item with no
+        /// monster and no zone behind it (the `/zcrare` dev mint). EMPTY, never null, when nothing is authored for the tier.
+        /// Lock-free: the anchored profile is a published copy that is never written again.
+        /// </summary>
+        public static EvaluatedProfile EvaluateTierDefault(int tier)
+            => EvaluateVariant($"T{tier} Default", GetAnchoredDefaultProfile(tier));
+
+        /// <summary>
+        /// The endgame tiers (11-25) that have at least one ENABLED saved zone, ascending (T11+ rares, 2026-10-08) - what
+        /// ZoneRare.OwnTier needs to tell "the highest tier this player qualifies for" from "the highest one they can
+        /// actually farm". Lock-free: a published array, replaced whole on every zone edit and never written in place.
+        /// No EnsureInitialized on purpose - the caller is the per-kill loot path, which only gets here after a zone
+        /// profile resolved (so the store is loaded); a command calls <see cref="EnsureLoaded"/> first.
+        /// </summary>
+        public static IReadOnlyList<int> EnabledZoneTiers => _enabledZoneTiers;
 
         /// <summary>Build one entry of the anchored-Default table. Call under _lock (RebuildIndexes holds it).
         /// StatToggles are applied here EXACTLY as <see cref="EvaluateVariant"/> applies them for the creature

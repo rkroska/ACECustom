@@ -19,14 +19,23 @@ namespace ACE.Server.Managers.ZoneControl
     /// </summary>
     public static class ZoneLootMutator
     {
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         /// <summary>
         /// Mutations for an item rolled from the death-treasure table: provenance, forced weapon
         /// properties, plus the low-chance special-property rolls.
         /// <paramref name="killed"/> is the dying monster (slayer type source); <paramref name="lootTier"/>
         /// is the effective treasure tier (levels the default proc spell). <paramref name="forceMax"/> = this
         /// piece won the per-kill slot special (Armor v2): every cantrip line rolls at band MAX.
+        ///
+        /// <paramref name="rare"/> (T11+ RARES, owner 2026-10-08) = this piece is the kill's rare, so it is made in
+        /// RARE MODE: every value at band max, and WHICH cards / lines it carries decided by the ZoneRare rules instead
+        /// of the chance rolls (see TrySpecialRolls and TryExtraModifier). None - the default, and every ordinary drop -
+        /// leaves this method exactly as it was. <paramref name="rareSlayerType"/> is for the dev mint only, which has no
+        /// killed monster to attune a Slayer to; a real drop always passes <paramref name="killed"/> and leaves it null.
         /// </summary>
-        public static void MutateLootItem(WorldObject wo, EvaluatedProfile p, Creature killed = null, int lootTier = 1, bool forceMax = false)
+        public static void MutateLootItem(WorldObject wo, EvaluatedProfile p, Creature killed = null, int lootTier = 1, bool forceMax = false,
+            ZoneRareTier rare = ZoneRareTier.None, CreatureType? rareSlayerType = null)
         {
             if (wo == null || p == null)
                 return;
@@ -80,7 +89,7 @@ namespace ACE.Server.Managers.ZoneControl
 
             // (weapon_workmanship_min/max and value_mult/min/max removed 2026-08-23)
 
-            TrySpecialRolls(wo, p, killed, lootTier, forceMax);
+            TrySpecialRolls(wo, p, killed, lootTier, forceMax, rare, rareSlayerType);
         }
 
         // ── special-property rolls ("fun stuff": independent 0..1 chance each; an item can win several) ──
@@ -148,7 +157,8 @@ namespace ACE.Server.Managers.ZoneControl
             return (1 + 7 * t, 2 + 8 * t);
         }
 
-        private static double RollRangeBand(EvaluatedProfile p, string minStat, string maxStat, double defLo, double defHi, double lo, double hi, int tier)
+        /// <param name="top">Take the top of the band instead of rolling inside it (a rare's Cleave / Split Arrows count).</param>
+        private static double RollRangeBand(EvaluatedProfile p, string minStat, string maxStat, double defLo, double defHi, double lo, double hi, int tier, bool top = false)
         {
             // ANCHORED (2026-08-29): each end reads through GetT, so an authored _t25 twin walks the
             // pair up the tier line. Historical one-box rule preserved: ONE authored box = that
@@ -160,7 +170,7 @@ namespace ACE.Server.Managers.ZoneControl
                 (a, b) = (b, a);
             a = Math.Clamp(a, lo, hi);
             b = Math.Clamp(b, lo, hi);
-            return a >= b ? a : ThreadSafeRandom.Next((float)a, (float)b);
+            return a >= b ? a : top ? b : ThreadSafeRandom.Next((float)a, (float)b);
         }
 
         /// <summary>
@@ -467,11 +477,21 @@ namespace ACE.Server.Managers.ZoneControl
             }
         }
 
-        private static void TrySpecialRolls(WorldObject wo, EvaluatedProfile p, Creature killed, int lootTier, bool forceMax)
+        private static void TrySpecialRolls(WorldObject wo, EvaluatedProfile p, Creature killed, int lootTier, bool forceMax,
+            ZoneRareTier rare = ZoneRareTier.None, CreatureType? rareSlayerType = null)
         {
             var isMelee = wo is MeleeWeapon;
             var isMissile = wo is MissileLauncher;
             var isWeapon = isMelee || isMissile || wo is Caster;
+
+            // T11+ RARES (owner 2026-10-08): a rare is made with every value at band max - the forceMax path that
+            // already exists for the slot special - and with its card / line SET chosen by ZoneRare instead of by the
+            // chance rolls (phase 2 below, and TryExtraModifier). isRare is false on every ordinary drop.
+            var isRare = rare != ZoneRareTier.None;
+            if (isRare)
+                forceMax = true;
+            // the Slayer type: the killed monster's kind, as always. Only the dev mint - which has no kill - names one.
+            var slayerType = killed?.CreatureType ?? rareSlayerType;
 
             // ── PHASE 1 - ELIGIBILITY, then CHANCE ROLLS, all decided up front (2026-08-30, the
             // modifier cap; eligibility split onto its own flags later that day for the FLOOR).
@@ -490,8 +510,8 @@ namespace ACE.Server.Managers.ZoneControl
             var rendCandidates = isWeapon ? GetMatchingRends(wo.W_DamageType) : null;
             rendCandidates?.RemoveAll(rend => (wo.GetImbuedEffects() & rend) != 0);
             var eligRend = rendCandidates != null && rendCandidates.Count > 0;
-            var eligSlayer = isWeapon && wo.SlayerCreatureType == null && killed?.CreatureType != null &&
-                killed.CreatureType != ACE.Entity.Enum.CreatureType.Invalid;
+            var eligSlayer = isWeapon && wo.SlayerCreatureType == null && slayerType != null &&
+                slayerType != ACE.Entity.Enum.CreatureType.Invalid;
 
             var gotArc = hasProcSlots && WonT(p, ZoneStat.WeaponProcArcChance, lootTier);
             var gotRing = hasProcSlots && WonT(p, ZoneStat.WeaponProcRingChance, lootTier);
@@ -532,13 +552,35 @@ namespace ACE.Server.Managers.ZoneControl
                 eligRend, eligSlayer, isWeapon, isWeapon, isMelee || isMissile, isMelee || isMissile,
                 isMelee, isMissile, hasProcSlots, hasProcSlots,
             };
-            ApplyModifierBounds(p, ZoneStat.WeaponModifierMin, ZoneStat.WeaponModifierCap, lootTier, won, eligible, new[]
+            var cardChances = new[]
             {
                 ZoneStat.WeaponImbueChance, ZoneStat.WeaponSlayerChance, ZoneStat.WeaponBiteChance,
                 ZoneStat.WeaponCrushChance, ZoneStat.WeaponArmorRendChance, ZoneStat.WeaponShieldCleaveChance,
                 ZoneStat.WeaponCleaveChance, ZoneStat.WeaponSplitChance,
                 ZoneStat.WeaponProcArcChance, ZoneStat.WeaponProcRingChance,
-            });
+            };
+            if (isRare && isWeapon)
+            {
+                // RARE MODE: the chance rolls above are discarded. The core - Rending, Slayer, Armor Rend - is forced
+                // wherever the weapon is eligible; random extras then fill the tier's weapon_modifier_cap from the
+                // cards that can drop at this tier (CouldWinT: toggled on, chance authored and above zero), never
+                // Biting Strike or Crushing Blow. The rules, and why, are on ZoneRare.PickWeaponCards.
+                // Eligibility is the array above - the drop path's own answer. ZoneRare.WeaponCardEligibility is the
+                // same rules as a pure function (what the tests pin); the two are compared here, on rares only, so a
+                // card added to one and not the other is logged the first time it matters instead of drifting.
+                var pureEligible = ZoneRare.WeaponCardEligibility(isMelee, isMissile, wo is Caster, eligRend, eligSlayer, hasProcSlots);
+                if (!pureEligible.AsSpan().SequenceEqual(eligible))
+                    log.Warn($"[ZONELOOT] RARE: weapon card eligibility differs between TrySpecialRolls and ZoneRare.WeaponCardEligibility on {wo.Name} ({wo.WeenieClassId}) - the drop path's answer is used.");
+                var canDrop = new bool[cardChances.Length];
+                for (int i = 0; i < cardChances.Length; i++)
+                    canDrop[i] = eligible[i] && CouldWinT(p, cardChances[i], lootTier);
+                var rareCap = p.Has(ZoneStat.WeaponModifierCap)
+                    ? Math.Max(0, (int)Math.Round(p.GetT(ZoneStat.WeaponModifierCap, 0.0, lootTier), MidpointRounding.AwayFromZero))
+                    : int.MaxValue;                                       // unset = uncapped, as for any drop
+                won = ZoneRare.PickWeaponCards(eligible, canDrop, rareCap, n => ThreadSafeRandom.Next(0, n - 1));
+            }
+            else
+                ApplyModifierBounds(p, ZoneStat.WeaponModifierMin, ZoneStat.WeaponModifierCap, lootTier, won, eligible, cardChances);
             gotRend = won[0]; gotSlayer = won[1]; gotBite = won[2]; gotCrush = won[3]; gotArmorRend = won[4];
             gotShieldCleave = won[5]; gotCleave = won[6]; gotSplit = won[7]; gotArc = won[8]; gotRing = won[9];
 
@@ -677,7 +719,7 @@ namespace ACE.Server.Managers.ZoneControl
             if (gotCleave)
             {
                 var (defLo, defHi) = CleaveSplitBandAt(lootTier);
-                var targets = (int)Math.Round(RollRangeBand(p, ZoneStat.WeaponCleaveMin, ZoneStat.WeaponCleaveMax, defLo, defHi, 1, 10, lootTier));
+                var targets = (int)Math.Round(RollRangeBand(p, ZoneStat.WeaponCleaveMin, ZoneStat.WeaponCleaveMax, defLo, defHi, 1, 10, lootTier, top: isRare));
                 // owner 2026-10-04 (review): the card always beats the weapon's OWN Cleaving (two-handers carry 2-5 natively) -
                 // a roll at or below it was a dead card that still spent a slot, and the Salvage Bag counter (which sees a
                 // Cleave card only as "differs from the weenie") could not see it, so a bag could add one over the tier cap
@@ -690,7 +732,7 @@ namespace ACE.Server.Managers.ZoneControl
             if (gotSplit)
             {
                 var (defLo, defHi) = CleaveSplitBandAt(lootTier);
-                var count = (int)Math.Round(RollRangeBand(p, ZoneStat.WeaponSplitMin, ZoneStat.WeaponSplitMax, defLo, defHi, 1, 10, lootTier));
+                var count = (int)Math.Round(RollRangeBand(p, ZoneStat.WeaponSplitMin, ZoneStat.WeaponSplitMax, defLo, defHi, 1, 10, lootTier, top: isRare));
                 wo.SetProperty((PropertyBool)SplitArrowsBoolId, true);
                 wo.SetProperty((PropertyInt)SplitArrowCountIntId, count);
                 wo.SetProperty((PropertyFloat)SplitArrowRangeFloatId,
@@ -742,7 +784,7 @@ namespace ACE.Server.Managers.ZoneControl
             // slayer attuned against the killed monster's own kind
             if (gotSlayer)
             {
-                wo.SlayerCreatureType = killed.CreatureType;
+                wo.SlayerCreatureType = slayerType;
                 // damage multiplier vs that creature type, rolled per drop; floor 1.5x (a normal slayer),
                 // cap 10x (=1000%). One box = exact, both = roll in range; neither = the tier ladder
                 // (1.80-2.10 at T11 -> 2.40-3.00 at T25) instead of the old flat 1.5.
@@ -760,7 +802,7 @@ namespace ACE.Server.Managers.ZoneControl
 
             // the zone-cantrip LINES on top of whatever the roll produced — the zone's pool only
             // (prop-based ZoneModifiers catalog; retail cantrips deliberately excluded)
-            TryExtraModifier(wo, p, isWeapon, forceMax, lootTier);
+            TryExtraModifier(wo, p, isWeapon, forceMax, lootTier, isRare);
 
             // WEAPON RESOLVE IDENTITY, last, once the record is final (2026-08-25).
             //
@@ -801,7 +843,11 @@ namespace ACE.Server.Managers.ZoneControl
         /// tier-scaled catalog band, the roll is a recorded GRADE, and forceMax (the piece carries
         /// the per-kill slot special) stamps every line it rolls at band MAX.
         /// </summary>
-        private static void TryExtraModifier(WorldObject wo, EvaluatedProfile p, bool isWeapon, bool forceMax, int lootTier = 11)
+        /// <param name="isRare">T11+ RARES (owner 2026-10-08): the piece is the kill's rare. forceMax is already true
+        /// for it; this additionally replaces the chance rolls - every Always Rolled resist the piece can carry lands,
+        /// and the extra lines are EXACTLY the tier's armor_modifier_cap, drawn at random by their own chances
+        /// (ZoneRare.PickExtraLines). False on every ordinary drop.</param>
+        private static void TryExtraModifier(WorldObject wo, EvaluatedProfile p, bool isWeapon, bool forceMax, int lootTier = 11, bool isRare = false)
         {
             if (isWeapon)
                 return;   // weapon drops no longer roll armor-style lines (weapon_modifier_chance retired 2026-08-29)
@@ -850,8 +896,10 @@ namespace ACE.Server.Managers.ZoneControl
             }
 
             // stamped first so they lead the line list, as they lead the plugin's Modifiers tab
+            // a rare does not roll these: every one the piece type gets (slot-filtered above) and that can drop at all
+            // (CouldWinT - on, authored, above zero) lands, at grade 1000 through forceMax
             foreach (var def in alwaysDefs)
-                if (WonT(p, ZoneModifiers.LineChanceStat(def.Key), lootTier))
+                if (isRare ? CouldWinT(p, ZoneModifiers.LineChanceStat(def.Key), lootTier) : WonT(p, ZoneModifiers.LineChanceStat(def.Key), lootTier))
                     StampLine(def);
 
             // PHASE 2: armor_modifier_min / armor_modifier_cap (anchored, unset = no floor /
@@ -867,7 +915,25 @@ namespace ACE.Server.Managers.ZoneControl
                 lineChances[i] = ZoneModifiers.LineChanceStat(lineDefs[i].Key);
                 lineWon[i] = WonT(p, lineChances[i], lootTier);
             }
-            ApplyModifierBounds(p, ZoneStat.ArmorModifierMin, ZoneStat.ArmorModifierCap, lootTier, lineWon, lineElig, lineChances);
+            if (isRare && p.Has(ZoneStat.ArmorModifierCap))
+            {
+                // RARE MODE: exactly the tier's maximum line count (3 at T11 - never 2), and WHICH lines is random,
+                // weighted by each line's own chance (owner 2026-10-08: on purpose, so some Pristine pieces are better
+                // than others - no line is guaranteed). The chance rolls above are discarded. A line that could not
+                // drop here (off, unauthored, zero chance) has weight 0 and is never drawn.
+                // With no cap authored there is no "maximum count" to hit, so the ordinary rolls stand (at grade 1000).
+                var rareCap = Math.Max(0, (int)Math.Round(p.GetT(ZoneStat.ArmorModifierCap, 0.0, lootTier), MidpointRounding.AwayFromZero));
+                var weights = new double[lineDefs.Count];
+                for (int i = 0; i < lineDefs.Count; i++)
+                {
+                    weights[i] = CouldWinT(p, lineChances[i], lootTier) ? Math.Clamp(p.GetT(lineChances[i], 0.0, lootTier), 0.0, 1.0) : 0.0;
+                    lineWon[i] = false;
+                }
+                foreach (var i in ZoneRare.PickExtraLines(weights, rareCap, () => ThreadSafeRandom.Next(0.0f, 1.0f)))
+                    lineWon[i] = true;
+            }
+            else
+                ApplyModifierBounds(p, ZoneStat.ArmorModifierMin, ZoneStat.ArmorModifierCap, lootTier, lineWon, lineElig, lineChances);
 
             for (int i = 0; i < lineDefs.Count; i++)
             {

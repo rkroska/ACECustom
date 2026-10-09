@@ -1224,5 +1224,260 @@ namespace ACE.Server.Command.Handlers
 
             Msg(ForgeWeapon(player, cls.Wcid, cls.CleanName, quality, tier, element, cls.TWType, cards, bag, force));
         }
+
+        // ── /zcrare: T11+ rares, the developer surface (owner 2026-10-08) ─────────────────────────────────
+        //
+        // A Pristine item is one in several hundred thousand kills, so nobody can test one by farming. `pristine`
+        // makes one on demand THROUGH THE DROP PATH: a one-item zone loot set (the way the slot special spawns a piece
+        // when the kill rolled none for its slot), then Creature.ApplyZoneDropSweep in rare mode - the same method a
+        // kill's loot loop calls. Nothing here decides a card, a line or a value; if this command and a real drop ever
+        // disagree, that is a bug in the shared path, not a second implementation to chase.
+        // What differs from a kill, on purpose: no monster (so the provenance reads "Created by", and the Slayer type
+        // comes from the creature the caller last appraised, or an argument), and no server-wide broadcast. The audit
+        // channel and the log line still run, marked as a dev mint, so a minted rare is never mistaken for a found one.
+
+        private static readonly string[] ZcRareKinds = { "weapon", "melee", "missile", "caster", "armor", "shield", "jewelry", "cloak", "clothing" };
+
+        [CommandHandler("zcrare", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
+            "T11+ rares: mint a Pristine or Ascendant test item through the real drop path, or show your rare odds.",
+            "pristine <weapon|melee|missile|caster|armor|shield|jewelry|cloak|clothing> [tier 11-25, default your own tier] [creature type for the Slayer]\n" +
+            "    One Pristine item of that kind in your pack, made by the same generation + sweep a kill uses. The Slayer type is the\n" +
+            "    creature you last appraised, else the creature type argument (e.g. Olthoi), else the weapon gets no Slayer.\n" +
+            "    Audited and logged as a dev mint; never broadcast.\n" +
+            "ascendant <kind> [drop tier 11-25, default your own tier] [creature type for the Slayer]\n" +
+            "    One Ascendant item as a kill at the DROP tier would give it: made at drop tier + zc_rare_ascendant_tier_bonus (never past 25),\n" +
+            "    wielded with the drop tier's requirements. Same path, same Slayer rule, same audit.\n" +
+            "tier\n" +
+            "    Your tier, your own tier for rare odds (and the enabled zone tiers it came from), and the odds a kill where you stand would use.")]
+        public static void HandleZcRare(Session session, params string[] parameters)
+        {
+            void Msg(string s) => ChatPacket.SendServerMessage(session, s, ChatMessageType.Broadcast);
+
+            var player = session.Player;
+            if (player == null)
+                return;
+
+            switch (parameters[0].ToLowerInvariant())
+            {
+                case "tier":
+                    ZcRareShowTier(player, Msg);
+                    return;
+                case "pristine":
+                    ZcRareMint(player, ZoneRareTier.Pristine, parameters, Msg);
+                    return;
+                case "ascendant":
+                    ZcRareMint(player, ZoneRareTier.Ascendant, parameters, Msg);
+                    return;
+                default:
+                    Msg("Usage: /zcrare pristine|ascendant <" + string.Join("|", ZcRareKinds) + "> [tier] [creature type]  |  /zcrare tier");
+                    return;
+            }
+        }
+
+        private static void ZcRareShowTier(ACE.Server.WorldObjects.Player player, Action<string> Msg)
+        {
+            ZoneControlManager.EnsureLoaded();
+
+            var playerTier = TierHitGate.PlayerTier(player);
+            var enabled = ZoneControlManager.EnabledZoneTiers;
+            var ownTier = ZoneRare.OwnTier(playerTier, enabled);
+            Msg($"zcrare: your tier (highest tier whose monsters you can hit) = {(playerTier > 0 ? "T" + playerTier : "below T11")}");
+            Msg($"zcrare: tiers with an enabled zone = {(enabled.Count > 0 ? string.Join(", ", enabled.Select(t => "T" + t)) : "(none)")}");
+            Msg($"zcrare: your own tier for rare odds = {(ownTier > 0 ? "T" + ownTier : "none - no enabled zone tier at or below your tier, so no kill rolls a rare for you")}");
+            Msg($"zcrare: settings - Pristine 1 in {ACE.Server.Managers.ServerConfig.zc_rare_pristine_odds.Value} (0 = off), Ascendant 1 in {ACE.Server.Managers.ServerConfig.zc_rare_ascendant_odds.Value} (0 = off), "
+                + $"one tier below x{F(ACE.Server.Managers.ServerConfig.zc_rare_odds_one_tier_below.Value)}, two tiers below x{F(ACE.Server.Managers.ServerConfig.zc_rare_odds_two_tiers_below.Value)}, three or more = never");
+            Msg($"zcrare: Ascendant tier bonus = {ACE.Server.Managers.ServerConfig.zc_rare_ascendant_tier_bonus.Value} (an Ascendant item is made that many tiers above the kill, never past T{ZoneRare.MaxTier}, and wielded with the kill tier's requirements)");
+
+            var here = ZoneControlManager.GetEffectiveVariation(player);
+            if (here < ZoneRare.MinTier)
+            {
+                Msg($"zcrare: you are standing in variation {here} - not a T11+ variation, so kills here never roll a rare.");
+                return;
+            }
+
+            // a kill's loot tier is max(the monster's own treasure tier, the variation) - the variation in practice
+            var o = ZoneRare.OddsFor(player, here);
+            string Effective(double chance) => chance > 0 ? "1 in " + (1.0 / chance).ToString("N0", CultureInfo.InvariantCulture) : "never";
+            var where = ownTier <= 0 ? "you have no own tier"
+                : here > ownTier ? $"above your own tier T{ownTier}"
+                : here == ownTier ? "your own tier"
+                : $"{ownTier - here} below your own tier T{ownTier}";
+            Msg($"zcrare: a kill here (variation {here} - {where}): scale x{F(o.Scale)} -> Pristine {Effective(o.PristineChance)}, Ascendant {Effective(o.AscendantChance)}");
+            Msg($"zcrare: a rare found here would be - Pristine: a tier {here} item; Ascendant: a tier {ZoneRare.AscendantTier(here, ACE.Server.Managers.ServerConfig.zc_rare_ascendant_tier_bonus.Value)} item with tier {here} wield requirements");
+            if (!ACE.Server.Managers.ServerConfig.zonecontrol_enabled.Value)
+                Msg("zcrare: NOTE zonecontrol_enabled is OFF - no kill rolls a rare while it is.");
+            else if (ZoneControlManager.ResolveZoneDefaultForPlayer(player) == null)
+                Msg("zcrare: NOTE no enabled zone covers this spot at this variation - monsters here are not zone loot and never roll a rare.");
+        }
+
+        private static void ZcRareMint(ACE.Server.WorldObjects.Player player, ZoneRareTier rareTier, string[] parameters, Action<string> Msg)
+        {
+            if (parameters.Length < 2 || !ZcRareKinds.Contains(parameters[1].ToLowerInvariant()))
+            {
+                Msg("zcrare: kind must be one of " + string.Join(" ", ZcRareKinds));
+                return;
+            }
+            var kind = parameters[1].ToLowerInvariant();
+
+            ZoneControlManager.EnsureLoaded();
+
+            // [tier] and [creature type], in either order: a number is the tier, anything else names a creature type
+            var tier = Math.Clamp(TierHitGate.PlayerTier(player), ZoneRare.MinTier, ZoneRare.MaxTier);
+            ACE.Entity.Enum.CreatureType? slayerType = null;
+            var slayerSource = "";
+            foreach (var arg in parameters.Skip(2))
+            {
+                if (int.TryParse(arg, out var t))
+                {
+                    if (t < ZoneRare.MinTier || t > ZoneRare.MaxTier)
+                    {
+                        Msg($"zcrare: tier must be {ZoneRare.MinTier}-{ZoneRare.MaxTier}.");
+                        return;
+                    }
+                    tier = t;
+                }
+                else if (Enum.TryParse<ACE.Entity.Enum.CreatureType>(arg, true, out var ct) && ct != ACE.Entity.Enum.CreatureType.Invalid
+                    && Enum.IsDefined(typeof(ACE.Entity.Enum.CreatureType), ct))
+                {
+                    slayerType = ct;
+                    slayerSource = "argument";
+                }
+                else
+                {
+                    Msg($"zcrare: '{arg}' is neither a tier nor a creature type (e.g. Olthoi, Tumerok, Undead).");
+                    return;
+                }
+            }
+
+            // the creature the caller last appraised wins over nothing, not over an explicit argument
+            if (slayerType == null && player.CurrentAppraisalTarget.HasValue
+                && player.CurrentLandblock?.GetObject(new ACE.Entity.ObjectGuid(player.CurrentAppraisalTarget.Value)) is ACE.Server.WorldObjects.Creature target
+                && !(target is ACE.Server.WorldObjects.Player)
+                && target.CreatureType != null && target.CreatureType != ACE.Entity.Enum.CreatureType.Invalid)
+            {
+                slayerType = target.CreatureType;
+                slayerSource = "appraised " + target.Name;
+            }
+
+            // ASCENDANT (owner 2026-10-09): the number typed is the DROP tier - the tier of the kill being imitated. The item
+            // is made at drop tier + the live bonus setting (never past 25) and keeps the drop tier as its wield gate, exactly
+            // as ZoneRare.TryRollDrop sets a real one up. For Pristine the two are the same tier and there is no gate tier.
+            var ascendant = rareTier == ZoneRareTier.Ascendant;
+            var dropTier = tier;
+            if (ascendant)
+                tier = ZoneRare.AscendantTier(dropTier, ACE.Server.Managers.ServerConfig.zc_rare_ascendant_tier_bonus.Value);
+            var gateTier = ascendant ? dropTier : 0;
+
+            // the profile a kill at this tier would roll from: the zone the caller stands in when it is a zone of this
+            // tier, else the tier Default every zone of the tier inherits. An Ascendant piece is ALWAYS rolled from its own
+            // (item) tier's Default - the kill's zone belongs to the lower drop tier - through the same helper the drop uses.
+            var zoneProfile = !ascendant && ZoneControlManager.GetEffectiveVariation(player) == tier ? ZoneControlManager.ResolveZoneDefaultForPlayer(player) : null;
+            var p = zoneProfile ?? (ascendant ? ZoneRare.AscendantProfile(tier) : ZoneControlManager.EvaluateTierDefault(tier));
+            var profileNote = zoneProfile != null ? $"zone {zoneProfile.ScopeKey}" : $"tier {tier} Default";
+
+            // a one-item zone loot set, the way the slot special spawns a piece the kill did not roll
+            var one = new ACE.Server.Factories.LootGenerationFactory.ZoneLootSetCounts();
+            switch (kind)
+            {
+                case "weapon": one.WeaponFamilyPicks = new List<int> { ACE.Server.Factories.LootGenerationFactory.RollZoneSetWeaponFamily(true, true, true) }; break;
+                case "melee": one.WeaponFamilyPicks = new List<int> { ACE.Server.Factories.LootGenerationFactory.RollZoneSetWeaponFamily(true, false, false) }; break;
+                case "missile": one.WeaponFamilyPicks = new List<int> { ACE.Server.Factories.LootGenerationFactory.RollZoneSetWeaponFamily(false, true, false) }; break;
+                case "caster": one.WeaponFamilyPicks = new List<int> { ACE.Server.Factories.LootGenerationFactory.RollZoneSetWeaponFamily(false, false, true) }; break;
+                case "shield": one.Shield = 1; break;
+                case "cloak": one.Cloak = 1; break;
+                case "clothing": one.Clothing = 1; break;
+                case "jewelry":
+                    switch (ACE.Common.ThreadSafeRandom.Next(0, 3))
+                    {
+                        case 0: one.Amulet = 1; break;
+                        case 1: one.Ring = 1; break;
+                        case 2: one.Bracelet = 1; break;
+                        default: one.Trinket = 1; break;
+                    }
+                    break;
+                default:   // armor: one of the nine body slots
+                    switch (ACE.Common.ThreadSafeRandom.Next(0, 8))
+                    {
+                        case 0: one.Helm = 1; break;
+                        case 1: one.Chest = 1; break;
+                        case 2: one.Shoulder = 1; break;
+                        case 3: one.Bracer = 1; break;
+                        case 4: one.Glove = 1; break;
+                        case 5: one.Girth = 1; break;
+                        case 6: one.UpperLeg = 1; break;
+                        case 7: one.LowerLeg = 1; break;
+                        default: one.Boot = 1; break;
+                    }
+                    break;
+            }
+
+            var treasure = ACE.Server.WorldObjects.Creature.ZoneFallbackTreasureAt(tier);
+            var dropFloor = ZoneStatResolver.GradeFloorOf(p);
+            List<WorldObject> made;
+            using (ZoneStatResolver.ScopeDropFloor(dropFloor))
+                made = ACE.Server.Factories.LootGenerationFactory.CreateZoneLootSet(treasure, one);
+
+            var wo = made.FirstOrDefault(ZoneRare.IsEligible);
+            foreach (var extra in made)
+                if (!ReferenceEquals(extra, wo))
+                    extra.Destroy();
+            if (wo == null)
+            {
+                Msg($"zcrare: the loot generator produced no {kind} at tier {tier} (see the server log) - nothing created.");
+                return;
+            }
+
+            // THE sweep a kill's loot loop runs, in rare mode. No monster: provenance and Slayer are handled around it.
+            ACE.Server.WorldObjects.Creature.ApplyZoneDropSweep(wo, p, null, tier, false, null, dropFloor, rareTier, slayerType, gateTier);
+
+            if (!ZoneRare.IsRare(wo))
+            {
+                Msg($"zcrare: {wo.Name} came out of the sweep without the rare flag (see the server log) - destroyed.");
+                wo.Destroy();
+                return;
+            }
+
+            // with no monster the mutator can only write a "Location: <scope> v0" line - replace it with the forge-style provenance
+            var kept = (wo.LongDesc ?? "").Split('\n').Where(l => !l.StartsWith("Location:") && !l.StartsWith("Dropped by")).ToList();
+            while (kept.Count > 0 && kept[kept.Count - 1].Trim().Length == 0)
+                kept.RemoveAt(kept.Count - 1);
+            var provenance = $"Created by: {player.Name}\nTier: {tier}";
+            wo.LongDesc = kept.Count > 0 ? string.Join("\n", kept) + "\n\n" + provenance : provenance;
+
+            if (!player.TryCreateInInventoryWithNetworking(wo))
+            {
+                Msg($"zcrare: could not place {wo.Name} in your inventory (full?) - destroyed.");
+                wo.Destroy();
+                return;
+            }
+
+            ZoneRare.Announce(new ZoneRare.Drop
+            {
+                Tier = rareTier,
+                Piece = wo,
+                Finder = player,
+                Odds = ZoneRare.OddsFor(player, dropTier),
+                ItemTier = tier,
+                GateTier = gateTier,
+                Placed = true,
+            }, null, devMint: true);
+
+            Msg($"zcrare: created {wo.NameWithMaterial} ({ZoneRare.TierName(rareTier)} {kind}, tier {tier}, rolled from the {profileNote}). Appraise it.");
+            if (ascendant)
+                Msg($"zcrare: as found in tier {dropTier} (bonus {ACE.Server.Managers.ServerConfig.zc_rare_ascendant_tier_bonus.Value}): item tier {tier}, wield requirements of tier {ZoneRare.GateTierOf(wo, tier)} - "
+                    + ACE.Server.Factories.LootGenerationFactory.WieldLineFor(wo).Replace("\n", "; "));
+            var record = wo.GetProperty(PropertyString.ZcModifiers);
+            if (GearEssencesIsWeapon(wo))
+            {
+                var slayerNote = wo.SlayerCreatureType != null ? $"{wo.SlayerCreatureType} ({slayerSource})"
+                    : slayerType != null ? "none (the weapon could not take one)"
+                    : "none - appraise a creature first, or add a creature type, to get the Slayer card";
+                Msg($"zcrare: Weapon Grade quality {wo.GetProperty(PropertyInt.WeaponAugScaleQuality) ?? 0}/1000, imbues {wo.GetImbuedEffects()}, Slayer {slayerNote}, "
+                    + $"Damage Rating {wo.GetProperty(PropertyInt.GearDamage) ?? 0}, Crit Damage Rating {wo.GetProperty(PropertyInt.GearCritDamage) ?? 0}");
+            }
+            Msg($"zcrare: grade record (key:grade, 1000 = band top) = {(string.IsNullOrEmpty(record) ? "(empty - the profile authors no cards / lines for this kind)" : record)}");
+        }
+
+        private static bool GearEssencesIsWeapon(WorldObject wo) => wo is MeleeWeapon || wo is MissileLauncher || wo is Caster;
     }
 }
