@@ -133,27 +133,103 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void Cards_BiteAndCrushAreNeverChosen_EvenUncapped()
+        public void Cards_BiteAndCrushAreNeverChosen_WhileAnyOtherCardIsLeft()
         {
+            // every cap from the core count up to "one short of every other card": Bite and Crush stay off
             foreach (var eligible in new[] { Melee(), Missile(), Caster() })
-                for (var seed = 0; seed < 50; seed++)
-                {
-                    var cards = ZoneRare.PickWeaponCards(eligible, All(true), Uncapped, Stride(seed));
-                    Assert.IsFalse(cards[ZoneRare.CardBite], "Biting Strike is never an extra");
-                    Assert.IsFalse(cards[ZoneRare.CardCrush], "Crushing Blow is never an extra");
-                }
+            {
+                var others = Count(eligible) - 2;   // everything the weapon can carry besides Bite and Crush
+                for (var cap = 0; cap <= others; cap++)
+                    for (var seed = 0; seed < 30; seed++)
+                    {
+                        var cards = ZoneRare.PickWeaponCards(eligible, All(true), cap, Stride(seed));
+                        Assert.IsFalse(cards[ZoneRare.CardBite], $"cap {cap}: Biting Strike before the other cards ran out");
+                        Assert.IsFalse(cards[ZoneRare.CardCrush], $"cap {cap}: Crushing Blow before the other cards ran out");
+                    }
+            }
+        }
+
+        [TestMethod]
+        public void Cards_T11Melee_CapFive_NeverGetsBiteOrCrush()
+        {
+            // live tuning: weapon_modifier_cap 5 at T11. Core 3 + two of Shield Cleave / Cleave / Arc / Ring - four are on offer
+            for (var seed = 0; seed < 100; seed++)
+            {
+                var cards = ZoneRare.PickWeaponCards(Melee(), All(true), 5, Stride(seed));
+                Assert.AreEqual(5, Count(cards));
+                Assert.IsFalse(cards[ZoneRare.CardBite] || cards[ZoneRare.CardCrush]);
+            }
+        }
+
+        [TestMethod]
+        public void Cards_T14Caster_CapSix_FillsWithCrushThenBite()
+        {
+            // the owner's wand: a caster can only carry Rending, Slayer and the two procs besides the fillers
+            for (var seed = 0; seed < 50; seed++)
+            {
+                var cards = ZoneRare.PickWeaponCards(Caster(), All(true), 6, Stride(seed));
+                Assert.AreEqual(6, Count(cards), "6 of 6");
+                foreach (var card in new[] { ZoneRare.CardRend, ZoneRare.CardSlayer, ZoneRare.CardProcArc, ZoneRare.CardProcRing, ZoneRare.CardCrush, ZoneRare.CardBite })
+                    Assert.IsTrue(cards[card]);
+            }
+
+            // one slot left after the four: Crushing Blow goes first
+            var five = ZoneRare.PickWeaponCards(Caster(), All(true), 5, Stride(0));
+            Assert.IsTrue(five[ZoneRare.CardCrush]);
+            Assert.IsFalse(five[ZoneRare.CardBite]);
+            Assert.AreEqual(5, Count(five));
+
+            // no creature type for the Slayer (the dev mint without a target): the fillers still close the gap
+            var noSlayer = ZoneRare.PickWeaponCards(Caster(slayer: false), All(true), 6, Stride(0));
+            Assert.AreEqual(5, Count(noSlayer), "Rend, Arc, Ring, Crush, Bite - all a wand without a Slayer can hold");
+        }
+
+        [TestMethod]
+        public void Cards_Fillers_RespectEligibilityTheToggleAndTheCap()
+        {
+            // switched off at this tier = not a filler either
+            var enabled = All(true);
+            enabled[ZoneRare.CardCrush] = false;
+            var noCrush = ZoneRare.PickWeaponCards(Caster(), enabled, Uncapped, Stride(0));
+            Assert.IsFalse(noCrush[ZoneRare.CardCrush]);
+            Assert.IsTrue(noCrush[ZoneRare.CardBite], "the other filler still fills");
+            Assert.AreEqual(5, Count(noCrush));
+
+            // nothing enabled: the forced core only, as before
+            Assert.AreEqual(2, Count(ZoneRare.PickWeaponCards(Caster(), All(false), Uncapped, Stride(0))));
+
+            // uncapped melee: every other card first, then both fillers
+            var melee = ZoneRare.PickWeaponCards(Melee(), All(true), Uncapped, Stride(0));
+            Assert.AreEqual(9, Count(melee));
+            Assert.IsFalse(melee[ZoneRare.CardSplit]);
+
+            // a cap already met by the core leaves no room for a filler
+            var capped = ZoneRare.PickWeaponCards(Caster(procs: false), All(true), 2, Stride(0));
+            Assert.AreEqual(2, Count(capped));
+            Assert.IsFalse(capped[ZoneRare.CardCrush] || capped[ZoneRare.CardBite]);
+        }
+
+        [TestMethod]
+        public void WeaponRatingTop_IsTheBandTop_UnderTheT25Ceiling()
+        {
+            Assert.AreEqual(69, ZoneRare.WeaponRatingTop(14, 69, 138));
+            Assert.AreEqual(84, ZoneRare.WeaponRatingTop(17, 84, 138), "T14");
+            Assert.AreEqual(138, ZoneRare.WeaponRatingTop(28, 138, 138), "T25");
+            Assert.AreEqual(138, ZoneRare.WeaponRatingTop(28, 900, 138), "a mistyped band stops at the line's T25 ceiling");
+            Assert.AreEqual(69, ZoneRare.WeaponRatingTop(69, 14, 138), "a reversed band still gives its top");
+            Assert.AreEqual(0, ZoneRare.WeaponRatingTop(0, 0, 138), "no band = nothing to add");
         }
 
         [TestMethod]
         public void Cards_Uncapped_TakesEveryEligibleEnabledExtra()
         {
             var melee = ZoneRare.PickWeaponCards(Melee(), All(true), Uncapped, Stride(3));
-            // core 3 + Shield Cleave, Cleave, both procs; never Split (missile), Bite, Crush
-            Assert.AreEqual(7, Count(melee));
+            // core 3 + Shield Cleave, Cleave, both procs, then the two last-resort fillers; never Split (missile)
+            Assert.AreEqual(9, Count(melee));
             Assert.IsFalse(melee[ZoneRare.CardSplit]);
 
             var missile = ZoneRare.PickWeaponCards(Missile(), All(true), Uncapped, Stride(3));
-            Assert.AreEqual(7, Count(missile));
+            Assert.AreEqual(9, Count(missile));
             Assert.IsTrue(missile[ZoneRare.CardSplit]);
             Assert.IsFalse(missile[ZoneRare.CardCleave]);
         }
@@ -161,12 +237,12 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void Cards_CapIsRespected_AtEveryCount()
         {
-            for (var cap = 3; cap <= 7; cap++)
+            for (var cap = 3; cap <= 9; cap++)
                 for (var seed = 0; seed < 30; seed++)
                     Assert.AreEqual(cap, Count(ZoneRare.PickWeaponCards(Melee(), All(true), cap, Stride(seed))), $"cap {cap}");
 
-            // a cap above what the weapon can carry stops at the pool, not at the cap
-            Assert.AreEqual(7, Count(ZoneRare.PickWeaponCards(Melee(), All(true), 10, Stride(0))));
+            // a cap above what the weapon can carry stops at what it can carry (7 cards + the two fillers), not at the cap
+            Assert.AreEqual(9, Count(ZoneRare.PickWeaponCards(Melee(), All(true), 10, Stride(0))));
         }
 
         [TestMethod]
@@ -179,7 +255,7 @@ namespace ACE.Server.Tests
             {
                 var cards = ZoneRare.PickWeaponCards(Missile(), enabled, Uncapped, Stride(seed));
                 Assert.IsFalse(cards[ZoneRare.CardSplit]);
-                Assert.AreEqual(6, Count(cards));   // core 3 + Shield Cleave + both procs
+                Assert.AreEqual(8, Count(cards));   // core 3 + Shield Cleave + both procs, then Crush and Bite - never Split
             }
 
             // null = nothing is known to be enabled: the core only

@@ -203,6 +203,14 @@ namespace ACE.Server.Managers.ZoneControl
         /// Biting Strike and Crushing Blow are never an extra (owner: near-worthless against current monster crit
         /// resists, and each would spend a slot a real card could have had).
         ///
+        /// LAST-RESORT FILLERS (owner 2026-10-10, after a rare wand came out at 3 of 6): only when every other card has
+        /// been taken and the weapon is STILL under the cap do Crushing Blow and then Biting Strike go on - each only if
+        /// the weapon is eligible and the card can drop at this tier, the same test the extras use. A caster can carry
+        /// just Rending, Slayer and the two Cast on Strike cards besides them, so without the fillers it could never
+        /// fill a cap above four. They are never taken while any other card is still available, so a sword or a bow
+        /// that reaches the cap without them is exactly as before; a weak card in an otherwise empty slot is still
+        /// better than the empty slot.
+        ///
         /// <paramref name="pickIndex"/>(n) returns an index in [0, n). Each pick removes one card from the pool, so the
         /// loop ends after at most ten picks whatever the picker returns.
         /// </summary>
@@ -240,6 +248,19 @@ namespace ACE.Server.Managers.ZoneControl
                 chosen[pool[k]] = true;
                 pool.RemoveAt(k);
                 count++;
+            }
+
+            // the last-resort fillers: the pool above is empty by now whenever the cap has not been reached. Crushing Blow
+            // first, then Biting Strike - a fixed order, no draw.
+            foreach (var filler in new[] { CardCrush, CardBite })
+            {
+                if (count >= cap)
+                    break;
+                if (eligible[filler] && enabled != null && filler < enabled.Length && enabled[filler])
+                {
+                    chosen[filler] = true;
+                    count++;
+                }
             }
 
             return chosen;
@@ -549,8 +570,24 @@ namespace ACE.Server.Managers.ZoneControl
                 {
                     if (wo.GetProperty(PropertyInt.WeaponAugScaleQuality).HasValue)
                         wo.SetProperty(PropertyInt.WeaponAugScaleQuality, WeaponScaling.WeaponScalingManager.QualityMax);
-                    MaxWeaponRating(wo, lootTier, PropertyInt.GearDamage, 28);
-                    MaxWeaponRating(wo, lootTier, PropertyInt.GearCritDamage, 29);
+                    // A rare weapon always carries the rating line (owner 2026-10-10). The ordinary roll can leave a weapon
+                    // with none: a zone-set CASTER never gets one at all (TryMutateGearRatingForWeapons is only reached from
+                    // the magical caster branch, and zone gear is generated blank), and a melee / missile roll that came
+                    // out at 0 writes nothing. Then the line is chosen here the way that roll chooses it - a fair coin
+                    // between Damage Rating and Crit Damage Rating - and stamped at the band top. One draw, rares only.
+                    var hasRating = (wo.GetProperty(PropertyInt.GearDamage) ?? 0) > 0 || (wo.GetProperty(PropertyInt.GearCritDamage) ?? 0) > 0;
+                    if (!hasRating)
+                    {
+                        if (ThreadSafeRandom.Next(0, 1) == 1)
+                            MaxWeaponRating(wo, lootTier, PropertyInt.GearCritDamage, 29, addIfMissing: true);
+                        else
+                            MaxWeaponRating(wo, lootTier, PropertyInt.GearDamage, 28, addIfMissing: true);
+                    }
+                    else
+                    {
+                        MaxWeaponRating(wo, lootTier, PropertyInt.GearDamage, 28);
+                        MaxWeaponRating(wo, lootTier, PropertyInt.GearCritDamage, 29);
+                    }
                 }
 
                 wo.SetProperty(PropertyInt.ZcRare, (int)tier);
@@ -579,22 +616,27 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>
         /// The weapon's own rating line (LootGenerationFactory.TryMutateGearRatingForWeapons: one of Damage Rating /
         /// Crit Damage Rating, a plain frozen Gear* value with no grade record) at grade 1000 - the same band, and the
-        /// same T25 catalog ceiling, that roll uses. Only the line the drop actually rolled, and only ever raised.
+        /// same T25 catalog ceiling, that roll uses. Only the line the drop actually rolled, and only ever raised -
+        /// unless <paramref name="addIfMissing"/>, which StampRare passes for the one line it picked on a weapon that
+        /// rolled neither (same band top, same ceiling; a band whose top is 0 still adds nothing).
         /// </summary>
-        private static void MaxWeaponRating(WorldObject wo, int lootTier, PropertyInt prop, int catalogKey)
+        private static void MaxWeaponRating(WorldObject wo, int lootTier, PropertyInt prop, int catalogKey, bool addIfMissing = false)
         {
             var current = wo.GetProperty(prop) ?? 0;
-            if (current <= 0)
+            if (current <= 0 && !addIfMissing)
                 return;
 
             var (min, max) = ZoneStatResolver.EffectiveBand(catalogKey, lootTier);
-            var top = ZoneStatResolver.ValueFor(min, max, ZoneStatResolver.GradeMax);
-            if (ZoneModifiers.TryGet(catalogKey, out var def))
-                top = Math.Min(top, ZoneModifiers.CatalogBandAt(def, MaxTier).Max);
+            var top = WeaponRatingTop(min, max, ZoneModifiers.TryGet(catalogKey, out var def) ? ZoneModifiers.CatalogBandAt(def, MaxTier).Max : int.MaxValue);
 
             if (top > current)
                 wo.SetProperty(prop, top);
         }
+
+        /// <summary>The top of a weapon rating band: its grade-1000 value, never above the line's own T25 catalog ceiling
+        /// (the cap TryMutateGearRatingForWeapons applies, so a mistyped authored band cannot mint an outlier).</summary>
+        internal static int WeaponRatingTop(int bandMin, int bandMax, int ceiling)
+            => Math.Min(ZoneStatResolver.ValueFor(bandMin, bandMax, ZoneStatResolver.GradeMax), ceiling);
 
         // -- announce + audit ------------------------------------------------------------------------------
 
