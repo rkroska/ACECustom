@@ -101,6 +101,18 @@ namespace ACE.Server.Managers.ZoneControl
         internal static string ImbueRefusalText(ZoneRareTier tier)
             => $"This item is {TierName(tier) ?? "a rare item"} and cannot be imbued. Ordinary tinkering still works.";
 
+        /// <summary>
+        /// Lines a rare carries as a BUILT-IN - guaranteed, and outside its armor_modifier_cap count - instead of as one of
+        /// its random extras. Today that is Reinforced alone (owner 2026-10-10: rare armor and shields always have top base
+        /// protection). Three places ask, and must agree: the rare line draw leaves these out of its pool, the stamp forces
+        /// them on, and the "Properties: N of M" count (GearEssences.LineCount) does not count them on a rare.
+        /// </summary>
+        internal static bool IsBuiltInOnRare(int lineKey) => lineKey == ZoneModifiers.ReinforcedKey;
+
+        /// <summary>Does Reinforced use one of the piece's property slots? On an ordinary piece yes - it is a rolled line and
+        /// the appraisal counts it. On a rare it is built in and does not.</summary>
+        internal static bool ReinforcedUsesASlot(ZoneRareTier tier) => tier == ZoneRareTier.None;
+
         /// <summary>Which rare this item is. None for an ordinary item, and for a stored value this build does not know.</summary>
         public static ZoneRareTier TierOfRare(WorldObject wo)
         {
@@ -548,8 +560,10 @@ namespace ACE.Server.Managers.ZoneControl
         ///
         ///   - a weapon's Weapon Grade is S (quality 1000);
         ///   - a weapon's Damage / Crit Damage rating - rolled inside item creation, long before anyone knows the kill
-        ///     has a rare - is raised to the top of its band for the tier (<paramref name="lootTier"/> is the tier the
-        ///     piece is swept at: the item tier, which for an Ascendant piece is above the kill's);
+        ///     has a rare - is at the top of its band for the tier: the line it rolled is raised, and a weapon that
+        ///     rolled none (every zone-set caster) is given one (<paramref name="lootTier"/> is the tier the piece is
+        ///     swept at: the item tier, which for an Ascendant piece is above the kill's);
+        ///   - a cloak is item level 5 and always has a spell proc (LootGenerationFactory.MaxOutRareCloak);
         ///   - the flag (PropertyInt.ZcRare), the name prefix, and Bonded so it is never dropped on death. NOT Attuned:
         ///     a rare stays tradeable. The zone's own attuned / bonded rules were applied by the mutator as for any drop.
         ///
@@ -597,6 +611,11 @@ namespace ACE.Server.Managers.ZoneControl
                 wo.SetProperty(PropertyString.Name, name);
 
                 wo.Bonded = BondedStatus.Bonded;
+
+                // A rare cloak's retail part - item level and proc - is rolled at creation, outside rare mode: top level and
+                // a guaranteed spell proc here (owner 2026-10-10). The level shows as the icon OVERLAY; the rare's own
+                // background just below is the UNDERLAY, so both show.
+                ACE.Server.Factories.LootGenerationFactory.MaxOutRareCloak(wo);
 
                 // Its tier's icon background, so a rare reads as one at a glance in a pack, on a corpse and in a trade window
                 // (owner 2026-10-09). On a weapon it replaces the rend's element underlay - this runs after the cards are

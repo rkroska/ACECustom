@@ -1629,7 +1629,8 @@ namespace ACE.Server.WorldObjects
             {
                 LootGenerationFactory.ApplyZoneGearStats(wo, lootTier, p: zoneLoot);
                 // item spells (owner 2026-10-05): random cantrips from the slot's list, count + level per zone
-                LootGenerationFactory.ApplyZoneSpells(wo, lootTier, zoneLoot);
+                // a rare takes the tier's maximum count at the maximum level (owner 2026-10-10); false for every ordinary drop
+                LootGenerationFactory.ApplyZoneSpells(wo, lootTier, zoneLoot, max: rare != ACE.Server.Managers.ZoneControl.ZoneRareTier.None);
             }
 
             // Zone Control loot: post-roll per-item mutations (weapon stats, AL, workmanship, coins,

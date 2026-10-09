@@ -1080,6 +1080,10 @@ namespace ACE.Server.Network.Structure
                 var rank = wo?.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.ReinforcedRank) ?? 0;
                 if (reinforced.Count == 0 && rank > 0 && ACE.Server.Managers.ZoneControl.ZoneModifiers.TryGet(ACE.Server.Managers.ZoneControl.ZoneModifiers.ReinforcedKey, out var reinforcedDef))
                     reinforced.Add($"- {reinforcedDef.Name} +{rank} [{reinforcedDef.Min}-{reinforcedDef.Max}]");
+                // on a rare, Reinforced is guaranteed and outside the Properties count - marked like every other line that uses no slot
+                if (rareLine != null)
+                    for (var i = 0; i < reinforced.Count; i++)
+                        reinforced[i] += GearEssences.BuiltInMarker;
                 cantrips.AddRange(reinforced);
             }
 

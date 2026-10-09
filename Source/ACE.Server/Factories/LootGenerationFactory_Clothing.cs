@@ -875,6 +875,44 @@ namespace ACE.Server.Factories
             MutateValue(wo, profile.Tier, roll);
         }
 
+        /// <summary>The top cloak level (the last entry of the tier tables in CloakChance).</summary>
+        internal const int CloakTopItemMaxLevel = 5;
+
+        /// <summary>
+        /// A RARE cloak's retail part at its best (T11+ rares, owner 2026-10-10): item max level 5 with the level's icon
+        /// overlay, and always a spell proc. MutateCloak rolls both inside item creation, long before anyone knows the
+        /// kill has a rare (the audit: level 4 on about 73 pct, the damage-reduction weave instead of a spell on about 8
+        /// pct), so this is a post-pass on the finished cloak - MutateCloak itself, and every draw an ordinary cloak makes,
+        /// is untouched. A proc is only rolled when the cloak has none, by the same table and the same assignments
+        /// MutateCloak uses; the equipment set stays as rolled. The level's wield requirement is not re-stamped: the
+        /// zone sweep has already replaced every inherited requirement with the tier gate.
+        /// Returns false (and changes nothing) for anything that is not a cloak.
+        /// </summary>
+        internal static bool MaxOutRareCloak(WorldObject wo)
+        {
+            if (wo == null || !ACE.Server.Entity.Cloak.IsCloak(wo))
+                return false;
+
+            wo.ItemMaxLevel = CloakTopItemMaxLevel;
+            wo.IconOverlayId = IconOverlay_ItemMaxLevel[CloakTopItemMaxLevel - 1];
+
+            if (wo.ProcSpell == null)
+            {
+                // RollProcSpell answers Undef for the damage-reduction weave (1 in 13); ask again until it names a spell.
+                // Bounded, with a fixed spell behind it, so loot generation can never spin here.
+                var surgeSpell = SpellId.Undef;
+                for (var attempt = 0; attempt < 64 && surgeSpell == SpellId.Undef; attempt++)
+                    surgeSpell = CloakChance.RollProcSpell();
+                if (surgeSpell == SpellId.Undef)
+                    surgeSpell = SpellId.CloakAllSkill;
+
+                wo.ProcSpell = (uint)surgeSpell;
+                wo.ProcSpellSelfTargeted = wo.ProcSpell == (uint)SpellId.CloakAllSkill;   // the only self-targeted one
+                wo.CloakWeaveProc = 1;
+            }
+            return true;
+        }
+
         private static int RollCloak_ItemMaxLevel(TreasureDeath profile)
         {
             //  These Values are just for starting off.  I haven't gotten the numbers yet to confirm these.

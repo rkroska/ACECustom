@@ -381,6 +381,54 @@ namespace ACE.Server.Tests
             Assert.AreEqual(0, ZoneRare.PickExtraLines(new[] { 0.0, 0.0 }, 3, Draws(1)).Count, "nothing can drop = nothing is forced on");
         }
 
+        // -- built-in Reinforced, item spells (owner 2026-10-10) --
+
+        [TestMethod]
+        public void Reinforced_IsBuiltInOnARare_AndUsesNoSlotThere()
+        {
+            Assert.IsTrue(ZoneRare.IsBuiltInOnRare(ZoneModifiers.ReinforcedKey));
+            foreach (var key in new[] { 19, 25, 28, 29, 31, 32, 33, 43, 47, 48, 50, 51, 52, 53, 54 })
+                Assert.IsFalse(ZoneRare.IsBuiltInOnRare(key), $"line {key} is still a drawn line");
+
+            Assert.IsTrue(ZoneRare.ReinforcedUsesASlot(ZoneRareTier.None), "an ordinary piece counts Reinforced, as before");
+            Assert.IsFalse(ZoneRare.ReinforcedUsesASlot(ZoneRareTier.Pristine));
+            Assert.IsFalse(ZoneRare.ReinforcedUsesASlot(ZoneRareTier.Ascendant));
+        }
+
+        [TestMethod]
+        public void Lines_WithReinforcedTakenOut_TheCapIsStillFilledWithOtherLines()
+        {
+            // the live armor pool: seven common lines, Reinforced (weight 0 on a rare) and two chase lines
+            var keys = new[] { 19, 25, 28, 29, 31, 32, 43, 49, 33, 47 };
+            var weights = new[] { 0.2, 0.3, 0.2, 0.2, 0.2, 0.3, 0.2, 0.0, 0.0000228, 0.0000228 };
+            foreach (var cap in new[] { 3, 4, 8 })
+                for (var seed = 0; seed < 100; seed++)
+                {
+                    var picked = ZoneRare.PickExtraLines(weights, cap, Draws(seed)).Select(i => keys[i]).ToList();
+                    Assert.AreEqual(cap, picked.Count, $"cap {cap}: exactly the cap, without Reinforced");
+                    CollectionAssert.DoesNotContain(picked, ZoneModifiers.ReinforcedKey);
+                }
+
+            // T25, cap 8: all seven common lines and one of the two chase lines
+            var top = ZoneRare.PickExtraLines(weights, 8, Draws(7)).Select(i => keys[i]).ToList();
+            foreach (var common in new[] { 19, 25, 28, 29, 31, 32, 43 })
+                CollectionAssert.Contains(top, common);
+            Assert.AreEqual(1, top.Count(k => k == 33 || k == 47));
+        }
+
+        [TestMethod]
+        public void ItemSpells_ARareTakesTheMaximumCountAndLevel_WithoutADraw()
+        {
+            Func<int, int, int> mustNotRoll = (lo, hi) => throw new InvalidOperationException("a rare makes no draw here");
+            Assert.AreEqual(3, ACE.Server.Factories.LootGenerationFactory.ZoneSpellCount(1, 3, true, mustNotRoll));
+            Assert.AreEqual(4, ACE.Server.Factories.LootGenerationFactory.ZoneSpellLevel(2, 4, true, mustNotRoll));
+            Assert.AreEqual(0, ACE.Server.Factories.LootGenerationFactory.ZoneSpellCount(0, 0, true, mustNotRoll), "a tier that gives no spells gives a rare none");
+
+            // an ordinary drop rolls between the two, as before
+            Assert.AreEqual(2, ACE.Server.Factories.LootGenerationFactory.ZoneSpellCount(1, 3, false, (lo, hi) => { Assert.AreEqual(1, lo); Assert.AreEqual(3, hi); return 2; }));
+            Assert.AreEqual(3, ACE.Server.Factories.LootGenerationFactory.ZoneSpellLevel(2, 4, false, (lo, hi) => 3));
+        }
+
         // -- which drops can be a rare --
 
         [TestMethod]

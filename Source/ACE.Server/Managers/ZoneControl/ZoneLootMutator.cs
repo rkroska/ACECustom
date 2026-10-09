@@ -563,8 +563,10 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 // RARE MODE: the chance rolls above are discarded. The core - Rending, Slayer, Armor Rend - is forced
                 // wherever the weapon is eligible; random extras then fill the tier's weapon_modifier_cap from the
-                // cards that can drop at this tier (CouldWinT: toggled on, chance authored and above zero), never
-                // Biting Strike or Crushing Blow. The rules, and why, are on ZoneRare.PickWeaponCards.
+                // cards that can drop at this tier (CouldWinT: toggled on, chance authored and above zero). Biting
+                // Strike and Crushing Blow are never one of those random extras; they go on only as last-resort fillers,
+                // when every other card is taken and the weapon is still under the cap (a caster has nothing else to
+                // fill with). The rules, and why, are on ZoneRare.PickWeaponCards.
                 // Eligibility is the array above - the drop path's own answer. ZoneRare.WeaponCardEligibility is the
                 // same rules as a pure function (what the tests pin); the two are compared here, on rares only, so a
                 // card added to one and not the other is logged the first time it matters instead of drifting.
@@ -922,11 +924,14 @@ namespace ACE.Server.Managers.ZoneControl
                 // than others - no line is guaranteed). The chance rolls above are discarded. A line that could not
                 // drop here (off, unauthored, zero chance) has weight 0 and is never drawn.
                 // With no cap authored there is no "maximum count" to hit, so the ordinary rolls stand (at grade 1000).
+                // Reinforced is not drawn here: a rare armor piece always has it (below), so drawing it would only waste
+                // one of the cap's slots - the cap is filled with OTHER lines.
                 var rareCap = Math.Max(0, (int)Math.Round(p.GetT(ZoneStat.ArmorModifierCap, 0.0, lootTier), MidpointRounding.AwayFromZero));
                 var weights = new double[lineDefs.Count];
                 for (int i = 0; i < lineDefs.Count; i++)
                 {
-                    weights[i] = CouldWinT(p, lineChances[i], lootTier) ? Math.Clamp(p.GetT(lineChances[i], 0.0, lootTier), 0.0, 1.0) : 0.0;
+                    weights[i] = !ZoneRare.IsBuiltInOnRare(lineDefs[i].Key) && CouldWinT(p, lineChances[i], lootTier)
+                        ? Math.Clamp(p.GetT(lineChances[i], 0.0, lootTier), 0.0, 1.0) : 0.0;
                     lineWon[i] = false;
                 }
                 foreach (var i in ZoneRare.PickExtraLines(weights, rareCap, () => ThreadSafeRandom.Next(0.0f, 1.0f)))
@@ -934,6 +939,20 @@ namespace ACE.Server.Managers.ZoneControl
             }
             else
                 ApplyModifierBounds(p, ZoneStat.ArmorModifierMin, ZoneStat.ArmorModifierCap, lootTier, lineWon, lineElig, lineChances);
+
+            // RARE ARMOR AND SHIELDS ALWAYS HAVE TOP BASE PROTECTION (owner 2026-10-10). The audit found two thirds of
+            // Pristine T11 armor without Reinforced, its protections whatever the base roll gave (down to 0.54) - beaten
+            // by any ordinary drop that rolled Reinforced +3. So on a rare, Reinforced is forced wherever the piece type
+            // can carry it at all: it is in lineDefs only when the slot rule allows it here (armor, shields, the
+            // armor-priced cap / glove / shoe - never jewelry, cloaks or shirts / pants). Forced like a core weapon card:
+            // the line's chance and toggle are not asked. It goes through the SAME stamp as a rolled one (StampLine ->
+            // StampGraded -> Stamp at grade 1000 = the band's top rank), so the rank property, the baked text and the
+            // frozen, never-in-the-record handling are exactly a natural Reinforced piece's. It is BUILT IN - outside
+            // the cap, which the draw above already filled without it (GearEssences.LineCount does not count it on a rare).
+            if (isRare)
+                for (int i = 0; i < lineDefs.Count; i++)
+                    if (ZoneRare.IsBuiltInOnRare(lineDefs[i].Key))
+                        lineWon[i] = true;
 
             for (int i = 0; i < lineDefs.Count; i++)
             {

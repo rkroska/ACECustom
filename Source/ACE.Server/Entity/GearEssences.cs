@@ -860,7 +860,9 @@ namespace ACE.Server.Entity
         /// that uses a slot (AllUnits - the locked one included), plus Reinforced (earned and frozen, never in the record).</summary>
         private static int LineCount(WorldObject target)
         {
-            var reinforced = (target.GetProperty((PropertyInt)ZoneModifiers.ReinforcedRank) ?? 0) > 0;
+            // on a RARE, Reinforced is a built-in (always there, outside the cap) and uses no slot - the count stays "cap of cap"
+            var reinforced = (target.GetProperty((PropertyInt)ZoneModifiers.ReinforcedRank) ?? 0) > 0
+                && ZoneRare.ReinforcedUsesASlot(ZoneRare.TierOfRare(target));
             return AllUnits(target).Count + (reinforced ? 1 : 0);
         }
 
