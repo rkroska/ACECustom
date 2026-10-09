@@ -507,6 +507,21 @@ namespace ACE.Server.Managers.ZoneControl
         // -- making the item -----------------------------------------------------------------------------
 
         /// <summary>
+        /// The icon background of each rare tier (owner's pick, 2026-10-09): the same sunburst-around-a-dark-centre shape in two
+        /// colours, so the two read as one family and the gold one as the step above. Both are existing client icons.
+        /// </summary>
+        public const uint PristineIconUnderlay = 0x06006E9A;    // green sunburst
+        public const uint AscendantIconUnderlay = 0x06006E9D;   // gold sunburst
+
+        /// <summary>The icon background for a rare tier; null for none.</summary>
+        internal static uint? IconUnderlayFor(ZoneRareTier tier) => tier switch
+        {
+            ZoneRareTier.Pristine => PristineIconUnderlay,
+            ZoneRareTier.Ascendant => AscendantIconUnderlay,
+            _ => null,
+        };
+
+        /// <summary>
         /// Finishes a piece the sweep made in rare mode: the rolls the mutator does not own, then the identity.
         /// Called by Creature.ApplyZoneDropSweep after the weapon quality stamp and before the description cleanup.
         ///
@@ -545,6 +560,13 @@ namespace ACE.Server.Managers.ZoneControl
                 wo.SetProperty(PropertyString.Name, name);
 
                 wo.Bonded = BondedStatus.Bonded;
+
+                // Its tier's icon background, so a rare reads as one at a glance in a pack, on a corpse and in a trade window
+                // (owner 2026-10-09). On a weapon it replaces the rend's element underlay - this runs after the cards are
+                // stamped, so it wins - and the element still shows through the icon tint and in Property Details. Nothing
+                // re-stamps the underlay afterwards: bags, imbues and the forge all refuse a rare.
+                if (IconUnderlayFor(tier) is uint underlay)
+                    wo.IconUnderlayId = underlay;
                 return true;
             }
             catch (Exception ex)

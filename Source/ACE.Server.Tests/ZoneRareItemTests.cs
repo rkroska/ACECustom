@@ -531,5 +531,14 @@ namespace ACE.Server.Tests
             Assert.AreEqual(1, (int)ZoneRareTier.Pristine);
             Assert.AreEqual(2, (int)ZoneRareTier.Ascendant);
         }
+
+        [TestMethod]
+        public void IconUnderlay_EachTierHasItsOwn()
+        {
+            Assert.AreEqual(ZoneRare.PristineIconUnderlay, ZoneRare.IconUnderlayFor(ZoneRareTier.Pristine));
+            Assert.AreEqual(ZoneRare.AscendantIconUnderlay, ZoneRare.IconUnderlayFor(ZoneRareTier.Ascendant));
+            Assert.IsNull(ZoneRare.IconUnderlayFor(ZoneRareTier.None), "an ordinary item keeps its own background");
+            Assert.AreNotEqual(ZoneRare.IconUnderlayFor(ZoneRareTier.Pristine), ZoneRare.IconUnderlayFor(ZoneRareTier.Ascendant));
+        }
     }
 }
