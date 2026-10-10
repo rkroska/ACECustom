@@ -26,7 +26,7 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void Defaults_BonusAndBelowTierShares()
         {
-            Assert.AreEqual(3, ServerConfig.zc_rare_ascendant_tier_bonus.Default);
+            Assert.AreEqual(1, ServerConfig.zc_rare_ascendant_tier_bonus.Default);
             Assert.AreEqual(0.40, ServerConfig.zc_rare_odds_one_tier_below.Default, 1e-9);
             Assert.AreEqual(0.10, ServerConfig.zc_rare_odds_two_tiers_below.Default, 1e-9);
         }

@@ -94,7 +94,7 @@ namespace ACE.Server.Managers.ZoneControl
 
         /// <summary>
         /// The ITEM tier of an Ascendant drop from a kill at this tier: kill tier + bonus (zc_rare_ascendant_tier_bonus),
-        /// never past the top of the ladder - a T22 kill with bonus 3 gives a T25 item, and so does a T25 kill. This is
+        /// never past the top of the ladder - a T24 kill with bonus 1 gives a T25 item, and so does a T25 kill. This is
         /// the tier the item is generated and resolved at, for good; nothing about its holder enters into it.
         /// A negative bonus never lowers it (bonus 0 = the kill's own tier), and a kill tier outside 11-25 is clamped.
         /// </summary>
