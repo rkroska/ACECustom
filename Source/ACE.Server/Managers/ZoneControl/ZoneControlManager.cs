@@ -1299,6 +1299,26 @@ namespace ACE.Server.Managers.ZoneControl
             return lockOn && ResolveZoneDefaultForPlayer(player) == null;
         }
 
+        /// <summary>DISPLAY ONLY (owner 2026-10-10): the Marketplace and the apartment landblocks (the mule spots,
+        /// LandblockCollections.ConnectionExemptLandblocks). An item panel read there shows a T11+ item's OWN values, not
+        /// the zone-locked ones, so gear can be compared and traded where it is muled. Combat and the wearer's real
+        /// ratings stay locked there - only the appraisal read sites ask this. Nothing while Zone Control is off.</summary>
+        public static bool InLockDisplayExemptSpot(Player player)
+        {
+            if (!ServerConfig.zonecontrol_enabled.Value)
+                return false;
+            var loc = player?.Location;
+            return loc != null && ACE.Server.Entity.LandblockCollections.ConnectionExemptLandblocks.Contains((ushort)loc.LandblockId.Landblock);
+        }
+
+        /// <summary><see cref="WeaponPowerSuppressed"/> for an item panel: false in a display-exempt spot.</summary>
+        public static bool WeaponPowerSuppressedForDisplay(WorldObject weapon, Creature holder)
+            => WeaponPowerSuppressed(weapon, holder) && !InLockDisplayExemptSpot(holder as Player);
+
+        /// <summary><see cref="WornPowerSuppressed"/> for an item panel: false in a display-exempt spot.</summary>
+        public static bool WornPowerSuppressedForDisplay(Creature holder)
+            => WornPowerSuppressed(holder) && !InLockDisplayExemptSpot(holder as Player);
+
         /// <summary>True while ANY power gate can suppress something: Zone Control off, a zone lock on, or a gear lock spot listed.
         /// Config only - a hot path asks this before reading anything off an item.</summary>
         public static bool AnyPowerGate => !ServerConfig.zonecontrol_enabled.Value || ServerConfig.zc_weapon_zone_lock.Value

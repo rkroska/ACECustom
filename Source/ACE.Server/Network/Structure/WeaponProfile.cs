@@ -59,7 +59,7 @@ namespace ACE.Server.Network.Structure
 
             // zone lock (owner 2026-10-07): a locked ZC melee weapon fights at its T10 base (BaseDamageMod) - show that base
             if (weapon is MeleeWeapon && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active
-                && ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, (weapon.Wielder as Player) ?? examiner)
+                && ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressedForDisplay(weapon, (weapon.Wielder as Player) ?? examiner)
                 && ACE.Server.Managers.ZoneControl.ZoneLockFallback.MeleeDamage(weapon) is int lockedBase)
                 Damage = (uint)Math.Max(0, lockedBase + Enchantment_Damage);
 
@@ -75,7 +75,7 @@ namespace ACE.Server.Network.Structure
             // variance to the whole and understates min ~2x.
             // gear / zone lock (owner 2026-10-05: "Show the real value"): no aug term where the holder stands - combat adds none
             int augTerm;
-            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, (weapon.Wielder as Player) ?? examiner))
+            if (ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressedForDisplay(weapon, (weapon.Wielder as Player) ?? examiner))
                 augTerm = 0;
             else if (weapon.Wielder is Player wielderPlayer)
                 augTerm = (int)ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFlatBonus(weapon, wielderPlayer);
@@ -159,7 +159,7 @@ namespace ACE.Server.Network.Structure
             var holder = (weapon.Wielder as Player) ?? examiner;
             // gear / zone lock: show what combat uses there (BaseDamageMod) - the T10 launcher mod while the zone lock holds,
             // the authored DamageMod with the master switch off
-            var profileLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, holder);
+            var profileLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressedForDisplay(weapon, holder);
             double baseMultiplier;
             if (profileLocked && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active
                 && ACE.Server.Managers.ZoneControl.ZoneLockFallback.LauncherDamageMod(weapon) is float lockedMod)
@@ -184,7 +184,7 @@ namespace ACE.Server.Network.Structure
         {
             if (weapon is Ammunition) return 1.0f;
 
-            var baseOffense = (double)ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, pctHolder, PropertyFloat.WeaponOffense, (float)(weapon.GetProperty(PropertyFloat.WeaponOffense) ?? 1.0f));   // zone lock: T10 %
+            var baseOffense = (double)ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, pctHolder, PropertyFloat.WeaponOffense, (float)(weapon.GetProperty(PropertyFloat.WeaponOffense) ?? 1.0f), display: true);   // zone lock: T10 %
             var offenseMod = !weapon.IsRanged ? weapon.EnchantmentManager.GetAttackMod(): 0.0f;
             var auraOffenseMod = weapon.Wielder != null && !weapon.IsRanged ? weapon.Wielder.EnchantmentManager.GetAttackMod() : 0.0f;
             Enchantment_WeaponOffense = weapon.IsEnchantable ? offenseMod + auraOffenseMod : offenseMod;
@@ -207,7 +207,7 @@ namespace ACE.Server.Network.Structure
             if (weapon.WeaponDefense.HasValue && weapon.WeaponDefense.Value > 0 && weapon.WeaponDefense.Value < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 4) != 0)
                 baseDefense += 1;
 
-            baseDefense = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, pctHolder, PropertyFloat.WeaponDefense, (float)baseDefense);   // zone lock: T10 %
+            baseDefense = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, pctHolder, PropertyFloat.WeaponDefense, (float)baseDefense, display: true);   // zone lock: T10 %
 
             var defenseMod = weapon.EnchantmentManager.GetDefenseMod();
             var auraDefenseMod = weapon.Wielder != null ? weapon.Wielder.EnchantmentManager.GetDefenseMod() : 0.0f;

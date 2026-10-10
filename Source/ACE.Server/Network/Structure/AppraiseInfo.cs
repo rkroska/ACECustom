@@ -275,7 +275,7 @@ namespace ACE.Server.Network.Structure
             // stamped (GetFlatBonus returns 0 otherwise). While WIELDED the green damage line
             // already includes the term (WeaponProfile), so the projection is for the unwielded case.
             // (gear / zone lock: no bonus damage where the examiner stands - the line is left out, like the flat term in combat)
-            if (examiner != null && wo.Wielder == null && !ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(wo, examiner))
+            if (examiner != null && wo.Wielder == null && !ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressedForDisplay(wo, examiner))
             {
                 var projected = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFlatBonus(wo, examiner);
                 var floor = ACE.Server.Managers.WeaponScaling.WeaponScalingCombat.GetFloorBonus(wo);
@@ -775,7 +775,7 @@ namespace ACE.Server.Network.Structure
                 var pctHolder = (wo.Wielder as Player) ?? examiner;
                 foreach (var pctProp in new[] { PropertyFloat.WeaponOffense, PropertyFloat.WeaponDefense, PropertyFloat.WeaponMissileDefense, PropertyFloat.WeaponMagicDefense, PropertyFloat.ManaConversionMod })
                     if (PropertiesFloat.TryGetValue(pctProp, out var pctOwn))
-                        PropertiesFloat[pctProp] = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(wo, pctHolder, pctProp, (float)pctOwn);
+                        PropertiesFloat[pctProp] = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(wo, pctHolder, pctProp, (float)pctOwn, display: true);
             }
 
             if (PropertiesFloat.ContainsKey(PropertyFloat.WeaponDefense) && !(wo is Ammunition))
@@ -821,7 +821,7 @@ namespace ACE.Server.Network.Structure
 
                 // gear / zone lock: show what combat uses there (WorldObject_Weapon caster gate) - the T10 caster mod + Spirit Thirst
                 // while the zone lock holds (2026-10-07), the stock mod with the master switch off
-                var casterLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(wo, casterHolder);
+                var casterLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressedForDisplay(wo, casterHolder);
                 if (casterLocked && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
                     PropertiesFloat[PropertyFloat.ElementalDamageMod] = ACE.Server.Managers.ZoneControl.ZoneLockFallback.CasterElementalMod + enchantmentBonus + ACE.Server.Managers.ZoneControl.ZoneLockFallback.ThirstTopUp(wo);
                 else if (!casterLocked
@@ -1061,7 +1061,7 @@ namespace ACE.Server.Network.Structure
             // judged for the WEARER of worn gear (combat does), else the examiner - the same holder the weapon panel uses
             var wornHolder = (wo?.Wielder as Player) ?? examiner;
             var wornLocked = wo != null && wornHolder != null && ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(wo)
-                && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(wornHolder);
+                && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressedForDisplay(wornHolder);
 
             if (resolved != null)
             {
@@ -1324,7 +1324,7 @@ namespace ACE.Server.Network.Structure
             // power is suppressed, every card line below shows what it does there (the combat fallbacks in
             // WorldObject_Weapon / DamageEvent), not the stamped value. Judged for the same holder the damage profile uses: the
             // wielder of a worn weapon, else the examiner.
-            var zcLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, (weapon.Wielder as Player) ?? examiner);
+            var zcLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressedForDisplay(weapon, (weapon.Wielder as Player) ?? examiner);
             // locked WITH Zone Control on = the zone lock's T10 fallback (owner 2026-10-07, ZoneLockFallback); locked with the
             // master switch OFF = inert, as before
             var zcT10 = zcLocked && ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active;
@@ -1488,7 +1488,7 @@ namespace ACE.Server.Network.Structure
             var wepMeleeDef = (float)(weapon.WeaponDefense ?? 1.0f);
             if (weapon.WeaponDefense > 0 && weapon.WeaponDefense < 1 && ((weapon.GetProperty(PropertyInt.ImbueStackingBits) ?? 0) & 4) != 0)
                 wepMeleeDef += 1;
-            wepMeleeDef = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, (weapon.Wielder as Player) ?? examiner, PropertyFloat.WeaponDefense, wepMeleeDef);   // zone lock: T10 %
+            wepMeleeDef = ACE.Server.Managers.ZoneControl.ZoneLockFallback.WeaponPercent(weapon, (weapon.Wielder as Player) ?? examiner, PropertyFloat.WeaponDefense, wepMeleeDef, display: true);   // zone lock: T10 %
 
             var meleeMod = wepMeleeDef + weapon.EnchantmentManager.GetDefenseMod();
             if (weapon.IsEnchantable)

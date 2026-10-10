@@ -37,29 +37,37 @@ namespace ACE.Server.Managers.ZoneControl
         /// and a multi-slot piece counts once, so a kit of multi-slot armor lands a little under the full totals.</summary>
         public const int FullKitPieces = 18;
 
-        /// <summary>Real T10 worn totals of NORMAL players - the average of Grumpy Old Man / Good Grief (owner 2026-10-07: Drexel and
-        /// Nerd Parade "have a ton of paragon items and enchants. Thats not normal"): GearDamage 128/104, DR 33/39, Crit 23/21,
-        /// CritResist 4/0, CritDamage 121/110, CDR 25/17, HealBoost 195/50, Nether 102/90, MaxHealth 1,045/385. Aetheria
-        /// EXCLUDED (owner 2026-10-07): they are not Zone Control gear, so a locked player's aetheria keep counting on their
-        /// own - every real aetheria carries +4 Crit, which put GOM / GG at 23 / 21 and would have counted twice (11 / 9 without).</summary>
-        private static readonly Dictionary<PropertyInt, int> WornTotals = new()
+        /// <summary>The T10 worn total one rating is worth across a full kit while locked. LIVE properties since 2026-10-10
+        /// (zc_lock_t10_*, @modifylong): the defaults are MAX T10 gear - the worn totals of the best all-T10 character on the
+        /// shard (Drexel, prod copy 2026-10-07, aetheria excluded; Damage 211 / DR 92 / CDR 73 are also ZoneFallback's
+        /// anchors). Before that this was a fixed table of two NORMAL players' average (GearDamage 116, DR 36, Crit 10,
+        /// CritResist 2, CritDamage 116, CDR 21, HealBoost 123, Nether 96, MaxHealth 715), which left a locked T11 kit below
+        /// most T10 suits. Aetheria are not Zone Control gear, so a locked player's aetheria keep counting on their own.</summary>
+        private const long MaxWornTotal = 100_000;   // far above any worn cap (2500) and any real max health
+
+        private static long WornTotal(PropertyInt rating) => rating switch
         {
-            { PropertyInt.GearDamage, 116 },
-            { PropertyInt.GearDamageResist, 36 },
-            { PropertyInt.GearCrit, 10 },
-            { PropertyInt.GearCritResist, 2 },
-            { PropertyInt.GearCritDamage, 116 },
-            { PropertyInt.GearCritDamageResist, 21 },
-            { PropertyInt.GearHealingBoost, 123 },
-            { PropertyInt.GearNetherResist, 96 },
-            { PropertyInt.GearMaxHealth, 715 },
+            PropertyInt.GearDamage => ServerConfig.zc_lock_t10_damage.Value,
+            PropertyInt.GearDamageResist => ServerConfig.zc_lock_t10_damage_resist.Value,
+            PropertyInt.GearCrit => ServerConfig.zc_lock_t10_crit.Value,
+            PropertyInt.GearCritResist => ServerConfig.zc_lock_t10_crit_resist.Value,
+            PropertyInt.GearCritDamage => ServerConfig.zc_lock_t10_crit_damage.Value,
+            PropertyInt.GearCritDamageResist => ServerConfig.zc_lock_t10_crit_damage_resist.Value,
+            PropertyInt.GearHealingBoost => ServerConfig.zc_lock_t10_healing_boost.Value,
+            PropertyInt.GearNetherResist => ServerConfig.zc_lock_t10_nether_resist.Value,
+            PropertyInt.GearMaxHealth => ServerConfig.zc_lock_t10_max_health.Value,
+            _ => 0,
         };
 
-        /// <summary>What the worn ZC pieces are worth for one rating while locked: the real T10 total, scaled by how much of a
+        /// <summary>What the worn ZC pieces are worth for one rating while locked: the T10 total, scaled by how much of a
         /// full kit is Zone Control gear (a half-T10 / half-T11 player keeps the T10 half's own ratings and gets half of this).</summary>
         public static int WornRating(PropertyInt rating, int zcPieces)
         {
-            if (zcPieces <= 0 || !WornTotals.TryGetValue(rating, out var total))
+            if (zcPieces <= 0)
+                return 0;
+            // a live property: a mistyped @modifylong must not overflow the int rating sum
+            var total = Math.Min(WornTotal(rating), MaxWornTotal);
+            if (total <= 0)
                 return 0;
             return (int)Math.Round(total * Math.Min(1.0, zcPieces / (double)FullKitPieces));
         }
@@ -173,11 +181,12 @@ namespace ACE.Server.Managers.ZoneControl
         };
 
         /// <summary>The base value of one weapon % stat: the T10 value while the zone lock holds this ZC weapon, else
-        /// <paramref name="own"/> unchanged.</summary>
-        public static float WeaponPercent(WorldObject weapon, Creature wielder, PropertyFloat prop, float own)
+        /// <paramref name="own"/> unchanged. <paramref name="display"/> = an item panel is asking, so the Marketplace /
+        /// apartment display exemption applies (ZoneControlManager.InLockDisplayExemptSpot); combat never passes it.</summary>
+        public static float WeaponPercent(WorldObject weapon, Creature wielder, PropertyFloat prop, float own, bool display = false)
         {
             if (weapon == null || !Active || !WeaponPercents.TryGetValue(prop, out var t10)
-                || !ZoneControlManager.WeaponPowerSuppressed(weapon, wielder))
+                || !(display ? ZoneControlManager.WeaponPowerSuppressedForDisplay(weapon, wielder) : ZoneControlManager.WeaponPowerSuppressed(weapon, wielder)))
                 return own;
             return weapon is Caster ? t10.Caster : weapon is MissileLauncher ? t10.Launcher : t10.Melee;
         }
