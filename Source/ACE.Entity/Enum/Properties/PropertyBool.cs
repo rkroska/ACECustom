@@ -402,6 +402,13 @@ namespace ACE.Entity.Enum.Properties
         /// zone / tier / rank / wcid. Server-only. 50058 is taken on test/integration (IsTestFiller).</summary>
         ZcImmuneShrapnelAgony = 50059,
 
+        /// <summary>
+        /// Set on a generator: every creature it spawns gets NoCorpse, so it leaves no corpse when it dies (server/custom).
+        /// Nested generators inherit it and pass it down to their own spawns. Loot follows the normal NoCorpse rule and
+        /// drops on the ground where the creature died.
+        /// </summary>
+        GeneratorNoCorpse = 50060,
+
         // Blacksmithing properties live at 52000+ in every property type (renumbered 2026-10-05: the first numbers,
         // taken next to the newest ones in use, collided with properties added on master the same week).
         /// <summary>Blacksmithing: on an NPC, makes it a forge smith. A weapon handed to it is never taken; the smith notes

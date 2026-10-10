@@ -532,6 +532,12 @@ namespace ACE.Server.Entity
             if (IsTainted(target))
                 return $"Your {target.Name} is Tainted. Bags no longer work on it.";
 
+            // T11+ RARES (owner 2026-10-08): a rare takes no bag of any kind - every roll on it is already at the
+            // maximum, and a bag could only break that. Here, before the kind is even read, so all twelve are covered
+            // (Edge returns early just below), and before the popup, so nothing is consumed.
+            if (ZoneRare.IsRare(target))
+                return ZoneRare.BagRefusalText(target.Name, ZoneRare.TierOfRare(target));
+
             var kind = KindOf(essence.WeenieClassId);
 
             if (kind == EssenceKind.Edge)
@@ -854,7 +860,9 @@ namespace ACE.Server.Entity
         /// that uses a slot (AllUnits - the locked one included), plus Reinforced (earned and frozen, never in the record).</summary>
         private static int LineCount(WorldObject target)
         {
-            var reinforced = (target.GetProperty((PropertyInt)ZoneModifiers.ReinforcedRank) ?? 0) > 0;
+            // on a RARE, Reinforced is a built-in (always there, outside the cap) and uses no slot - the count stays "cap of cap"
+            var reinforced = (target.GetProperty((PropertyInt)ZoneModifiers.ReinforcedRank) ?? 0) > 0
+                && ZoneRare.ReinforcedUsesASlot(ZoneRare.TierOfRare(target));
             return AllUnits(target).Count + (reinforced ? 1 : 0);
         }
 

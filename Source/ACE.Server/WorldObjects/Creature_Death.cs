@@ -1219,6 +1219,40 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
+                // T11+ RARES (owner 2026-10-08): ONE roll per KILL beside the slot special, under the same gate - zone
+                // loot, Zone Control on, tier 11+. On a hit ONE item of this kill's own loot is picked (uniformly, among
+                // the zone gear the kill actually generated - nothing is spawned for it) and the sweep below makes it in
+                // rare mode. Decided HERE, before the sweep, so the piece is produced as a rare in one pass.
+                // zc_rare_pristine_odds = 1 in N kills (0 = off, how it ships), scaled down when the killer farms below
+                // their own tier - all of it in ZoneRare.TryRollDrop. Independent of the slot special: a piece can be both.
+                ACE.Server.Managers.ZoneControl.ZoneRare.Drop rareDrop = null;
+                if (zoneLoot != null && ServerConfig.zonecontrol_enabled.Value
+                    && effectiveTreasure.Tier >= LootGenerationFactory.ZoneLootSetMinTier)
+                {
+                    // a rare roll never aborts the corpse or changes the kill's ordinary loot: a miss, or a throw, leaves rareDrop null
+                    try { rareDrop = ACE.Server.Managers.ZoneControl.ZoneRare.TryRollDrop(killer, this, effectiveTreasure.Tier, items, effectiveTreasure, zoneLoot); }
+                    catch (Exception ex) { rareDrop = null; log.Error($"[ZONELOOT] RARE: roll failed for {Name} ({WeenieClassId}): {ex}"); }
+
+                    // ASCENDANT replaces the piece it picked with one of the same kind made at a higher tier (ZoneRareItems.cs
+                    // header). If that piece was also this kill's slot-special piece, the special moves to the replacement
+                    // when it sits in the special's slot. It usually does, but not always: the replacement is asked for by the
+                    // FIRST slot the old piece covered, so a coat that carried a Girth special can come back as a breastplate.
+                    // Then the special goes to another piece this kill generated for that slot, and only when there is none
+                    // is it given up, with a warning. Only ever entered on a kill whose Ascendant replaced a piece.
+                    if (rareDrop?.Replaced != null && specialDef != null && ReferenceEquals(specialPiece, rareDrop.Replaced))
+                    {
+                        var specialSlot = ACE.Server.Managers.ZoneControl.ZoneModifiers.EffectiveSpecialSlot(specialDef, zoneLoot.ModifierSlots);
+                        specialPiece = ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialPieceMatches(rareDrop.Piece, specialSlot)
+                            ? rareDrop.Piece
+                            : items.FirstOrDefault(i => ACE.Server.Managers.ZoneControl.ZoneModifiers.SpecialPieceMatches(i, specialSlot));
+                        if (specialPiece == null)
+                        {
+                            log.Warn($"[ZONELOOT] SLOT SPECIAL {specialDef.Name} was on the piece an Ascendant rare replaced; the replacement {rareDrop.Piece.Name} does not sit in {specialSlot} and no other piece of this kill does - the special is not stamped.");
+                            specialDef = null;
+                        }
+                    }
+                }
+
                 // Corpse display order (owner 2026-07-20): casters, missiles, UA, sword, other
                 // melee, then armor/shields/jewelry/cloaks. The client's loot window shows items
                 // in REVERSE insertion order, so insert in exact reverse of the desired display
@@ -1232,76 +1266,39 @@ namespace ACE.Server.WorldObjects
                     if (tier > 0)
                         PrestigeManager.ApplyLootScaling(wo, tier);
 
-                    // T11+ deterministic per-slot gear budget (fixed base; cantrips carry the
-                    // variance). BEFORE MutateLootItem so the cantrip
-                    // stamps layer ON TOP of it rather than being clobbered.
                     var isSpecial = specialPiece != null && ReferenceEquals(wo, specialPiece);
-                    if (effectiveTreasure.Tier >= LootGenerationFactory.ZoneLootSetMinTier)
-                    {
-                        LootGenerationFactory.ApplyZoneGearStats(wo, effectiveTreasure.Tier, p: zoneLoot);
-                        // item spells (owner 2026-10-05): random cantrips from the slot's list, count + level per zone
-                        LootGenerationFactory.ApplyZoneSpells(wo, effectiveTreasure.Tier, zoneLoot);
-                    }
+                    // T11+ RARES: the kill's one rare piece (if any) goes through the same sweep in rare mode
+                    var isRare = rareDrop != null && ReferenceEquals(wo, rareDrop.Piece);
+                    // the per-item zone sweep (gear budget, mutations, slot special, wield gates, cleanup) - one shared
+                    // method since 2026-10-08, see ApplyZoneDropSweep
+                    // An ordinary piece, and a Pristine one, are swept at the kill's tier from the kill's zone profile - as always.
+                    // An ASCENDANT piece is swept at ITS tier (kill tier + bonus) from that tier's Default profile, and remembers
+                    // the kill tier only as its wield gate.
+                    if (!isRare)
+                        ApplyZoneDropSweep(wo, zoneLoot, this, effectiveTreasure.Tier, isSpecial, specialDef, dropFloor);
+                    else
+                        ApplyZoneDropSweep(wo, rareDrop.Profile ?? zoneLoot, this, rareDrop.ItemTier, isSpecial, specialDef, dropFloor,
+                            rareDrop.Tier, null, rareDrop.GateTier);
 
-                    // Zone Control loot: post-roll per-item mutations (weapon stats, AL, workmanship, coins,
-                    // value, and the low-chance special-property rolls)
-                    ACE.Server.Managers.ZoneControl.ZoneLootMutator.MutateLootItem(wo, zoneLoot, this, effectiveTreasure.Tier, forceMax: isSpecial);
-
-                    // the slot special itself (Armor v2): rolled in ITS band (zone override wins), stamped
-                    // after the lines so it reads last among the "Zone Cantrip:" lines
-                    if (isSpecial && specialDef != null)
-                    {
-                        var (sMin, sMax) = zoneLoot.ModifierBands.TryGetValue(specialDef.Key, out var sBand)
-                            ? (sBand.Min, sBand.Max) : ACE.Server.Managers.ZoneControl.ZoneModifiers.CatalogBandAt(specialDef, effectiveTreasure.Tier);
-                        if (sMin > sMax) (sMin, sMax) = (sMax, sMin);
-                        // specials join the grade model (owner 2026-08-22): graded roll, recorded in ZcModifiers
-                        var sGrade = ACE.Server.Managers.ZoneControl.ZoneStatResolver.RollGrade(effectiveTreasure.Tier, false, dropFloor);
-                        ACE.Server.Managers.ZoneControl.ZoneModifiers.StampGraded(wo, specialDef, sGrade, (sMin, sMax));
-                    }
-
-                    // Tier 11+ presentation sweep. Runs LAST so it also covers values that came
-                    // from the base weenie or any mutation above.
-                    if (effectiveTreasure.Tier >= LootGenerationFactory.ZoneLootSetMinTier)
-                    {
-                        // ALL inherited wield reqs removed, replaced by the per-tier item-aug gate
-                        LootGenerationFactory.StripWieldRequirements(wo);
-                        LootGenerationFactory.ApplyZoneWieldRequirement(wo, effectiveTreasure.Tier);
-
-                        // Weapon aug-scaling identity: quality roll + tier (weapons/casters only)
-                        LootGenerationFactory.ApplyWeaponAugScaleStamp(wo, effectiveTreasure.Tier, zoneLoot);
-
-                        // one uniform resist value across all eight elements. Pass the tier AND the
-                        // zone profile: without the profile the armor_prot_equalize switch resolves
-                        // from the tier Default only, so a ZONE-level override would be silently
-                        // ignored on this path while working everywhere else.
-                        LootGenerationFactory.EqualizeZoneArmorResists(wo, effectiveTreasure.Tier, zoneLoot);
-
-                        // description cleanup LAST: drop inherited weenie flavor text, keep our
-                        // lines in order, provenance ("Dropped by") to the very bottom
-                        LootGenerationFactory.FinalizeZoneLongDesc(wo);
-
-                        // Live stat resolution self-check: the record must resolve to exactly what
-                        // was stamped (grades are the truth, props the cache). Cheap, once per piece.
-                        VerifyLiveStatCache(wo);
-
-                        // NOTE (owner 2026-07-21): the server-composed info block / full panel
-                        // takeover was REVERTED -- the client renders its stock examine panel.
-                        // A future pass will APPEND extra lines to the bottom (LongDesc renders
-                        // last) without touching the default layout.
-
-                        // the drop KEEPS its rolled material, so it can be salvaged (owner 2026-10-05: salvaging is back on
-                        // T11+; ApplyZoneMaterialClear removed). Gear that dropped before keeps no material - by ruling, not repaired.
-
-                        // name tinted by damage element (trial 2026-07-20, may revert)
-                        LootGenerationFactory.ApplyZoneElementTint(wo);
-                    }
-
+                    // the result was always discarded here; it is read now ONLY to know whether the rare made it
+                    var onCorpse = true;
                     if (corpse != null)
-                        corpse.TryAddToInventory(wo);
+                        onCorpse = corpse.TryAddToInventory(wo);
                     else
                         droppedItems.Add(wo);
+                    if (isRare)
+                        rareDrop.Placed = onCorpse;
 
                     DoModifierLogging(killer, wo);
+                }
+
+                // T11+ RARES: announce + audit once the piece is safely on the corpse / in the dropped list. A rare the
+                // corpse refused (full) is never silently lost - FinishDrop hands it to the finder or drops it on the
+                // ground, and logs it. Like the roll, this never aborts the corpse.
+                if (rareDrop != null)
+                {
+                    try { ACE.Server.Managers.ZoneControl.ZoneRare.FinishDrop(rareDrop, this); }
+                    catch (Exception ex) { log.Error($"[ZONELOOT] RARE: finish failed for {rareDrop.Piece?.Name} from {Name} ({WeenieClassId}): {ex}"); }
                 }
 
                 // Gear Essences (owner 2026-10-02): ONE roll per KILL, zone drops only - the same gate as the
@@ -1453,6 +1450,43 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// A kill's own treasure profile (its quality mod and all) re-tiered, retail roll groups zeroed - what an Ascendant
+        /// rare's piece is generated from, so it is this monster's drop of the higher tier (2026-10-09). No profile in
+        /// hand = the zone fallback below. A fresh object every call: the kill's profile is never touched.
+        /// </summary>
+        internal static ACE.Database.Models.World.TreasureDeath ZoneTreasureAt(ACE.Database.Models.World.TreasureDeath killTreasure, int tier)
+        {
+            if (killTreasure == null)
+                return ZoneFallbackTreasureAt(tier);
+            var treasure = CloneTreasureDeath(killTreasure);
+            treasure.Tier = tier;
+            treasure.ItemChance = 0;
+            treasure.MagicItemChance = 0;
+            treasure.MundaneItemChance = 0;
+            return treasure;
+        }
+
+        /// <summary>
+        /// The treasure profile a T11+ zone kill generates its set from when the monster has no table of its own - the
+        /// zone fallback profile at the asked tier, retail roll groups zeroed, exactly as GenerateTreasure builds it for
+        /// the zone loot floor. For callers that make zone loot with no monster behind it (the `/zcrare` dev mint), so
+        /// they hand CreateZoneLootSet the same shape of profile a real kill does. A fresh object every call: the
+        /// cached row is never touched.
+        /// </summary>
+        internal static ACE.Database.Models.World.TreasureDeath ZoneFallbackTreasureAt(int tier)
+        {
+            var row = DatabaseManager.World.GetCachedDeathTreasure(LootGenerationFactory.ZoneLootFallbackProfile);
+            var treasure = row != null
+                ? CloneTreasureDeath(row)
+                : new ACE.Database.Models.World.TreasureDeath { TreasureType = LootGenerationFactory.ZoneLootFallbackProfile };
+            treasure.Tier = tier;
+            treasure.ItemChance = 0;
+            treasure.MagicItemChance = 0;
+            treasure.MundaneItemChance = 0;
+            return treasure;
+        }
+
+        /// <summary>
         /// Zone Scaler: injects bonus currency onto the corpse/drop list. Two independent sources, both
         /// loot-table independent: the legacy single-token bonus_currency stat (server-wide token wcid from
         /// zonescale_bonus_currency_wcid) and the zone's per-entry currency drop table (each entry = its own
@@ -1560,6 +1594,107 @@ namespace ACE.Server.WorldObjects
             if (slag == null) return;
 
             corpse.TryAddToInventory(slag);
+        }
+
+        /// <summary>
+        /// THE PER-ITEM ZONE SWEEP - everything a generated drop goes through between item creation and the corpse:
+        /// the T11+ gear budget and item spells, the Zone Control mutations (cards, lines), the slot special, the wield
+        /// gates, the weapon quality stamp, the resist equalize, the description cleanup, the live-stat self-check and
+        /// the element tint.
+        ///
+        /// Moved out of GenerateTreasure's loop UNCHANGED on 2026-10-08 (T11+ rares) so that the `/zcrare` dev mint runs
+        /// the very same code a kill does and the two cannot drift. Static, and it touches nothing but the item, so it
+        /// is as thread-safe as the loop body it came from. For an ordinary drop - <paramref name="rare"/> None, which
+        /// is every caller but the kill's one rare piece and the mint - it does exactly what that loop body did.
+        ///
+        /// <paramref name="killed"/> is the dying monster (provenance + the Slayer type); null for the mint, which
+        /// passes <paramref name="rareSlayerType"/> instead. <paramref name="lootTier"/> is the tier the piece is made at:
+        /// the effective treasure tier, except for an Ascendant rare, whose tier is above the kill's - the caller then also
+        /// passes that tier's profile as <paramref name="zoneLoot"/> and the kill tier as <paramref name="rareGateTier"/>.
+        /// </summary>
+        internal static void ApplyZoneDropSweep(WorldObject wo, ACE.Server.Managers.ZoneScaling.EvaluatedProfile zoneLoot, Creature killed, int lootTier,
+            bool isSpecial, ACE.Server.Managers.ZoneControl.ZoneModifiers.Def specialDef, double dropFloor,
+            ACE.Server.Managers.ZoneControl.ZoneRareTier rare = ACE.Server.Managers.ZoneControl.ZoneRareTier.None, CreatureType? rareSlayerType = null,
+            int rareGateTier = 0)
+        {
+            // T11+ RARES, Ascendant (owner 2026-10-09): the tier it dropped in goes on the piece FIRST, so the wield gates
+            // stamped further down are that tier's from the very first stamp. Does nothing for any other piece.
+            if (rare != ACE.Server.Managers.ZoneControl.ZoneRareTier.None)
+                ACE.Server.Managers.ZoneControl.ZoneRare.StampGateTier(wo, rare, rareGateTier);
+
+            // T11+ deterministic per-slot gear budget (fixed base; cantrips carry the
+            // variance). BEFORE MutateLootItem so the cantrip
+            // stamps layer ON TOP of it rather than being clobbered.
+            if (lootTier >= LootGenerationFactory.ZoneLootSetMinTier)
+            {
+                LootGenerationFactory.ApplyZoneGearStats(wo, lootTier, p: zoneLoot);
+                // item spells (owner 2026-10-05): random cantrips from the slot's list, count + level per zone
+                // a rare takes the tier's maximum count at the maximum level (owner 2026-10-10); false for every ordinary drop
+                LootGenerationFactory.ApplyZoneSpells(wo, lootTier, zoneLoot, max: rare != ACE.Server.Managers.ZoneControl.ZoneRareTier.None);
+            }
+
+            // Zone Control loot: post-roll per-item mutations (weapon stats, AL, workmanship, coins,
+            // value, and the low-chance special-property rolls)
+            ACE.Server.Managers.ZoneControl.ZoneLootMutator.MutateLootItem(wo, zoneLoot, killed, lootTier, forceMax: isSpecial, rare: rare, rareSlayerType: rareSlayerType);
+
+            // the slot special itself (Armor v2): rolled in ITS band (zone override wins), stamped
+            // after the lines so it reads last among the "Zone Cantrip:" lines
+            if (isSpecial && specialDef != null)
+            {
+                var (sMin, sMax) = zoneLoot.ModifierBands.TryGetValue(specialDef.Key, out var sBand)
+                    ? (sBand.Min, sBand.Max) : ACE.Server.Managers.ZoneControl.ZoneModifiers.CatalogBandAt(specialDef, lootTier);
+                if (sMin > sMax) (sMin, sMax) = (sMax, sMin);
+                // specials join the grade model (owner 2026-08-22): graded roll, recorded in ZcModifiers.
+                // On a RARE piece the special is at grade max like every other roll on it ("every roll at maximum"):
+                // forceMax returns before any draw, so the kill's grade floor is not read for it either. An ordinary
+                // special piece passes false and rolls exactly as it always has. The band above comes from zoneLoot,
+                // which for an Ascendant piece is already the item tier's profile, at lootTier = the item tier.
+                var sGrade = ACE.Server.Managers.ZoneControl.ZoneStatResolver.RollGrade(lootTier, rare != ACE.Server.Managers.ZoneControl.ZoneRareTier.None, dropFloor);
+                ACE.Server.Managers.ZoneControl.ZoneModifiers.StampGraded(wo, specialDef, sGrade, (sMin, sMax));
+            }
+
+            // Tier 11+ presentation sweep. Runs LAST so it also covers values that came
+            // from the base weenie or any mutation above.
+            if (lootTier >= LootGenerationFactory.ZoneLootSetMinTier)
+            {
+                // ALL inherited wield reqs removed, replaced by the per-tier item-aug gate
+                LootGenerationFactory.StripWieldRequirements(wo);
+                LootGenerationFactory.ApplyZoneWieldRequirement(wo, lootTier);
+
+                // Weapon aug-scaling identity: quality roll + tier (weapons/casters only)
+                LootGenerationFactory.ApplyWeaponAugScaleStamp(wo, lootTier, zoneLoot);
+
+                // T11+ RARES (owner 2026-10-08): the kill's rare is finished here - Weapon Grade S, the weapon's own
+                // rating line at band top, then the flag, the name prefix and Bonded. After the quality stamp above
+                // (which it overrides) and before the description cleanup. Never throws; None on every ordinary drop.
+                if (rare != ACE.Server.Managers.ZoneControl.ZoneRareTier.None)
+                    ACE.Server.Managers.ZoneControl.ZoneRare.StampRare(wo, rare, lootTier);
+
+                // one uniform resist value across all eight elements. Pass the tier AND the
+                // zone profile: without the profile the armor_prot_equalize switch resolves
+                // from the tier Default only, so a ZONE-level override would be silently
+                // ignored on this path while working everywhere else.
+                LootGenerationFactory.EqualizeZoneArmorResists(wo, lootTier, zoneLoot);
+
+                // description cleanup LAST: drop inherited weenie flavor text, keep our
+                // lines in order, provenance ("Dropped by") to the very bottom
+                LootGenerationFactory.FinalizeZoneLongDesc(wo);
+
+                // Live stat resolution self-check: the record must resolve to exactly what
+                // was stamped (grades are the truth, props the cache). Cheap, once per piece.
+                VerifyLiveStatCache(wo);
+
+                // NOTE (owner 2026-07-21): the server-composed info block / full panel
+                // takeover was REVERTED -- the client renders its stock examine panel.
+                // A future pass will APPEND extra lines to the bottom (LongDesc renders
+                // last) without touching the default layout.
+
+                // the drop KEEPS its rolled material, so it can be salvaged (owner 2026-10-05: salvaging is back on
+                // T11+; ApplyZoneMaterialClear removed). Gear that dropped before keeps no material - by ruling, not repaired.
+
+                // name tinted by damage element (trial 2026-07-20, may revert)
+                LootGenerationFactory.ApplyZoneElementTint(wo);
+            }
         }
 
         /// <summary>

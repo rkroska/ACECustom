@@ -1012,7 +1012,11 @@ namespace ACE.Server.Network.Structure
             // gone - tailoring a look onto a piece replaces its LongDesc (2026-10-05: "T11 stats go poof", the stats were
             // still on the piece, only this block was missing)
             var fromRecord = resolved != null && resolved.Lines.Count > 0 && !GearEssences.IsWeapon(wo);
-            if (!worked && !fromRecord && ld.IndexOf(LegacyModifierMarker, StringComparison.Ordinal) < 0)
+            // T11+ RARES (owner 2026-10-08): a rare armour / jewelry / clothing piece says so at the top of this block,
+            // built live from its flag (weapons say it in Property Details, BuildWeapon - never twice). A rare always
+            // shows the block, even in the odd case that it carries no line at all.
+            var rareLine = GearEssences.IsWeapon(wo) ? null : ACE.Server.Managers.ZoneControl.ZoneRare.AppraisalLine(wo);
+            if (!worked && !fromRecord && rareLine == null && ld.IndexOf(LegacyModifierMarker, StringComparison.Ordinal) < 0)
                 return;
 
             var cantrips = new List<string>();
@@ -1076,13 +1080,17 @@ namespace ACE.Server.Network.Structure
                 var rank = wo?.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.ReinforcedRank) ?? 0;
                 if (reinforced.Count == 0 && rank > 0 && ACE.Server.Managers.ZoneControl.ZoneModifiers.TryGet(ACE.Server.Managers.ZoneControl.ZoneModifiers.ReinforcedKey, out var reinforcedDef))
                     reinforced.Add($"- {reinforcedDef.Name} +{rank} [{reinforcedDef.Min}-{reinforcedDef.Max}]");
+                // on a rare, Reinforced is guaranteed and outside the Properties count - marked like every other line that uses no slot
+                if (rareLine != null)
+                    for (var i = 0; i < reinforced.Count; i++)
+                        reinforced[i] += GearEssences.BuiltInMarker;
                 cantrips.AddRange(reinforced);
             }
 
             if (showTainted)
                 cantrips.Add(GearEssences.TaintedAppraisalLine);
 
-            if (cantrips.Count == 0 && !worked)
+            if (cantrips.Count == 0 && !worked && rareLine == null)
                 return;
 
             // "Properties: 3 of 5" heads the block (owner 2026-10-04): the slot count the drop limit and the bags use. Not on
@@ -1099,6 +1107,8 @@ namespace ACE.Server.Network.Structure
             var gradeLine = legacyText || GearEssences.IsWeapon(wo) ? null : ZoneStatResolver.GearGradeLine(wo);
             if (gradeLine != null)
                 cantrips.Insert(0, gradeLine);
+            if (rareLine != null)
+                cantrips.Insert(0, rareLine);
             if (cantrips.Count == 0)
                 return;
 
@@ -1527,6 +1537,13 @@ namespace ACE.Server.Network.Structure
             // why. Absent when the lock is off, when the item is not ZC-stamped, or inside an authored area.
             if (zcLocked)
                 effectDescriptions.Insert(0, ACE.Server.Managers.ZoneControl.ZoneControlManager.ZoneLockedAppraisalLine);
+
+            // T11+ RARES (owner 2026-10-08): a rare says so on the very first line of the block. Built live from the
+            // item's flag and tier, never baked into LongDesc - so the LongDesc whitelist needs no entry and the wording
+            // can change for rares already in the world.
+            var rareLine = ACE.Server.Managers.ZoneControl.ZoneRare.AppraisalLine(weapon);
+            if (rareLine != null)
+                effectDescriptions.Insert(0, rareLine);
 
             // Cast on Strike (owner 2026-08-27: "Appraisal line should show Force Arc (13% proc chance)").
             // One line PER SLOT - the arc and the ring are separate entities with separate rates, so a
