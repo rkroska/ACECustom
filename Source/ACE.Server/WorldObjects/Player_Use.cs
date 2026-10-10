@@ -186,6 +186,14 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Enlarging (78780265) and Shrinking (78780266) Stones: step how big something held in the hands is drawn.
+            if (SizeStones.IsSizeStone(sourceItem))
+            {
+                SizeStones.HandleUse(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
             if (target is PetDevice && target.CurrentLandblock != null)
             {
                 SendTransientError("The pet device must be in your inventory.");

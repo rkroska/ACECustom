@@ -767,6 +767,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.DefaultScale); else SetProperty(PropertyFloat.DefaultScale, value.Value); }
         }
 
+        /// <summary>
+        /// The scale clients are told to draw this object at: ObjScale, times the level an Enlarging or Shrinking
+        /// Stone has set on it (SizeStones). The same as ObjScale for everything no stone has been used on.
+        /// </summary>
+        public float? ShownObjScale => ACE.Server.Entity.SizeStones.ShownScale(ObjScale, GetProperty(PropertyFloat.ItemSizeLevel));
+
         public float? Friction
         {
             get => (float?)GetProperty(PropertyFloat.Friction);

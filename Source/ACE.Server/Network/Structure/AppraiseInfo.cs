@@ -386,6 +386,16 @@ namespace ACE.Server.Network.Structure
                     PropertiesString[PropertyString.LongDesc] = forgeMsg;
             }
 
+            // Enlarging / Shrinking Stones: an item drawn off its normal size says so (ASCII, explicit \n).
+            var sizeMsg = ACE.Server.Entity.SizeStones.BuildAppraisalLine(wo);
+            if (!string.IsNullOrEmpty(sizeMsg))
+            {
+                if (PropertiesString.TryGetValue(PropertyString.LongDesc, out var sizeLd) && !string.IsNullOrEmpty(sizeLd))
+                    PropertiesString[PropertyString.LongDesc] = sizeLd + $"\n\n{sizeMsg}";
+                else
+                    PropertiesString[PropertyString.LongDesc] = sizeMsg;
+            }
+
             // Growth charms + gems carry UnlimitedUse only so Gem.ActOnUse does not self-consume
             // them (gems are consumed by the confirm handler). It is a mechanical flag, not a use
             // counter - hide it so the panel shows no "Number of uses remaining" line.
