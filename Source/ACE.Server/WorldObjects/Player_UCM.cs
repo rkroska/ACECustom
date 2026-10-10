@@ -352,6 +352,9 @@ namespace ACE.Server.WorldObjects
                 ushort landblockId = (ushort)Self.Location.Landblock;
                 if (!LandblockCollections.ValleyOfDeathLandblocks.Contains(landblockId) && !LandblockCollections.ThaelarynIslandLandblocks.Contains(landblockId)) return;
 
+                // The reduced-reward copies of those two areas are exempt.
+                if (CloneZones.Contains(Self.Location)) return;
+
                 // Calculate the true probability of at least one trigger occurring over the elapsed time.
                 // Formula: 1 - (1 - chancePerSecond)^TotalSeconds.
                 // Note: ucm_check_spawn_chance is configured as a percentage between 0 and 1.
