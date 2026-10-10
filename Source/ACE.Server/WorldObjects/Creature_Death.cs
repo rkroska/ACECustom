@@ -288,6 +288,11 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            // A clone zone pays a share of the original's kill luminance. Scaled here, before the split, so every damager
+            // and every fellowship share comes out of the reduced award.
+            if (luminanceAward.HasValue)
+                luminanceAward = CloneZones.ScaleLuminance(luminanceAward.Value, Location);
+
             // One EarnXP / EarnLuminance per player: combine direct hits + all of that player's combat pets.
             // Avoids duplicate fellowship splits and matches "your kill bonuses apply to the full credit you earned on the mob."
             var xpCreditByPlayer = new Dictionary<uint, float>();
@@ -1393,6 +1398,9 @@ namespace ACE.Server.WorldObjects
                                 (i.DestinationType & DestinationType.Treasure) != 0 && (i.DestinationType & DestinationType.Wield) == 0).ToList();
 
                 var selected = CreateListSelect(createList);
+
+                // A clone zone keeps each rolled drop of the listed items with a chance equal to its reward multiplier.
+                selected = CloneZones.ReduceDrops(selected, Location, () => ACE.Common.ThreadSafeRandom.Next(0.0f, 1.0f));
 
                 foreach (var item in selected)
                 {
