@@ -352,6 +352,16 @@ namespace ACE.Server.Entity
                 if (Generator.GetProperty(PropertyBool.OnlyCombatPetsCanDamage) == true)
                     obj.SetProperty(PropertyBool.OnlyCombatPetsCanDamage, true);
 
+                // GeneratorNoCorpse: nested generators inherit the flag; creatures get NoCorpse.
+                if (Generator.GetProperty(PropertyBool.GeneratorNoCorpse) == true)
+                {
+                    if (obj.IsGenerator)
+                        obj.SetProperty(PropertyBool.GeneratorNoCorpse, true);
+
+                    if (obj is Creature noCorpseCreature && obj is not Player)
+                        noCorpseCreature.NoCorpse = true;
+                }
+
                 // SpawnColourMutationChance: nested generators inherit the chance; each creature rolls for itself.
                 var colourChance = Generator.GetProperty(PropertyFloat.SpawnColourMutationChance) ?? 0.0;
                 if (colourChance > 0.0)

@@ -303,13 +303,67 @@ namespace ACE.Server.Managers.WeaponScaling
                 // (holder null, or a viewer short of the requirement) reads the honest minimum for
                 // any hands rather than a modifier this weapon can never actually produce. A no-op
                 // for a genuine wielder, who by definition already clears the floor.
-                var augs = Math.Max(tierRow.MinWieldAugs, holder?.EffectiveItemAugCount ?? 0);   // gems + Triune Weave, like every other aug read
+                //
+                // The floor is the WIELD GATE's, which is the weapon's own tier for every weapon but one: an Ascendant
+                // rare is a higher-tier weapon wielded with the requirements of the tier it dropped in (WieldFloorAugs).
+                // Flooring that at its own tier's minimum would hand a T11 character holding a T14 bow the T14 minimum
+                // they never earned - tier steps for free. The steps themselves are still counted against the weapon's
+                // own row (its cap), so what a higher tier really gives - a higher ceiling to grow into - is kept.
+                var augs = Math.Max(WieldFloorAugs(weapon, tierRow), holder?.EffectiveItemAugCount ?? 0);   // gems + Triune Weave, like every other aug read
                 k *= 1.0 + tierStep * LauncherTierSteps(WeaponScalingManager.Current, tierRow, augs);
             }
 
             mod = (float)(k * HoneFactor(weapon, ACE.Server.Entity.ForgeMath.ForgeLine.DamageMod));
             return true;
         }
+
+        /// <summary>
+        /// The item-aug count the WIELD GATE guarantees for this weapon - the floor under the launcher / caster tier steps
+        /// and under the melee "natural damage" display.
+        ///
+        /// Every weapon but an Ascendant rare: its own tier row's MinWieldAugs, exactly as before - one nullable int read
+        /// finds no gate tier and the row already in hand is used. An Ascendant rare (T11+ rares, 2026-10-09) carries the
+        /// wield requirements of the tier it DROPPED in, so the guarantee is THAT tier's minimum, and that is the floor.
+        /// Runs on every shot and cast: no allocation, and the tier table is walked only for a weapon that has a gate tier.
+        /// </summary>
+        private static long WieldFloorAugs(WorldObject weapon, WeaponScalingTier tierRow)
+        {
+            var gateTier = weapon.GetProperty(PropertyInt.ZcRareGateTier);
+            if (gateTier == null)
+                return tierRow.MinWieldAugs;
+
+            // the same rule the gate stamp uses, so the floor and the requirement on the item cannot disagree; a stored
+            // tier that rule ignores (not below the weapon's own, or off the ladder) leaves the weapon gated by its own tier
+            var gate = ACE.Server.Managers.ZoneControl.ZoneRare.GateTier(gateTier, tierRow.Tier);
+            if (gate == tierRow.Tier)
+                return tierRow.MinWieldAugs;
+
+            WeaponScalingTier gateRow = null;
+            foreach (var t in WeaponScalingManager.Current.Tiers)
+                if (t.Tier == gate) { gateRow = t; break; }
+            return WieldFloorAugs(tierRow, gateRow, gateRowMissing: gateRow == null);
+        }
+
+        /// <summary>
+        /// The floor rule itself, on plain rows so it can be tested without a world. <paramref name="gateRow"/> null =
+        /// the weapon is gated by its own tier. <paramref name="gateRowMissing"/> = the weapon IS gated by a lower tier but
+        /// that tier has no row (deleted from the table): nothing is guaranteed then, so the floor is 0 and the holder's
+        /// real count rules - never the weapon's own tier minimum, which is the free bonus this rule exists to remove.
+        /// The floor is never above the weapon's own tier minimum.
+        /// </summary>
+        internal static long WieldFloorAugs(WeaponScalingTier tierRow, WeaponScalingTier gateRow, bool gateRowMissing = false)
+        {
+            if (gateRowMissing)
+                return 0;
+            if (gateRow == null)
+                return tierRow.MinWieldAugs;
+            return Math.Min(gateRow.MinWieldAugs, tierRow.MinWieldAugs);
+        }
+
+        /// <summary>The tier steps a launcher / caster of <paramref name="tierRow"/> shows for a holder with this many item
+        /// augs, floor applied - the composition TryGetScaledMod uses, on plain values for the unit tests.</summary>
+        internal static int ScaledModTierSteps(WeaponScalingConfig cfg, WeaponScalingTier tierRow, WeaponScalingTier gateRow, long holderAugs)
+            => LauncherTierSteps(cfg, tierRow, Math.Max(WieldFloorAugs(tierRow, gateRow), holderAugs));
 
         /// <summary>How many TIER STEPS this launcher's holder has actually unlocked (owner
         /// 2026-08-06: "Bows should track min(augs, cap) like melee does").
@@ -350,7 +404,10 @@ namespace ACE.Server.Managers.WeaponScaling
             if (weapon is MissileLauncher || weapon is Caster || !TryResolve(weapon, out var k, out var tierRow))
                 return 0f;
 
-            return (float)(k * Math.Min(tierRow.MinWieldAugs, tierRow.Cap) * HoneFactor(weapon, ACE.Server.Entity.ForgeMath.ForgeLine.MaxDamage)) * EvNormalization(weapon);
+            // WieldFloorAugs, not tierRow.MinWieldAugs directly: the same number for every weapon gated by its own tier, and
+            // the DROP tier's minimum for an Ascendant rare - so the panel does not promise an under-tier wielder damage
+            // only the item tier's minimum would give (GetExamineBonus and the AppraiseInfo floor both come through here)
+            return (float)(k * Math.Min(WieldFloorAugs(weapon, tierRow), tierRow.Cap) * HoneFactor(weapon, ACE.Server.Entity.ForgeMath.ForgeLine.MaxDamage)) * EvNormalization(weapon);
         }
 
         /// <summary>The UNWIELDED examine value (owner 2026-08-03): read the term off the

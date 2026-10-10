@@ -183,6 +183,11 @@ namespace ACE.Server.Factories
             // never rechecked, because they are already wearing it. They keep it until they choose to
             // unequip. Keeping the gate costs only cosmetics (a T25 piece asks 5,000 Triune while its stats
             // read T10 in fallback); clearing it costs a hole. DO NOT re-add the clearing branch.
+            // T11+ RARES, Ascendant (owner 2026-10-09): the gates are those of the tier the item DROPPED in, not of its own
+            // (higher) tier. Resolved here as well as inside StampTierGates so the "is there a row" test below asks about
+            // the row that will actually be stamped. A no-op for every item without a stored gate tier.
+            tier = ACE.Server.Managers.ZoneControl.ZoneRare.GateTierOf(wo, tier);
+
             // no weaponscaling row for this tier (deleted, or an empty config): the gates on the piece stay as they are - the
             // T11-T15 fallback in StampTierGates is for NEW drops only, never a re-stamp that would lower a T16+ gate
             if (ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(tier) == null)
@@ -276,10 +281,19 @@ namespace ACE.Server.Factories
         /// Slot 2 is never touched (the forge's training requirement lives there). Setting a gate takes its slot whatever it held
         /// (the tier gate must never be missing); CLEARING a slot only removes one of OUR gates, never an unrelated requirement.
         /// Returns the number of slots that changed.
+        ///
+        /// THE ONE DOOR (T11+ rares, 2026-10-09). This is the only method that writes a tier gate (SetGate is private and has
+        /// no other caller), and every path that stamps or re-stamps one - the drop sweep and the forges through
+        /// ApplyZoneWieldRequirement, and the live re-stamps before a wield check, on appraise, on re-resolve and after a
+        /// Salvage Bag through RefreshWieldGate - ends here. So the Ascendant rule lives here and nowhere else: an item that
+        /// stores the tier it dropped in (ZoneRare.GateTierOf) gets THAT tier's gates, whatever tier the caller passes. With
+        /// the row swapped before the T11-T15 / T16+ branch is chosen, a T18 item found in T15 gets the three aug gates and a
+        /// T25 item found in T22 gets the T22 Triune gate. Every other item has no stored gate tier and is untouched.
         /// </summary>
         public static int StampTierGates(WorldObject wo, int tier)
         {
             if (wo == null) return 0;
+            tier = ACE.Server.Managers.ZoneControl.ZoneRare.GateTierOf(wo, tier);
             var row = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(tier);
             var triune = row?.MinWieldTriune ?? 0;
             var changed = 0;
@@ -674,6 +688,103 @@ namespace ACE.Server.Factories
         /// the enum cannot silently mis-lane the draw.</summary>
         private static readonly int zoneSetMissileFamily = System.Array.IndexOf(zoneSetFamilies, ZoneSetFamily.Missile);
         private static readonly int zoneSetCasterFamily = System.Array.IndexOf(zoneSetFamilies, ZoneSetFamily.Caster);
+
+        /// <summary>
+        /// One weapon family index for <see cref="ZoneLootSetCounts.WeaponFamilyPicks"/>, drawn uniformly from the
+        /// lanes asked for (the `/zcrare` dev mint, 2026-10-08: "one melee weapon", "one caster"). The family enum is
+        /// private to this class, so a caller outside it cannot name a lane any other way. -1 when no lane is asked for.
+        /// </summary>
+        internal static int RollZoneSetWeaponFamily(bool melee, bool missile, bool caster)
+        {
+            var lanes = new List<int>();
+            for (var i = 0; i < zoneSetFamilies.Length; i++)
+            {
+                var isMissile = i == zoneSetMissileFamily;
+                var isCaster = i == zoneSetCasterFamily;
+                if (isMissile ? missile : isCaster ? caster : melee)
+                    lanes.Add(i);
+            }
+            return lanes.Count == 0 ? -1 : lanes[ThreadSafeRandom.Next(0, lanes.Count - 1)];
+        }
+
+        /// <summary>
+        /// The one-item slot counts that make CreateZoneLootSet produce a piece of the SAME KIND as this one: the same weapon
+        /// family, the same armor slot, the same jewelry slot, a shield, a cloak or a shirt / pants piece. For the Ascendant
+        /// rare (2026-10-09), which replaces the piece the kill rolled with one generated at a higher tier - the kind is kept,
+        /// the exact weenie is rolled again (a sword stays in the Sword family but may change weight class; a two-handed
+        /// weapon that is not a spear re-rolls among the families that can be two-handed). Null for anything that is not
+        /// zone-set gear.
+        /// </summary>
+        internal static ZoneLootSetCounts ZoneSetCountsLike(WorldObject wo)
+        {
+            if (wo == null)
+                return null;
+
+            var one = new ZoneLootSetCounts();
+
+            if (wo is Caster)
+                one.WeaponFamilyPicks = new List<int> { zoneSetCasterFamily };
+            else if (wo is MissileLauncher)
+                one.WeaponFamilyPicks = new List<int> { zoneSetMissileFamily };
+            else if (wo is MeleeWeapon)
+            {
+                ZoneSetFamily family;
+                switch (wo.W_WeaponType)
+                {
+                    case ACE.Entity.Enum.WeaponType.Axe: family = ZoneSetFamily.Axe; break;
+                    case ACE.Entity.Enum.WeaponType.Dagger: family = ZoneSetFamily.Dagger; break;
+                    case ACE.Entity.Enum.WeaponType.Mace: family = ZoneSetFamily.Mace; break;
+                    case ACE.Entity.Enum.WeaponType.Spear: family = ZoneSetFamily.Spear; break;
+                    case ACE.Entity.Enum.WeaponType.Staff: family = ZoneSetFamily.Staff; break;
+                    case ACE.Entity.Enum.WeaponType.Sword: family = ZoneSetFamily.Sword; break;
+                    case ACE.Entity.Enum.WeaponType.Unarmed: family = ZoneSetFamily.Unarmed; break;
+                    case ACE.Entity.Enum.WeaponType.TwoHanded:
+                        // the item no longer says which family rolled it; a thrusting one is the spear line
+                        var thrust = ACE.Entity.Enum.AttackType.Thrust | ACE.Entity.Enum.AttackType.DoubleThrust | ACE.Entity.Enum.AttackType.TripleThrust;
+                        if ((wo.W_AttackType & thrust) != 0)
+                            family = ZoneSetFamily.Spear;
+                        else
+                            family = ThreadSafeRandom.Next(0, 2) switch { 0 => ZoneSetFamily.Axe, 1 => ZoneSetFamily.Mace, _ => ZoneSetFamily.Sword };
+                        break;
+                    default:
+                        return null;
+                }
+                one.WeaponFamilyPicks = new List<int> { System.Array.IndexOf(zoneSetFamilies, family) };
+            }
+            else if (wo.IsShield)
+                one.Shield = 1;
+            else if (wo.ItemType == ACE.Entity.Enum.ItemType.Jewelry)
+            {
+                var loc = wo.ValidLocations ?? ACE.Entity.Enum.EquipMask.None;
+                if ((loc & ACE.Entity.Enum.EquipMask.NeckWear) != 0) one.Amulet = 1;
+                else if ((loc & (ACE.Entity.Enum.EquipMask.FingerWearLeft | ACE.Entity.Enum.EquipMask.FingerWearRight)) != 0) one.Ring = 1;
+                else if ((loc & (ACE.Entity.Enum.EquipMask.WristWearLeft | ACE.Entity.Enum.EquipMask.WristWearRight)) != 0) one.Bracelet = 1;
+                else if ((loc & ACE.Entity.Enum.EquipMask.TrinketOne) != 0) one.Trinket = 1;
+                else return null;
+            }
+            else if (wo.ItemType == ACE.Entity.Enum.ItemType.Clothing && (wo.ValidLocations ?? ACE.Entity.Enum.EquipMask.None).HasFlag(ACE.Entity.Enum.EquipMask.Cloak))
+                one.Cloak = 1;
+            else if (wo.ItemType == ACE.Entity.Enum.ItemType.Armor || wo.ItemType == ACE.Entity.Enum.ItemType.Clothing)
+            {
+                // top-down, the order AddZoneSetArmorSlots walks: a multi-slot piece asks for the first slot it covers
+                var cov = wo.ClothingPriority ?? 0;
+                if ((cov & ACE.Entity.Enum.CoverageMask.Head) != 0) one.Helm = 1;
+                else if ((cov & ACE.Entity.Enum.CoverageMask.OuterwearChest) != 0) one.Chest = 1;
+                else if ((cov & ACE.Entity.Enum.CoverageMask.OuterwearUpperArms) != 0) one.Shoulder = 1;
+                else if ((cov & ACE.Entity.Enum.CoverageMask.OuterwearLowerArms) != 0) one.Bracer = 1;
+                else if ((cov & ACE.Entity.Enum.CoverageMask.Hands) != 0) one.Glove = 1;
+                else if ((cov & ACE.Entity.Enum.CoverageMask.OuterwearAbdomen) != 0) one.Girth = 1;
+                else if ((cov & ACE.Entity.Enum.CoverageMask.OuterwearUpperLegs) != 0) one.UpperLeg = 1;
+                else if ((cov & ACE.Entity.Enum.CoverageMask.OuterwearLowerLegs) != 0) one.LowerLeg = 1;
+                else if ((cov & ACE.Entity.Enum.CoverageMask.Feet) != 0) one.Boot = 1;
+                else if (wo.ItemType == ACE.Entity.Enum.ItemType.Clothing) one.Clothing = 1;   // a shirt / pants piece
+                else return null;
+            }
+            else
+                return null;
+
+            return one;
+        }
 
         /// <summary>
         /// BUDGET MODE sampler (owner 2026-08-24). Turns a total item budget plus category weights into

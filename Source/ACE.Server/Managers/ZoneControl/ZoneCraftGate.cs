@@ -148,6 +148,9 @@ namespace ACE.Server.Managers.ZoneControl
             (int)PropertyInt.WieldRequirements, (int)PropertyInt.WieldSkillType, (int)PropertyInt.WieldDifficulty,
             (int)PropertyInt.WieldRequirements3, (int)PropertyInt.WieldSkillType3, (int)PropertyInt.WieldDifficulty3,
             (int)PropertyInt.WieldRequirements4, (int)PropertyInt.WieldSkillType4, (int)PropertyInt.WieldDifficulty4,
+            // T11+ rares (2026-10-09): which rare the item is, and the tier an Ascendant item dropped in (its wield gate).
+            // Neither is a magnitude - a recipe replacing either would turn a Pristine into an Ascendant, or move the gate
+            (int)PropertyInt.ZcRare, (int)PropertyInt.ZcRareGateTier,
         };
 
         private static readonly HashSet<int> OwnedFloats = new()
@@ -196,6 +199,18 @@ namespace ACE.Server.Managers.ZoneControl
             reason = null;
             if (recipe == null || target == null)
                 return false;
+
+            // T11+ RARES (owner 2026-10-08): a rare takes no imbue. Tested FIRST - above the master switch, the tier
+            // test and the matrix - because it is a rule about the item, not a tuning of the gate: switching the craft
+            // gate off, or authoring an Allow cell, must not open a Pristine weapon to a second rend or a crit imbue.
+            // AppliesImbue is the classification the imbue branch below uses (IsImbuing, the stock imbue DataIds) plus
+            // any recipe that writes ImbuedEffect itself, so ordinary tinkering - and everything else that is not an
+            // imbue - falls through and is judged exactly as for any T11+ item.
+            if (ZoneRare.IsRare(target) && AppliesImbue(recipe))
+            {
+                reason = ZoneRare.ImbueRefusalText(ZoneRare.TierOfRare(target));
+                return true;
+            }
 
             // Master switch OFF bypasses the WHOLE gate - matrix and downgrade rule alike.
             if (!ZoneCraftGateStore.Enabled)
@@ -378,6 +393,30 @@ namespace ACE.Server.Managers.ZoneControl
                     continue;
                 if (DataIdToImbue.TryGetValue((uint)mod.DataId, out effect))
                     return true;
+            }
+            return false;
+        }
+
+        /// <summary>Is this recipe an imbue, however it is authored? The salvage imbues (SalvageType 2), any recipe
+        /// carrying one of the stock imbue mutation DataIds, and any custom recipe whose int mods write
+        /// PropertyInt.ImbuedEffect directly (a rend gem authored as a plain SetValue has neither of the first two
+        /// marks). Used for the rule that a rare takes no imbue.</summary>
+        internal static bool AppliesImbue(Recipe recipe)
+        {
+            if (recipe == null)
+                return false;
+            if (recipe.IsImbuing() || TryGetImbue(recipe, out _))
+                return true;
+            if (recipe.RecipeMod == null)
+                return false;
+
+            foreach (var mod in recipe.RecipeMod)
+            {
+                if (mod?.RecipeModsInt == null)
+                    continue;
+                foreach (var m in mod.RecipeModsInt)
+                    if (m != null && m.Stat == (int)PropertyInt.ImbuedEffect)
+                        return true;
             }
             return false;
         }

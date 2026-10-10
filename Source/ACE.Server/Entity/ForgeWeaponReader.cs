@@ -46,6 +46,12 @@ namespace ACE.Server.Entity
             var weapon = ForgeGroups.IsWeapon(wo);
             if (!weapon && !IsArmorKind(wo))
                 return $"{wo?.Name ?? "That"} is not a weapon or a piece of armour.";
+            // T11+ rares (2026-10-08): a rare is already every roll at its maximum, so the forge can only make it worse while
+            // it kept the name and the flag, honing would push it past the tier maximum, and using one as the feeder would
+            // destroy it. This is the one door every forge, hone and /bs path comes through, so refusing here covers them
+            // all - and with no forge or hone on the piece, the unbinding oil never has anything to strip from it either.
+            if (ACE.Server.Managers.ZoneControl.ZoneRare.IsRare(wo))
+                return $"{wo.Name} is a rare item and cannot be forged or honed.";
             if (!IsLootGenerated(wo) || ForgeGroups.GetGroup(wo) == null)
                 return $"{wo.Name} was not made by the loot generator, and only loot weapons and armour can be forged.";
             if (HasUnknownTinkerHistory(wo))

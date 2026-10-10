@@ -165,8 +165,21 @@ namespace ACE.Server.Factories
             return double.IsFinite(v) ? (int)Math.Round(Math.Clamp(v, int.MinValue, int.MaxValue), MidpointRounding.AwayFromZero) : fallback;
         }
 
+        /// <summary>How many item spells a piece gets: a roll between the tier's min and max - or, for a rare
+        /// (<paramref name="max"/>), the max itself, with no draw.</summary>
+        internal static int ZoneSpellCount(int countMin, int countMax, bool max, System.Func<int, int, int> roll)
+            => max || countMin >= countMax ? countMax : roll(countMin, countMax);
+
+        /// <summary>The level (1-4) of one item spell: a roll between the tier's min and max level, or the max for a rare.</summary>
+        internal static int ZoneSpellLevel(int levelMin, int levelMax, bool max, System.Func<int, int, int> roll)
+            => max || levelMin >= levelMax ? levelMax : roll(levelMin, levelMax);
+
         /// <summary>Rolls the piece's item spells (see the class summary). Returns how many were added.</summary>
-        public static int ApplyZoneSpells(WorldObject wo, int tier, EvaluatedProfile p)
+        /// <param name="max">T11+ rares (owner 2026-10-10): the piece is a rare, so it takes the tier's MAXIMUM count at the
+        /// tier's maximum level instead of rolling either. Which spells, and the Thirst roll, stay as for any drop. The
+        /// count is still bounded by what the piece can hold: the slot's pool, less the families its base weenie already
+        /// carries. False - every ordinary drop - makes exactly the draws it always made.</param>
+        public static int ApplyZoneSpells(WorldObject wo, int tier, EvaluatedProfile p, bool max = false)
         {
             var pool = ZoneSpellPool(wo);
             if (pool == null || pool.Count == 0)
@@ -176,7 +189,7 @@ namespace ACE.Server.Factories
             var countMin = Math.Clamp(ZsStat(p, ZoneStat.ItemSpellCountMin, 1, tier), 0, countMax);   // min above max acts as max
             var levelMax = Math.Clamp(ZsStat(p, ZoneStat.ItemSpellLevelMax, 4, tier), 1, 4);
             var levelMin = Math.Clamp(ZsStat(p, ZoneStat.ItemSpellLevelMin, 4, tier), 1, levelMax);
-            var count = ThreadSafeRandom.Next(countMin, countMax);
+            var count = max ? ZoneSpellCount(countMin, countMax, true, null) : ThreadSafeRandom.Next(countMin, countMax);
             if (count <= 0)
                 return 0;
 
@@ -206,7 +219,7 @@ namespace ACE.Server.Factories
                 var levels = SpellLevelProgression.GetSpellLevels(minor);
                 if (levels == null || levels.Count != 4)
                     continue;
-                var spell = levels[ThreadSafeRandom.Next(levelMin, levelMax) - 1];
+                var spell = levels[(max ? ZoneSpellLevel(levelMin, levelMax, true, null) : ThreadSafeRandom.Next(levelMin, levelMax)) - 1];
                 wo.Biota.GetOrAddKnownSpell((int)spell, wo.BiotaDatabaseLock, out _);
                 added++;
             }
