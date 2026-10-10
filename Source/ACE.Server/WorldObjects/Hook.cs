@@ -156,7 +156,9 @@ namespace ACE.Server.WorldObjects
             MotionTableId = item.MotionTableId;
             PhysicsTableId = item.PhysicsTableId;
             SoundTableId = item.SoundTableId;
-            ObjScale = item.ObjScale;
+            // As the item is drawn, so an Enlarging / Shrinking Stone level shows on the hook. This is the hook's own
+            // scale (put back in OnRemoveItem), never copied to an item: do not read it back as an item's DefaultScale.
+            ObjScale = item.ShownObjScale;
             Name = item.NameWithMaterial;
 
             if (MotionTableId != 0)

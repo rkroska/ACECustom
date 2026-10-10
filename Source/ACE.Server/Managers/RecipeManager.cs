@@ -446,7 +446,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Sends an UpdateObj to the client for modified sources / targets
         /// </summary>
-        private static void UpdateObj(Player player, WorldObject obj)
+        public static void UpdateObj(Player player, WorldObject obj)
         {
             if (Debug)
                 Console.WriteLine($"{player.Name}.UpdateObj({obj.Name})");

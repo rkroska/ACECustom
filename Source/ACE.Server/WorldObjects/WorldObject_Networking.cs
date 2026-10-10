@@ -357,7 +357,7 @@ namespace ACE.Server.WorldObjects
             }
 
             if ((physicsDescriptionFlag & PhysicsDescriptionFlag.ObjScale) != 0)
-                writer.Write(ObjScale ?? 0f);
+                writer.Write(ShownObjScale ?? 0f);
 
             if ((physicsDescriptionFlag & PhysicsDescriptionFlag.Friction) != 0)
                 writer.Write(Friction ?? 0f);
@@ -475,7 +475,9 @@ namespace ACE.Server.WorldObjects
 
             // where did this epsilon value come from?
             // why is it different from the physics engine epsilon?
-            if ((ObjScale != null) && (Math.Abs(ObjScale ?? 0) >= 0.001))
+            // the size level of an Enlarging / Shrinking Stone is multiplied in here (SizeStones)
+            var shownObjScale = ShownObjScale;
+            if ((shownObjScale != null) && (Math.Abs(shownObjScale ?? 0) >= 0.001))
                 physicsDescriptionFlag |= PhysicsDescriptionFlag.ObjScale;
 
             if (Friction != null)

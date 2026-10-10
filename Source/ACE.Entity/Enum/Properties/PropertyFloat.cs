@@ -368,5 +368,12 @@ namespace ACE.Entity.Enum.Properties
         /// unchanged; an explicit 0 means no gate at all. Lower it on custom plates that need to catch a group.
         /// Owner range 50000+ (moved off 9056 - that is ZoneLootMutator Rend Power, and upstream now uses it too).</summary>
         PressurePlateCooldown = 50502,
+
+        /// <summary>
+        /// Enlarging / Shrinking Stones: how big an item held in the hands is drawn, as a multiple of its own
+        /// DefaultScale (0.7 .. 1.4 in tenths). Applied only where the scale is sent to clients
+        /// (WorldObject.ShownObjScale); DefaultScale itself is never changed. Unset = normal size.
+        /// </summary>
+        ItemSizeLevel = 54000,
     }
 }
