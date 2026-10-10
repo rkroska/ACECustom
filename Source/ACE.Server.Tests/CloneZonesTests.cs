@@ -95,6 +95,19 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void Luminance_IsScaledAndRounded_AndNeverOverflows()
+        {
+            Assert.AreEqual(61250L, CloneZones.ScaleLuminance(245000L, 0.25));
+            Assert.AreEqual(6281L, CloneZones.ScaleLuminance(25125L, 0.25));       // 6,281.25 rounds down
+            Assert.AreEqual(245000L, CloneZones.ScaleLuminance(245000L, 1.0));     // untouched at 1
+            Assert.AreEqual(0L, CloneZones.ScaleLuminance(245000L, 0.0));
+            Assert.AreEqual(0L, CloneZones.ScaleLuminance(0L, 0.25));
+            Assert.AreEqual(-5L, CloneZones.ScaleLuminance(-5L, 0.25));            // nothing to scale: comes back as it is
+            Assert.AreEqual(long.MaxValue, CloneZones.ScaleLuminance(12000000L, 1e15));
+            Assert.AreEqual(long.MaxValue, CloneZones.ScaleLuminance(long.MaxValue, 2.0));
+        }
+
+        [TestMethod]
         public void WcidList_TakesCommasSemicolonsAndSpaces_AndLeavesOutJunkAndZero()
         {
             var parsed = CloneZones.ParseWcids(" 30010112, 300101186;290500318  0 abc -5 ");

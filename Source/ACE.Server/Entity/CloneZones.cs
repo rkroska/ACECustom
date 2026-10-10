@@ -72,10 +72,17 @@ namespace ACE.Server.Entity
         /// <summary>Kill luminance in a clone zone. Outside one, or at a multiplier of 1, the award comes back untouched.</summary>
         public static long ScaleLuminance(long award, Position position)
         {
-            var mult = RewardMultiplier(position);
+            return ScaleLuminance(award, RewardMultiplier(position));
+        }
+
+        /// <summary>The award times the multiplier, rounded. A multiplier large enough to push the result past what a long
+        /// holds gives the largest long instead of an undefined conversion.</summary>
+        internal static long ScaleLuminance(long award, double mult)
+        {
             if (mult == 1.0 || award <= 0)
                 return award;
-            return (long)Math.Round(award * mult);
+            var scaled = Math.Round(award * mult);
+            return scaled >= long.MaxValue ? long.MaxValue : (long)scaled;
         }
 
         private static readonly object reducedLock = new object();
