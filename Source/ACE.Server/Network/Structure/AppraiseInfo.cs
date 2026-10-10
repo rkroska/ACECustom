@@ -545,11 +545,17 @@ namespace ACE.Server.Network.Structure
                     // Hooked items have a custom "description", containing the desc of the sub item and who the owner of the house is (if any)
                     BuildProfile(hookedItem, examiner, success);
 
+                    // What that call built for the item: its own LongDesc plus any generated lines (forge, size, ...).
+                    PropertiesString.TryGetValue(PropertyString.LongDesc, out var hookedDesc);
+
                     containsString = "It contains: \n";
 
-                    if (!string.IsNullOrWhiteSpace(hookedItem.LongDesc))
+                    if (!string.IsNullOrWhiteSpace(hookedDesc))
                     {
-                        containsString += hookedItem.LongDesc;
+                        // generated lines alone do not say what the item is
+                        if (string.IsNullOrWhiteSpace(hookedItem.LongDesc))
+                            containsString += hookedItem.Name + "\n\n";
+                        containsString += hookedDesc;
                     }
                     //else if (PropertiesString.ContainsKey(PropertyString.ShortDesc) && PropertiesString[PropertyString.ShortDesc] != null)
                     //{
