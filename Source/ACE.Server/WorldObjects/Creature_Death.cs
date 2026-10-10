@@ -1355,6 +1355,11 @@ namespace ACE.Server.WorldObjects
                 if (item.Bonded == BondedStatus.Destroy)
                     continue;
 
+                // A clone zone cuts a listed item the creature carries at the same rate as a rolled one: it stays on the
+                // creature and goes with it, like a destroy-on-death piece above.
+                if (!CloneZones.KeepsDrop(item.WeenieClassId, Location, () => ACE.Common.ThreadSafeRandom.Next(0.0f, 1.0f)))
+                    continue;
+
                 if (TryDequipObjectWithBroadcasting(item.Guid, out var wo, out var wieldedLocation))
                     EnqueueBroadcast(new GameMessagePublicUpdateInstanceID(item, PropertyInstanceId.Wielder, ObjectGuid.Invalid));
 

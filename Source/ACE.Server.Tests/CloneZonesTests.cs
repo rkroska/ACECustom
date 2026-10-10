@@ -74,6 +74,27 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void CarriedItem_ListedIsKeptOnlyWhenTheRollIsBelowTheChance()
+        {
+            Assert.IsTrue(CloneZones.KeepsDrop(Core, 0.25, Listed, () => 0.10));
+            Assert.IsFalse(CloneZones.KeepsDrop(Core, 0.25, Listed, () => 0.25));
+            Assert.IsFalse(CloneZones.KeepsDrop(Core, 0.0, Listed, () => 0.0));
+        }
+
+        [TestMethod]
+        public void CarriedItem_NotListedOrNoCut_AlwaysStaysAndSpendsNoRoll()
+        {
+            int rolls = 0;
+            System.Func<double> roll = () => { rolls++; return 0.99; };
+
+            Assert.IsTrue(CloneZones.KeepsDrop(Pelt, 0.25, Listed, roll));     // not a listed item
+            Assert.IsTrue(CloneZones.KeepsDrop(Core, 1.0, Listed, roll));      // no cut
+            Assert.IsTrue(CloneZones.KeepsDrop(Core, 2.5, Listed, roll));      // a raised reward never touches drops
+            Assert.IsTrue(CloneZones.KeepsDrop(Core, 0.25, null, roll));       // nothing listed
+            Assert.AreEqual(0, rolls);
+        }
+
+        [TestMethod]
         public void WcidList_TakesCommasSemicolonsAndSpaces_AndLeavesOutJunkAndZero()
         {
             var parsed = CloneZones.ParseWcids(" 30010112, 300101186;290500318  0 abc -5 ");

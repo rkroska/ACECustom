@@ -16,7 +16,9 @@ namespace ACE.Server.Entity
     /// Same generators, same monsters, same quests and kill tasks - no weenie is duplicated. What differs is decided here:
     ///
     ///   - kill luminance is multiplied by the area's reward multiplier;
-    ///   - corpse drops of the listed items (clone_zone_reduced_drops) are kept with that same chance;
+    ///   - create-list drops of the listed items (clone_zone_reduced_drops) are kept with that same chance, whether the
+    ///     item is rolled from the create list at death or carried by the creature and moved to its corpse (loot
+    ///     generated from treasure tables is not touched);
     ///   - the UCM check does not run there.
     ///
     /// clone_zone_variation = 0 switches all of it off: no landblock is a clone zone and every method answers "no".
@@ -136,11 +138,32 @@ namespace ACE.Server.Entity
             var kept = new List<PropertiesCreateList>(rolled.Count);
             foreach (var item in rolled)
             {
-                if (reduced.Contains(item.WeenieClassId) && roll() >= keepChance)
-                    continue;
-                kept.Add(item);
+                if (KeepsDrop(item.WeenieClassId, keepChance, reduced, roll))
+                    kept.Add(item);
             }
             return kept;
+        }
+
+        /// <summary>
+        /// One item a creature carries or wields and would hand to its corpse when it dies at "position": does it still
+        /// drop? The same rule as for a rolled drop, for the drops that are not rolled at death - an item created with the
+        /// creature and moved to the corpse. Outside a clone zone, and for an item that is not listed, always true.
+        /// </summary>
+        public static bool KeepsDrop(uint wcid, Position position, Func<double> roll)
+        {
+            var mult = RewardMultiplier(position);
+            if (mult >= 1.0)
+                return true;
+            return KeepsDrop(wcid, mult, ReducedDrops, roll);
+        }
+
+        /// <summary>A listed item stays when roll() is below keepChance; an item that is not listed always stays, and no
+        /// roll is spent on it.</summary>
+        internal static bool KeepsDrop(uint wcid, double keepChance, HashSet<uint> reduced, Func<double> roll)
+        {
+            if (keepChance >= 1.0 || reduced == null || !reduced.Contains(wcid))
+                return true;
+            return roll() < keepChance;
         }
     }
 }
