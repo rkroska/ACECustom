@@ -217,6 +217,7 @@ namespace ACE.Server.Managers
 
             // after every player and offline player save has been written
             PyrealLedger.Shutdown();
+            EconomyLedger.Shutdown();
 
             // Write exit to console/log
             log.Info($"Exiting at {DateTime.UtcNow}");

@@ -391,6 +391,9 @@ namespace ACE.Server
             else
                 PyrealLedger.InvalidateBaseline();
 
+            log.Info("Initializing EconomyLedger...");
+            EconomyLedger.Initialize(ServerConfig.economy_ledger.Value);
+
             log.Info("Initializing HouseManager...");
             HouseManager.Initialize();
 

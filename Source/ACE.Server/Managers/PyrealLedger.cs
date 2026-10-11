@@ -106,6 +106,9 @@ namespace ACE.Server.Managers
 
         public static bool IsCurrency(uint wcid) => currencyWcids.Contains(wcid);
 
+        /// <summary>The coin, trade note and pea wcids. For the economy ledger's supply snapshot.</summary>
+        internal static IReadOnlyCollection<uint> CurrencyWcids => currencyWcids;
+
         private static readonly Dictionary<uint, long> faceValueCache = new Dictionary<uint, long>();
 
         /// <summary>The weenie's Value for one unit, read from the world database (no hardcoded denominations).</summary>
@@ -239,14 +242,17 @@ namespace ACE.Server.Managers
             return scope;
         }
 
-        /// <summary>Scopes do nothing (no allocation, no property reads) while the ledger is off.</summary>
-        private static bool ScopesActive => initialized || ForceScopesForTests;
+        /// <summary>Scopes do nothing (no allocation, no property reads) while this ledger and the economy ledger are both off.</summary>
+        private static bool ScopesActive => initialized || EconomyLedger.FlowTracking || ForceScopesForTests;
 
         /// <summary>Lets unit tests exercise scopes without a running ledger.</summary>
         internal static bool ForceScopesForTests;
 
         /// <summary>The source label open on this thread, or null. For tests.</summary>
         internal static string CurrentSource => current?.Source;
+
+        /// <summary>The scope open on this thread, or null. The economy ledger labels other currencies with it.</summary>
+        internal static SourceContext CurrentContext => current;
 
         /// <summary>Begins a scope only when no other scope is open on this thread (a fallback label such as a chat command).</summary>
         public static Scope BeginIfNone(string source, string key = "", string name = "", WorldObject actor = null)
@@ -634,6 +640,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void OnCurrencyItem(Player player, uint wcid, long units, bool incoming, string source = null, string detailKey = null, string detailName = null)
         {
+            // coins, lum tokens and keys of the other currencies; has its own switch and never throws
+            EconomyLedger.OnItem(player, wcid, units, incoming, source, detailKey, detailName);
+
             if (!initialized || player == null || units <= 0 || !IsCurrency(wcid))
                 return;
 
@@ -754,12 +763,12 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void OnItemMoved(Player player, WorldObject item, long units, Container fromRoot, Container toRoot)
         {
-            if (!initialized || player == null || item == null)
+            if (player == null || item == null)
                 return;
 
             try
             {
-                if (IsCurrency(item.WeenieClassId))
+                if ((initialized && IsCurrency(item.WeenieClassId)) || EconomyLedger.TracksItem(item.WeenieClassId))
                     RecordItemMoved(player, item, units, fromRoot, toRoot);
             }
             catch (Exception ex)

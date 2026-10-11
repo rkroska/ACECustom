@@ -209,7 +209,8 @@ namespace ACE.Server.Managers
             }
 
             // Tickets safely persisted — now commit the deduction
-            player.BankedLuminance = banked - totalCost;
+            using (PyrealLedger.Begin(EconomyLedger.SrcPowerball, "tickets", "Powerball tickets", player))
+                player.BankedLuminance = banked - totalCost;
             player.SaveBiotaToDatabase(enqueueSave: true);
 
             lock (_lock) { _jackpotPool += totalCost; }
@@ -401,7 +402,8 @@ namespace ACE.Server.Managers
             var online = PlayerManager.GetOnlinePlayer(charId);
             if (online != null)
             {
-                online.BankedLuminance = (online.BankedLuminance ?? 0) + summary.NetWon;
+                using (PyrealLedger.Begin(EconomyLedger.SrcPowerball, "payout", "Powerball payout"))
+                    online.BankedLuminance = (online.BankedLuminance ?? 0) + summary.NetWon;
                 online.SaveBiotaToDatabase(enqueueSave: true);
                 SendWinNotification(online.Session, summary);
             }
@@ -410,7 +412,8 @@ namespace ACE.Server.Managers
                 var offline = PlayerManager.GetOfflinePlayer(charId);
                 if (offline != null)
                 {
-                    offline.BankedLuminance = (offline.BankedLuminance ?? 0) + summary.NetWon;
+                    using (PyrealLedger.Begin(EconomyLedger.SrcPowerball, "payout", "Powerball payout"))
+                        offline.BankedLuminance = (offline.BankedLuminance ?? 0) + summary.NetWon;
                     offline.SaveBiotaToDatabase(enqueueSave: true);
                 }
                 else

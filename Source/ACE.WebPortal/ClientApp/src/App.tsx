@@ -39,6 +39,7 @@ import PortalSecurity from './components/PortalSecurity'
 
 import AuditLog from './components/AuditLog'
 import PyrealLedger from './components/PyrealLedger'
+import Economy from './components/Economy'
 import CorpseFinder from './components/CorpseFinder'
 import PetNameApprovals from './components/admin/PetNameApprovals'
 
@@ -239,6 +240,12 @@ function App() {
         <Route path="/audit/pyreals/:kind?/:id?" element={
           <ProtectedRoute pageKey="pyreal-ledger">
             <PyrealLedger />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/audit/economy/:currency?" element={
+          <ProtectedRoute pageKey="economy">
+            <Economy />
           </ProtectedRoute>
         } />
 

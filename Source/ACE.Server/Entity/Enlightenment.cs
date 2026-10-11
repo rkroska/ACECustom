@@ -297,14 +297,16 @@ namespace ACE.Server.Entity
             if (amount <= 0)
                 return;
 
-            player.TryConsumeFromInventoryWithNetworking((uint)tier.ItemWcid.Value, amount);
+            using (PyrealLedger.Begin(EconomyLedger.SrcEnlighten, targetEnlightenment.ToString(), "Enlightenment " + targetEnlightenment, player))
+                player.TryConsumeFromInventoryWithNetworking((uint)tier.ItemWcid.Value, amount);
         }
 
         private static bool SpendLuminance(Player player)
         {
             int targetEnlightenment = player.Enlightenment + 1;
             long lumCost = EnlightenmentTierManager.CalculateLuminanceCost(targetEnlightenment);
-            return player.SpendLuminance(lumCost);
+            using (PyrealLedger.Begin(EconomyLedger.SrcEnlighten, targetEnlightenment.ToString(), "Enlightenment " + targetEnlightenment, player))
+                return player.SpendLuminance(lumCost);
         }
 
         private static void RemoveSociety(Player player)

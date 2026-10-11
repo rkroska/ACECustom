@@ -23,6 +23,7 @@ import {
   PawPrint,
   Shirt,
   Coins,
+  Landmark,
 } from 'lucide-react'
 
 export interface PortalRouteDefinition {
@@ -46,6 +47,7 @@ export const PORTAL_ROUTES: PortalRouteDefinition[] = [
   { key: 'pet-naming', path: '/pet-names', label: 'Pet Name Approvals', section: 'Monitoring', icon: Tag },
   { key: 'audit-log', path: '/audit', label: 'Audit Log', section: 'Monitoring', icon: ClipboardList },
   { key: 'pyreal-ledger', path: '/audit/pyreals', label: 'Pyreal Ledger', section: 'Monitoring', icon: Coins },
+  { key: 'economy', path: '/audit/economy', label: 'Economy', section: 'Monitoring', icon: Landmark },
   { key: 'map', path: '/map', label: '3D Showroom', section: 'Content Tools', icon: Globe, placeholder: false },
   { key: 'combat-calculator', path: '/combat-calculator', label: 'Combat Calculator', section: 'Content Tools', icon: Swords },
   { key: 'pet-breeding', path: '/pet-breeding', label: 'Pet Breeding', section: 'Content Tools', icon: Heart },
