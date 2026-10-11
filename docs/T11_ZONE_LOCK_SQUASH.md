@@ -2,7 +2,7 @@
 
 Status as of 2026-10-10, branch `feature/t11-squash-max-t10` (cut from master at `482d44d26`).
 Sections "How the squash works today" through "Cause" describe master before this branch.
-"Changes on this branch" lists what has been changed since (uncommitted, compiled, not tested in game).
+"Changes on this branch" lists what has been changed since (committed, compiled, not tested in game).
 
 ## Background
 
@@ -174,7 +174,8 @@ bound that ignores bank and mules.
   ratings in combat after #544 was live, the table is not applying on prod for a reason not yet
   found, and raising the table would fix nothing until that is. Check: developer character in T11
   gear, outside any T11 zone, armor lock on, run `@zcvitals`. Gear Max Health should read about
-  715 x T11 pieces / 18 plus non-T11 pieces.
+  `zc_lock_t10_max_health` (default 1810) x T11 pieces / 18, plus the Max Health on non-T11
+  pieces. On a build from before this branch the multiplier is the old fixed 715.
 - **Prod state unknown:** which build is running, and whether `zc_armor_zone_lock` is on (it is
   not stored in the local DB copy).
 - **Stackers:** a suit stacked on Crit Damage / Nether Resist (Double Dreggon) can still edge out
