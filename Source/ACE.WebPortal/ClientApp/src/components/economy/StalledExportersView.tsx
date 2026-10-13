@@ -85,7 +85,7 @@ function StalledCell({ row }: { row: StalledRow }) {
       title={row.stallIsMinimum ? 'No progress seen since tracking began, so the real figure may be longer.' : undefined}
     >
       {row.stallIsMinimum && <span className="text-neutral-500">at least </span>}
-      {row.stalledDays.toLocaleString()} days
+      {row.stalledDays.toLocaleString()} {row.stalledDays === 1 ? 'day' : 'days'}
     </span>
   )
 }

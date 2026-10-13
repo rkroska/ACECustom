@@ -26,7 +26,7 @@ export function StatusPill({ status }: { status: string }) {
 
 /** A change value like "+1.2M (+3.4%)", or a note when there is no history. */
 export function ChangeText({ change }: { change: { amount: number; pct: number } | null }) {
-  if (!change) return <span className="text-neutral-600">no snapshots yet</span>
+  if (!change) return <span className="text-neutral-600">needs a snapshot that old</span>
   const color = change.amount > 0 ? 'text-amber-300' : change.amount < 0 ? 'text-blue-300' : 'text-neutral-400'
   return (
     <span className={`tabular-nums ${color}`} title={`${formatFull(change.amount)} (${formatPct(change.pct, 2)})`}>

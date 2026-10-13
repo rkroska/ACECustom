@@ -219,8 +219,11 @@ namespace ACE.Server.Managers
         /// <summary>The pyreal ledger's item rows key their detail as "itemWcid:detail"; bank rows as "detail".</summary>
         private const string PyrealDetail = "CASE WHEN `kind` = 1 THEN `detail_key` ELSE SUBSTRING(`detail_key`, LOCATE(':', `detail_key`) + 1) END";
 
-        /// <summary>Pyreal ledger rows that are flows: bank and item rows, not the per-item sale rows and not balances minted by @copychar.</summary>
-        private static readonly string PyrealRows = $"`kind` IN (1, 2, 3) AND `source` <> '{PyrealLedger.SrcCopyChar}'";
+        /// <summary>
+        /// Pyreal ledger rows that are flows: bank and item rows, not the per-item sale rows, not balances minted by
+        /// @copychar, and not the bookkeeping rows for what characters already held when tracking began.
+        /// </summary>
+        private static readonly string PyrealRows = $"`kind` IN (1, 2, 3) AND `source` NOT IN ('{PyrealLedger.SrcCopyChar}', '{PyrealLedger.SrcOpening}')";
 
         // ---- flow groups -----------------------------------------------------------------------------------------
 
@@ -563,6 +566,10 @@ namespace ACE.Server.Managers
                     $"WHERE {where} AND `source` NOT IN ({InternalList}) GROUP BY src, dk",
                     Bind,
                     r => new DetailRow { Source = S(r, 0), DetailKey = S(r, 1), DetailName = S(r, 2), AmountIn = L(r, 3), AmountOut = L(r, 4), Events = L(r, 5), Characters = L(r, 6) });
+
+                // loot rows carry no id, and the stored name is just one corpse out of many
+                foreach (var d in details.Where(d => d.Source == PyrealLedger.SrcLoot && string.IsNullOrEmpty(d.DetailKey)))
+                    d.DetailName = "creature corpses (all)";
 
                 detail.Faucets = details.Where(d => d.AmountIn > d.AmountOut).OrderByDescending(d => d.AmountIn - d.AmountOut).Take(DetailLimit).ToList();
                 detail.Sinks = details.Where(d => d.AmountOut > d.AmountIn).OrderByDescending(d => d.AmountOut - d.AmountIn).Take(DetailLimit).ToList();
