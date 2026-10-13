@@ -37,6 +37,7 @@ namespace ACE.Server.Tests
             Assert.IsTrue(EconomyLedger.Tracks(PropertyInt64.BankedPrestigeCoins));
             Assert.IsTrue(EconomyLedger.Tracks(PropertyInt64.BankedLegendaryKeys));
             Assert.IsTrue(EconomyLedger.Tracks(PropertyInt64.BankedMythicalKeys));
+            Assert.IsTrue(EconomyLedger.Tracks(PropertyInt64.BankedEnlightenmentTokens));
 
             // pyreals belong to the pyreal ledger; XP must never be touched
             Assert.IsFalse(EconomyLedger.Tracks(PropertyInt64.BankedPyreals));
@@ -60,6 +61,14 @@ namespace ACE.Server.Tests
             Assert.IsTrue(EconomyLedger.Find("pyreals").FromPyrealLedger);
             Assert.AreEqual(1, EconomyLedger.Currencies.Count(c => c.FromPyrealLedger));
             Assert.IsNull(EconomyLedger.Find("nope"));
+
+            // the banked property of every currency leads back to that currency, and to no other
+            foreach (var currency in EconomyLedger.Currencies.Where(c => !c.FromPyrealLedger))
+            {
+                EconomyLedger.ResetForTests(true);
+                EconomyLedger.OnBalanceChanged(7, "Alice", 3, 0, currency.Bank[0], 0, 5);
+                Assert.AreEqual(currency.Key, EconomyLedger.PendingForTests().Single().currency);
+            }
         }
 
         // ---- recording ---------------------------------------------------------------------------------------------

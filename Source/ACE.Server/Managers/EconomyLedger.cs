@@ -167,6 +167,8 @@ namespace ACE.Server.Managers
                     Key = "mythical-keys", Name = "Mythical Keys", Bank = new[] { PropertyInt64.BankedMythicalKeys },
                     Items = mythicalKeyUses.Keys.ToArray(), ItemsUseStructure = true, UnitValue = w => mythicalKeyUses.TryGetValue(w, out var u) ? u : 1,
                 },
+                // bankable since the auto-deposit work of 2026-10-13; spent on enlightenments, pack first then bank
+                new Currency { Key = "enlightenment-tokens", Name = "Enlightenment Tokens", Bank = new[] { PropertyInt64.BankedEnlightenmentTokens }, Items = new[] { Player.ENLIGHTENMENT_TOKEN_WCID } },
             };
 
             for (var i = 0; i < list.Length; i++)
@@ -195,6 +197,8 @@ namespace ACE.Server.Managers
                     return Currencies[5];
                 case PropertyInt64.BankedMythicalKeys:
                     return Currencies[6];
+                case PropertyInt64.BankedEnlightenmentTokens:
+                    return Currencies[7];
                 default:
                     return null;
             }
