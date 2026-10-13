@@ -358,7 +358,7 @@ namespace ACE.Server.Managers
             {
                 foreach (var row in Query(
                     "SELECT `char_id`, MAX(`account_id`), SUM(`amount_in`), SUM(`amount_out`) FROM `pyreal_ledger_hourly` " +
-                    $"WHERE `kind` IN (1, 2, 3) AND `hour_utc` >= @since AND `source` NOT IN ({InternalList}) GROUP BY `char_id`",
+                    $"WHERE `kind` IN (1, 2, 3) AND `hour_utc` >= @since AND `source` NOT IN ({PyrealLedgerReports.NotEarnedList}) GROUP BY `char_id`",
                     c => Param(c, "@since", since),
                     r => (charId: Convert.ToUInt32(r.GetValue(0)), account: Convert.ToUInt32(L(r, 1)), amountIn: L(r, 2), amountOut: L(r, 3))))
                     AddEarned("pyreals", row.charId, row.account, row.amountIn, row.amountOut);

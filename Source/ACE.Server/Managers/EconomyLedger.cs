@@ -42,6 +42,15 @@ namespace ACE.Server.Managers
         public const string SrcFellowship = "Fellowship";
         public const string SrcQuest = "Quest";
         public const string SrcOtherLuminance = "Other";
+        /// <summary>The blackjack commands. A bet is placed by one command and paid by another, so they share one label and net to the house edge.</summary>
+        public const string SrcCasino = "Casino";
+        /// <summary>Spending one use of a key on a chest or door; the detail is what was unlocked.</summary>
+        public const string SrcKeyUse = "KeyUse";
+
+        private static readonly HashSet<string> casinoCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "blackjack", "hit", "stand", "double", "split", "fblackjack", "fhit", "fstand", "fdouble", "fsplit",
+        };
 
         /// <summary>Label for luminance granted with no scope open (see Player.AddLuminance).</summary>
         public static string SourceFor(ACE.Entity.Enum.XpType xpType)
@@ -90,6 +99,16 @@ namespace ACE.Server.Managers
 
         public static bool IsInternalSource(string source) => source != null && internalSources.Contains(source);
 
+        /// <summary>
+        /// The source a row is netted under. An item handed to an NPC is recorded as GiveNPC and what the NPC does in
+        /// return as Emote, both with the NPC as detail; they are two halves of one exchange. Netted apart, a luminance
+        /// token turned in for its own value would show as a faucet and an equal sink.
+        /// </summary>
+        public static string NetSource(string source) => source == PyrealLedger.SrcGiveNpc ? PyrealLedger.SrcEmote : source;
+
+        /// <summary>The same rule as <see cref="NetSource"/>, as SQL over a `source` column.</summary>
+        public const string NetSourceSql = "CASE WHEN `source` = 'GiveNPC' THEN 'Emote' ELSE `source` END";
+
         public static IEnumerable<string> InternalSources => internalSources;
 
         public const byte FormBank = 1;
@@ -114,8 +133,9 @@ namespace ACE.Server.Managers
             public Func<uint, long> UnitValue = _ => 1;
         }
 
-        private static readonly Dictionary<uint, long> legendaryKeyUses = new Dictionary<uint, long> { [500010] = 25, [51954] = 10, [48746] = 1 };
-        private static readonly Dictionary<uint, long> mythicalKeyUses = new Dictionary<uint, long> { [90000110] = 25, [90000109] = 10, [90000104] = 1 };
+        // every key the bank accepts (Player_Bank DepositLegendaryKeys / DepositMythicalKeys), with the uses of a full one
+        private static readonly Dictionary<uint, long> legendaryKeyUses = new Dictionary<uint, long> { [500010] = 25, [51954] = 10, [52010] = 5, [48748] = 2, [48746] = 1 };
+        private static readonly Dictionary<uint, long> mythicalKeyUses = new Dictionary<uint, long> { [90000110] = 25, [90000109] = 10, [90000108] = 5, [90000107] = 2, [90000104] = 1 };
         private static readonly uint[] lumTokens = { 227190187, 300101211, 867530211, 867530194, 64454972 };
 
         public static readonly Currency[] Currencies = BuildCurrencies();
@@ -361,6 +381,30 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
+        /// One use of a key was spent on <paramref name="target"/>. A key is a currency whose amount is its remaining
+        /// uses, so this is the real sink; the item itself disappearing when the last use is gone is not (the caller
+        /// runs that under <see cref="PyrealLedger.SrcIgnore"/>). Never throws.
+        /// </summary>
+        public static void OnKeyUse(Player player, uint keyWcid, WorldObject target)
+        {
+            if (!flowTracking || player == null || !flowItemCurrency.TryGetValue(keyWcid, out var currency) || !currency.ItemsUseStructure)
+                return;
+
+            try
+            {
+                if ((player.Account?.AccessLevel ?? 0) > 0)
+                    return;
+
+                Add(currency.Index, player.Guid.Full, player.Account?.AccountId ?? 0, player.Name, FormItem, SrcKeyUse,
+                    target?.WeenieClassId.ToString() ?? "", target?.Name ?? "", 0, 1);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[EconomyLedger] OnKeyUse failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Works out the label for a change to <paramref name="charId"/>: an explicit source wins, then the scope open on
         /// this thread, then Unattributed. A chat command scope for /bank becomes <see cref="SrcBank"/>.
         /// </summary>
@@ -388,7 +432,12 @@ namespace ACE.Server.Managers
             detailKey = explicitKey ?? (isActor ? ctx.GetKey() : ctx.ActorGuid.ToString());
             detailName = explicitName ?? (isActor ? ctx.GetName() : ctx.ActorName);
 
-            if (source == PyrealLedger.SrcCommand && IsBankCommand(ctx.GetKey()))
+            if (source != PyrealLedger.SrcCommand)
+                return;
+
+            var command = ctx.GetKey();
+
+            if (IsBankCommand(command))
             {
                 source = SrcBank;
                 if (isActor)
@@ -396,6 +445,20 @@ namespace ACE.Server.Managers
                     detailKey = "";
                     detailName = "";
                 }
+            }
+            else if (casinoCommands.Contains(command))
+            {
+                // every player at the table, whoever typed the command
+                source = SrcCasino;
+                detailKey = "blackjack";
+                detailName = "Blackjack";
+            }
+            else if (string.Equals(command, "clap", StringComparison.OrdinalIgnoreCase))
+            {
+                // the coins are credited before the command opens its own Clap scope
+                source = PyrealLedger.SrcClap;
+                detailKey = "";
+                detailName = "";
             }
         }
 
@@ -716,8 +779,10 @@ namespace ACE.Server.Managers
                     foreach (var row in rows)
                     {
                         var currency = Find(row.Currency);
-                        // pyreal flows live in the pyreal ledger, which has its own checks
-                        if (net != null && currency != null && !currency.FromPyrealLedger)
+                        // Pyreal flows live in the pyreal ledger, which has its own checks. Keys are left out too: a key
+                        // moving between a pack and the bank is recorded as a full key on one side and its remaining
+                        // uses on the other, so the two would never agree.
+                        if (net != null && currency != null && !currency.FromPyrealLedger && !currency.ItemsUseStructure)
                             row.FlowNet = net[currency.Index];
                     }
 

@@ -137,9 +137,12 @@ namespace ACE.Server.Managers
                 var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
                 if (weenie?.PropertiesDID != null && weenie.PropertiesDID.TryGetValue(PropertyDataId.UseCreateItem, out var inner) && inner != wcid && IsCurrency(inner))
                 {
-                    // a box: worth what it turns into, whatever its own Value says
+                    // a box: worth what it turns into, whatever its own Value says. The contents are read as a plain
+                    // item (never as another box), so two boxes pointing at each other cannot recurse.
                     var quantity = weenie.PropertiesInt != null && weenie.PropertiesInt.TryGetValue(PropertyInt.UseCreateQuantity, out var q) ? q : 1;
-                    value = FaceValue(inner) * Math.Max(1, quantity);
+                    var contents = DatabaseManager.World.GetCachedWeenie(inner);
+                    long each = contents?.PropertiesInt != null && contents.PropertiesInt.TryGetValue(PropertyInt.Value, out var iv) ? iv : 0;
+                    value = each * Math.Max(1, quantity);
                 }
                 else if (weenie?.PropertiesInt != null && weenie.PropertiesInt.TryGetValue(PropertyInt.Value, out var v))
                     value = v;
@@ -930,16 +933,20 @@ namespace ACE.Server.Managers
                 var banked = player.GetProperty(PropertyInt64.BankedPyreals) ?? 0;
                 var now = DateTime.UtcNow;
 
+                // face values first: a lookup can read the world database, and nothing waits on that under the lock
+                var rows = new List<(uint wcid, long units, long value)>(held.Count);
+                foreach (var kv in held)
+                    rows.Add((kv.Key, kv.Value, FaceValue(kv.Key) * kv.Value));
+
                 lock (sync)
                 {
                     var state = GetOrCreateState(charId, accountId, player.Name, banked);
                     long position = 0;
 
-                    foreach (var kv in held)
+                    foreach (var (wcid, units, value) in rows)
                     {
-                        var value = FaceValue(kv.Key) * kv.Value;
                         position += value;
-                        AddToBucket(now, charId, accountId, player.Name, KindItemIn, SrcOpening, $"{kv.Key}:", "starting items", value, 0, kv.Value);
+                        AddToBucket(now, charId, accountId, player.Name, KindItemIn, SrcOpening, $"{wcid}:", "starting items", value, 0, units);
                     }
 
                     state.CurrencyPosition = position;

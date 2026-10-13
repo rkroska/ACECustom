@@ -209,6 +209,32 @@ namespace ACE.Server.Tests
             Assert.AreEqual(0, previous);
         }
 
+        [TestMethod]
+        public void CasinoCommands_ShareOneLabel_SoBetsAndWinsNet()
+        {
+            // the bet is taken by /blackjack, the win is paid by /stand, and a fellow at the table is paid on the actor's thread
+            using (PyrealLedger.Begin(PyrealLedger.SrcCommand, "blackjack", "@blackjack"))
+                EconomyLedger.OnBalanceChanged(7, "Alice", 3, 0, PropertyInt64.BankedLuminance, 1000, 0);
+            using (PyrealLedger.Begin(PyrealLedger.SrcCommand, "stand", "@stand"))
+                EconomyLedger.OnBalanceChanged(7, "Alice", 3, 0, PropertyInt64.BankedLuminance, 0, 1900);
+
+            var rows = EconomyLedger.PendingForTests();
+            Assert.AreEqual(1, rows.Count);
+            Assert.AreEqual(EconomyLedger.SrcCasino, rows[0].source);
+            Assert.AreEqual("blackjack", rows[0].detailKey);
+            Assert.AreEqual(1900, rows[0].amountIn);
+            Assert.AreEqual(1000, rows[0].amountOut);
+        }
+
+        [TestMethod]
+        public void ClapCommand_IsLabeledClap()
+        {
+            using (PyrealLedger.Begin(PyrealLedger.SrcCommand, "clap", "@clap"))
+                EconomyLedger.OnBalanceChanged(7, "Alice", 3, 0, PropertyInt64.BankedEnlightenedCoins, 0, 30);
+
+            Assert.AreEqual(PyrealLedger.SrcClap, EconomyLedger.PendingForTests().Single().source);
+        }
+
         // ---- supply ------------------------------------------------------------------------------------------------
 
         [TestMethod]
@@ -351,17 +377,32 @@ namespace ACE.Server.Tests
         {
             var (faucets, sinks, moved) = EconomyReports.NetFlow(new[]
             {
-                Group(PyrealLedger.SrcEmote, "100", 5000, 0),               // quest reward: faucet 5000
+                Group(PyrealLedger.SrcEmote, "100", 5000, 0),               // quest reward: faucet 5000, less the 100 handed in
                 Group(PyrealLedger.SrcVendorBuy, "200", 250_000, 250_000),  // note bought for its face value: neither
                 Group(PyrealLedger.SrcVendorBuy, "300", 0, 900),            // real purchase: sink 900
-                Group(PyrealLedger.SrcGiveNpc, "100", 0, 100),              // turn-in: sink 100
+                Group(PyrealLedger.SrcGiveNpc, "100", 0, 100),              // handed to the same NPC: nets against its reward
                 Group(EconomyLedger.SrcBank, "", 7000, 7000),               // deposit: moved, not created
                 Group(PyrealLedger.SrcTransfer, "", 300, 300),
             });
 
-            Assert.AreEqual(5000, faucets);
-            Assert.AreEqual(1000, sinks);
+            Assert.AreEqual(4900, faucets);
+            Assert.AreEqual(900, sinks);
             Assert.AreEqual(7300, moved);
+        }
+
+        [TestMethod]
+        public void NetFlow_ATokenTurnedInForItsOwnValue_IsNeitherFaucetNorSink()
+        {
+            // a luminance token handed to its NPC (GiveNPC out) and the luminance the NPC pays for it (Emote in)
+            var (faucets, sinks, _) = EconomyReports.NetFlow(new[]
+            {
+                Group(PyrealLedger.SrcGiveNpc, "12050", 0, 500_000_000_000),
+                Group(PyrealLedger.SrcEmote, "12050", 500_000_000_000, 0),
+                Group(PyrealLedger.SrcEmote, "777", 1_000, 0),      // an ordinary quest reward from another NPC
+            });
+
+            Assert.AreEqual(1_000, faucets);
+            Assert.AreEqual(0, sinks);
         }
 
         [TestMethod]

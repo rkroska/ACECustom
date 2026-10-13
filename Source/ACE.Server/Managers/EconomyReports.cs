@@ -276,7 +276,13 @@ namespace ACE.Server.Managers
             }
 
             lock (cacheLock)
+            {
+                // nothing older than the cache time is kept, so stepping through windows cannot pile data up
+                foreach (var stale in flowCache.Where(kv => (DateTime.UtcNow - kv.Value.at).TotalSeconds >= CacheSeconds).Select(kv => kv.Key).ToList())
+                    flowCache.Remove(stale);
+
                 flowCache[days] = (DateTime.UtcNow, data);
+            }
 
             return data;
         }
@@ -289,7 +295,7 @@ namespace ACE.Server.Managers
         {
             long faucets = 0, sinks = 0, movedIn = 0, movedOut = 0;
 
-            foreach (var g in groups.GroupBy(x => (x.Source, x.DetailKey)))
+            foreach (var g in groups.GroupBy(x => (Source: EconomyLedger.NetSource(x.Source), x.DetailKey)))
             {
                 var amountIn = g.Sum(x => x.AmountIn);
                 var amountOut = g.Sum(x => x.AmountOut);
@@ -317,8 +323,13 @@ namespace ACE.Server.Managers
         private sealed class SupplyDay
         {
             public DateTime Day;
+            /// <summary>When the snapshot was actually taken; gaps are measured from this, not from the calendar day.</summary>
+            public DateTime TakenUtc;
             public Supply Supply;
         }
+
+        /// <summary>Two snapshots closer together than this are not compared: one day's noise times seven is not a trend.</summary>
+        internal const double MinTrendGapDays = 2;
 
         private static Dictionary<string, List<SupplyDay>> LoadSupply(int days)
         {
@@ -330,7 +341,7 @@ namespace ACE.Server.Managers
             var since = DateTime.UtcNow.Date.AddDays(-Math.Max(days, 40));
 
             var rows = Query(
-                "SELECT `currency`, `day_utc`, `banked`, `items`, `holders`, `active_supply`, `active_holders`, `top1pct_amount`, `largest_holder`, `admin_supply`, `flow_net` " +
+                "SELECT `currency`, `day_utc`, `banked`, `items`, `holders`, `active_supply`, `active_holders`, `top1pct_amount`, `largest_holder`, `admin_supply`, `flow_net`, `taken_utc` " +
                 "FROM `economy_supply_daily` WHERE `day_utc` >= @since ORDER BY `day_utc`",
                 c => Param(c, "@since", since),
                 r =>
@@ -339,6 +350,7 @@ namespace ACE.Server.Managers
                     return (currency: S(r, 0), row: new SupplyDay
                     {
                         Day = day,
+                        TakenUtc = r.IsDBNull(11) ? day : Convert.ToDateTime(r.GetValue(11)),
                         Supply = new Supply
                         {
                             Day = DayText(day), Banked = L(r, 2), Items = L(r, 3), Total = L(r, 2) + L(r, 3), Holders = L(r, 4), ActiveSupply = L(r, 5),
@@ -397,7 +409,7 @@ namespace ACE.Server.Managers
         private static Change ChangeSince(List<SupplyDay> supply, SupplyDay latest, int daysBack)
         {
             // the newest snapshot at least daysBack old, but not so old that it measures a different period
-            var reference = supply.LastOrDefault(s => s.Day <= latest.Day.AddDays(-daysBack) && s.Day >= latest.Day.AddDays(-daysBack - 4));
+            var reference = supply.LastOrDefault(s => s.Day <= latest.Day.AddDays(-daysBack) && s.Day >= latest.Day.AddDays(-daysBack - 1));
             if (reference == null)
                 return null;
 
@@ -439,12 +451,13 @@ namespace ACE.Server.Managers
             // weekly trend: two snapshots when there are two, otherwise recorded flows against the latest supply
             if (latest != null)
             {
+                // about a week back if there is one, otherwise the oldest snapshot in the last week that is far enough away
                 var reference = supply.LastOrDefault(s => s.Day <= latest.Day.AddDays(-7) && s.Day >= latest.Day.AddDays(-11))
-                                ?? supply.FirstOrDefault(s => s.Day >= latest.Day.AddDays(-7) && s.Day < latest.Day);
+                                ?? supply.FirstOrDefault(s => s.Day >= latest.Day.AddDays(-7) && (latest.TakenUtc - s.TakenUtc).TotalDays >= MinTrendGapDays);
 
                 if (reference != null)
                 {
-                    summary.WeeklyPct = WeeklyPct(reference.Supply.Total, latest.Supply.Total, (latest.Day - reference.Day).TotalDays);
+                    summary.WeeklyPct = WeeklyPct(reference.Supply.Total, latest.Supply.Total, (latest.TakenUtc - reference.TakenUtc).TotalDays);
                     if (summary.WeeklyPct.HasValue)
                         summary.WeeklyPctBasis = "snapshots";
                 }
@@ -457,7 +470,8 @@ namespace ACE.Server.Managers
                         from = firstDay;
 
                     var (f, s, _) = NetFlow(flows.Where(x => x.Day >= from));
-                    var covered = (today - from).TotalDays + 1;
+                    // today is only part of a day
+                    var covered = Math.Max(1.0 / 24, (DateTime.UtcNow - from).TotalDays);
                     summary.WeeklyPct = (f - s) * 100.0 / latest.Supply.Total * (7.0 / covered);
                     summary.WeeklyPctBasis = "flows";
                 }
@@ -509,7 +523,12 @@ namespace ACE.Server.Managers
             var detail = BuildCurrency(currency, days);
 
             lock (cacheLock)
+            {
+                foreach (var stale in detailCache.Where(kv => (DateTime.UtcNow - kv.Value.at).TotalSeconds >= CacheSeconds).Select(kv => kv.Key).ToList())
+                    detailCache.Remove(stale);
+
                 detailCache[(currency.Key, days)] = (DateTime.UtcNow, detail);
+            }
 
             return detail;
         }
@@ -540,8 +559,8 @@ namespace ACE.Server.Managers
                     r => new SourceRow { Source = S(r, 0), Kind = EconomyLedger.IsInternalSource(S(r, 0)) ? "internal" : "flow", AmountIn = L(r, 1), AmountOut = L(r, 2), Events = L(r, 3), Characters = L(r, 4) });
 
                 var details = Query(
-                    $"SELECT `source`, {detailKey} AS dk, MAX(`detail_name`), SUM(`amount_in`), SUM(`amount_out`), SUM(`events`), COUNT(DISTINCT `char_id`) FROM `{table}` " +
-                    $"WHERE {where} AND `source` NOT IN ({InternalList}) GROUP BY `source`, dk",
+                    $"SELECT {EconomyLedger.NetSourceSql} AS src, {detailKey} AS dk, MAX(`detail_name`), SUM(`amount_in`), SUM(`amount_out`), SUM(`events`), COUNT(DISTINCT `char_id`) FROM `{table}` " +
+                    $"WHERE {where} AND `source` NOT IN ({InternalList}) GROUP BY src, dk",
                     Bind,
                     r => new DetailRow { Source = S(r, 0), DetailKey = S(r, 1), DetailName = S(r, 2), AmountIn = L(r, 3), AmountOut = L(r, 4), Events = L(r, 5), Characters = L(r, 6) });
 
@@ -625,20 +644,22 @@ namespace ACE.Server.Managers
             };
 
             if (currency.FromPyrealLedger)
+            {
                 notes.Add("Pyreal flows come from the pyreal ledger (banked pyreals plus coins, trade notes, peas and boxes of notes at face value). Staff accounts and balances created by @copychar are left out. Unexplained is not worked out for pyreals; the Pyreal Ledger page has its own checks.");
+                notes.Add("Dressing Room and Forge fees were recorded as Unattributed until the build of 2026-10-12 labeled them Fee; an Unattributed pyreal sink in older days is those fees.");
+            }
             else
-                notes.Add("Unexplained = how much the supply changed since the previous snapshot, minus everything recorded in between. Positive means currency appeared with no record. " +
-                          "Small values are timing noise (the pack count takes a minute or two); deleted characters show as a negative. It is blank when recording was off for part of the period.");
-
-            if (currency.ItemsUseStructure)
-                notes.Add("Key uses spent on chests are not recorded as a flow, so keys normally show a negative unexplained figure.");
-            else
+            {
                 notes.Add(EconomyLedger.FlowTracking
                     ? $"Flow tracking for this currency began {EconomyLedger.FlowTrackingSinceUtc:yyyy-MM-dd HH:mm} UTC; earlier days have no faucet or sink data."
                     : "Flow tracking is off, so no faucets or sinks are being recorded (ServerConfig economy_ledger, or @economyledger on).");
 
-            if (currency.ItemsUseStructure)
-                notes.Add("Key items moving between characters and the world are counted as full keys; the supply snapshot counts remaining uses.");
+                if (currency.ItemsUseStructure)
+                    notes.Add("Each use of a key on a chest or door is a KeyUse sink, labeled with what was unlocked. Key items moving between characters and the world are counted as full keys, and the supply snapshot counts remaining uses, so Unexplained is not worked out for keys.");
+                else
+                    notes.Add("Unexplained = how much the supply changed since the previous snapshot, minus everything recorded in between. Positive means currency appeared with no record. " +
+                              "Small values are timing noise (the pack count takes a minute or two); deleted characters show as a negative. It is blank when recording was off for part of the period.");
+            }
 
             if (currency.Key == "luminance")
                 notes.Add("Kill luminance shared to a fellowship member on another landblock thread is listed under Fellowship with no creature.");
@@ -687,7 +708,8 @@ namespace ACE.Server.Managers
             sb.Append($"- Window: the last {days} days, generated {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC. Supply is a daily snapshot; faucets and sinks are recorded flows.\n");
             sb.Append("- Faucet = creates currency, sink = removes it. Both are NET per source and detail.\n");
             sb.Append("- Source says what kind of code path it was. Detail id is a weenie class id (wcid) for these sources: Emote and GiveNPC (the NPC), VendorBuy and VendorSell (the vendor), Kill (the creature), Chest (the container), Recipe (the recipe). For Command it is the chat command name.\n");
-            sb.Append("- Emote covers quest rewards and NPC turn-ins. GiveNPC is an item handed to an NPC. Clap is the /clap coin command. Unattributed means a code path nobody has labeled yet.\n");
+            sb.Append("- Emote covers quest rewards and NPC turn-ins, net of any currency item handed to that NPC. Fee is a Dressing Room or Forge fee. KeyUse is one key use spent on a chest. Casino is blackjack, net of bets. Clap is the /clap coin command.\n");
+            sb.Append("- Unattributed means a code path nobody has labeled yet. For pyreals before 2026-10-12 it is mostly Dressing Room and Forge fees, not a problem.\n");
             sb.Append("- Unexplained = supply change between two snapshots that no recorded flow accounts for. A large positive value means an unlabeled code path, a database edit or a dupe; investigate that before balancing rewards.\n");
             sb.Append("- Characters = how many different characters used that source. A large amount from very few characters suggests an exploit or a bot rather than a balance problem.\n");
             sb.Append($"- Flow tracking for currencies other than pyreals: {(EconomyLedger.FlowTracking ? "on since " + (EconomyLedger.FlowTrackingSinceUtc?.ToString("yyyy-MM-dd HH:mm") ?? "?") + " UTC" : "OFF")}. ");

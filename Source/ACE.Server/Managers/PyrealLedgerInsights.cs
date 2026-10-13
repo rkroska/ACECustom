@@ -212,7 +212,7 @@ namespace ACE.Server.Managers
         {
             var reasons = new List<string>();
 
-            if (row.FlaggedAmount > 0)
+            if (row.FlaggedAmount >= Math.Max(1, o.MinSurplus))
                 reasons.Add($"Flagged gains of {Compact(row.FlaggedAmount)} (dupe, rollback or outside edit)");
 
             if (row.CurrencySurplus >= Math.Max(1, o.MinSurplus))
@@ -267,7 +267,7 @@ namespace ACE.Server.Managers
                 $"SELECT `account_id`, `hour_utc`, `source`, {DetailExpr} AS dk, MAX(`detail_name`), SUM(`amount_in`), SUM(`amount_out`) FROM `pyreal_ledger_hourly` " +
                 $"WHERE `kind` IN (1, 2, 3) AND `hour_utc` >= @since AND `source` NOT IN ({NotEarnedList}){NotStaffSql()} GROUP BY `account_id`, `hour_utc`, `source`, dk",
                 c => P(c, "@since", since),
-                r => new EarnRow { AccountId = U(r, 0), Hour = Convert.ToDateTime(r.GetValue(1)), Source = S(r, 2), DetailKey = S(r, 3), DetailName = S(r, 4), AmountIn = L(r, 5), AmountOut = L(r, 6) });
+                r => new EarnRow { AccountId = U(r, 0), Hour = Convert.ToDateTime(r.GetValue(1)), Source = EconomyLedger.NetSource(S(r, 2)), DetailKey = S(r, 3), DetailName = S(r, 4), AmountIn = L(r, 5), AmountOut = L(r, 6) });
 
             var signals = ComputeSignals(earned);
             var medianPeak = Median(signals.Values.Select(s => s.PeakHourAmount));
@@ -474,7 +474,7 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_reviewed` (
 
             foreach (var net in Query(
                 $"SELECT SUM(`amount_in`) - SUM(`amount_out`) FROM `pyreal_ledger_hourly` " +
-                $"WHERE `kind` IN (1, 2, 3) AND `hour_utc` >= @since AND `source` NOT IN ({NotEarnedList}){NotStaffSql()} GROUP BY `source`, {DetailExpr}",
+                $"WHERE `kind` IN (1, 2, 3) AND `hour_utc` >= @since AND `source` NOT IN ({NotEarnedList}){NotStaffSql()} GROUP BY {EconomyLedger.NetSourceSql}, {DetailExpr}",
                 c => P(c, "@since", since),
                 r => L(r, 0)))
             {
@@ -500,7 +500,12 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_reviewed` (
             context.WeeklyPct = context.Supply > 0 ? Math.Round(context.NetPerWeek * 100.0 / context.Supply, 3) : null;
 
             lock (contextCache)
+            {
+                foreach (var stale in contextCache.Where(kv => (DateTime.UtcNow - kv.Value.at).TotalSeconds >= 60).Select(kv => kv.Key).ToList())
+                    contextCache.Remove(stale);
+
                 contextCache[days] = (DateTime.UtcNow, context);
+            }
 
             return context;
         }
