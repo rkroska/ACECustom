@@ -352,14 +352,18 @@ namespace ACE.Server.Entity
                 if (Generator.GetProperty(PropertyBool.OnlyCombatPetsCanDamage) == true)
                     obj.SetProperty(PropertyBool.OnlyCombatPetsCanDamage, true);
 
-                // GeneratorNoCorpse: nested generators inherit the flag; creatures get NoCorpse.
+                // GeneratorNoCorpse: nested generators inherit the flag; creatures get NoCorpse and keep the flag,
+                // which is what tells CreateCorpse to drop nothing (plain NoCorpse still drops loot on the ground).
                 if (Generator.GetProperty(PropertyBool.GeneratorNoCorpse) == true)
                 {
                     if (obj.IsGenerator)
                         obj.SetProperty(PropertyBool.GeneratorNoCorpse, true);
 
                     if (obj is Creature noCorpseCreature && obj is not Player)
+                    {
                         noCorpseCreature.NoCorpse = true;
+                        obj.SetProperty(PropertyBool.GeneratorNoCorpse, true);
+                    }
                 }
 
                 // SpawnColourMutationChance: nested generators inherit the chance; each creature rolls for itself.

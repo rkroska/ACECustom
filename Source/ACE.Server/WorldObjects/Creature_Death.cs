@@ -687,6 +687,10 @@ namespace ACE.Server.WorldObjects
                 if (this is Pet)
                     return;
 
+                // Spawned by a GeneratorNoCorpse generator: no corpse and no loot at all
+                if (GetProperty(PropertyBool.GeneratorNoCorpse) == true)
+                    return;
+
                 var loot = GenerateTreasure(killer, null);
 
                 foreach(var item in loot)
