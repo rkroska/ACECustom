@@ -152,6 +152,10 @@ namespace ACE.Server.Network.Handlers
                 }
 
                 var possessions = player.GetAllPossessions();
+
+                // pyreal ledger: the starting coins of a new character
+                PyrealLedger.OnCharacterCreated(player, possessions);
+
                 var possessedBiotas = new Collection<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>();
                 foreach (var possession in possessions)
                     possessedBiotas.Add((possession.Biota, possession.BiotaDatabaseLock));

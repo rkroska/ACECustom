@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { LedgerNpcReceiverRow, LedgerNpcRow } from '../../types/pyrealLedger'
+import type { LedgerNpcHandinRow, LedgerNpcReceiverRow, LedgerNpcRow } from '../../types/pyrealLedger'
 import { accountPath, characterPath, formatDateTime, useLedgerFetch } from './ledgerUtils'
 import {
   EmptyState,
@@ -21,6 +21,7 @@ import {
   TH_NUM_CLASS,
   TableScroll,
 } from './LedgerShared'
+import { ContextLine, CutControl, WhatIfCell, useContextData, useCut } from './WhatIf'
 
 const LIMIT = 200
 
@@ -39,6 +40,8 @@ export default function NpcsTab({
 }) {
   const { data, loading, error } = useLedgerFetch<LedgerNpcRow[]>(`/npcs?days=${days}&limit=${LIMIT}`)
   const rows = data ?? []
+  const ctx = useContextData(days).data
+  const [cut, setCut] = useCut()
   const openMissing = openWcid !== null && !loading && !error && !rows.some(r => r.npcWcid === openWcid)
 
   return (
@@ -46,6 +49,10 @@ export default function NpcsTab({
       title="Quest NPC payouts"
       help="NPCs ranked by the coins, trade notes and pyreals their quest rewards handed out. The ledger records where currency came from; it does not judge whether a reward is too generous. A reward that pays far more than the others, or one character collecting most of it, is worth a look."
     >
+      <div className="px-4 pt-3 space-y-3">
+        <ContextLine ctx={ctx} />
+        <CutControl cut={cut} onChange={setCut} />
+      </div>
       {loading ? (
         <LoadingState />
       ) : error ? (
@@ -66,14 +73,20 @@ export default function NpcsTab({
                   <th className={TH_NUM_CLASS} title="How many times the NPC handed something out">Gives</th>
                   <th className={TH_NUM_CLASS}>Characters</th>
                   <th className={TH_NUM_CLASS}>Accounts</th>
+                  <th className={TH_NUM_CLASS} title="Average paid per give">Per give</th>
                   <th className={TH_CLASS} title="The character who received the most from this NPC, and their share of the total">Top receiver</th>
+                  <th className={TH_CLASS} title="The most this NPC paid out in a single hour">Busiest hour</th>
+                  <th className={TH_NUM_CLASS} title="Average paid per week over the period">Per week</th>
+                  <th className={TH_NUM_CLASS} title="Share of everything created on the server">Share of all creation</th>
+                  <th className={TH_NUM_CLASS} title="Items handed in to this NPC (units)">Handed in</th>
+                  <th className={TH_CLASS}>What if</th>
                 </tr>
               </thead>
               <tbody className={TBODY_CLASS}>
                 {rows.map(row => {
                   const open = openWcid === row.npcWcid
-                  const share = sharePct(row.topReceiverValue, row.total)
-                  const lopsided = share >= 50 && row.characters > 1
+                  const lopsided = row.topReceiverSharePct >= 50
+                  const hotHour = row.busiestHourValue >= 1000000000
                   return (
                     <Fragment key={row.npcWcid}>
                       <tr className={`${ROW_CLICK_CLASS} ${open ? 'bg-neutral-800/40' : ''}`} onClick={() => onToggle(open ? null : row.npcWcid)}>
@@ -98,6 +111,9 @@ export default function NpcsTab({
                         <td className={TD_NUM_CLASS}>{row.gives.toLocaleString()}</td>
                         <td className={TD_NUM_CLASS}>{row.characters.toLocaleString()}</td>
                         <td className={TD_NUM_CLASS}>{row.accounts.toLocaleString()}</td>
+                        <td className={TD_NUM_CLASS}>
+                          <Money value={row.perGive} />
+                        </td>
                         <td className={`${TD_CLASS} whitespace-nowrap`}>
                           {row.topReceiver && row.topReceiverCharId ? (
                             <span className="inline-flex items-center gap-2">
@@ -110,18 +126,43 @@ export default function NpcsTab({
                                 }`}
                                 title={`${row.topReceiverValue.toLocaleString()} of ${row.total.toLocaleString()} paid`}
                               >
-                                {share}%
+                                {row.topReceiverSharePct.toLocaleString(undefined, { maximumFractionDigits: 1 })}%
                               </span>
                             </span>
                           ) : (
                             <span className="text-neutral-600">-</span>
                           )}
                         </td>
+                        <td className={`${TD_CLASS} whitespace-nowrap`}>
+                          {row.busiestHourValue > 0 ? (
+                            <span title={`${row.busiestHourValue.toLocaleString()} pyreals`}>
+                              <Money value={row.busiestHourValue} className={hotHour ? 'text-amber-300 font-semibold' : ''} />
+                              <div className="text-[11px] text-neutral-500">
+                                {row.busiestHourGives.toLocaleString()} gives by {row.busiestHourChar ?? 'unknown'} at {formatDateTime(row.busiestHourUtc)}
+                              </div>
+                            </span>
+                          ) : (
+                            <span className="text-neutral-600">-</span>
+                          )}
+                        </td>
+                        <td className={TD_NUM_CLASS}>
+                          <Money value={row.perWeek} />
+                        </td>
+                        <td className={`${TD_NUM_CLASS} text-neutral-400`}>
+                          {row.shareOfCreationPct.toLocaleString(undefined, { maximumFractionDigits: 1 })}%
+                        </td>
+                        <td className={TD_NUM_CLASS} title={`${row.handedInUnits.toLocaleString()} items`}>
+                          {row.handedInUnits > 0 ? row.handedInUnits.toLocaleString() : '-'}
+                        </td>
+                        <td className={`${TD_CLASS} whitespace-nowrap`}>
+                          <WhatIfCell perWeek={row.perWeek} cut={cut} ctx={ctx} />
+                        </td>
                       </tr>
                       {open && (
                         <tr>
-                          <td colSpan={9} className="bg-neutral-950/60 px-3 py-3">
+                          <td colSpan={15} className="bg-neutral-950/60 px-3 py-3">
                             <NpcReceivers wcid={row.npcWcid} total={row.total} days={days} />
+                            <NpcHandins wcid={row.npcWcid} days={days} />
                           </td>
                         </tr>
                       )}
@@ -137,6 +178,7 @@ export default function NpcsTab({
                 NPC WCID {openWcid} is not in the top {LIMIT} for this period. Who it paid:
               </div>
               <NpcReceivers wcid={openWcid} total={null} days={days} />
+              <NpcHandins wcid={openWcid} days={days} />
             </div>
           )}
         </TableScroll>
@@ -208,6 +250,61 @@ function NpcReceivers({ wcid, total, days }: { wcid: number; total: number | nul
           </tbody>
         </table>
       </TableScroll>
+    </div>
+  )
+}
+
+function NpcHandins({ wcid, days }: { wcid: number; days: number }) {
+  const { data, loading, error } = useLedgerFetch<LedgerNpcHandinRow[]>(`/npcs/${wcid}/handins?days=${days}`)
+  const rows = data ?? []
+
+  return (
+    <div className="mt-3 rounded-xl border border-neutral-800 overflow-hidden">
+      <div className="px-3 py-2 text-[10px] font-bold text-neutral-500 uppercase tracking-widest border-b border-neutral-800">
+        Items handed in
+      </div>
+      {loading ? (
+        <LoadingState />
+      ) : error ? (
+        <ErrorState message={error} />
+      ) : rows.length === 0 ? (
+        <EmptyState message="No hand-ins recorded yet (recording began with this build)." />
+      ) : (
+        <TableScroll>
+          <table className={TABLE_CLASS}>
+            <thead className={THEAD_CLASS}>
+              <tr className="border-b border-neutral-800">
+                <th className={TH_CLASS}>Item</th>
+                <th className={TH_NUM_CLASS}>Units</th>
+                <th className={TH_NUM_CLASS}>Gives</th>
+                <th className={TH_NUM_CLASS}>Characters</th>
+                <th className={TH_CLASS}>Top giver</th>
+              </tr>
+            </thead>
+            <tbody className={TBODY_CLASS}>
+              {rows.map(r => (
+                <tr key={r.itemWcid} className={ROW_CLASS}>
+                  <td className={`${TD_CLASS} whitespace-nowrap`}>
+                    {r.itemName || 'Unknown item'} <span className="font-mono text-neutral-500">{r.itemWcid}</span>
+                  </td>
+                  <td className={TD_NUM_CLASS}>{r.units.toLocaleString()}</td>
+                  <td className={TD_NUM_CLASS}>{r.gives.toLocaleString()}</td>
+                  <td className={TD_NUM_CLASS}>{r.characters.toLocaleString()}</td>
+                  <td className={`${TD_CLASS} whitespace-nowrap`}>
+                    {r.topGiver ? (
+                      <>
+                        {r.topGiver} <span className="text-neutral-500">({r.topGiverUnits.toLocaleString()})</span>
+                      </>
+                    ) : (
+                      <span className="text-neutral-600">-</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableScroll>
+      )}
     </div>
   )
 }

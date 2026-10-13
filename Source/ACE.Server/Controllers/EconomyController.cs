@@ -40,6 +40,11 @@ namespace ACE.Server.Web.Controllers
         [HttpGet("prompt")]
         public IActionResult GetPrompt([FromQuery] string currency = "all", [FromQuery] int days = 30) => Run(() => EconomyReports.GetPrompt(currency, days));
 
+        [HttpGet("stalled")]
+        public IActionResult GetStalled([FromQuery] int days = 30, [FromQuery] int stallDays = 30, [FromQuery] int minEnl = 10, [FromQuery] int maxEnl = 0,
+            [FromQuery] string currency = "all", [FromQuery] long minExport = 0)
+            => Run(() => EconomyStalledReport.Get(days, stallDays, minEnl, maxEnl, currency, minExport));
+
         [HttpPost("snapshot")]
         public IActionResult TakeSnapshot() => Run(() =>
         {

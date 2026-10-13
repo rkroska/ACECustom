@@ -4076,6 +4076,7 @@ namespace ACE.Server.WorldObjects
                         target.EmoteManager.ExecuteEmoteSet(emoteResult, this);
 
                         PyrealLedger.OnCurrencyItem(this, itemToGive, stackSize, false, PyrealLedger.SrcGiveNpc, target.WeenieClassId.ToString(), target.Name);
+                        PyrealLedger.OnHandedIn(this, itemToGive.WeenieClassId, stackSize, target);
 
                         itemToGive.Destroy();
                     }

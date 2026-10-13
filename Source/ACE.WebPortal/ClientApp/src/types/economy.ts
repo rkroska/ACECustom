@@ -137,3 +137,55 @@ export interface EconomySnapshotResult {
   started: boolean
   message: string
 }
+
+/** GET /api/audit/economy/stalled */
+export interface StalledCharacter {
+  charId: number
+  charName: string
+  enlightenment: number
+  augs: number
+}
+
+export interface StalledCurrency {
+  key: string
+  name: string
+  earned: number
+  spentOnSelf: number
+  exported: number
+}
+
+export interface StalledRecipient {
+  accountId: number
+  accountName: string
+  charName: string
+  currency: string
+  currencyName: string
+  amount: number
+}
+
+export interface StalledRow {
+  accountId: number
+  accountName: string
+  maxEnlightenment: number
+  augs: number
+  stalledDays: number
+  stallIsMinimum: boolean
+  lastProgressUtc: string | null
+  lastLoginUtc: string | null
+  characters: StalledCharacter[]
+  currencies: StalledCurrency[]
+  recipients: StalledRecipient[]
+}
+
+export interface StalledReport {
+  days: number
+  stallDays: number
+  minEnlightenment: number
+  maxEnlightenment: number
+  currency: string
+  minExport: number
+  progressSinceUtc: string | null
+  flowTrackingSinceUtc: string | null
+  rows: StalledRow[]
+  notes: string[]
+}

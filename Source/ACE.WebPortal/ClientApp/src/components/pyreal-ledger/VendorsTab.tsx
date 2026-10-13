@@ -23,6 +23,7 @@ import {
   TH_NUM_CLASS,
   TableScroll,
 } from './LedgerShared'
+import { ContextLine, CutControl, WhatIfCell, useContextData, useCut } from './WhatIf'
 
 export default function VendorsTab({
   days,
@@ -35,6 +36,8 @@ export default function VendorsTab({
 }) {
   const { data, loading, error } = useLedgerFetch<LedgerVendorRow[]>(`/vendors?days=${days}`)
   const rows = data ?? []
+  const ctx = useContextData(days).data
+  const [cut, setCut] = useCut()
   const overpaying = rows.filter(r => (r.buyPriceNow ?? 0) > 1)
 
   return (
@@ -50,6 +53,10 @@ export default function VendorsTab({
         title="Vendor payouts"
         help="Pyreals paid out by each vendor for items players sold. The multiplier is what the vendor pays right now relative to item value - normal is 1x or less. Click a vendor to see who sold to it."
       >
+        <div className="px-4 pt-3 space-y-3">
+          <ContextLine ctx={ctx} />
+          <CutControl cut={cut} onChange={setCut} />
+        </div>
         {loading ? (
           <LoadingState />
         ) : error ? (
@@ -68,6 +75,11 @@ export default function VendorsTab({
                   <th className={TH_NUM_CLASS}>Sales</th>
                   <th className={TH_NUM_CLASS}>Characters</th>
                   <th className={TH_NUM_CLASS}>Accounts</th>
+                  <th className={TH_CLASS} title="The character that took the most from this vendor, and their share of the payout">Top seller</th>
+                  <th className={TH_NUM_CLASS} title="Hours in which the top seller sold to this vendor">Hours selling</th>
+                  <th className={TH_NUM_CLASS} title="Average paid per week over the period">Per week</th>
+                  <th className={TH_NUM_CLASS} title="Share of everything created on the server">Share of all creation</th>
+                  <th className={TH_CLASS}>What if</th>
                 </tr>
               </thead>
               <tbody className={TBODY_CLASS}>
@@ -92,10 +104,38 @@ export default function VendorsTab({
                         <td className={TD_NUM_CLASS}>{row.sales.toLocaleString()}</td>
                         <td className={TD_NUM_CLASS}>{row.characters.toLocaleString()}</td>
                         <td className={TD_NUM_CLASS}>{row.accounts.toLocaleString()}</td>
+                        <td className={`${TD_CLASS} whitespace-nowrap`}>
+                          {row.topSeller ? (
+                            <span title={`${row.topSellerPayout.toLocaleString()} pyreals paid`}>
+                              <span className="text-neutral-200">{row.topSeller}</span>{' '}
+                              <span
+                                className={`px-1.5 py-0.5 rounded-md border text-[10px] font-bold tabular-nums ${
+                                  row.topSellerSharePct >= 50 && row.payout >= 1000000000
+                                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                    : 'bg-neutral-800 text-neutral-400 border-neutral-700'
+                                }`}
+                              >
+                                {row.topSellerSharePct.toLocaleString(undefined, { maximumFractionDigits: 1 })}%
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-neutral-600">-</span>
+                          )}
+                        </td>
+                        <td className={TD_NUM_CLASS}>{row.topSeller ? row.topSellerHours.toLocaleString() : '-'}</td>
+                        <td className={TD_NUM_CLASS}>
+                          <Money value={row.perWeek} />
+                        </td>
+                        <td className={`${TD_NUM_CLASS} text-neutral-400`}>
+                          {row.shareOfCreationPct.toLocaleString(undefined, { maximumFractionDigits: 1 })}%
+                        </td>
+                        <td className={`${TD_CLASS} whitespace-nowrap`}>
+                          <WhatIfCell perWeek={row.perWeek} cut={cut} ctx={ctx} />
+                        </td>
                       </tr>
                       {open && (
                         <tr>
-                          <td colSpan={7} className="bg-neutral-950/60 px-3 py-3">
+                          <td colSpan={12} className="bg-neutral-950/60 px-3 py-3">
                             <VendorSellers wcid={row.vendorWcid} days={days} />
                           </td>
                         </tr>

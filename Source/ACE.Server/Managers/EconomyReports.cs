@@ -219,6 +219,9 @@ namespace ACE.Server.Managers
         /// <summary>The pyreal ledger's item rows key their detail as "itemWcid:detail"; bank rows as "detail".</summary>
         private const string PyrealDetail = "CASE WHEN `kind` = 1 THEN `detail_key` ELSE SUBSTRING(`detail_key`, LOCATE(':', `detail_key`) + 1) END";
 
+        /// <summary>Pyreal ledger rows that are flows: bank and item rows, not the per-item sale rows and not balances minted by @copychar.</summary>
+        private static readonly string PyrealRows = $"`kind` IN (1, 2, 3) AND `source` <> '{PyrealLedger.SrcCopyChar}'";
+
         // ---- flow groups -----------------------------------------------------------------------------------------
 
         internal sealed class FlowGroup
@@ -267,7 +270,7 @@ namespace ACE.Server.Managers
             {
                 data["pyreals"] = Query(
                     $"SELECT DATE(`hour_utc`) AS d, `source`, CASE WHEN `source` IN ({InternalList}) THEN '' ELSE {PyrealDetail} END AS dk, MAX(`detail_name`), " +
-                    "SUM(`amount_in`), SUM(`amount_out`), SUM(`events`) FROM `pyreal_ledger_hourly` WHERE `kind` IN (1, 2, 3) AND `hour_utc` >= @since GROUP BY d, `source`, dk",
+                    $"SUM(`amount_in`), SUM(`amount_out`), SUM(`events`) FROM `pyreal_ledger_hourly` WHERE {PyrealRows} AND `hour_utc` >= @since{PyrealLedgerReports.NotStaffSql()} GROUP BY d, `source`, dk",
                     c => Param(c, "@since", since),
                     r => new FlowGroup { Day = Convert.ToDateTime(r.GetValue(0)).Date, Source = S(r, 1), DetailKey = S(r, 2), DetailName = S(r, 3), AmountIn = L(r, 4), AmountOut = L(r, 5), Events = L(r, 6) });
             }
@@ -519,7 +522,7 @@ namespace ACE.Server.Managers
             // table, filter and expressions differ between the pyreal ledger and the economy ledger; the shapes do not
             var pyreal = currency.FromPyrealLedger;
             var table = pyreal ? "pyreal_ledger_hourly" : "economy_flow_daily";
-            var where = pyreal ? "`kind` IN (1, 2, 3) AND `hour_utc` >= @since" : "`currency` = @currency AND `day_utc` >= @since";
+            var where = pyreal ? $"{PyrealRows} AND `hour_utc` >= @since{PyrealLedgerReports.NotStaffSql()}" : "`currency` = @currency AND `day_utc` >= @since";
             var detailKey = pyreal ? PyrealDetail : "`detail_key`";
 
             void Bind(DbCommand c)
@@ -622,7 +625,7 @@ namespace ACE.Server.Managers
             };
 
             if (currency.FromPyrealLedger)
-                notes.Add("Pyreal flows come from the pyreal ledger (banked pyreals plus coins, trade notes and peas at face value) and include staff characters. Unexplained is not worked out for pyreals; the Pyreal Ledger page has its own checks.");
+                notes.Add("Pyreal flows come from the pyreal ledger (banked pyreals plus coins, trade notes, peas and boxes of notes at face value). Staff accounts and balances created by @copychar are left out. Unexplained is not worked out for pyreals; the Pyreal Ledger page has its own checks.");
             else
                 notes.Add("Unexplained = how much the supply changed since the previous snapshot, minus everything recorded in between. Positive means currency appeared with no record. " +
                           "Small values are timing noise (the pack count takes a minute or two); deleted characters show as a negative. It is blank when recording was off for part of the period.");

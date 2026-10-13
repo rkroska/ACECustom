@@ -728,6 +728,9 @@ namespace ACE.Server.Managers
 
                     log.Info($"[EconomyLedger] Supply snapshot ({reason}) written in {(DateTime.UtcNow - started).TotalSeconds:N1} s: " +
                              string.Join(", ", rows.Select(r => $"{r.Currency}={r.Banked + r.Items:N0}")));
+
+                    // who gained an enlightenment or an aug since the last snapshot (has its own error handling)
+                    EconomyProgress.Update();
                 }
                 catch (Exception ex)
                 {

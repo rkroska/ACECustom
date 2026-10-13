@@ -16,7 +16,7 @@ namespace ACE.Server.Managers
     /// Read-only queries over the pyreal ledger tables for the admin portal page and @pyrealaudit.
     /// All amounts are pyreals. Currency items are valued at face value.
     /// </summary>
-    public static class PyrealLedgerReports
+    public static partial class PyrealLedgerReports
     {
         public const int MaxDays = 365;
 
@@ -72,7 +72,36 @@ namespace ACE.Server.Managers
             public long CurrencySurplus { get; set; }
             public Dictionary<string, long> Flags { get; set; } = new();
             public long FlaggedAmount { get; set; }
+            /// <summary>How many reasons this account has; see <see cref="Reasons"/>.</summary>
             public long Score { get; set; }
+
+            // rate and concentration signals (PyrealLedgerInsights.cs)
+
+            /// <summary>Pyreals earned minus spent, leaving out bank, transfer, trade and give moves.</summary>
+            public long Created { get; set; }
+            public long PeakHourAmount { get; set; }
+            public DateTime? PeakHourUtc { get; set; }
+            public string PeakHourSource { get; set; }
+            public int ActiveHours { get; set; }
+            public int WindowHours { get; set; }
+            /// <summary>The single NPC, vendor or other source this account earned the most from.</summary>
+            public string TopSource { get; set; }
+            public long TopSourceAmount { get; set; }
+            /// <summary>What every account together earned from that source.</summary>
+            public long TopSourceTotal { get; set; }
+            public int TopSourceUsers { get; set; }
+            public double TopSourceSharePct { get; set; }
+            /// <summary>Pyreals that do not add up, in plain words. Empty = not a suspect.</summary>
+            public List<string> Reasons { get; set; } = new();
+            /// <summary>What makes this account a heavy earner, stated neutrally (for balancing, not an accusation).</summary>
+            public List<string> Highlights { get; set; } = new();
+            /// <summary>An admin marked this account as looked at and normal.</summary>
+            public bool Reviewed { get; set; }
+            public string ReviewedNote { get; set; }
+            public string ReviewedBy { get; set; }
+            public DateTime? ReviewedUtc { get; set; }
+            /// <summary>A gain flag was raised after the review, so the account is shown again.</summary>
+            public bool NewSinceReview { get; set; }
         }
 
         public class EarnerRow
@@ -95,6 +124,16 @@ namespace ACE.Server.Managers
             public long Sales { get; set; }
             public long Characters { get; set; }
             public long Accounts { get; set; }
+            public long PerSale { get; set; }
+            public string TopSeller { get; set; }
+            public long TopSellerPayout { get; set; }
+            public double TopSellerSharePct { get; set; }
+            /// <summary>Distinct hours the top seller sold in.</summary>
+            public long TopSellerHours { get; set; }
+            /// <summary>Payout scaled to a week.</summary>
+            public long PerWeek { get; set; }
+            /// <summary>Share of all pyreals created on the server in the window.</summary>
+            public double ShareOfCreationPct { get; set; }
         }
 
         public class VendorSellerRow
@@ -246,6 +285,20 @@ namespace ACE.Server.Managers
             public string TopReceiver { get; set; }
             public uint TopReceiverCharId { get; set; }
             public long TopReceiverValue { get; set; }
+            public double TopReceiverSharePct { get; set; }
+            /// <summary>Average value of one give.</summary>
+            public long PerGive { get; set; }
+            /// <summary>The most one character received from this NPC within one hour.</summary>
+            public long BusiestHourValue { get; set; }
+            public long BusiestHourGives { get; set; }
+            public string BusiestHourChar { get; set; }
+            public DateTime? BusiestHourUtc { get; set; }
+            /// <summary>Total scaled to a week.</summary>
+            public long PerWeek { get; set; }
+            /// <summary>Share of all pyreals created on the server in the window.</summary>
+            public double ShareOfCreationPct { get; set; }
+            /// <summary>Items players handed to this NPC in the window (recorded since 2026-10-12).</summary>
+            public long HandedInUnits { get; set; }
         }
 
         public class NpcReceiverRow
@@ -572,6 +625,8 @@ namespace ACE.Server.Managers
             foreach (var row in rows)
                 row.BuyPriceNow = VendorBuyPrice(row.VendorWcid);
 
+            AddVendorRates(rows, since);
+
             return rows;
         }
 
@@ -841,6 +896,8 @@ namespace ACE.Server.Managers
                     row.TopReceiverValue = best.value;
                 }
             }
+
+            AddNpcRates(rows, since);
 
             return rows;
         }

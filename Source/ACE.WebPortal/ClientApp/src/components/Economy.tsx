@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Camera, Landmark, Sparkles } from 'lucide-react'
 import PageHeader from './common/PageHeader'
 import type { EconomyOverview, EconomySnapshotResult } from '../types/economy'
@@ -8,8 +8,10 @@ import { EmptyState, ErrorState, InfoNote, LoadingState } from './pyreal-ledger/
 import CurrencyCard from './economy/CurrencyCard'
 import CurrencyDetailView from './economy/CurrencyDetailView'
 import PromptModal from './economy/PromptModal'
+import StalledExportersView from './economy/StalledExportersView'
 import {
   ECONOMY_API,
+  ECONOMY_BASE_PATH,
   ECONOMY_DAY_OPTIONS,
   clampEconomyDays,
   describeEconomyError,
@@ -20,10 +22,12 @@ import {
 
 /**
  * Economy dashboard: supply, faucets and sinks per currency.
- * URL state: /audit/economy/:currency?days=
+ * URL state: /audit/economy/:currency?days=  (currency 'stalled' is the stalled-exporters report)
  */
 export default function Economy() {
-  const { currency } = useParams<{ currency?: string }>()
+  const { currency: routeKey } = useParams<{ currency?: string }>()
+  const stalledView = routeKey === 'stalled'
+  const currency = stalledView ? undefined : routeKey
   const [params, setParams] = useSearchParams()
   const days = clampEconomyDays(params.get('days'))
 
@@ -91,6 +95,23 @@ export default function Economy() {
         </div>
       </PageHeader>
 
+      <div className="mb-4 inline-flex rounded-lg border border-neutral-800 bg-neutral-950 p-0.5">
+        {[
+          { to: `${ECONOMY_BASE_PATH}?days=${days}`, label: 'Currencies', active: !stalledView },
+          { to: `${ECONOMY_BASE_PATH}/stalled?days=${days}`, label: 'Stalled exporters', active: stalledView },
+        ].map(t => (
+          <Link
+            key={t.label}
+            to={t.to}
+            className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+              t.active ? 'bg-blue-600 text-white' : 'text-neutral-400 hover:text-neutral-200'
+            }`}
+          >
+            {t.label}
+          </Link>
+        ))}
+      </div>
+
       {snapshotMsg && (
         <div className="mb-3">
           <InfoNote tone={snapshotMsg.ok ? 'info' : 'warn'}>{snapshotMsg.text}</InfoNote>
@@ -113,7 +134,9 @@ export default function Economy() {
         </div>
       )}
 
-      {currency ? (
+      {stalledView ? (
+        <StalledExportersView days={days} currencies={o?.currencies ?? []} reloadToken={reloadToken} />
+      ) : currency ? (
         <CurrencyDetailView currencyKey={currency} days={days} reloadToken={reloadToken} />
       ) : overview.loading ? (
         <LoadingState />

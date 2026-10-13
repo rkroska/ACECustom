@@ -23,7 +23,7 @@ import { Amount, ChangeText, NetAmount, StatusPill } from './EconomyShared'
 import { FlowChart, SupplyChart } from './EconomyCharts'
 import { ECONOMY_BASE_PATH, basisNote, formatCompact, formatDateTime, formatFull, formatPct, useEconomyFetch } from './economyUtils'
 
-function DetailTable({ rows, mode, empty }: { rows: EconomyDetailRow[]; mode: 'in' | 'out'; empty: string }) {
+function DetailTable({ rows, mode, empty, flowTotal }: { rows: EconomyDetailRow[]; mode: 'in' | 'out'; empty: string; flowTotal: number }) {
   if (rows.length === 0) return <EmptyState message={empty} />
   return (
     <TableScroll>
@@ -32,7 +32,8 @@ function DetailTable({ rows, mode, empty }: { rows: EconomyDetailRow[]; mode: 'i
           <tr className="border-b border-neutral-800">
             <th className={TH_CLASS}>Source</th>
             <th className={TH_CLASS}>Detail</th>
-            <th className={TH_NUM_CLASS}>{mode === 'in' ? 'Created' : 'Removed'}</th>
+            <th className={TH_NUM_CLASS}>{mode === 'in' ? 'Created (net)' : 'Removed (net)'}</th>
+            <th className={TH_NUM_CLASS} title={mode === 'in' ? 'Share of all currency created in this period' : 'Share of all currency removed in this period'}>Share</th>
             <th className={TH_NUM_CLASS}>Events</th>
             <th className={TH_NUM_CLASS}>Characters</th>
           </tr>
@@ -45,7 +46,10 @@ function DetailTable({ rows, mode, empty }: { rows: EconomyDetailRow[]; mode: 'i
                 {r.detailName || r.detailKey || '-'}
               </td>
               <td className={TD_NUM_CLASS}>
-                <Amount value={mode === 'in' ? r.amountIn : r.amountOut} />
+                <Amount value={mode === 'in' ? r.amountIn - r.amountOut : r.amountOut - r.amountIn} />
+              </td>
+              <td className={`${TD_NUM_CLASS} text-neutral-400`}>
+                {flowTotal > 0 ? `${(((mode === 'in' ? r.amountIn - r.amountOut : r.amountOut - r.amountIn) / flowTotal) * 100).toFixed(1)}%` : '-'}
               </td>
               <td className={TD_NUM_CLASS}>{r.events.toLocaleString()}</td>
               <td className={TD_NUM_CLASS}>{r.characters.toLocaleString()}</td>
@@ -184,11 +188,11 @@ export default function CurrencyDetailView({ currencyKey, days, reloadToken }: {
       </Panel>
 
       <Panel title="Top faucets" help="The biggest specific places this currency was created.">
-        <DetailTable rows={faucets} mode="in" empty="No faucets recorded in this period." />
+        <DetailTable rows={faucets} mode="in" flowTotal={c.flow.faucets} empty="No faucets recorded in this period." />
       </Panel>
 
       <Panel title="Top sinks" help="The biggest specific places this currency was removed.">
-        <DetailTable rows={sinks} mode="out" empty="No sinks recorded in this period." />
+        <DetailTable rows={sinks} mode="out" flowTotal={c.flow.sinks} empty="No sinks recorded in this period." />
       </Panel>
 
       <Panel title="Top earners" help="Characters with the largest net gain in the period.">

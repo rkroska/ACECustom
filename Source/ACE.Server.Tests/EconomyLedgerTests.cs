@@ -281,6 +281,66 @@ namespace ACE.Server.Tests
             Assert.IsNull(EconomyReports.Unexplained(1000, 1350, null));           // period not fully recorded
         }
 
+        // ---- stalled exporters -------------------------------------------------------------------------------------
+
+        [TestMethod]
+        public void Progress_NewCharactersAreStoredOnceTheyHaveProgress_AndChangesAreSeen()
+        {
+            Assert.AreEqual(EconomyProgress.RowAction.None, EconomyProgress.Decide(null, new EconomyProgress.Counts(0, 0)));
+            Assert.AreEqual(EconomyProgress.RowAction.Insert, EconomyProgress.Decide(null, new EconomyProgress.Counts(1, 0)));
+            Assert.AreEqual(EconomyProgress.RowAction.Insert, EconomyProgress.Decide(null, new EconomyProgress.Counts(0, 5)));
+
+            var stored = new EconomyProgress.Counts(12, 300);
+            Assert.AreEqual(EconomyProgress.RowAction.None, EconomyProgress.Decide(stored, new EconomyProgress.Counts(12, 300)));
+            Assert.AreEqual(EconomyProgress.RowAction.Changed, EconomyProgress.Decide(stored, new EconomyProgress.Counts(13, 300)));
+            Assert.AreEqual(EconomyProgress.RowAction.Changed, EconomyProgress.Decide(stored, new EconomyProgress.Counts(12, 301)));
+        }
+
+        private static EconomyStalledReport.ProgressChar Char(int firstSeenDaysAgo, int? lastChangeDaysAgo, DateTime now) =>
+            new EconomyStalledReport.ProgressChar { FirstSeenUtc = now.AddDays(-firstSeenDaysAgo), LastChangeUtc = lastChangeDaysAgo.HasValue ? now.AddDays(-lastChangeDaysAgo.Value) : null };
+
+        [TestMethod]
+        public void Stall_IsMeasuredFromTheMostRecentProgressOnTheAccount()
+        {
+            var now = new DateTime(2026, 12, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            // one character progressed 5 days ago: the account is not stalled, whatever the others did
+            var (days, isMinimum, _) = EconomyStalledReport.StallOf(new[] { Char(60, 40, now), Char(60, 5, now), Char(60, null, now) }, now);
+            Assert.AreEqual(5, days);
+            Assert.IsFalse(isMinimum);
+
+            // nobody has progressed since tracking began 60 days ago: at least 60 days
+            (days, isMinimum, _) = EconomyStalledReport.StallOf(new[] { Char(60, null, now), Char(60, null, now) }, now);
+            Assert.AreEqual(60, days);
+            Assert.IsTrue(isMinimum);
+
+            // a character first recorded 3 days ago got its first enlightenment then: that is progress
+            (days, _, _) = EconomyStalledReport.StallOf(new[] { Char(60, null, now), Char(3, null, now) }, now);
+            Assert.AreEqual(3, days);
+        }
+
+        [TestMethod]
+        public void Matches_NeedsEstablishedStalledAndExporting()
+        {
+            var sent = new System.Collections.Generic.Dictionary<string, long> { ["luminance"] = 5000, ["pyreals"] = 10 };
+            var nothing = new System.Collections.Generic.Dictionary<string, long>();
+
+            Assert.IsTrue(EconomyStalledReport.Matches(12, 45, sent, 10, 0, 30, null, 0));
+            Assert.IsFalse(EconomyStalledReport.Matches(9, 45, sent, 10, 0, 30, null, 0));        // not established
+            Assert.IsFalse(EconomyStalledReport.Matches(12, 29, sent, 10, 0, 30, null, 0));       // still progressing
+            Assert.IsFalse(EconomyStalledReport.Matches(12, 45, nothing, 10, 0, 30, null, 0));    // sends nothing away
+            Assert.IsFalse(EconomyStalledReport.Matches(40, 45, sent, 10, 30, 30, null, 0));      // above the upper limit
+            Assert.IsTrue(EconomyStalledReport.Matches(30, 45, sent, 10, 30, 30, null, 0));
+
+            // one currency selected: the threshold applies to that currency only
+            Assert.IsTrue(EconomyStalledReport.Matches(12, 45, sent, 10, 0, 30, "luminance", 5000));
+            Assert.IsFalse(EconomyStalledReport.Matches(12, 45, sent, 10, 0, 30, "luminance", 5001));
+            Assert.IsFalse(EconomyStalledReport.Matches(12, 45, sent, 10, 0, 30, "prestige-coins", 0));
+
+            // stall of 0 days shows every established exporter
+            Assert.IsTrue(EconomyStalledReport.Matches(12, 0, sent, 10, 0, 0, null, 0));
+        }
+
         // ---- reports -----------------------------------------------------------------------------------------------
 
         private static EconomyReports.FlowGroup Group(string source, string detail, long amountIn, long amountOut) =>

@@ -359,6 +359,8 @@ namespace ACE.Server.Entity
             }
 
             var fundsBefore = PyrealFee.Funds(player);
+            // pyreal ledger: the fee is labeled with the attendant
+            using var ledgerScope = PyrealLedger.BeginFor(PyrealLedger.SrcFee, attendant, player);
             if (!PyrealFee.Charge(player, plan.Total, Tag))
             {
                 log.Info($"{Tag} {player.Name} confirmed but could not be charged {plan.Total} (funds {fundsBefore}); nothing was changed");
