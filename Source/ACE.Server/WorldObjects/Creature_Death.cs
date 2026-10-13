@@ -669,6 +669,58 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Pyreal auto-deposit (owner 2026-10-13): the coin stacks a monster would leave on its corpse go straight to the
+        /// killer's banked pyreals. Runs AFTER the loot is on the corpse, so the amount is exactly what would have dropped
+        /// (rolled treasure and create-list coins alike). The killer is the corpse's KillerId - the top damager, or a
+        /// pet's owner - and must be an online player; otherwise the coins stay on the corpse as before. Coins only
+        /// (wcid 273): pyreal peas and trade notes are left as items. Switch: pyreal_auto_deposit_on_kill.
+        /// </summary>
+        private void BankCorpseCoins(Corpse corpse)
+        {
+            if (!ServerConfig.pyreal_auto_deposit_on_kill.Value || corpse.KillerId == null)
+                return;
+
+            var killerGuid = new ObjectGuid(corpse.KillerId.Value);
+            if (!killerGuid.IsPlayer())
+                return;
+
+            // A player who is logging out still counts as online until the final save returns, and a bank write after
+            // that save was issued would never be stored: leave the coins on the corpse instead.
+            var player = PlayerManager.GetOnlinePlayer(killerGuid);
+            if (player == null || player.IsLoggingOut)
+                return;
+
+            var coinStacks = corpse.Inventory.Values.Where(i => i.WeenieClassId == (uint)ACE.Entity.Enum.WeenieClassName.W_COINSTACK_CLASS).ToList();
+            if (coinStacks.Count == 0)
+                return;
+
+            long total = 0;
+            foreach (var stack in coinStacks)
+            {
+                // the corpse is not in the world yet, so nobody has been told about the stack: no network messages
+                if (!corpse.TryRemoveFromInventory(stack.Guid, out var removed))
+                    continue;
+
+                total += Math.Max(removed.StackSize ?? 1, 0);
+                removed.Destroy();
+            }
+
+            if (total <= 0)
+                return;
+
+            // Same rule as the kill XP grant above: the killer may be on another landblock group by the time the kill
+            // lands, so unless this thread owns the player's landblock the bank write runs on the world queue.
+            LandblockManager.RunOnThreadFor(player, ActionType.CreatureDeath_BankCorpseCoins, () =>
+            {
+                // pyreal ledger: a labeled gain (Loot, this creature), never an unexplained one
+                using (PyrealLedger.BeginFor(PyrealLedger.SrcLoot, this, player))
+                    player.BankedPyreals = (player.BankedPyreals ?? 0) + total;
+
+                player.RefreshCoinValueAfterBankChange();
+            });
+        }
+
+        /// <summary>
         /// Create a corpse for both creatures and players currently
         /// </summary>
         protected void CreateCorpse(DamageHistoryInfo killer, bool hadVitae = false)
@@ -904,7 +956,10 @@ namespace ACE.Server.WorldObjects
                 corpse.TimeToRot = TimeToRot;
 
                 if (killer == null || !killer.IsOlthoiPlayer)
+                {
                     GenerateTreasure(killer, corpse);
+                    BankCorpseCoins(corpse);
+                }
                 else
                     GenerateTreasure_Olthoi(killer, corpse);
 
