@@ -186,8 +186,9 @@ namespace ACE.Server.WorldObjects
             var motionDeath = new Motion(MotionStance.NonCombat, MotionCommand.Dead);
             var deathAnimLength = ExecuteMotion(motionDeath);
 
-            // Try to generate Siphon Lens before death emotes (which might destroy the creature)
-            if (!(this is Pet))
+            // Try to generate Siphon Lens before death emotes (which might destroy the creature).
+            // Creatures spawned by a GeneratorNoCorpse generator drop nothing at all, lenses included.
+            if (!(this is Pet) && !(NoCorpse && GetProperty(PropertyBool.GeneratorNoCorpse) == true))
                 GenerateSiphonLens(topDamager);
 
             if (EmoteManager != null)
