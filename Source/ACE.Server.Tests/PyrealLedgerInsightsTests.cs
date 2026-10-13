@@ -151,10 +151,16 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void ExchangeAccountIds_AreParsedLeniently()
+        public void ExchangeList_TakesCharacterNames_AndAccountIds()
         {
-            CollectionAssert.AreEquivalent(new uint[] { 1895, 22 }, PyrealLedgerReports.ParseIds(" 1895, 22 ;x,, ").ToList());
-            Assert.AreEqual(0, PyrealLedgerReports.ParseIds(null).Count);
+            var (ids, names) = PyrealLedgerReports.ParseExchangeList(" Atm, Grumpy Old Man ;+Staff Trader,, 1895 ");
+
+            CollectionAssert.AreEquivalent(new uint[] { 1895 }, ids.ToList());
+            // names keep their spaces; a leading + is dropped
+            CollectionAssert.AreEqual(new[] { "Atm", "Grumpy Old Man", "Staff Trader" }, names);
+
+            (ids, names) = PyrealLedgerReports.ParseExchangeList(null);
+            Assert.AreEqual(0, ids.Count + names.Count);
         }
     }
 }

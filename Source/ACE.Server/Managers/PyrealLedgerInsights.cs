@@ -63,16 +63,48 @@ namespace ACE.Server.Managers
             return staff.Count == 0 ? "" : $" AND {column} NOT IN ({string.Join(",", staff.OrderBy(a => a))})";
         }
 
-        /// <summary>Accounts the owner has marked as player-run exchanges (ServerConfig pyreal_ledger_exchange_accounts).</summary>
-        internal static HashSet<uint> ExchangeAccounts() => ParseIds(ServerConfig.pyreal_ledger_exchange_accounts.Value);
-
-        internal static HashSet<uint> ParseIds(string text)
+        /// <summary>
+        /// Accounts the owner has marked as player-run exchanges (ServerConfig pyreal_ledger_exchange_accounts): a
+        /// comma-separated list of CHARACTER NAMES (owner 2026-10-13: a name is easier than an account number). Each
+        /// name marks the whole account that owns that character. A plain number is still read as an account id.
+        /// </summary>
+        internal static HashSet<uint> ExchangeAccounts()
         {
-            var set = new HashSet<uint>();
-            foreach (var part in (text ?? "").Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries))
-                if (uint.TryParse(part.Trim(), out var id))
-                    set.Add(id);
-            return set;
+            var (ids, names) = ParseExchangeList(ServerConfig.pyreal_ledger_exchange_accounts.Value);
+
+            foreach (var name in names)
+            {
+                // a name that matches nobody (a typo, a deleted character) marks nothing
+                var accountId = PlayerManager.FindByName(name)?.Account?.AccountId ?? 0;
+                if (accountId != 0)
+                    ids.Add(accountId);
+            }
+
+            return ids;
+        }
+
+        /// <summary>
+        /// Splits the setting on commas and semicolons (not spaces: character names contain them) into account ids
+        /// and character names. A leading "+" on a name is dropped. Pure; unit tested.
+        /// </summary>
+        internal static (HashSet<uint> ids, List<string> names) ParseExchangeList(string text)
+        {
+            var ids = new HashSet<uint>();
+            var names = new List<string>();
+
+            foreach (var raw in (text ?? "").Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var part = raw.Trim().TrimStart('+').Trim();
+                if (part.Length == 0)
+                    continue;
+
+                if (uint.TryParse(part, out var id))
+                    ids.Add(id);
+                else
+                    names.Add(part);
+            }
+
+            return (ids, names);
         }
 
         // ---- suspect signals --------------------------------------------------------------------------------------

@@ -182,7 +182,7 @@ export default function TransfersTab({ days }: { days: number }) {
 
       <p className="text-[11px] text-neutral-500 leading-relaxed">
         Counted on the receiving side: bank transfers, trades and gives. Staff accounts are left out. Mark a player-run exchange with
-        /modifystring pyreal_ledger_exchange_accounts &lt;account ids&gt;.
+        /modifystring pyreal_ledger_exchange_accounts &lt;character names, comma-separated&gt; (for example: Atm).
       </p>
     </div>
   )

@@ -213,7 +213,7 @@ namespace ACE.Server.Managers
 
             report.Notes.Add("An account is listed when its highest enlightenment is in range, none of its characters gained an enlightenment or luminance augmentation for the chosen number of days, and it sent currency to another account in the window.");
             report.Notes.Add("Sent to other accounts = bank transfers, trades and hand-to-hand gives received by a character on a different account. Moves between characters on the same account are not counted. Items other than currency are not counted.");
-            report.Notes.Add("Transfers to or from an account marked as a player-run exchange (ServerConfig pyreal_ledger_exchange_accounts) are not counted: the sender gets something back.");
+            report.Notes.Add("Transfers to or from an account marked as a player-run exchange (ServerConfig pyreal_ledger_exchange_accounts, a list of character names) are not counted: the sender gets something back.");
             report.Notes.Add("Earned and Spent on self leave out bank, trade and give moves. Staff characters are left out of everything except pyreals.");
             report.Notes.Add("Progress is checked once a day with the supply snapshot. \"At least\" means no progress has been seen since tracking began, so the real stall may be longer.");
 
