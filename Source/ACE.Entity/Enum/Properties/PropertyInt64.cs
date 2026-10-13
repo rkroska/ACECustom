@@ -79,6 +79,11 @@ namespace ACE.Entity.Enum.Properties
         /// 50601, free in EVERY Property enum - moved off 9028 before release (upstream ACE owns the 90xx range).
         /// </summary>
         BankedPrestigeCoins    = 50601,
+        /// <summary>
+        /// Enlightenment Token (300000) bank balance (owner 2026-10-13): deposit / withdraw only, exactly like Prestige Coins -
+        /// Bonded + Attuned, never transferable. 50602, free in EVERY Property enum.
+        /// </summary>
+        BankedEnlightenmentTokens = 50602,
 
         /// <summary>Blacksmithing: Unix time (seconds) until which PropertyInt.ForgeDyePreview is the colour drawn.</summary>
         ForgeDyePreviewUntil    = 52000,

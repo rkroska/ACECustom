@@ -34,6 +34,7 @@ namespace ACE.Server.WorldObjects
         private const int WEAKLY_ENLIGHTENED_COIN_MAX_STACK = 25000;
         private const int PRESTIGE_COIN_MAX_STACK = 25000;
         public const uint PRESTIGE_COIN_WCID = 19860000;
+        public const uint ENLIGHTENMENT_TOKEN_WCID = 300000;
         private const int TRADE_NOTE_MAX_STACK = 250;
         private const int MMD_TRADE_NOTE_MAX_STACK = 5000;
 
@@ -1761,6 +1762,138 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Deposit all Enlightenment Tokens (owner 2026-10-13). Counted by STACK SIZE like Prestige Coins. A token that is
+        /// not bound (an old stack from before the weenie was Attuned) can go in; every token that comes out is bound.
+        /// </summary>
+        public void DepositEnlightenmentTokens(bool suppressChat = false)
+        {
+            if (BankedEnlightenmentTokens == null)
+            {
+                BankedEnlightenmentTokens = 0;
+            }
+            lock (balanceLock)
+            {
+                long totalDeposited = 0;
+                var tokens = this.GetInventoryItemsOfWCID(ENLIGHTENMENT_TOKEN_WCID);
+                foreach (var token in tokens)
+                {
+                    int count = token.StackSize ?? 1;
+                    if (count > 0 && this.TryConsumeFromInventoryWithNetworking(token))
+                    {
+                        BankedEnlightenmentTokens += count;
+                        totalDeposited += count;
+                    }
+                }
+
+                if (!suppressChat)
+                {
+                    if (totalDeposited > 0)
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} enlightenment tokens", ChatMessageType.System));
+                    else
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("No enlightenment tokens found to deposit", ChatMessageType.System));
+                }
+            }
+
+            this.SavePlayerToDatabase();
+        }
+
+        /// <summary>
+        /// Mints Enlightenment Token stacks into the pack; returns how many were made. Bonded + Attuned come from the weenie,
+        /// and are forced here as well: a banked token must never come out tradeable, whatever the world data says.
+        /// </summary>
+        private long CreateEnlightenmentTokens(long Amount)
+        {
+            long remaining = Amount;
+            long successfullyCreated = 0;
+            var createdItems = new List<WorldObject>();
+
+            while (remaining > 0)
+            {
+                WorldObject wo = WorldObjectFactory.CreateNewWorldObject(ENLIGHTENMENT_TOKEN_WCID);
+                if (wo == null)
+                    break;
+
+                if ((wo.Attuned ?? AttunedStatus.Normal) < AttunedStatus.Attuned)
+                    wo.Attuned = AttunedStatus.Attuned;
+                if ((wo.Bonded ?? BondedStatus.Normal) < BondedStatus.Bonded)
+                    wo.Bonded = BondedStatus.Bonded;
+
+                int stackSize = (int)Math.Min(remaining, (long)Math.Max(1, (int)(wo.MaxStackSize ?? 1)));
+                wo.SetStackSize(stackSize);
+
+                if (!this.TryAddToInventory(wo, out _))
+                {
+                    LogDebug($"[BANK_DEBUG] Player: {Name} | Failed to create enlightenment token stack of {stackSize} - insufficient pack space");
+                    wo.Destroy();
+                    break;
+                }
+
+                createdItems.Add(wo);
+                successfullyCreated += stackSize;
+                remaining -= stackSize;
+            }
+
+            foreach (var item in createdItems)
+                Session.Network.EnqueueSend(new GameMessageCreateObject(item));
+
+            return successfullyCreated;
+        }
+
+        /// <summary>Withdraw Enlightenment Tokens from the bank (owner 2026-10-13). There is deliberately NO TransferEnlightenmentTokens.</summary>
+        public void WithdrawEnlightenmentTokens(long Amount)
+        {
+            if (Amount <= 0)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Amount must be greater than zero", ChatMessageType.System));
+                return;
+            }
+
+            if (BankedEnlightenmentTokens < Amount)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You don't have enough enlightenment tokens banked. Need {Amount:N0} tokens but only have {BankedEnlightenmentTokens:N0}.", ChatMessageType.System));
+                return;
+            }
+
+            long successfullyCreated = CreateEnlightenmentTokens(Amount);
+
+            if (successfullyCreated > 0)
+            {
+                lock (balanceLock)
+                {
+                    BankedEnlightenmentTokens -= successfullyCreated;
+                }
+
+                if (successfullyCreated == Amount)
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} enlightenment tokens", ChatMessageType.System));
+                else
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} enlightenment tokens (partial - insufficient pack space for remaining {Amount - successfullyCreated:N0} enlightenment tokens)", ChatMessageType.System));
+            }
+            else
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create enlightenment tokens - check pack space. Withdrawal cancelled.", ChatMessageType.System));
+            }
+        }
+
+        /// <summary>
+        /// Takes Enlightenment Tokens out of the bank for an enlightenment (the pack is used first, see Enlightenment.cs).
+        /// Returns false, and takes nothing, when the bank does not hold that many.
+        /// </summary>
+        public bool TrySpendBankedEnlightenmentTokens(long amount)
+        {
+            if (amount <= 0)
+                return true;
+
+            lock (balanceLock)
+            {
+                if ((BankedEnlightenmentTokens ?? 0) < amount)
+                    return false;
+
+                BankedEnlightenmentTokens -= amount;
+                return true;
+            }
+        }
+
+        /// <summary>
         /// Withdraw specific trade note denominations
         /// </summary>
         /// <param name="denomination">Trade note denomination (i, v, x, l, c, d, m, md, mm, mmd)</param>
@@ -2583,6 +2716,11 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt64.BankedPrestigeCoins) ?? 0;
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPrestigeCoins); else SetProperty(PropertyInt64.BankedPrestigeCoins, value.Value); }
+        }
+        public long? BankedEnlightenmentTokens
+        {
+            get => GetProperty(PropertyInt64.BankedEnlightenmentTokens) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedEnlightenmentTokens); else SetProperty(PropertyInt64.BankedEnlightenmentTokens, value.Value); }
         }
         public long? BankedMythicalKeys
         {
