@@ -473,6 +473,7 @@ namespace ACE.Server.Entity.Actions
         PlayerInventory_DeepSaveCallback,   // inventory DeepSave flag cleanup on the world action queue
         MonsterCombat_EnrageLoop,           // thread audit: enrage hotspot / grapple steps on the boss's own queue
         CreatureDeath_GrantKillXp,          // thread audit: kill XP / luminance handed to the world queue
+        CreatureDeath_BankCorpseCoins,      // pyreal auto-deposit: a kill's coins handed to the killer's bank on the world queue
         Fellowship_GrantShare,              // thread audit: fellowship share handed to the world queue
         QuestManager_DynamicQuestReload,    // thread audit: dynamic quest landblock reload on the target block's queue
         CreatureDeath_KillTaskCredit,       // thread audit: kill-task credit handed to the world queue
