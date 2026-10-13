@@ -404,8 +404,8 @@ namespace ACE.Entity.Enum.Properties
 
         /// <summary>
         /// Set on a generator: every creature it spawns gets NoCorpse, so it leaves no corpse when it dies (server/custom).
-        /// Nested generators inherit it and pass it down to their own spawns. Loot follows the normal NoCorpse rule and
-        /// drops on the ground where the creature died.
+        /// Nested generators inherit it and pass it down to their own spawns. The spawned creatures carry the flag too,
+        /// and drop nothing when they die: no death treasure, no create list items, no wielded items.
         /// </summary>
         GeneratorNoCorpse = 50060,
 
