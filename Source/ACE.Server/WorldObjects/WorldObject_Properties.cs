@@ -196,6 +196,20 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // economy ledger: the other banked currencies of a player (never ephemeral properties)
+            if (EconomyLedger.Tracks(property) && this is Player economyPlayer)
+            {
+                // same write as below; it also hands back the old value, read under the same lock
+                Biota.SetProperty(property, value, BiotaDatabaseLock, out var economyChanged, out var previous);
+
+                if (economyChanged)
+                {
+                    ChangesDetected = true;
+                    EconomyLedger.OnBalanceChanged(Guid.Full, Name, economyPlayer.Account?.AccountId ?? 0, economyPlayer.Account?.AccessLevel ?? 0, property, previous, value);
+                }
+                return;
+            }
+
             if (EphemeralProperties.PropertiesInt64.Contains(property))
             {
                 if (ephemeralPropertyInt64s == null)
@@ -328,6 +342,16 @@ namespace ACE.Server.WorldObjects
             if (PyrealLedger.Tracks(property))
             {
                 RemoveTrackedProperty(property);
+                return;
+            }
+
+            if (EconomyLedger.Tracks(property) && this is Player economyPlayer)
+            {
+                if (Biota.TryRemoveProperty(property, BiotaDatabaseLock, out var previous))
+                {
+                    ChangesDetected = true;
+                    EconomyLedger.OnBalanceChanged(Guid.Full, Name, economyPlayer.Account?.AccountId ?? 0, economyPlayer.Account?.AccessLevel ?? 0, property, previous, 0);
+                }
                 return;
             }
 

@@ -93,7 +93,11 @@ namespace ACE.Server.WorldObjects
             {
                 BankedLuminance = 0;
             }
-            BankedLuminance += amount;
+
+            // economy ledger: a share granted on another thread arrives with no scope open, so label it by its type
+            using (EconomyLedger.BeginLuminance(xpType))
+                BankedLuminance += amount;
+
             if (xpType == XpType.Quest || xpType == XpType.Kill)
                 Session.Network.EnqueueSend(new GameMessageSystemChat($"You've banked {amount:N0} Luminance.", ChatMessageType.Broadcast));
 

@@ -190,6 +190,9 @@ namespace ACE.Server.WorldObjects
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} accepted. Click on the quill icon in the lower right corner to open your contract tab to view your active contracts.", ChatMessageType.Broadcast));
             }
 
+            // pyreal ledger: what this item turns into, and the item being used up, are labeled with the item
+            using var ledgerScope = UseCreateItem > 0 ? PyrealLedger.BeginFor(PyrealLedger.SrcItemUse, this, player) : default;
+
             if (UseCreateItem > 0)
             {
                 if (!HandleUseCreateItem(player))

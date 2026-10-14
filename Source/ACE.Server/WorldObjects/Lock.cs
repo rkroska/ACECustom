@@ -66,6 +66,9 @@ namespace ACE.Server.WorldObjects
                 else
                     unlocker.Structure = 0;
 
+                // economy ledger: one use of a key spent on this chest or door (records only; never throws)
+                ACE.Server.Managers.EconomyLedger.OnKeyUse(player, unlocker.WeenieClassId, target);
+
                 if (unlocker.Structure == 0)
                 {
                     msg += $"{(isLockpick ? "are" : "is")} used up.";
@@ -86,6 +89,9 @@ namespace ACE.Server.WorldObjects
             {
                 if (unlocker.Structure == 0)
                 {
+                    // economy ledger: the uses were already recorded one by one, so the empty key leaving is not a second sink
+                    using var ledgerScope = ACE.Server.Managers.PyrealLedger.Begin(ACE.Server.Managers.PyrealLedger.SrcIgnore);
+
                     if (!player.TryConsumeFromInventoryWithNetworking(unlocker, 1))
                         log.Warn($"UnlockerHelper.ConsumeUnlocker: TryConsumeFromInventoryWithNetworking failed for {unlocker.Name} (0x{unlocker.Guid}:{unlocker.WeenieClassId}), used on {target.Name} (0x{target.Guid}:{target.WeenieClassId}) and used by {player.Name} (0x{player.Guid})");
                 }

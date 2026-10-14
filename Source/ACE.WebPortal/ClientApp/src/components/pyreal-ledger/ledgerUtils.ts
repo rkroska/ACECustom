@@ -25,6 +25,8 @@ export function formatFull(n: number | null | undefined): string {
 export function formatCompact(n: number | null | undefined): string {
   if (n === null || n === undefined || Number.isNaN(n)) return '-'
   if (Math.abs(n) < 10000) return n.toLocaleString()
+  // the built-in compact format stops at trillions; luminance totals are in the quadrillions
+  if (Math.abs(n) >= 1e15) return `${(n / 1e15).toLocaleString(undefined, { maximumFractionDigits: 1 })}Q`
   return compactFormatter.format(n)
 }
 

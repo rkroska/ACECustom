@@ -340,7 +340,11 @@ namespace ACE.Server.WorldObjects
                     if (xpGrant > 0)
                         player.EarnXP(xpGrant, XpType.Kill, ShareType.All, tierForGrant);
                     if (hasLum)
-                        player.EarnLuminance(lumGrant, XpType.Kill, ShareType.All, tierForGrant);
+                    {
+                        // economy ledger: kill luminance is labeled with the creature
+                        using (PyrealLedger.BeginFor(EconomyLedger.SrcKill, this))
+                            player.EarnLuminance(lumGrant, XpType.Kill, ShareType.All, tierForGrant);
+                    }
                 };
 
                 LandblockManager.RunOnThreadFor(player, ActionType.CreatureDeath_GrantKillXp, grant);

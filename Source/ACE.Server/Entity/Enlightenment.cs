@@ -300,6 +300,9 @@ namespace ACE.Server.Entity
             if (amount <= 0)
                 return;
 
+            // economy ledger: the tokens or other items an enlightenment costs
+            using var ledgerScope = PyrealLedger.Begin(EconomyLedger.SrcEnlighten, targetEnlightenment.ToString(), "Enlightenment " + targetEnlightenment, player);
+
             var wcid = (uint)tier.ItemWcid.Value;
             if (wcid != Player.ENLIGHTENMENT_TOKEN_WCID)
             {
@@ -320,7 +323,8 @@ namespace ACE.Server.Entity
         {
             int targetEnlightenment = player.Enlightenment + 1;
             long lumCost = EnlightenmentTierManager.CalculateLuminanceCost(targetEnlightenment);
-            return player.SpendLuminance(lumCost);
+            using (PyrealLedger.Begin(EconomyLedger.SrcEnlighten, targetEnlightenment.ToString(), "Enlightenment " + targetEnlightenment, player))
+                return player.SpendLuminance(lumCost);
         }
 
         private static void RemoveSociety(Player player)

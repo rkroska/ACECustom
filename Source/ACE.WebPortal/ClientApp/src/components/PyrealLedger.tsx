@@ -1,20 +1,22 @@
 import { Navigate, useParams, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, BarChart3, Coins, Flag, Package, ScrollText, Store, TrendingUp, UserSearch } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, BarChart3, Coins, Flag, Gauge, Package, ScrollText, Store, TrendingUp, UserSearch } from 'lucide-react'
 import PageHeader from './common/PageHeader'
 import TabButton from './common/TabButton'
 import type { LedgerEarnerScope, LedgerOverview, LedgerTab } from '../types/pyrealLedger'
 import { DAY_OPTIONS, LEDGER_BASE_PATH, clampDays, formatDate, useLedgerFetch } from './pyreal-ledger/ledgerUtils'
 import SuspectsTab from './pyreal-ledger/SuspectsTab'
+import HeavyEarnersTab from './pyreal-ledger/HeavyEarnersTab'
 import EarnersTab from './pyreal-ledger/EarnersTab'
 import VendorsTab from './pyreal-ledger/VendorsTab'
 import FlagsTab from './pyreal-ledger/FlagsTab'
 import ItemsSoldTab from './pyreal-ledger/ItemsSoldTab'
+import TransfersTab from './pyreal-ledger/TransfersTab'
 import NpcsTab from './pyreal-ledger/NpcsTab'
 import OverviewTab from './pyreal-ledger/OverviewTab'
 import LedgerDetail from './pyreal-ledger/LedgerDetail'
 import LedgerSearch from './pyreal-ledger/LedgerSearch'
 
-const TABS: LedgerTab[] = ['suspects', 'earners', 'vendors', 'items', 'npcs', 'flags', 'overview']
+const TABS: LedgerTab[] = ['suspects', 'heavy', 'earners', 'transfers', 'vendors', 'items', 'npcs', 'flags', 'overview']
 
 /**
  * Pyreal Ledger: find pyreals that appear without a reason.
@@ -85,8 +87,10 @@ export default function PyrealLedger() {
       ) : (
         <>
           <div className="shrink-0 flex gap-1 mb-4 border-b border-neutral-800 overflow-x-auto">
-            <TabButton active={tab === 'suspects'} onClick={() => update({ tab: null })} icon={<UserSearch />} label="Suspects" />
+            <TabButton active={tab === 'suspects'} onClick={() => update({ tab: null })} icon={<UserSearch />} label="Doesn't add up" />
+            <TabButton active={tab === 'heavy'} onClick={() => update({ tab: 'heavy' })} icon={<Gauge />} label="Heavy earners" />
             <TabButton active={tab === 'earners'} onClick={() => update({ tab: 'earners' })} icon={<TrendingUp />} label="Top earners" />
+            <TabButton active={tab === 'transfers'} onClick={() => update({ tab: 'transfers' })} icon={<ArrowLeftRight />} label="Transfers" />
             <TabButton active={tab === 'vendors'} onClick={() => update({ tab: 'vendors' })} icon={<Store />} label="Vendors" />
             <TabButton active={tab === 'items'} onClick={() => update({ tab: 'items' })} icon={<Package />} label="Items sold" />
             <TabButton active={tab === 'npcs'} onClick={() => update({ tab: 'npcs' })} icon={<ScrollText />} label="Quest NPCs" />
@@ -95,7 +99,9 @@ export default function PyrealLedger() {
           </div>
 
           {tab === 'suspects' && <SuspectsTab days={days} />}
+          {tab === 'heavy' && <HeavyEarnersTab days={days} />}
           {tab === 'earners' && <EarnersTab days={days} by={by} onByChange={b => update({ by: b === 'account' ? null : b })} />}
+          {tab === 'transfers' && <TransfersTab days={days} />}
           {tab === 'vendors' && <VendorsTab days={days} openWcid={openVendor} onToggle={w => update({ vendor: w })} />}
           {tab === 'items' && <ItemsSoldTab days={days} openWcid={openItem} onToggle={w => update({ item: w })} />}
           {tab === 'npcs' && <NpcsTab days={days} openWcid={openNpc} onToggle={w => update({ npc: w })} />}

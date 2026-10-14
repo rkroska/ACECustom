@@ -155,6 +155,18 @@ namespace ACE.Server.Entity
                 return;
             }
 
+            // economy ledger: the other banked currencies (see WorldObject.SetProperty)
+            if (EconomyLedger.Tracks(property))
+            {
+                Biota.SetProperty(property, value, BiotaDatabaseLock, out var economyChanged, out var previous);
+                if (economyChanged)
+                {
+                    ChangesDetected = true;
+                    EconomyLedger.OnBalanceChanged(Guid.Full, Name, Account?.AccountId ?? 0, Account?.AccessLevel ?? 0, property, previous, value);
+                }
+                return;
+            }
+
             Biota.SetProperty(property, value, BiotaDatabaseLock, out var changed);
             if (changed)
                 ChangesDetected = true;
@@ -218,6 +230,16 @@ namespace ACE.Server.Entity
             if (PyrealLedger.Tracks(property))
             {
                 RemoveTrackedProperty(property);
+                return;
+            }
+
+            if (EconomyLedger.Tracks(property))
+            {
+                if (Biota.TryRemoveProperty(property, BiotaDatabaseLock, out var previous))
+                {
+                    ChangesDetected = true;
+                    EconomyLedger.OnBalanceChanged(Guid.Full, Name, Account?.AccountId ?? 0, Account?.AccessLevel ?? 0, property, previous, 0);
+                }
                 return;
             }
 
