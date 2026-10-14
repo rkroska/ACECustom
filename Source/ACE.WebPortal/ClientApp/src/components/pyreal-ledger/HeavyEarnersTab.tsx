@@ -122,7 +122,7 @@ function GroupRows({
   group: Group
   days: number
   onOpen: (accountId: number) => void
-  mark: (accountId: number, note: string) => Promise<void>
+  mark: (accountId: number, note: string) => Promise<boolean>
   unmark: (accountId: number) => Promise<void>
 }) {
   const isOther = group.source === OTHER

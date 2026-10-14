@@ -475,8 +475,19 @@ namespace ACE.Server.Managers
         /// </summary>
         public static List<SuspectRow> GetSuspects(int days, int limit)
         {
-            days = ClampDays(days);
             limit = Math.Clamp(limit <= 0 ? 100 : limit, 1, 500);
+
+            return LoadSuspectRows(days)
+                .OrderByDescending(r => r.Score)
+                .ThenByDescending(r => r.BankIn)
+                .Take(limit)
+                .ToList();
+        }
+
+        /// <summary>Every account with ledger rows in the window, with its totals, flags and surplus: not ordered, not cut.</summary>
+        private static List<SuspectRow> LoadSuspectRows(int days)
+        {
+            days = ClampDays(days);
             var since = Since(days);
             var rows = new Dictionary<uint, SuspectRow>();
 
@@ -564,11 +575,7 @@ namespace ACE.Server.Managers
                 row.Score = row.FlaggedAmount + Math.Max(0, row.CurrencySurplus) + row.UnattributedIn;
             }
 
-            return rows.Values
-                .OrderByDescending(r => r.Score)
-                .ThenByDescending(r => r.BankIn)
-                .Take(limit)
-                .ToList();
+            return rows.Values.ToList();
         }
 
         public static List<EarnerRow> GetEarners(int days, bool byAccount, int limit)
@@ -610,7 +617,7 @@ namespace ACE.Server.Managers
 
             var rows = Query(
                 "SELECT `detail_key`, MAX(`detail_name`), SUM(`amount_in`), SUM(`events`), COUNT(DISTINCT `char_id`), COUNT(DISTINCT `account_id`) FROM `pyreal_ledger_hourly` " +
-                $"WHERE `kind` = {KBank} AND `source` = '{VendorSell}' AND `hour_utc` >= @since GROUP BY `detail_key` ORDER BY SUM(`amount_in`) DESC",
+                $"WHERE `kind` = {KBank} AND `source` = '{VendorSell}' AND `hour_utc` >= @since{NotStaffSql()} GROUP BY `detail_key` ORDER BY SUM(`amount_in`) DESC",
                 c => P(c, "@since", since),
                 r => new VendorRow
                 {
@@ -856,7 +863,7 @@ namespace ACE.Server.Managers
                 "SELECT SUBSTRING_INDEX(`detail_key`, ':', -1) AS `npc`, MAX(`detail_name`), " +
                 $"SUM(CASE WHEN `kind` = {KItemIn} THEN `amount_in` ELSE 0 END), SUM(CASE WHEN `kind` = {KItemIn} THEN `units` ELSE 0 END), " +
                 $"SUM(CASE WHEN `kind` = {KBank} THEN `amount_in` ELSE 0 END), SUM(`events`), COUNT(DISTINCT `char_id`), COUNT(DISTINCT `account_id`) " +
-                $"FROM `pyreal_ledger_hourly` WHERE {NpcRowsWhere} GROUP BY `npc` ORDER BY SUM(`amount_in`) DESC LIMIT {limit}",
+                $"FROM `pyreal_ledger_hourly` WHERE {NpcRowsWhere}{NotStaffSql()} GROUP BY `npc` ORDER BY SUM(`amount_in`) DESC LIMIT {limit}",
                 c => P(c, "@since", since),
                 r => new NpcRow
                 {
@@ -876,7 +883,7 @@ namespace ACE.Server.Managers
             var top = new Dictionary<uint, (uint charId, string name, long value)>();
             foreach (var (npc, charId, name, value) in Query(
                 "SELECT SUBSTRING_INDEX(`detail_key`, ':', -1) AS `npc`, `char_id`, MAX(`char_name`), SUM(`amount_in`) " +
-                $"FROM `pyreal_ledger_hourly` WHERE {NpcRowsWhere} GROUP BY `npc`, `char_id`",
+                $"FROM `pyreal_ledger_hourly` WHERE {NpcRowsWhere}{NotStaffSql()} GROUP BY `npc`, `char_id`",
                 c => P(c, "@since", since),
                 r => (uint.TryParse(S(r, 0), out var w) ? w : 0, U(r, 1), S(r, 2), L(r, 3))))
             {

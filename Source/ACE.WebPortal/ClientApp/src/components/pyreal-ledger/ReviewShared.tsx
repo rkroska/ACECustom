@@ -113,7 +113,8 @@ export function useSuspectRows(days: number) {
 
   const rows = (data ?? []).map(r => (overrides[r.accountId] ? { ...r, ...overrides[r.accountId] } : r))
 
-  const mark = async (accountId: number, note: string) => {
+  /** Resolves to true only when the server stored the mark. */
+  const mark = async (accountId: number, note: string): Promise<boolean> => {
     try {
       setFailure(null)
       const res = await api.post<LedgerReviewMark>(`${LEDGER_API}/reviewed`, { accountId, note })
@@ -127,8 +128,10 @@ export function useSuspectRows(days: number) {
           newSinceReview: false,
         },
       }))
+      return true
     } catch (e) {
       setFailure(e instanceof Error ? e.message : 'Could not save the review.')
+      return false
     }
   }
 
@@ -156,7 +159,7 @@ export function ReviewCell({
   showNewBadge,
 }: {
   row: LedgerSuspectRow
-  onMark: (accountId: number, note: string) => Promise<void>
+  onMark: (accountId: number, note: string) => Promise<boolean>
   onUnmark: (accountId: number) => Promise<void>
   showNewBadge?: boolean
 }) {
@@ -166,8 +169,10 @@ export function ReviewCell({
 
   const save = async () => {
     setBusy(true)
-    await onMark(row.accountId, note.trim())
+    const saved = await onMark(row.accountId, note.trim())
     setBusy(false)
+    // a failed save keeps the editor open with the note still in it
+    if (!saved) return
     setEditing(false)
     setNote('')
   }

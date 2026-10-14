@@ -103,19 +103,23 @@ namespace ACE.Server.Managers
         /// </summary>
         internal static (int days, bool isMinimum, DateTime reference) StallOf(IEnumerable<ProgressChar> characters, DateTime nowUtc)
         {
+            // the date and the "only a minimum" flag come from the same character: the one with the latest date,
+            // and on a tie the one whose date is a recorded change
             var reference = DateTime.MinValue;
-            var seenChange = false;
+            ProgressChar selected = null;
 
             foreach (var c in characters)
             {
                 var date = c.LastChangeUtc ?? c.FirstSeenUtc;
-                if (date > reference)
+                if (selected == null || date > reference || (date == reference && c.LastChangeUtc.HasValue && !selected.LastChangeUtc.HasValue))
+                {
+                    selected = c;
                     reference = date;
-                if (c.LastChangeUtc.HasValue)
-                    seenChange = true;
+                }
             }
 
-            return ((int)Math.Max(0, Math.Floor((nowUtc - reference).TotalDays)), !seenChange, reference);
+            var isMinimum = selected == null || !selected.LastChangeUtc.HasValue;
+            return ((int)Math.Max(0, Math.Floor((nowUtc - reference).TotalDays)), isMinimum, reference);
         }
 
         /// <summary>

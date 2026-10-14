@@ -301,10 +301,28 @@ namespace ACE.Server.Tests
             EconomyLedger.OnBalanceChanged(7, "Alice", 3, 0, PropertyInt64.BankedLuminance, 100, 600);
             EconomyLedger.OnBalanceChanged(7, "Alice", 3, 0, PropertyInt64.BankedLuminance, 600, 450);
             var net = EconomyLedger.TakeNetSinceSnapshot();
-            Assert.AreEqual(350, net[luminance]);
+            Assert.AreEqual(350, net.Value.net[luminance]);
+            Assert.AreEqual(350, net.Value.bankNet[luminance]);
 
             // and the next period starts from zero
-            Assert.AreEqual(0, EconomyLedger.TakeNetSinceSnapshot()[luminance]);
+            Assert.AreEqual(0, EconomyLedger.TakeNetSinceSnapshot().Value.net[luminance]);
+        }
+
+        [TestMethod]
+        public void Stall_DateAndMinimumFlagComeFromTheSameCharacter()
+        {
+            var now = new DateTime(2026, 12, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            // an old recorded change on one character, a newer first sighting on another: the newer date wins, and it
+            // is not a recorded change, so the figure is a minimum
+            var (days, isMinimum, _) = EconomyStalledReport.StallOf(new[] { Char(60, 40, now), Char(10, null, now) }, now);
+            Assert.AreEqual(10, days);
+            Assert.IsTrue(isMinimum);
+
+            // the same date on both: the recorded change is the one that counts
+            (days, isMinimum, _) = EconomyStalledReport.StallOf(new[] { Char(10, null, now), Char(60, 10, now) }, now);
+            Assert.AreEqual(10, days);
+            Assert.IsFalse(isMinimum);
         }
 
         [TestMethod]

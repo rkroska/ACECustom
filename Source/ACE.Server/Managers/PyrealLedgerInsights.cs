@@ -244,7 +244,8 @@ namespace ACE.Server.Managers
         {
             var reasons = new List<string>();
 
-            if (row.FlaggedAmount >= Math.Max(1, o.MinSurplus))
+            // a flag is the ledger itself saying a gain has no recorded cause: reported at any size
+            if (row.FlaggedAmount > 0)
                 reasons.Add($"Flagged gains of {Compact(row.FlaggedAmount)} (dupe, rollback or outside edit)");
 
             if (row.CurrencySurplus >= Math.Max(1, o.MinSurplus))
@@ -279,6 +280,9 @@ namespace ACE.Server.Managers
             return highlights;
         }
 
+        /// <summary>The most rows the suspects report returns, applied after reasons are worked out and the rows ordered.</summary>
+        private const int MaxSuspectRows = 500;
+
         /// <summary>
         /// Every account with its integrity reasons (the "Doesn't add up" list), its heavy-earner highlights, and
         /// whether an admin has marked it reviewed. Staff removed. Ordered by reasons, then by pyreals created.
@@ -290,8 +294,9 @@ namespace ACE.Server.Managers
             limit = Math.Clamp(limit <= 0 ? 100 : limit, 1, 500);
             var since = Since(days);
 
-            // the flag, surplus and totals columns as before (every account, so nothing is cut before it is scored)
-            var rows = GetSuspects(days, 500);
+            // the flag, surplus and totals columns for EVERY account: cutting to a limit here, by the old score, could
+            // drop an account before its reasons are worked out
+            var rows = LoadSuspectRows(days);
             var staff = StaffAccounts();
             rows.RemoveAll(r => staff.Contains(r.AccountId));
 
@@ -369,7 +374,7 @@ namespace ACE.Server.Managers
                 .OrderByDescending(r => r.Reasons.Count)
                 .ThenByDescending(r => r.Highlights.Count > 0)
                 .ThenByDescending(r => r.Created)
-                .Take(Math.Max(limit, rows.Count(r => r.Reasons.Count > 0 || r.Highlights.Count > 0)))
+                .Take(Math.Min(MaxSuspectRows, Math.Max(limit, rows.Count(r => r.Reasons.Count > 0 || r.Highlights.Count > 0))))
                 .ToList();
         }
 
@@ -701,7 +706,8 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_reviewed` (
 
             var characters = Query(
                 "SELECT `account_id`, GROUP_CONCAT(DISTINCT `char_name` ORDER BY `char_name` SEPARATOR ', ') FROM `pyreal_ledger_hourly` " +
-                $"WHERE `kind` = 1 AND `hour_utc` >= @since AND `source` = '{PyrealLedger.SrcTransfer}' GROUP BY `account_id`",
+                $"WHERE `kind` IN (1, 2, 3) AND `hour_utc` >= @since " +
+                $"AND `source` IN ('{PyrealLedger.SrcTransfer}','{PyrealLedger.SrcTrade}','{PyrealLedger.SrcGive}') GROUP BY `account_id`",
                 c => P(c, "@since", since),
                 r => (account: U(r, 0), names: S(r, 1))).ToDictionary(x => x.account, x => x.names);
 
@@ -737,7 +743,7 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_reviewed` (
             var busiest = new Dictionary<uint, (string name, DateTime hour, long value, long gives)>();
             foreach (var (npc, name, hour, value, gives) in Query(
                 "SELECT SUBSTRING_INDEX(`detail_key`, ':', -1) AS `npc`, MAX(`char_name`), `hour_utc`, SUM(`amount_in`), SUM(`events`) " +
-                $"FROM `pyreal_ledger_hourly` WHERE {NpcRowsWhere} GROUP BY `npc`, `char_id`, `hour_utc`",
+                $"FROM `pyreal_ledger_hourly` WHERE {NpcRowsWhere}{NotStaffSql()} GROUP BY `npc`, `char_id`, `hour_utc`",
                 c => P(c, "@since", since),
                 r => (uint.TryParse(S(r, 0), out var w) ? w : 0, S(r, 1), Convert.ToDateTime(r.GetValue(2)), L(r, 3), L(r, 4))))
             {
@@ -747,7 +753,7 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_reviewed` (
 
             var handedIn = Query(
                 "SELECT SUBSTRING_INDEX(`detail_key`, ':', -1) AS `npc`, SUM(`units`) FROM `pyreal_ledger_hourly` " +
-                $"WHERE `kind` = {PyrealLedger.KindHandedIn} AND `hour_utc` >= @since GROUP BY `npc`",
+                $"WHERE `kind` = {PyrealLedger.KindHandedIn} AND `hour_utc` >= @since{NotStaffSql()} GROUP BY `npc`",
                 c => P(c, "@since", since),
                 r => (npc: uint.TryParse(S(r, 0), out var w) ? w : 0, units: L(r, 1))).ToDictionary(x => x.npc, x => x.units);
 
@@ -780,7 +786,7 @@ CREATE TABLE IF NOT EXISTS `pyreal_ledger_reviewed` (
             var top = new Dictionary<string, (string name, long payout, long hours)>();
             foreach (var (vendor, name, payout, hours) in Query(
                 "SELECT `detail_key`, MAX(`char_name`), SUM(`amount_in`), COUNT(DISTINCT `hour_utc`) FROM `pyreal_ledger_hourly` " +
-                $"WHERE `kind` = {KBank} AND `source` = '{VendorSell}' AND `hour_utc` >= @since GROUP BY `detail_key`, `char_id`",
+                $"WHERE `kind` = {KBank} AND `source` = '{VendorSell}' AND `hour_utc` >= @since{NotStaffSql()} GROUP BY `detail_key`, `char_id`",
                 c => P(c, "@since", since),
                 r => (S(r, 0), S(r, 1), L(r, 2), L(r, 3))))
             {

@@ -398,11 +398,23 @@ export default function StalledExportersView({
                 <Fragment key={r.accountId}>
                   <tr className={ROW_CLICK_CLASS} onClick={() => toggle(r.accountId)}>
                     <td className={TD_CLASS}>
-                      {open ? (
-                        <ChevronDown className="w-3.5 h-3.5 text-neutral-500" />
-                      ) : (
-                        <ChevronRight className="w-3.5 h-3.5 text-neutral-500" />
-                      )}
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        aria-label={`${open ? 'Hide' : 'Show'} details for account ${r.accountName || r.accountId}`}
+                        onClick={e => {
+                          // the row has its own click handler; without this the click would toggle twice
+                          e.stopPropagation()
+                          toggle(r.accountId)
+                        }}
+                        className="flex items-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      >
+                        {open ? (
+                          <ChevronDown className="w-3.5 h-3.5 text-neutral-500" />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5 text-neutral-500" />
+                        )}
+                      </button>
                     </td>
                     <td className={TD_CLASS}>
                       <span className="font-semibold text-neutral-100">{r.accountName}</span>{' '}

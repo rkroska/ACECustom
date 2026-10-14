@@ -473,8 +473,15 @@ namespace ACE.Server.Managers
                         from = firstDay;
 
                     var (f, s, _) = NetFlow(flows.Where(x => x.Day >= from));
-                    // today is only part of a day
-                    var covered = Math.Max(1.0 / 24, (DateTime.UtcNow - from).TotalDays);
+
+                    // Today is only part of a day, and so is the day tracking began. Only when the first rows are from
+                    // that very day: after an unclean restart "tracking since" is newer than rows that are still valid.
+                    var coveredFrom = from;
+                    var trackingSince = currency.FromPyrealLedger ? PyrealLedger.LedgerStartUtc : EconomyLedger.FlowTrackingSinceUtc;
+                    if (trackingSince.HasValue && trackingSince.Value.Date == from && trackingSince.Value > coveredFrom)
+                        coveredFrom = trackingSince.Value;
+
+                    var covered = Math.Max(1.0 / 24, (DateTime.UtcNow - coveredFrom).TotalDays);
                     summary.WeeklyPct = (f - s) * 100.0 / latest.Supply.Total * (7.0 / covered);
                     summary.WeeklyPctBasis = "flows";
                 }

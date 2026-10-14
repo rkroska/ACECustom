@@ -285,8 +285,20 @@ namespace ACE.Server.Managers
         /// </summary>
         private static readonly long[] netSinceSnapshot = new long[Currencies.Length];
 
+        /// <summary>
+        /// The same, for banked balances only. A snapshot taken with economy_snapshot_items off counts no items, so a
+        /// deposit (item out, bank in) raises its supply; only the bank side of the flows can be compared with it.
+        /// </summary>
+        private static readonly long[] netBankSinceSnapshot = new long[Currencies.Length];
+
         /// <summary>True while <see cref="netSinceSnapshot"/> holds every change since the last snapshot (recording was never off in between).</summary>
         private static bool netCovered;
+
+        /// <summary>Whether the previous supply snapshot counted pack items (null = not known). Two snapshots counted differently cannot be compared.</summary>
+        private static bool? lastSnapshotCountedItems;
+
+        /// <summary>Set when Shutdown begins: no new snapshot may start.</summary>
+        private static volatile bool shuttingDown;
 
         private static volatile bool flowTracking;
         private static volatile bool tablesReady;
@@ -488,23 +500,27 @@ namespace ACE.Server.Managers
                 bucket.AmountOut += amountOut;
 
                 netSinceSnapshot[currency] += amountIn - amountOut;
+                if (form == FormBank)
+                    netBankSinceSnapshot[currency] += amountIn - amountOut;
             }
         }
 
         /// <summary>
-        /// Hands over the net recorded flow per currency since the last snapshot and starts a new period. Null when the
-        /// period was not fully recorded (recording was off for part of it, or this is the first snapshot).
+        /// Hands over the net recorded flow per currency since the last snapshot (all of it, and the banked side alone)
+        /// and starts a new period. Null when the period was not fully recorded (recording was off for part of it, or
+        /// this is the first snapshot).
         /// </summary>
-        internal static long[] TakeNetSinceSnapshot()
+        internal static (long[] net, long[] bankNet)? TakeNetSinceSnapshot()
         {
             lock (sync)
             {
-                var net = netCovered ? (long[])netSinceSnapshot.Clone() : null;
+                (long[], long[])? taken = netCovered ? ((long[])netSinceSnapshot.Clone(), (long[])netBankSinceSnapshot.Clone()) : null;
 
                 Array.Clear(netSinceSnapshot, 0, netSinceSnapshot.Length);
+                Array.Clear(netBankSinceSnapshot, 0, netBankSinceSnapshot.Length);
                 netCovered = flowTracking;
 
-                return net;
+                return taken;
             }
         }
 
@@ -529,6 +545,7 @@ namespace ACE.Server.Managers
             {
                 buckets = new Dictionary<BucketKey, Bucket>();
                 Array.Clear(netSinceSnapshot, 0, netSinceSnapshot.Length);
+                Array.Clear(netBankSinceSnapshot, 0, netBankSinceSnapshot.Length);
                 netCovered = false;
             }
             flowTracking = tracking;
@@ -554,8 +571,18 @@ namespace ACE.Server.Managers
                     lastSnapshotDay = snapUtc.Date;
                 }
 
+                if (meta.TryGetValue("snapshot_items", out var mode))
+                    lastSnapshotCountedItems = mode == "1" ? true : mode == "0" ? false : null;
+
+                shuttingDown = false;
+
                 if (trackFlows)
                     StartFlowTracking(meta);
+                else
+                {
+                    // recording is off for this run: whatever a clean stop saved no longer describes an unbroken period
+                    SaveMeta(new Dictionary<string, string> { ["flow_resume_ok"] = "0", ["net_valid"] = "0" });
+                }
 
                 timer = new Timer(_ => TimerTick(), null, 15000, TickMs);
 
@@ -581,6 +608,7 @@ namespace ACE.Server.Managers
             lock (sync)
             {
                 Array.Clear(netSinceSnapshot, 0, netSinceSnapshot.Length);
+                Array.Clear(netBankSinceSnapshot, 0, netBankSinceSnapshot.Length);
                 netCovered = false;
 
                 if (continued && meta.TryGetValue("net_valid", out var valid) && valid == "1")
@@ -590,16 +618,20 @@ namespace ACE.Server.Managers
                     {
                         if (meta.TryGetValue("net_" + currency.Key, out var text) && long.TryParse(text, out var net))
                             netSinceSnapshot[currency.Index] = net;
+                        if (meta.TryGetValue("netbank_" + currency.Key, out var bankText) && long.TryParse(bankText, out var bankNet))
+                            netBankSinceSnapshot[currency.Index] = bankNet;
                     }
                 }
             }
 
-            SaveMeta(new Dictionary<string, string>
-            {
-                ["flow_since_utc"] = FlowTrackingSinceUtc.Value.ToString("o"),
-                ["flow_resume_ok"] = "0",
-                ["net_valid"] = "0",
-            });
+            // while running, the stored state says "not resumable": only a clean stop turns it back on
+            if (!SaveMeta(new Dictionary<string, string>
+                {
+                    ["flow_since_utc"] = FlowTrackingSinceUtc.Value.ToString("o"),
+                    ["flow_resume_ok"] = "0",
+                    ["net_valid"] = "0",
+                }))
+                log.Warn("[EconomyLedger] Could not mark flow tracking as running; if the server crashes, the next start may wrongly continue the previous tracking period.");
 
             flowTracking = true;
         }
@@ -654,34 +686,62 @@ namespace ACE.Server.Managers
             if (!tablesReady)
                 return;
 
+            // from here on no new snapshot starts
+            shuttingDown = true;
+
+            // true once this method owns the flush; a timer callback still running keeps its own ownership
+            var acquired = false;
+
             try
             {
                 timer?.Dispose();
                 timer = null;
 
-                var waited = 0;
-                while (Interlocked.CompareExchange(ref tickRunning, 1, 0) != 0 && waited < 10000)
+                for (var waited = 0; waited <= 10000; waited += 50)
                 {
+                    if (Interlocked.CompareExchange(ref tickRunning, 1, 0) == 0)
+                    {
+                        acquired = true;
+                        break;
+                    }
+
                     Thread.Sleep(50);
-                    waited += 50;
                 }
 
                 var wasTracking = flowTracking;
                 flowTracking = false;
+
+                if (!acquired)
+                {
+                    // The timer's flush is still writing. A second flush over the same rows can deadlock in MySQL, so
+                    // the rows are left to it, and the stop is not recorded as clean: the next start begins a new
+                    // tracking period rather than claim an unbroken one.
+                    log.Warn("[EconomyLedger] A flush was still running at shutdown; the final flush was skipped and the next start begins a new tracking period.");
+                    return;
+                }
 
                 // a restart that loses no rows keeps the "tracking since" date and the running net since the last snapshot
                 if (FlushBuckets() && wasTracking)
                 {
                     var meta = new Dictionary<string, string> { ["flow_clean_stop_utc"] = DateTime.UtcNow.ToString("o"), ["flow_resume_ok"] = "1" };
 
+                    // A snapshot still in flight has already taken the running net but not yet saved its supply row.
+                    // What is left in the counters then does not line up with any saved snapshot, so it is not kept.
+                    var snapshotInFlight = Volatile.Read(ref snapshotRunning) != 0;
+
                     lock (sync)
                     {
-                        meta["net_valid"] = netCovered ? "1" : "0";
+                        meta["net_valid"] = netCovered && !snapshotInFlight ? "1" : "0";
                         foreach (var currency in Currencies)
+                        {
                             meta["net_" + currency.Key] = netSinceSnapshot[currency.Index].ToString();
+                            meta["netbank_" + currency.Key] = netBankSinceSnapshot[currency.Index].ToString();
+                        }
                     }
 
-                    SaveMeta(meta);
+                    // one transaction: either the whole resumable state is stored, or none of it and the start is fresh
+                    if (!SaveMeta(meta))
+                        log.Warn("[EconomyLedger] The clean-stop state could not be saved; the next start begins a new tracking period.");
                 }
 
                 log.Info("[EconomyLedger] Final flush complete");
@@ -693,7 +753,8 @@ namespace ACE.Server.Managers
             finally
             {
                 tablesReady = false;
-                Interlocked.Exchange(ref tickRunning, 0);
+                if (acquired)
+                    Interlocked.Exchange(ref tickRunning, 0);
             }
         }
 
@@ -760,7 +821,7 @@ namespace ACE.Server.Managers
         /// </summary>
         public static bool StartSnapshot(string reason)
         {
-            if (!tablesReady)
+            if (!tablesReady || shuttingDown)
                 return false;
 
             if (Interlocked.CompareExchange(ref snapshotRunning, 1, 0) != 0)
@@ -777,8 +838,14 @@ namespace ACE.Server.Managers
 
                     // taken right before the balances are read, so both describe the same moment (the pack count
                     // that follows takes a minute or two; item moves in that window are small timing noise)
+                    var includeItems = ServerConfig.economy_snapshot_items.Value;
                     var net = TakeNetSinceSnapshot();
-                    var rows = ComputeSupply(ServerConfig.economy_snapshot_items.Value);
+                    var rows = ComputeSupply(includeItems);
+
+                    // The flows are compared with how much the supply changed since the previous snapshot, so both
+                    // snapshots must have been counted the same way; after a change of economy_snapshot_items the
+                    // first snapshot has nothing valid to compare with.
+                    var sameCounting = lastSnapshotCountedItems == includeItems;
 
                     foreach (var row in rows)
                     {
@@ -786,14 +853,18 @@ namespace ACE.Server.Managers
                         // Pyreal flows live in the pyreal ledger, which has its own checks. Keys are left out too: a key
                         // moving between a pack and the bank is recorded as a full key on one side and its remaining
                         // uses on the other, so the two would never agree.
-                        if (net != null && currency != null && !currency.FromPyrealLedger && !currency.ItemsUseStructure)
-                            row.FlowNet = net[currency.Index];
+                        if (net.HasValue && sameCounting && currency != null && !currency.FromPyrealLedger && !currency.ItemsUseStructure)
+                        {
+                            // a supply without items only moves with the banked side of the flows
+                            row.FlowNet = (includeItems ? net.Value.net : net.Value.bankNet)[currency.Index];
+                        }
                     }
 
                     SaveSupply(started.Date, rows);
 
                     LastSnapshotUtc = started;
-                    SaveMeta(new Dictionary<string, string> { ["last_snapshot_utc"] = started.ToString("o") });
+                    lastSnapshotCountedItems = includeItems;
+                    SaveMeta(new Dictionary<string, string> { ["last_snapshot_utc"] = started.ToString("o"), ["snapshot_items"] = includeItems ? "1" : "0" });
 
                     log.Info($"[EconomyLedger] Supply snapshot ({reason}) written in {(DateTime.UtcNow - started).TotalSeconds:N1} s: " +
                              string.Join(", ", rows.Select(r => $"{r.Currency}={r.Banked + r.Items:N0}")));
@@ -1277,25 +1348,35 @@ CREATE TABLE IF NOT EXISTS `economy_meta` (
             return meta;
         }
 
-        private static void SaveMeta(Dictionary<string, string> meta)
+        /// <summary>
+        /// Writes every value in one transaction, so a failure leaves the stored state as it was and never half
+        /// updated. Returns false if nothing was written. Never throws.
+        /// </summary>
+        private static bool SaveMeta(Dictionary<string, string> meta)
         {
             try
             {
                 using var ctx = new ShardDbContext();
                 var con = OpenConnection(ctx);
+                using var tx = con.BeginTransaction();
 
                 foreach (var kv in meta)
                 {
                     using var cmd = NewCommand(con);
+                    cmd.Transaction = tx;
                     cmd.CommandText = "INSERT INTO `economy_meta` (`k`,`v`) VALUES (@k,@v) ON DUPLICATE KEY UPDATE `v`=VALUES(`v`)";
                     AddParam(cmd, "@k", kv.Key);
                     AddParam(cmd, "@v", kv.Value);
                     cmd.ExecuteNonQuery();
                 }
+
+                tx.Commit();
+                return true;
             }
             catch (Exception ex)
             {
                 log.Error($"[EconomyLedger] SaveMeta failed: {ex.Message}");
+                return false;
             }
         }
     }
