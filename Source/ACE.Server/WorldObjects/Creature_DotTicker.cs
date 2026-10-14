@@ -110,6 +110,24 @@ namespace ACE.Server.WorldObjects
             ScheduleDotTick(dotTickerGeneration);
         }
 
+        /// <summary>LANDING TICK (owner 2026-10-13: "make the dot deal a tick of damage when it lands"): one normal tick of this
+        /// one DoT, at once, on this creature's own thread. Only when the entry is one that ticks (top layer) - a weaker
+        /// caster's DoT under a stronger one deals nothing here either. The ticker's own schedule is not touched.</summary>
+        public void ZcDotLandingTick(PropertiesEnchantmentRegistry entry)
+        {
+            if (entry == null) return;
+            EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, () =>
+            {
+                if (IsDestroyed || IsDead || CurrentLandblock == null || !ZcDebuffCompressed) return;
+                var top = PropertiesEnchantmentRegistryExtensions.GetEnchantmentsTopLayer(
+                    Biota.PropertiesEnchantmentRegistry, BiotaDatabaseLock, SpellSet.SetSpells);
+                if (top == null || !top.Contains(entry)) return;
+                var heartbeat = HeartbeatInterval ?? DefaultHeartbeatSeconds;
+                var scale = UsesDotTicker ? (float)(DotTickSeconds / (heartbeat > 0 ? heartbeat : DefaultHeartbeatSeconds)) : 1.0f;
+                EnchantmentManager.ApplyDamageTick(new List<PropertiesEnchantmentRegistry> { entry }, ACE.Entity.Enum.DamageType.Nether, false, scale, landing: true);
+            }));
+        }
+
         private void ScheduleDotTick(int generation)
         {
             dotTickerScheduledAt = Time.GetUnixTime();

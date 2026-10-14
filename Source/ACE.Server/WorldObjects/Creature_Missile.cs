@@ -150,10 +150,12 @@ namespace ACE.Server.WorldObjects
             // has Split Arrows, else +2 at the normal T10 damage, never written to the item; ZoneLockFallback.SplitFor)
             if (weapon != null)
             {
+                // (Split Arrow charm, owner 2026-10-13: a player's active charm gives a T11+ launcher split arrows - the
+                // higher of the charm's and the launcher's own numbers; the three-argument reader)
                 var split = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon,
-                    ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, this));
+                    ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, this), this);
                 if (split.On && split.Count > 0)
-                    CreateSplitArrows(weapon, ammo, target, origin, orientation, split.Count, split.Range, split.Damage);
+                    CreateSplitArrows(weapon, ammo, target, origin, orientation, split.Count, split.Range, split.Damage, split.Angle);
             }
 
             // detonate point-blank projectiles immediately
@@ -512,7 +514,7 @@ namespace ACE.Server.WorldObjects
         /// <param name="origin">Origin position for split arrows</param>
         /// <param name="orientation">Orientation for split arrows</param>
         private void CreateSplitArrows(WorldObject weapon, WorldObject ammo, WorldObject target, Vector3 origin, Quaternion orientation,
-            int splitCount, float splitRange, float damageMultiplier)
+            int splitCount, float splitRange, float damageMultiplier, float splitAngle = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitAngleDefault)
         {
             try
             {
@@ -560,7 +562,7 @@ namespace ACE.Server.WorldObjects
                 
                 var additionalArrowCount = splitCount; // SplitArrowCount now directly represents number of split arrows to create
                 
-                var validTargets = FindValidSplitTargets(origin, target, splitRange, additionalArrowCount);
+                var validTargets = FindValidSplitTargets(origin, target, splitRange, additionalArrowCount, splitAngle);
                 
                 if (validTargets.Count == 0)
                     return;
@@ -608,6 +610,9 @@ namespace ACE.Server.WorldObjects
                 // This enables death message modification to prevent VirindiTank kill attribution issues
                 splitProj.SetProperty(PropertyBool.IsSplitArrow, true);
                 splitProj.SetProperty(PropertyFloat.SplitArrowDamageMultiplier, shotSplitDamage);
+                // the count this shot fired with, for the proc decay on a split arrow's hit (a charm's or the zone lock's
+                // split is not on the launcher)
+                splitProj.SetProperty(PropertyInt.SplitArrowCount, splitCount);
                     
                     // Calculate velocity to new target using the SAME method as main arrows
                     // Each split arrow needs its own aim level and spawn origin based on its target distance
@@ -710,7 +715,8 @@ namespace ACE.Server.WorldObjects
         /// <param name="splitRange">Maximum range to search for additional targets</param>
         /// <param name="maxTargets">Maximum number of additional targets to find</param>
         /// <returns>List of valid targets for split arrows</returns>
-        private List<WorldObject> FindValidSplitTargets(Vector3 origin, WorldObject primaryTarget, float splitRange, int maxTargets)
+        private List<WorldObject> FindValidSplitTargets(Vector3 origin, WorldObject primaryTarget, float splitRange, int maxTargets,
+            float splitAngle = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitAngleDefault)
         {
             var potentialTargets = new List<WorldObject>();
             
@@ -793,7 +799,7 @@ namespace ACE.Server.WorldObjects
                     creaturesInRange++;
                     
                     // Basic angle validation: Check if target is roughly in front of the player
-                    if (IsTargetInValidAngle(primaryTarget, obj))
+                    if (IsTargetInValidAngle(primaryTarget, obj, splitAngle))
                     {
                         creaturesValidAngle++;
                         potentialTargets.Add(obj);
@@ -812,7 +818,8 @@ namespace ACE.Server.WorldObjects
         /// <param name="primaryTarget">The primary target that was hit</param>
         /// <param name="potentialTarget">The potential target to validate</param>
         /// <returns>True if the target is within a valid firing angle</returns>
-        private bool IsTargetInValidAngle(WorldObject primaryTarget, WorldObject potentialTarget)
+        private bool IsTargetInValidAngle(WorldObject primaryTarget, WorldObject potentialTarget,
+            float maxAngle = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitAngleDefault)
         {
             try
             {
@@ -838,7 +845,9 @@ namespace ACE.Server.WorldObjects
                 // Allow targets within 60° of the primary target (cos(60°) = 0.5)
                 // This ensures split arrows only target creatures in front of the player
                 // and prevents physics issues with targets behind the player
-                return dot >= 0.5f;
+                // (the Split Arrow charm can widen the cone; 60 = the old fixed rule, dot >= 0.5)
+                if (maxAngle >= 180f) return true;
+                return dot >= (maxAngle == ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitAngleDefault ? 0.5f : (float)Math.Cos(maxAngle * Math.PI / 180.0));
             }
             catch (Exception ex)
             {

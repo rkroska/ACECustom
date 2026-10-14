@@ -383,7 +383,8 @@ namespace ACE.Server.WorldObjects
                             TryProcEquippedItemsWithChanceMod(this, creature, false, weapon, strikeMultiplier);
                     }
 
-                    if (weapon != null && weapon.IsCleaving && creature != null)
+                    // (the picker decides: a weapon that cleaves, or the Improved Cleave charm on a weapon that does not)
+                    if (weapon != null && creature != null && (weapon.IsCleaving || HasImprovedCleaveCharm))
                     {
                         var cleave = GetCleaveTarget(creature, weapon);
                         
@@ -413,7 +414,7 @@ namespace ACE.Server.WorldObjects
                             // strikeMultiplier will be 1.0f on first successful hit even if AllowMultiStrikeProcs is false
                             if (cleaveDamageEvent != null && cleaveDamageEvent.HasDamage && strikeMultiplier > 0f)
                             {
-                                TryProcWeaponOnCleaveTarget(this, cleaveHit, weapon, weapon?.CleaveTargets ?? 1, successfulHitCounter, strikeMultiplier);
+                                TryProcWeaponOnCleaveTarget(this, cleaveHit, weapon, Math.Max(weapon?.CleaveTargets ?? 1, cleave.Count), successfulHitCounter, strikeMultiplier);
                             }
                         }
                     }

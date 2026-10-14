@@ -824,7 +824,11 @@ namespace ACE.Server.Entity
             // on a Zone Control monster, key 44 included - the "more HP" knob. 1.0 unless set. Key 44 is only ever scaled DOWN
             // by it: above 1 its NO-KILL amount would become a killing blow.
             var takenMult = Damage > 0 && playerDefender == null
-                ? ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(defender) : 1f;
+                ? ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(defender,
+                    // per attack type (owner 2026-10-12): a player's swing is melee, a shot is missile
+                    playerAttacker == null ? ACE.Server.Managers.ZoneControl.ZoneControlManager.ZcAttackKind.None
+                    : CombatType == CombatType.Missile ? ACE.Server.Managers.ZoneControl.ZoneControlManager.ZcAttackKind.Missile
+                    : ACE.Server.Managers.ZoneControl.ZoneControlManager.ZcAttackKind.Melee) : 1f;
             DamageBeforeZoneTaken = Damage;
             Damage = Damage * takenMult + pctHpAdd * Math.Min(takenMult, 1f);
 

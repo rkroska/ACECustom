@@ -218,5 +218,43 @@ namespace ACE.Server.Managers.ZoneControl
                 return (true, count, Math.Min(range, SplitRangeCap), Math.Min(damage, SplitDamageCap));
             return (true, SplitBonusCount, SplitBonusRange, SplitBonusDamage);
         }
+
+        /// <summary>The cone every split arrow has had: a monster may stand up to 60 degrees to either side of the line
+        /// from the archer to the main target.</summary>
+        public const float SplitAngleDefault = 60f;
+
+        /// <summary>The Split Arrows a SHOT fires with: the launcher's own (the reader above) and, for a player whose
+        /// Split Arrow charm is active, the charm's numbers at the charm's level - the HIGHER of the two per number, never
+        /// the sum (owner 2026-10-13: "higher of 2, do not add"). The charm needs a T11+ launcher whose power is live
+        /// (setting t11only; off = any launcher, anywhere). Also gives the cone the extra arrows look in.</summary>
+        public static (bool On, int Count, float Range, float Damage, float Angle) SplitFor(WorldObject launcher, bool locked, Creature wielder)
+        {
+            var own = SplitFor(launcher, locked);
+            var charm = CharmSplitFor(launcher, locked, wielder);
+            if (!charm.On)
+                return (own.On, own.Count, own.Range, own.Damage, SplitAngleDefault);
+            if (!own.On || own.Count <= 0)
+                return (true, charm.Count, charm.Range, charm.Damage, charm.Angle);
+            return (true, Math.Max(own.Count, charm.Count), Math.Max(own.Range, charm.Range), Math.Max(own.Damage, charm.Damage),
+                Math.Max(SplitAngleDefault, charm.Angle));
+        }
+
+        /// <summary>What the Split Arrow charm alone gives this wielder with this launcher; On = false when it does not
+        /// apply (no charm, charm switched off, not a launcher, level gives no arrows, or the T11 rule says no).</summary>
+        public static (bool On, int Count, float Range, float Damage, float Angle) CharmSplitFor(WorldObject launcher, bool locked, Creature wielder)
+        {
+            var cs = CharmSettingsManager.SplitArrow;
+            if (launcher == null || !(wielder is Player player) || !cs.Enabled || !player.HasSplitArrowCharm || !IsLauncher(launcher))
+                return (false, 0, 0f, 0f, SplitAngleDefault);
+            // "full T11 for now": a T11+ launcher, and not while the zone lock holds its power back
+            if (cs.On("t11only") && (locked || ZoneCraftGate.TierOf(launcher) < 11))
+                return (false, 0, 0f, 0f, SplitAngleDefault);
+            var level = CharmAbilityRegistry.LevelOf(player, CharmAbilityRegistry.SplitArrowAbilityId);
+            var count = cs.CountAt("arrows", level);
+            if (level < 1 || count <= 0)
+                return (false, 0, 0f, 0f, SplitAngleDefault);
+            // the damage is stamped on the arrow unclamped by the shot, so the charm holds its own to 0..1 here
+            return (true, count, cs.NumberAt("range", level), Math.Clamp(cs.NumberAt("damage", level), 0f, 1f), cs.NumberAt("angle", level));
+        }
     }
 }

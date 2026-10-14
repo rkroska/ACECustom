@@ -22,7 +22,7 @@ namespace ACE.Server.Managers.ZoneControl
     ///   - positive key  = ZoneModifiers catalog key (lines AND specials), value = grade 0-1000
     ///   - c1..c4        = LEGACY: the retired core four (DamageResist / CritDamageResist / CritResist / NetherResist),
     ///                     never written by a new drop, still resolved on its own window so an old piece keeps its value
-    ///   - -11..-30      = the reserved WEAPON block (2026-08-25): the six continuous weapon cards,
+    ///   - -11..-30      = the reserved WEAPON block (2026-08-25): the continuous weapon cards (-11..-19 today),
     ///                     which are PropertyFloats and resolve through ZoneModifiers.WeaponBand rather
     ///                     than the armour catalog. See the block comment at WeaponBiteKey.
     ///   - Reinforced (49) is NOT recorded: an earned, frozen armor mod (owner ruling 2026-08-22 §8.3)
@@ -135,7 +135,7 @@ namespace ACE.Server.Managers.ZoneControl
         // by Format, so they never appear as a bare negative token in a well-formed record).
         //
         // -5..-10 IS A DELIBERATE GAP so the core block can grow (a fifth core rating) without
-        // renumbering weapons. -11..-30 is the WEAPON block; only -11..-16 are defined today.
+        // renumbering weapons. -11..-30 is the WEAPON block; only -11..-19 are defined today.
         // NOTE for anyone touching the record format: a bare '-' in a ZcModifiers string means
         // "this record contains a weapon key" and NOTHING else - grades are 0..1000 and never
         // signed. HasWeaponKey below depends on that; keep it true.
@@ -148,6 +148,8 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Cast on Strike damage B, one key per slot (added 2026-08-27).</summary>
         public const int WeaponProcArcDamageKey = -17;
         public const int WeaponProcRingDamageKey = -18;
+        /// <summary>Spell Armor Rend, the caster card (added 2026-10-12).</summary>
+        public const int WeaponSpellArmorRendKey = -19;
 
         /// <summary>The reserved weapon block, -11..-30. Membership of the block, NOT "is defined":
         /// an unknown key inside the block is skipped by Compute exactly like an unknown catalog key,
@@ -205,10 +207,16 @@ namespace ACE.Server.Managers.ZoneControl
         public static readonly WeaponSpecial SpecProcRingDamage = new WeaponSpecial
         { Key = WeaponProcRingDamageKey, Band = ZoneModifiers.WeaponProcRingDamage, Prop = (PropertyFloat)ZoneLootMutator.ProcRingDamagePropId };
 
+        /// <summary>Spell Armor Rend (2026-10-12), casters only. Not read by the melee damage pipeline either -
+        /// Creature.GetZcSpellArmorMod takes it off the monster's Spell Armor level.</summary>
+        public static readonly WeaponSpecial SpecSpellArmorRend = new WeaponSpecial
+        { Key = WeaponSpellArmorRendKey, Band = ZoneModifiers.WeaponSpellArmorRend, Prop = PropertyFloat.ZcSpellArmorRend };
+
         public static readonly WeaponSpecial[] WeaponSpecials =
         {
             SpecBite, SpecArmorRend, SpecRendPower, SpecSlayer, SpecShieldCleave, SpecCrush,
             SpecProcArcDamage, SpecProcRingDamage,
+            SpecSpellArmorRend,
         };
 
         public static bool TryGetWeapon(int key, out WeaponSpecial ws)

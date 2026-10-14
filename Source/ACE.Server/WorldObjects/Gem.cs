@@ -603,7 +603,9 @@ namespace ACE.Server.WorldObjects
 
 
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
-            return activating ? $"{name} Level {level} activated." : $"{name} deactivated.";
+            // a levelled charm (1-100) says what it does at its level, from the live settings
+            var levelled = activating ? CharmSettingsManager.PlayerTextFor(abilityId, level) : null;
+            return activating ? $"{name} Level {level} activated." + (levelled != null ? " " + levelled : "") : $"{name} deactivated.";
         }
     }
 }

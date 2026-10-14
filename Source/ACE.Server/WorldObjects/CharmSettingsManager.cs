@@ -15,7 +15,7 @@ namespace ACE.Server.WorldObjects
     /// Backed by the world DB table <c>charm_settings</c> (key/value store).
     /// Values survive server restarts. Updated at runtime by the /charm command.
     /// </summary>
-    public static class CharmSettingsManager
+    public static partial class CharmSettingsManager
     {
         private static readonly log4net.ILog log =
             log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
@@ -85,6 +85,7 @@ namespace ACE.Server.WorldObjects
             sb.Append(EssenceRefill.Dump());
             sb.Append(UniversalSummoning.Dump());
             sb.Append(Fork.Dump());
+            foreach (var leveled in LeveledBlocks.Values) sb.Append(leveled.Dump());
             return sb.ToString();
         }
 
@@ -112,7 +113,7 @@ namespace ACE.Server.WorldObjects
                 "essencerefill"      => EssenceRefill,
                 "universalsummoning" => UniversalSummoning,
                 "fork"               => Fork,
-                _                    => null
+                _                    => Leveled(charmName)
             };
 
             if (block == null) { found = false; return null; }
@@ -154,6 +155,7 @@ namespace ACE.Server.WorldObjects
             EssenceRefill.Reset();      PersistBlock("essencerefill",      EssenceRefill);
             UniversalSummoning.Reset(); PersistBlock("universalsummoning", UniversalSummoning);
             Fork.Reset();               PersistBlock("fork",               Fork);
+            foreach (var leveled in LeveledBlocks.Values) { leveled.Reset(); PersistBlock(leveled.Name, leveled); }
         }
 
         /// <summary>
@@ -179,7 +181,11 @@ namespace ACE.Server.WorldObjects
                 case "essencerefill":      EssenceRefill.Reset();      PersistBlock("essencerefill",      EssenceRefill);      return true;
                 case "universalsummoning": UniversalSummoning.Reset(); PersistBlock("universalsummoning", UniversalSummoning); return true;
                 case "fork":               Fork.Reset();               PersistBlock("fork",               Fork);               return true;
-                default: return false;
+                default:
+                    var leveled = Leveled(charmName);
+                    if (leveled == null) return false;
+                    leveled.Reset(); PersistBlock(leveled.Name, leveled);
+                    return true;
             }
         }
 
@@ -202,7 +208,7 @@ namespace ACE.Server.WorldObjects
                 "essencerefill"      => EssenceRefill.Dump(),
                 "universalsummoning" => UniversalSummoning.Dump(),
                 "fork"               => Fork.Dump(),
-                _                    => null
+                _                    => Leveled(charmName)?.Dump()
             };
         }
 
@@ -225,7 +231,7 @@ namespace ACE.Server.WorldObjects
                 "essencerefill"      => EssenceRefill.Help(),
                 "universalsummoning" => UniversalSummoning.Help(),
                 "fork"               => Fork.Help(),
-                _                    => null
+                _                    => Leveled(charmName)?.Help()
             };
         }
 
@@ -300,7 +306,7 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             "essencerefill"      => EssenceRefill,
             "universalsummoning" => UniversalSummoning,
             "fork"               => Fork,
-            _                    => null
+            _                    => Leveled(charmName)
         };
 
         // ─────────────────────────────────────────────────────────────────────

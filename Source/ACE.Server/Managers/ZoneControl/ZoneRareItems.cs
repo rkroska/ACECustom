@@ -161,7 +161,7 @@ namespace ACE.Server.Managers.ZoneControl
 
         // -- weapon cards --------------------------------------------------------------------------------
 
-        // The ten weapon cards, in the order ZoneLootMutator.TrySpecialRolls keeps its won / eligible / chance arrays.
+        // The eleven weapon cards, in the order ZoneLootMutator.TrySpecialRolls keeps its won / eligible / chance arrays.
         // That method's won and chance arrays are still written out positionally, so a card added there needs its index
         // added here too (ZoneRareItemTests pins the count).
         internal const int CardRend = 0;
@@ -174,14 +174,16 @@ namespace ACE.Server.Managers.ZoneControl
         internal const int CardSplit = 7;
         internal const int CardProcArc = 8;
         internal const int CardProcRing = 9;
-        internal const int CardCount = 10;
+        internal const int CardSpellArmorRend = 10;
+        internal const int CardCount = 11;
 
         /// <summary>
         /// Which cards a weapon can carry at all - the one copy of the rules, used by the ordinary roll and by rare mode.
         /// Rend needs an element the weapon deals (eligRend), Slayer a creature type to attune to (eligSlayer), the two
         /// Cast on Strike slots a resolvable element and a free proc slot (hasProcSlots). Armor Rend and Shield Cleave are
         /// physical effects - melee and missile only, never a caster. Biting Strike and Crushing Blow are live on every
-        /// weapon (magic crits exist). Cleave is melee, Split Arrows is missile.
+        /// weapon (magic crits exist). Cleave is melee, Split Arrows is missile. Spell Armor Rend is the caster's own
+        /// card - a caster only, never melee or missile.
         /// </summary>
         internal static bool[] WeaponCardEligibility(bool isMelee, bool isMissile, bool isCaster, bool eligRend, bool eligSlayer, bool hasProcSlots)
         {
@@ -198,6 +200,7 @@ namespace ACE.Server.Managers.ZoneControl
             e[CardSplit] = isMissile;
             e[CardProcArc] = isWeapon && hasProcSlots;
             e[CardProcRing] = isWeapon && hasProcSlots;
+            e[CardSpellArmorRend] = isCaster;
             return e;
         }
 
@@ -218,13 +221,13 @@ namespace ACE.Server.Managers.ZoneControl
         /// LAST-RESORT FILLERS (owner 2026-10-10, after a rare wand came out at 3 of 6): only when every other card has
         /// been taken and the weapon is STILL under the cap do Crushing Blow and then Biting Strike go on - each only if
         /// the weapon is eligible and the card can drop at this tier, the same test the extras use. A caster can carry
-        /// just Rending, Slayer and the two Cast on Strike cards besides them, so without the fillers it could never
-        /// fill a cap above four. They are never taken while any other card is still available, so a sword or a bow
-        /// that reaches the cap without them is exactly as before; a weak card in an otherwise empty slot is still
-        /// better than the empty slot.
+        /// just Rending, Slayer, the two Cast on Strike cards and Spell Armor Rend (an ordinary extra, 2026-10-12)
+        /// besides them, so without the fillers it could never fill a cap above five. They are never taken while any
+        /// other card is still available, so a sword or a bow that reaches the cap without them is exactly as before;
+        /// a weak card in an otherwise empty slot is still better than the empty slot.
         ///
         /// <paramref name="pickIndex"/>(n) returns an index in [0, n). Each pick removes one card from the pool, so the
-        /// loop ends after at most ten picks whatever the picker returns.
+        /// loop ends after at most eleven picks whatever the picker returns.
         /// </summary>
         internal static bool[] PickWeaponCards(bool[] eligible, bool[] enabled, int cap, Func<int, int> pickIndex)
         {

@@ -606,7 +606,10 @@ namespace ACE.Server.Network.Structure
                     var tierStr = maxTier.HasValue ? $"{tier}/{maxTier}" : $"{tier}";
                     var isOn    = wo.GetProperty(PropertyBool.IsCharmActivated) == true;
                     var status  = isOn ? "Status: ON" : "Status: OFF";
-                    charmHeader = $"Charm [Tier {tierStr}]\n\n{status}\n\nDouble click to toggle ability on / off.";
+                    // the levelled charms (1-100) say "Level" and what the charm does at this level, from the live settings
+                    var levelled = CharmSettingsManager.PlayerTextFor(wo.GetProperty(PropertyInt.CharmGrantsAbility) ?? 0, tier);
+                    charmHeader = $"Charm [{(levelled != null ? "Level" : "Tier")} {tierStr}]\n\n{status}\n\nDouble click to toggle ability on / off.";
+                    if (levelled != null) charmHeader += $"\n\n{levelled}";
                 }
                 else
                 {
@@ -1362,8 +1365,15 @@ namespace ACE.Server.Network.Structure
 
             // Cleaving (multi-target): the raw prop stores TOTAL targets (extra + 1), so raw-prop
             // readouts look one higher than authored — this line shows the true extra-target count.
-            if (weapon.IsCleaving)
-                effectDescriptions.Add($"- Cleaving: +{(!zcLocked ? weapon.CleaveTargets : zcT10 ? Math.Min(weapon.CleaveTargets, ACE.Server.Managers.ZoneControl.ZoneLockFallback.CleaveCap) : 0)} Targets");
+            // (Improved Cleave charm 2026-10-13: the holder's active charm counts - the higher of the two, "(Charm)" when
+            // the charm is what gives the number, with its reach and arc)
+            var cleaveHolder = (weapon.Wielder as Player) ?? examiner;
+            var cleaveCharm = cleaveHolder != null ? cleaveHolder.CharmCleaveFor(weapon, zcLocked) : (false, 0, 0f, 0f, false);
+            var cleaveOwn = !weapon.IsCleaving ? 0 : !zcLocked ? weapon.CleaveTargets : zcT10 ? Math.Min(weapon.CleaveTargets, ACE.Server.Managers.ZoneControl.ZoneLockFallback.CleaveCap) : 0;
+            if (cleaveCharm.Item1)
+                effectDescriptions.Add($"- Cleaving: +{Math.Max(cleaveOwn, cleaveCharm.Item2)} Targets, {cleaveCharm.Item3:0.#} m, {(cleaveCharm.Item4 >= 359.5f ? "all around" : $"{cleaveCharm.Item4:0} degrees")} (Charm)");
+            else if (weapon.IsCleaving)
+                effectDescriptions.Add($"- Cleaving: +{cleaveOwn} Targets");
 
             // Resistance Cleaving (Fixed Resistance Modifier)
             if (weapon.ResistanceModifier.HasValue && weapon.ResistanceModifierType.HasValue)
@@ -1383,9 +1393,16 @@ namespace ACE.Server.Network.Structure
 
             // Split Arrow - the same reader combat uses, so a locked launcher shows its T10 split (its own count, or the +2
             // a launcher without Split Arrows gets while locked)
-            var splitShown = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon, zcLocked);
+            // (Split Arrow charm 2026-10-13: the holder's active charm counts too - the three-argument reader; "(Charm)" when
+            // the charm is what gives or raises the number)
+            var splitHolder = (weapon.Wielder as Player) ?? examiner;
+            var splitOwn = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon, zcLocked);
+            var splitShown = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon, zcLocked, splitHolder);
             if (weapon.GetProperty(PropertyBool.SplitArrows) == true || splitShown.On)
-                effectDescriptions.Add($"- Split Arrow: +{(splitShown.On ? splitShown.Count : 0)} Targets, {splitShown.Damage:P0} Dmg");
+            {
+                var splitByCharm = splitShown.On && (!splitOwn.On || splitShown.Count > splitOwn.Count || splitShown.Damage > splitOwn.Damage || splitShown.Range > splitOwn.Range);
+                effectDescriptions.Add($"- Split Arrow: +{(splitShown.On ? splitShown.Count : 0)} Targets, {splitShown.Damage:P0} Dmg{(splitByCharm ? " (Charm)" : "")}");
+            }
 
             // Crushing Blow: engine crit damage = 1 + CriticalMultiplier, so the true multiplier the
             // player actually deals is prop + 1 (a stored 1.0 = normal 2x crit).
@@ -1475,6 +1492,12 @@ namespace ACE.Server.Network.Structure
             // the weapon (PropertyFloat.IgnoreShield); GetIgnoreShieldMod reads it at hit time.
             if (weapon.IgnoreShield.HasValue && weapon.IgnoreShield.Value > 0)
                 effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(weapon.IgnoreShield.Value, 0.0, 1.0)):P0} Shield Ignored");   // locked: off (owner 2026-10-07)
+
+            // Spell Armor Rend (casters): fraction of the monster's Spell Armor level the wand's spells ignore. Stored directly
+            // on the weapon (PropertyFloat.ZcSpellArmorRend); Creature.GetZcSpellArmorMod reads it at hit time.
+            var spellArmorRend = weapon.GetProperty(PropertyFloat.ZcSpellArmorRend);
+            if (spellArmorRend.HasValue && spellArmorRend.Value > 0)
+                effectDescriptions.Add($"- Spell Armor Rend: {(zcLocked ? 0.0 : Math.Clamp(spellArmorRend.Value, 0.0, 1.0)):P0} Spell Armor Ignored");   // locked: off, like the other cards
 
             // Phantom (hollow): the weapon bypasses the target's protective magic - Impen/Banes on armor
             // and Life prots. RETAIL ONLY as of 2026-08-25: our loot card was deleted, so every weapon

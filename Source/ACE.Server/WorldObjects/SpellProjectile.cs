@@ -17,7 +17,7 @@ using ACE.Server.WorldObjects.Entity;
 
 namespace ACE.Server.WorldObjects
 {
-    public class SpellProjectile : WorldObject
+    public partial class SpellProjectile : WorldObject
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -461,7 +461,7 @@ namespace ACE.Server.WorldObjects
                 // TODO: instead of ProjectileLauncher is Caster, perhaps a SpellProjectile.CanProc bool that defaults to true,
                 // but is set to false if the source of a spell is from a proc, to prevent multi procs?
 
-                if (sourceCreature != null && ProjectileTarget != null && !FromProc)
+                if (sourceCreature != null && ProjectileTarget != null && !FromProc && (Chain == null || Chain.Procs))
                 {
                     // TODO figure out why cross-landblock group operations are happening here. We shouldn't need this code Mag-nus 2021-02-09
                     bool threadSafe = true;
@@ -495,7 +495,7 @@ namespace ACE.Server.WorldObjects
             //     still struck the creature and the fork projectiles roll their own resist.
             // Does NOT fire if CanDamage or PK checks failed (those return early above).
             if (forkEligibleOnImpact
-                && !IsForkProjectile && player != null && player.HasForkCharm
+                && !IsForkProjectile && Chain == null && player != null && player.HasForkCharm
                 && CharmSettingsManager.Fork.Enabled
                 && (SpellType == ProjectileSpellType.Streak
                     || SpellType == ProjectileSpellType.Arc
@@ -503,6 +503,11 @@ namespace ACE.Server.WorldObjects
             {
                 TryApplyForkProc(player, creatureTarget);
             }
+
+            // Chain charm (owner 2026-10-13): a hand-cast war arc / bolt / streak jumps on from the monster it struck; a
+            // jump carries its chain one step further. Same place as Fork: after the hit, also on a kill.
+            if (forkEligibleOnImpact && player != null && targetPlayer == null && (Chain != null || player.HasChainCharm))
+                TryChain(player, creatureTarget, damage != null);
 
             // also called on resist
             if (player != null && targetPlayer == null)
@@ -762,7 +767,8 @@ namespace ACE.Server.WorldObjects
                 resistanceMod = (float)Math.Max(0.0f, target.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
 
                 // Spell Armor (owner 2026-10-04): a T11+ monster's armor against player spells, hand-cast and proc'd (Creature_SpellArmor.cs)
-                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer);
+                // - less the wand's Spell Armor Rend card (2026-10-12), read off the same weapon as the rend above
+                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer, HandCastParityWeapon(weapon, sourceCreature));
 
                 // UNIFIED CRIT: CritX x the base the hit ACTUALLY uses - player and governed casters alike
                 if (criticalHit)
@@ -938,7 +944,8 @@ namespace ACE.Server.WorldObjects
                 resistanceMod = (float)Math.Max(0.0f, target.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
 
                 // Spell Armor (owner 2026-10-04): a T11+ monster's armor against player spells, hand-cast and proc'd (Creature_SpellArmor.cs)
-                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer);
+                // - less the wand's Spell Armor Rend card (2026-10-12), read off the same weapon as the rend above
+                resistanceMod *= target.GetZcSpellArmorMod(sourcePlayer, HandCastParityWeapon(weapon, sourceCreature));
 
                 if (sourcePlayer != null && targetPlayer != null && Spell.DamageType == DamageType.Nether)
                 {
@@ -1018,6 +1025,10 @@ namespace ACE.Server.WorldObjects
                 finalDamage *= ForkDamageMult;
                 if (tr != null) tr.Fork = ForkDamageMult;
             }
+
+            // Chain charm: a jump deals its share of a normal hit (the first jump's share, then the falloff per jump).
+            if (Chain != null)
+                finalDamage *= Chain.Mult;
 
             // (The 2026-07-27 WYSIWYG felt-damage override that used to live here was REMOVED 2026-08-02:
             // spell_damage is now a plain PRE-mitigation base replacement and rides the retail pipeline.)
@@ -1484,7 +1495,9 @@ namespace ACE.Server.WorldObjects
                 // DAMAGE TAKEN multiplier (owner 2026-10-05, mirrors DamageEvent): a harmful spell on a Zone Control monster. Key 44
                 // only ever scaled DOWN by it (its NO-KILL amount must never become a killing blow).
                 var spellTakenMult = damage > 0 && Spell.IsHarmful && targetPlayer == null
-                    ? ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(target) : 1f;
+                    ? ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(target,
+                        // per attack type (owner 2026-10-12): the spell's school, a proc as the weapon that fired it
+                        ACE.Server.Managers.ZoneControl.ZoneControlManager.AttackKindOfSpell(sourceCreature, ProjectileLauncher, Spell, FromProc)) : 1f;
                 damage = damage * spellTakenMult + pctHpAdd * Math.Min(spellTakenMult, 1f);
 
                 // TRUE DAMAGE (owner 2026-10-01, mirrors DamageEvent): the zone's fixed amount, after every rating and

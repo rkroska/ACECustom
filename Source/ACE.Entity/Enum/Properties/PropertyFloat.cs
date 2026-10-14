@@ -375,5 +375,12 @@ namespace ACE.Entity.Enum.Properties
         /// (WorldObject.ShownObjScale); DefaultScale itself is never changed. Unset = normal size.
         /// </summary>
         ItemSizeLevel = 54000,
+
+        /// <summary>
+        /// Spell Armor Rend, the caster weapon card (2026-10-12): the fraction (0..1) of a monster's Spell Armor LEVEL
+        /// that this wand's spells ignore - effective level = level x (1 - value). Read by
+        /// Creature.GetZcSpellArmorMod; the float being present IS the card (no imbue bit). Server-only. Unset = no card.
+        /// </summary>
+        ZcSpellArmorRend = 51200,
     }
 }

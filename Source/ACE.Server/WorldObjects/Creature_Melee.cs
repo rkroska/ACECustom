@@ -94,22 +94,38 @@ namespace ACE.Server.WorldObjects
         {
             var player = this as Player;
 
-            if (!weapon.IsCleaving) return null;
-
             // zone lock (owner 2026-10-07): Cleave is something a T10 weapon can have, so a locked ZC weapon keeps it,
             // held to the T10 ceiling (4 targets). Master switch OFF: inert, as before.
             var cleaveLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, this);
-            if (cleaveLocked && !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
-                return null;
+
+            // Improved Cleave charm (owner 2026-10-13): a player's active charm gives a melee weapon its extra targets (a
+            // weapon without cleave cleaves through it), a longer reach and a wider arc - the higher of the charm's and
+            // the weapon's own, never the sum. Off for monsters and for everybody without the charm: nothing below changes.
+            var charm = CharmCleaveFor(weapon, cleaveLocked);
+            var ownOn = weapon.IsCleaving && !(cleaveLocked && !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active);
+
+            if (!ownOn && !charm.On) return null;
 
             // sort visible objects by ascending distance
             var visible = PhysicsObj.ObjMaint.GetVisibleObjectsValuesWhere(o => o.WeenieObj.WorldObject != null);
             visible.Sort(DistanceComparator);
 
             var cleaveTargets = new List<Creature>();
-            var totalCleaves = cleaveLocked
+            var totalCleaves = !ownOn ? 0 : cleaveLocked
                 ? Math.Min(weapon.CleaveTargets, ACE.Server.Managers.ZoneControl.ZoneLockFallback.CleaveCap)
                 : weapon.CleaveTargets;
+            var cleaveRange = CleaveCylRange;
+            var cleaveAngle = CleaveAngle;
+            ACE.Server.Physics.PhysicsObj charmSight = null;
+            if (charm.On)
+            {
+                totalCleaves = Math.Max(totalCleaves, charm.Targets);
+                cleaveRange = charm.Range;
+                cleaveAngle = charm.Angle;
+            }
+
+            try
+            {
 
             foreach (var obj in visible)
             {
@@ -132,13 +148,26 @@ namespace ACE.Server.WorldObjects
 
                 // no objects in cleave range
                 var cylDist = GetCylinderDistance(creature);
-                if (cylDist > CleaveCylRange)
+                if (cylDist > cleaveRange)
                     return cleaveTargets;
 
-                // only cleave in front of attacker
+                // only cleave in front of attacker (the charm can open the arc; 360 = all around)
                 var angle = GetAngle(creature);
-                if (Math.Abs(angle) > CleaveAngle / 2.0f)
+                if (cleaveAngle < 360.0f && Math.Abs(angle) > cleaveAngle / 2.0f)
                     continue;
+
+                // beyond the reach everybody has, the charm's cleave needs sight of the monster: no cleaving through a
+                // wall or a closed door (the ring's sight trace - the plain one sees through outdoor scenery)
+                if (charm.On && charm.Los && cylDist > CleaveCylRange)
+                {
+                    if (charmSight == null)
+                    {
+                        charmSight = Player.CreateRingSightObject();
+                        charmSight.SightIgnoresTerrain = false;
+                    }
+                    if (!Player.IsRingTargetInSight(this, creature, charmSight))
+                        continue;
+                }
 
                 // found cleavable object
                 cleaveTargets.Add(creature);
@@ -146,6 +175,11 @@ namespace ACE.Server.WorldObjects
                     break;
             }
             return cleaveTargets;
+            }
+            finally
+            {
+                charmSight?.DestroyObject();
+            }
         }
     }
 }

@@ -295,6 +295,16 @@ namespace ACE.Server.WorldObjects
                 targetInfo.DebugDamageBuffer = $"{info}\n";
         }
 
+        /// <summary>DIRECT DoT (owner 2026-10-13: "change corro and corru to work like Destructive curse"): a player's own
+        /// hand-cast Corrosion or Corruption at a Zone Control monster is delivered as a direct enchantment, not a bolt.
+        /// Never a proc, a weapon's built-in spell or an item's cast; never on a retail monster or a player.</summary>
+        public bool ZcDirectDot(Spell spell, WorldObject target, WorldObject itemCaster, bool isWeaponSpell, bool fromProc = false)
+            => this is Player && !fromProc && !isWeaponSpell && itemCaster == null
+                && spell != null && spell.MetaSpellType == SpellType.EnchantmentProjectile
+                && (Creature.IsCorrosionSpell(spell.Id) || Creature.IsCorruptionSpell(spell.Id))
+                && target is Creature zcTarget && !(target is Player) && zcTarget.ZcDebuffCompressed
+                && ServerConfig.zc_dot_direct.Value;
+
         /// <summary>
         /// Creates a spell based on MetaSpellType
         /// </summary>
@@ -325,6 +335,7 @@ namespace ACE.Server.WorldObjects
             {
                 case SpellType.Enchantment:
                 case SpellType.FellowEnchantment:
+                case SpellType.EnchantmentProjectile when ZcDirectDot(spell, targetCreature, itemCaster, isWeaponSpell, fromProc):
 
                     // TODO: replace with some kind of 'rootOwner unless equip' concept?
                     if (itemCaster != null && (equip || itemCaster is Gem || itemCaster is Food))
@@ -451,6 +462,11 @@ namespace ACE.Server.WorldObjects
 
             // create enchantment
             var addResult = target.EnchantmentManager.Add(spell, caster, weapon, equip);
+
+            // PANDEMIC charm (owner 2026-10-13): a player's HAND-CAST void DoT is marked to spread while the charm is active
+            // (never a proc's - the tick itself cannot tell them apart, so it is decided here, at the cast)
+            if (!fromProc && !aetheriaProc && !cloakProc && player != null && player.HasPandemicCharm && target is Creature pandemicTarget)
+                pandemicTarget.ZcPandemicArm(player, spell, addResult.Enchantment);
 
             // build message
             var suffix = "";
@@ -2240,7 +2256,7 @@ namespace ACE.Server.WorldObjects
             return dir * speed;
         }
 
-        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f, bool handCastFork = false)
+        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f, bool handCastFork = false, SpellChain chain = null)
         {
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -2333,6 +2349,7 @@ namespace ACE.Server.WorldObjects
                 sp.IsForkProjectile = isForkProjectile;
                 sp.ForkDamageMult   = forkDamageMult;
                 sp.HandCastFork     = handCastFork;   // a projectile can collide inside AddObject, so the low-tier gate needs it now
+                sp.Chain            = chain;          // Chain charm: the jump's state, set before it can collide
 
                 if (!LandblockManager.AddObject(sp))
                 {
@@ -2345,7 +2362,9 @@ namespace ACE.Server.WorldObjects
 
                 sp.EnqueueBroadcast(new GameMessageScript(sp.Guid, PlayScript.Launch, sp.GetProjectileScriptIntensity(spellType)));
 
-                if (!IsProjectileVisible(sp))
+                // (a chain jump leaves a MONSTER, and the chain has traced its own line from that monster to the next:
+                // the caster's own view of the spawn point does not decide it)
+                if (chain == null && !IsProjectileVisible(sp))
                 {
                     sp.OnCollideEnvironment();
                     continue;
@@ -2592,6 +2611,11 @@ namespace ACE.Server.WorldObjects
                     }
                 }
             }
+            // Zone Control (owner 2026-10-12): a player's void DoT on a Zone Control monster ticks as a spell hit - the caster's
+            // side is fixed here, at the cast (Creature_DotHit.cs). The stored value below stays what it always was.
+            if (player != null && creatureTarget != null && spell.School == MagicSchool.VoidMagic)
+                creatureTarget.ZcStoreDotSnapshot(player, weapon, spell, statModVal);
+
             enchantment_statModVal *= skillMod * elementalDamageMod * damageRatingMod;
 
             return enchantment_statModVal;
