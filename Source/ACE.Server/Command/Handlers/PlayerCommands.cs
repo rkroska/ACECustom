@@ -585,7 +585,7 @@ namespace ACE.Server.Command.Handlers
                     //trade notes
                     iType = 3;
                 }
-                if (parameters[1] == "Legendarykeys" || parameters[1] == "k")
+                if (parameters[1] == "legendarykeys" || parameters[1] == "k")
                 {
                     iType = 4;
                 }
@@ -597,11 +597,11 @@ namespace ACE.Server.Command.Handlers
                 {
                     iType = 6;
                 }
-                if (parameters[1] == "Mythicalkeys" || parameters[1] == "mk")
+                if (parameters[1] == "mythicalkeys" || parameters[1] == "mk")
                 {
                     iType = 7;
                 }
-                if (parameters[1] == "Weaklyenlightenedcoins" || parameters[1] == "we")
+                if (parameters[1] == "weaklyenlightenedcoins" || parameters[1] == "we")
                 {
                     iType = 8;
                 }
