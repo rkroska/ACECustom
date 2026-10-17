@@ -1495,7 +1495,7 @@ namespace ACE.Server.Command.Handlers
 
         }
 
-        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "top qb|level|enl|title|augs|deaths|bank|lum|attr|bond(s)|sumbond(s)|enlcoins|wenlcoins|mkeys|lkeys|jails|notguilty|pets|shinies|potency|mutations|summutations|litters")]
+        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "top qb|level|enl|title|augs|deaths|bank|lum|attr|bond(s)|sumbond(s)|enlcoins|wenlcoins|mkeys|lkeys|jails|notguilty|pets|shinies|potency|mutations|summutations|litters|jailbreak")]
         public static async void DisplayTop(Session session, params string[] parameters)
         {
             try
@@ -1716,9 +1716,38 @@ namespace ACE.Server.Command.Handlers
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 1 Player named Gymnos: Gymnos", ChatMessageType.Broadcast));
                     }
+                    else if (key == "jailbreak")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "jailbreak", LeaderboardInlineSql.TopJailbreak);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Jail Escape Trial Completion Times:", ChatMessageType.Broadcast));
+                            for (int i = 0; i < list.Count; i++)
+                            {
+                                var minutes = list[i].Score / 60;
+                                var secs = list[i].Score % 60;
+                                var formatted = minutes > 0 ? $"{minutes}m {secs}s" : $"{secs}s";
+                                session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {formatted} - {list[i].Character}", ChatMessageType.Broadcast));
+                            }
+                            
+                            var p = await Leaderboard.GetSelfPlacementRowAsync(context, "jailbreak", session.AccountId);
+                            if (p != null)
+                            {
+                                var minutes = p.Score.Value / 60;
+                                var secs = p.Score.Value % 60;
+                                var formatted = minutes > 0 ? $"{minutes}m {secs}s" : $"{secs}s";
+                                session.Network.EnqueueSend(new GameMessageSystemChat($"Your placement: #{p.PlacementRank:N0} - Score: {formatted} ({p.Character})", ChatMessageType.Broadcast));
+                            }
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("No jail escape completions yet!", ChatMessageType.Broadcast));
+                        }
+                        return;
+                    }
                     else
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies, potency, mutations, summutations, litters", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies, potency, mutations, summutations, litters, jailbreak", ChatMessageType.Broadcast));
                         return;
                     }
 

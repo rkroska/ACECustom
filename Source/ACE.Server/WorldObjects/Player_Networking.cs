@@ -24,6 +24,14 @@ namespace ACE.Server.WorldObjects
             PlayerManager.SwitchPlayerFromOfflineToOnline(this);
             Teleporting = true;
 
+            // Never log in inside a Jail Escape trial copy (0x00C0 variations 2-10): trials live in memory only, so
+            // after a restart the copy is empty and its exit portal does nothing. Still jailed goes to the jail
+            // spawn; otherwise to the release spot in the jail, free to walk out.
+            if (Location.Landblock == 0x00C0 && Location.Variation >= 2 && !JailEscapeActive)
+            {
+                Location = IsInJail() ? GetJailTeleportLocationSafe() : GetJailReleaseLocation();
+            }
+
             // Log character login to char_tracker table
             CharacterTracker.LogCharacterLogin(this);
 

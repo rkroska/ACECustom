@@ -32,6 +32,7 @@ using ACE.DatLoader.FileTypes;
 using ACE.DatLoader;
 using Discord;
 using ACE.Server.Mods;
+using ACE.Server.Entity.Actions;
 
 using log4net;
 
@@ -321,6 +322,178 @@ namespace ACE.Server.Command.Handlers.Processors
             {
                 CommandHandlerHelper.WriteOutputError(session, $"There was an error importing the SQL:\n\n{e.Message}");
             }
+        }
+
+        [CommandHandler("dupedungeon", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 4, "Duplicates a landblock variation's instances to a range of other variations", "<landblock> <srcVariant> <startDstVariant> <endDstVariant>")]
+        public static void HandleDupeDungeon(Session session, params string[] parameters)
+        {
+            var landblockStr = parameters[0].Replace("0x", "");
+            if (!ushort.TryParse(landblockStr, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var landblockId))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Invalid landblock hex: {parameters[0]}");
+                return;
+            }
+
+            // Safety boundary check: Indoor dungeons have landblock IDs less than 0x0100.
+            // Outdoor landblocks are from 0x0100 to 0xFFFF and must NOT be duplicated.
+            if (landblockId >= 0x0100)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "This command can only be used on indoor/dungeon landblocks (IDs less than 0x0100). Outdoor duplication is blocked.");
+                return;
+            }
+
+            if (!int.TryParse(parameters[1], out var srcVariant))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Invalid source variation ID: {parameters[1]}");
+                return;
+            }
+
+            if (!int.TryParse(parameters[2], out var startDstVariant))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Invalid start destination variation ID: {parameters[2]}");
+                return;
+            }
+
+            if (!int.TryParse(parameters[3], out var endDstVariant))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Invalid end destination variation ID: {parameters[3]}");
+                return;
+            }
+
+            if (startDstVariant > endDstVariant)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Start destination variation must be <= end destination variation.");
+                return;
+            }
+
+            var srcVariationId = srcVariant == 0 ? null : (int?)srcVariant;
+
+            using var db = new WorldDbContext();
+            
+            // Load source instances along with their links
+            var srcInstances = db.LandblockInstance
+                .Include(i => i.LandblockInstanceLink)
+                .Where(i => i.Landblock == landblockId && i.VariationId == srcVariationId)
+                .ToList();
+
+            if (srcInstances.Count == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"No instances found for landblock 0x{landblockId:X4} and variation {(srcVariationId.HasValue ? srcVariationId.Value.ToString() : "NULL")} in database.");
+                return;
+            }
+
+            // Load all instances for this landblock to check capacity and manage GUIDs
+            var allInstances = db.LandblockInstance
+                .Include(i => i.LandblockInstanceLink)
+                .Where(i => i.Landblock == landblockId)
+                .ToList();
+
+            var targetCount = endDstVariant - startDstVariant + 1;
+            var replacedCount = allInstances.Count(i => i.VariationId >= startDstVariant && i.VariationId <= endDstVariant);
+            var existingCount = allInstances.Count - replacedCount;
+            var srcCount = srcInstances.Count;
+
+            // Enforce capacity check to prevent client crashes/offsets overflow
+            if (existingCount + (srcCount * targetCount) > 4095)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Cannot duplicate: Duplicating {srcCount} instances to {targetCount} variations would exceed the 4095 static GUID limit for landblock 0x{landblockId:X4} (would be {existingCount + (srcCount * targetCount)}).");
+                return;
+            }
+
+            // Delete target variations' existing instances
+            var instancesToRemove = allInstances.Where(i => i.VariationId >= startDstVariant && i.VariationId <= endDstVariant).ToList();
+            foreach (var inst in instancesToRemove)
+            {
+                db.LandblockInstanceLink.RemoveRange(inst.LandblockInstanceLink);
+                db.LandblockInstance.Remove(inst);
+            }
+            db.SaveChanges();
+
+            // Setup current instance list for GetNextStaticGuid
+            var currentInstancesList = allInstances.Where(i => !(i.VariationId >= startDstVariant && i.VariationId <= endDstVariant)).ToList();
+
+            for (var v = startDstVariant; v <= endDstVariant; v++)
+            {
+                var guidMap = new Dictionary<uint, uint>();
+                var newInstances = new List<LandblockInstance>();
+
+                // 1. Duplicate instances
+                foreach (var srcInst in srcInstances)
+                {
+                    var newGuid = GetNextStaticGuid(landblockId, currentInstancesList);
+
+                    var newInst = new LandblockInstance
+                    {
+                        Guid = newGuid,
+                        Landblock = srcInst.Landblock,
+                        WeenieClassId = srcInst.WeenieClassId,
+                        ObjCellId = srcInst.ObjCellId,
+                        OriginX = srcInst.OriginX,
+                        OriginY = srcInst.OriginY,
+                        OriginZ = srcInst.OriginZ,
+                        AnglesW = srcInst.AnglesW,
+                        AnglesX = srcInst.AnglesX,
+                        AnglesY = srcInst.AnglesY,
+                        AnglesZ = srcInst.AnglesZ,
+                        IsLinkChild = srcInst.IsLinkChild,
+                        VariationId = v,
+                        LastModified = DateTime.UtcNow
+                    };
+
+                    currentInstancesList.Add(newInst);
+                    newInstances.Add(newInst);
+                    guidMap.Add(srcInst.Guid, newGuid);
+
+                    db.LandblockInstance.Add(newInst);
+                }
+
+                // 2. Duplicate links
+                foreach (var srcInst in srcInstances)
+                {
+                    foreach (var srcLink in srcInst.LandblockInstanceLink)
+                    {
+                        if (guidMap.TryGetValue(srcLink.ParentGuid, out var newParentGuid) &&
+                            guidMap.TryGetValue(srcLink.ChildGuid, out var newChildGuid))
+                        {
+                            var newLink = new LandblockInstanceLink
+                            {
+                                ParentGuid = newParentGuid,
+                                ChildGuid = newChildGuid,
+                                LastModified = DateTime.UtcNow
+                            };
+                            db.LandblockInstanceLink.Add(newLink);
+                        }
+                    }
+                }
+            }
+
+            db.SaveChanges();
+
+            // Clear database manager cache and reload active variants
+            for (var v = startDstVariant; v <= endDstVariant; v++)
+            {
+                var targetLandblock = LandblockManager.GetLandblock(new LandblockId((uint)landblockId << 16 | 0xFFFF), false, v);
+                if (targetLandblock != null)
+                {
+                    targetLandblock.DestroyAllNonPlayerObjects();
+                    DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId, v);
+                    
+                    var actionChain = new ActionChain();
+                    actionChain.AddDelayForOneTick();
+                    var closureV = v; // local copy for closure
+                    actionChain.AddAction(session.Player, ACE.Server.Entity.Actions.ActionType.Landblock_Init, () =>
+                    {
+                        targetLandblock.Init(closureV, true);
+                    });
+                    actionChain.EnqueueChain();
+                }
+                else
+                {
+                    DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId, v);
+                }
+            }
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"Successfully duplicated landblock 0x{landblockId:X4} variation {srcVariant} to variations {startDstVariant} through {endDstVariant}. Cache cleared and live instances re-initialized.");
         }
 
         public static void ImportSQLWeenie(Session session, string wcid, bool withFolders = false, bool force = false)

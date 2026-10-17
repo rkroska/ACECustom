@@ -726,6 +726,16 @@ namespace ACE.Server.WorldObjects
 
         public CastingPreCheckStatus GetCastingPreCheckStatus(Spell spell, uint magicSkill, bool isWeaponSpell)
         {
+            if (JailEscapeActive && 
+                (spell.MetaSpellType == SpellType.PortalRecall || 
+                 spell.MetaSpellType == SpellType.PortalSummon || 
+                 spell.MetaSpellType == SpellType.PortalLink ||
+                 spell.MetaSpellType == SpellType.FellowPortalSending))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot recall, tie, or summon portals while inside the Jail Escape trial!", ChatMessageType.Magic));
+                return CastingPreCheckStatus.CastFailed;
+            }
+
             var difficulty = spell.Power;
 
             var castingPreCheckStatus = CastingPreCheckStatus.CastFailed;

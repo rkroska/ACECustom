@@ -97,65 +97,9 @@ INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES
 (787800401, 8, 100667499);   -- Icon
 
 -- ===================================================================
--- CUSTOM JAIL ESCAPE TIME TRIAL OBSTACLES & SPAWNERS
+-- The trial's placements and clean-up now live in
+-- Database/Updates/World/2026-10-16-00-Jailbreak-Course.sql (also repeats sections 1-3 above).
+-- The old light markers (787800500) and the step that copied placements from the base layer to
+-- variations 2-10 were removed: the light effects are played by code, and the copy step deleted the
+-- trial's exit portals whenever no base-layer portal existed.
 -- ===================================================================
-
--- 7. Jailbreak Colored Portal Gen (WCID: 787800500)
-DELETE FROM `weenie` WHERE `class_Id` = 787800500;
-INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`) VALUES (787800500, 'jailbreak_colored_portal_gen', 1, NOW());
-INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`) VALUES (787800500, 1, True); -- Stuck
-INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`) VALUES (787800500, 11, True); -- IgnoreCollisions
-INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`) VALUES (787800500, 13, True); -- Ethereal
-INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`) VALUES (787800500, 18, True); -- Visibility (hidden from normal players)
-INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`) VALUES (787800500, 19, False); -- Attackable
-INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`) VALUES (787800500, 1, 'Jailbreak Colored Portal Gen');
-INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`) VALUES (787800500, 1, 0x0200026B); -- Invisible generator setup
-
--- Clean up any removed obstacle nodes
-DELETE FROM `weenie` WHERE `class_Id` BETWEEN 787800411 AND 787800421;
-DELETE FROM `weenie` WHERE `class_Id` BETWEEN 787800501 AND 787800504;
-
--- 12. Duplicate spawners and the exit portal from the base layer to variations 2 through 10.
--- Clean up any existing records for variations 2 through 10 on landblock 0x00C0 (192) to prevent duplicate key errors
-DELETE FROM `landblock_instance` 
-WHERE `landblock` = 192 
-  AND `weenie_Class_Id` IN (787800500, 787800401)
-  AND `variation_Id` BETWEEN 2 AND 10;
-
--- Duplicate spawners and the exit portal from the base layer to variations 2 through 10.
--- We cross join with the variation IDs 2..10 and offset GUIDs by (var_id - 1) * 1000.
-INSERT INTO `landblock_instance` (
-    `guid`, `weenie_Class_Id`, `obj_Cell_Id`, 
-    `origin_X`, `origin_Y`, `origin_Z`, 
-    `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, 
-    `is_Link_Child`, `last_Modified`, `variation_Id`
-)
-SELECT 
-    l.`guid` + (v.var_id - 1) * 1000, 
-    l.`weenie_Class_Id`, 
-    l.`obj_Cell_Id`, 
-    l.`origin_X`, 
-    l.`origin_Y`, 
-    l.`origin_Z`, 
-    l.`angles_W`, 
-    l.`angles_X`, 
-    l.`angles_Y`, 
-    l.`angles_Z`, 
-    l.`is_Link_Child`, 
-    NOW(), 
-    v.var_id
-FROM `landblock_instance` l
-CROSS JOIN (
-    SELECT 2 AS var_id UNION ALL
-    SELECT 3 UNION ALL
-    SELECT 4 UNION ALL
-    SELECT 5 UNION ALL
-    SELECT 6 UNION ALL
-    SELECT 7 UNION ALL
-    SELECT 8 UNION ALL
-    SELECT 9 UNION ALL
-    SELECT 10
-) v
-WHERE l.`landblock` = 192 
-  AND (l.`weenie_Class_Id` = 787800500 OR l.`weenie_Class_Id` = 787800401)
-  AND (l.`variation_Id` IS NULL OR l.`variation_Id` = 1);

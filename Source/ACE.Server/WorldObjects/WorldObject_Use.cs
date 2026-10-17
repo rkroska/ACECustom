@@ -75,6 +75,20 @@ namespace ACE.Server.WorldObjects
 
         public virtual void OnActivate(WorldObject activator)
         {
+            if (activator is Player trialPlayer)
+            {
+                if (WeenieClassId == 787800400) // Jail Escape Entry NPC
+                {
+                    trialPlayer.StartJailEscape();
+                    return;
+                }
+                if (WeenieClassId == 787800401) // Jail Escape Exit Portal
+                {
+                    trialPlayer.SucceedJailEscape();
+                    return;
+                }
+            }
+
             //Console.WriteLine($"{Name}.OnActivate({activator.Name})");
 
             // when players double click an object,

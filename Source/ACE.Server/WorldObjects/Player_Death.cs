@@ -155,6 +155,11 @@ namespace ACE.Server.WorldObjects
             bool isSuicide = suicideInProgress;
             IsInDeathProcess = true;
 
+            if (JailEscapeActive)
+            {
+                FailJailEscapeNoTeleport("You died during your escape attempt!");
+            }
+
             if (topDamager?.Guid == Guid && IsPKType)
             {
                 var topDamagerOther = DamageHistory.GetTopDamager(false);
@@ -274,6 +279,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public Position GetDeathLocation()
         {
+            if (IsInJail())
+                return GetJailTeleportLocationSafe();
+
             // teleport to sanctuary or best location
             return Sanctuary ?? Instantiation ?? Location;
         }
