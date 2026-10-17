@@ -969,7 +969,7 @@ public static class LeaderboardInlineSql
           ) innerq
         ) ranked
         WHERE ranked.Account = {accountId}
-        ORDER BY ranked.Score ASC
+        ORDER BY ranked.PlacementRank ASC
         LIMIT 1
         """);
 }

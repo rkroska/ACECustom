@@ -10,8 +10,17 @@
 -- Nothing else is placed: trial chambers are empty variations, and the light effects are played by code.
 -- Replaces Content/sql/weenies/custom_features_setup.sql for the trial; do not run that file's old marker
 -- and copy steps after this one.
--- The Trial Master keeps its dev-server GUID 0x7016CE03. If production already uses that GUID for something
--- else the INSERT fails with a duplicate key; pick a free 0x7016Cxxx GUID then.
+-- The Trial Master keeps its dev-server GUID 0x7016CE03 and the portals use 0x700C0800 + (variation - 2) * 0x40.
+
+-- 0. GUID check, before anything changes. If any of those GUIDs belongs to some other object on this server,
+--    this statement fails with "Subquery returns more than 1 row": stop there and pick free GUIDs for the
+--    colliding rows (MySQL Workbench keeps going after an error, so run this one first and read its result).
+--    It returns 'no GUID collisions' when the file is safe to run.
+SELECT IF(COUNT(*) = 0, 'no GUID collisions', (SELECT 1 UNION ALL SELECT 2)) AS guid_check
+FROM `landblock_instance`
+WHERE `guid` IN (0x7016CE03, 0x700C0800, 0x700C0840, 0x700C0880, 0x700C08C0, 0x700C0900, 0x700C0940, 0x700C0980, 0x700C09C0, 0x700C0A00)
+  AND NOT (`weenie_Class_Id` = 787800400 AND `guid` = 0x7016CE03)
+  AND NOT (`weenie_Class_Id` = 787800401 AND `landblock` = 192 AND `variation_Id` BETWEEN 2 AND 10);
 
 
 -- 1. Quest Cooldown Definition (Corrected Schema Columns Casing)

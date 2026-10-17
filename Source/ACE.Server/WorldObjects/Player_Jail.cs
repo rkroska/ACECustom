@@ -97,6 +97,12 @@ namespace ACE.Server.WorldObjects
         /// <summary>Red-light catches in the current run, for the Flawless tier.</summary>
         public int JailEscapeCatches { get; set; }
 
+        /// <summary>The trial chambers: landblock 0x00C0, variations 2-10.</summary>
+        public const int JailEscapeFirstVariation = 2, JailEscapeLastVariation = 10;
+
+        public static bool IsJailEscapeChamber(Position pos) =>
+            pos != null && pos.Landblock == 0x00C0 && pos.Variation >= JailEscapeFirstVariation && pos.Variation <= JailEscapeLastVariation;
+
         private static readonly object EscapeReservationLock = new object();
         private static readonly ConcurrentDictionary<int, uint> ActiveEscapeReservations = new ConcurrentDictionary<int, uint>();
 
@@ -170,7 +176,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Reserve an instance from the variation pool (2 to 10)
-            if (!TryReserveEscapeVariation(Guid.Full, 2, 10, out int variationId))
+            if (!TryReserveEscapeVariation(Guid.Full, JailEscapeFirstVariation, JailEscapeLastVariation, out int variationId))
             {
                 Session?.Network?.EnqueueSend(new GameMessageSystemChat("All jail escape trial chambers are currently occupied. Please try again shortly.", ChatMessageType.Broadcast));
                 return;
@@ -243,7 +249,6 @@ namespace ACE.Server.WorldObjects
 
             JailEscapeActive = false;
             JailEscapeEndTimeUtc = null;
-            ReleaseEscapeReservation(Guid.Full);
 
             // Destroy the light cloud, if one is up
             foreach (var guid in JailEscapeDynamicObjectGuids.ToList())
@@ -257,10 +262,11 @@ namespace ACE.Server.WorldObjects
             // Stamp persistent cooldown
             QuestManager.Stamp("jail_escape_cooldown");
 
+            // the chamber stays reserved until its delayed reset has run, so no one is put into it mid-reset
             if (reservedVariation != -1)
-            {
-                ResetJailMaze(reservedVariation);
-            }
+                ResetJailMaze(reservedVariation, Guid.Full);
+            else
+                ReleaseEscapeReservation(Guid.Full);
 
             if (!string.IsNullOrEmpty(reason))
             {
@@ -292,7 +298,6 @@ namespace ACE.Server.WorldObjects
 
             JailEscapeActive = false;
             JailEscapeEndTimeUtc = null;
-            ReleaseEscapeReservation(Guid.Full);
 
             // Destroy the light cloud, if one is up
             foreach (var guid in JailEscapeDynamicObjectGuids.ToList())
@@ -303,10 +308,11 @@ namespace ACE.Server.WorldObjects
             JailEscapeDynamicObjectGuids.Clear();
             JailEscapeLightState = EscapeLightState.None;
 
+            // the chamber stays reserved until its delayed reset has run, so no one is put into it mid-reset
             if (reservedVariation != -1)
-            {
-                ResetJailMaze(reservedVariation);
-            }
+                ResetJailMaze(reservedVariation, Guid.Full);
+            else
+                ReleaseEscapeReservation(Guid.Full);
 
             // Release from sentence. The player is taken back to the jail below, not to their lifestone.
             ReleaseFromJail(teleportOut: false);
@@ -346,7 +352,9 @@ namespace ACE.Server.WorldObjects
             Session?.Network?.EnqueueSend(new GameMessageSystemChat("Congratulations! You have escaped! You are free to walk out of the jail.", ChatMessageType.Broadcast));
         }
 
-        public void ResetJailMaze(int? variationId)
+        /// <param name="releaseOwner">When set, that player's reservation of the chamber is released once the reset has
+        /// run (or at once if the chamber is not loaded), unless they have started a new trial in the meantime.</param>
+        public void ResetJailMaze(int? variationId, uint? releaseOwner = null)
         {
             log.Info($"[Jail Debug] ResetJailMaze called for variation {variationId}. Scheduling reset with a 3-second delay...");
 
@@ -363,6 +371,8 @@ namespace ACE.Server.WorldObjects
                     landblock.DestroyAllNonPlayerObjects();
                     DatabaseManager.World.ClearCachedInstancesByLandblock(0x00C0, variationId);
                     landblock.Init(variationId, true);
+                    if (releaseOwner.HasValue)
+                        ReleaseEscapeReservationAfterReset(releaseOwner.Value);
                 });
                 actionChain.EnqueueChain();
             }
@@ -370,7 +380,20 @@ namespace ACE.Server.WorldObjects
             {
                 log.Warn($"[Jail Debug] Landblock 0x00C0FFFF variation {variationId} was null. Clearing cached instances only.");
                 DatabaseManager.World.ClearCachedInstancesByLandblock(0x00C0, variationId);
+                if (releaseOwner.HasValue)
+                    ReleaseEscapeReservationAfterReset(releaseOwner.Value);
             }
+        }
+
+        /// <summary>
+        /// Frees a chamber after its reset, unless the same player has already started a new trial (a reservation is
+        /// reused by its owner, so it would otherwise be taken from under the running trial).
+        /// </summary>
+        private static void ReleaseEscapeReservationAfterReset(uint owner)
+        {
+            if (PlayerManager.GetOnlinePlayer(owner)?.JailEscapeActive == true)
+                return;
+            ReleaseEscapeReservation(owner);
         }
 
         public void InitializeDynamicJailMaze(int? variationId)
@@ -528,7 +551,7 @@ namespace ACE.Server.WorldObjects
 
             // Every release ends the same way: inside the jail, free to walk out. Only someone in the jail (or in a
             // trial copy) is moved; staff releasing a player elsewhere leaves them where they are.
-            if (teleportOut && (Location.Landblock == 0x00C0 || IsAtJail()))
+            if (teleportOut && (IsJailEscapeChamber(Location) || IsAtJail()))
                 JailTeleport(GetJailReleaseLocation());
 
             Session?.Network?.EnqueueSend(new GameMessageSystemChat("Your punishment has concluded. You may now resume your adventures.", ChatMessageType.Broadcast));
@@ -570,8 +593,9 @@ namespace ACE.Server.WorldObjects
             var fallback = Sanctuary ?? Instantiation;
             if (fallback == null || fallback.Landblock == 0x00C0)
             {
-                // Default safe town fallback (e.g. Holtburg lifestone default cell) to prevent recursion loops
-                return new Position(0x016C0001u, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f);
+                // Safe town fallback: Holtburg, where the Holtburg point of interest drops players (world DB,
+                // weenie 42820's destination), so this can never point back into the jail or a trial copy.
+                return new Position(0xA9B40019u, 84.0f, 7.1f, 94.0f, 0.0f, 0.0f, -0.078459f, 0.996917f);
             }
             return fallback;
         }

@@ -366,6 +366,20 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
+            // Destinations are layered copies only: never the base layer (0/null) or below, and never a range that
+            // holds the source, which would be deleted before it is copied.
+            if (startDstVariant < 1)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Destination variations must be 1 or higher.");
+                return;
+            }
+
+            if (srcVariant >= startDstVariant && srcVariant <= endDstVariant)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"The destination range {startDstVariant}-{endDstVariant} contains the source variation {srcVariant}.");
+                return;
+            }
+
             var srcVariationId = srcVariant == 0 ? null : (int?)srcVariant;
 
             using var db = new WorldDbContext();
@@ -388,18 +402,23 @@ namespace ACE.Server.Command.Handlers.Processors
                 .Where(i => i.Landblock == landblockId)
                 .ToList();
 
-            var targetCount = endDstVariant - startDstVariant + 1;
+            long targetCount = (long)endDstVariant - startDstVariant + 1;
             var replacedCount = allInstances.Count(i => i.VariationId >= startDstVariant && i.VariationId <= endDstVariant);
-            var existingCount = allInstances.Count - replacedCount;
-            var srcCount = srcInstances.Count;
+            long existingCount = allInstances.Count - replacedCount;
+            long srcCount = srcInstances.Count;
+            long projected = existingCount + srcCount * targetCount;
 
             // Enforce capacity check to prevent client crashes/offsets overflow
-            if (existingCount + (srcCount * targetCount) > 4095)
+            if (projected > 4095)
             {
-                CommandHandlerHelper.WriteOutputInfo(session, $"Cannot duplicate: Duplicating {srcCount} instances to {targetCount} variations would exceed the 4095 static GUID limit for landblock 0x{landblockId:X4} (would be {existingCount + (srcCount * targetCount)}).");
+                CommandHandlerHelper.WriteOutputInfo(session, $"Cannot duplicate: Duplicating {srcCount} instances to {targetCount} variations would exceed the 4095 static GUID limit for landblock 0x{landblockId:X4} (would be {projected}).");
                 return;
             }
 
+            // The delete and the copy commit together: a failed copy must not leave the destinations emptied.
+            using var tx = db.Database.BeginTransaction();
+            try
+            {
             // Delete target variations' existing instances
             var instancesToRemove = allInstances.Where(i => i.VariationId >= startDstVariant && i.VariationId <= endDstVariant).ToList();
             foreach (var inst in instancesToRemove)
@@ -468,31 +487,35 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             db.SaveChanges();
-
-            // Clear database manager cache and reload active variants
-            for (var v = startDstVariant; v <= endDstVariant; v++)
+            tx.Commit();
+            }
+            catch (Exception ex)
             {
-                var targetLandblock = LandblockManager.GetLandblock(new LandblockId((uint)landblockId << 16 | 0xFFFF), false, v);
-                if (targetLandblock != null)
-                {
-                    targetLandblock.DestroyAllNonPlayerObjects();
-                    DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId, v);
-                    
-                    var actionChain = new ActionChain();
-                    actionChain.AddDelayForOneTick();
-                    var closureV = v; // local copy for closure
-                    actionChain.AddAction(session.Player, ACE.Server.Entity.Actions.ActionType.Landblock_Init, () =>
-                    {
-                        targetLandblock.Init(closureV, true);
-                    });
-                    actionChain.EnqueueChain();
-                }
-                else
-                {
-                    DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId, v);
-                }
+                tx.Rollback();
+                log.Error($"/dupedungeon 0x{landblockId:X4} {srcVariant} {startDstVariant}-{endDstVariant} failed and was rolled back", ex);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Duplication failed and was rolled back; nothing changed: {ex.Message}");
+                return;
             }
 
+            // Clear the cached instances, then rebuild only copies that are already loaded (never load one just to
+            // rebuild it). The rebuild runs on the world thread, between landblock ticks.
+            for (var v = startDstVariant; v <= endDstVariant; v++)
+            {
+                DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId, v);
+
+                var targetLandblock = LandblockManager.GetLoadedLandblock(new LandblockId((uint)landblockId << 16 | 0xFFFF), v);
+                if (targetLandblock == null)
+                    continue;
+
+                var closureV = v; // local copy for closure
+                WorldManager.EnqueueAction(new ActionEventDelegate(ACE.Server.Entity.Actions.ActionType.Landblock_Init, () =>
+                {
+                    targetLandblock.DestroyAllNonPlayerObjects();
+                    targetLandblock.Init(closureV, true);
+                }));
+            }
+
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} ran /dupedungeon: landblock 0x{landblockId:X4} variation {srcVariant} copied to variations {startDstVariant}-{endDstVariant} ({srcCount} instances each).");
             CommandHandlerHelper.WriteOutputInfo(session, $"Successfully duplicated landblock 0x{landblockId:X4} variation {srcVariant} to variations {startDstVariant} through {endDstVariant}. Cache cleared and live instances re-initialized.");
         }
 
