@@ -1344,6 +1344,12 @@ namespace ACE.Server.WorldObjects
 
         public bool? SummonCreature(Player player, uint wcid)
         {
+            if (player.JailEscapeActive)
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot summon pets while inside the Jail Escape trial!", ChatMessageType.Broadcast));
+                return false;
+            }
+
             var wo = WorldObjectFactory.CreateNewWorldObject(wcid);
 
             if (wo == null)

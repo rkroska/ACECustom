@@ -2377,6 +2377,8 @@ namespace ACE.Server.WorldObjects.Managers
                     {
                         if (emote.Amount == 1)
                             player.SendToJail();
+                        else if (emote.Amount == 2)
+                            player.SendToJail(countsTowardTotal: false);   // a quest's jail: same sentence, no TimesJailed or jail_fresh_meat
                         else if (emote.Amount == 0)
                             player.ReleaseFromJail();
                         else

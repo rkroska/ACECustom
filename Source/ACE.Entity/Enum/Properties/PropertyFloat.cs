@@ -375,5 +375,8 @@ namespace ACE.Entity.Enum.Properties
         /// (WorldObject.ShownObjScale); DefaultScale itself is never changed. Unset = normal size.
         /// </summary>
         ItemSizeLevel = 54000,
+
+        /// <summary>Server-only: UTC timestamp (Unix epoch seconds) until this character is jailed.</summary>
+        JailedUntil = 55000,
     }
 }

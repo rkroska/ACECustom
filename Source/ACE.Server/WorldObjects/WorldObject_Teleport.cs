@@ -72,7 +72,7 @@ namespace ACE.Server.WorldObjects
                 log.Warn(e);
             }
 
-            player?.Session.Network.EnqueueSend(new GameMessagePlayerTeleport(player));
+            player?.Session?.Network?.EnqueueSend(new GameMessagePlayerTeleport(player));
 
             // load quickly, but player can load into landblock before server is finished loading
             // send a "fake" update position to get the client to start loading asap,
@@ -380,7 +380,7 @@ namespace ACE.Server.WorldObjects
             if (player != null && (player.RequestedLocationBroadcast || DateTime.UtcNow - player.LastUpdatePosition >= Player.MoveToState_UpdatePosition_Threshold))
                 SendUpdatePosition();
             else if (player != null)
-                player.Session.Network.EnqueueSend(new GameMessageUpdatePosition(this));
+                player.Session?.Network?.EnqueueSend(new GameMessageUpdatePosition(this));
             else
                 SendUpdatePosition(); // Creature always sends?
 
