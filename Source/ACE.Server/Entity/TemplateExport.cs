@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 
 using ACE.Database.Models.World;
 using ACE.Entity.Enum;
@@ -97,6 +98,29 @@ namespace ACE.Server.Entity
 
             args.NameOverride = nameTokens.Count > 0 ? string.Join(" ", nameTokens) : null;
             return args;
+        }
+
+        /// <summary>
+        /// Folder under the content sql folder that holds the backups @export-template takes before replacing a
+        /// weenie. It sits beside sql/weenies, not inside it, so @import-sql never reads a backup.
+        /// </summary>
+        public const string BackupFolderName = "weenies-backup";
+
+        private static readonly Regex BackupFileNamePattern = new Regex(@"^(\d+)\.backup-\d{8}-\d{6}(-\d+)?\.sql$", RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// "&lt;wcid&gt;.backup-&lt;yyyyMMdd-HHmmss&gt;.sql", with "-&lt;attempt&gt;" before .sql from the second attempt on.
+        /// No spaces, so the reply's restore command is one chat token.
+        /// </summary>
+        public static string BuildBackupFileName(uint wcid, DateTime utc, int attempt = 1)
+            => $"{wcid}.backup-{utc:yyyyMMdd-HHmmss}" + (attempt > 1 ? $"-{attempt}" : "") + ".sql";
+
+        /// <summary>True only for a bare name in the exact backup form; any path, wildcard or other name is refused.</summary>
+        public static bool TryParseBackupFileName(string fileName, out uint wcid)
+        {
+            wcid = 0;
+            var m = BackupFileNamePattern.Match(fileName ?? "");
+            return m.Success && uint.TryParse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out wcid) && wcid > 0;
         }
 
         public static bool TryParseWcid(string token, out uint wcid)
@@ -1190,7 +1214,7 @@ namespace ACE.Server.Entity
             lines.Add($"File: {r.FilePath}" + (r.SentToDiscord ? " (also sent to Discord)" : ""));
 
             if (!string.IsNullOrEmpty(r.BackupPath))
-                lines.Add($"Backup of the replaced weenie: {r.BackupPath} (undo with @import-sql on that file).");
+                lines.Add($"Backup of the replaced weenie: {r.BackupPath}. Undo: @import-template-backup {System.IO.Path.GetFileName(r.BackupPath)}");
 
             var captured = $"Captured: {r.SummaryLine}";
             if (r.WieldSkippedForPet)

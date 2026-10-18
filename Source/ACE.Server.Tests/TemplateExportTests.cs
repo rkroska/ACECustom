@@ -716,15 +716,16 @@ namespace ACE.Server.Tests
                 SourceName = "Frost Golem", SourceWcid = 1234,
                 FilePath = @"C:\ACE\Content\sql\weenies\78780999 Frost Golem King.sql", SummaryLine = "setup 0x02000926",
                 ReplacedExisting = true, ExistingName = "Frost Golem", OutsideBlock = true, ImportStarted = true,
-                BackupPath = @"C:\ACE\Content\sql\weenies\78780999 Frost Golem.backup-20261018-120000.sql",
+                BackupPath = System.IO.Path.Combine("Content", "sql", TemplateExport.BackupFolderName, "78780999.backup-20261018-120000.sql"),
                 BlockStart = BlockStart, BlockEnd = BlockEnd,
             });
 
             var lines = reply.Split('\n');
             Assert.IsTrue(lines.Length <= 9, lines.Length.ToString());
             AssertAscii(reply);
-            StringAssert.Contains(reply, "78780999 Frost Golem.backup-20261018-120000.sql");
-            StringAssert.Contains(reply, "undo with @import-sql");
+            // the undo names the one file, never a wcid that @import-sql would widen to every match
+            StringAssert.Contains(reply, "Undo: @import-template-backup 78780999.backup-20261018-120000.sql");
+            Assert.IsFalse(reply.Contains("@import-sql 78780999"));
             StringAssert.Contains(reply, "--force loads it");
             StringAssert.Contains(reply, "loading it into ace_world now");
             Assert.IsFalse(reply.Contains("verified free"), "a replaced id was not free");
@@ -744,6 +745,38 @@ namespace ACE.Server.Tests
             StringAssert.Contains(reply, "re-run @et with --force");
             StringAssert.Contains(reply, "@import-sql 78780999,");
             Assert.IsFalse(reply.Contains("Backup"));
+        }
+
+        [TestMethod]
+        public void BackupFileName_RoundTrips_HasNoSpaces_AndAttemptSuffixIsUnique()
+        {
+            var utc = new DateTime(2026, 10, 18, 12, 0, 0, DateTimeKind.Utc);
+
+            var first = TemplateExport.BuildBackupFileName(78780999, utc);
+            var second = TemplateExport.BuildBackupFileName(78780999, utc, 2);
+
+            Assert.AreEqual("78780999.backup-20261018-120000.sql", first);
+            Assert.AreEqual("78780999.backup-20261018-120000-2.sql", second);
+            Assert.IsFalse(first.Contains(' '), "one chat token");
+            Assert.IsTrue(TemplateExport.TryParseBackupFileName(first, out var w1) && w1 == 78780999);
+            Assert.IsTrue(TemplateExport.TryParseBackupFileName(second, out var w2) && w2 == 78780999);
+        }
+
+        [TestMethod]
+        public void TryParseBackupFileName_RefusesPathsWildcardsAndOrdinaryExports()
+        {
+            foreach (var bad in new[]
+            {
+                "78780999 Frost Golem.sql",                          // an ordinary export
+                "*.backup-20261018-120000.sql",
+                "../78780999.backup-20261018-120000.sql",
+                @"..\78780999.backup-20261018-120000.sql",
+                "78780999.backup-20261018-120000.sql.txt",
+                "78780999.backup-2026.sql",
+                "0.backup-20261018-120000.sql",
+                "",
+            })
+                Assert.IsFalse(TemplateExport.TryParseBackupFileName(bad, out _), bad);
         }
 
         // ---- pet summon state is not part of the template ---------------------------------------

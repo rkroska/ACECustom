@@ -3354,7 +3354,7 @@ namespace ACE.Server.Command.Handlers.Processors
             HandleExportClothingToDiscord(session, parameters);
         }
 
-        [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file and load to Discord", "<wcid> [content-type] | template [wcid] [npc|monster] [overwrite] [name...]")]
+        [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file and load to Discord", "<wcid> [content-type] | template [wcid] [npc|monster] [--force|overwrite] [name...]")]
         public static void HandleExportSqlToDiscord(Session session, params string[] parameters)
         {
             // "@ed template ..." exports the SELECTED live object (not a database weenie) and hands the file to
@@ -3466,7 +3466,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
         [CommandHandler("export-template", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
             "Exports the selected (or last appraised) object, with its live appearance, as a new weenie SQL template in the temporary export block",
-            "[wcid] [npc|monster] [--force|overwrite] [name...] - every argument optional, any order. monster (default) = faithful copy; npc = not attackable, invincible, stuck, radar NPC, no loot/XP/corpse. A player source defaults to npc. A taken wcid is refused; overwrite replaces it, --force replaces it and also loads a wcid outside the export block. A replaced weenie is saved to a .backup-<utc>.sql first. The file is loaded into ace_world and sent to Discord automatically (content_template_export_auto_import / _auto_discord).")]
+            "[wcid] [npc|monster] [--force|overwrite] [name...] - every argument optional, any order. monster (default) = faithful copy; npc = not attackable, invincible, stuck, radar NPC, no loot/XP/corpse. A player source defaults to npc. A taken wcid is refused; overwrite replaces it, --force replaces it and also loads a wcid outside the export block. A replaced weenie is saved to sql/weenies-backup first; restore it with @import-template-backup. The file is loaded into ace_world and sent to Discord automatically (content_template_export_auto_import / _auto_discord).")]
         public static void HandleExportTemplate(Session session, params string[] parameters)
         {
             ExportTemplate(session, parameters, toDiscord: false);
@@ -3616,12 +3616,12 @@ namespace ACE.Server.Command.Handlers.Processors
                 var fileName = WeenieSQLWriter.GetDefaultFileName(weenie);
                 var fullPath = sqlFolder + fileName;
 
-                // Replacing a weenie: save the row as it is now first, so a wrong id is one @import-sql away from
-                // undone. No backup, no export.
+                // Replacing a weenie: save the row as it is now first, so a wrong id is one
+                // @import-template-backup away from undone. No backup, no export.
                 string backupPath = null;
                 if (choice.ReplacesExisting)
                 {
-                    backupPath = WriteReplacedWeenieBackup(choice.Wcid, sqlFolder, exportedUtc);
+                    backupPath = WriteReplacedWeenieBackup(choice.Wcid, $"{di.FullName}{sep}sql{sep}{TemplateExport.BackupFolderName}{sep}", exportedUtc);
                     if (backupPath == null)
                     {
                         CommandHandlerHelper.WriteOutputInfo(session, $"Refused: could not back up the existing weenie at {choice.Wcid} ('{TemplateExport.ToAscii(choice.ExistingName)}'), so it was not replaced. See the server log.");
@@ -3696,12 +3696,14 @@ namespace ACE.Server.Command.Handlers.Processors
         }
 
         /// <summary>
-        /// Writes the weenie currently stored at <paramref name="wcid"/> to "&lt;wcid&gt; &lt;name&gt;.backup-&lt;utc&gt;.sql" next to the
-        /// export, read fresh from ace_world (not the cache) and written with the same DELETE + INSERT as @export-sql,
-        /// so @import-sql on it restores the old weenie. The timestamp keeps a second --force from overwriting the
-        /// first backup. Returns the path, or null when the row could not be read or the file not written.
+        /// Writes the weenie currently stored at <paramref name="wcid"/> to "&lt;wcid&gt;.backup-&lt;utc&gt;.sql" in
+        /// sql/weenies-backup, read fresh from ace_world (not the cache) and written with the same DELETE + INSERT as
+        /// @export-sql. That folder is outside sql/weenies, so no @import-sql form (by wcid, all, or with folders) ever
+        /// picks a backup up; @import-template-backup restores exactly one by name. The file is created new, never
+        /// overwritten: a second export in the same second gets a -2, -3 ... suffix. Returns the path, or null when
+        /// the row could not be read or the file not written.
         /// </summary>
-        private static string WriteReplacedWeenieBackup(uint wcid, string sqlFolder, DateTime exportedUtc)
+        private static string WriteReplacedWeenieBackup(uint wcid, string backupFolder, DateTime exportedUtc)
         {
             try
             {
@@ -3712,8 +3714,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     return null;
                 }
 
-                var backupName = $"{Path.GetFileNameWithoutExtension(WeenieSQLWriter.GetDefaultFileName(existing))}.backup-{exportedUtc:yyyyMMdd-HHmmss}.sql";
-                var backupPath = sqlFolder + backupName;
+                Directory.CreateDirectory(backupFolder);
 
                 string sqlText;
                 using (var mem = new MemoryStream())
@@ -3721,22 +3722,79 @@ namespace ACE.Server.Command.Handlers.Processors
                     using (var sw = new StreamWriter(mem, new UTF8Encoding(false), 4096, leaveOpen: true) { NewLine = "\n" })
                     {
                         sw.WriteLine($"-- Backup of weenie {wcid} taken {exportedUtc:yyyy-MM-dd HH:mm:ss} UTC, before @export-template replaced it.");
-                        sw.WriteLine("-- Restore it with @import-sql on this file.");
+                        sw.WriteLine("-- Restore it with @import-template-backup <this file name>.");
                         WeenieSQLWriter.CreateSQLDELETEStatement(existing, sw);
                         sw.WriteLine();
                         WeenieSQLWriter.CreateSQLINSERTStatement(existing, sw);
                     }
                     sqlText = Encoding.UTF8.GetString(mem.ToArray());
                 }
+                var bytes = new UTF8Encoding(false).GetBytes(sqlText.Replace("\r\n", "\n").Replace("\r", ""));
 
-                File.WriteAllBytes(backupPath, new UTF8Encoding(false).GetBytes(sqlText.Replace("\r\n", "\n").Replace("\r", "")));
-                log.Info($"[TemplateExport] backed up {wcid} to {backupPath}");
-                return backupPath;
+                // CreateNew fails instead of overwriting, so two exports racing on the same id and second each keep
+                // their own backup.
+                for (var attempt = 1; attempt <= 100; attempt++)
+                {
+                    var backupPath = backupFolder + TemplateExport.BuildBackupFileName(wcid, exportedUtc, attempt);
+                    try
+                    {
+                        using (var fs = new FileStream(backupPath, FileMode.CreateNew, FileAccess.Write))
+                            fs.Write(bytes, 0, bytes.Length);
+                    }
+                    catch (IOException) when (File.Exists(backupPath))
+                    {
+                        continue;
+                    }
+                    log.Info($"[TemplateExport] backed up {wcid} to {backupPath}");
+                    return backupPath;
+                }
+
+                log.Error($"[TemplateExport] backup of {wcid} failed: 100 backup names for {exportedUtc:yyyyMMdd-HHmmss} are already taken");
+                return null;
             }
             catch (Exception e)
             {
                 log.Error($"[TemplateExport] backup of {wcid} failed: {e}");
                 return null;
+            }
+        }
+
+        [CommandHandler("import-template-backup", AccessLevel.Developer, CommandHandlerFlag.None, 1,
+            "Restores one weenie backup that @export-template saved before replacing it",
+            "<file name> - exactly as the export reply printed it, e.g. 78780999.backup-20261018-120000.sql")]
+        public static void HandleImportTemplateBackup(Session session, params string[] parameters)
+        {
+            var fileName = parameters[0].Trim();
+
+            // A bare backup name only: no path, no wildcard, nothing outside sql/weenies-backup.
+            if (!TemplateExport.TryParseBackupFileName(fileName, out var wcid))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"'{TemplateExport.ToAscii(fileName)}' is not a template backup name. Use the exact name from the export reply, e.g. 78780999.backup-20261018-120000.sql.");
+                return;
+            }
+
+            var di = VerifyContentFolder(session);
+            if (!di.Exists) return;
+
+            var sep = Path.DirectorySeparatorChar;
+            var fullPath = $"{di.FullName}{sep}sql{sep}{TemplateExport.BackupFolderName}{sep}{fileName}";
+            if (!File.Exists(fullPath))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find {fullPath}");
+                return;
+            }
+
+            try
+            {
+                ImportSQL(fullPath);
+                DatabaseManager.World.ClearCachedWeenie(wcid);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Restored {wcid} from {fileName}. Spawn it with @ci {wcid} or @create {wcid}.");
+                log.Info($"[TemplateExport] {session?.Player?.Name ?? "console"} restored {wcid} from {fullPath}");
+            }
+            catch (Exception e)
+            {
+                log.Error($"[TemplateExport] restore of {wcid} from {fullPath} failed: {e}");
+                CommandHandlerHelper.WriteOutputError(session, $"Restore failed: {e.Message}");
             }
         }
 
