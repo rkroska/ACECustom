@@ -766,7 +766,7 @@ export default function PetBreedingCalculator() {
             hex: mutFam.hex,
             templateId: specMap.templateId,
             paletteId: specMap.paletteId,
-            hueShift: Math.floor(Math.random() * 360),
+            hueShift: 0, // the game has no hue shift; a rotated preview would not match the bred pet
             swatches: mutFam.swatches
           }
           addDebugLog(`[COLOR MUTATION] Pool unavailable; picked colour family "${mutFam.name}"`)

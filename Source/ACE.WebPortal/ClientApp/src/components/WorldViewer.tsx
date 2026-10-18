@@ -1022,9 +1022,9 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
          setSpeciesPalettes(data);
          if (propPaletteOverride === undefined) {
            const defVar = data.find((v: any) => v.isDefault);
-           if (defVar) setPaletteId(defVar.templateId);
-           else if (data.length > 0) setPaletteId(data[0].templateId);
-           else setPaletteId(0);
+           // No variant is the creature's own: start on "Default Variant" (0), which the server paints exactly as
+           // the game draws this creature, rather than on the first variant, which the game may never apply.
+           setPaletteId(defVar ? defVar.templateId : 0);
            setHueShift(0);
          }
       })
@@ -1253,25 +1253,31 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
     setTimeout(() => setCopiedDebug(false), 3000);
   };
 
-  const getActivePaletteParamString = () => {
-    if (!paletteId || paletteId === 0) return '0';
-    const matchedVariant = speciesPalettes.find(p => p.templateId === paletteId || p.paletteId === paletteId);
-    if (matchedVariant && matchedVariant.paletteId && (matchedVariant.paletteId & 0xFF000000) === 0x04000000) {
-      return `0x${matchedVariant.paletteId.toString(16).toUpperCase()}`;
-    }
-    if (matchedVariant) {
-      return `${matchedVariant.templateId}`;
-    }
-    
-    if ((paletteId & 0xFF000000) === 0x04000000 || (paletteId & 0xFF000000) === 0x0F000000) {
-      return `0x${paletteId.toString(16).toUpperCase()}`;
-    }
-    return `0x${paletteId.toString(16).toUpperCase()}`;
+  // The PaletteTemplate value the viewer is painting with, exactly as the server receives it: a template ordinal
+  // in decimal, or a full palette in hex. Null on "Default Variant", where the creature keeps its own value.
+  // The showroom renders by setting PaletteTemplate on the creature (no shade, no hue), so these commands
+  // reproduce what is on screen.
+  const getActivePaletteParamString = (): string | null => {
+    if (!paletteId) return null;
+    return paletteId < 0x01000000 ? `${paletteId}` : `0x${paletteId.toString(16).toUpperCase().padStart(8, '0')}`;
+  };
+
+  const getPaletteCommands = () => {
+    const p = getActivePaletteParamString();
+    return {
+      create: p ? `@create ${wcid} 1 ${p}` : `@create ${wcid}`,
+      // @setproperty reads 0x values as hex; "null" puts the weenie's own palette back.
+      set: `@setproperty PropertyInt.PaletteTemplate ${p ?? 'null'}`,
+      sql: p
+        ? `-- Make WCID ${wcid} always spawn with this palette (PropertyInt.PaletteTemplate = 3)\n` +
+          `DELETE FROM \`weenie_properties_int\` WHERE \`object_Id\` = ${wcid} AND \`type\` = 3;\n` +
+          `INSERT INTO \`weenie_properties_int\` (\`object_Id\`, \`type\`, \`value\`) VALUES (${wcid}, 3, ${paletteId | 0});`
+        : `-- Default Variant: WCID ${wcid} already spawns like this; nothing to change.`,
+    };
   };
 
   const handleCopyCreateCmd = async () => {
-    const palParam = getActivePaletteParamString();
-    const cmd = `@create ${wcid} 1 ${palParam} 0.5`;
+    const cmd = getPaletteCommands().create;
     const success = await copyToClipboard(cmd);
     if (success) {
       setCopiedCreateCmd(true);
@@ -1281,8 +1287,7 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
   };
 
   const handleCopySetCmd = async () => {
-    const palParam = getActivePaletteParamString();
-    const cmd = `@set Int PaletteTemplate ${palParam}`;
+    const cmd = getPaletteCommands().set;
     const success = await copyToClipboard(cmd);
     if (success) {
       setCopiedSetCmd(true);
@@ -1424,14 +1429,16 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [wcid, activeTexReplaceIdx, targetSurfaceId, paletteId, textureReplacements, filteredSmartPalettes, curationQueueTab]);
 
+  // Only palettes the game can show. A hue shift has no counterpart on the server, so a random one made the
+  // showroom draw colours no creature in the game can have (a red Drudge palette rotated to purple).
   const randomizePalette = () => {
-    if (speciesPalettes.length > 0 && Math.random() > 0.5) {
-      const randomPal = speciesPalettes[Math.floor(Math.random() * speciesPalettes.length)];
-      setPaletteId(randomPal.templateId);
-      setHueShift(0);
-    } else {
-      setHueShift(Math.floor(Math.random() * 360));
-    }
+    const pool = [
+      ...speciesPalettes.map((p: any) => p.templateId),
+      ...(filteredSmartPalettes || []).map((p: any) => p.paletteId),
+    ].filter((id: number) => id && id !== paletteId);
+    if (pool.length > 0)
+      setPaletteId(pool[Math.floor(Math.random() * pool.length)]);
+    setHueShift(0);
   };
 
   const applyUniversalTextureSwap = () => {
@@ -1936,7 +1943,20 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
 
               {/* Active Species Variant Metadata & Swatches Card */}
               {(() => {
-                const activeVariant = speciesPalettes.find(p => p.templateId === paletteId || p.paletteId === paletteId);
+                // Follow whatever palette is on screen: a species variant, or a full palette picked from the smart
+                // pool, Randomize or the override box. Showing nothing (or a stale variant) for the latter left the
+                // copy button exporting a different palette from the one in the viewer.
+                const variant = speciesPalettes.find(p => p.templateId === paletteId || p.paletteId === paletteId);
+                const smart = !variant ? smartPalettes.find((p: any) => p.paletteId === paletteId) : null;
+                const hex = `0x${paletteId.toString(16).toUpperCase().padStart(8, '0')}`;
+                const activeVariant = variant ?? ((paletteId & 0xFF000000) === 0x04000000 ? {
+                  name: smart ? `${smart.family || 'Smart'} Palette ${hex}` : `Custom Palette ${hex}`,
+                  templateId: hex,
+                  paletteSetHex: '-',
+                  paletteHex: hex,
+                  swatches: smart?.swatches || [],
+                  ranges: 'Full palette override (all 2048 colours)',
+                } : null);
                 if (!activeVariant) return null;
                 return (
                   <div className="mt-2 p-2.5 bg-[#111827] rounded-lg border border-[#374151] flex flex-col gap-2">
@@ -1948,11 +1968,11 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
                     <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono text-neutral-300 bg-[#1f2937]/50 p-2 rounded border border-[#374151]/40">
                       <div>
                         <span className="text-neutral-500 block text-[9px] uppercase">PaletteSet</span>
-                        <span className="text-blue-300 font-bold">{activeVariant.paletteSetHex || '0x0F000202'}</span>
+                        <span className="text-blue-300 font-bold">{activeVariant.paletteSetHex || '-'}</span>
                       </div>
                       <div>
                         <span className="text-neutral-500 block text-[9px] uppercase">Resolved Palette</span>
-                        <span className="text-green-300 font-bold">{activeVariant.paletteHex || '0x04001163'}</span>
+                        <span className="text-green-300 font-bold">{activeVariant.paletteHex || '-'}</span>
                       </div>
                     </div>
 
@@ -1980,22 +2000,12 @@ const WorldViewer: FC<WorldViewerProps> = ({ wcid: propWcid, paletteOverride: pr
                     {/* Content Developer Export Bar */}
                     <button
                       onClick={() => {
-                        const palHex = `0x${(paletteId || 0).toString(16).toUpperCase().padStart(8, '0')}`;
-                        const palTemplate = activeVariant.templateId;
-                        
-                        const spawnCmd = `@create ${wcid} 1 ${palHex !== '0x00000000' ? palHex : palTemplate}`;
-                        const propCmd = palHex !== '0x00000000' 
-                          ? `@setproperty PropertyDataId.PaletteBase ${palHex}`
-                          : `@setproperty PropertyInt.PaletteTemplate ${palTemplate}`;
+                        // Same commands as the header buttons: PaletteTemplate is what the viewer renders with.
+                        // (This used to write PaletteBase, which the server does not recolour from, and SQL rows
+                        // for DID 15 = HairPalette and int 40 = CombatMode.)
+                        const { create: spawnCmd, set: propCmd, sql: sqlSnippet } = getPaletteCommands();
 
-                        const sqlSnippet = `-- Permanent Server Spawn SQL for WCID ${wcid}
-DELETE FROM \`weenie_properties_d_i_d\` WHERE \`object_Id\` = ${wcid} AND \`type\` = 15;
-INSERT INTO \`weenie_properties_d_i_d\` (\`object_Id\`, \`type\`, \`value\`) VALUES (${wcid}, 15, ${palHex});
-
-DELETE FROM \`weenie_properties_int\` WHERE \`object_Id\` = ${wcid} AND \`type\` = 40;
-INSERT INTO \`weenie_properties_int\` (\`object_Id\`, \`type\`, \`value\`) VALUES (${wcid}, 40, ${palTemplate});`;
-
-                        const fullExport = `-- In-Game Admin Command (Instant Creation):\n${spawnCmd}\n\n-- In-Game Live Target Command:\n${propCmd}\n\n${sqlSnippet}`;
+                        const fullExport = `-- In-Game Admin Command (Instant Creation):\n${spawnCmd}\n\n-- In-Game Live Target Command (appraise the creature first):\n${propCmd}\n\n${sqlSnippet}`;
                         navigator.clipboard.writeText(fullExport);
                         alert(`Copied Content Developer Commands & SQL to Clipboard!\n\n${spawnCmd}\n${propCmd}`);
                       }}
@@ -2957,7 +2967,7 @@ INSERT INTO \`weenie_properties_int\` (\`object_Id\`, \`type\`, \`value\`) VALUE
               title="Copy in-game @set command to clipboard"
             >
               <Copy className="w-3.5 h-3.5" />
-              {copiedSetCmd ? '✓ Copied @set!' : '🎯 Copy @set'}
+              {copiedSetCmd ? '✓ Copied @setproperty!' : '🎯 Copy @setproperty'}
             </button>
             <button
               onClick={handleCopyDebugInfo}

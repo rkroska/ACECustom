@@ -393,7 +393,11 @@ namespace ACE.Server.Services
             hue = NormalizeHue(hue);
             if (!IsAcceptedPaletteOverride(paletteId)) return null;
 
-            var cacheKey = $"{wcid}_{paletteId}_{hue}";
+            // The game has no hue shift, so a game-driven mesh ignores it: one cache entry, not 360.
+            if (IsGameDrivenRequest(wcid, paletteId))
+                hue = 0;
+
+            var cacheKey = $"game1_{wcid}_{paletteId}_{hue}";
             var cachePath = Path.Combine(ModelsCacheDir, $"{cacheKey}.gltf");
             if (File.Exists(cachePath))
             {
@@ -1242,10 +1246,30 @@ namespace ACE.Server.Services
 
             var textureToMatKey = new Dictionary<string, int>();
 
+            // Model and texture swaps come from the ObjDesc the server really sends, as the textures' colours do, so
+            // the mesh is the one the game draws. A 0x0F PaletteSet override (showroom only) or a creature that cannot
+            // be built keeps the clothing-table swaps registered above.
+            Dictionary<int, uint> gamePartModels = null;
+            Dictionary<(int Part, uint Old), uint> gamePartTextures = null;
+            if ((paletteId & 0xFF000000) != 0x0F000000)
+            {
+                var gameObjDesc = GetGameObjDesc(wcid, paletteId);
+                if (gameObjDesc != null)
+                {
+                    gamePartModels = new Dictionary<int, uint>();
+                    foreach (var ap in gameObjDesc.AnimPartChanges)
+                        gamePartModels[ap.Index] = ap.AnimationId;
+
+                    gamePartTextures = new Dictionary<(int, uint), uint>();
+                    foreach (var tc in gameObjDesc.TextureChanges)
+                        gamePartTextures[(tc.PartIndex, tc.OldTexture)] = tc.NewTexture;
+                }
+            }
+
             // Map each setup part to a GLTF node
             for (int i = 0; i < setupModel.Parts.Count; i++)
             {
-                var gfxObjId = setupModel.Parts[i];
+                var gfxObjId = gamePartModels != null && gamePartModels.TryGetValue(i, out var gameGfx) && gameGfx != 0 ? gameGfx : setupModel.Parts[i];
                 if (gfxObjId == 0x010001EC) continue; // Skip AC target selection bounding box dummy mesh
                 var parentIdx = (setupModel.ParentIndex != null && i < setupModel.ParentIndex.Count) ? (int)setupModel.ParentIndex[i] : -1;
                 var scaleVec = (setupModel.DefaultScale != null && i < setupModel.DefaultScale.Count) ? setupModel.DefaultScale[i] : Vector3.One;
@@ -1304,8 +1328,14 @@ namespace ACE.Server.Services
                                 {
                                     var originalSwappedTexId = surface.OrigTextureId;
 
+                                    if (gamePartTextures != null)
+                                    {
+                                        // The game's own swaps for this part; nothing else applies.
+                                        if (gamePartTextures.TryGetValue((i, originalSwappedTexId), out uint gameTex) && gameTex != 0)
+                                            originalSwappedTexId = gameTex;
+                                    }
                                     // 1. Prioritize exact OldTexture DID swap (e.g. 10000976.json OldTexture 83899143 -> 83898569 Glowing Pink Tentacles)
-                                    if (textureSwaps != null && textureSwaps.TryGetValue(originalSwappedTexId, out uint swappedTexId))
+                                    else if (textureSwaps != null && textureSwaps.TryGetValue(originalSwappedTexId, out uint swappedTexId))
                                     {
                                         log.Info($"[VISUALIZER DEBUG] Part #{i} GfxObj 0x{gfxObjId:X8} Surf #{surfaceIdx}: Swapped OldTexture 0x{surface.OrigTextureId:X8} -> 0x{swappedTexId:X8}");
                                         originalSwappedTexId = swappedTexId;
@@ -1551,7 +1581,16 @@ namespace ACE.Server.Services
             paletteSlot = ClampPaletteSlot(paletteSlot);
             if (!IsAcceptedPaletteOverride(paletteId)) return null;
 
-            string cacheKey = $"v4.0_{textureId}_wcid_{wcid}_pal_0x{paletteId:X8}_slot_{paletteSlot}_hue_{hueShift}";
+            // A game-driven texture depends only on (texture, wcid, palette): the game has no hue shift and the
+            // ObjDesc fixes the shade, and the slot was never used when painting. Folding them here stops varied
+            // requests from minting thousands of cache entries for one picture.
+            if (IsGameDrivenRequest(wcid, paletteId))
+            {
+                hueShift = 0;
+                paletteSlot = -1;
+            }
+
+            string cacheKey = $"v5.0game_{textureId}_wcid_{wcid}_pal_0x{paletteId:X8}_slot_{paletteSlot}_hue_{hueShift}";
             var cachePath = Path.Combine(TexturesCacheDir, $"{cacheKey}.png");
             if (File.Exists(cachePath))
             {
@@ -1756,8 +1795,29 @@ namespace ACE.Server.Services
                 int height = texture.Height;
                 byte[] rgba8 = new byte[width * height * 4];
 
-                // Subpalette baking
                 Palette basePalette = null;
+                uint paletteBase = 0;
+
+                // A creature is painted from the ObjDesc the server really sends, so the showroom shows what the game
+                // shows. A 0x0F PaletteSet override is a showroom-only experiment the game cannot produce, so it (and a
+                // creature that cannot be built) keeps the older DAT-driven baking below.
+                bool gameDriven = false;
+                if (wcid != 0 && (paletteId & 0xFF000000) != 0x0F000000)
+                {
+                    var gameObjDesc = GetGameObjDesc(wcid, paletteId);
+                    if (gameObjDesc != null)
+                    {
+                        gameDriven = true;
+                        paletteBase = gameObjDesc.PaletteID;
+                        basePalette = ComposeGamePalette(portalDb, gameObjDesc);
+                        if (basePalette == null && texture.DefaultPaletteId is uint texPal && texPal != 0)
+                            basePalette = ReadPaletteSafely(portalDb, texPal, shade);
+                    }
+                }
+
+                if (!gameDriven)
+                {
+                // Subpalette baking
                 List<CloSubPalette> cloSubPalettes = null;
                 double weenieShade = 0.5;
                 uint defaultPalBaseDID = 0;
@@ -1857,7 +1917,6 @@ namespace ACE.Server.Services
                     }
                 }
 
-                uint paletteBase = 0;
                 if ((paletteId & 0xFF000000) == 0x04000000)
                 {
                     paletteBase = paletteId;
@@ -2037,6 +2096,7 @@ namespace ACE.Server.Services
                             }
                         }
                     }
+                } // !gameDriven
 
             if (hueShift != 0 && basePalette != null)
                 {
@@ -2305,6 +2365,99 @@ namespace ACE.Server.Services
             r = (byte)(rOut * 255.0);
             g = (byte)(gOut * 255.0);
             b = (byte)(bOut * 255.0);
+        }
+
+        // One game ObjDesc per (wcid, paletteId), shared by the mesh and every texture of it. Building one constructs
+        // the whole creature (its wield list and treasure included), so each is built once; sharing it also keeps a
+        // creature with randomly rolled gear from mixing the mesh of one roll with the textures of another.
+        // Lazy makes concurrent requests for the same key wait on a single build. Capped so varied anonymous
+        // requests cannot grow it without bound; a cleared entry is simply built again.
+        private static readonly ConcurrentDictionary<(uint Wcid, uint PaletteId), Lazy<ACE.Entity.ObjDesc>> _gameObjDescCache = new();
+        private const int MaxGameObjDescCacheEntries = 4096;
+
+        // The endpoints are anonymous; at most two creature builds run at once, whatever the request rate.
+        private static readonly SemaphoreSlim _gameObjDescBuildGate = new(2, 2);
+
+        /// <summary>
+        /// The ObjDesc the server would send for this creature, built by the server's own CalculateObjDesc so the
+        /// showroom cannot drift from the game. A non-zero paletteId (a template ordinal or a full 0x04 palette) is
+        /// applied the way @set PaletteTemplate would. Null when the creature cannot be built. Cached per
+        /// (wcid, paletteId); callers must not modify the result.
+        /// </summary>
+        internal static ACE.Entity.ObjDesc GetGameObjDesc(uint wcid, uint paletteId)
+        {
+            if (_gameObjDescCache.Count >= MaxGameObjDescCacheEntries)
+                _gameObjDescCache.Clear();
+
+            return _gameObjDescCache.GetOrAdd((wcid, paletteId),
+                key => new Lazy<ACE.Entity.ObjDesc>(() => BuildGameObjDesc(key.Wcid, key.PaletteId))).Value;
+        }
+
+        private static ACE.Entity.ObjDesc BuildGameObjDesc(uint wcid, uint paletteId)
+        {
+            var weenie = DatabaseManager.World?.GetCachedWeenie(wcid);
+            if (weenie == null) return null;
+
+            _gameObjDescBuildGate.Wait();
+            ACE.Server.WorldObjects.WorldObject wo = null;
+            try
+            {
+                wo = ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject(weenie);
+                if (wo == null) return null;
+                if (paletteId != 0)
+                    wo.SetProperty(PropertyInt.PaletteTemplate, unchecked((int)paletteId));
+                return wo.CalculateObjDesc();
+            }
+            catch (Exception ex)
+            {
+                log.Warn($"[VISUALIZER] Could not build the game ObjDesc for wcid {wcid} palette 0x{paletteId:X8}: {ex.Message}");
+                return null;
+            }
+            finally
+            {
+                // Never entered the world: nothing to notify and nothing in the database to remove.
+                wo?.Destroy(raiseNotifyOfDestructionEvent: false, enqueueDatabaseRemove: false);
+                _gameObjDescBuildGate.Release();
+            }
+        }
+
+        /// <summary>
+        /// True when a request is painted from the game ObjDesc rather than the showroom's own DAT baking: any creature
+        /// request except a 0x0F PaletteSet override, which only the showroom can draw.
+        /// </summary>
+        private static bool IsGameDrivenRequest(uint wcid, uint paletteId) =>
+            wcid != 0 && (paletteId & 0xFF000000) != 0x0F000000;
+
+        /// <summary>
+        /// The palette the client builds from an ObjDesc: the base PaletteID, then every sub-palette range copied over
+        /// the same indices. Offset and length go out as bytes counting blocks of 8 colours, and a length byte of 0
+        /// means 256 blocks (all 2048 colours). Null when there are no sub-palettes: the client then ignores the base
+        /// and each texture keeps its own palette.
+        /// </summary>
+        private static Palette ComposeGamePalette(PortalDatDatabase portalDb, ACE.Entity.ObjDesc objDesc)
+        {
+            if (objDesc == null || objDesc.PaletteID == 0 || objDesc.SubPalettes.Count == 0) return null;
+
+            var basePal = ReadPaletteSafely(portalDb, objDesc.PaletteID);
+            if (basePal == null || basePal.Colors.Count == 0) return null;
+
+            var result = new Palette();
+            result.Colors.AddRange(basePal.Colors);
+            while (result.Colors.Count < 2048)
+                result.Colors.Add(0);
+
+            foreach (var sub in objDesc.SubPalettes)
+            {
+                var subPal = ReadPaletteSafely(portalDb, 0x04000000u | sub.SubPaletteId);
+                if (subPal == null) continue;
+
+                int start = (byte)sub.Offset * 8;
+                int blocks = (byte)sub.Length;
+                int count = (blocks == 0 ? 256 : blocks) * 8;
+                for (int i = start; i < start + count && i < result.Colors.Count && i < subPal.Colors.Count; i++)
+                    result.Colors[i] = subPal.Colors[i];
+            }
+            return result;
         }
 
         private static Palette ReadPaletteSafely(PortalDatDatabase portalDb, uint palId, float shade = 0.5f)
