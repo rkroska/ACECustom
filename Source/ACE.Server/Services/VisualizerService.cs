@@ -2386,24 +2386,57 @@ namespace ACE.Server.Services
         /// </summary>
         internal static ACE.Entity.ObjDesc GetGameObjDesc(uint wcid, uint paletteId)
         {
+            // An unknown wcid never gets an entry, so made-up ids cannot fill the cache.
+            if (DatabaseManager.World?.GetCachedWeenie(wcid) == null)
+                return null;
+
             if (_gameObjDescCache.Count >= MaxGameObjDescCacheEntries)
                 _gameObjDescCache.Clear();
 
-            return _gameObjDescCache.GetOrAdd((wcid, paletteId),
-                key => new Lazy<ACE.Entity.ObjDesc>(() => BuildGameObjDesc(key.Wcid, key.PaletteId))).Value;
+            var key = (wcid, paletteId);
+            var entry = _gameObjDescCache.GetOrAdd(key,
+                k => new Lazy<ACE.Entity.ObjDesc>(() => BuildGameObjDesc(k.Wcid, k.PaletteId)));
+
+            ACE.Entity.ObjDesc result = null;
+            try
+            {
+                result = entry.Value;
+            }
+            finally
+            {
+                // Keep only successes: a failed build (null or thrown) is dropped so the next request tries again.
+                if (result == null)
+                    _gameObjDescCache.TryRemove(new KeyValuePair<(uint, uint), Lazy<ACE.Entity.ObjDesc>>(key, entry));
+            }
+            return result;
         }
 
         private static ACE.Entity.ObjDesc BuildGameObjDesc(uint wcid, uint paletteId)
         {
-            var weenie = DatabaseManager.World?.GetCachedWeenie(wcid);
-            if (weenie == null) return null;
-
             _gameObjDescBuildGate.Wait();
             ACE.Server.WorldObjects.WorldObject wo = null;
             try
             {
-                wo = ACE.Server.Factories.WorldObjectFactory.CreateNewWorldObject(weenie);
-                if (wo == null) return null;
+                var weenie = DatabaseManager.World?.GetCachedWeenie(wcid);
+                if (weenie == null) return null;
+
+                // Same as WorldObjectFactory.CreateNewWorldObject, but the guid is also recycled when construction
+                // throws (equipment or treasure generation), which the shared factory does not do.
+                var guid = GuidManager.NewDynamicGuid();
+                try
+                {
+                    wo = ACE.Server.Factories.WorldObjectFactory.CreateWorldObject(weenie, guid);
+                }
+                catch
+                {
+                    GuidManager.RecycleDynamicGuid(guid);
+                    throw;
+                }
+                if (wo == null)
+                {
+                    GuidManager.RecycleDynamicGuid(guid);
+                    return null;
+                }
                 if (paletteId != 0)
                     wo.SetProperty(PropertyInt.PaletteTemplate, unchecked((int)paletteId));
                 return wo.CalculateObjDesc();
