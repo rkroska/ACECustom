@@ -3354,7 +3354,7 @@ namespace ACE.Server.Command.Handlers.Processors
             HandleExportClothingToDiscord(session, parameters);
         }
 
-        [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file and load to Discord", "<wcid> [content-type] | template [wcid] [npc|monster] [overwrite] [name...]")]
+        [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file and load to Discord", "<wcid> [content-type] | template [wcid] [npc|monster] [--force|overwrite] [name...]")]
         public static void HandleExportSqlToDiscord(Session session, params string[] parameters)
         {
             // "@ed template ..." exports the SELECTED live object (not a database weenie) and hands the file to
@@ -3466,7 +3466,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
         [CommandHandler("export-template", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
             "Exports the selected (or last appraised) object, with its live appearance, as a new weenie SQL template in the temporary export block",
-            "[wcid] [npc|monster] [overwrite] [name...] - every argument optional, any order. monster (default) = faithful copy; npc = not attackable, invincible, stuck, radar NPC, no loot/XP/corpse. A player source defaults to npc. The file is loaded into ace_world and sent to Discord automatically (content_template_export_auto_import / _auto_discord).")]
+            "[wcid] [npc|monster] [--force|overwrite] [name...] - every argument optional, any order. monster (default) = faithful copy; npc = not attackable, invincible, stuck, radar NPC, no loot/XP/corpse. A player source defaults to npc. A taken wcid is refused; overwrite replaces it, --force replaces it and also loads a wcid outside the export block. A replaced weenie is saved to sql/weenies-backup first; restore it with @import-template-backup. The file is loaded into ace_world and sent to Discord automatically (content_template_export_auto_import / _auto_discord).")]
         public static void HandleExportTemplate(Session session, params string[] parameters)
         {
             ExportTemplate(session, parameters, toDiscord: false);
@@ -3474,7 +3474,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
         [CommandHandler("et", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
             "Alias for export-template - exports the selected object as a weenie SQL template",
-            "[wcid] [npc|monster] [overwrite] [name...]")]
+            "[wcid] [npc|monster] [--force|overwrite] [name...]")]
         public static void HandleExportTemplateAlias(Session session, params string[] parameters)
         {
             ExportTemplate(session, parameters, toDiscord: false);
@@ -3616,6 +3616,19 @@ namespace ACE.Server.Command.Handlers.Processors
                 var fileName = WeenieSQLWriter.GetDefaultFileName(weenie);
                 var fullPath = sqlFolder + fileName;
 
+                // Replacing a weenie: save the row as it is now first, so a wrong id is one
+                // @import-template-backup away from undone. No backup, no export.
+                string backupPath = null;
+                if (choice.ReplacesExisting)
+                {
+                    backupPath = WriteReplacedWeenieBackup(choice.Wcid, $"{di.FullName}{sep}sql{sep}{TemplateExport.BackupFolderName}{sep}", exportedUtc);
+                    if (backupPath == null)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Refused: could not back up the existing weenie at {choice.Wcid} ('{TemplateExport.ToAscii(choice.ExistingName)}'), so it was not replaced. See the server log.");
+                        return;
+                    }
+                }
+
                 string sqlText;
                 using (var mem = new MemoryStream())
                 {
@@ -3640,10 +3653,10 @@ namespace ACE.Server.Command.Handlers.Processors
                 if (sendToDiscord)
                     _ = SendTemplateToDiscordAsync(session.Player.Name, fileName, bytes);
 
-                // Load it into ace_world so it can be spawned at once - but only inside the staging block. An explicit
-                // id outside it may be real content (with "overwrite", an existing weenie), so that stays a reviewed,
-                // manual import.
-                var autoImport = ServerConfig.content_template_export_auto_import.Value && !choice.OutsideBlock;
+                // Load it into ace_world so it can be spawned at once - but only inside the staging block, unless
+                // --force was given. An explicit id outside it may be real content (with "overwrite", an existing
+                // weenie), so without --force that stays a reviewed, manual import; with it, the backup above is the undo.
+                var autoImport = ServerConfig.content_template_export_auto_import.Value && (!choice.OutsideBlock || args.Force);
                 if (autoImport)
                     StartTemplateImport(session, fullPath, choice.Wcid);
 
@@ -3658,6 +3671,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     ReplacedExisting = choice.ReplacesExisting,
                     ExistingName = choice.ExistingName,
                     OutsideBlock = choice.OutsideBlock,
+                    BackupPath = backupPath,
                     SourceName = TemplateExport.ToAscii(target.Name ?? ""),
                     SourceWcid = target.WeenieClassId,
                     CapturedFromWcid = capturedFrom,
@@ -3682,25 +3696,156 @@ namespace ACE.Server.Command.Handlers.Processors
         }
 
         /// <summary>
+        /// Writes the weenie currently stored at <paramref name="wcid"/> to "&lt;wcid&gt;.backup-&lt;utc&gt;.sql" in
+        /// sql/weenies-backup, read fresh from ace_world (not the cache) and written with the same DELETE + INSERT as
+        /// @export-sql. That folder is outside sql/weenies, so no @import-sql form (by wcid, all, or with folders) ever
+        /// picks a backup up; @import-template-backup restores exactly one by name. The file is created new, never
+        /// overwritten: a second export in the same second gets a -2, -3 ... suffix. Returns the path, or null when
+        /// the row could not be read or the file not written.
+        /// </summary>
+        private static string WriteReplacedWeenieBackup(uint wcid, string backupFolder, DateTime exportedUtc)
+        {
+            try
+            {
+                var existing = DatabaseManager.World.GetWeenie(wcid);
+                if (existing == null)
+                {
+                    log.Error($"[TemplateExport] backup of {wcid} failed: the weenie is listed but could not be read");
+                    return null;
+                }
+
+                Directory.CreateDirectory(backupFolder);
+
+                string sqlText;
+                using (var mem = new MemoryStream())
+                {
+                    using (var sw = new StreamWriter(mem, new UTF8Encoding(false), 4096, leaveOpen: true) { NewLine = "\n" })
+                    {
+                        sw.WriteLine($"-- Backup of weenie {wcid} taken {exportedUtc:yyyy-MM-dd HH:mm:ss} UTC, before @export-template replaced it.");
+                        sw.WriteLine("-- Restore it with @import-template-backup <this file name>.");
+                        WeenieSQLWriter.CreateSQLDELETEStatement(existing, sw);
+                        sw.WriteLine();
+                        WeenieSQLWriter.CreateSQLINSERTStatement(existing, sw);
+                    }
+                    sqlText = Encoding.UTF8.GetString(mem.ToArray());
+                }
+                var bytes = new UTF8Encoding(false).GetBytes(sqlText.Replace("\r\n", "\n").Replace("\r", ""));
+
+                // CreateNew fails instead of overwriting, so two exports racing on the same id and second each keep
+                // their own backup.
+                for (var attempt = 1; attempt <= 100; attempt++)
+                {
+                    var backupPath = backupFolder + TemplateExport.BuildBackupFileName(wcid, exportedUtc, attempt);
+                    try
+                    {
+                        using (var fs = new FileStream(backupPath, FileMode.CreateNew, FileAccess.Write))
+                            fs.Write(bytes, 0, bytes.Length);
+                    }
+                    catch (IOException) when (File.Exists(backupPath))
+                    {
+                        continue;
+                    }
+                    log.Info($"[TemplateExport] backed up {wcid} to {backupPath}");
+                    return backupPath;
+                }
+
+                log.Error($"[TemplateExport] backup of {wcid} failed: 100 backup names for {exportedUtc:yyyyMMdd-HHmmss} are already taken");
+                return null;
+            }
+            catch (Exception e)
+            {
+                log.Error($"[TemplateExport] backup of {wcid} failed: {e}");
+                return null;
+            }
+        }
+
+        [CommandHandler("import-template-backup", AccessLevel.Developer, CommandHandlerFlag.None, 1,
+            "Restores one weenie backup that @export-template saved before replacing it",
+            "<file name> - exactly as the export reply printed it, e.g. 78780999.backup-20261018-120000.sql")]
+        public static void HandleImportTemplateBackup(Session session, params string[] parameters)
+        {
+            var fileName = parameters[0].Trim();
+
+            // A bare backup name only: no path, no wildcard, nothing outside sql/weenies-backup.
+            if (!TemplateExport.TryParseBackupFileName(fileName, out var wcid))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"'{TemplateExport.ToAscii(fileName)}' is not a template backup name. Use the exact name from the export reply, e.g. 78780999.backup-20261018-120000.sql.");
+                return;
+            }
+
+            var di = VerifyContentFolder(session);
+            if (!di.Exists) return;
+
+            var sep = Path.DirectorySeparatorChar;
+            var fullPath = $"{di.FullName}{sep}sql{sep}{TemplateExport.BackupFolderName}{sep}{fileName}";
+            if (!File.Exists(fullPath))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find {fullPath}");
+                return;
+            }
+
+            // Same per-wcid lock as the background load. The export marks its load pending before it prints the undo,
+            // so a restore typed straight after the export cannot run first and then be overwritten by that load.
+            lock (TemplateImportLock(wcid))
+            {
+                if (PendingTemplateImports.TryGetValue(wcid, out var pending) && pending > 0)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"{wcid} is still being loaded from the export; nothing was restored. Wait for the 'Loaded {wcid}' line, then run this again.");
+                    return;
+                }
+
+                try
+                {
+                    ImportSQL(fullPath);
+                    DatabaseManager.World.ClearCachedWeenie(wcid);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Restored {wcid} from {fileName}. Spawn it with @ci {wcid} or @create {wcid}.");
+                    log.Info($"[TemplateExport] {session?.Player?.Name ?? "console"} restored {wcid} from {fullPath}");
+                }
+                catch (Exception e)
+                {
+                    log.Error($"[TemplateExport] restore of {wcid} from {fullPath} failed: {e}");
+                    CommandHandlerHelper.WriteOutputError(session, $"Restore failed: {e.Message}");
+                }
+            }
+        }
+
+        // Template loads and backup restores for one wcid run one at a time; different wcids do not wait on each other.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, object> TemplateImportLocks = new();
+        // Background loads started but not finished, per wcid. Raised before the export reply is sent, lowered under the lock.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, int> PendingTemplateImports = new();
+
+        private static object TemplateImportLock(uint wcid) => TemplateImportLocks.GetOrAdd(wcid, _ => new object());
+
+        /// <summary>
         /// Loads an exported template into ace_world and drops the weenie from the cache, off the landblock thread:
         /// the export runs on the thread that owns the target, and a database write there would stall its tick.
         /// The file already carries a DELETE for its own id, so re-exporting over the same id is safe.
         /// </summary>
         private static void StartTemplateImport(Session session, string fullPath, uint wcid)
         {
+            // Marked now, on the export thread, so it is visible before the reply (and its undo command) is sent.
+            PendingTemplateImports.AddOrUpdate(wcid, 1, (_, n) => n + 1);
+
             _ = Task.Run(() =>
             {
-                try
+                lock (TemplateImportLock(wcid))
                 {
-                    ImportSQL(fullPath);
-                    DatabaseManager.World.ClearCachedWeenie(wcid);
-                    CommandHandlerHelper.WriteOutputInfo(session, $"Loaded {wcid} into ace_world. Spawn it with @ci {wcid} or @create {wcid}.");
-                    log.Info($"[TemplateExport] auto-imported {wcid} from {fullPath}");
-                }
-                catch (Exception e)
-                {
-                    log.Error($"[TemplateExport] auto-import of {wcid} from {fullPath} failed: {e}");
-                    CommandHandlerHelper.WriteOutputInfo(session, $"[ERROR] The file was written but could not be loaded into ace_world: {e.Message}. Load it by hand with @import-sql {wcid} force.");
+                    try
+                    {
+                        ImportSQL(fullPath);
+                        DatabaseManager.World.ClearCachedWeenie(wcid);
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Loaded {wcid} into ace_world. Spawn it with @ci {wcid} or @create {wcid}.");
+                        log.Info($"[TemplateExport] auto-imported {wcid} from {fullPath}");
+                    }
+                    catch (Exception e)
+                    {
+                        log.Error($"[TemplateExport] auto-import of {wcid} from {fullPath} failed: {e}");
+                        CommandHandlerHelper.WriteOutputInfo(session, $"[ERROR] The file was written but could not be loaded into ace_world: {e.Message}. Load it by hand with @import-sql {wcid} force.");
+                    }
+                    finally
+                    {
+                        PendingTemplateImports.AddOrUpdate(wcid, 0, (_, n) => Math.Max(0, n - 1));
+                    }
                 }
             });
         }
