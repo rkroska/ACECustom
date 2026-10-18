@@ -53,14 +53,17 @@ namespace ACE.Server.Entity
             /// <summary>Null when no flavour keyword was typed; the caller then picks the default for the source.</summary>
             public Flavour? Flavour { get; set; }
             public bool Overwrite { get; set; }
+            /// <summary>--force: overwrite, and load into ace_world even when the id is outside the export block.</summary>
+            public bool Force { get; set; }
             /// <summary>Null when no name was typed; the live object's own name is used.</summary>
             public string NameOverride { get; set; }
         }
 
         /// <summary>
         /// Order-insensitive, forgiving parse: the first bare number (decimal or 0x hex) is the wcid, the words
-        /// npc / monster / overwrite are keywords, the literal word template (from "@ed template ...") is ignored,
-        /// and everything else is the name override joined with spaces. Nothing is rejected on ordering grounds.
+        /// npc / monster / overwrite / --force are keywords, the literal word template (from "@ed template ...") is
+        /// ignored, and everything else is the name override joined with spaces. Nothing is rejected on ordering
+        /// grounds. A bare "force" is a name word, not a keyword, so names like "Force Elemental" survive.
         /// </summary>
         public static Arguments ParseArguments(IEnumerable<string> tokens)
         {
@@ -81,6 +84,7 @@ namespace ACE.Server.Entity
                 if (lower == "npc") { args.Flavour = TemplateExport.Flavour.Npc; continue; }
                 if (lower == "monster") { args.Flavour = TemplateExport.Flavour.Monster; continue; }
                 if (lower == "overwrite") { args.Overwrite = true; continue; }
+                if (lower == "--force") { args.Force = true; args.Overwrite = true; continue; }
 
                 if (args.ExplicitWcid == null && TryParseWcid(token, out var wcid))
                 {
@@ -184,7 +188,7 @@ namespace ACE.Server.Entity
                     if (!overwrite)
                     {
                         choice.Refused = true;
-                        choice.RefusalReason = $"Refused: wcid {wcid} already exists in the world database as '{choice.ExistingName}'. Pick another id, leave the id out to auto-allocate, or add the word overwrite to replace it.";
+                        choice.RefusalReason = $"Refused: wcid {wcid} already exists in the world database as '{choice.ExistingName}'. Pick another id, leave the id out to auto-allocate, or add --force (or overwrite) to replace it.";
                         return choice;
                     }
                     choice.ReplacesExisting = true;
@@ -1148,6 +1152,8 @@ namespace ACE.Server.Entity
             public bool ReplacedExisting { get; set; }
             public string ExistingName { get; set; }
             public bool OutsideBlock { get; set; }
+            /// <summary>Where the replaced weenie was saved before the overwrite; null when nothing was replaced.</summary>
+            public string BackupPath { get; set; }
             public string SourceName { get; set; }
             public uint SourceWcid { get; set; }
             public uint? CapturedFromWcid { get; set; }
@@ -1162,7 +1168,7 @@ namespace ACE.Server.Entity
             public double BlockUsedFraction { get; set; }
         }
 
-        /// <summary>At most eight lines, joined with "\n", 7-bit ASCII.</summary>
+        /// <summary>At most nine lines, joined with "\n", 7-bit ASCII.</summary>
         public static string BuildChatReply(ReplyInfo r)
         {
             var lines = new List<string>();
@@ -1183,13 +1189,18 @@ namespace ACE.Server.Entity
 
             lines.Add($"File: {r.FilePath}" + (r.SentToDiscord ? " (also sent to Discord)" : ""));
 
+            if (!string.IsNullOrEmpty(r.BackupPath))
+                lines.Add($"Backup of the replaced weenie: {r.BackupPath} (undo with @import-sql on that file).");
+
             var captured = $"Captured: {r.SummaryLine}";
             if (r.WieldSkippedForPet)
                 captured += ". Held items skipped: the monster flavour of a pet fights with its body parts; use npc to carry them";
             lines.Add(captured + ".");
 
-            if (r.OutsideBlock)
-                lines.Add($"WARNING: {r.Wcid} is outside the export block {r.BlockStart}-{r.BlockEnd}. It was verified free at export time, but check docs/WCID_ALLOCATION_7878.md before loading it.");
+            if (r.OutsideBlock && r.ImportStarted)
+                lines.Add($"WARNING: {r.Wcid} is outside the export block {r.BlockStart}-{r.BlockEnd}; --force loads it into ace_world anyway.");
+            else if (r.OutsideBlock)
+                lines.Add($"WARNING: {r.Wcid} is outside the export block {r.BlockStart}-{r.BlockEnd}, so it was not loaded. Check docs/WCID_ALLOCATION_7878.md before loading it, or re-run @et with --force to load it now.");
             else
             {
                 var status = $"Id {r.Wcid} was verified free at export time; block {r.BlockStart}-{r.BlockEnd} is reserved for exports (temporary staging).";
