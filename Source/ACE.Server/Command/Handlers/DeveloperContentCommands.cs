@@ -3784,19 +3784,37 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
-            try
+            // Same per-wcid lock as the background load. The export marks its load pending before it prints the undo,
+            // so a restore typed straight after the export cannot run first and then be overwritten by that load.
+            lock (TemplateImportLock(wcid))
             {
-                ImportSQL(fullPath);
-                DatabaseManager.World.ClearCachedWeenie(wcid);
-                CommandHandlerHelper.WriteOutputInfo(session, $"Restored {wcid} from {fileName}. Spawn it with @ci {wcid} or @create {wcid}.");
-                log.Info($"[TemplateExport] {session?.Player?.Name ?? "console"} restored {wcid} from {fullPath}");
-            }
-            catch (Exception e)
-            {
-                log.Error($"[TemplateExport] restore of {wcid} from {fullPath} failed: {e}");
-                CommandHandlerHelper.WriteOutputError(session, $"Restore failed: {e.Message}");
+                if (PendingTemplateImports.TryGetValue(wcid, out var pending) && pending > 0)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"{wcid} is still being loaded from the export; nothing was restored. Wait for the 'Loaded {wcid}' line, then run this again.");
+                    return;
+                }
+
+                try
+                {
+                    ImportSQL(fullPath);
+                    DatabaseManager.World.ClearCachedWeenie(wcid);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Restored {wcid} from {fileName}. Spawn it with @ci {wcid} or @create {wcid}.");
+                    log.Info($"[TemplateExport] {session?.Player?.Name ?? "console"} restored {wcid} from {fullPath}");
+                }
+                catch (Exception e)
+                {
+                    log.Error($"[TemplateExport] restore of {wcid} from {fullPath} failed: {e}");
+                    CommandHandlerHelper.WriteOutputError(session, $"Restore failed: {e.Message}");
+                }
             }
         }
+
+        // Template loads and backup restores for one wcid run one at a time; different wcids do not wait on each other.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, object> TemplateImportLocks = new();
+        // Background loads started but not finished, per wcid. Raised before the export reply is sent, lowered under the lock.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, int> PendingTemplateImports = new();
+
+        private static object TemplateImportLock(uint wcid) => TemplateImportLocks.GetOrAdd(wcid, _ => new object());
 
         /// <summary>
         /// Loads an exported template into ace_world and drops the weenie from the cache, off the landblock thread:
@@ -3805,19 +3823,29 @@ namespace ACE.Server.Command.Handlers.Processors
         /// </summary>
         private static void StartTemplateImport(Session session, string fullPath, uint wcid)
         {
+            // Marked now, on the export thread, so it is visible before the reply (and its undo command) is sent.
+            PendingTemplateImports.AddOrUpdate(wcid, 1, (_, n) => n + 1);
+
             _ = Task.Run(() =>
             {
-                try
+                lock (TemplateImportLock(wcid))
                 {
-                    ImportSQL(fullPath);
-                    DatabaseManager.World.ClearCachedWeenie(wcid);
-                    CommandHandlerHelper.WriteOutputInfo(session, $"Loaded {wcid} into ace_world. Spawn it with @ci {wcid} or @create {wcid}.");
-                    log.Info($"[TemplateExport] auto-imported {wcid} from {fullPath}");
-                }
-                catch (Exception e)
-                {
-                    log.Error($"[TemplateExport] auto-import of {wcid} from {fullPath} failed: {e}");
-                    CommandHandlerHelper.WriteOutputInfo(session, $"[ERROR] The file was written but could not be loaded into ace_world: {e.Message}. Load it by hand with @import-sql {wcid} force.");
+                    try
+                    {
+                        ImportSQL(fullPath);
+                        DatabaseManager.World.ClearCachedWeenie(wcid);
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Loaded {wcid} into ace_world. Spawn it with @ci {wcid} or @create {wcid}.");
+                        log.Info($"[TemplateExport] auto-imported {wcid} from {fullPath}");
+                    }
+                    catch (Exception e)
+                    {
+                        log.Error($"[TemplateExport] auto-import of {wcid} from {fullPath} failed: {e}");
+                        CommandHandlerHelper.WriteOutputInfo(session, $"[ERROR] The file was written but could not be loaded into ace_world: {e.Message}. Load it by hand with @import-sql {wcid} force.");
+                    }
+                    finally
+                    {
+                        PendingTemplateImports.AddOrUpdate(wcid, 0, (_, n) => Math.Max(0, n - 1));
+                    }
                 }
             });
         }
