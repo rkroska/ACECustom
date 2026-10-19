@@ -81,6 +81,27 @@ namespace ACE.Server.Network.Structure
             EnchantmentMask = (EnchantmentMask)entry.EnchantmentCategory;
         }
 
+        private Enchantment() { }
+
+        /// <summary>A display-only enchantment built field by field, with no Spell behind it (ZcGearDisplay): the spell id
+        /// is one no spell uses, so there is nothing to Init from. Item-style: start 0, duration -1.</summary>
+        public static Enchantment ForDisplay(ushort spellId, ushort layer, ushort spellCategory, uint casterGuid, EnchantmentTypeFlags statModType, uint statModKey, float statModValue)
+        {
+            return new Enchantment
+            {
+                SpellID = spellId,
+                Layer = layer,
+                SpellCategory = spellCategory,
+                PowerLevel = 1,
+                StartTime = 0,
+                Duration = -1,
+                CasterGuid = casterGuid,
+                StatModType = statModType,
+                StatModKey = statModKey,
+                StatModValue = statModValue,
+            };
+        }
+
         public void Init(Spell spell)
         {
             Spell = spell;

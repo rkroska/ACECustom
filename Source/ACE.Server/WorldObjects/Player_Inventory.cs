@@ -452,6 +452,9 @@ namespace ACE.Server.WorldObjects
                 || (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(item) && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this)))
                 HandleMaxHealthUpdate();
 
+            // T11+ gear lines on the character panel (display only)
+            SyncZcGearDisplay();
+
             TryShuffleStance(wieldedLocation);
 
             // handle item spells
@@ -560,6 +563,11 @@ namespace ACE.Server.WorldObjects
             if (item.GearMaxHealth != null
                 || (ACE.Server.Managers.ZoneControl.ZoneControlManager.IsZcGear(item) && ACE.Server.Managers.ZoneControl.ZoneControlManager.WornPowerSuppressed(this)))
                 HandleMaxHealthUpdate();
+
+            // any piece can lower a max vital (Endurance / Self from All Attributes, Fortify Vitals, Max Health Pct, Max Health):
+            // cap the current values now rather than at the next regen tick, then fix the panel
+            ClampVitalsToMax();
+            SyncZcGearDisplay();
 
             if (dequipObjectAction == DequipObjectAction.ToCorpseOnDeath || dequipObjectAction == DequipObjectAction.TradeItem)
                 Session.Network.EnqueueSend(new GameMessageDeleteObject(item));
