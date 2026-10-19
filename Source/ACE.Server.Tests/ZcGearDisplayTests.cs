@@ -18,18 +18,22 @@ namespace ACE.Server.Tests
     [TestClass]
     public class ZcGearDisplayTests
     {
+        /// <summary>Runs ZcGearDisplay.Compute with stubbed reads: missing props read 0.</summary>
         private static List<ZcGearDisplay.Entry> Compute(Dictionary<int, int> bonus, Dictionary<int, int> max = null, IEnumerable<int> skills = null)
             => ZcGearDisplay.Compute(p => bonus.TryGetValue(p, out var v) ? v : 0, p => max != null && max.TryGetValue(p, out var v) ? v : 0, skills);
 
+        /// <summary>The six All Attributes props, each at <paramref name="value"/>.</summary>
         private static Dictionary<int, int> AllAttributes(int value)
             => ZcGearDisplay.Attributes.ToDictionary(a => ZoneModifiers.AttrBonusBase + (int)a, _ => value);
 
+        /// <summary>No worn lines: no entries.</summary>
         [TestMethod]
         public void NoGear_SendsNothing()
         {
             Assert.AreEqual(0, Compute(new Dictionary<int, int>()).Count);
         }
 
+        /// <summary>All Attributes gives one additive entry per attribute, each carrying the summed total.</summary>
         [TestMethod]
         public void AllAttributes_OneAdditiveEntryPerAttribute_CarryingTheTotal()
         {
@@ -46,6 +50,7 @@ namespace ACE.Server.Tests
             }
         }
 
+        /// <summary>An upgrade (+70 to +80) keeps the same layers with the new value, so the client replaces the entry instead of adding.</summary>
         [TestMethod]
         public void Upgrade_SameLayerNewValue_SoTheClientReplacesNotAdds()
         {
@@ -60,6 +65,7 @@ namespace ACE.Server.Tests
             }
         }
 
+        /// <summary>Fortify Vitals multiplies all three max vitals; Max Health Pct adds to health only.</summary>
         [TestMethod]
         public void Fortify_MultipliesAllThreeVitals_PctAddsToHealthOnly()
         {
@@ -74,6 +80,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(1.25f, entries.Single(e => e.StatModKey == (uint)PropertyAttribute2nd.MaxMana).StatModValue, 1e-6f);
         }
 
+        /// <summary>Max Health Pct on its own gives a single health multiplier.</summary>
         [TestMethod]
         public void PctMaxHealthAlone_OnlyHealth()
         {
@@ -84,6 +91,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(1.03f, entries[0].StatModValue, 1e-6f);
         }
 
+        /// <summary>The health multiplier equals CreatureVital.GetMaxValue's 1 + (Fortify + Pct) / 100.</summary>
         [TestMethod]
         public void VitalMultiplier_MatchesTheServerFormula()
         {
@@ -97,6 +105,7 @@ namespace ACE.Server.Tests
             }
         }
 
+        /// <summary>Lines read as 0 (zone lock, gear removed) give no entries, so the sync removes what it sent.</summary>
         [TestMethod]
         public void ZoneLockOrRemoved_GivesNoEntries_SoTheSyncRemovesThem()
         {
@@ -104,6 +113,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(0, Compute(AllAttributes(0), new Dictionary<int, int> { [ZoneModifiers.FortifyVitalsPct] = 0 }).Count);
         }
 
+        /// <summary>Skill lines send only positive values, keyed by the skill, as GetAugBonus_Current adds them.</summary>
         [TestMethod]
         public void SkillLines_PositiveOnly_KeyIsTheSkill()
         {
@@ -117,6 +127,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(12f, entries[0].StatModValue);
         }
 
+        /// <summary>Every possible entry has a unique layer and category, above the real spell categories and below the cooldown one.</summary>
         [TestMethod]
         public void LayersAndCategories_UniqueAndOutsideRealCategories()
         {
@@ -138,6 +149,7 @@ namespace ACE.Server.Tests
             }
         }
 
+        /// <summary>The display spell id is above the retail range, is not 8185, and is not a named spell.</summary>
         [TestMethod]
         public void SpellId_AboveRetailAndClearOfKnownUse()
         {
@@ -158,6 +170,7 @@ namespace ACE.Server.Tests
             return (v & 0x4000) != 0;
         }
 
+        /// <summary>The client's acceptance check passes every shape we send, and rejects the shapes retail never uses.</summary>
         [TestMethod]
         public void ClientGate_AcceptsEveryShapeWeSend_AndTheGateIsReadRight()
         {
@@ -172,6 +185,7 @@ namespace ACE.Server.Tests
             Assert.IsFalse(ClientAccepts(EnchantmentTypeFlags.Additive | EnchantmentTypeFlags.Multiplicative | EnchantmentTypeFlags.Attribute), "both");
         }
 
+        /// <summary>A display entry serializes to the retail enchantment layout, item-style (start 0, duration -1).</summary>
         [TestMethod]
         public void Packet_IsTheRetailEnchantmentLayout_ItemStyle()
         {

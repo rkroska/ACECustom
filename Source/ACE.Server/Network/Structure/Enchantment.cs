@@ -81,6 +81,7 @@ namespace ACE.Server.Network.Structure
             EnchantmentMask = (EnchantmentMask)entry.EnchantmentCategory;
         }
 
+        /// <summary>Only for <see cref="ForDisplay"/>, which sets every field itself.</summary>
         private Enchantment() { }
 
         /// <summary>A display-only enchantment built field by field, with no Spell behind it (ZcGearDisplay): the spell id

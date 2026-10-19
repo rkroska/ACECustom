@@ -61,6 +61,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>One display entry: what one (SpellId, Layer) enchantment carries.</summary>
         public readonly record struct Entry(ushort Layer, EnchantmentTypeFlags StatModType, uint StatModKey, float StatModValue)
         {
+            /// <summary>The entry's own spell category, one per layer, so it never competes with a buff or another entry.</summary>
             public ushort Category => (ushort)(CategoryBase + Layer);
         }
 

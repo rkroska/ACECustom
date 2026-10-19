@@ -76,6 +76,7 @@ namespace ACE.Server.WorldObjects
             SendCurrentVitals();
         }
 
+        /// <summary>Re-sends current health, stamina and mana, so the client checks them against the max it now works out.</summary>
         private void SendCurrentVitals()
         {
             if (Session == null)

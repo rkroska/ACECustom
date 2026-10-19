@@ -15,6 +15,7 @@ namespace ACE.Server.Command.Handlers
     /// </summary>
     public static class ZcPanelCommands
     {
+        /// <summary>/zcpanel show | resend.</summary>
         [CommandHandler("zcpanel", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Character-panel display of the T11+ gear lines (All Attributes, skill lines, Fortify Vitals, Max Health Pct).",
             "show   - the server's numbers (what the panel should read) and the display entries sent to your client\n" +
@@ -44,6 +45,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        /// <summary>Prints the server's attribute, vital and skill numbers (what the panel should read) and the entries sent to the client.</summary>
         private static void Show(Player player, Action<string> msg)
         {
             msg($"--- T11+ gear lines on the panel (spell id {ZcGearDisplay.SpellId}, {(ZcGearDisplay.CheckSpellIdFree() ? "free" : "IN USE - display is OFF")}) ---");
@@ -82,6 +84,7 @@ namespace ACE.Server.Command.Handlers
                 msg($"  layer {e.Layer,3}  category 0x{e.Category:X4}  {e.StatModType} key {e.StatModKey} value {e.StatModValue:0.###}  ({Describe(e)})");
         }
 
+        /// <summary>One entry in words, e.g. "Strength +70" or "MaxHealth x1.25".</summary>
         private static string Describe(ZcGearDisplay.Entry e)
         {
             if ((e.StatModType & EnchantmentTypeFlags.Attribute) != 0)
