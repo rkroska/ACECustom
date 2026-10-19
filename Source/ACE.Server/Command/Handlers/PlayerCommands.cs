@@ -2472,6 +2472,9 @@ namespace ACE.Server.Command.Handlers
 
             // update client
             session.Network.EnqueueSend(new GameEventPlayerDescription(session));
+
+            // the description rebuilt the client's enchantment list: put the T11+ gear-line display entries back
+            session.Player.SyncZcGearDisplay(clientListReset: true);
         }
 
         /// <summary>

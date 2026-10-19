@@ -264,6 +264,9 @@ namespace ACE.Server.WorldObjects
 
             Session.Network.EnqueueSend(player, title, friends);
 
+            // the description rebuilt the client's enchantment list without the T11+ gear-line display entries: send them again
+            SyncZcGearDisplay(clientListReset: true);
+
             // Player objects don't get a placement
             Placement = null;
             // A Ghost draws itself: changenodraw strips NoDraw and Cloaked from the serialized state so you DRAW.
