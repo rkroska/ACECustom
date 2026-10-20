@@ -213,18 +213,6 @@ namespace ACE.Server.Command.Handlers
             return uint.TryParse(digits, hex ? NumberStyles.HexNumber : NumberStyles.None, CultureInfo.InvariantCulture, out guid);
         }
 
-        /// <summary>
-        /// The audit line for an admin command that changed a target: names the admin and the target, with the id in the
-        /// 0x form the commands take back
-        /// </summary>
-        /// <param name="session">The admin's session</param>
-        /// <param name="target">What was changed</param>
-        /// <param name="change">What was done, e.g. "Strength rank set to 448"</param>
-        public static void AuditTargetChange(Session session, WorldObject target, string change)
-        {
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed {target.Name} (0x{target.Guid.Full:X8}): {change}");
-        }
-
         public static WorldObject GetWorldObjectByGuid(Session session, uint guid)
         {
             var target = session.Player.FindObject(guid, Player.SearchLocations.Everywhere, out _, out _, out _);

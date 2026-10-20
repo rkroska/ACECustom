@@ -6198,7 +6198,6 @@ namespace ACE.Server.Command.Handlers
             }
 
             CommandHandlerHelper.WriteOutputInfo(session, $"{creature.Name}: max {vitalAttr} raised by {delta:N0} ranks.");
-            CommandHandlerHelper.AuditTargetChange(session, creature, $"max {vitalAttr} raised by {delta:N0} ranks");
         }
 
         [CommandHandler("modifyskill", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts the skill for the last appraised mob/player, or the named online player", "<skillName> <delta> [player name or id]")]
@@ -6244,7 +6243,6 @@ namespace ACE.Server.Command.Handlers
             }
 
             CommandHandlerHelper.WriteOutputInfo(session, $"{creature.Name}: {skill} base changed by {delta}, now {creatureSkill.InitLevel}.");
-            CommandHandlerHelper.AuditTargetChange(session, creature, $"{skill} base changed by {delta}, now {creatureSkill.InitLevel}");
         }
 
         [CommandHandler("modifyattr", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts an attribute for the last appraised mob/NPC/player, or the named online player", "<attribute> <delta> [player name or id]")]
@@ -6288,7 +6286,6 @@ namespace ACE.Server.Command.Handlers
             }
 
             CommandHandlerHelper.WriteOutputInfo(session, $"{creature.Name}: innate {attrType} changed by {delta}, now {attr.StartingValue}.");
-            CommandHandlerHelper.AuditTargetChange(session, creature, $"innate {attrType} changed by {delta}, now {attr.StartingValue}");
         }
 
         [CommandHandler("setattrrank", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Sets an attribute rank for the last appraised player, or the named online player", "<attribute> <rank> [player name or id]")]
@@ -6328,7 +6325,6 @@ namespace ACE.Server.Command.Handlers
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute(player, attr));
 
             CommandHandlerHelper.WriteOutputInfo(session, $"{player.Name}: {attrType} rank set to {value:N0}.");
-            CommandHandlerHelper.AuditTargetChange(session, player, $"{attrType} rank set to {value:N0}");
         }
 
         // heal

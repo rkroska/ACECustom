@@ -2368,7 +2368,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} (0x{target.Guid.Full:X8}): {prop} = {value}{xpNow}", ChatMessageType.Broadcast));
-            CommandHandlerHelper.AuditTargetChange(session, target, $"{prop} = {value}{xpNow}");
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed a property for {target.Name} ({target.Guid}): {prop} = {value}{xpNow}");
         }
 
         /// <summary>
@@ -3287,10 +3287,7 @@ namespace ACE.Server.Command.Handlers
             player.EnchantmentManager.RemoveVitae();
 
             if (player != session.Player)
-            {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Removed vitae for {player.Name}", ChatMessageType.Broadcast));
-                CommandHandlerHelper.AuditTargetChange(session, player, "vitae removed");
-            }
         }
 
         [CommandHandler("fast", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld)]
