@@ -14,6 +14,14 @@ namespace ACE.Server.WorldObjects
     partial class Player
     {
         public const double AttributeXpMod = 0.077;
+
+        /// <summary>
+        /// The highest rank the attribute / vital cost functions will price. Their loops count up to the rank, so a wrapped
+        /// rank (near uint.MaxValue, or past int.MaxValue) would never end them. Real ranks are a few hundred (costs past
+        /// ~rank 494 already overflow a ulong); past this, a delta cost is ulong.MaxValue, which the attribute and vital
+        /// raises refuse, and SetAttributeRank refuses the rank.
+        /// </summary>
+        internal const uint MaxPricedRank = 10_000;
         private const uint MinimumAttributeStartingValue = 10;
         private const uint MinimumVitalStartingValue = 10;
         public bool HandleActionRaiseAttribute(PropertyAttribute attribute, ulong amount)
@@ -110,7 +118,7 @@ namespace ACE.Server.WorldObjects
 
         public bool SetAttributeRank(CreatureAttribute creatureAttribute, uint rank)
         {
-            if (rank < 0)
+            if (rank < 0 || rank > MaxPricedRank)   // past the ceiling there is no cost to store (MaxPricedRank)
             {
                 return false;
             }
@@ -291,6 +299,8 @@ namespace ACE.Server.WorldObjects
 
         public static double GetXPCostByRank(uint rank)
         {
+            rank = Math.Min(rank, MaxPricedRank);   // the loop below counts up to it (a content Amount of -1 is 4,294,967,295)
+
             var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;
             if (rank < rankXpTable.Count)
                 return (double)rankXpTable[(int)rank];            
@@ -307,7 +317,11 @@ namespace ACE.Server.WorldObjects
 
         public static ulong GetXPDeltaCostByRank(uint destinationRank, uint currentRank)
         {
-            var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;           
+            // the loops below count up to these ranks: a wrapped one would never end them (MaxPricedRank)
+            if (destinationRank > MaxPricedRank || currentRank > MaxPricedRank)
+                return ulong.MaxValue;
+
+            var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;
             if (destinationRank < rankXpTable.Count)
             {
                 if (currentRank < rankXpTable.Count)

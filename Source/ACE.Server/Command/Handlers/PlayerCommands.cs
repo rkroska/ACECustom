@@ -1247,9 +1247,10 @@ namespace ACE.Server.Command.Handlers
             {
                 if (parameters.Length == 2)
                 {
-                    if (!int.TryParse(parameters[1], out amount) || amount < 1)
+                    // an upper bound too: a huge amount wrapped the destination rank (see Player.MaxPricedRank)
+                    if (!int.TryParse(parameters[1], out amount) || amount < 1 || amount > 1000)
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Provide a number to count for XP Ranks", ChatMessageType.System));
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Provide a number from 1 to 1000 to count for XP Ranks", ChatMessageType.System));
                         return;
                     }
                 }
@@ -1369,10 +1370,12 @@ namespace ACE.Server.Command.Handlers
                 if (!int.TryParse(parameters[1], out amt))
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Something isn't parsing your command correctly, check your input and try again!", ChatMessageType.Advancement));
+                    return;
                 }
-                if (amt > 10)
+                // 0 or negative asks for the cost of a LOWER rank, which wraps the rank (see Player.MaxPricedRank)
+                if (amt < 1 || amt > 10)
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] You can only raise your attributes by up to 10 points at a time.", ChatMessageType.Advancement));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] You can only raise your attributes by 1 to 10 points at a time.", ChatMessageType.Advancement));
                     return;
                 }
 
