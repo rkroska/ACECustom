@@ -6128,33 +6128,33 @@ namespace ACE.Server.Command.Handlers
         }
 
 
-        [CommandHandler("modifyvital", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts the maximum vital attribute for the last appraised mob/player and restores full vitals", "<Health|Stamina|Mana> <delta>")]
+        [CommandHandler("modifyvital", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts the maximum vital attribute for the last appraised mob/player, or the named online player, and restores full vitals", "<Health|Stamina|Mana> <delta> [player name or id]")]
         public static void HandleModifyVital(Session session, params string[] parameters)
         {
-            var lastAppraised = CommandHandlerHelper.GetLastAppraisedObject(session);
-            if (lastAppraised == null || !(lastAppraised is Creature))
-            {
-                ChatPacket.SendServerMessage(session, "The last appraised object was not a mob/NPC/player.", ChatMessageType.Broadcast);
-                return;
-            }
-            var creature = lastAppraised as Creature;
-
             if (parameters.Length < 2)
             {
-                ChatPacket.SendServerMessage(session, "Usage: modifyvital <Invalid vital type, valid values are: Health,Stamina,Mana", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: modifyvital <Health|Stamina|Mana> <delta> [player name or id]");
                 return;
             }
 
             // determine the vital type
             if (!Enum.TryParse(parameters[0], out PropertyAttribute2nd vitalAttr))
             {
-                ChatPacket.SendServerMessage(session, "Invalid vital type, valid values are: Health,Stamina,Mana", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid vital type, valid values are: Health,Stamina,Mana");
                 return;
             }
 
             if (!ulong.TryParse(parameters[1], out ulong delta))
             {
-                ChatPacket.SendServerMessage(session, "Invalid vital value, values must be valid integers", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid vital value, values must be valid integers");
+                return;
+            }
+
+            var target = CommandHandlerHelper.GetCommandTarget(session, parameters, 2);   // the last appraised one, or a named player
+            if (target == null) return;
+            if (target is not Creature creature)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "The target is not a mob/NPC/player.");
                 return;
             }
 
@@ -6171,7 +6171,7 @@ namespace ACE.Server.Command.Handlers
                     maxAttr = PropertyAttribute2nd.MaxMana;
                     break;
                 default:
-                    ChatPacket.SendServerMessage(session, "Unexpected vital type, valid values are: Health,Stamina,Mana", ChatMessageType.Broadcast);
+                    CommandHandlerHelper.WriteOutputInfo(session, "Unexpected vital type, valid values are: Health,Stamina,Mana");
                     return;
             }
 
@@ -6196,33 +6196,36 @@ namespace ACE.Server.Command.Handlers
             {
                 creature.SaveBiotaToDatabase();
             }
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"{creature.Name}: max {vitalAttr} raised by {delta:N0} ranks.");
+            CommandHandlerHelper.AuditTargetChange(session, creature, $"max {vitalAttr} raised by {delta:N0} ranks");
         }
 
-        [CommandHandler("modifyskill", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts the skill for the last appraised mob/player", "<skillName> <delta>")]
+        [CommandHandler("modifyskill", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts the skill for the last appraised mob/player, or the named online player", "<skillName> <delta> [player name or id]")]
         public static void HandleModifySkill(Session session, params string[] parameters)
         {
-            var lastAppraised = CommandHandlerHelper.GetLastAppraisedObject(session);
-            if (lastAppraised == null || !(lastAppraised is Creature))
-            {
-                ChatPacket.SendServerMessage(session, "The last appraised object was not a mob/NPC/player.", ChatMessageType.Broadcast);
-                return;
-            }
-            var creature = lastAppraised as Creature;
-
             if (parameters.Length < 2)
             {
-                ChatPacket.SendServerMessage(session, "Usage: modifyskill <skillName> <delta>: missing skillId and/or delta", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: modifyskill <skillName> <delta> [player name or id]: missing skillId and/or delta");
                 return;
             }
             if (!Enum.TryParse(parameters[0], out Skill skill))
             {
                 String[] names = Enum.GetNames(typeof(Skill));
-                ChatPacket.SendServerMessage(session, "Invalid skillName, must be a valid skill name (without spaces, with capitalization), valid values are: " + String.Join(", ", names), ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid skillName, must be a valid skill name (without spaces, with capitalization), valid values are: " + String.Join(", ", names));
                 return;
             }
             if (!Int32.TryParse(parameters[1], out int delta))
             {
-                ChatPacket.SendServerMessage(session, "Invalid delta, must be a valid integer", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid delta, must be a valid integer");
+                return;
+            }
+
+            var target = CommandHandlerHelper.GetCommandTarget(session, parameters, 2);   // the last appraised one, or a named player
+            if (target == null) return;
+            if (target is not Creature creature)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "The target is not a mob/NPC/player.");
                 return;
             }
 
@@ -6239,32 +6242,35 @@ namespace ACE.Server.Command.Handlers
                 Player player = creature as Player;
                 player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateSkill(player, creatureSkill));
             }
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"{creature.Name}: {skill} base changed by {delta}, now {creatureSkill.InitLevel}.");
+            CommandHandlerHelper.AuditTargetChange(session, creature, $"{skill} base changed by {delta}, now {creatureSkill.InitLevel}");
         }
 
-        [CommandHandler("modifyattr", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts an attribute for the last appraised mob/NPC/player", "<attribute> <delta>")]
+        [CommandHandler("modifyattr", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts an attribute for the last appraised mob/NPC/player, or the named online player", "<attribute> <delta> [player name or id]")]
         public static void HandleModifyAttribute(Session session, params string[] parameters)
         {
-            var lastAppraised = CommandHandlerHelper.GetLastAppraisedObject(session);
-            if (lastAppraised == null || !(lastAppraised is Creature))
-            {
-                ChatPacket.SendServerMessage(session, "The last appraised object was not a mob/NPC/player.", ChatMessageType.Broadcast);
-                return;
-            }
-            var creature = lastAppraised as Creature;
-
             if (parameters.Length < 2)
             {
-                ChatPacket.SendServerMessage(session, "Usage: modifyattr <attribute> <delta>: missing attribute name and/or delta", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: modifyattr <attribute> <delta> [player name or id]: missing attribute name and/or delta");
                 return;
             }
             if (!Enum.TryParse(parameters[0], out PropertyAttribute attrType))
             {
-                ChatPacket.SendServerMessage(session, "Invalid skillName, must be a valid skill name (without spaces, with capitalization), valid values are: Strength,Endurance,Coordination,Quickness,Focus,Self", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid attribute name, must be a valid attribute name (without spaces, with capitalization), valid values are: Strength,Endurance,Coordination,Quickness,Focus,Self");
                 return;
             }
             if (!Int32.TryParse(parameters[1], out int delta))
             {
-                ChatPacket.SendServerMessage(session, "Invalid delta, must be a valid integer", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid delta, must be a valid integer");
+                return;
+            }
+
+            var target = CommandHandlerHelper.GetCommandTarget(session, parameters, 2);   // the last appraised one, or a named player
+            if (target == null) return;
+            if (target is not Creature creature)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "The target is not a mob/NPC/player.");
                 return;
             }
 
@@ -6280,39 +6286,49 @@ namespace ACE.Server.Command.Handlers
                 Player player = creature as Player;
                 player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute(player, attr));
             }
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"{creature.Name}: innate {attrType} changed by {delta}, now {attr.StartingValue}.");
+            CommandHandlerHelper.AuditTargetChange(session, creature, $"innate {attrType} changed by {delta}, now {attr.StartingValue}");
         }
 
-        [CommandHandler("setattrrank", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts an attribute for the last appraised mob/NPC/player", "<attribute> <delta>")]
+        [CommandHandler("setattrrank", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Sets an attribute rank for the last appraised player, or the named online player", "<attribute> <rank> [player name or id]")]
         public static void HandleSetAttributeRank(Session session, params string[] parameters)
         {
-            var lastAppraised = CommandHandlerHelper.GetLastAppraisedObject(session);
-            if (lastAppraised == null || !(lastAppraised is Player))
-            {
-                ChatPacket.SendServerMessage(session, "The last appraised object was not a player.", ChatMessageType.Broadcast);
-                return;
-            }
-            var player = lastAppraised as Player;
-
             if (parameters.Length < 2)
             {
-                ChatPacket.SendServerMessage(session, "Usage: setattrrank <attribute> <value>: missing attribute name and/or value", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: setattrrank <attribute> <rank> [player name or id]: missing attribute name and/or rank");
                 return;
             }
             if (!Enum.TryParse(parameters[0], out PropertyAttribute attrType))
             {
-                ChatPacket.SendServerMessage(session, "Invalid attribute name, must be a valid attribute name (without spaces, with capitalization), valid values are: Strength,Endurance,Coordination,Quickness,Focus,Self", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid attribute name, must be a valid attribute name (without spaces, with capitalization), valid values are: Strength,Endurance,Coordination,Quickness,Focus,Self");
                 return;
             }
             if (!UInt32.TryParse(parameters[1], out uint value))
             {
-                ChatPacket.SendServerMessage(session, "Invalid value, must be a valid integer greater than 0", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid rank, must be a valid whole number");
+                return;
+            }
+
+            var target = CommandHandlerHelper.GetCommandTarget(session, parameters, 2);   // the last appraised one, or a named player
+            if (target == null) return;
+            if (target is not Player player)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "The target is not a player.");
                 return;
             }
 
             CreatureAttribute attr = player.Attributes[attrType];
-            player.SetAttributeRank(attr, value);
+            if (!player.SetAttributeRank(attr, value))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Rank {value:N0} is past the highest rank that can be priced ({Player.MaxPricedRank:N0}) - nothing changed.");
+                return;
+            }
             player.SaveBiotaToDatabase();
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute(player, attr));
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"{player.Name}: {attrType} rank set to {value:N0}.");
+            CommandHandlerHelper.AuditTargetChange(session, player, $"{attrType} rank set to {value:N0}");
         }
 
         // heal
@@ -7955,10 +7971,10 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("getenchantments", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Shows the enchantments for the last appraised item")]
+        [CommandHandler("getenchantments", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Shows the enchantments for the last appraised item, or the named online player", "[player name or id]")]
         public static void HandleGetEnchantments(Session session, params string[] parameters)
         {
-            var item = CommandHandlerHelper.GetLastAppraisedObject(session);
+            var item = CommandHandlerHelper.GetCommandTarget(session, parameters, 0);   // the last appraised one, or a named player
             if (item == null) return;
 
             var enchantments = item.Biota.PropertiesEnchantmentRegistry.GetEnchantmentsTopLayer(item.BiotaDatabaseLock, SpellSet.SetSpells);
