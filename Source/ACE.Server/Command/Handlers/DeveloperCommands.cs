@@ -2189,7 +2189,7 @@ namespace ACE.Server.Command.Handlers
         /// <summary>
         /// Sets a property for the last appraised object
         /// </summary>
-        [CommandHandler("setproperty", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 2, "Sets a property for the last appraised object", "<property> <value>")]
+        [CommandHandler("setproperty", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 2, "Sets a property for the last appraised object, or the object with the given id (an online player anywhere)", "<property> <value> [object id: decimal or 0x hex]")]
         public static void HandleSetProperty(Session session, params string[] parameters)
         {
             string guid = string.Empty;
@@ -2197,22 +2197,23 @@ namespace ACE.Server.Command.Handlers
             {
                 guid = parameters[2];
             }
-            WorldObject target = null;
-            uint guidVal = 0;
-            if (uint.TryParse(guid, out guidVal))
+            WorldObject target;
+            if (guid.Length > 0)
             {
-                target = CommandHandlerHelper.GetWorldObjectByGuid(session, guidVal);
+                // an id was given (decimal, or 0x hex as the client shows it): that object or nothing - never the last
+                // appraised one, which would put the value on whatever was clicked last
+                var hex = guid.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+                if (!uint.TryParse(hex ? guid[2..] : guid, hex ? NumberStyles.HexNumber : NumberStyles.None, CultureInfo.InvariantCulture, out var guidVal))
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Not an object id: {guid} (decimal, or 0x hex) - nothing changed", ChatMessageType.Broadcast));
+                    return;
+                }
+                target = CommandHandlerHelper.GetWorldObjectByGuid(session, guidVal);   // it says so when not found
             }
             else
-            {
-                var obj = CommandHandlerHelper.GetLastAppraisedObject(session);
-                if (obj != null)
-                {
-                    target = obj;
-                }
-            }
-            
-            if (target == null && guid == string.Empty) return;
+                target = CommandHandlerHelper.GetLastAppraisedObject(session);
+
+            if (target == null) return;
 
             if (parameters.Length < 2)
                 return;
@@ -2350,11 +2351,62 @@ namespace ACE.Server.Command.Handlers
                 catch (Exception e)
                 {
                     Console.WriteLine(e);
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Could not set {prop} to {value}: {e.Message} - nothing changed", ChatMessageType.Broadcast));
                     return;
                 }
             }
-            session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} ({target.Guid}): {prop} = {value}", ChatMessageType.Broadcast));
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed a property for {target.Name} ({target.Guid}): {prop} = {value}");
+
+            var xpNow = string.Empty;
+            if (target is Player targetPlayer)
+            {
+                // owner 10-19: a player found by id can be anywhere - the update above is broadcast round the ADMIN, so the
+                // target's own client is told directly (commands run on the world thread, between landblock ticks)
+                SendOwnPropertyUpdate(targetPlayer, propType, result);
+
+                // a change to the unassigned XP or its saved overflow: move what fits from the bank at once, so the client
+                // is not left showing a low balance with XP saved behind it - and say what the balance and bank are now
+                if (propType.Equals("PropertyInt64", StringComparison.OrdinalIgnoreCase)
+                    && ((PropertyInt64)result == PropertyInt64.AvailableExperience || (PropertyInt64)result == PropertyInt64.OverflowExperience))
+                {
+                    targetPlayer.RefillAvailableXpFromOverflow();
+                    xpNow = $" (now AvailableExperience {targetPlayer.AvailableExperience ?? 0:N0}, OverflowExperience {targetPlayer.OverflowExperience ?? 0:N0})";
+                }
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} ({target.Guid}): {prop} = {value}{xpNow}", ChatMessageType.Broadcast));
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed a property for {target.Name} ({target.Guid}): {prop} = {value}{xpNow}");
+        }
+
+        /// <summary>
+        /// Tells a player's own client the current value of one of its properties (the /setproperty broadcast only reaches
+        /// players near the admin). The value is read back, so a removed property is sent as its default. The server-only
+        /// XP bank (PropertyInt64.OverflowExperience) is never sent - the client only ever sees AvailableExperience.
+        /// </summary>
+        /// <param name="player">The player whose client is told</param>
+        /// <param name="propType">The property type name as typed (PropertyInt, PropertyInt64, ...)</param>
+        /// <param name="prop">The property, as the matching enum value</param>
+        private static void SendOwnPropertyUpdate(Player player, string propType, object prop)
+        {
+            if (player.Session == null)
+                return;
+
+            if (propType.Equals("PropertyInt64", StringComparison.OrdinalIgnoreCase) && (PropertyInt64)prop == PropertyInt64.OverflowExperience)
+                return;
+
+            if (propType.Equals("PropertyInt", StringComparison.OrdinalIgnoreCase))
+                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, (PropertyInt)prop, player.GetProperty((PropertyInt)prop) ?? 0));
+            else if (propType.Equals("PropertyInt64", StringComparison.OrdinalIgnoreCase))
+                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, (PropertyInt64)prop, player.GetProperty((PropertyInt64)prop) ?? 0));
+            else if (propType.Equals("PropertyBool", StringComparison.OrdinalIgnoreCase))
+                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyBool(player, (PropertyBool)prop, player.GetProperty((PropertyBool)prop) ?? false));
+            else if (propType.Equals("PropertyFloat", StringComparison.OrdinalIgnoreCase))
+                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyFloat(player, (PropertyFloat)prop, player.GetProperty((PropertyFloat)prop) ?? 0));
+            else if (propType.Equals("PropertyString", StringComparison.OrdinalIgnoreCase))
+                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyString(player, (PropertyString)prop, player.GetProperty((PropertyString)prop) ?? ""));
+            else if (propType.Equals("PropertyInstanceId", StringComparison.OrdinalIgnoreCase))
+                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateInstanceID(player, (PropertyInstanceId)prop, player.GetProperty((PropertyInstanceId)prop) ?? 0));
+            else if (propType.Equals("PropertyDataId", StringComparison.OrdinalIgnoreCase))
+                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateDataID(player, (PropertyDataId)prop, player.GetProperty((PropertyDataId)prop) ?? 0));
         }
 
         /// <summary>
@@ -3753,6 +3805,8 @@ namespace ACE.Server.Command.Handlers
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"Unassigned XP required: {unassignedXPRequired:N0}", ChatMessageType.Broadcast));
 
+            session.Player.RefillAvailableXpFromOverflow();   // the saved XP past the cap counts as unassigned (Player_Xp)
+
             if (session.Player.AvailableExperience < unassignedXPRequired)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You only have {session.Player.AvailableExperience:N0} unassigned XP -- delevel failed", ChatMessageType.Broadcast));
@@ -3790,6 +3844,7 @@ namespace ACE.Server.Command.Handlers
             var newTotalSkillCredits = session.Player.TotalSkillCredits - skillCreditsRequired;
 
             session.Player.UpdateProperty(session.Player, PropertyInt64.AvailableExperience, newAvailableExperience);
+            session.Player.RefillAvailableXpFromOverflow();   // a lower balance: top it up from the bank
             session.Player.UpdateProperty(session.Player, PropertyInt64.TotalExperience, newTotalExperience);
 
             session.Player.UpdateProperty(session.Player, PropertyInt.AvailableSkillCredits, newAvailableSkillCredits);

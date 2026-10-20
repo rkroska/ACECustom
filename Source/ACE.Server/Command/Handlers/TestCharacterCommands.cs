@@ -166,6 +166,7 @@ namespace ACE.Server.Command.Handlers
 
             // 4. Reset Experience and Luminance to 0
             player.AvailableExperience = 0;
+            player.OverflowExperience = null;   // the saved XP past the cap too, or the first spend refills it all back
             player.TotalExperience = 0;
             player.TotalExperienceDouble = 0;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.AvailableExperience, 0));

@@ -6103,6 +6103,9 @@ namespace ACE.Server.Command.Handlers
 
                 currentPlayer.RemoveProperty(PropertyString.GodState);
 
+                // the bank is frozen in god mode (Player_Xp RefillAvailableXpFromOverflow): fill the restored balance from it
+                currentPlayer.RefillAvailableXpFromOverflow();
+
                 currentPlayer.SaveBiotaToDatabase();
 
                 currentPlayer.PlayParticleEffect(PlayScript.DispelAll, currentPlayer.Guid);

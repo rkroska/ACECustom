@@ -443,6 +443,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance:N0}", ChatMessageType.System));
+                SendOverflowExperienceLine(session);
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Legendary Keys: {session.Player.BankedLegendaryKeys:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Mythical Keys: {session.Player.BankedMythicalKeys:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightened Coins: {session.Player.BankedEnlightenedCoins:N0}", ChatMessageType.System));
@@ -916,6 +917,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance:N0}", ChatMessageType.System));
+                SendOverflowExperienceLine(session);
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Legendary Keys: {session.Player.BankedLegendaryKeys:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Mythical Keys: {session.Player.BankedMythicalKeys:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightened Coins: {session.Player.BankedEnlightenedCoins:N0}", ChatMessageType.System));
@@ -930,6 +932,20 @@ namespace ACE.Server.Command.Handlers
         {
 
             HandleBank(session, parameters);
+        }
+
+        /// <summary>
+        /// Sends the /bank line for the XP saved past the unassigned experience cap (Player_Xp). Shown only when there is
+        /// some, which only happens above the cap; it refills by itself and cannot be moved.
+        /// </summary>
+        /// <param name="session">The session asking for its balances</param>
+        private static void SendOverflowExperienceLine(Session session)
+        {
+            var overflow = session.Player.OverflowExperience ?? 0;   // a long, read as 0 when unset or negative
+            if (overflow <= 0)
+                return;
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Saved Experience: {overflow:N0} (refills your unassigned experience automatically as you spend)", ChatMessageType.System));
         }
 
         static readonly uint[] _lowLevelOverlays = [

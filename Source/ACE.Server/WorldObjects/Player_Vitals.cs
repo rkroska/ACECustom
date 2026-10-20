@@ -35,7 +35,9 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            if ((long)amount > AvailableExperience)
+            RefillAvailableXpFromOverflow();   // the saved XP past the cap counts as available (Player_Xp)
+
+            if ((long)amount > (AvailableExperience ?? 0))   // ?? 0: a missing balance compares false - a free raise
             {
                 // there is a client bug for vitals only,
 
@@ -104,6 +106,8 @@ namespace ACE.Server.WorldObjects
         public void SpendAllAvailableVitalXp(CreatureVital creatureVital, bool sendNetworkUpdate = true)
         {
             var amountRemaining = creatureVital.ExperienceLeft;
+
+            RefillAvailableXpFromOverflow();   // the saved XP past the cap counts as available (Player_Xp)
 
             if (amountRemaining > AvailableExperience)
                 amountRemaining = (uint)AvailableExperience;

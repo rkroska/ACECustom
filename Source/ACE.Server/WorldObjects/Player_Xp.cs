@@ -26,6 +26,9 @@ namespace ACE.Server.WorldObjects
         private ActionChain xpBatchChain = null;
         private readonly object xpBatchLock = new object();
 
+        // the "unassigned experience is full" notice went out this login (AddAvailableXp)
+        private bool overflowNoticeSent;
+
         // Item XP Batching fields
         private readonly object itemXpBatchLock = new object();
         private readonly System.Collections.Generic.Dictionary<uint, long> pendingItemXpUpdates = new System.Collections.Generic.Dictionary<uint, long>();
@@ -156,14 +159,8 @@ namespace ACE.Server.WorldObjects
             {
                 var addAmount = amount;
                 
-                if (TotalExperience + addAmount < 0) //check for long overflow
-                {
-                    TotalExperience = long.MaxValue;                    
-                }
-                else
-                {
-                    TotalExperience += addAmount;
-                }
+                TotalExperience = AddXpClamped(TotalExperience, addAmount);
+
                 if (!TotalExperienceDouble.HasValue || TotalExperienceDouble == 0)
                 {
                     TotalExperienceDouble = TotalExperience;
@@ -172,7 +169,7 @@ namespace ACE.Server.WorldObjects
                 {
                     TotalExperienceDouble += addAmount;
                 }
-                AvailableExperience += addAmount;
+                AddAvailableXp(addAmount);
 
                 // Batch XP updates to reduce network traffic
                 BatchXpUpdate(addAmount, xpType);
@@ -193,7 +190,7 @@ namespace ACE.Server.WorldObjects
         {
             lock (xpBatchLock)
             {
-                pendingXpUpdate += amount;
+                pendingXpUpdate = AddXpClamped(pendingXpUpdate, amount);
                 EnsureXpBatchChain();
             }
         }
@@ -544,10 +541,23 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool SpendXP(ulong amount, bool sendNetworkUpdate = true)
         {
-            if ((long)amount > AvailableExperience)
+            // a cost past long.MaxValue is a wrapped ulong (e.g. a vital cost asked for a LOWER rank):
+            // cast to long it is negative, and "spending" it would ADD XP
+            if (amount > long.MaxValue)
+            {
+                log.Warn($"{Name}.SpendXP({amount}) - cost past long.MaxValue refused");
+                return false;
+            }
+
+            RefillAvailableXpFromOverflow(sendNetworkUpdate);   // tells the client itself when it moves XP
+
+            // ?? 0: a missing balance (/setproperty ... null) compares false against anything - every raise would be free
+            if ((long)amount > (AvailableExperience ?? 0))
                 return false;
 
-            AvailableExperience -= (long)amount;
+            AvailableExperience = (AvailableExperience ?? 0) - (long)amount;
+
+            RefillAvailableXpFromOverflow(false);   // the update below carries the result
 
             if (sendNetworkUpdate)
                 Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0));
@@ -585,16 +595,157 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void RefundXP(long amount)
         {
-            AvailableExperience += amount;
+            AddAvailableXp(amount);
 
             var xpUpdate = new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0);
             Session.Network.EnqueueSend(xpUpdate);
+        }
+
+        /// <summary>
+        /// Adds amount to an XP value, stopping at long.MaxValue / long.MinValue instead of wrapping around
+        /// </summary>
+        /// <param name="current">The current XP value, null is treated as 0</param>
+        /// <param name="amount">The XP to add, can be negative</param>
+        /// <returns>current + amount, clamped to the range of a long</returns>
+        internal static long AddXpClamped(long? current, long amount)
+        {
+            var value = current ?? 0;
+
+            if (amount > 0 && value > long.MaxValue - amount)
+                return long.MaxValue;
+
+            if (amount < 0 && value < long.MinValue - amount)
+                return long.MinValue;
+
+            return value + amount;
+        }
+
+        /// <summary>
+        /// Adds earned or refunded XP to AvailableExperience. The part that would go past long.MaxValue is kept in
+        /// OverflowExperience instead of being lost, and moves back as XP is spent (RefillAvailableXpFromOverflow).
+        /// </summary>
+        /// <param name="amount">The XP to add, can be negative</param>
+        private void AddAvailableXp(long amount)
+        {
+            if (amount <= 0)
+            {
+                AvailableExperience = AddXpClamped(AvailableExperience, amount);
+                RefillAvailableXpFromOverflow();   // a lower balance: top it up from the bank
+                return;
+            }
+
+            var bankBefore = OverflowExperience ?? 0;
+            var (available, bank) = ApplyXpGain(AvailableExperience ?? 0, bankBefore, amount);
+
+            AvailableExperience = available;
+
+            if (bank != bankBefore)
+            {
+                OverflowExperience = bank;
+
+                // once per login: a player at the cap who spends and earns would empty and refill the bank over and over
+                if (!overflowNoticeSent)
+                {
+                    overflowNoticeSent = true;
+                    Session?.Network.EnqueueSend(new GameMessageSystemChat("Your unassigned experience is full. Extra experience is now saved for you and refills it automatically as you spend. Type /bank to see how much is saved.", ChatMessageType.Advancement));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Moves saved XP from OverflowExperience back into AvailableExperience, as much as fits under long.MaxValue
+        /// </summary>
+        /// <param name="sendNetworkUpdate">Tell the client the new AvailableExperience when XP moved</param>
+        /// <returns>True if any XP was moved</returns>
+        public bool RefillAvailableXpFromOverflow(bool sendNetworkUpdate = true)
+        {
+            // a hand-edited 0 or negative bank (/setproperty) reads as 0 - clear the row instead of keeping it for good
+            var raw = GetProperty(PropertyInt64.OverflowExperience);
+            if (raw.HasValue && raw.Value <= 0)
+                RemoveProperty(PropertyInt64.OverflowExperience);
+
+            var overflow = OverflowExperience ?? 0;
+            if (overflow <= 0)
+                return false;
+
+            // god mode: /ungod puts the saved AvailableExperience back, so XP moved out of the bank now would be lost
+            // (a GodState left behind by a failed /ungod keeps the bank frozen until it is cleared)
+            if (!string.IsNullOrEmpty(GodState))
+                return false;
+
+            var (moved, remaining) = TakeFromOverflow(AvailableExperience ?? 0, overflow);
+            if (moved == 0)
+                return false;
+
+            AvailableExperience = (AvailableExperience ?? 0) + moved;
+            OverflowExperience = remaining;
+
+            // the client shows AvailableExperience: tell it, even when the action that asked is then refused
+            if (sendNetworkUpdate)
+                Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0));
+
+            return true;
+        }
+
+        /// <summary>
+        /// How much XP still fits in AvailableExperience under long.MaxValue
+        /// </summary>
+        /// <param name="available">The current AvailableExperience</param>
+        /// <returns>The room left; a negative balance (an old wrap) has room for any long, and long.MaxValue - available would overflow</returns>
+        internal static long RoomBelowCap(long available) => available < 0 ? long.MaxValue : long.MaxValue - available;
+
+        /// <summary>
+        /// An XP gain applied to the balance and the bank: what fits goes to AvailableExperience, the rest to OverflowExperience
+        /// (which stops at long.MaxValue itself - together they hold 2 x 9.22 quintillion, past that the rest is not kept)
+        /// </summary>
+        /// <param name="available">The current AvailableExperience</param>
+        /// <param name="bank">The current OverflowExperience</param>
+        /// <param name="amount">The XP being added</param>
+        /// <returns>The new AvailableExperience and OverflowExperience</returns>
+        internal static (long available, long bank) ApplyXpGain(long available, long bank, long amount)
+        {
+            var (toAvailable, toOverflow) = SplitXpAtCap(available, amount);
+
+            return (available + toAvailable, toOverflow > 0 ? AddXpClamped(Math.Max(0, bank), toOverflow) : bank);
+        }
+
+        /// <summary>
+        /// Splits an XP gain into the part that fits in AvailableExperience and the part past long.MaxValue
+        /// </summary>
+        /// <param name="available">The current AvailableExperience</param>
+        /// <param name="amount">The XP being added; 0 or negative is returned whole, with nothing to keep</param>
+        /// <returns>The XP to add to AvailableExperience, and the XP to keep in OverflowExperience</returns>
+        internal static (long toAvailable, long toOverflow) SplitXpAtCap(long available, long amount)
+        {
+            if (amount <= 0)
+                return (amount, 0);
+
+            var toAvailable = Math.Min(amount, RoomBelowCap(available));
+
+            return (toAvailable, amount - toAvailable);
+        }
+
+        /// <summary>
+        /// Works out how much saved XP fits back into AvailableExperience
+        /// </summary>
+        /// <param name="available">The current AvailableExperience</param>
+        /// <param name="overflow">The current OverflowExperience</param>
+        /// <returns>The XP to move into AvailableExperience, and what is left in OverflowExperience (moved + remaining = overflow)</returns>
+        internal static (long moved, long remaining) TakeFromOverflow(long available, long overflow)
+        {
+            if (overflow <= 0)
+                return (0, 0);
+
+            var moved = Math.Min(overflow, RoomBelowCap(available));
+
+            return (moved, overflow - moved);
         }
 
         public void HandleMissingXp()
         {
             var verifyXp = GetProperty(PropertyInt64.VerifyXp) ?? 0;
             if (verifyXp == 0) return;
+            if (verifyXp == long.MinValue) verifyXp = long.MinValue + 1;   // Math.Abs / negating long.MinValue overflows
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(5.0f);
@@ -608,8 +759,8 @@ namespace ACE.Server.WorldObjects
 
                 if (verifyXp < 0)
                 {
-                    // add to character's total XP
-                    TotalExperience -= verifyXp;
+                    // add to character's total XP (clamped: a capped character would wrap negative)
+                    TotalExperience = AddXpClamped(TotalExperience, -verifyXp);
 
                     CheckForLevelup();
                 }
