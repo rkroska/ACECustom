@@ -83,6 +83,10 @@ namespace ACE.Server.WorldObjects
 
             HandlePreOrderItems();
 
+            // unassigned XP saved past the cap (Player_Xp): fill the balance before the description goes out, so the client
+            // never starts on a low balance with XP saved behind it (after an admin repair, or a /ungod that restored one)
+            RefillAvailableXpFromOverflow(false);
+
             // SendSelf will trigger the entrance into portal space
             SendSelf();
             MarkPortalSpaceEntered();

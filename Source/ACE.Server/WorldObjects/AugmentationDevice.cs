@@ -125,6 +125,7 @@ namespace ACE.Server.WorldObjects
 
             // consume xp
             player.AvailableExperience -= AugmentationCost;
+            player.RefillAvailableXpFromOverflow();
 
             // consume augmentation gem
             player.TryConsumeFromInventoryWithNetworking(this, 1);
@@ -145,6 +146,7 @@ namespace ACE.Server.WorldObjects
 
         public bool VerifyRequirements(Player player)
         {
+            player.RefillAvailableXpFromOverflow();   // the saved XP past the cap counts as available (Player_Xp)
             var availableXP = player.AvailableExperience ?? 0;
             var augCost = AugmentationCost ?? 0;
 

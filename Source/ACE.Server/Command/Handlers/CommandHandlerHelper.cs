@@ -153,6 +153,11 @@ namespace ACE.Server.Command.Handlers
         public static WorldObject GetWorldObjectByGuid(Session session, uint guid)
         {
             var target = session.Player.FindObject(guid, Player.SearchLocations.Everywhere, out _, out _, out _);
+
+            // "Everywhere" is the admin's own landblock (+ adjacent) and inventory - an online player anywhere else by id
+            // (owner 2026-10-19: /setproperty <prop> <value> <player id>, the player can be anywhere)
+            target ??= PlayerManager.GetOnlinePlayer(guid);
+
             if (target == null)
             {
                 WriteOutputInfo(session, $"GetWorldObjectByGuid() - couldn't find {guid:X8}");

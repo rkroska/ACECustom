@@ -88,6 +88,12 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Blacksmithing: Unix time (seconds) until which PropertyInt.ForgeDyePreview is the colour drawn.</summary>
         ForgeDyePreviewUntil    = 52000,
 
+        /// <summary>
+        /// Server-only (no SendOnLogin): unassigned XP earned past the long.MaxValue cap of AvailableExperience, moved back
+        /// into AvailableExperience as XP is spent (Player_Xp). 51300, free in EVERY Property enum.
+        /// </summary>
+        OverflowExperience      = 51300,
+
         // Pet Bonding System (Combat Pet Devices) — [AssessmentProperty] for identify + plugin PublicUpdateProperty*
         /// <summary>Current bond XP toward next level on a PetDevice.</summary>
         [AssessmentProperty]

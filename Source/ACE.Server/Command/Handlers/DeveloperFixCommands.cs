@@ -612,6 +612,26 @@ namespace ACE.Server.Command.Handlers
         };
 
         /// <summary>
+        /// Adds refunded XP to an offline character's unassigned XP; the part past long.MaxValue goes into its saved
+        /// overflow (PropertyInt64.OverflowExperience) like an online refund (Player_Xp AddAvailableXp), never lost.
+        /// </summary>
+        /// <param name="player">The offline character</param>
+        /// <param name="availableExperience">Its current AvailableExperience</param>
+        /// <param name="refundXP">The XP to give back; 0 or negative does nothing</param>
+        private static void AddRefundOffline(OfflinePlayer player, long availableExperience, long refundXP)
+        {
+            if (refundXP <= 0)
+                return;
+
+            var bank = player.GetProperty(PropertyInt64.OverflowExperience) ?? 0;
+            var (available, newBank) = Player.ApplyXpGain(availableExperience, bank, refundXP);
+
+            player.SetProperty(PropertyInt64.AvailableExperience, available);
+            if (newBank != bank)
+                player.SetProperty(PropertyInt64.OverflowExperience, newBank);
+        }
+
+        /// <summary>
         /// This method is only required in the rare situation when the amount of available skill credits
         /// a player should have is negative.
         /// </summary>
@@ -644,7 +664,7 @@ namespace ACE.Server.Command.Handlers
 
             var availableExperience = player.GetProperty(PropertyInt64.AvailableExperience) ?? 0;
 
-            player.SetProperty(PropertyInt64.AvailableExperience, availableExperience + refundXP);
+            AddRefundOffline(player, availableExperience, refundXP);
 
             player.SetProperty(PropertyInt.AvailableSkillCredits, targetCredits);
 
@@ -690,7 +710,7 @@ namespace ACE.Server.Command.Handlers
 
             var availableExperience = player.GetProperty(PropertyInt64.AvailableExperience) ?? 0;
 
-            player.SetProperty(PropertyInt64.AvailableExperience, availableExperience + refundXP);
+            AddRefundOffline(player, availableExperience, refundXP);
 
             var availableSkillCredits = player.GetProperty(PropertyInt.AvailableSkillCredits) ?? 0;
 
@@ -907,6 +927,13 @@ namespace ACE.Server.Command.Handlers
                 var totalXP = player.GetProperty(PropertyInt64.TotalExperience) ?? 0;
                 var unassignedXP = player.GetProperty(PropertyInt64.AvailableExperience) ?? 0;
 
+                // totals that cannot add up - leave these characters alone, a "fix" would wipe or wrap their balance:
+                // XP past long.MaxValue (TotalExperience clamped, unassigned XP saved in OverflowExperience); unassigned XP
+                // above the total (enlightenment resets TotalExperience and keeps the unassigned XP); a wrapped balance
+                if (totalXP == long.MaxValue || (player.GetProperty(PropertyInt64.OverflowExperience) ?? 0) > 0
+                    || unassignedXP < 0 || unassignedXP > totalXP)
+                    continue;
+
                 // loop through all attributes/vitals/skills, add up assigned xp
                 long attributeXP = 0;
                 long vitalXP = 0;
@@ -987,7 +1014,7 @@ namespace ACE.Server.Command.Handlers
                 {
                     // add to unassigned xp
                     var unassignedXP = player.GetProperty(PropertyInt64.AvailableExperience) ?? 0;
-                    player.SetProperty(PropertyInt64.AvailableExperience, unassignedXP + diff);
+                    AddRefundOffline(player, unassignedXP, diff);   // past the cap into the bank, never lost
                     player.SetProperty(PropertyInt64.VerifyXp, diff);
                 }
                 else
@@ -999,7 +1026,7 @@ namespace ACE.Server.Command.Handlers
                         if (unassignedXP + diff >= 0)
                         {
                             // this is the only (rare) case where subtracting from AvailableExperience is required
-                            player.SetProperty(PropertyInt64.AvailableExperience, unassignedXP + diff);
+                            player.SetProperty(PropertyInt64.AvailableExperience, Player.AddXpClamped(unassignedXP, diff));
                         }
                         else
                             Console.WriteLine($"ERROR: couldn't fix, xp exceeds all bounds");

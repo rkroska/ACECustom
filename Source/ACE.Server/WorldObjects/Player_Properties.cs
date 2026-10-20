@@ -1398,6 +1398,16 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.TotalExperienceDouble); else SetProperty(PropertyFloat.TotalExperienceDouble, value.Value); }
         }
 
+        /// <summary>
+        /// Unassigned XP saved past the cap of AvailableExperience (Player_Xp AddAvailableXp / RefillAvailableXpFromOverflow).
+        /// Read as 0 when unset or negative - a hand edit with /setproperty bypasses this setter.
+        /// </summary>
+        public long? OverflowExperience
+        {
+            get => System.Math.Max(0, GetProperty(PropertyInt64.OverflowExperience) ?? 0);
+            set { if (!value.HasValue || value.Value <= 0) RemoveProperty(PropertyInt64.OverflowExperience); else SetProperty(PropertyInt64.OverflowExperience, value.Value); }
+        }
+
         public double? SpentExperienceStrength
         {
             get => GetProperty(PropertyFloat.SpentExperienceStrength) ?? 0;
