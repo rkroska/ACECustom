@@ -280,13 +280,13 @@ VALUES (777700071,  1, 'Chipped Split Arrow Upgrade Gem (+1)')
      , (777700079, 15, 'A gem that deepens the power of a Pandemic charm.')
      , (777700080,  1, 'Chipped Improved Cleave Upgrade Gem (+1)')
      , (777700080, 14, 'Double click to raise your Improved Cleave charm by 1 level, up to level 100. The charm must be in your pack. Each level also costs Prestige Coins (pack or bank), more as the charm climbs; you are asked before any are spent.')
-     , (777700080, 15, 'A gem that deepens the power of a Improved Cleave charm.')
+     , (777700080, 15, 'A gem that deepens the power of an Improved Cleave charm.')
      , (777700081,  1, 'Flawed Improved Cleave Upgrade Gem (+5)')
      , (777700081, 14, 'Double click to raise your Improved Cleave charm by 5 levels, up to level 100. The charm must be in your pack. Each level also costs Prestige Coins (pack or bank), more as the charm climbs; you are asked before any are spent.')
-     , (777700081, 15, 'A gem that deepens the power of a Improved Cleave charm.')
+     , (777700081, 15, 'A gem that deepens the power of an Improved Cleave charm.')
      , (777700082,  1, 'Flawless Improved Cleave Upgrade Gem (+10)')
      , (777700082, 14, 'Double click to raise your Improved Cleave charm by 10 levels, up to level 100. The charm must be in your pack. Each level also costs Prestige Coins (pack or bank), more as the charm climbs; you are asked before any are spent.')
-     , (777700082, 15, 'A gem that deepens the power of a Improved Cleave charm.');
+     , (777700082, 15, 'A gem that deepens the power of an Improved Cleave charm.');
 
 INSERT INTO `weenie_properties_emote` (`object_Id`, `category`, `probability`, `weenie_Class_Id`, `style`, `substyle`, `quest`, `vendor_Type`, `min_Health`, `max_Health`)
 VALUES (777700071, 7 /* Use */, 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL);

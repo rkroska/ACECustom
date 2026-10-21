@@ -668,7 +668,7 @@ namespace ACE.Server.Command.Handlers
                 var parts = token.Split('=');
                 var key = parts[0].ToLowerInvariant();
                 var val = parts.Length > 1 ? parts[1] : null;
-                double Num(double dflt) => val != null && double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : dflt;
+                double Num(double dflt) => val != null && TryParseDouble(val, out var d) ? d : dflt;   // NaN / Infinity -> default
                 switch (key)
                 {
                     case "proc": cards.ProcArc = true; cards.ProcRing = true; break;
