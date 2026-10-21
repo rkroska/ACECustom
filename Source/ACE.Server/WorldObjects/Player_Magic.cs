@@ -1484,10 +1484,18 @@ namespace ACE.Server.WorldObjects
 
                     if (!asProjectile)
                     {
+                        // the bolt it replaces was refused by a pets-only monster before any aggro (SpellProjectile): so is this
+                        if (zcDirectDot && targetCreature != null && !targetCreature.CanBeDamagedBy(this))
+                        {
+                            NotifyPetsOnlyTarget(targetCreature);
+                            break;
+                        }
+
                         if (targetPlayer == null)
                             OnAttackMonster(targetCreature, spell.IsHarmful);
 
-                        if (TryResistSpell(target, spell, itemCaster))
+                        // a direct DoT still rolls the resist the bolt rolled on impact (projectileHit)
+                        if (TryResistSpell(target, spell, itemCaster, projectileHit: zcDirectDot))
                             break;
 
                         // the bolt it replaces could hit a monster that is immune to direct magic: so can this
