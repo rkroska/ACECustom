@@ -942,4 +942,34 @@ public static class LeaderboardInlineSql
         ORDER BY ranked.Score DESC
         LIMIT 1
         """);
+
+    public static readonly string TopJailbreak = ResolveSql("""
+        SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
+        FROM ace_shard.character c
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 55000
+        LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        ORDER BY Score ASC, c.id DESC
+        LIMIT 25
+        """);
+
+    public static FormattableString SelfPlacementJailbreak(uint accountId) => ResolveFormattableSql($"""
+        SELECT ranked.PlacementRank, ranked.Score, ranked.Account, ranked.Character, ranked.LeaderboardID
+        FROM (
+          SELECT innerq.Score, innerq.Account, innerq.Character, innerq.LeaderboardID,
+                 ROW_NUMBER() OVER (ORDER BY innerq.Score ASC, innerq.LeaderboardID DESC) AS PlacementRank
+          FROM (
+            SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
+            FROM ace_shard.character c
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 55000
+            LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = {ExcludeFromLeaderboardsBoolType}
+            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+          ) innerq
+        ) ranked
+        WHERE ranked.Account = {accountId}
+        ORDER BY ranked.PlacementRank ASC
+        LIMIT 1
+        """);
 }

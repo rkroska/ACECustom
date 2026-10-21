@@ -197,6 +197,10 @@ namespace ACE.Server.WorldObjects
 
             ZoneLockMaxHealthTick();
 
+            // T11+ gear lines on the character panel: catches what no equip event marks - the zone lock flipping at a
+            // border, a gear-lock spot, a zone with another line cap, a ladder re-resolve. Sends nothing when nothing changed.
+            SyncZcGearDisplay();
+
             ManaConsumersTick();
 
             HandleTargetVitals();

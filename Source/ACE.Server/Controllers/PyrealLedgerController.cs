@@ -34,7 +34,38 @@ namespace ACE.Server.Web.Controllers
         public IActionResult GetOverview([FromQuery] int days = 7) => Run(() => PyrealLedgerReports.GetOverview(days));
 
         [HttpGet("suspects")]
-        public IActionResult GetSuspects([FromQuery] int days = 30, [FromQuery] int limit = 100) => Run(() => PyrealLedgerReports.GetSuspects(days, limit));
+        public IActionResult GetSuspects([FromQuery] int days = 30, [FromQuery] int limit = 100, [FromQuery] long minAmount = 1_000_000_000,
+            [FromQuery] long minSurplus = 1_000_000, [FromQuery] double sharePct = 25, [FromQuery] double activePct = 80, [FromQuery] double peakTimes = 10)
+            => Run(() => PyrealLedgerReports.GetSuspects(days, limit, new PyrealLedgerReports.SuspectOptions
+            {
+                MinAmount = Math.Max(0, minAmount), MinSurplus = Math.Max(0, minSurplus), SharePct = Math.Clamp(sharePct, 0, 100),
+                ActivePct = Math.Clamp(activePct, 0, 100), PeakTimesMedian = Math.Max(0, peakTimes),
+            }));
+
+        public class ReviewRequest
+        {
+            public uint AccountId { get; set; }
+            public string Note { get; set; }
+        }
+
+        /// <summary>Marks an account as looked at and normal. Writes one row to the ledger's own table; no game data.</summary>
+        [HttpPost("reviewed")]
+        public IActionResult SetReviewed([FromBody] ReviewRequest request) => Run(() => PyrealLedgerReports.SetReviewed(request?.AccountId ?? 0, request?.Note, CurrentAccountId));
+
+        [HttpDelete("reviewed/{accountId}")]
+        public IActionResult ClearReviewed(uint accountId) => Run(() => new { Cleared = PyrealLedgerReports.ClearReviewed(accountId) });
+
+        [HttpGet("context")]
+        public IActionResult GetContext([FromQuery] int days = 30) => Run(() => PyrealLedgerReports.GetContext(days));
+
+        [HttpGet("npcs/{wcid}/handins")]
+        public IActionResult GetNpcHandIns(uint wcid, [FromQuery] int days = 30) => Run(() => PyrealLedgerReports.GetNpcHandIns(wcid, days));
+
+        [HttpGet("transfers")]
+        public IActionResult GetTransfers([FromQuery] int days = 30, [FromQuery] int limit = 100) => Run(() => PyrealLedgerReports.GetTransfers(days, limit));
+
+        [HttpGet("copies")]
+        public IActionResult GetCopies() => Run(() => PyrealLedgerReports.GetCopies());
 
         [HttpGet("earners")]
         public IActionResult GetEarners([FromQuery] int days = 7, [FromQuery] string by = "account", [FromQuery] int limit = 100)

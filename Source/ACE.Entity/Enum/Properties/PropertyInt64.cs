@@ -79,6 +79,11 @@ namespace ACE.Entity.Enum.Properties
         /// 50601, free in EVERY Property enum - moved off 9028 before release (upstream ACE owns the 90xx range).
         /// </summary>
         BankedPrestigeCoins    = 50601,
+        /// <summary>
+        /// Enlightenment Token (300000) bank balance (owner 2026-10-13): deposit / withdraw only, exactly like Prestige Coins -
+        /// Bonded + Attuned, never transferable. 50602, free in EVERY Property enum.
+        /// </summary>
+        BankedEnlightenmentTokens = 50602,
         // Levelled charm levels (owner 2026-10-17): the level lives on the PLAYER and is raised with upgrade gems bought for
         // Prestige Coins; the charm item only shows it (PropertyInt.CharmLevel is mirrored from these). Ids in this lane's
         // 512xx block (2026-10-20: 50602 is upstream's BankedEnlightenmentTokens, #550).
@@ -93,6 +98,12 @@ namespace ACE.Entity.Enum.Properties
 
         /// <summary>Blacksmithing: Unix time (seconds) until which PropertyInt.ForgeDyePreview is the colour drawn.</summary>
         ForgeDyePreviewUntil    = 52000,
+
+        /// <summary>
+        /// Server-only (no SendOnLogin): unassigned XP earned past the long.MaxValue cap of AvailableExperience, moved back
+        /// into AvailableExperience as XP is spent (Player_Xp). 51300, free in EVERY Property enum.
+        /// </summary>
+        OverflowExperience      = 51300,
 
         // Pet Bonding System (Combat Pet Devices) — [AssessmentProperty] for identify + plugin PublicUpdateProperty*
         /// <summary>Current bond XP toward next level on a PetDevice.</summary>

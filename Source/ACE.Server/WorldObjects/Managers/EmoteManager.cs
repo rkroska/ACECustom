@@ -206,6 +206,14 @@ namespace ACE.Server.WorldObjects.Managers
             return false;
         }
 
+        /// <summary>
+        /// True for the unassigned XP balance and its overflow bank (Player_Xp): an emote that changes either must leave the
+        /// balance topped up from the bank.
+        /// </summary>
+        /// <param name="property">The Int64 property an emote changed</param>
+        private static bool IsXpBalanceProperty(PropertyInt64 property) =>
+            property == PropertyInt64.AvailableExperience || property == PropertyInt64.OverflowExperience;
+
         private static void GetPromptAddAugmentEconomy(WorldObject augmentGem, PropertiesEmoteAction emoteFromBiota, out double baseCost, out double percentIncrease)
         {
             baseCost = emoteFromBiota.Amount.HasValue ? emoteFromBiota.Amount.Value : 0;
@@ -597,6 +605,10 @@ namespace ACE.Server.WorldObjects.Managers
 
                         if (player != null)
                             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, int64Property, current));
+
+                        // a lower unassigned XP balance: top it up from its overflow bank (Player_Xp)
+                        if (targetObject is Player bankTarget && IsXpBalanceProperty(int64Property))
+                            bankTarget.RefillAvailableXpFromOverflow();
                     }
                     break;
 
@@ -778,12 +790,23 @@ namespace ACE.Server.WorldObjects.Managers
                     if (targetObject != null && emote.Stat != null)
                     {
                         var int64Property = (PropertyInt64)emote.Stat;
+
+                        // unassigned XP goes through the cap and its overflow bank (Player_Xp), never a raw add that wraps
+                        if (int64Property == PropertyInt64.AvailableExperience && targetObject is Player xpTarget && (emote.Amount64 ?? 1) > 0)
+                        {
+                            xpTarget.RefundXP(emote.Amount64 ?? 1);
+                            break;
+                        }
+
                         var current = targetObject.GetProperty(int64Property) ?? 0;
                         current += emote.Amount64 ?? 1;
                         targetObject.SetProperty(int64Property, current);
 
                         if (player != null)
                             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, int64Property, current));
+
+                        if (targetObject is Player bankTarget && IsXpBalanceProperty(int64Property))
+                            bankTarget.RefillAvailableXpFromOverflow();
                     }
                     break;
 
@@ -1793,6 +1816,10 @@ namespace ACE.Server.WorldObjects.Managers
                     {
                         player.UpdateProperty(player, (PropertyInt64)emote.Stat, emote.Amount64);
                         player.EnqueueBroadcast(false, new GameMessagePublicUpdatePropertyInt64(player, (PropertyInt64)emote.Stat, Convert.ToInt64(emote.Amount64)));
+
+                        // a set unassigned XP balance: top it up from its overflow bank (Player_Xp)
+                        if (IsXpBalanceProperty((PropertyInt64)emote.Stat))
+                            player.RefillAvailableXpFromOverflow();
                     }
                     break;
 
@@ -2377,6 +2404,8 @@ namespace ACE.Server.WorldObjects.Managers
                     {
                         if (emote.Amount == 1)
                             player.SendToJail();
+                        else if (emote.Amount == 2)
+                            player.SendToJail(countsTowardTotal: false);   // a quest's jail: same sentence, no TimesJailed or jail_fresh_meat
                         else if (emote.Amount == 0)
                             player.ReleaseFromJail();
                         else

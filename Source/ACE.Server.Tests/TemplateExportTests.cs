@@ -65,6 +65,28 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void ParseArguments_DashDashForce_SetsForceAndOverwrite_AnyPosition()
+        {
+            var args = TemplateExport.ParseArguments(new[] { "monster", "78780999", "--FORCE", "Frost", "Golem", "King" });
+
+            Assert.IsTrue(args.Force);
+            Assert.IsTrue(args.Overwrite, "--force implies overwrite");
+            Assert.AreEqual(78780999u, args.ExplicitWcid);
+            Assert.AreEqual(TemplateExport.Flavour.Monster, args.Flavour);
+            Assert.AreEqual("Frost Golem King", args.NameOverride);
+        }
+
+        [TestMethod]
+        public void ParseArguments_BareForce_IsAName_AndOverwriteAloneIsNotForce()
+        {
+            var args = TemplateExport.ParseArguments(new[] { "overwrite", "Force", "Elemental" });
+
+            Assert.IsFalse(args.Force, "a bare force must not become a keyword");
+            Assert.IsTrue(args.Overwrite);
+            Assert.AreEqual("Force Elemental", args.NameOverride);
+        }
+
+        [TestMethod]
         public void StripForceKeyword_RemovesEveryForceToken()
         {
             var kept = TemplateExport.StripForceKeyword(new[] { "78790001", "FORCE", "weenie", "force" }, out var force);
@@ -685,6 +707,78 @@ namespace ACE.Server.Tests
             StringAssert.Contains(lines[lines.Length - 1], "renumber");
         }
 
+        [TestMethod]
+        public void BuildChatReply_ForcedReplaceOutsideBlock_NamesBackup_AndSaysItWasLoaded()
+        {
+            var reply = TemplateExport.BuildChatReply(new TemplateExport.ReplyInfo
+            {
+                Name = "Frost Golem King", Wcid = 78780999, ClassName = "tmpl78780999_frost_golem_king", Flavour = TemplateExport.Flavour.Monster,
+                SourceName = "Frost Golem", SourceWcid = 1234,
+                FilePath = @"C:\ACE\Content\sql\weenies\78780999 Frost Golem King.sql", SummaryLine = "setup 0x02000926",
+                ReplacedExisting = true, ExistingName = "Frost Golem", OutsideBlock = true, ImportStarted = true,
+                BackupPath = System.IO.Path.Combine("Content", "sql", TemplateExport.BackupFolderName, "78780999.backup-20261018-120000.sql"),
+                BlockStart = BlockStart, BlockEnd = BlockEnd,
+            });
+
+            var lines = reply.Split('\n');
+            Assert.IsTrue(lines.Length <= 9, lines.Length.ToString());
+            AssertAscii(reply);
+            // the undo names the one file, never a wcid that @import-sql would widen to every match
+            StringAssert.Contains(reply, "Undo: @import-template-backup 78780999.backup-20261018-120000.sql");
+            Assert.IsFalse(reply.Contains("@import-sql 78780999"));
+            StringAssert.Contains(reply, "--force loads it");
+            StringAssert.Contains(reply, "loading it into ace_world now");
+            Assert.IsFalse(reply.Contains("verified free"), "a replaced id was not free");
+        }
+
+        [TestMethod]
+        public void BuildChatReply_OutsideBlockWithoutForce_NotLoaded_PointsAtForce()
+        {
+            var reply = TemplateExport.BuildChatReply(new TemplateExport.ReplyInfo
+            {
+                Name = "X", Wcid = 78780999, ClassName = "tmpl78780999_x", Flavour = TemplateExport.Flavour.Monster,
+                SourceName = "X", SourceWcid = 1, FilePath = "f.sql", SummaryLine = "s",
+                OutsideBlock = true, BlockStart = BlockStart, BlockEnd = BlockEnd,
+            });
+
+            StringAssert.Contains(reply, "was not loaded");
+            StringAssert.Contains(reply, "re-run @et with --force");
+            StringAssert.Contains(reply, "@import-sql 78780999,");
+            Assert.IsFalse(reply.Contains("Backup"));
+        }
+
+        [TestMethod]
+        public void BackupFileName_RoundTrips_HasNoSpaces_AndAttemptSuffixIsUnique()
+        {
+            var utc = new DateTime(2026, 10, 18, 12, 0, 0, DateTimeKind.Utc);
+
+            var first = TemplateExport.BuildBackupFileName(78780999, utc);
+            var second = TemplateExport.BuildBackupFileName(78780999, utc, 2);
+
+            Assert.AreEqual("78780999.backup-20261018-120000.sql", first);
+            Assert.AreEqual("78780999.backup-20261018-120000-2.sql", second);
+            Assert.IsFalse(first.Contains(' '), "one chat token");
+            Assert.IsTrue(TemplateExport.TryParseBackupFileName(first, out var w1) && w1 == 78780999);
+            Assert.IsTrue(TemplateExport.TryParseBackupFileName(second, out var w2) && w2 == 78780999);
+        }
+
+        [TestMethod]
+        public void TryParseBackupFileName_RefusesPathsWildcardsAndOrdinaryExports()
+        {
+            foreach (var bad in new[]
+            {
+                "78780999 Frost Golem.sql",                          // an ordinary export
+                "*.backup-20261018-120000.sql",
+                "../78780999.backup-20261018-120000.sql",
+                @"..\78780999.backup-20261018-120000.sql",
+                "78780999.backup-20261018-120000.sql.txt",
+                "78780999.backup-2026.sql",
+                "0.backup-20261018-120000.sql",
+                "",
+            })
+                Assert.IsFalse(TemplateExport.TryParseBackupFileName(bad, out _), bad);
+        }
+
         // ---- pet summon state is not part of the template ---------------------------------------
 
         private static TemplateExport.Snapshot SummonedPetSnapshot(ACE.Entity.Models.Weenie template)
@@ -829,7 +923,8 @@ namespace ACE.Server.Tests
             });
 
             StringAssert.Contains(reply, "review the file, then @import-sql 78780300,");
-            Assert.IsFalse(reply.Contains("force"));
+            Assert.IsFalse(reply.Contains("@import-sql 78780300 force"), "the import needs no force outside the block");
+            StringAssert.Contains(reply, "re-run @et with --force");
         }
 
         [TestMethod]

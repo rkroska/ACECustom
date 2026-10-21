@@ -49,7 +49,69 @@ export interface LedgerSuspectRow {
   currencySurplus: number
   flags: Record<string, number>
   flaggedAmount: number
+  /** Number of reasons. */
   score: number
+  /** Earned minus spent, moves excluded. */
+  created: number
+  peakHourAmount: number
+  peakHourUtc: string | null
+  peakHourSource: string | null
+  activeHours: number
+  windowHours: number
+  topSource: string | null
+  topSourceAmount: number
+  topSourceTotal: number
+  topSourceUsers: number
+  topSourceSharePct: number
+  /** Integrity problems only (dupe flags, disposed beyond received, unlabeled bank gains). score = reasons.length. */
+  reasons: string[]
+  /** Neutral heavy-earner statements (share of one source, best hour, hours active). */
+  highlights: string[]
+  reviewed: boolean
+  reviewedNote: string | null
+  reviewedBy: string | null
+  reviewedUtc: string | null
+  /** Reviewed, but a new flag appeared after the review. */
+  newSinceReview: boolean
+}
+
+export interface LedgerReviewMark {
+  accountId: number
+  note: string
+  by: string
+  utc: string
+}
+
+export interface LedgerContext {
+  days: number
+  coveredDays: number
+  created: number
+  removed: number
+  createdPerWeek: number
+  removedPerWeek: number
+  netPerWeek: number
+  supply: number
+  weeklyPct: number | null
+  targetMinWeeklyPct: number
+  targetMaxWeeklyPct: number
+}
+
+export interface LedgerNpcHandinRow {
+  itemWcid: number
+  itemName: string | null
+  units: number
+  gives: number
+  characters: number
+  topGiver: string | null
+  topGiverUnits: number
+}
+
+export interface LedgerSuspectThresholds {
+  minAmount: number
+  minSurplus: number
+  sharePct: number
+  activePct: number
+  peakTimes: number
 }
 
 export type LedgerEarnerScope = 'account' | 'character'
@@ -74,6 +136,13 @@ export interface LedgerVendorRow {
   sales: number
   characters: number
   accounts: number
+  perSale: number
+  topSeller: string | null
+  topSellerPayout: number
+  topSellerSharePct: number
+  topSellerHours: number
+  perWeek: number
+  shareOfCreationPct: number
 }
 
 export interface LedgerVendorSellerRow {
@@ -231,6 +300,16 @@ export interface LedgerNpcRow {
   topReceiver: string | null
   topReceiverCharId: number
   topReceiverValue: number
+  perGive: number
+  topReceiverSharePct: number
+  busiestHourValue: number
+  busiestHourGives: number
+  busiestHourChar: string | null
+  busiestHourUtc: string | null
+  perWeek: number
+  shareOfCreationPct: number
+  /** Items handed in to this NPC (units). */
+  handedInUnits: number
 }
 
 export interface LedgerNpcReceiverRow {
@@ -247,4 +326,54 @@ export interface LedgerNpcReceiverRow {
   lastHourUtc: string
 }
 
-export type LedgerTab = 'suspects' | 'earners' | 'vendors' | 'items' | 'npcs' | 'flags' | 'overview'
+export interface LedgerTransferAccount {
+  accountId: number
+  accountName: string
+  characters: string | null
+  sent: number
+  received: number
+  net: number
+  partners: number
+  events: number
+  isExchange: boolean
+}
+
+export interface LedgerTransferPair {
+  fromAccountId: number
+  fromAccountName: string
+  toAccountId: number
+  toAccountName: string
+  amount: number
+  events: number
+  viaExchange: boolean
+}
+
+export interface LedgerTransfers {
+  days: number
+  crossAccount: number
+  sameAccount: number
+  viaExchanges: number
+  exchangeAccounts: number[]
+  accounts: LedgerTransferAccount[]
+  pairs: LedgerTransferPair[]
+}
+
+export interface LedgerCopyRow {
+  utc: string
+  charId: number
+  charName: string
+  accountId: number
+  accountName: string
+  copiedBalance: number
+  balanceNow: number
+  exists: boolean
+  detail: string
+}
+
+export interface LedgerCopies {
+  copiedTotal: number
+  stillHeld: number
+  rows: LedgerCopyRow[]
+}
+
+export type LedgerTab = 'suspects' | 'heavy' | 'earners' | 'transfers' | 'vendors' | 'items' | 'npcs' | 'flags' | 'overview'

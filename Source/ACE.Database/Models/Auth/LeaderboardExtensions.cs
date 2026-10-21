@@ -315,6 +315,9 @@ namespace ACE.Database.Models.Auth
                     case "litters":
                         sql = LeaderboardInlineSql.SelfPlacementLittersBred(accountId);
                         break;
+                    case "jailbreak":
+                        sql = LeaderboardInlineSql.SelfPlacementJailbreak(accountId);
+                        break;
                     default:
                         return null;
                 }

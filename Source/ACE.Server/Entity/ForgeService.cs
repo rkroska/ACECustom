@@ -251,6 +251,10 @@ namespace ACE.Server.Entity
         {
             if (fee <= 0)
                 return true;
+
+            // pyreal ledger: forge, honing, dye and unbind fees
+            using var ledgerScope = PyrealLedger.Begin(PyrealLedger.SrcFee, "Forge", "Forge", player);
+
             var bank = player.BankedPyreals ?? 0;
             var pack = PackPyreals(player);
             var split = SplitFee(bank, pack, fee);

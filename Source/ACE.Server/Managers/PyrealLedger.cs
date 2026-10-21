@@ -64,6 +64,10 @@ namespace ACE.Server.Managers
         public const string SrcBankClamp = "BankClamp";
         public const string SrcCopyChar = "CopyChar";
         public const string SrcDeath = "Death";
+        /// <summary>A service fee paid in pyreals (Dressing Room, Forge); the detail is the attendant or the service.</summary>
+        public const string SrcFee = "Fee";
+        /// <summary>An item used from the pack that turns into other items (a box of trade notes).</summary>
+        public const string SrcItemUse = "ItemUse";
         /// <summary>Currency a character already held when item tracking began (written once, at startup).</summary>
         public const string SrcOpening = "Opening";
         /// <summary>Records nothing: an item going back to where it came from after a failed action.</summary>
@@ -93,6 +97,8 @@ namespace ACE.Server.Managers
         public const byte KindItemOut = 3;
         /// <summary>Any item sold to a vendor: detail_key "itemWcid:vendorWcid", units = stack size, amount_in = payout.</summary>
         public const byte KindSold = 4;
+        /// <summary>Any item handed to an NPC that accepted it: detail_key "itemWcid:npcWcid", units = stack size, no amount.</summary>
+        public const byte KindHandedIn = 5;
 
         // ---- currency items ----------------------------------------------------------------------------------------
 
@@ -102,9 +108,17 @@ namespace ACE.Server.Managers
             2621, 2622, 2623, 2624, 2625, 2626, 2627,       // Trade Note (100) .. (100,000)
             20628, 20629, 20630,                            // Trade Note (150,000) .. (250,000)
             8326, 8327, 8328, 8329, 8330, 8331,             // Copper, Gold, Iron, Lead, Pyreal, Silver Pea
+            // Boxes that turn into 250,000 trade notes when used. Counted as currency so that a box arriving is where
+            // the pyreals are recorded as created (the vendor or NPC that handed it out), and opening one is a wash.
+            987011,                                         // Box Of 750 MMD notes
+            19853083,                                       // Gloomrustle's Box of MMDs (1,200)
+            90000025,                                       // Captain's Booty (25)
         };
 
         public static bool IsCurrency(uint wcid) => currencyWcids.Contains(wcid);
+
+        /// <summary>The coin, trade note and pea wcids. For the economy ledger's supply snapshot.</summary>
+        internal static IReadOnlyCollection<uint> CurrencyWcids => currencyWcids;
 
         private static readonly Dictionary<uint, long> faceValueCache = new Dictionary<uint, long>();
 
@@ -121,7 +135,16 @@ namespace ACE.Server.Managers
             try
             {
                 var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
-                if (weenie?.PropertiesInt != null && weenie.PropertiesInt.TryGetValue(PropertyInt.Value, out var v))
+                if (weenie?.PropertiesDID != null && weenie.PropertiesDID.TryGetValue(PropertyDataId.UseCreateItem, out var inner) && inner != wcid && IsCurrency(inner))
+                {
+                    // a box: worth what it turns into, whatever its own Value says. The contents are read as a plain
+                    // item (never as another box), so two boxes pointing at each other cannot recurse.
+                    var quantity = weenie.PropertiesInt != null && weenie.PropertiesInt.TryGetValue(PropertyInt.UseCreateQuantity, out var q) ? q : 1;
+                    var contents = DatabaseManager.World.GetCachedWeenie(inner);
+                    long each = contents?.PropertiesInt != null && contents.PropertiesInt.TryGetValue(PropertyInt.Value, out var iv) ? iv : 0;
+                    value = each * Math.Max(1, quantity);
+                }
+                else if (weenie?.PropertiesInt != null && weenie.PropertiesInt.TryGetValue(PropertyInt.Value, out var v))
                     value = v;
             }
             catch (Exception ex)
@@ -239,14 +262,17 @@ namespace ACE.Server.Managers
             return scope;
         }
 
-        /// <summary>Scopes do nothing (no allocation, no property reads) while the ledger is off.</summary>
-        private static bool ScopesActive => initialized || ForceScopesForTests;
+        /// <summary>Scopes do nothing (no allocation, no property reads) while this ledger and the economy ledger are both off.</summary>
+        private static bool ScopesActive => initialized || EconomyLedger.FlowTracking || ForceScopesForTests;
 
         /// <summary>Lets unit tests exercise scopes without a running ledger.</summary>
         internal static bool ForceScopesForTests;
 
         /// <summary>The source label open on this thread, or null. For tests.</summary>
         internal static string CurrentSource => current?.Source;
+
+        /// <summary>The scope open on this thread, or null. The economy ledger labels other currencies with it.</summary>
+        internal static SourceContext CurrentContext => current;
 
         /// <summary>Begins a scope only when no other scope is open on this thread (a fallback label such as a chat command).</summary>
         public static Scope BeginIfNone(string source, string key = "", string name = "", WorldObject actor = null)
@@ -634,6 +660,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void OnCurrencyItem(Player player, uint wcid, long units, bool incoming, string source = null, string detailKey = null, string detailName = null)
         {
+            // coins, lum tokens and keys of the other currencies; has its own switch and never throws
+            EconomyLedger.OnItem(player, wcid, units, incoming, source, detailKey, detailName);
+
             if (!initialized || player == null || units <= 0 || !IsCurrency(wcid))
                 return;
 
@@ -749,17 +778,39 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
+        /// An NPC accepted an item from a player. One row per item type, NPC, character and hour, so a payout can be
+        /// set against what was turned in for it. Carries no pyreal amount, so it changes no total.
+        /// </summary>
+        public static void OnHandedIn(Player player, uint itemWcid, long units, WorldObject npc)
+        {
+            if (!initialized || player == null || npc == null || units <= 0)
+                return;
+
+            try
+            {
+                var accountId = player.Account?.AccountId ?? 0;
+
+                lock (sync)
+                    AddToBucket(DateTime.UtcNow, player.Guid.Full, accountId, player.Name, KindHandedIn, SrcGiveNpc, $"{itemWcid}:{npc.WeenieClassId}", npc.Name, 0, 0, units);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[PyrealLedger] OnHandedIn failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Moves between a player and the world (pickup, drop, chest, corpse). Records currency items crossing the boundary
         /// of <paramref name="player"/>'s possessions.
         /// </summary>
         public static void OnItemMoved(Player player, WorldObject item, long units, Container fromRoot, Container toRoot)
         {
-            if (!initialized || player == null || item == null)
+            if (player == null || item == null)
                 return;
 
             try
             {
-                if (IsCurrency(item.WeenieClassId))
+                if ((initialized && IsCurrency(item.WeenieClassId)) || EconomyLedger.TracksItem(item.WeenieClassId))
                     RecordItemMoved(player, item, units, fromRoot, toRoot);
             }
             catch (Exception ex)
@@ -855,6 +906,56 @@ namespace ACE.Server.Managers
             {
                 log.Error($"[PyrealLedger] CurrencyValueOf failed: {ex.Message}");
                 return 0;
+            }
+        }
+
+        /// <summary>
+        /// A character was just created. Its starting coins never passed through an inventory hook, so without this the
+        /// first thing it spends looks like currency from nowhere (seen live 2026-10-12: every new character sat at a
+        /// position of -14 or -10,000). Records them as an Opening row and sets the position. Never throws.
+        /// </summary>
+        public static void OnCharacterCreated(Player player, IEnumerable<WorldObject> possessions)
+        {
+            if (!initialized || player == null || possessions == null)
+                return;
+
+            try
+            {
+                var held = new Dictionary<uint, long>();
+                foreach (var item in possessions)
+                {
+                    if (item != null && IsCurrency(item.WeenieClassId))
+                        held[item.WeenieClassId] = (held.TryGetValue(item.WeenieClassId, out var units) ? units : 0) + (item.StackSize ?? 1);
+                }
+
+                var charId = player.Guid.Full;
+                var accountId = player.Account?.AccountId ?? player.Character?.AccountId ?? 0;
+                var banked = player.GetProperty(PropertyInt64.BankedPyreals) ?? 0;
+                var now = DateTime.UtcNow;
+
+                // face values first: a lookup can read the world database, and nothing waits on that under the lock
+                var rows = new List<(uint wcid, long units, long value)>(held.Count);
+                foreach (var kv in held)
+                    rows.Add((kv.Key, kv.Value, FaceValue(kv.Key) * kv.Value));
+
+                lock (sync)
+                {
+                    var state = GetOrCreateState(charId, accountId, player.Name, banked);
+                    long position = 0;
+
+                    foreach (var (wcid, units, value) in rows)
+                    {
+                        position += value;
+                        AddToBucket(now, charId, accountId, player.Name, KindItemIn, SrcOpening, $"{wcid}:", "starting items", value, 0, units);
+                    }
+
+                    state.CurrencyPosition = position;
+                    state.Dirty = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[PyrealLedger] OnCharacterCreated failed: {ex.Message}");
             }
         }
 
@@ -1018,8 +1119,10 @@ namespace ACE.Server.Managers
                         log.Warn("[PyrealLedger] Baseline rows were not all written; the next startup will write the baseline again instead of comparing balances.");
                 }
 
-                // once, and again after any period with the ledger off: count the currency every character already holds
-                if (firstRun || !meta.ContainsKey("opening_items"))
+                // once, and again after any period with the ledger off: count the currency every character already holds.
+                // "v2" (2026-10-12): counted once more because boxes of trade notes became currency and characters
+                // created before OnCharacterCreated existed never had their starting coins recorded.
+                if (firstRun || !meta.ContainsKey(OpeningItemsKey))
                     RecordOpeningHoldings();
 
                 flushTimer = new Timer(_ => TimerTick(), null, FlushIntervalMs, FlushIntervalMs);
@@ -1042,6 +1145,8 @@ namespace ACE.Server.Managers
         /// been written, so the database is the truth. Read-only on game tables. One slow query (about 15 seconds on a
         /// 3M row biota table), which is why it runs once and is remembered in the meta table.
         /// </summary>
+        private const string OpeningItemsKey = "opening_items_v2";
+
         private static void RecordOpeningHoldings()
         {
             try
@@ -1160,7 +1265,7 @@ namespace ACE.Server.Managers
 
                 var written = FlushBuckets(force: true) & FlushStates();
                 if (written)
-                    SaveMeta(new Dictionary<string, string> { ["opening_items"] = now.ToString("o") });
+                    SaveMeta(new Dictionary<string, string> { [OpeningItemsKey] = now.ToString("o") });
 
                 log.Info($"[PyrealLedger] Opening currency count: {holders:N0} characters hold {totalValue:N0} pyreals in coins, notes and peas " +
                          $"({(DateTime.UtcNow - started).TotalSeconds:N1} s){(written ? "" : " - NOT saved, will run again at the next startup")}");

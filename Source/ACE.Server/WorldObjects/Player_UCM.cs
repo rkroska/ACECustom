@@ -173,7 +173,7 @@ namespace ACE.Server.WorldObjects
             if (passCount >= 20) Self.QuestManager.StampFirst("focus_test_actually_playing");
             if (passCount >= 50) Self.QuestManager.StampFirst("focus_test_unshakable_focus");
 
-            Self.Session.Network.EnqueueSend(new GameMessageSystemChat("You passed the focus test.", ChatMessageType.Broadcast));
+            Self.Session?.Network?.EnqueueSend(new GameMessageSystemChat("You passed the focus test.", ChatMessageType.Broadcast));
             var passElapsed = FormatUcmResponseSeconds(UcmPromptStartedAtUtc);
             var stageInfo = CurrentStage == UcmStage.Basic ? "" : $" (Stage: {CurrentStage})";
             PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} passed UCM check{stageInfo} at {Self.Location}.{passElapsed}");
@@ -217,7 +217,7 @@ namespace ACE.Server.WorldObjects
             }
 
             string message = advancedMathFail ? PickAdvancedMathInsult() : "You failed the focus test and have been punished!";
-            Self.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
+            Self.Session?.Network?.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
 
             var failElapsed = FormatUcmResponseSeconds(UcmPromptStartedAtUtc);
             var stageTag = advancedMathFail ? $"{CurrentStage} / AdvancedMath" : CurrentStage.ToString();

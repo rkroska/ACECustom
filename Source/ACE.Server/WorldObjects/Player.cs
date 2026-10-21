@@ -637,6 +637,12 @@ namespace ACE.Server.WorldObjects
             IsLoggingOut = true;
             UCMChecker.FailActiveCheck(UCMCheckFailReason.LoggedOut);
 
+            if (JailEscapeActive)
+            {
+                FailJailEscapeNoTeleport("Logout detected.");
+                Location = IsInJail() ? GetJailTeleportLocationSafe() : GetJailReleaseLocation();
+            }
+
             if (Fellowship != null)
                 FellowshipQuit(false);
 

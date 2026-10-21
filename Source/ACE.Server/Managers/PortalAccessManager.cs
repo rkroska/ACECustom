@@ -32,6 +32,7 @@ namespace ACE.Server.Managers
         public const string CorpseFinder = "corpse-finder";
         public const string PetNaming = "pet-naming";
         public const string PyrealLedger = "pyreal-ledger";
+        public const string Economy = "economy";
     }
 
     public sealed class PortalPageDefinition
@@ -121,6 +122,7 @@ namespace ACE.Server.Managers
             new(PortalPages.Players, "Player List", "/players", "Monitoring", DefaultRestrictedPageMinLevel),
             new(PortalPages.AuditLog, "Audit Log", "/audit", "Monitoring", DefaultRestrictedPageMinLevel),
             new(PortalPages.PyrealLedger, "Pyreal Ledger", "/audit/pyreals", "Monitoring", DefaultRestrictedPageMinLevel),
+            new(PortalPages.Economy, "Economy", "/audit/economy", "Monitoring", DefaultRestrictedPageMinLevel),
             new(PortalPages.Map, "World Map", "/map", "Monitoring", DefaultRestrictedPageMinLevel),
             new(PortalPages.CombatCalculator, "Combat Calculator", "/combat-calculator", "Content Tools", DefaultRestrictedPageMinLevel),
             new(PortalPages.Properties, "Property Explorer", "/properties", "Content Tools", DefaultRestrictedPageMinLevel),

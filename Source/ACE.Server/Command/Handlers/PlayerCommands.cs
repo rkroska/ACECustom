@@ -443,11 +443,13 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance:N0}", ChatMessageType.System));
+                SendOverflowExperienceLine(session);
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Legendary Keys: {session.Player.BankedLegendaryKeys:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Mythical Keys: {session.Player.BankedMythicalKeys:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightened Coins: {session.Player.BankedEnlightenedCoins:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Weakly Enlightened Coins: {session.Player.BankedWeaklyEnlightenedCoins:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Prestige Coins: {session.Player.BankedPrestigeCoins:N0} (bound to you - deposit / withdraw only)", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightenment Tokens: {session.Player.BankedEnlightenmentTokens:N0} (bound to you - deposit / withdraw only)", ChatMessageType.System));
                 return;
             }
 
@@ -467,6 +469,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit enlightenedcoins (or /b d e) - Deposit all enlightened coins", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit weaklyenlightenedcoins (or /b d we) - Deposit all weakly enlightened coins", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit prestigecoins (or /b d pc) - Deposit all prestige coins", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit enlightenmenttokens (or /b d et) - Deposit all enlightenment tokens", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit notes (or /b d n) - Deposit all trade notes", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b lum - Bank your luminance tokens (Thaelaryn, ILT, Researcher's) as luminance - deposit all does this too", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
@@ -480,6 +483,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw enlightenedcoins <amount> (or /b w e <amount>) - Withdraw enlightened coins", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw weaklyenlightenedcoins <amount> (or /b w we <amount>) - Withdraw weakly enlightened coins", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw prestigecoins <amount> (or /b w pc <amount>) - Withdraw prestige coins (they cannot be transferred)", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw enlightenmenttokens <amount> (or /b w et <amount>) - Withdraw enlightenment tokens (they cannot be transferred; withdraw them before handing them to an NPC)", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"OTHER COMMANDS:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank balance (or /b b) - Show bank balance", ChatMessageType.System));
@@ -556,6 +560,10 @@ namespace ACE.Server.Command.Handlers
             {
                 session.Player.BankedPrestigeCoins = 0;
             }
+            if (session.Player.BankedEnlightenmentTokens < 0)
+            {
+                session.Player.BankedEnlightenmentTokens = 0;
+            }
 
             int iType = 0;
             long amount = -1;
@@ -578,7 +586,7 @@ namespace ACE.Server.Command.Handlers
                     //trade notes
                     iType = 3;
                 }
-                if (parameters[1] == "Legendarykeys" || parameters[1] == "k")
+                if (parameters[1] == "legendarykeys" || parameters[1] == "k")
                 {
                     iType = 4;
                 }
@@ -590,17 +598,21 @@ namespace ACE.Server.Command.Handlers
                 {
                     iType = 6;
                 }
-                if (parameters[1] == "Mythicalkeys" || parameters[1] == "mk")
+                if (parameters[1] == "mythicalkeys" || parameters[1] == "mk")
                 {
                     iType = 7;
                 }
-                if (parameters[1] == "Weaklyenlightenedcoins" || parameters[1] == "we")
+                if (parameters[1] == "weaklyenlightenedcoins" || parameters[1] == "we")
                 {
                     iType = 8;
                 }
                 if (parameters[1].Equals("prestigecoins", StringComparison.OrdinalIgnoreCase) || parameters[1].Equals("pc", StringComparison.OrdinalIgnoreCase))
                 {
                     iType = 9;   // Prestige Coins (owner 2026-10-04): deposit / withdraw / balance - never transfer
+                }
+                if (parameters[1].Equals("enlightenmenttokens", StringComparison.OrdinalIgnoreCase) || parameters[1].Equals("et", StringComparison.OrdinalIgnoreCase))
+                {
+                    iType = 10;  // Enlightenment Tokens (owner 2026-10-13): deposit / withdraw / balance - never transfer
                 }
             }
 
@@ -659,6 +671,7 @@ namespace ACE.Server.Command.Handlers
                     session.Player.DepositEnlightenedCoins(true);
                     session.Player.DepositWeaklyEnlightenedCoins(true);
                     session.Player.DepositPrestigeCoins(true);
+                    session.Player.DepositEnlightenmentTokens(true);
                     session.Player.DepositMythicalKeys(true);
                     session.Player.DepositTradeNotes(true);
                     // ILT lum tokens (owner 2026-10-05): per-token lines like /b lum, between Starting and Ending Banked Lum (owner
@@ -722,6 +735,9 @@ namespace ACE.Server.Command.Handlers
                         break;
                     case 9:
                         session.Player.DepositPrestigeCoins();
+                        break;
+                    case 10:
+                        session.Player.DepositEnlightenmentTokens();
                         break;
                     default:
                         break;
@@ -787,6 +803,9 @@ namespace ACE.Server.Command.Handlers
                         break;
                     case 9:
                         session.Player.WithdrawPrestigeCoins(amount);
+                        break;
+                    case 10:
+                        session.Player.WithdrawEnlightenmentTokens(amount);
                         break;
                     default:
                         break;
@@ -887,6 +906,10 @@ namespace ACE.Server.Command.Handlers
                         // Prestige Coins are a personal currency (owner 2026-10-04): banked and withdrawn, never moved to anyone
                         session.Network.EnqueueSend(new GameMessageSystemChat("[BANK] Prestige Coins are bound to you and cannot be transferred.", ChatMessageType.System));
                         break;
+                    case 10:
+                        // Enlightenment Tokens are a personal currency (owner 2026-10-13): banked and withdrawn, never moved to anyone
+                        session.Network.EnqueueSend(new GameMessageSystemChat("[BANK] Enlightenment Tokens are bound to you and cannot be transferred.", ChatMessageType.System));
+                        break;
                 }
             }
             if (parameters[0] == "balance" || parameters[0] == "b")
@@ -894,11 +917,13 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance:N0}", ChatMessageType.System));
+                SendOverflowExperienceLine(session);
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Legendary Keys: {session.Player.BankedLegendaryKeys:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Mythical Keys: {session.Player.BankedMythicalKeys:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightened Coins: {session.Player.BankedEnlightenedCoins:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Weakly Enlightened Coins: {session.Player.BankedWeaklyEnlightenedCoins:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Prestige Coins: {session.Player.BankedPrestigeCoins:N0} (bound to you - deposit / withdraw only)", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightenment Tokens: {session.Player.BankedEnlightenmentTokens:N0} (bound to you - deposit / withdraw only)", ChatMessageType.System));
             }
         }
 
@@ -907,6 +932,20 @@ namespace ACE.Server.Command.Handlers
         {
 
             HandleBank(session, parameters);
+        }
+
+        /// <summary>
+        /// Sends the /bank line for the XP saved past the unassigned experience cap (Player_Xp). Shown only when there is
+        /// some, which only happens above the cap; it refills by itself and cannot be moved.
+        /// </summary>
+        /// <param name="session">The session asking for its balances</param>
+        private static void SendOverflowExperienceLine(Session session)
+        {
+            var overflow = session.Player.OverflowExperience ?? 0;   // a long, read as 0 when unset or negative
+            if (overflow <= 0)
+                return;
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Saved Experience: {overflow:N0} (refills your unassigned experience automatically as you spend)", ChatMessageType.System));
         }
 
         static readonly uint[] _lowLevelOverlays = [
@@ -1224,9 +1263,10 @@ namespace ACE.Server.Command.Handlers
             {
                 if (parameters.Length == 2)
                 {
-                    if (!int.TryParse(parameters[1], out amount) || amount < 1)
+                    // an upper bound too: a huge amount wrapped the destination rank (see Player.MaxPricedRank)
+                    if (!int.TryParse(parameters[1], out amount) || amount < 1 || amount > 1000)
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Provide a number to count for XP Ranks", ChatMessageType.System));
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Provide a number from 1 to 1000 to count for XP Ranks", ChatMessageType.System));
                         return;
                     }
                 }
@@ -1346,10 +1386,12 @@ namespace ACE.Server.Command.Handlers
                 if (!int.TryParse(parameters[1], out amt))
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Something isn't parsing your command correctly, check your input and try again!", ChatMessageType.Advancement));
+                    return;
                 }
-                if (amt > 10)
+                // 0 or negative asks for the cost of a LOWER rank, which wraps the rank (see Player.MaxPricedRank)
+                if (amt < 1 || amt > 10)
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] You can only raise your attributes by up to 10 points at a time.", ChatMessageType.Advancement));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] You can only raise your attributes by 1 to 10 points at a time.", ChatMessageType.Advancement));
                     return;
                 }
 
@@ -1472,7 +1514,7 @@ namespace ACE.Server.Command.Handlers
 
         }
 
-        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "top qb|level|enl|title|augs|deaths|bank|lum|attr|bond(s)|sumbond(s)|enlcoins|wenlcoins|mkeys|lkeys|jails|notguilty|pets|shinies|potency|mutations|summutations|litters")]
+        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "top qb|level|enl|title|augs|deaths|bank|lum|attr|bond(s)|sumbond(s)|enlcoins|wenlcoins|mkeys|lkeys|jails|notguilty|pets|shinies|potency|mutations|summutations|litters|jailbreak")]
         public static async void DisplayTop(Session session, params string[] parameters)
         {
             try
@@ -1693,9 +1735,38 @@ namespace ACE.Server.Command.Handlers
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 1 Player named Gymnos: Gymnos", ChatMessageType.Broadcast));
                     }
+                    else if (key == "jailbreak")
+                    {
+                        list = await cache.GetTopBankedInt64Async(context, "jailbreak", LeaderboardInlineSql.TopJailbreak);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Jail Escape Trial Completion Times:", ChatMessageType.Broadcast));
+                            for (int i = 0; i < list.Count; i++)
+                            {
+                                var minutes = list[i].Score / 60;
+                                var secs = list[i].Score % 60;
+                                var formatted = minutes > 0 ? $"{minutes}m {secs}s" : $"{secs}s";
+                                session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {formatted} - {list[i].Character}", ChatMessageType.Broadcast));
+                            }
+                            
+                            var p = await Leaderboard.GetSelfPlacementRowAsync(context, "jailbreak", session.AccountId);
+                            if (p != null)
+                            {
+                                var minutes = p.Score.Value / 60;
+                                var secs = p.Score.Value % 60;
+                                var formatted = minutes > 0 ? $"{minutes}m {secs}s" : $"{secs}s";
+                                session.Network.EnqueueSend(new GameMessageSystemChat($"Your placement: #{p.PlacementRank:N0} - Score: {formatted} ({p.Character})", ChatMessageType.Broadcast));
+                            }
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("No jail escape completions yet!", ChatMessageType.Broadcast));
+                        }
+                        return;
+                    }
                     else
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies, potency, mutations, summutations, litters", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies, potency, mutations, summutations, litters, jailbreak", ChatMessageType.Broadcast));
                         return;
                     }
 
@@ -2420,6 +2491,9 @@ namespace ACE.Server.Command.Handlers
 
             // update client
             session.Network.EnqueueSend(new GameEventPlayerDescription(session));
+
+            // the description rebuilt the client's enchantment list: put the T11+ gear-line display entries back
+            session.Player.SyncZcGearDisplay(clientListReset: true);
         }
 
         /// <summary>

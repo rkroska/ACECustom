@@ -32,6 +32,7 @@ using ACE.DatLoader.FileTypes;
 using ACE.DatLoader;
 using Discord;
 using ACE.Server.Mods;
+using ACE.Server.Entity.Actions;
 
 using log4net;
 
@@ -321,6 +322,201 @@ namespace ACE.Server.Command.Handlers.Processors
             {
                 CommandHandlerHelper.WriteOutputError(session, $"There was an error importing the SQL:\n\n{e.Message}");
             }
+        }
+
+        [CommandHandler("dupedungeon", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 4, "Duplicates a landblock variation's instances to a range of other variations", "<landblock> <srcVariant> <startDstVariant> <endDstVariant>")]
+        public static void HandleDupeDungeon(Session session, params string[] parameters)
+        {
+            var landblockStr = parameters[0].Replace("0x", "");
+            if (!ushort.TryParse(landblockStr, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var landblockId))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Invalid landblock hex: {parameters[0]}");
+                return;
+            }
+
+            // Safety boundary check: Indoor dungeons have landblock IDs less than 0x0100.
+            // Outdoor landblocks are from 0x0100 to 0xFFFF and must NOT be duplicated.
+            if (landblockId >= 0x0100)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "This command can only be used on indoor/dungeon landblocks (IDs less than 0x0100). Outdoor duplication is blocked.");
+                return;
+            }
+
+            if (!int.TryParse(parameters[1], out var srcVariant))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Invalid source variation ID: {parameters[1]}");
+                return;
+            }
+
+            if (!int.TryParse(parameters[2], out var startDstVariant))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Invalid start destination variation ID: {parameters[2]}");
+                return;
+            }
+
+            if (!int.TryParse(parameters[3], out var endDstVariant))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Invalid end destination variation ID: {parameters[3]}");
+                return;
+            }
+
+            if (startDstVariant > endDstVariant)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Start destination variation must be <= end destination variation.");
+                return;
+            }
+
+            // Destinations are layered copies only: never the base layer (0/null) or below, and never a range that
+            // holds the source, which would be deleted before it is copied.
+            if (startDstVariant < 1)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Destination variations must be 1 or higher.");
+                return;
+            }
+
+            if (srcVariant >= startDstVariant && srcVariant <= endDstVariant)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"The destination range {startDstVariant}-{endDstVariant} contains the source variation {srcVariant}.");
+                return;
+            }
+
+            var srcVariationId = srcVariant == 0 ? null : (int?)srcVariant;
+
+            using var db = new WorldDbContext();
+            
+            // Load source instances along with their links
+            var srcInstances = db.LandblockInstance
+                .Include(i => i.LandblockInstanceLink)
+                .Where(i => i.Landblock == landblockId && i.VariationId == srcVariationId)
+                .ToList();
+
+            if (srcInstances.Count == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"No instances found for landblock 0x{landblockId:X4} and variation {(srcVariationId.HasValue ? srcVariationId.Value.ToString() : "NULL")} in database.");
+                return;
+            }
+
+            // Load all instances for this landblock to check capacity and manage GUIDs
+            var allInstances = db.LandblockInstance
+                .Include(i => i.LandblockInstanceLink)
+                .Where(i => i.Landblock == landblockId)
+                .ToList();
+
+            long targetCount = (long)endDstVariant - startDstVariant + 1;
+            var replacedCount = allInstances.Count(i => i.VariationId >= startDstVariant && i.VariationId <= endDstVariant);
+            long existingCount = allInstances.Count - replacedCount;
+            long srcCount = srcInstances.Count;
+            long projected = existingCount + srcCount * targetCount;
+
+            // Enforce capacity check to prevent client crashes/offsets overflow
+            if (projected > 4095)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Cannot duplicate: Duplicating {srcCount} instances to {targetCount} variations would exceed the 4095 static GUID limit for landblock 0x{landblockId:X4} (would be {projected}).");
+                return;
+            }
+
+            // The delete and the copy commit together: a failed copy must not leave the destinations emptied.
+            using var tx = db.Database.BeginTransaction();
+            try
+            {
+            // Delete target variations' existing instances
+            var instancesToRemove = allInstances.Where(i => i.VariationId >= startDstVariant && i.VariationId <= endDstVariant).ToList();
+            foreach (var inst in instancesToRemove)
+            {
+                db.LandblockInstanceLink.RemoveRange(inst.LandblockInstanceLink);
+                db.LandblockInstance.Remove(inst);
+            }
+            db.SaveChanges();
+
+            // Setup current instance list for GetNextStaticGuid
+            var currentInstancesList = allInstances.Where(i => !(i.VariationId >= startDstVariant && i.VariationId <= endDstVariant)).ToList();
+
+            for (var v = startDstVariant; v <= endDstVariant; v++)
+            {
+                var guidMap = new Dictionary<uint, uint>();
+                var newInstances = new List<LandblockInstance>();
+
+                // 1. Duplicate instances
+                foreach (var srcInst in srcInstances)
+                {
+                    var newGuid = GetNextStaticGuid(landblockId, currentInstancesList);
+
+                    var newInst = new LandblockInstance
+                    {
+                        Guid = newGuid,
+                        Landblock = srcInst.Landblock,
+                        WeenieClassId = srcInst.WeenieClassId,
+                        ObjCellId = srcInst.ObjCellId,
+                        OriginX = srcInst.OriginX,
+                        OriginY = srcInst.OriginY,
+                        OriginZ = srcInst.OriginZ,
+                        AnglesW = srcInst.AnglesW,
+                        AnglesX = srcInst.AnglesX,
+                        AnglesY = srcInst.AnglesY,
+                        AnglesZ = srcInst.AnglesZ,
+                        IsLinkChild = srcInst.IsLinkChild,
+                        VariationId = v,
+                        LastModified = DateTime.UtcNow
+                    };
+
+                    currentInstancesList.Add(newInst);
+                    newInstances.Add(newInst);
+                    guidMap.Add(srcInst.Guid, newGuid);
+
+                    db.LandblockInstance.Add(newInst);
+                }
+
+                // 2. Duplicate links
+                foreach (var srcInst in srcInstances)
+                {
+                    foreach (var srcLink in srcInst.LandblockInstanceLink)
+                    {
+                        if (guidMap.TryGetValue(srcLink.ParentGuid, out var newParentGuid) &&
+                            guidMap.TryGetValue(srcLink.ChildGuid, out var newChildGuid))
+                        {
+                            var newLink = new LandblockInstanceLink
+                            {
+                                ParentGuid = newParentGuid,
+                                ChildGuid = newChildGuid,
+                                LastModified = DateTime.UtcNow
+                            };
+                            db.LandblockInstanceLink.Add(newLink);
+                        }
+                    }
+                }
+            }
+
+            db.SaveChanges();
+            tx.Commit();
+            }
+            catch (Exception ex)
+            {
+                tx.Rollback();
+                log.Error($"/dupedungeon 0x{landblockId:X4} {srcVariant} {startDstVariant}-{endDstVariant} failed and was rolled back", ex);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Duplication failed and was rolled back; nothing changed: {ex.Message}");
+                return;
+            }
+
+            // Clear the cached instances, then rebuild only copies that are already loaded (never load one just to
+            // rebuild it). The rebuild runs on the world thread, between landblock ticks.
+            for (var v = startDstVariant; v <= endDstVariant; v++)
+            {
+                DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId, v);
+
+                var targetLandblock = LandblockManager.GetLoadedLandblock(new LandblockId((uint)landblockId << 16 | 0xFFFF), v);
+                if (targetLandblock == null)
+                    continue;
+
+                var closureV = v; // local copy for closure
+                WorldManager.EnqueueAction(new ActionEventDelegate(ACE.Server.Entity.Actions.ActionType.Landblock_Init, () =>
+                {
+                    targetLandblock.DestroyAllNonPlayerObjects();
+                    targetLandblock.Init(closureV, true);
+                }));
+            }
+
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} ran /dupedungeon: landblock 0x{landblockId:X4} variation {srcVariant} copied to variations {startDstVariant}-{endDstVariant} ({srcCount} instances each).");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Successfully duplicated landblock 0x{landblockId:X4} variation {srcVariant} to variations {startDstVariant} through {endDstVariant}. Cache cleared and live instances re-initialized.");
         }
 
         public static void ImportSQLWeenie(Session session, string wcid, bool withFolders = false, bool force = false)
@@ -3158,7 +3354,7 @@ namespace ACE.Server.Command.Handlers.Processors
             HandleExportClothingToDiscord(session, parameters);
         }
 
-        [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file and load to Discord", "<wcid> [content-type] | template [wcid] [npc|monster] [overwrite] [name...]")]
+        [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file and load to Discord", "<wcid> [content-type] | template [wcid] [npc|monster] [--force|overwrite] [name...]")]
         public static void HandleExportSqlToDiscord(Session session, params string[] parameters)
         {
             // "@ed template ..." exports the SELECTED live object (not a database weenie) and hands the file to
@@ -3270,7 +3466,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
         [CommandHandler("export-template", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
             "Exports the selected (or last appraised) object, with its live appearance, as a new weenie SQL template in the temporary export block",
-            "[wcid] [npc|monster] [overwrite] [name...] - every argument optional, any order. monster (default) = faithful copy; npc = not attackable, invincible, stuck, radar NPC, no loot/XP/corpse. A player source defaults to npc. The file is loaded into ace_world and sent to Discord automatically (content_template_export_auto_import / _auto_discord).")]
+            "[wcid] [npc|monster] [--force|overwrite] [name...] - every argument optional, any order. monster (default) = faithful copy; npc = not attackable, invincible, stuck, radar NPC, no loot/XP/corpse. A player source defaults to npc. A taken wcid is refused; overwrite replaces it, --force replaces it and also loads a wcid outside the export block. A replaced weenie is saved to sql/weenies-backup first; restore it with @import-template-backup. The file is loaded into ace_world and sent to Discord automatically (content_template_export_auto_import / _auto_discord).")]
         public static void HandleExportTemplate(Session session, params string[] parameters)
         {
             ExportTemplate(session, parameters, toDiscord: false);
@@ -3278,7 +3474,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
         [CommandHandler("et", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
             "Alias for export-template - exports the selected object as a weenie SQL template",
-            "[wcid] [npc|monster] [overwrite] [name...]")]
+            "[wcid] [npc|monster] [--force|overwrite] [name...]")]
         public static void HandleExportTemplateAlias(Session session, params string[] parameters)
         {
             ExportTemplate(session, parameters, toDiscord: false);
@@ -3420,6 +3616,19 @@ namespace ACE.Server.Command.Handlers.Processors
                 var fileName = WeenieSQLWriter.GetDefaultFileName(weenie);
                 var fullPath = sqlFolder + fileName;
 
+                // Replacing a weenie: save the row as it is now first, so a wrong id is one
+                // @import-template-backup away from undone. No backup, no export.
+                string backupPath = null;
+                if (choice.ReplacesExisting)
+                {
+                    backupPath = WriteReplacedWeenieBackup(choice.Wcid, $"{di.FullName}{sep}sql{sep}{TemplateExport.BackupFolderName}{sep}", exportedUtc);
+                    if (backupPath == null)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Refused: could not back up the existing weenie at {choice.Wcid} ('{TemplateExport.ToAscii(choice.ExistingName)}'), so it was not replaced. See the server log.");
+                        return;
+                    }
+                }
+
                 string sqlText;
                 using (var mem = new MemoryStream())
                 {
@@ -3444,10 +3653,10 @@ namespace ACE.Server.Command.Handlers.Processors
                 if (sendToDiscord)
                     _ = SendTemplateToDiscordAsync(session.Player.Name, fileName, bytes);
 
-                // Load it into ace_world so it can be spawned at once - but only inside the staging block. An explicit
-                // id outside it may be real content (with "overwrite", an existing weenie), so that stays a reviewed,
-                // manual import.
-                var autoImport = ServerConfig.content_template_export_auto_import.Value && !choice.OutsideBlock;
+                // Load it into ace_world so it can be spawned at once - but only inside the staging block, unless
+                // --force was given. An explicit id outside it may be real content (with "overwrite", an existing
+                // weenie), so without --force that stays a reviewed, manual import; with it, the backup above is the undo.
+                var autoImport = ServerConfig.content_template_export_auto_import.Value && (!choice.OutsideBlock || args.Force);
                 if (autoImport)
                     StartTemplateImport(session, fullPath, choice.Wcid);
 
@@ -3462,6 +3671,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     ReplacedExisting = choice.ReplacesExisting,
                     ExistingName = choice.ExistingName,
                     OutsideBlock = choice.OutsideBlock,
+                    BackupPath = backupPath,
                     SourceName = TemplateExport.ToAscii(target.Name ?? ""),
                     SourceWcid = target.WeenieClassId,
                     CapturedFromWcid = capturedFrom,
@@ -3486,25 +3696,156 @@ namespace ACE.Server.Command.Handlers.Processors
         }
 
         /// <summary>
+        /// Writes the weenie currently stored at <paramref name="wcid"/> to "&lt;wcid&gt;.backup-&lt;utc&gt;.sql" in
+        /// sql/weenies-backup, read fresh from ace_world (not the cache) and written with the same DELETE + INSERT as
+        /// @export-sql. That folder is outside sql/weenies, so no @import-sql form (by wcid, all, or with folders) ever
+        /// picks a backup up; @import-template-backup restores exactly one by name. The file is created new, never
+        /// overwritten: a second export in the same second gets a -2, -3 ... suffix. Returns the path, or null when
+        /// the row could not be read or the file not written.
+        /// </summary>
+        private static string WriteReplacedWeenieBackup(uint wcid, string backupFolder, DateTime exportedUtc)
+        {
+            try
+            {
+                var existing = DatabaseManager.World.GetWeenie(wcid);
+                if (existing == null)
+                {
+                    log.Error($"[TemplateExport] backup of {wcid} failed: the weenie is listed but could not be read");
+                    return null;
+                }
+
+                Directory.CreateDirectory(backupFolder);
+
+                string sqlText;
+                using (var mem = new MemoryStream())
+                {
+                    using (var sw = new StreamWriter(mem, new UTF8Encoding(false), 4096, leaveOpen: true) { NewLine = "\n" })
+                    {
+                        sw.WriteLine($"-- Backup of weenie {wcid} taken {exportedUtc:yyyy-MM-dd HH:mm:ss} UTC, before @export-template replaced it.");
+                        sw.WriteLine("-- Restore it with @import-template-backup <this file name>.");
+                        WeenieSQLWriter.CreateSQLDELETEStatement(existing, sw);
+                        sw.WriteLine();
+                        WeenieSQLWriter.CreateSQLINSERTStatement(existing, sw);
+                    }
+                    sqlText = Encoding.UTF8.GetString(mem.ToArray());
+                }
+                var bytes = new UTF8Encoding(false).GetBytes(sqlText.Replace("\r\n", "\n").Replace("\r", ""));
+
+                // CreateNew fails instead of overwriting, so two exports racing on the same id and second each keep
+                // their own backup.
+                for (var attempt = 1; attempt <= 100; attempt++)
+                {
+                    var backupPath = backupFolder + TemplateExport.BuildBackupFileName(wcid, exportedUtc, attempt);
+                    try
+                    {
+                        using (var fs = new FileStream(backupPath, FileMode.CreateNew, FileAccess.Write))
+                            fs.Write(bytes, 0, bytes.Length);
+                    }
+                    catch (IOException) when (File.Exists(backupPath))
+                    {
+                        continue;
+                    }
+                    log.Info($"[TemplateExport] backed up {wcid} to {backupPath}");
+                    return backupPath;
+                }
+
+                log.Error($"[TemplateExport] backup of {wcid} failed: 100 backup names for {exportedUtc:yyyyMMdd-HHmmss} are already taken");
+                return null;
+            }
+            catch (Exception e)
+            {
+                log.Error($"[TemplateExport] backup of {wcid} failed: {e}");
+                return null;
+            }
+        }
+
+        [CommandHandler("import-template-backup", AccessLevel.Developer, CommandHandlerFlag.None, 1,
+            "Restores one weenie backup that @export-template saved before replacing it",
+            "<file name> - exactly as the export reply printed it, e.g. 78780999.backup-20261018-120000.sql")]
+        public static void HandleImportTemplateBackup(Session session, params string[] parameters)
+        {
+            var fileName = parameters[0].Trim();
+
+            // A bare backup name only: no path, no wildcard, nothing outside sql/weenies-backup.
+            if (!TemplateExport.TryParseBackupFileName(fileName, out var wcid))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"'{TemplateExport.ToAscii(fileName)}' is not a template backup name. Use the exact name from the export reply, e.g. 78780999.backup-20261018-120000.sql.");
+                return;
+            }
+
+            var di = VerifyContentFolder(session);
+            if (!di.Exists) return;
+
+            var sep = Path.DirectorySeparatorChar;
+            var fullPath = $"{di.FullName}{sep}sql{sep}{TemplateExport.BackupFolderName}{sep}{fileName}";
+            if (!File.Exists(fullPath))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find {fullPath}");
+                return;
+            }
+
+            // Same per-wcid lock as the background load. The export marks its load pending before it prints the undo,
+            // so a restore typed straight after the export cannot run first and then be overwritten by that load.
+            lock (TemplateImportLock(wcid))
+            {
+                if (PendingTemplateImports.TryGetValue(wcid, out var pending) && pending > 0)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"{wcid} is still being loaded from the export; nothing was restored. Wait for the 'Loaded {wcid}' line, then run this again.");
+                    return;
+                }
+
+                try
+                {
+                    ImportSQL(fullPath);
+                    DatabaseManager.World.ClearCachedWeenie(wcid);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Restored {wcid} from {fileName}. Spawn it with @ci {wcid} or @create {wcid}.");
+                    log.Info($"[TemplateExport] {session?.Player?.Name ?? "console"} restored {wcid} from {fullPath}");
+                }
+                catch (Exception e)
+                {
+                    log.Error($"[TemplateExport] restore of {wcid} from {fullPath} failed: {e}");
+                    CommandHandlerHelper.WriteOutputError(session, $"Restore failed: {e.Message}");
+                }
+            }
+        }
+
+        // Template loads and backup restores for one wcid run one at a time; different wcids do not wait on each other.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, object> TemplateImportLocks = new();
+        // Background loads started but not finished, per wcid. Raised before the export reply is sent, lowered under the lock.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, int> PendingTemplateImports = new();
+
+        private static object TemplateImportLock(uint wcid) => TemplateImportLocks.GetOrAdd(wcid, _ => new object());
+
+        /// <summary>
         /// Loads an exported template into ace_world and drops the weenie from the cache, off the landblock thread:
         /// the export runs on the thread that owns the target, and a database write there would stall its tick.
         /// The file already carries a DELETE for its own id, so re-exporting over the same id is safe.
         /// </summary>
         private static void StartTemplateImport(Session session, string fullPath, uint wcid)
         {
+            // Marked now, on the export thread, so it is visible before the reply (and its undo command) is sent.
+            PendingTemplateImports.AddOrUpdate(wcid, 1, (_, n) => n + 1);
+
             _ = Task.Run(() =>
             {
-                try
+                lock (TemplateImportLock(wcid))
                 {
-                    ImportSQL(fullPath);
-                    DatabaseManager.World.ClearCachedWeenie(wcid);
-                    CommandHandlerHelper.WriteOutputInfo(session, $"Loaded {wcid} into ace_world. Spawn it with @ci {wcid} or @create {wcid}.");
-                    log.Info($"[TemplateExport] auto-imported {wcid} from {fullPath}");
-                }
-                catch (Exception e)
-                {
-                    log.Error($"[TemplateExport] auto-import of {wcid} from {fullPath} failed: {e}");
-                    CommandHandlerHelper.WriteOutputInfo(session, $"[ERROR] The file was written but could not be loaded into ace_world: {e.Message}. Load it by hand with @import-sql {wcid} force.");
+                    try
+                    {
+                        ImportSQL(fullPath);
+                        DatabaseManager.World.ClearCachedWeenie(wcid);
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Loaded {wcid} into ace_world. Spawn it with @ci {wcid} or @create {wcid}.");
+                        log.Info($"[TemplateExport] auto-imported {wcid} from {fullPath}");
+                    }
+                    catch (Exception e)
+                    {
+                        log.Error($"[TemplateExport] auto-import of {wcid} from {fullPath} failed: {e}");
+                        CommandHandlerHelper.WriteOutputInfo(session, $"[ERROR] The file was written but could not be loaded into ace_world: {e.Message}. Load it by hand with @import-sql {wcid} force.");
+                    }
+                    finally
+                    {
+                        PendingTemplateImports.AddOrUpdate(wcid, 0, (_, n) => Math.Max(0, n - 1));
+                    }
                 }
             });
         }

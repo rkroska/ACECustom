@@ -552,6 +552,19 @@ namespace ACE.Server.WorldObjects
             return Math.Min(sum, GetGearCap(capStat, defaultCap));
         }
 
+        /// <summary>The skill-line props (50300-block) present on worn gear, for the panel display (ZcGearDisplay). Raw keys
+        /// only - the values still go through GetZoneModifierBonus.</summary>
+        internal List<int> ZoneModifierSkillPropIds()
+        {
+            var ids = new List<int>();
+            if (zoneModifierCache == null)
+                return ids;
+            foreach (var kv in zoneModifierCache)
+                if (kv.Key > ACE.Server.Managers.ZoneControl.ZoneModifiers.SkillBonusBase && kv.Value != 0)
+                    ids.Add(kv.Key);
+            return ids;
+        }
+
         /// <summary>
         /// MAX (not sum) of a Zone Control cantrip prop across this creature's equipped items — the
         /// combine rule for the slot SPECIALS (Fortify 41, Battle Mending 42, pct-HP 44, Cheat Death 45,

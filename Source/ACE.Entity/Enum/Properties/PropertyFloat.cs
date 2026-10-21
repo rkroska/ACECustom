@@ -382,5 +382,8 @@ namespace ACE.Entity.Enum.Properties
         /// Creature.GetZcSpellArmorMod; the float being present IS the card (no imbue bit). Server-only. Unset = no card.
         /// </summary>
         ZcSpellArmorRend = 51200,
+
+        /// <summary>Server-only: UTC timestamp (Unix epoch seconds) until this character is jailed.</summary>
+        JailedUntil = 55000,
     }
 }

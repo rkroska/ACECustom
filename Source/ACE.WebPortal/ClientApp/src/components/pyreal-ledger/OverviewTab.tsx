@@ -1,9 +1,11 @@
+import { Link } from 'react-router-dom'
 import type { LedgerFetchState } from './ledgerUtils'
-import { flagInfo, sortFlagsBySeverity, SEVERITY_CLASSES } from './ledgerUtils'
-import type { LedgerOverview } from '../../types/pyrealLedger'
+import { accountPath, characterPath, flagInfo, formatDateTime, sortFlagsBySeverity, useLedgerFetch, SEVERITY_CLASSES } from './ledgerUtils'
+import type { LedgerCopies, LedgerOverview } from '../../types/pyrealLedger'
 import {
   EmptyState,
   ErrorState,
+  LINK_CLASS,
   LoadingState,
   Money,
   NetMoney,
@@ -197,6 +199,77 @@ export default function OverviewTab({
           </TableScroll>
         )}
       </Panel>
+
+      <CopiesPanel />
     </div>
+  )
+}
+
+function CopiesPanel() {
+  const { data, loading, error } = useLedgerFetch<LedgerCopies>('/copies')
+  const rows = data?.rows ?? []
+  return (
+    <Panel
+      title="Balances created by @copychar"
+      help="Copying a character that holds pyreals creates new pyreals on the copy. Each row is one copy, with what it started with and what it holds now."
+    >
+      {loading ? (
+        <LoadingState />
+      ) : error ? (
+        <ErrorState message={error} />
+      ) : !data || rows.length === 0 ? (
+        <EmptyState message="No copied balances." />
+      ) : (
+        <>
+          <div className="p-3 grid grid-cols-2 gap-3">
+            <StatCard label="Copied in total" value={<Money value={data.copiedTotal} />} hint="Pyreals created by copying" />
+            <StatCard label="Still held" value={<Money value={data.stillHeld} />} hint="Held by the copies right now" />
+          </div>
+          <TableScroll>
+            <table className={TABLE_CLASS}>
+              <thead className={THEAD_CLASS}>
+                <tr className="border-b border-neutral-800">
+                  <th className={TH_CLASS}>Character</th>
+                  <th className={TH_CLASS}>Account</th>
+                  <th className={TH_NUM_CLASS}>Copied balance</th>
+                  <th className={TH_NUM_CLASS}>Balance now</th>
+                  <th className={TH_CLASS}>Detail</th>
+                  <th className={TH_CLASS}>When</th>
+                </tr>
+              </thead>
+              <tbody className={TBODY_CLASS}>
+                {rows.map((r, i) => (
+                  <tr key={`${r.charId}-${r.utc}-${i}`} className={ROW_CLASS}>
+                    <td className={`${TD_CLASS} whitespace-nowrap`}>
+                      {r.exists ? (
+                        <Link to={characterPath(r.charId, 30)} className={LINK_CLASS}>
+                          {r.charName || `#${r.charId}`}
+                        </Link>
+                      ) : (
+                        <>
+                          <span className="text-neutral-300">{r.charName || `#${r.charId}`}</span>{' '}
+                          <span className="px-1.5 py-0.5 rounded-md border text-[10px] font-bold bg-neutral-800 text-neutral-400 border-neutral-700">deleted</span>
+                        </>
+                      )}
+                    </td>
+                    <td className={`${TD_CLASS} whitespace-nowrap`}>
+                      <Link to={accountPath(r.accountId, 30)} className={LINK_CLASS}>
+                        {r.accountName || `#${r.accountId}`}
+                      </Link>
+                    </td>
+                    <td className={TD_NUM_CLASS}>
+                      <Money value={r.copiedBalance} />
+                    </td>
+                    <td className={TD_NUM_CLASS}>{r.exists ? <Money value={r.balanceNow} /> : <span className="text-neutral-600">-</span>}</td>
+                    <td className={`${TD_CLASS} text-neutral-400`}>{r.detail}</td>
+                    <td className={`${TD_CLASS} whitespace-nowrap text-neutral-400`}>{formatDateTime(r.utc)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
+        </>
+      )}
+    </Panel>
   )
 }

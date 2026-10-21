@@ -223,7 +223,10 @@ namespace ACE.Server.Entity
             if (tier.ItemWcid.HasValue)
             {
                 var need = tier.GetRequiredItemCount(targetEnlightenment);
-                var have = player.GetNumInventoryItemsOfWCID((uint)tier.ItemWcid.Value);
+                // Enlightenment Tokens count from the pack AND the bank (owner 2026-10-13)
+                long have = player.GetNumInventoryItemsOfWCID((uint)tier.ItemWcid.Value);
+                if ((uint)tier.ItemWcid.Value == Player.ENLIGHTENMENT_TOKEN_WCID)
+                    have += player.BankedEnlightenmentTokens ?? 0;
                 if (have < need)
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(
@@ -297,14 +300,31 @@ namespace ACE.Server.Entity
             if (amount <= 0)
                 return;
 
-            player.TryConsumeFromInventoryWithNetworking((uint)tier.ItemWcid.Value, amount);
+            // economy ledger: the tokens or other items an enlightenment costs
+            using var ledgerScope = PyrealLedger.Begin(EconomyLedger.SrcEnlighten, targetEnlightenment.ToString(), "Enlightenment " + targetEnlightenment, player);
+
+            var wcid = (uint)tier.ItemWcid.Value;
+            if (wcid != Player.ENLIGHTENMENT_TOKEN_WCID)
+            {
+                player.TryConsumeFromInventoryWithNetworking(wcid, amount);
+                return;
+            }
+
+            // Enlightenment Tokens (owner 2026-10-13): the pack first, then the bank - the order Prestige Coins are spent in
+            var fromPack = Math.Min(amount, player.GetNumInventoryItemsOfWCID(wcid));
+            if (fromPack > 0)
+                player.TryConsumeFromInventoryWithNetworking(wcid, fromPack);
+
+            if (amount > fromPack)
+                player.TrySpendBankedEnlightenmentTokens(amount - fromPack);
         }
 
         private static bool SpendLuminance(Player player)
         {
             int targetEnlightenment = player.Enlightenment + 1;
             long lumCost = EnlightenmentTierManager.CalculateLuminanceCost(targetEnlightenment);
-            return player.SpendLuminance(lumCost);
+            using (PyrealLedger.Begin(EconomyLedger.SrcEnlighten, targetEnlightenment.ToString(), "Enlightenment " + targetEnlightenment, player))
+                return player.SpendLuminance(lumCost);
         }
 
         private static void RemoveSociety(Player player)

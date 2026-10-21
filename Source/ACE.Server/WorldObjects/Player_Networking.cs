@@ -24,6 +24,14 @@ namespace ACE.Server.WorldObjects
             PlayerManager.SwitchPlayerFromOfflineToOnline(this);
             Teleporting = true;
 
+            // Never log in inside a Jail Escape trial copy (0x00C0 variations 2-10): trials live in memory only, so
+            // after a restart the copy is empty and its exit portal does nothing. Still jailed goes to the jail
+            // spawn; otherwise to the release spot in the jail, free to walk out.
+            if (IsJailEscapeChamber(Location) && !JailEscapeActive)
+            {
+                Location = IsInJail() ? GetJailTeleportLocationSafe() : GetJailReleaseLocation();
+            }
+
             // Log character login to char_tracker table
             CharacterTracker.LogCharacterLogin(this);
 
@@ -74,6 +82,10 @@ namespace ACE.Server.WorldObjects
             }
 
             HandlePreOrderItems();
+
+            // unassigned XP saved past the cap (Player_Xp): fill the balance before the description goes out, so the client
+            // never starts on a low balance with XP saved behind it (after an admin repair, or a /ungod that restored one)
+            RefillAvailableXpFromOverflow(false);
 
             // SendSelf will trigger the entrance into portal space
             SendSelf();
@@ -255,6 +267,9 @@ namespace ACE.Server.WorldObjects
             var friends = new GameEventFriendsListUpdate(Session);
 
             Session.Network.EnqueueSend(player, title, friends);
+
+            // the description rebuilt the client's enchantment list without the T11+ gear-line display entries: send them again
+            SyncZcGearDisplay(clientListReset: true);
 
             // Player objects don't get a placement
             Placement = null;

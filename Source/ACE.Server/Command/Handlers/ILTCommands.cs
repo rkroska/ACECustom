@@ -181,6 +181,7 @@ namespace ACE.Server.Command.Handlers
             }
             else if (sub == "levelskills")
             {
+                player.RefillAvailableXpFromOverflow();   // the saved XP past the cap counts as available (Player_Xp)
                 if (player.AvailableExperience <= 0)
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat(

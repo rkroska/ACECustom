@@ -28,7 +28,9 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            if (amount > AvailableExperience)
+            RefillAvailableXpFromOverflow();   // the saved XP past the cap counts as available (Player_Xp)
+
+            if (amount > (AvailableExperience ?? 0))   // ?? 0: a missing balance compares false - a free raise
             {
                 //log.Error($"{Name}.HandleActionRaiseSkill({skill}, {amount}) - amount > AvailableExperience ({AvailableExperience})");
                 return false;
@@ -355,6 +357,8 @@ namespace ACE.Server.WorldObjects
         public void SpendAllAvailableSkillXp(CreatureSkill creatureSkill, bool sendNetworkUpdate = true)
         {
             var amountRemaining = creatureSkill.ExperienceLeft;
+
+            RefillAvailableXpFromOverflow();   // the saved XP past the cap counts as available (Player_Xp)
 
             if (amountRemaining > AvailableExperience)
                 amountRemaining = (uint)AvailableExperience;

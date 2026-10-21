@@ -27,7 +27,17 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            if ((long)amount > AvailableExperience)
+            // a cost past long.MaxValue is a wrapped ulong (a LOWER rank asked for, or past Player.MaxPricedRank): negative
+            // as a long, it would pass the check below
+            if (amount > long.MaxValue)
+            {
+                ChatPacket.SendServerMessage(Session, $"Your attempt to raise {vital.ToSentence()} has failed.", ChatMessageType.Broadcast);
+                return false;
+            }
+
+            RefillAvailableXpFromOverflow();   // the saved XP past the cap counts as available (Player_Xp)
+
+            if ((long)amount > (AvailableExperience ?? 0))   // ?? 0: a missing balance compares false - a free raise
             {
                 // there is a client bug for vitals only,
 
@@ -96,6 +106,8 @@ namespace ACE.Server.WorldObjects
         public void SpendAllAvailableVitalXp(CreatureVital creatureVital, bool sendNetworkUpdate = true)
         {
             var amountRemaining = creatureVital.ExperienceLeft;
+
+            RefillAvailableXpFromOverflow();   // the saved XP past the cap counts as available (Player_Xp)
 
             if (amountRemaining > AvailableExperience)
                 amountRemaining = (uint)AvailableExperience;
@@ -206,6 +218,10 @@ namespace ACE.Server.WorldObjects
 
         public static ulong GetXPDeltaCostByRankForSecondary(uint destinationRank, uint currentRank)
         {
+            // the loops below count up to these ranks: a wrapped one would never end them (Player.MaxPricedRank)
+            if (destinationRank > MaxPricedRank || currentRank > MaxPricedRank)
+                return ulong.MaxValue;
+
             var rankXpTable = DatManager.PortalDat.XpTable.VitalXpList;
             if (destinationRank < rankXpTable.Count)
             {

@@ -845,6 +845,13 @@ namespace ACE.Entity.Enum.Properties
         WeaponAugScaleTier                      = 9061,
 
         /// <summary>
+        /// The best completion time (in seconds) for the jailbreak escape time trial.
+        /// </summary>
+        [SendOnLogin]
+        [AssessmentProperty]
+        JailbreakBestTime                       = 55000,
+
+        /// <summary>
         /// The absolute Unix timestamp (in seconds since epoch) when the item expires.
         /// </summary>
         ItemExpirationTimestamp                 = 50060,

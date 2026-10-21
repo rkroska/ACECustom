@@ -354,6 +354,28 @@ namespace ACE.Entity.Models
             }
         }
 
+        /// <summary>
+        /// As above, and also returns the value the property had before the write (0 if it was not set), read under the
+        /// same write lock. For the economy ledger, which records the difference.
+        /// </summary>
+        public static void SetProperty(this Biota biota, PropertyInt64 property, long value, ReaderWriterLockSlim rwLock, out bool changed, out long previous)
+        {
+            rwLock.EnterWriteLock();
+            try
+            {
+                biota.PropertiesInt64 ??= new Dictionary<PropertyInt64, long>();
+
+                changed = (!biota.PropertiesInt64.TryGetValue(property, out previous) || value != previous);
+
+                if (changed)
+                    biota.PropertiesInt64[property] = value;
+            }
+            finally
+            {
+                rwLock.ExitWriteLock();
+            }
+        }
+
         public static void SetProperty(this Biota biota, PropertyString property, string value, ReaderWriterLockSlim rwLock, out bool changed)
         {
             rwLock.EnterWriteLock();
@@ -499,6 +521,25 @@ namespace ACE.Entity.Models
             try
             {
                 return biota.PropertiesInt64.Remove(property);
+            }
+            finally
+            {
+                rwLock.ExitWriteLock();
+            }
+        }
+
+        /// <summary>As above, and also returns the value that was removed (0 if the property was not set).</summary>
+        public static bool TryRemoveProperty(this Biota biota, PropertyInt64 property, ReaderWriterLockSlim rwLock, out long previous)
+        {
+            previous = 0;
+
+            if (biota.PropertiesInt64 == null)
+                return false;
+
+            rwLock.EnterWriteLock();
+            try
+            {
+                return biota.PropertiesInt64.Remove(property, out previous);
             }
             finally
             {

@@ -59,6 +59,10 @@ namespace ACE.Server.Entity
         {
             if (fee <= 0)
                 return true;
+
+            // pyreal ledger: a caller that did not label the fee itself is labeled with its log tag
+            using var ledgerScope = ACE.Server.Managers.PyrealLedger.BeginIfNone(ACE.Server.Managers.PyrealLedger.SrcFee, logTag, logTag, player);
+
             var bank = player.BankedPyreals ?? 0;
             var pack = PackPyreals(player);
             var split = Split(bank, pack, fee);
