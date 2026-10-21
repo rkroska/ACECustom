@@ -33,8 +33,12 @@ namespace ACE.Server.WorldObjects
         public float Mult;
         /// <summary>Each further jump deals this share of the jump before it.</summary>
         public float Falloff;
+        /// <summary>The lowest share of a normal hit a jump can fall to through the falloff (0 = no floor; owner 2026-10-17).</summary>
+        public float Floor;
         public float Range;
         public bool Revisit, Los, OnResist, Procs;
+        /// <summary>Chance a chain that would end (no fresh monster in reach) jumps back to a monster it hit instead (2026-10-17).</summary>
+        public float RevisitChance;
         /// <summary>Every monster this chain has hit (the first one included), by guid.</summary>
         public HashSet<uint> Visited;
 
@@ -48,6 +52,10 @@ namespace ACE.Server.WorldObjects
     {
         /// <summary>Set on a projectile that is a JUMP of a chain (never on the spell that started it).</summary>
         public SpellChain Chain { get; set; }
+
+        /// <summary>One of the Split Cast charm's extra projectiles: it never starts a chain - only the main projectile does,
+        /// so the two charms do not multiply (owner 2026-10-20: "Chain starts only from the main projectile").</summary>
+        public bool IsSplitCastExtra { get; set; }
 
         /// <summary>True for a spell the Chain charm works on: war school, a plain projectile flying as an arc, bolt or
         /// streak (per the charm's three switches). Rings, blasts, volleys, walls, life and void spells never chain.</summary>
@@ -83,10 +91,12 @@ namespace ACE.Server.WorldObjects
                 {
                     JumpsLeft = Chain.JumpsLeft - 1,
                     JumpIndex = Chain.JumpIndex + 1,
-                    Mult = Chain.Mult * Chain.Falloff,
+                    Mult = Math.Max(Chain.Mult * Chain.Falloff, Chain.Floor),
                     Falloff = Chain.Falloff,
+                    Floor = Chain.Floor,
                     Range = Chain.Range,
                     Revisit = Chain.Revisit,
+                    RevisitChance = Chain.RevisitChance,
                     Los = Chain.Los,
                     OnResist = Chain.OnResist,
                     Procs = Chain.Procs,
@@ -95,8 +105,9 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                // a chain starts only from a HAND-CAST spell: never a weapon proc, never a wand's built-in spell
-                if (FromProc || IsWeaponSpell || !player.HasChainCharm)
+                // a chain starts only from a HAND-CAST spell: never a weapon proc, never a wand's built-in spell, never a Split
+                // Cast extra projectile (only the main one)
+                if (FromProc || IsWeaponSpell || IsSplitCastExtra || !player.HasChainCharm)
                     return;
                 var cs = CharmSettingsManager.Chain;
                 if (!cs.Enabled || !IsChainShape() || (!landed && !cs.On("onresist")))
@@ -121,8 +132,10 @@ namespace ACE.Server.WorldObjects
                     JumpIndex = 1,
                     Mult = cs.NumberAt("damage", level),
                     Falloff = cs.NumberAt("falloff", level),
+                    Floor = cs.NumberAt("floor", level),
                     Range = cs.NumberAt("range", level),
                     Revisit = cs.On("revisit"),
+                    RevisitChance = Math.Clamp(cs.NumberAt("revisitchance", level), 0f, 1f),
                     Los = cs.On("los"),
                     OnResist = cs.On("onresist"),
                     Procs = cs.On("procs"),
@@ -157,33 +170,36 @@ namespace ACE.Server.WorldObjects
                     if (adj != null) allObjects.AddRange(adj.GetWorldObjectsForPhysicsHandling());
             }
 
-            var candidates = new List<(Creature c, float dist)>();
-            var seen = new HashSet<ObjectGuid>();
-            foreach (var obj in allObjects)
+            // JUMP BACK (owner 2026-10-17): "5% chance [per milestone] to jump back to a monster it has hit (just never the same
+            // monster twice in a row)" - rolled ONLY when no fresh monster can be reached, i.e. when the chain would end.
+            List<(Creature c, float dist)> Gather(bool back)
             {
-                if (!seen.Add(obj.Guid)) continue;
-                if (obj is not Creature c || c == player || c == from || c is Player || c is CombatPet) continue;
-                if (!c.IsAlive || c.Location == null || c.PhysicsObj == null) continue;
-                // every monster once - or, with "revisit" on, any monster but the one just hit
-                if (!chain.Revisit && chain.Visited.Contains(c.Guid.Full)) continue;
-                var dist = Vector3.Distance(fromGlobal, c.Location.ToGlobal(false));
-                if (dist > chain.Range) continue;
-                if (!player.CanDamage(c) || !c.CanBeDamagedBy(player)) continue;
-                if (player.CheckPKStatusVsTarget(c, Spell) != null) continue;
-                if (c.IsImmuneToChain()) continue;
-                candidates.Add((c, dist));
+                var list = new List<(Creature c, float dist)>();
+                var seen = new HashSet<ObjectGuid>();
+                foreach (var obj in allObjects)
+                {
+                    if (!seen.Add(obj.Guid)) continue;
+                    if (obj is not Creature c || c == player || c == from || c is Player || c is CombatPet) continue;
+                    if (!c.IsAlive || c.Location == null || c.PhysicsObj == null) continue;
+                    // fresh pass: every monster once - or, with "revisit" on, any monster but the one just hit;
+                    // jump-back pass: only monsters this chain already hit (never the one just hit - excluded above)
+                    var hit = chain.Visited.Contains(c.Guid.Full);
+                    if (back ? !hit : !chain.Revisit && hit) continue;
+                    var dist = Vector3.Distance(fromGlobal, c.Location.ToGlobal(false));
+                    if (dist > chain.Range) continue;
+                    if (!player.CanDamage(c) || !c.CanBeDamagedBy(player)) continue;
+                    if (player.CheckPKStatusVsTarget(c, Spell) != null) continue;
+                    if (c.IsImmuneToChain()) continue;
+                    list.Add((c, dist));
+                }
+                list.Sort((a, b) => a.dist.CompareTo(b.dist));
+                return list;
             }
-            if (candidates.Count == 0)
-            {
-                SpellChain.Stop("no monster in range");
-                return;
-            }
-
-            candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
 
             ACE.Server.Physics.PhysicsObj sightObj = null;
-            var why = "no monster in sight";
-            try
+            var why = "no monster in range";
+
+            bool TryLaunch(List<(Creature c, float dist)> candidates, string label)
             {
                 foreach ((Creature target, float _) in candidates)
                 {
@@ -218,8 +234,26 @@ namespace ACE.Server.WorldObjects
                         origins, velocity, LifeProjectileDamage,
                         originOverride: from, directionOverride: from,
                         chain: chain);
-                    SpellChain.Stop("jumped" + (from.IsDead ? " (from a dying monster)" : ""));
-                    return;   // one jump at a time
+                    SpellChain.Stop(label + (from.IsDead ? " (from a dying monster)" : ""));
+                    return true;   // one jump at a time
+                }
+                return false;
+            }
+
+            try
+            {
+                if (TryLaunch(Gather(false), "jumped"))
+                    return;
+                if (!chain.Revisit && chain.RevisitChance > 0f)
+                {
+                    if (ThreadSafeRandom.Next(0.0f, 1.0f) < chain.RevisitChance)
+                    {
+                        why = "no monster to jump back to";
+                        if (TryLaunch(Gather(true), "jumped back"))
+                            return;
+                    }
+                    else
+                        why += " (jump back not rolled)";
                 }
                 SpellChain.Stop(why);
             }

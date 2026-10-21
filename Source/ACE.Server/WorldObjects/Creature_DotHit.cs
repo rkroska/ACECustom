@@ -38,16 +38,32 @@ namespace ACE.Server.WorldObjects
             public uint SpellId;
             public float NormalPre;       // a normal tick before the monster's side
             public float CritPre;         // a crit tick before the monster's side
-            public float CritChance;
+            public float CritChance;      // the caster's own, from the wand at the cast
             public float RendMod;         // the wand's resistance modifier (Rend), 1 = none
             public double SpellArmorRend; // fraction of the Spell Armor level ignored, 0 = none
+            /// <summary>Which damage-taken dial the ticks use: Void for a hand cast, the weapon's kind for a Cast on Strike
+            /// proc ("tie it to the weapon", owner 2026-10-12).</summary>
+            public ACE.Server.Managers.ZoneControl.ZoneControlManager.ZcAttackKind AttackKind;
             // PANDEMIC charm (Creature_Pandemic.cs): 0 = this DoT does not spread; else the charm level it was cast with
             public int PandemicLevel;
             public int Generation;        // 0 = the cast itself, 1 = a copy of it, 2 = a copy of a copy ...
             public double PandemicEndsAt; // unix time the ORIGINAL cast ends; no copy spreads or is made after it
+            public float LeashCastDistance; // metres caster -> monster at the cast (0 for a copy); the leash's clear allows this much
+            /// <summary>The Pandemic charm's extra crit chance, SET (never added) by the arm / a copy, kept apart from the
+            /// caster's own so a refresh cannot stack it (review 2026-10-20).</summary>
+            public float CharmCritBonus;
+
+            /// <summary>The wand of the cast (round 2): Pandemic copies are built from it, never from whatever is in hand when
+            /// they spread, so the caster's side stays "fixed at the cast" down the whole infection.</summary>
+            public WorldObject CastWeapon;
+
+            /// <summary>The crit chance a tick rolls against.</summary>
+            public float EffectiveCritChance => Math.Clamp(CritChance + CharmCritBonus, 0f, 1f);
         }
 
-        private ConcurrentDictionary<(uint Caster, SpellCategory Category), ZcDotSnapshot> zcDotSnapshots;
+        // keyed by the SPELL, not its family (review 2026-10-20): one caster can hold two entries of one family (a cast and a
+        // weaker proc on their own layers), and the one that ticks must keep its own numbers
+        private ConcurrentDictionary<(uint Caster, uint SpellId), ZcDotSnapshot> zcDotSnapshots;
 
         /// <summary>Called as a void DoT lands (or is refreshed) on this monster: work out and keep the caster's side.
         /// <paramref name="basePerTick"/> is the spell's own damage per heartbeat tick, before anything.</summary>
@@ -94,13 +110,41 @@ namespace ACE.Server.WorldObjects
                 CritChance = GetWeaponMagicCritFrequency(wand, caster, skill, this),
                 RendMod = GetWeaponResistanceModifier(wand, caster, skill, spell.DamageType),
                 SpellArmorRend = ZcSpellArmorRendOf(wand, caster),
+                CastWeapon = wand,
+                // a hand cast comes from a wand (or nothing); anything else is a Cast on Strike proc of that item
+                AttackKind = ACE.Server.Managers.ZoneControl.ZoneControlManager.AttackKindOfSpell(caster, weapon, spell,
+                    fromProc: weapon != null && !(weapon is Caster)),
             };
-            if (!float.IsFinite(snap.NormalPre) || !float.IsFinite(snap.CritPre) || snap.NormalPre < 0)
-                return;   // nothing sane to keep: the tick takes the old path
 
             // made once, whichever caster's thread gets here first (two DoTs can land on one monster at the same moment)
-            System.Threading.LazyInitializer.EnsureInitialized(ref zcDotSnapshots,
-                () => new ConcurrentDictionary<(uint Caster, SpellCategory Category), ZcDotSnapshot>())[(caster.Guid.Full, spell.Category)] = snap;
+            var all = System.Threading.LazyInitializer.EnsureInitialized(ref zcDotSnapshots,
+                () => new ConcurrentDictionary<(uint Caster, uint SpellId), ZcDotSnapshot>());
+            var key = (caster.Guid.Full, spell.Id);
+
+            if (!float.IsFinite(snap.NormalPre) || !float.IsFinite(snap.CritPre) || snap.NormalPre < 0)
+            {
+                all.TryRemove(key, out _);   // nothing sane to keep: the tick takes the old path (and no stale snapshot lingers)
+                return;
+            }
+
+            // a REFRESH of the same DoT keeps its Pandemic marking (review 2026-10-20): a proc refresh never re-arms it, and
+            // a hand cast always goes through ZcPandemicArm right after this (charm on or off), which clears or sets these
+            // again. Only while that entry is still on the monster - a new entry (BuildEntry runs before it is added) never
+            // inherits an old one's - and only from the CAST itself (generation 0): a proc landing on a spread COPY makes it
+            // that proc's own full DoT, which does not spread (round 2: it kept spreading at full strength past its source).
+            if (all.TryGetValue(key, out var old) && old.Generation == 0
+                && EnchantmentManager.GetEnchantments(spell.Category).Exists(e => e.CasterObjectId == caster.Guid.Full && (uint)e.SpellId == spell.Id))
+            {
+                snap.PandemicLevel = old.PandemicLevel;
+                snap.Generation = old.Generation;
+                snap.PandemicEndsAt = old.PandemicEndsAt;
+                snap.LeashCastDistance = old.LeashCastDistance;
+                snap.CharmCritBonus = old.CharmCritBonus;
+                // and the CAST's wand: a melee / missile proc refreshing a marked cast must not make later copies come from
+                // the sword (round-2 fix-delta review)
+                snap.CastWeapon = old.CastWeapon ?? snap.CastWeapon;
+            }
+            all[key] = snap;
         }
 
         /// <summary>The snapshot that belongs to this DoT entry, or null (then the tick takes the old path).</summary>
@@ -109,7 +153,7 @@ namespace ACE.Server.WorldObjects
             var all = zcDotSnapshots;
             if (all == null || entry == null || !ServerConfig.zc_dot_spell_math.Value)
                 return null;
-            return all.TryGetValue((entry.CasterObjectId, entry.SpellCategory), out var snap) && snap.SpellId == (uint)entry.SpellId ? snap : null;
+            return all.TryGetValue((entry.CasterObjectId, (uint)entry.SpellId), out var snap) ? snap : null;
         }
 
         /// <summary>One tick of a snapshotted void DoT on this monster, before the damage-taken multipliers.

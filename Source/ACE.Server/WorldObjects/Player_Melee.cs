@@ -96,6 +96,10 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // T11+ void lockout (owner 2026-10-14): no melee for a while after a void cast (Player_VoidLockout.cs)
+            if (ZcRefuseAttackAfterVoid())
+                return;
+
             // verify input
             powerLevel = Math.Clamp(powerLevel, 0.0f, 1.0f);
 
@@ -392,6 +396,14 @@ namespace ACE.Server.WorldObjects
                         if (cleave == null || cleave.Count == 0)
                             return;
                         
+                        // Improved Cleave charm damage share (owner 2026-10-14), worked out once per swing: only the hits the
+                        // charm ADDS take it - the first ownCleaveCount targets (nearest first, as the picker orders them) are
+                        // the weapon's own and keep full damage, or the share if a levelled share is above 1 (review 2026-10-20)
+                        var cleaveLockedNow = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, this);
+                        var charmShare = CharmCleaveDamageScale(weapon, cleaveLockedNow);
+                        var ownCleaveCount = OwnCleaveCount(weapon, cleaveLockedNow);
+                        var cleaveIndex = 0;
+
                         // Apply cleave damage regardless of primary hit success
                         // Procs only happen if primary hit was successful (strikeMultiplier > 0f)
                         // strikeMultiplier is already calculated above and matches primary target behavior
@@ -401,13 +413,18 @@ namespace ACE.Server.WorldObjects
                             if (cleaveHit == null)
                                 continue;
 
+                            var cleaveScale = cleaveIndex++ < ownCleaveCount ? Math.Max(1f, charmShare) : charmShare;
+
                             // Clear split arrow tracking on cleave targets before hitting
                             cleaveHit?.RemoveProperty(PropertyBool.LastHitWasSplitArrow);
                             cleaveHit?.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
                             cleaveHit?.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
 
                             // Apply cast on strike effects to cleaved targets
-                            var cleaveDamageEvent = DamageTarget(cleaveHit, weapon);
+                            PendingCleaveDamageScale = cleaveScale != 1f ? cleaveScale : null;
+                            DamageEvent cleaveDamageEvent;
+                            try { cleaveDamageEvent = DamageTarget(cleaveHit, weapon); }
+                            finally { PendingCleaveDamageScale = null; }
                             
                             // Handle weapon-only procs for cleaved targets: uses strike-decayed chance then applies cleave decay
                             // Only proc if primary hit was successful and dealt damage

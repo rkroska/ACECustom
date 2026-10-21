@@ -719,6 +719,10 @@ namespace ACE.Server.Entity
                 Damage *= splitMultiplier;
             }
 
+            // Improved Cleave charm damage share (owner 2026-10-14): set by the melee path only around a cleaved hit
+            if (attacker is Creature cleaver && cleaver.PendingCleaveDamageScale is float cleaveScale)
+                Damage *= cleaveScale;
+
             // NEW: Apply enrage damage reduction to the final output damage if the defender is a mob and enraged
             if (defender.IsEnraged && !(defender is Player))
             {

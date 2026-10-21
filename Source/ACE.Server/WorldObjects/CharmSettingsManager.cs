@@ -133,6 +133,12 @@ namespace ACE.Server.WorldObjects
                     : key.ToLower();
 
                 PersistKey(persistedCharmName, persistedKey, block.GetRaw(persistedKey));
+
+                // a levelled charm's saved rows carry their format with them (review 2026-10-20 round 2): without this row
+                // LoadAll would take a single /charm change for a pre-schedule leftover and drop it at the next start
+                if (block is LeveledCharmBlock)
+                    PersistKey(persistedCharmName, LeveledCharmBlock.VersionKey,
+                        LeveledCharmBlock.SettingsVersion.ToString(CultureInfo.InvariantCulture));
             }
             return result;
         }
@@ -259,10 +265,35 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
         {
             using var ctx = new WorldDbContext();
             var rows = ctx.CharmSettings.ToListAsync().GetAwaiter().GetResult();
+
+            // levelled charms saved before the level schedules (no settings_version row) - see LeveledCharmBlock.VersionKey
+            var stale = new List<LeveledCharmBlock>();
+            foreach (var leveled in LeveledBlocks.Values)
+            {
+                var hasRows = false;
+                var version = 0;
+                foreach (var row in rows)
+                {
+                    if (row.CharmName != leveled.Name) continue;
+                    hasRows = true;
+                    if (row.SettingKey == LeveledCharmBlock.VersionKey)
+                        int.TryParse(row.SettingValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out version);
+                }
+                if (hasRows && version < LeveledCharmBlock.SettingsVersion)
+                    stale.Add(leveled);
+            }
+
             foreach (var row in rows)
             {
+                if (stale.Exists(b => b.Name == row.CharmName)) continue;
                 var block = GetBlock(row.CharmName);
                 block?.ApplyRaw(row.SettingKey, row.SettingValue);
+            }
+
+            foreach (var leveled in stale)
+            {
+                log.Warn($"CharmSettingsManager: {leveled.Name} was saved before the level schedules - its saved values are dropped and it is saved again from the defaults.");
+                PersistBlock(leveled.Name, leveled);
             }
         }
 

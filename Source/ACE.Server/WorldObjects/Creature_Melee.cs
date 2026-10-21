@@ -102,6 +102,7 @@ namespace ACE.Server.WorldObjects
             // weapon without cleave cleaves through it), a longer reach and a wider arc - the higher of the charm's and
             // the weapon's own, never the sum. Off for monsters and for everybody without the charm: nothing below changes.
             var charm = CharmCleaveFor(weapon, cleaveLocked);
+            var ownCount = OwnCleaveCount(weapon, cleaveLocked);
             var ownOn = weapon.IsCleaving && !(cleaveLocked && !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active);
 
             if (!ownOn && !charm.On) return null;
@@ -111,14 +112,14 @@ namespace ACE.Server.WorldObjects
             visible.Sort(DistanceComparator);
 
             var cleaveTargets = new List<Creature>();
-            var totalCleaves = !ownOn ? 0 : cleaveLocked
-                ? Math.Min(weapon.CleaveTargets, ACE.Server.Managers.ZoneControl.ZoneLockFallback.CleaveCap)
-                : weapon.CleaveTargets;
+            var totalCleaves = ownCount;
             var cleaveRange = CleaveCylRange;
             var cleaveAngle = CleaveAngle;
             ACE.Server.Physics.PhysicsObj charmSight = null;
             if (charm.On)
             {
+                // higher of the two per number, never the sum (owner 2026-10-13); CharmCleaveFor already never goes below
+                // the reach and arc everybody has (2 m, 180 degrees)
                 totalCleaves = Math.Max(totalCleaves, charm.Targets);
                 cleaveRange = charm.Range;
                 cleaveAngle = charm.Angle;

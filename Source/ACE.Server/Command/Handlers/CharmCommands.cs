@@ -96,23 +96,23 @@ namespace ACE.Server.Command.Handlers
         // Brief descriptions shown by /charms and /charm (no args)
         private static readonly string CharmList =
             "=== Available Charms ===\n" +
-            "  • agony              — Tectonic (Bludgeon Ring) spells now cast Ring of Unspeakable Agony.\n" +
-            "  • artisans           — Provides Crafting and Tinkering bonuses.\n" +
-            "  • asheronsfavor      — Grants Health% and Natural Armor bonuses.\n" +
-            "  • autorebuff         — Automatically re-applies expiring beneficial buffs.\n" +
-            "  • chain              — (level 1-100) War arcs, bolts and streaks jump from monster to monster.\n" +
-            "  • essencerefill      — Pay pyreals to automatically refill empty summoning essence charges.\n" +
-            "  • explosivearrow     — Arrows detonate on hit, dealing AOE blast damage to nearby enemies.\n" +
-            "  • fork               — Spell projectiles fork to nearby enemies on hit.\n" +
-            "  • improvedcleave     — (level 1-100) Melee cleave reaches further, all around, more targets.\n" +
-            "  • infinitecasting    — Spell components are not consumed while spellcasting.\n" +
-            "  • manabarrier        — Drains Mana before HP while taking damage.\n" +
-            "  • pandemic           — (level 1-100) A ticking void DoT spreads to nearby monsters.\n" +
-            "  • splitarrow         — (level 1-100) T11+ launchers fire extra arrows at nearby monsters.\n" +
-            "  • splitcast          — Streak, Arc, and Bolt spells target multiple nearby enemies simultaneously.\n" +
-            "  • omnistrike         — Melee attacks strike with the target's absolute weakest damage type.\n" +
-            "  • shrapnel           — Tectonic (Bludgeon Ring) spells now cast Rocky Shrapnel.\n" +
-            "  • universalsummoning — Bypasses summoning mastery skill checks (can use all pet types).\n" +
+            "  - agony              - Tectonic (Bludgeon Ring) spells now cast Ring of Unspeakable Agony.\n" +
+            "  - artisans           - Provides Crafting and Tinkering bonuses.\n" +
+            "  - asheronsfavor      - Grants Health% and Natural Armor bonuses.\n" +
+            "  - autorebuff         - Automatically re-applies expiring beneficial buffs.\n" +
+            "  - chain              - (level 1-100) War arcs, bolts and streaks jump from monster to monster.\n" +
+            "  - essencerefill      - Pay pyreals to automatically refill empty summoning essence charges.\n" +
+            "  - explosivearrow     - Arrows detonate on hit, dealing AOE blast damage to nearby enemies.\n" +
+            "  - fork               - Spell projectiles fork to nearby enemies on hit.\n" +
+            "  - improvedcleave     - (level 1-100) Melee cleave reaches further, all around, more targets.\n" +
+            "  - infinitecasting    - Spell components are not consumed while spellcasting.\n" +
+            "  - manabarrier        - Drains Mana before HP while taking damage.\n" +
+            "  - pandemic           - (level 1-100) A ticking void DoT spreads to nearby monsters.\n" +
+            "  - splitarrow         - (level 1-100) T11+ launchers fire extra arrows at nearby monsters.\n" +
+            "  - splitcast          - Streak, Arc, and Bolt spells target multiple nearby enemies simultaneously.\n" +
+            "  - omnistrike         - Melee attacks strike with the target's absolute weakest damage type.\n" +
+            "  - shrapnel           - Tectonic (Bludgeon Ring) spells now cast Rocky Shrapnel.\n" +
+            "  - universalsummoning - Bypasses summoning mastery skill checks (can use all pet types).\n" +
             "\nUse /charm <name> to see current settings and all adjustable keys.\n" +
             "Use /charm level <name> <1-100> to set the level of a levelled charm you carry.";
 
@@ -130,12 +130,12 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("charm", AccessLevel.Developer, CommandHandlerFlag.None, 0,
             "Dev: view or modify ability charm settings on the fly.",
             "Usage:\n" +
-            "  /charm                           — list all charms\n" +
-            "  /charm <name>                    — show current settings + all adjustable keys\n" +
-            "  /charm <name> <key> <value>      — set a value (e.g. /charm manabarrier ratio 0.5)\n" +
-            "  /charm <name> true|false|on|off  — enable or disable a charm\n" +
-            "  /charm level <name> <1-100>      — set the level of the levelled charm you carry (test tool)\n" +
-            "  /charm sync [help]               — every charm's settings as plugin wire lines\n" +
+            "  /charm                           - list all charms\n" +
+            "  /charm <name>                    - show current settings + all adjustable keys\n" +
+            "  /charm <name> <key> <value>      - set a value (e.g. /charm manabarrier ratio 0.5)\n" +
+            "  /charm <name> true|false|on|off  - enable or disable a charm\n" +
+            "  /charm level <name> <1-100>      - set the level of the levelled charm you carry (test tool)\n" +
+            "  /charm sync [help]               - every charm's settings as plugin wire lines\n" +
             "\nCharm names are flexible: 'manabarrier' or 'Mana Barrier' both work.")]
         public static void HandleCharm(Session session, params string[] parameters)
         {
@@ -181,7 +181,7 @@ namespace ACE.Server.Command.Handlers
             {
                 var dump = CharmSettingsManager.DumpCharm(charmName);
                 var help = CharmSettingsManager.DumpHelp(charmName);
-                Reply(session, "\u200B\n" + dump + "\n" + help);
+                Reply(session, dump + "\n" + help);
                 return;
             }
 
@@ -210,7 +210,8 @@ namespace ACE.Server.Command.Handlers
             if (remaining.Length >= 2)
             {
                 var key   = arg1;
-                var value = remaining[1];
+                // the rest of the line: a schedule like "25:1, 50:1" may come with spaces (2026-10-17)
+                var value = string.Join(" ", remaining.Skip(1));
 
                 var result = CharmSettingsManager.TrySet(charmName, key, value, out _);
                 if (result == null)
@@ -223,7 +224,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            Reply(session, $"Usage: /charm {charmName} <key> <value>  — use /charm {charmName} to see valid keys.");
+            Reply(session, $"Usage: /charm {charmName} <key> <value>  - use /charm {charmName} to see valid keys.");
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
@@ -268,7 +269,7 @@ namespace ACE.Server.Command.Handlers
                 var item = FindCarriedCharm(player, abilityId);
                 if (!first) sb.Append('|');
                 first = false;
-                sb.Append(block.Name).Append('=').Append(item?.CharmLevel ?? 0).Append('~').Append(item != null && item.IsCharmActivated ? 1 : 0);
+                sb.Append(block.Name).Append('=').Append(item != null ? Math.Max(1, player.GetCharmLevel(abilityId)) : 0).Append('~').Append(item != null && item.IsCharmActivated ? 1 : 0);
             }
             Reply(session, sb.ToString());
         }
@@ -280,8 +281,9 @@ namespace ACE.Server.Command.Handlers
             return null;
         }
 
-        /// <summary>/charm level &lt;name&gt; &lt;1-100&gt;: sets the level of the levelled charm the caller carries and, when it
-        /// is switched on, the level the ability uses at once. A test tool - how players gain levels is not built.</summary>
+        /// <summary>/charm level &lt;name&gt; &lt;1-100&gt;: sets the caller's level of a levelled charm they carry (the level lives on
+        /// the player; every copy carried shows it) and, when it is switched on, the level the ability uses at once. A test
+        /// tool - players raise levels with upgrade gems (Player_CharmLevels.cs).</summary>
         private static void HandleCharmLevel(Session session, string[] parameters)
         {
             var player = session?.Player;
@@ -297,12 +299,9 @@ namespace ACE.Server.Command.Handlers
             var item = FindCarriedCharm(player, abilityId);
             if (item == null) { Reply(session, $"You carry no {GetCharmDisplayName(charmName)} charm."); return; }
 
-            item.CharmLevel = level;
-            item.SaveBiotaToDatabase();
-            if (item.IsCharmActivated)
-                CharmAbilityRegistry.Apply(player, abilityId, true, level);
+            player.SetCharmLevel(abilityId, level);
             Reply(session, $"{item.Name} is now level {level}" + (item.IsCharmActivated ? " (active - in use at once)." : " (switched off)."));
-            Reply(session, "\u200B\n" + CharmSettingsManager.DescribeAtLevel(charmName, level));
+            Reply(session, CharmSettingsManager.DescribeAtLevel(charmName, level));
             SendMyLevels(session);
         }
 

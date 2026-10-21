@@ -341,7 +341,8 @@ namespace ACE.Server.WorldObjects
                     if (itemCaster != null && (equip || itemCaster is Gem || itemCaster is Food))
                         CreateEnchantment(targetCreature ?? target, itemCaster, itemCaster, spell, equip);
                     else
-                        CreateEnchantment(targetCreature ?? target, this, weapon, spell, equip);
+                        CreateEnchantment(targetCreature ?? target, this, weapon, spell, equip,
+                            zcHandCast: !fromProc && !isWeaponSpell && itemCaster == null);
 
                     break;
 
@@ -428,7 +429,10 @@ namespace ACE.Server.WorldObjects
         /// Handles casting SpellType.Enchantment / FellowEnchantment spells
         /// this is also called if SpellType.EnchantmentProjectile successfully hits
         /// </summary>
-        public void CreateEnchantment(WorldObject target, WorldObject caster, WorldObject weapon, Spell spell, bool equip = false, bool fromProc = false)
+        /// <param name="zcHandCast">True only from the paths that know this is the player's own hand cast (not a proc, not a
+        /// weapon's or item's built-in spell): the Pandemic charm marks only those (review 2026-10-20 round 2 - an
+        /// Enchantment-type proc such as a Destructive Curse gem proc never passed fromProc here and was marked).</param>
+        public void CreateEnchantment(WorldObject target, WorldObject caster, WorldObject weapon, Spell spell, bool equip = false, bool fromProc = false, bool zcHandCast = false)
         {
             // weird itemCaster -> caster collapsing going on here -- fixme
 
@@ -464,8 +468,10 @@ namespace ACE.Server.WorldObjects
             var addResult = target.EnchantmentManager.Add(spell, caster, weapon, equip);
 
             // PANDEMIC charm (owner 2026-10-13): a player's HAND-CAST void DoT is marked to spread while the charm is active
-            // (never a proc's - the tick itself cannot tell them apart, so it is decided here, at the cast)
-            if (!fromProc && !aetheriaProc && !cloakProc && player != null && player.HasPandemicCharm && target is Creature pandemicTarget)
+            // (never a proc's - the tick itself cannot tell them apart, so it is decided here, at the cast). Called for every
+            // hand cast, charm on or off: the arm first clears what a refreshed DoT carried over, and marks it only when the
+            // charm is on (review 2026-10-20 round 2: with the charm off a recast kept spreading and kept the crit bonus).
+            if (zcHandCast && !fromProc && !aetheriaProc && !cloakProc && player != null && target is Creature pandemicTarget)
                 pandemicTarget.ZcPandemicArm(player, spell, addResult.Enchantment);
 
             // build message
@@ -1991,7 +1997,8 @@ namespace ACE.Server.WorldObjects
                     if (extraOrigins == null || extraOrigins.Count == 0)
                         continue;
                     var extraVelocity = CalculateProjectileVelocity(spell, extraTarget, spellType, extraOrigins[0]);
-                    var extraProjectiles = LaunchSpellProjectiles(spell, extraTarget, spellType, weapon, isWeaponSpell, fromProc, extraOrigins, extraVelocity, lifeProjectileDamage);
+                    var extraProjectiles = LaunchSpellProjectiles(spell, extraTarget, spellType, weapon, isWeaponSpell, fromProc, extraOrigins, extraVelocity, lifeProjectileDamage,
+                        splitCastExtra: true);   // the Chain charm starts only from the main projectile (owner 2026-10-20)
                     if (extraProjectiles != null)
                         spellProjectiles.AddRange(extraProjectiles);
                 }
@@ -2256,7 +2263,7 @@ namespace ACE.Server.WorldObjects
             return dir * speed;
         }
 
-        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f, bool handCastFork = false, SpellChain chain = null)
+        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f, bool handCastFork = false, SpellChain chain = null, bool splitCastExtra = false)
         {
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -2350,6 +2357,7 @@ namespace ACE.Server.WorldObjects
                 sp.ForkDamageMult   = forkDamageMult;
                 sp.HandCastFork     = handCastFork;   // a projectile can collide inside AddObject, so the low-tier gate needs it now
                 sp.Chain            = chain;          // Chain charm: the jump's state, set before it can collide
+                sp.IsSplitCastExtra = splitCastExtra; // a Split Cast extra never starts a chain (set before it can collide)
 
                 if (!LandblockManager.AddObject(sp))
                 {

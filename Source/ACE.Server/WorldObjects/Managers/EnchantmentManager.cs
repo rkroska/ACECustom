@@ -1882,6 +1882,8 @@ namespace ACE.Server.WorldObjects.Managers
 
             // PANDEMIC charm: the marked DoTs that ticked here (never on the landing tick), spread after the damage
             List<(PropertiesEnchantmentRegistry Entry, Player Caster, Creature.ZcDotSnapshot Snap)> pandemic = null;
+            // ... and the marked DoTs the leash takes off this monster (caster gone, or this monster off the caster's radar)
+            List<PropertiesEnchantmentRegistry> leashed = null;
 
             // get the total tick amount
             var tickAmountTotal = 0.0f;
@@ -1902,6 +1904,9 @@ namespace ACE.Server.WorldObjects.Managers
                 if (damager == null)
                 {
                     //Console.WriteLine($"{WorldObject.Name}.ApplyDamageTick() - couldn't find damager {enchantment.CasterObjectId:X8}");
+                    // PANDEMIC leash: a marked DoT whose caster is not even in this or a neighbouring landblock is off the radar
+                    if (!landing && creature.ZcDotSnapshotFor(enchantment)?.PandemicLevel > 0 && creature.ZcPandemicLeashClears(null, null))
+                        (leashed ??= new List<PropertiesEnchantmentRegistry>()).Add(enchantment);
                     continue;
                 }
 
@@ -1972,8 +1977,16 @@ namespace ACE.Server.WorldObjects.Managers
                 // Spell Armor Rend, Spell Armor, the rating rows and a crit rolled per tick (Creature_DotHit.cs). No snapshot =
                 // the path above, untouched.
                 var zcSnap = zcDotTick && damageType == DamageType.Nether ? creature.ZcDotSnapshotFor(enchantment) : null;
+
+                // PANDEMIC leash, clear: a marked DoT on a monster off its caster's radar comes off before this tick deals anything
+                if (!landing && zcSnap != null && zcSnap.PandemicLevel > 0 && sourcePlayer != null && creature.ZcPandemicLeashClears(sourcePlayer, zcSnap))
+                {
+                    (leashed ??= new List<PropertiesEnchantmentRegistry>()).Add(enchantment);
+                    continue;
+                }
+
                 if (zcSnap != null)
-                    tickAmount = creature.ZcDotTickAmount(zcSnap, damager, damageType, tickScale, ThreadSafeRandom.Next(0.0f, 1.0f) < zcSnap.CritChance);
+                    tickAmount = creature.ZcDotTickAmount(zcSnap, damager, damageType, tickScale, ThreadSafeRandom.Next(0.0f, 1.0f) < zcSnap.EffectiveCritChance);
                 else
                     tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod * netherResistRatingMod;
 
@@ -1982,7 +1995,12 @@ namespace ACE.Server.WorldObjects.Managers
                 if (targetPlayer != null && damager is Creature dotCaster)
                     tickAmount *= ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(dotCaster, targetPlayer);
 
-                tickAmount *= damageType == DamageType.Nether && damager is Player ? voidTakenMult : dotTakenMult;
+                // a DoT put on by a melee / missile weapon's Cast on Strike takes that weapon's dial, as its other procs do
+                // ("tie it to the weapon", owner 2026-10-12; the kind is fixed at the cast - review 2026-10-20)
+                if (targetPlayer == null && zcSnap != null && zcSnap.AttackKind != ACE.Server.Managers.ZoneControl.ZoneControlManager.ZcAttackKind.Void)
+                    tickAmount *= ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(creature, zcSnap.AttackKind);
+                else
+                    tickAmount *= damageType == DamageType.Nether && damager is Player ? voidTakenMult : dotTakenMult;
 
                 // make sure the target's current health is not exceeded
                 if (tickAmountTotal + tickAmount >= creature.Health.Current)
@@ -2000,7 +2018,10 @@ namespace ACE.Server.WorldObjects.Managers
 
                 tickAmountTotal += tickAmount;
 
-                if (!landing && zcSnap != null && zcSnap.PandemicLevel > 0 && sourcePlayer != null)
+                // a landing tick spreads only for the CAST DoT (generation 0) with spreadonland on (owner 2026-10-17: "Cast DoT
+                // only"); a copy spreads from its next tick
+                var spreadsNow = !landing || zcSnap != null && zcSnap.Generation == 0 && CharmSettingsManager.Pandemic.On("spreadonland");
+                if (spreadsNow && zcSnap != null && zcSnap.PandemicLevel > 0 && sourcePlayer != null)
                     (pandemic ??= new List<(PropertiesEnchantmentRegistry, Player, Creature.ZcDotSnapshot)>()).Add((enchantment, sourcePlayer, zcSnap));
 
                 traceParts?.Add(new PetTrace.DotPart
@@ -2011,6 +2032,10 @@ namespace ACE.Server.WorldObjects.Managers
 
                 if (isDead) break;
             }
+
+            if (leashed != null)
+                foreach (var entry in leashed)
+                    Remove(entry, false);
 
             creature.TakeDamageOverTime(tickAmountTotal, damageType);
 

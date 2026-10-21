@@ -10,6 +10,7 @@ using ACE.Entity.Enum;
 using ACE.Entity.Models;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
+using ACE.Server.Managers;
 using ACE.Server.Managers.ZoneControl;
 using ACE.Server.Network.GameMessages.Messages;
 
@@ -22,13 +23,15 @@ namespace ACE.Server.WorldObjects
     ///
     /// A player's hand-cast void DoT (Corrosion, Corruption, Destructive Curse) on a Zone Control monster is MARKED at the cast
     /// when the caster's Pandemic charm is active: the charm's level and the moment the DoT ends are written onto the DoT's
-    /// snapshot (Creature_DotHit.cs). Every later tick of a marked DoT - never the landing tick - looks for monsters near the
+    /// snapshot (Creature_DotHit.cs). Every tick of a marked DoT - the CAST's landing tick too (setting spreadonland, owner
+    /// 2026-10-17; a copy's landing tick never) - looks for monsters near the
     /// ticking one that do not carry that DoT from this caster, and puts a copy on them:
     ///   - the copy is a real DoT entry from the same caster (kill credit, the DoT bonus, the Curse's damage cut all follow);
     ///   - it lasts only until the ORIGINAL cast would have ended (an absolute time carried from copy to copy), so a whole
     ///     infection is bounded by one cast's clock however far it travels, and it cannot keep itself alive by ping-pong;
     ///   - the copy is marked too (one generation further), so it spreads in turn;
-    ///   - a monster that carries the DoT from this caster is never given it again (an Add would refresh it to full length).
+    ///   - a monster that carries the DoT from this caster is never given it again (an Add would refresh it to full length),
+    ///     nor one that carries it from another player (a copy must not push their own cast off the top layer, 2026-10-20).
     /// Monsters only (never players or pets), Zone Control monsters only (only they tick by the new math), each with the tier
     /// hit gate, optional line of sight and resist roll, and the immunity (Creature_CharmImmunity.cs).
     ///
@@ -48,7 +51,13 @@ namespace ACE.Server.WorldObjects
             if (snap == null)
                 return;   // old math or not a Zone Control monster: nothing to mark
 
+            // a hand cast is always the start of its own infection: nothing carried over from a refreshed snapshot
             snap.PandemicLevel = 0;
+            snap.Generation = 0;
+            snap.CharmCritBonus = 0f;
+            // the leash's clear counts from here (owner 2026-10-14: "only clear once i move away after casting")
+            var casterLoc = caster.Location;
+            snap.LeashCastDistance = casterLoc != null && Location != null ? casterLoc.Distance2D(Location) : 0f;
             var cs = CharmSettingsManager.Pandemic;
             if (!cs.Enabled || !caster.HasPandemicCharm)
                 return;
@@ -66,9 +75,27 @@ namespace ACE.Server.WorldObjects
             snap.Generation = 0;
             snap.PandemicEndsAt = Time.GetUnixTime() + Math.Max(0.0, entry.Duration + entry.StartTime);
             snap.PandemicLevel = level;
+            // milestone bonus (owner 2026-10-17): extra crit chance on every tick of the charm-holder's void DoTs - SET, never
+            // added, so a refresh cannot stack it
+            snap.CharmCritBonus = Math.Clamp(cs.NumberAt("critchance", level), 0f, 1f);
         }
 
-        /// <summary>One tick (not the landing tick) of a marked DoT has just been dealt to this monster: spread it.</summary>
+        /// <summary>HOME CLEAR (owner 2026-10-17, replaces the radar leash as the default): a Zone Control monster that turns
+        /// back home loses every void DoT on it - Corrosion, Corruption, Destructive Curse, from any player, hand-cast or
+        /// spread. Server switch zc_void_dot_home_clear. Called from MoveToHome.</summary>
+        public void ZcClearVoidDotsGoingHome()
+        {
+            if (!ServerConfig.zc_void_dot_home_clear.Value || !ZcDebuffCompressed || Biota?.PropertiesEnchantmentRegistry == null)
+                return;
+            var all = Biota.PropertiesEnchantmentRegistry.Clone(BiotaDatabaseLock);
+            if (all == null)
+                return;
+            foreach (var entry in all)
+                if (IsVoidDotSpell((uint)entry.SpellId))
+                    EnchantmentManager.Remove(entry, false);
+        }
+
+        /// <summary>One tick of a marked DoT has just been dealt to this monster (a copy's landing tick never comes here): spread it.</summary>
         public void ZcPandemicOnTick(PropertiesEnchantmentRegistry entry, Player caster, ZcDotSnapshot snap)
         {
             var cs = CharmSettingsManager.Pandemic;
@@ -102,6 +129,11 @@ namespace ACE.Server.WorldObjects
                 return;
             if (Location == null || CurrentLandblock == null)
                 return;
+            // the leash (owner 2026-10-14: "If the mob is on your radar, is should still work. If not, then no.") - for the
+            // ticking monster here, and for each one it would spread to below
+            var leash = cs.On("leash");
+            if (leash && !ZcOnRadarOf(caster))
+                return;
 
             var here = Location.ToGlobal(false);
             var allObjects = new List<WorldObject>();
@@ -126,8 +158,11 @@ namespace ACE.Server.WorldObjects
                 if (dist > range) continue;
                 if (!caster.CanDamage(c) || !c.CanBeDamagedBy(caster)) continue;
                 if (c.IsImmuneToPandemic()) continue;
-                // "just not on the same mob": a monster that carries this DoT from this caster is left alone
-                if (c.ZcCarriesDotFrom(category, casterGuid)) continue;
+                if (leash && !c.ZcOnRadarOf(caster)) continue;
+                // "just not on the same mob": a monster that carries this DoT is left alone - from this caster, or from
+                // anybody (review 2026-10-20: a copy must never push another player's own cast off the top layer, nor sit
+                // under it unticking while it takes up a slot of the cap)
+                if (c.ZcCarriesDotFamily(category)) continue;
                 candidates.Add((c, dist));
             }
             if (candidates.Count == 0)
@@ -158,14 +193,45 @@ namespace ACE.Server.WorldObjects
                     sent++;
                     var endsAt = snap.PandemicEndsAt;
                     var generation = snap.Generation + 1;
+                    var castWeapon = snap.CastWeapon;   // the cast's wand travels with the infection (round 2)
                     neighbour.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay,
-                        () => neighbour.ZcPandemicReceive(caster, spellId, level, generation, endsAt)));
+                        () => neighbour.ZcPandemicReceive(caster, spellId, level, generation, endsAt, castWeapon)));
                 }
             }
             finally
             {
                 sightObj?.DestroyObject();
             }
+        }
+
+        /// <summary>True when this monster would be on the player's radar: within the radar range of where the player stands
+        /// (25 m indoors, 75 m outdoors, flat distance) and in the player's view - the test fellowship sharing uses
+        /// (Fellowship.cs). The view check keeps out monsters behind dungeon walls or on another layer. Safe from the
+        /// monster's thread: the player's Location is read once, and the view set is behind its own lock.</summary>
+        public bool ZcOnRadarOf(Player player, float atLeast = 0f)
+        {
+            var theirs = player?.Location;
+            var mine = Location;
+            if (theirs == null || mine == null)
+                return false;
+            var radar = Math.Max(theirs.Indoors ? Player.MaxRadarRange_Indoors : Player.MaxRadarRange_Outdoors, atLeast);
+            if (theirs.Distance2D(mine) > radar)
+                return false;
+            var view = player.PhysicsObj?.ObjMaint;
+            return view != null && view.VisibleObjectsContainsKey(Guid.Full);
+        }
+
+        /// <summary>The leash's clear (owner 2026-10-14: "the leash should remove the damage... essentially clearing the dot.
+        /// Optional at least, so we can test"): true when a charm-marked DoT from this caster must come off this monster -
+        /// the caster is not found near it at all (null), or it is off the caster's radar. "Off radar" for the clear reaches at
+        /// least as far as the caster stood at the cast (owner 2026-10-14: "only clear once i move away after casting") - an
+        /// indoor cast from 40 m (radar 25 m) keeps ticking until the caster is farther than 40 m. A copy has no such reach.</summary>
+        public bool ZcPandemicLeashClears(Player casterOrNull, ZcDotSnapshot snap)
+        {
+            var cs = CharmSettingsManager.Pandemic;
+            if (!cs.Enabled || !cs.On("leash") || !cs.On("leashclear"))
+                return false;
+            return casterOrNull == null || !ZcOnRadarOf(casterOrNull, snap?.LeashCastDistance ?? 0f);
         }
 
         /// <summary>True when this creature has a DoT of that family from that caster on it.</summary>
@@ -176,8 +242,16 @@ namespace ACE.Server.WorldObjects
             return false;
         }
 
+        /// <summary>True when this creature has a DoT of that family from any player on it (Pandemic never spreads onto it).</summary>
+        public bool ZcCarriesDotFamily(SpellCategory category)
+        {
+            foreach (var e in EnchantmentManager.GetEnchantments(category))
+                if (ObjectGuid.IsPlayer(e.CasterObjectId)) return true;
+            return false;
+        }
+
         /// <summary>On THIS monster's own thread: catch a spread copy of the caster's DoT.</summary>
-        private void ZcPandemicReceive(Player caster, uint spellId, int level, int generation, double endsAt)
+        private void ZcPandemicReceive(Player caster, uint spellId, int level, int generation, double endsAt, WorldObject castWeapon)
         {
             var cs = CharmSettingsManager.Pandemic;
             if (IsDestroyed || IsDead || CurrentLandblock == null || !ZcDebuffCompressed || !cs.Enabled)
@@ -189,7 +263,7 @@ namespace ACE.Server.WorldObjects
                 return;
 
             var spell = new Spell(spellId);
-            if (spell.NotFound || ZcCarriesDotFrom(spell.Category, caster.Guid.Full) || IsImmuneToPandemic())
+            if (spell.NotFound || ZcCarriesDotFamily(spell.Category) || IsImmuneToPandemic())
                 return;
 
             // the cap again, now that the copy lands: two monsters ticking at the same moment both saw room for one more
@@ -214,7 +288,10 @@ namespace ACE.Server.WorldObjects
             AddEnchantmentResult result;
             try
             {
-                result = EnchantmentManager.Add(spell, caster, caster.GetEquippedWand());
+                // built from the CAST's wand, not whatever is in hand now (review 2026-10-20 round 2: a swap after the cast
+                // changed every later copy and let a non-T11 wand power the charm); the wand in hand only if that one is gone
+                var copyWand = castWeapon != null && !castWeapon.IsDestroyed ? castWeapon : caster.GetEquippedWand();
+                result = EnchantmentManager.Add(spell, caster, copyWand);
             }
             finally
             {
@@ -232,12 +309,18 @@ namespace ACE.Server.WorldObjects
             var snap = ZcDotSnapshotFor(copy);
             if (snap != null)
             {
+                // generation 1 = the copy strength; each later generation `falloff` of the one before, never below `floor`
+                // (owner 2026-10-17, the devs' worry about DoTs spreading far: same pair as the Chain charm)
                 var share = cs.NumberAt("damage", level);
+                var falloff = cs.NumberAt("falloff", level);
+                if (generation > 1 && falloff < 1f)
+                    share = Math.Max(share * MathF.Pow(falloff, generation - 1), cs.NumberAt("floor", level));
                 snap.NormalPre *= share;
                 snap.CritPre *= share;
                 snap.Generation = generation;
                 snap.PandemicEndsAt = endsAt;
                 snap.PandemicLevel = level;   // copies spread too
+                snap.CharmCritBonus = Math.Clamp(cs.NumberAt("critchance", level), 0f, 1f);   // the charm's crit bonus (set, not added)
             }
 
             if (cs.On("aggro"))
@@ -249,7 +332,7 @@ namespace ACE.Server.WorldObjects
             else
                 EnqueueBroadcast(new GameMessageScript(Guid, PlayScript.HealthDownVoid));
 
-            caster.PandemicSpreadTo(this, spell, endsAt, cs.On("message"));
+            caster.PandemicSpreadTo(this, spell, endsAt, cs.On("message"), track: cap > 0);
         }
     }
 
@@ -282,11 +365,16 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>A DoT of this player's has spread to a monster: count it for the cap, and tell the player - at most one
-        /// line every 5 s, with how many monsters since the last line.</summary>
-        public void PandemicSpreadTo(Creature monster, Spell spell, double endsAt, bool tell)
+        /// line every 5 s, with how many monsters since the last line. <paramref name="track"/> false (no cap, maxinfected 0):
+        /// nothing is kept - only PandemicCarried prunes the list, and it runs only under a cap (round 2: the list grew for
+        /// the whole session and held every dead monster).</summary>
+        public void PandemicSpreadTo(Creature monster, Spell spell, double endsAt, bool tell, bool track = true)
         {
             if (monster == null) return;
-            pandemicCarried[monster.Guid.Full] = (monster, endsAt);
+            if (track)
+                pandemicCarried[monster.Guid.Full] = (monster, endsAt);
+            else if (!pandemicCarried.IsEmpty)
+                PandemicCarried(Time.GetUnixTime());   // prune what has ended - never wipe what a capped cast still counts on
             if (!tell || Session == null) return;
 
             var count = System.Threading.Interlocked.Increment(ref pandemicUntold);

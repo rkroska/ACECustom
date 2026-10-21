@@ -602,6 +602,10 @@ namespace ACE.Server.Network.Structure
                 if (wo.GetProperty(PropertyBool.IsAbilityCharm) == true)
                 {
                     var tier    = wo.GetProperty(PropertyInt.CharmLevel) ?? 1;
+                    // a levelled charm shows its owner's level, which lives on the player (2026-10-17). Charms are
+                    // bonded + attuned, so the one appraising a charm is the one carrying it.
+                    var playerLevel = examiner?.GetCharmLevel(wo.GetProperty(PropertyInt.CharmGrantsAbility) ?? 0) ?? 0;
+                    if (playerLevel > 0) tier = playerLevel;
                     var maxTier = wo.GetProperty(PropertyInt.CharmMaxLevel);
                     var tierStr = maxTier.HasValue ? $"{tier}/{maxTier}" : $"{tier}";
                     var isOn    = wo.GetProperty(PropertyBool.IsCharmActivated) == true;

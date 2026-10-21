@@ -152,10 +152,18 @@ namespace ACE.Server.WorldObjects
             {
                 // (Split Arrow charm, owner 2026-10-13: a player's active charm gives a T11+ launcher split arrows - the
                 // higher of the charm's and the launcher's own numbers; the three-argument reader)
-                var split = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon,
-                    ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, this), this);
+                var splitLocked = ACE.Server.Managers.ZoneControl.ZoneControlManager.WeaponPowerSuppressed(weapon, this);
+                var split = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon, splitLocked, this);
                 if (split.On && split.Count > 0)
-                    CreateSplitArrows(weapon, ammo, target, origin, orientation, split.Count, split.Range, split.Damage, split.Angle);
+                {
+                    // proc decay on a split arrow's hit uses what it always used - the launcher's own count property, else 0 -
+                    // and the charm's count only when the charm is what raises it (review 2026-10-20: no proc change for
+                    // anybody without the charm)
+                    var ownSplit = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon, splitLocked);
+                    var byCharm = split.Count > (ownSplit.On ? ownSplit.Count : 0);
+                    var procSplitCount = byCharm ? split.Count : (weapon.GetProperty(PropertyInt.SplitArrowCount) ?? 0);
+                    CreateSplitArrows(weapon, ammo, target, origin, orientation, split.Count, split.Range, split.Damage, split.Angle, procSplitCount);
+                }
             }
 
             // detonate point-blank projectiles immediately
@@ -514,7 +522,8 @@ namespace ACE.Server.WorldObjects
         /// <param name="origin">Origin position for split arrows</param>
         /// <param name="orientation">Orientation for split arrows</param>
         private void CreateSplitArrows(WorldObject weapon, WorldObject ammo, WorldObject target, Vector3 origin, Quaternion orientation,
-            int splitCount, float splitRange, float damageMultiplier, float splitAngle = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitAngleDefault)
+            int splitCount, float splitRange, float damageMultiplier, float splitAngle = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitAngleDefault,
+            int procSplitCount = 0)
         {
             try
             {
@@ -610,9 +619,9 @@ namespace ACE.Server.WorldObjects
                 // This enables death message modification to prevent VirindiTank kill attribution issues
                 splitProj.SetProperty(PropertyBool.IsSplitArrow, true);
                 splitProj.SetProperty(PropertyFloat.SplitArrowDamageMultiplier, shotSplitDamage);
-                // the count this shot fired with, for the proc decay on a split arrow's hit (a charm's or the zone lock's
-                // split is not on the launcher)
-                splitProj.SetProperty(PropertyInt.SplitArrowCount, splitCount);
+                // the count for the proc decay on a split arrow's hit (the charm's split is not on the launcher; without the
+                // charm it is the launcher's own count property, else 0, exactly as before)
+                splitProj.SetProperty(PropertyInt.SplitArrowCount, procSplitCount);
                     
                     // Calculate velocity to new target using the SAME method as main arrows
                     // Each split arrow needs its own aim level and spawn origin based on its target distance

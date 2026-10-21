@@ -742,6 +742,18 @@ namespace ACE.Server.WorldObjects
             if (isWeaponSpell)
                 castingPreCheckStatus = CastingPreCheckStatus.Success;
 
+            // T11+ (owner 2026-10-14): in a Zone Control area war fails for zc_void_war_lockout_seconds after a void cast
+            // (Player_VoidLockout.cs) - longer than the retail 3-5 s below, and on the void cast's own clock
+            if (spell.School == MagicSchool.WarMagic)
+            {
+                var voidLeft = ZcVoidLockoutLeft(ServerConfig.zc_void_war_lockout_seconds.Value);
+                if (voidLeft > 0)
+                {
+                    Session.Network.EnqueueSend(new GameMessageSystemChat(VoidWarLockoutText(voidLeft), ChatMessageType.Magic));
+                    return CastingPreCheckStatus.CastFailed;
+                }
+            }
+
             // limit casting time between war and void
             if (spell.School == MagicSchool.VoidMagic && LastSuccessCast_School == MagicSchool.WarMagic ||
                 spell.School == MagicSchool.WarMagic && LastSuccessCast_School == MagicSchool.VoidMagic)
@@ -1417,6 +1429,8 @@ namespace ACE.Server.WorldObjects
 
             LastSuccessCast_School = spell.School;
             LastSuccessCast_Time = Time.GetUnixTime();
+            if (spell.School == MagicSchool.VoidMagic)
+                LastVoidCast_Time = LastSuccessCast_Time;   // the void lockouts' clock (Player_VoidLockout.cs)
 
             var caster = GetEquippedWand();
 
@@ -2150,7 +2164,7 @@ namespace ACE.Server.WorldObjects
                     // --- 1. Intercept Enchantment Projectiles (e.g., debuffs like Shroud of Darkness) ---
                     if (spell.MetaSpellType == ACE.Entity.Enum.SpellType.EnchantmentProjectile)
                     {
-                        CreateEnchantment(creature, this, weapon, spell, false, fromProc);
+                        CreateEnchantment(creature, this, weapon, spell, false, fromProc, zcHandCast: !fromProc);
                         DoSpellEffects(spell, this, creature, true);
                         dbgHit++;
                         continue;
