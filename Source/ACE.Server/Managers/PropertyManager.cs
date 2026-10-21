@@ -902,7 +902,13 @@ namespace ACE.Server.Managers
         // Control - T11 through T25 all use them). Gates the VARIATION-triggered paths of the %HP floor, the
         // attack-skill floor, vuln compression and monster damage-taken mitigation. Zone-authored stats
         // (percent_hp_base, vuln_cap, true_damage ...) work regardless.
-        public static ConfigProperty<bool> zc_combat_rules_enabled { get; private set; } = new(true, "Zone Control endgame combat rules for monsters at variation 11+: the %HP floor (where it is the fallback), the attack-skill floor, vuln compression and damage-taken mitigation. Zone-authored stats work regardless.");
+        public static ConfigProperty<bool> zc_combat_rules_enabled { get; private set; } = new(true, "Zone Control endgame combat rules for monsters at variation 11+: the %HP floor (where it is the fallback), the attack-skill floor, vuln compression, crit compression (zc_crit_compress) and damage-taken mitigation. Zone-authored stats work regardless.");
+
+        // Crit compression (owner 2026-10-21): crits on Zone Control monsters follow a power curve set by the tier's
+        // crit_damage_resist_rating row, instead of being divided by it - see Entity/CritCompression.cs
+        public static ConfigProperty<bool> zc_crit_compress { get; private set; } = new(true, "if TRUE, a PLAYER's crit on a Zone Control monster (variation 11+) lands at the bigger of raw^p times a normal hit and the old Crit Damage Resist division, with p read from the monster's Crit Damage Resist so the stack its row was solved for still crits at zc_crit_target_ratio - never below today's crit, and at least zc_crit_floor_ratio times a normal hit (that floor capped at the target and at the un-resisted crit). Pets and monsters keep the old rule. Also needs zc_combat_rules_enabled. FALSE = Crit Damage Resist divides the crit as before (below BiS a crit can land under a normal hit).");
+        public static ConfigProperty<double> zc_crit_target_ratio { get; private set; } = new(3.0, "the crit ratio the crit_damage_resist_rating rows were solved for (3 = the 2026-09-02 ruling, BiS crits at 3x a normal hit). Only read while zc_crit_compress is on; must stay what the rows were solved for. 1 or less = no compression (the old division).");
+        public static ConfigProperty<double> zc_crit_floor_ratio { get; private set; } = new(1.5, "while zc_crit_compress is on: the smallest crit on a Zone Control monster, as a multiple of a normal hit (1.5 = half again). Never above zc_crit_target_ratio, and never above what the crit would do with no Crit Damage Resist. 0 = no floor.");
 
         // Percent-HP floor (owner 2026-10-01: an OPTION now, True Damage is the main mechanic)
 
