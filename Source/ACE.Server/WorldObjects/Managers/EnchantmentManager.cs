@@ -1885,6 +1885,10 @@ namespace ACE.Server.WorldObjects.Managers
             // ... and the marked DoTs the leash takes off this monster (caster gone, or this monster off the caster's radar)
             List<PropertiesEnchantmentRegistry> leashed = null;
 
+            // nearby health: the health reports DamageHistory.Add makes below come BEFORE this tick's damage lands - hold them;
+            // NearbyHealthAfterDamageOverTime reports once, after it (review 2026-10-20)
+            creature.NearbyHealthDotTickBegin();
+
             // get the total tick amount
             var tickAmountTotal = 0.0f;
             foreach (var enchantment in enchantments)
@@ -2038,6 +2042,11 @@ namespace ACE.Server.WorldObjects.Managers
                     Remove(entry, false);
 
             creature.TakeDamageOverTime(tickAmountTotal, damageType);
+
+            // health readings (selected and /nearbyhealth): the tick's damage landed without a health report (the ones from
+            // DamageHistory.Add came before it and were held), so one goes out now with the new value - a tick that kills
+            // sends its zero at once; a tick that changed nothing sends nothing
+            creature.NearbyHealthAfterDamageOverTime(tickAmountTotal > 0);
 
             // (also on the tick that kills: the monster passes it on as it dies)
             if (pandemic != null)

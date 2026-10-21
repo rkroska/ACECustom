@@ -79,7 +79,7 @@ namespace ACE.Server.Network.Structure
             Success = success;
 
             BuildProperties(wo, examiner);
-            BuildSpells(wo);
+            BuildSpells(wo, examiner);
 
             // Live Stat Resolution (owner 2026-08-22, plan 3b): a piece with a ZcModifiers record is
             // resolved from its grades against the LIVE ladder for the RESPONSE COPY only - wo is
@@ -862,12 +862,28 @@ namespace ACE.Server.Network.Structure
                 PropertiesInt.Remove(PropertyInt.AppraisalLongDescDecoration);
         }
 
-        private void BuildSpells(WorldObject wo)
+
+        private void BuildSpells(WorldObject wo, Player examiner = null)
         {
             SpellBook = new List<uint>();
 
             if (wo is Creature)
+            {
+                // Mob HUD (owner 2026-10-17: "Need a way to see the dots on the other mobs too ... Also what we spread to"):
+                // a player who switched on nearby health (/nearbyhealth on) also sees, when appraising a monster, the void
+                // DoTs on it that THEY cast - by hand or spread by Pandemic - as enchantment entries (the high bit, as items
+                // show theirs). Nobody else sees any change.
+                // (and the server switch is on; the void-DoT test is the same id check Pandemic uses - review 2026-10-20)
+                if (examiner != null && wo is not Player && NearbyHealth.IsOn(examiner) && ServerConfig.nearby_health_updates.Value)
+                {
+                    var all = wo.Biota.PropertiesEnchantmentRegistry.Clone(wo.BiotaDatabaseLock);
+                    if (all != null)
+                        foreach (var e in all)
+                            if (e.CasterObjectId == examiner.Guid.Full && Creature.IsVoidDotSpell((uint)e.SpellId))
+                                SpellBook.Add((uint)e.SpellId | EnchantmentMask);
+                }
                 return;
+            }
 
             if (wo.SpellDID.HasValue)
                 SpellBook.Add(wo.SpellDID.Value);

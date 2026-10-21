@@ -636,6 +636,7 @@ namespace ACE.Server.WorldObjects
             IsBusy = true;
             IsLoggingOut = true;
             UCMChecker.FailActiveCheck(UCMCheckFailReason.LoggedOut);
+            NearbyHealth.Remove(this);
 
             if (JailEscapeActive)
             {
@@ -761,6 +762,10 @@ namespace ACE.Server.WorldObjects
             // Before leaving the landblock, while Location is still where the character is saved: a player logging out
             // inside a Room Assign room keeps it for the logout hold (server setting room_assign_logout_hold_minutes).
             RoomAssignManager.OnLogout(this);
+
+            // nearby health: off for good once the character has left (it is refused during logout too; this also clears
+            // anything that slipped in before IsLoggingOut was set) - review 2026-10-20
+            NearbyHealth.Remove(this);
 
             CurrentLandblock?.RemoveWorldObject(Guid, false);
             SetPropertiesAtLogOut();

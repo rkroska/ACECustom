@@ -71,6 +71,7 @@ namespace ACE.Server.WorldObjects
         public void Monster_Tick(double currentUnixTime)
         {
             UpdateAuraBuffs(currentUnixTime);
+            FlushNearbyHealth();
 
             if (IsChessPiece && this is GamePiece gamePiece)
             {
