@@ -68,6 +68,7 @@ namespace ACE.Server.WorldObjects
 
             UCMChecker.Tick();
             TickJail();
+            NearbyHealthTick();
 
             // Zone Control: per-zone player effects (DoT, etc.), self-timed so ticks can be as fast as 1s
             // regardless of the 5s heartbeat.

@@ -482,7 +482,8 @@ namespace ACE.Server.Managers.ZoneControl
         {
             var isMelee = wo is MeleeWeapon;
             var isMissile = wo is MissileLauncher;
-            var isWeapon = isMelee || isMissile || wo is Caster;
+            var isCaster = wo is Caster;
+            var isWeapon = isMelee || isMissile || isCaster;
 
             // T11+ RARES (owner 2026-10-08): a rare is made with every value at band max - the forceMax path that
             // already exists for the slot special - and with its card / line SET chosen by ZoneRare instead of by the
@@ -533,6 +534,9 @@ namespace ACE.Server.Managers.ZoneControl
             // floor FORCE a dead shield cleave onto a short caster drop as filler.
             var gotShieldCleave = (isMelee || isMissile) && WonT(p, ZoneStat.WeaponShieldCleaveChance, lootTier);
             var gotSlayer = eligSlayer && WonT(p, ZoneStat.WeaponSlayerChance, lootTier);
+            // Spell Armor Rend (2026-10-12): the caster twin of armor rend - it takes the wand's spells past part of
+            // the monster's Spell Armor, so melee and missile never roll it (nothing on a swing reads it).
+            var gotSpellArmorRend = isCaster && WonT(p, ZoneStat.WeaponSpellArmorRendChance, lootTier);
 
             // ── PHASE 2 - THE BOUNDS (cap: owner 2026-08-30, "combo impossible at T11"; floor:
             // same day, "need a hard min floor and max"). weapon_modifier_cap (anchored, unset =
@@ -541,7 +545,7 @@ namespace ACE.Server.Managers.ZoneControl
             // at RANDOM - so junk cards genuinely dilute god-rolls, which is intended.
             // weapon_modifier_min (anchored, unset = no floor) then tops a short drop up at random
             // from the eligible losers - COUNT guaranteed, identity random.
-            var won = new[] { gotRend, gotSlayer, gotBite, gotCrush, gotArmorRend, gotShieldCleave, gotCleave, gotSplit, gotArc, gotRing };
+            var won = new[] { gotRend, gotSlayer, gotBite, gotCrush, gotArmorRend, gotShieldCleave, gotCleave, gotSplit, gotArc, gotRing, gotSpellArmorRend };
             // Index order matches `won` above. Bite and Crush stay isWeapon on purpose - magic crits
             // exist, so those are live on a caster. Shield Cleave is (isMelee || isMissile) to match
             // its roll gate: this array drives the Min-floor TOP-UP, so leaving it as isWeapon here
@@ -551,6 +555,7 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 eligRend, eligSlayer, isWeapon, isWeapon, isMelee || isMissile, isMelee || isMissile,
                 isMelee, isMissile, hasProcSlots, hasProcSlots,
+                isCaster,
             };
             var cardChances = new[]
             {
@@ -558,6 +563,7 @@ namespace ACE.Server.Managers.ZoneControl
                 ZoneStat.WeaponCrushChance, ZoneStat.WeaponArmorRendChance, ZoneStat.WeaponShieldCleaveChance,
                 ZoneStat.WeaponCleaveChance, ZoneStat.WeaponSplitChance,
                 ZoneStat.WeaponProcArcChance, ZoneStat.WeaponProcRingChance,
+                ZoneStat.WeaponSpellArmorRendChance,
             };
             if (isRare && isWeapon)
             {
@@ -570,7 +576,7 @@ namespace ACE.Server.Managers.ZoneControl
                 // Eligibility is the array above - the drop path's own answer. ZoneRare.WeaponCardEligibility is the
                 // same rules as a pure function (what the tests pin); the two are compared here, on rares only, so a
                 // card added to one and not the other is logged the first time it matters instead of drifting.
-                var pureEligible = ZoneRare.WeaponCardEligibility(isMelee, isMissile, wo is Caster, eligRend, eligSlayer, hasProcSlots);
+                var pureEligible = ZoneRare.WeaponCardEligibility(isMelee, isMissile, isCaster, eligRend, eligSlayer, hasProcSlots);
                 if (!pureEligible.AsSpan().SequenceEqual(eligible))
                     log.Warn($"[ZONELOOT] RARE: weapon card eligibility differs between TrySpecialRolls and ZoneRare.WeaponCardEligibility on {wo.Name} ({wo.WeenieClassId}) - the drop path's answer is used.");
                 var canDrop = new bool[cardChances.Length];
@@ -585,6 +591,7 @@ namespace ACE.Server.Managers.ZoneControl
                 ApplyModifierBounds(p, ZoneStat.WeaponModifierMin, ZoneStat.WeaponModifierCap, lootTier, won, eligible, cardChances);
             gotRend = won[0]; gotSlayer = won[1]; gotBite = won[2]; gotCrush = won[3]; gotArmorRend = won[4];
             gotShieldCleave = won[5]; gotCleave = won[6]; gotSplit = won[7]; gotArc = won[8]; gotRing = won[9];
+            gotSpellArmorRend = won[10];
 
             // Cast on Strike (melee/missile — procs fire from the swing path; never clobber an existing proc)
             // CASTERS INCLUDED since 2026-08-25 (owner). The old condition was (isMelee || isMissile)
@@ -776,6 +783,11 @@ namespace ACE.Server.Managers.ZoneControl
             // Shield Cleaving: fraction of shield AL ignored (engine reads the value directly)
             if (gotShieldCleave)
                 StampWeaponCard(wo, p, ZoneStatResolver.SpecShieldCleave, lootTier, forceMax);
+
+            // Spell Armor Rend (casters only): fraction of the monster's Spell Armor level the wand's spells ignore.
+            // No imbue bit - the float is the card (Creature.GetZcSpellArmorMod reads the value directly)
+            if (gotSpellArmorRend)
+                StampWeaponCard(wo, p, ZoneStatResolver.SpecSpellArmorRend, lootTier, forceMax);
 
             // REMOVED 2026-08-25 (owner): the Phantom ("hollow") loot card. It stamped PropertyBool
             // IgnoreMagicArmor + IgnoreMagicResist at drop time, behind weapon_phantom_chance.

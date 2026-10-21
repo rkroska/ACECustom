@@ -355,8 +355,9 @@ namespace ACE.Server.Managers.ZoneControl
         //
         // WHY THIS IS A SEPARATE TABLE AND NOT SIX MORE Catalog ROWS
         //
-        // The six continuous weapon specials (Biting Strike, Crushing Blow, Armor Rend, Shield
-        // Cleaving, Slayer, Rend Power) are DOUBLES whose second decimal matters: 0.58 crit chance,
+        // The continuous weapon specials (six at first: Biting Strike, Crushing Blow, Armor Rend, Shield
+        // Cleaving, Slayer, Rend Power; Spell Armor Rend since 2026-10-12) are DOUBLES whose second
+        // decimal matters: 0.58 crit chance,
         // 1.85x crush, 2.10 slayer. Def.Min/Max are ints, and CatalogBandAt returns (int, int).
         // Widening those would drag ValueFor/GradeFor, StampGraded, Stamp, the "[min-max]" LongDesc
         // text (which ZoneControlCommands.TryParseZcLine PARSES BACK for legacy-item migration),
@@ -549,11 +550,22 @@ namespace ACE.Server.Managers.ZoneControl
             Min = 3.25, Max = 4.00, Min25 = 5.50, Max25 = 6.80, Lo = 2.0, Hi = 10.0,
         };
 
+        // Spell Armor Rend (2026-10-12) -> PropertyFloat.ZcSpellArmorRend, the fraction of the monster's Spell Armor
+        // LEVEL the wand's spells ignore. CASTERS ONLY - the twin of Armor Rend. Plugin box is PERCENT 0..100; wire is
+        // a 0..1 fraction. Conversion: wire = box / 100. Box 62-68 -> 0.62-0.68 at T11; box 74-80 -> 0.74-0.80 at T25.
+        public static readonly WeaponBand WeaponSpellArmorRend = new WeaponBand
+        {
+            Name = "Spell Armor Rend", MinStat = ZoneScaling.ZoneStat.WeaponSpellArmorRendMin, MaxStat = ZoneScaling.ZoneStat.WeaponSpellArmorRendMax,
+            // the Armor Rend band to start (owner 2026-10-12: "Same as armor rend ... to start")
+            Min = 0.62, Max = 0.68, Min25 = 0.74, Max25 = 0.80, Lo = 0.0, Hi = 1.0,
+        };
+
         /// <summary>Every weapon band, for help text / catalog printouts. Order is display order.</summary>
         public static readonly WeaponBand[] WeaponBands =
         {
             WeaponBite, WeaponArmorRend, WeaponRendPower, WeaponSlayer, WeaponShieldCleave, WeaponCrush,
             WeaponProcArcDamage, WeaponProcRingDamage,
+            WeaponSpellArmorRend,
         };
 
         /// <summary>

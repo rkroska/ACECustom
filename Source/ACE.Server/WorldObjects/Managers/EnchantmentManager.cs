@@ -134,12 +134,27 @@ namespace ACE.Server.WorldObjects.Managers
         /// <summary>
         /// Add/update an enchantment in this object's registry
         /// </summary>
+        /// <summary>Set by the Pandemic charm around its Add of a spread copy (same thread, set and cleared in one go): the
+        /// copy lands without the landing tick a cast gets. A flag and not a parameter, so Add keeps its signature.</summary>
+        [ThreadStatic] public static bool ZcHoldLandingTick;
+
         public virtual AddEnchantmentResult Add(Spell spell, WorldObject caster, WorldObject weapon, bool equip = false)
         {
             var result = new AddEnchantmentResult();
 
             // check for existing spell in this category
             var entries = GetEnchantments(spell.Category);
+
+            if (caster is Player cursePlayer && Creature.IsDestructiveCurseSpell(spell.Id) && WorldObject is Creature cursed
+                && cursed.ZcDebuffCompressed && ServerConfig.zc_curse_damage_cut.Value && cursed.IsImmuneToCurseCut())
+                cursePlayer.NotifyCurseCutImmune(cursed);
+
+            // LANDING TICK (owner 2026-10-13): a player's void DoT that is NEW on a Zone Control monster from this caster deals
+            // one tick at once. A re-cast (refresh) deals none, and neither does a second level of the same DoT from the same
+            // caster - or casting it again and again would be a direct-damage spell.
+            var landingTick = spell.IsDamageOverTime && caster is Player && IsZcVoidHarmfulOnCompressed(spell)
+                && ServerConfig.zc_dot_spell_math.Value && ServerConfig.zc_dot_landing_tick.Value && !ZcHoldLandingTick
+                && !entries.Any(x => x.CasterObjectId == caster.Guid.Full);
 
             // if none, add new record
             if (entries.Count == 0)
@@ -148,6 +163,7 @@ namespace ACE.Server.WorldObjects.Managers
                 newEntry.LayerId = 1;
                 WorldObject.Biota.PropertiesEnchantmentRegistry.AddEnchantment(newEntry, WorldObject.BiotaDatabaseLock);
                 WorldObject.ChangesDetected = true;
+                if (landingTick) (WorldObject as Creature)?.ZcDotLandingTick(newEntry);
 
                 result.Enchantment = newEntry;
                 result.StackType = StackType.Initial;
@@ -173,6 +189,7 @@ namespace ACE.Server.WorldObjects.Managers
                 var newEntry = BuildEntry(spell, caster, weapon, equip);
                 newEntry.LayerId = result.NextLayerId;
                 WorldObject.Biota.PropertiesEnchantmentRegistry.AddEnchantment(newEntry, WorldObject.BiotaDatabaseLock);
+                if (landingTick) (WorldObject as Creature)?.ZcDotLandingTick(newEntry);
 
                 result.Enchantment = newEntry;
             }
@@ -1843,7 +1860,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// Applies 1 tick of damage from a DoT spell
         /// </summary>
         /// <param name="enchantments">The damage over time (DoT) spells</param>
-        public void ApplyDamageTick(List<PropertiesEnchantmentRegistry> enchantments, DamageType damageType, bool aetheria = false, float tickScale = 1f)
+        public void ApplyDamageTick(List<PropertiesEnchantmentRegistry> enchantments, DamageType damageType, bool aetheria = false, float tickScale = 1f, bool landing = false)
         {
             var creature = WorldObject as Creature;
             if (creature == null || creature.IsDead) return;
@@ -1855,10 +1872,22 @@ namespace ACE.Server.WorldObjects.Managers
 
             // DAMAGE TAKEN multiplier (owner 2026-10-05): every DoT tick on a Zone Control monster - the same for each tick below
             var dotTakenMult = targetPlayer == null ? ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(creature) : 1f;
+            // ... and a PLAYER's void DoT also takes the void setting (per attack type, owner 2026-10-12)
+            var voidTakenMult = targetPlayer == null ? ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(creature,
+                ACE.Server.Managers.ZoneControl.ZoneControlManager.ZcAttackKind.Void) : 1f;
 
             // [PetTrace] one record per tick; the parts list is only built when the trace is on.
             var traceParts = PetTrace.Enabled ? new List<PetTrace.DotPart>() : null;
             var traceBefore = traceParts != null ? (creature.Health?.Current ?? 0) : 0u;
+
+            // PANDEMIC charm: the marked DoTs that ticked here (never on the landing tick), spread after the damage
+            List<(PropertiesEnchantmentRegistry Entry, Player Caster, Creature.ZcDotSnapshot Snap)> pandemic = null;
+            // ... and the marked DoTs the leash takes off this monster (caster gone, or this monster off the caster's radar)
+            List<PropertiesEnchantmentRegistry> leashed = null;
+
+            // nearby health: the health reports DamageHistory.Add makes below come BEFORE this tick's damage lands - hold them;
+            // NearbyHealthAfterDamageOverTime reports once, after it (review 2026-10-20)
+            creature.NearbyHealthDotTickBegin();
 
             // get the total tick amount
             var tickAmountTotal = 0.0f;
@@ -1879,6 +1908,9 @@ namespace ACE.Server.WorldObjects.Managers
                 if (damager == null)
                 {
                     //Console.WriteLine($"{WorldObject.Name}.ApplyDamageTick() - couldn't find damager {enchantment.CasterObjectId:X8}");
+                    // PANDEMIC leash: a marked DoT whose caster is not even in this or a neighbouring landblock is off the radar
+                    if (!landing && creature.ZcDotSnapshotFor(enchantment)?.PandemicLevel > 0 && creature.ZcPandemicLeashClears(null, null))
+                        (leashed ??= new List<PropertiesEnchantmentRegistry>()).Add(enchantment);
                     continue;
                 }
 
@@ -1945,14 +1977,34 @@ namespace ACE.Server.WorldObjects.Managers
                     netherResistRatingMod = 1.0f;
                 }
 
-                tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod * netherResistRatingMod;
+                // NEW MATH (owner 2026-10-12): a player's void DoT with a cast-time snapshot ticks as a spell hit - Slayer, Rend,
+                // Spell Armor Rend, Spell Armor, the rating rows and a crit rolled per tick (Creature_DotHit.cs). No snapshot =
+                // the path above, untouched.
+                var zcSnap = zcDotTick && damageType == DamageType.Nether ? creature.ZcDotSnapshotFor(enchantment) : null;
+
+                // PANDEMIC leash, clear: a marked DoT on a monster off its caster's radar comes off before this tick deals anything
+                if (!landing && zcSnap != null && zcSnap.PandemicLevel > 0 && sourcePlayer != null && creature.ZcPandemicLeashClears(sourcePlayer, zcSnap))
+                {
+                    (leashed ??= new List<PropertiesEnchantmentRegistry>()).Add(enchantment);
+                    continue;
+                }
+
+                if (zcSnap != null)
+                    tickAmount = creature.ZcDotTickAmount(zcSnap, damager, damageType, tickScale, ThreadSafeRandom.Next(0.0f, 1.0f) < zcSnap.EffectiveCritChance);
+                else
+                    tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod * netherResistRatingMod;
 
                 // per-monster DAMAGE MULTIPLIER (owner 2026-10-03: "cover harm, drain and DoTs too"): a monster's DoT tick on a
                 // player (the caster is looked up above; a caster that is gone deals no tick at all, as before)
                 if (targetPlayer != null && damager is Creature dotCaster)
                     tickAmount *= ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(dotCaster, targetPlayer);
 
-                tickAmount *= dotTakenMult;
+                // a DoT put on by a melee / missile weapon's Cast on Strike takes that weapon's dial, as its other procs do
+                // ("tie it to the weapon", owner 2026-10-12; the kind is fixed at the cast - review 2026-10-20)
+                if (targetPlayer == null && zcSnap != null && zcSnap.AttackKind != ACE.Server.Managers.ZoneControl.ZoneControlManager.ZcAttackKind.Void)
+                    tickAmount *= ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(creature, zcSnap.AttackKind);
+                else
+                    tickAmount *= damageType == DamageType.Nether && damager is Player ? voidTakenMult : dotTakenMult;
 
                 // make sure the target's current health is not exceeded
                 if (tickAmountTotal + tickAmount >= creature.Health.Current)
@@ -1970,6 +2022,12 @@ namespace ACE.Server.WorldObjects.Managers
 
                 tickAmountTotal += tickAmount;
 
+                // a landing tick spreads only for the CAST DoT (generation 0) with spreadonland on (owner 2026-10-17: "Cast DoT
+                // only"); a copy spreads from its next tick
+                var spreadsNow = !landing || zcSnap != null && zcSnap.Generation == 0 && CharmSettingsManager.Pandemic.On("spreadonland");
+                if (spreadsNow && zcSnap != null && zcSnap.PandemicLevel > 0 && sourcePlayer != null)
+                    (pandemic ??= new List<(PropertiesEnchantmentRegistry, Player, Creature.ZcDotSnapshot)>()).Add((enchantment, sourcePlayer, zcSnap));
+
                 traceParts?.Add(new PetTrace.DotPart
                 {
                     Damager = damager, SpellId = enchantment.SpellId, Base = traceBase, ResistMod = resistanceMod,
@@ -1979,7 +2037,21 @@ namespace ACE.Server.WorldObjects.Managers
                 if (isDead) break;
             }
 
+            if (leashed != null)
+                foreach (var entry in leashed)
+                    Remove(entry, false);
+
             creature.TakeDamageOverTime(tickAmountTotal, damageType);
+
+            // health readings (selected and /nearbyhealth): the tick's damage landed without a health report (the ones from
+            // DamageHistory.Add came before it and were held), so one goes out now with the new value - a tick that kills
+            // sends its zero at once; a tick that changed nothing sends nothing
+            creature.NearbyHealthAfterDamageOverTime(tickAmountTotal > 0);
+
+            // (also on the tick that kills: the monster passes it on as it dies)
+            if (pandemic != null)
+                foreach (var (entry, caster, snap) in pandemic)
+                    creature.ZcPandemicOnTick(entry, caster, snap);
 
             if (traceParts != null)
                 PetTrace.CombatDot(creature, damageType, aetheria, tickAmountTotal, traceBefore, traceParts);

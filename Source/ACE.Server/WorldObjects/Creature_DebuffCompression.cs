@@ -53,6 +53,21 @@ namespace ACE.Server.WorldObjects
             return mod;
         }
 
+        /// <summary>The DoT multipliers alone - dot_damage_mult x the DoT's own (Corruption / Destructive Curse) - WITHOUT
+        /// DoT armor: what a spell-hit tick takes (Creature_DotHit.cs, 2026-10-12), since Spell Armor and the rating rows cut
+        /// that tick themselves.</summary>
+        public float GetZcDotMults(uint spellId = 0)
+        {
+            if (!ZcDebuffCompressed) return 1.0f;
+            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveCombatProfile(this);
+            if (zp == null) return 1.0f;
+            var mod = FiniteMult(zp, ZoneStat.DotDamageMult);
+            var own = IsCorruptionSpell(spellId) ? ZoneStat.DotMultCorruption : IsDestructiveCurseSpell(spellId) ? ZoneStat.DotMultDestructive : null;
+            if (own != null)
+                mod *= FiniteMult(zp, own);
+            return mod;
+        }
+
         /// <summary>A multiplier stat, at least 0; 1 when unset or not finite.</summary>
         private static float FiniteMult(EvaluatedProfile zp, string stat)
         {
@@ -61,6 +76,12 @@ namespace ACE.Server.WorldObjects
             // capped at float.MaxValue: a finite double above float range (1e39) became +Infinity, and 0 x Infinity = NaN
             return double.IsFinite(v) ? (float)Math.Min(Math.Max(0.0, v), float.MaxValue) : 1.0f;
         }
+
+        /// <summary>Corrosion I-VII (5387-5393) + Incantation of Corrosion (5394).</summary>
+        public static bool IsCorrosionSpell(uint spellId) => spellId >= 5387 && spellId <= 5394;
+
+        /// <summary>One of the three void DoTs, any level.</summary>
+        public static bool IsVoidDotSpell(uint spellId) => IsCorrosionSpell(spellId) || IsCorruptionSpell(spellId) || IsDestructiveCurseSpell(spellId);
 
         /// <summary>Corruption I-VII (5395-5401) + Incantation of Corruption (5402).</summary>
         public static bool IsCorruptionSpell(uint spellId) => spellId >= 5395 && spellId <= 5402;

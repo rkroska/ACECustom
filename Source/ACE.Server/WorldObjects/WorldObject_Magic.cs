@@ -295,6 +295,16 @@ namespace ACE.Server.WorldObjects
                 targetInfo.DebugDamageBuffer = $"{info}\n";
         }
 
+        /// <summary>DIRECT DoT (owner 2026-10-13: "change corro and corru to work like Destructive curse"): a player's own
+        /// hand-cast Corrosion or Corruption at a Zone Control monster is delivered as a direct enchantment, not a bolt.
+        /// Never a proc, a weapon's built-in spell or an item's cast; never on a retail monster or a player.</summary>
+        public bool ZcDirectDot(Spell spell, WorldObject target, WorldObject itemCaster, bool isWeaponSpell, bool fromProc = false)
+            => this is Player && !fromProc && !isWeaponSpell && itemCaster == null
+                && spell != null && spell.MetaSpellType == SpellType.EnchantmentProjectile
+                && (Creature.IsCorrosionSpell(spell.Id) || Creature.IsCorruptionSpell(spell.Id))
+                && target is Creature zcTarget && !(target is Player) && zcTarget.ZcDebuffCompressed
+                && ServerConfig.zc_dot_direct.Value;
+
         /// <summary>
         /// Creates a spell based on MetaSpellType
         /// </summary>
@@ -325,12 +335,14 @@ namespace ACE.Server.WorldObjects
             {
                 case SpellType.Enchantment:
                 case SpellType.FellowEnchantment:
+                case SpellType.EnchantmentProjectile when ZcDirectDot(spell, targetCreature, itemCaster, isWeaponSpell, fromProc):
 
                     // TODO: replace with some kind of 'rootOwner unless equip' concept?
                     if (itemCaster != null && (equip || itemCaster is Gem || itemCaster is Food))
                         CreateEnchantment(targetCreature ?? target, itemCaster, itemCaster, spell, equip);
                     else
-                        CreateEnchantment(targetCreature ?? target, this, weapon, spell, equip);
+                        CreateEnchantment(targetCreature ?? target, this, weapon, spell, equip,
+                            zcHandCast: !fromProc && !isWeaponSpell && itemCaster == null);
 
                     break;
 
@@ -417,7 +429,10 @@ namespace ACE.Server.WorldObjects
         /// Handles casting SpellType.Enchantment / FellowEnchantment spells
         /// this is also called if SpellType.EnchantmentProjectile successfully hits
         /// </summary>
-        public void CreateEnchantment(WorldObject target, WorldObject caster, WorldObject weapon, Spell spell, bool equip = false, bool fromProc = false)
+        /// <param name="zcHandCast">True only from the paths that know this is the player's own hand cast (not a proc, not a
+        /// weapon's or item's built-in spell): the Pandemic charm marks only those (review 2026-10-20 round 2 - an
+        /// Enchantment-type proc such as a Destructive Curse gem proc never passed fromProc here and was marked).</param>
+        public void CreateEnchantment(WorldObject target, WorldObject caster, WorldObject weapon, Spell spell, bool equip = false, bool fromProc = false, bool zcHandCast = false)
         {
             // weird itemCaster -> caster collapsing going on here -- fixme
 
@@ -451,6 +466,13 @@ namespace ACE.Server.WorldObjects
 
             // create enchantment
             var addResult = target.EnchantmentManager.Add(spell, caster, weapon, equip);
+
+            // PANDEMIC charm (owner 2026-10-13): a player's HAND-CAST void DoT is marked to spread while the charm is active
+            // (never a proc's - the tick itself cannot tell them apart, so it is decided here, at the cast). Called for every
+            // hand cast, charm on or off: the arm first clears what a refreshed DoT carried over, and marks it only when the
+            // charm is on (review 2026-10-20 round 2: with the charm off a recast kept spreading and kept the crit bonus).
+            if (zcHandCast && !fromProc && !aetheriaProc && !cloakProc && player != null && target is Creature pandemicTarget)
+                pandemicTarget.ZcPandemicArm(player, spell, addResult.Enchantment);
 
             // build message
             var suffix = "";
@@ -1975,7 +1997,8 @@ namespace ACE.Server.WorldObjects
                     if (extraOrigins == null || extraOrigins.Count == 0)
                         continue;
                     var extraVelocity = CalculateProjectileVelocity(spell, extraTarget, spellType, extraOrigins[0]);
-                    var extraProjectiles = LaunchSpellProjectiles(spell, extraTarget, spellType, weapon, isWeaponSpell, fromProc, extraOrigins, extraVelocity, lifeProjectileDamage);
+                    var extraProjectiles = LaunchSpellProjectiles(spell, extraTarget, spellType, weapon, isWeaponSpell, fromProc, extraOrigins, extraVelocity, lifeProjectileDamage,
+                        splitCastExtra: true);   // the Chain charm starts only from the main projectile (owner 2026-10-20)
                     if (extraProjectiles != null)
                         spellProjectiles.AddRange(extraProjectiles);
                 }
@@ -2240,7 +2263,7 @@ namespace ACE.Server.WorldObjects
             return dir * speed;
         }
 
-        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f, bool handCastFork = false)
+        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f, bool handCastFork = false, SpellChain chain = null, bool splitCastExtra = false)
         {
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -2333,6 +2356,8 @@ namespace ACE.Server.WorldObjects
                 sp.IsForkProjectile = isForkProjectile;
                 sp.ForkDamageMult   = forkDamageMult;
                 sp.HandCastFork     = handCastFork;   // a projectile can collide inside AddObject, so the low-tier gate needs it now
+                sp.Chain            = chain;          // Chain charm: the jump's state, set before it can collide
+                sp.IsSplitCastExtra = splitCastExtra; // a Split Cast extra never starts a chain (set before it can collide)
 
                 if (!LandblockManager.AddObject(sp))
                 {
@@ -2345,7 +2370,9 @@ namespace ACE.Server.WorldObjects
 
                 sp.EnqueueBroadcast(new GameMessageScript(sp.Guid, PlayScript.Launch, sp.GetProjectileScriptIntensity(spellType)));
 
-                if (!IsProjectileVisible(sp))
+                // (a chain jump leaves a MONSTER, and the chain has traced its own line from that monster to the next:
+                // the caster's own view of the spawn point does not decide it)
+                if (chain == null && !IsProjectileVisible(sp))
                 {
                     sp.OnCollideEnvironment();
                     continue;
@@ -2592,6 +2619,11 @@ namespace ACE.Server.WorldObjects
                     }
                 }
             }
+            // Zone Control (owner 2026-10-12): a player's void DoT on a Zone Control monster ticks as a spell hit - the caster's
+            // side is fixed here, at the cast (Creature_DotHit.cs). The stored value below stays what it always was.
+            if (player != null && creatureTarget != null && spell.School == MagicSchool.VoidMagic)
+                creatureTarget.ZcStoreDotSnapshot(player, weapon, spell, statModVal);
+
             enchantment_statModVal *= skillMod * elementalDamageMod * damageRatingMod;
 
             return enchantment_statModVal;

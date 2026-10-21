@@ -132,6 +132,26 @@ namespace ACE.Server.Managers.ZoneScaling
         // DoT ticks - from any attacker. The mirror of monster_damage_mult, and the "more HP" knob without touching the 1M HP
         // (ZoneControlManager.MonsterDamageTakenMultFor). 0.8 = takes 20 pct less = fights last 1.25x. Unset = x1.
         public const string MonsterDamageTakenMult = "monster_damage_taken_mult";
+        // DAMAGE TAKEN PER ATTACK TYPE (owner 2026-10-12: "option 1, monster side setting per attack type"): x what a Zone
+        // Control monster takes from a PLAYER's melee weapon, missile weapon, war spells, void spells (void DoT ticks included),
+        // on top of monster_damage_taken_mult - the dials that bring the four to the same kill times. A Cast on Strike proc
+        // counts as the weapon that fired it ("tie it to the weapon"). Same bounds; unset = x1.
+        // (ZoneControlManager.MonsterDamageTakenMultFor(defender, kind)).
+        public const string MeleeDamageTakenMult = "melee_damage_taken_mult";
+        public const string MissileDamageTakenMult = "missile_damage_taken_mult";
+        public const string WarDamageTakenMult = "war_damage_taken_mult";
+        public const string VoidDamageTakenMult = "void_damage_taken_mult";
+        // DESTRUCTIVE CURSE DAMAGE CUT (owner 2026-10-13): while a player's Destructive Curse is on the monster, everything it
+        // deals to a player is cut by this share (0.25 = 25 pct less). Unset = 0.25; 0 = no cut here; never above 0.9.
+        public const string CurseDamageCut = "curse_damage_cut";
+        // 1 = the Curse does not cut this monster's damage (it still takes the Curse's own damage); the per-weenie twin is
+        // PropertyBool.ZcImmuneCurseCut (51200).
+        public const string ImmuneCurseCut = "immune_curse_cut";
+        // LEVELLED CHARMS (owner 2026-10-13): 1 = the Pandemic charm never spreads a DoT ONTO this monster / the Chain charm
+        // never jumps ONTO it (a cast at it works as always). Per-weenie twins: PropertyBool.ZcImmunePandemic (51205),
+        // ZcImmuneChain (51206).
+        public const string ImmunePandemic = "immune_pandemic";
+        public const string ImmuneChain = "immune_chain";
         // owner 2026-10-03: 1 = the monster takes NO damage from Rocky Shrapnel (6152) / Ring of Unspeakable Agony (2673).
         // Zone / Tier Default / rank / wcid like any stat; PropertyBool.ZcImmuneShrapnelAgony (50059) does the same per weenie.
         public const string ImmuneShrapnelAgony = "immune_shrapnel_agony";
@@ -428,6 +448,9 @@ namespace ACE.Server.Managers.ZoneScaling
         public const string WeaponShieldCleaveChance = "weapon_shield_cleave_chance"; // Shield Cleaving
         public const string WeaponShieldCleaveMin = "weapon_shield_cleave_min"; //   fraction of shield ignored 0..1 (default 0.5)
         public const string WeaponShieldCleaveMax = "weapon_shield_cleave_max";
+        public const string WeaponSpellArmorRendChance = "weapon_spell_armor_rend_chance"; // Spell Armor Rend (2026-10-12): casters only
+        public const string WeaponSpellArmorRendMin = "weapon_spell_armor_rend_min"; //   fraction of the monster's Spell Armor level ignored 0..1
+        public const string WeaponSpellArmorRendMax = "weapon_spell_armor_rend_max";
         // REMOVED 2026-08-25 (owner): weapon_phantom_chance, the Phantom (hollow) card's chance stat.
         // The card is gone from ZoneLootMutator; the retail IgnoreMagicArmor / IgnoreMagicResist
         // properties it used to stamp are untouched. Zones that authored the key keep a dead store row
@@ -697,6 +720,14 @@ namespace ACE.Server.Managers.ZoneScaling
             LootSlotClothing, LootSlotClothingMax, LootWeightClothing,
             // Blood / Spirit Thirst chance (2026-10-06) - APPEND-ONLY
             ItemSpellThirstChance, "item_spell_thirst_chance_t25",
+            // Spell Armor Rend, the caster weapon card (2026-10-12) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            WeaponSpellArmorRendChance, WeaponSpellArmorRendMin, WeaponSpellArmorRendMax,
+            "weapon_spell_armor_rend_chance_t25", "weapon_spell_armor_rend_min_t25", "weapon_spell_armor_rend_max_t25",
+            // damage taken per attack type (2026-10-12) - APPEND-ONLY
+            MeleeDamageTakenMult, MissileDamageTakenMult, WarDamageTakenMult, VoidDamageTakenMult,
+            CurseDamageCut, ImmuneCurseCut,
+            // levelled charm immunities (2026-10-13) - APPEND-ONLY
+            ImmunePandemic, ImmuneChain,
         };
 
         /// <summary>

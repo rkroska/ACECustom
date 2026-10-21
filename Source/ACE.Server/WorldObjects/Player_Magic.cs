@@ -752,6 +752,18 @@ namespace ACE.Server.WorldObjects
             if (isWeaponSpell)
                 castingPreCheckStatus = CastingPreCheckStatus.Success;
 
+            // T11+ (owner 2026-10-14): in a Zone Control area war fails for zc_void_war_lockout_seconds after a void cast
+            // (Player_VoidLockout.cs) - longer than the retail 3-5 s below, and on the void cast's own clock
+            if (spell.School == MagicSchool.WarMagic)
+            {
+                var voidLeft = ZcVoidLockoutLeft(ServerConfig.zc_void_war_lockout_seconds.Value);
+                if (voidLeft > 0)
+                {
+                    Session.Network.EnqueueSend(new GameMessageSystemChat(VoidWarLockoutText(voidLeft), ChatMessageType.Magic));
+                    return CastingPreCheckStatus.CastFailed;
+                }
+            }
+
             // limit casting time between war and void
             if (spell.School == MagicSchool.VoidMagic && LastSuccessCast_School == MagicSchool.WarMagic ||
                 spell.School == MagicSchool.WarMagic && LastSuccessCast_School == MagicSchool.VoidMagic)
@@ -809,10 +821,20 @@ namespace ACE.Server.WorldObjects
 
         public static float CastSpeed = 2.0f;       // from retail pcaps, player animation speed for windup / first half of cast gesture
 
-        public void DoWindupGestures(Spell spell, bool isWeaponSpell, ActionChain castChain)
+        public void DoWindupGestures(Spell spell, bool isWeaponSpell, ActionChain castChain, WorldObject target = null)
         {
             if (spell.Flags.HasFlag(SpellFlags.FastCast) || isWeaponSpell)
                 return;
+
+            // A void DoT at a Zone Control monster winds up faster (owner 2026-10-13: 3.6 s a cast against a streak's 1.7 s
+            // made "DoTs first" too slow to start). Only the wind-up: the cast gesture keeps its speed, like a streak's.
+            var windupSpeed = CastSpeed;
+            if (target is Creature zcTarget && zcTarget.ZcDebuffCompressed && Creature.IsVoidDotSpell(spell.Id))
+            {
+                var mult = ServerConfig.zc_dot_windup_speed.Value;
+                if (double.IsFinite(mult) && mult > 1.0)
+                    windupSpeed = CastSpeed * (float)Math.Min(mult, 50.0);
+            }
 
             if (FastTick)
             {
@@ -833,14 +855,14 @@ namespace ACE.Server.WorldObjects
                 {
                     castChain.AddAction(this, ActionType.PlayerMagic_RecordCast, () =>
                     {
-                        var animLength = Physics.Animation.MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, windupGesture, CastSpeed);
+                        var animLength = Physics.Animation.MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, windupGesture, windupSpeed);
                         RecordCast.Log($"Windup Gesture: {windupGesture}, Windup Time: {animLength}");
                     });
                 }
 
                 // don't mess with CurrentMotionState here?
                 if (!FastTick)
-                    windupTime = EnqueueMotionMagic(castChain, windupGesture, CastSpeed);
+                    windupTime = EnqueueMotionMagic(castChain, windupGesture, windupSpeed);
 
                 /*Console.WriteLine($"{spell.Name}");
                 Console.WriteLine($"Windup Gesture: " + windupGesture);
@@ -849,12 +871,22 @@ namespace ACE.Server.WorldObjects
             }
 
             if (FastTick)
-                windupTime = EnqueueMotionAction(castChain, spell.Formula.WindupGestures, CastSpeed, MotionStance.Magic, checkCasting: true);
+                windupTime = EnqueueMotionAction(castChain, spell.Formula.WindupGestures, windupSpeed, MotionStance.Magic, checkCasting: true);
         }
 
-        public void DoCastGesture(Spell spell, WorldObject casterItem, ActionChain castChain)
+        public void DoCastGesture(Spell spell, WorldObject casterItem, ActionChain castChain, WorldObject target = null)
         {
             MagicState.CastGesture = spell.Formula.CastGesture;
+
+            // Corrosion / Corruption at a Zone Control monster can play another cast gesture (owner 2026-10-13) - a look
+            // only: the client plays whatever gesture the server names. Hand casts only, like the direct delivery.
+            if (casterItem == null && target is Creature zcTarget && !(target is Player) && zcTarget.ZcDebuffCompressed
+                && (Creature.IsCorrosionSpell(spell.Id) || Creature.IsCorruptionSpell(spell.Id)))
+            {
+                var gesture = ServerConfig.zc_dot_cast_gesture.Value;
+                if (gesture > 0 && gesture <= uint.MaxValue && Enum.IsDefined(typeof(MotionCommand), (uint)gesture))
+                    MagicState.CastGesture = (MotionCommand)(uint)gesture;
+            }
 
             if (casterItem != null)
             {
@@ -1377,10 +1409,10 @@ namespace ACE.Server.WorldObjects
             //StartPos = new Physics.Common.Position(PhysicsObj.Position);
 
             // do wind-up gestures: fastcast has no windup (creature enchantments)
-            DoWindupGestures(spell, isWeaponSpell, spellChain);
+            DoWindupGestures(spell, isWeaponSpell, spellChain, target);
 
             // cast spell
-            DoCastGesture(spell, casterItem, spellChain);
+            DoCastGesture(spell, casterItem, spellChain, target);
 
             MagicState.SetCastParams(spell, casterItem, magicSkill, manaUsed, target, castingPreCheckStatus);
 
@@ -1407,6 +1439,8 @@ namespace ACE.Server.WorldObjects
 
             LastSuccessCast_School = spell.School;
             LastSuccessCast_Time = Time.GetUnixTime();
+            if (spell.School == MagicSchool.VoidMagic)
+                LastVoidCast_Time = LastSuccessCast_Time;   // the void lockouts' clock (Player_VoidLockout.cs)
 
             var caster = GetEquippedWand();
 
@@ -1438,15 +1472,34 @@ namespace ACE.Server.WorldObjects
 
                 default:
 
-                    if (!spell.IsProjectile)
+                    // a void DoT delivered directly (ZcDirectDot) takes the direct-spell path below - after a line-of-sight
+                    // check, which the bolt it replaces had by flying (owner 2026-10-13: "yes need line of sight")
+                    var zcDirectDot = ZcDirectDot(spell, target, itemCaster, isWeaponSpell);
+                    var asProjectile = spell.IsProjectile && !zcDirectDot;
+                    if (zcDirectDot && !ZcDirectDotInSight(targetCreature))
                     {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"You have no line of sight to {target.Name} - {spell.Name} does not reach it.", ChatMessageType.Magic));
+                        break;
+                    }
+
+                    if (!asProjectile)
+                    {
+                        // the bolt it replaces was refused by a pets-only monster before any aggro (SpellProjectile): so is this
+                        if (zcDirectDot && targetCreature != null && !targetCreature.CanBeDamagedBy(this))
+                        {
+                            NotifyPetsOnlyTarget(targetCreature);
+                            break;
+                        }
+
                         if (targetPlayer == null)
                             OnAttackMonster(targetCreature, spell.IsHarmful);
 
-                        if (TryResistSpell(target, spell, itemCaster))
+                        // a direct DoT still rolls the resist the bolt rolled on impact (projectileHit)
+                        if (TryResistSpell(target, spell, itemCaster, projectileHit: zcDirectDot))
                             break;
 
-                        if (targetCreature != null && targetCreature.NonProjectileMagicImmune)
+                        // the bolt it replaces could hit a monster that is immune to direct magic: so can this
+                        if (!zcDirectDot && targetCreature != null && targetCreature.NonProjectileMagicImmune)
                         {
                             Session.Network.EnqueueSend(new GameMessageSystemChat($"You fail to affect {targetCreature.Name} with {spell.Name}", ChatMessageType.Magic));
                             break;
@@ -1455,7 +1508,7 @@ namespace ACE.Server.WorldObjects
 
                     HandleCastSpell(spell, target, itemCaster, caster, isWeaponSpell);
 
-                    if (!spell.IsProjectile)
+                    if (!asProjectile)
                     {
                         if (spell.IsHarmful)
                         {
@@ -1910,6 +1963,25 @@ namespace ACE.Server.WorldObjects
             return null;
         }
 
+        /// <summary>Line of sight for a void DoT delivered directly (ZcDirectDot): what would have stopped the bolt it replaces.
+        /// The ring's sight object and height, not IsDirectVisible(target): that one traces with physics ID 0 and sees straight
+        /// through outdoor rocks, trees and fences (see CreateRingSightObject) - found 2026-10-13, the first build of this used it.
+        /// The ground always blocks here (a hill stops a bolt), whatever ring_aoe_los_ignore_ground says.</summary>
+        private bool ZcDirectDotInSight(Creature target)
+        {
+            if (target == null) return false;
+            var sightObj = CreateRingSightObject();
+            sightObj.SightIgnoresTerrain = false;
+            try
+            {
+                return IsRingTargetInSight(this, target, sightObj);
+            }
+            finally
+            {
+                sightObj.DestroyObject();
+            }
+        }
+
         /// <summary>Ring line-of-sight test from the blast origin.</summary>
         internal static bool IsRingTargetInSight(WorldObject origin, Creature target, PhysicsObj sightObj)
         {
@@ -2110,7 +2182,7 @@ namespace ACE.Server.WorldObjects
                     // --- 1. Intercept Enchantment Projectiles (e.g., debuffs like Shroud of Darkness) ---
                     if (spell.MetaSpellType == ACE.Entity.Enum.SpellType.EnchantmentProjectile)
                     {
-                        CreateEnchantment(creature, this, weapon, spell, false, fromProc);
+                        CreateEnchantment(creature, this, weapon, spell, false, fromProc, zcHandCast: !fromProc);
                         DoSpellEffects(spell, this, creature, true);
                         dbgHit++;
                         continue;
@@ -2269,7 +2341,8 @@ namespace ACE.Server.WorldObjects
                     var resistanceMod = (float)Math.Max(0.0f, creature.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
 
                     // Spell Armor (owner 2026-10-04): every player ring, hand-cast and proc'd alike (procs since 2026-10-05, Creature_SpellArmor.cs)
-                    resistanceMod *= creature.GetZcSpellArmorMod(this);
+                    // - less the wand's Spell Armor Rend card (2026-10-12)
+                    resistanceMod *= creature.GetZcSpellArmorMod(this, HandCastParityWeapon(weapon, this));
 
                     // Void PvP modifier (matches SpellProjectile line ~602).
                     if (isPvP && spell.DamageType == DamageType.Nether)
@@ -2395,7 +2468,8 @@ namespace ACE.Server.WorldObjects
                     // so each creature in it takes its own here.
                     if (finalDamage > 0 && spell.IsHarmful)
                     {
-                        var ringTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(creature);
+                        var ringTakenMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(creature,
+                            ACE.Server.Managers.ZoneControl.ZoneControlManager.AttackKindOfSpell(this, weapon, spell, fromProc));   // per attack type (2026-10-12)
                         if (ringTakenMult != 1f)
                             finalDamage *= ringTakenMult;
                     }

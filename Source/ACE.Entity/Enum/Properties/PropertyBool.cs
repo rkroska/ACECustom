@@ -409,6 +409,30 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         GeneratorNoCorpse = 50060,
 
+        /// <summary>Zone Control (owner 2026-10-13): a player's Destructive Curse does NOT cut the damage this creature deals
+        /// (it still takes the Curse's own damage). The zone stat immune_curse_cut does the same per zone / tier / rank /
+        /// wcid. Server-only. Numbered in this lane's own 512xx block, away from the ids other branches add.</summary>
+        ZcImmuneCurseCut = 51200,
+
+        /// <summary>On a player (owner 2026-10-13): the Split Arrow charm is active - a T11+ launcher fires extra arrows as
+        /// if it carried Split Arrows (the higher of the charm's and the launcher's own numbers). Server-only.</summary>
+        HasSplitArrowCharm = 51201,
+        /// <summary>On a player (owner 2026-10-13): the Chain charm is active - a hand-cast war arc / bolt / streak jumps
+        /// on from monster to monster. Server-only.</summary>
+        HasChainCharm = 51202,
+        /// <summary>On a player (owner 2026-10-13): the Pandemic charm is active - a ticking void DoT spreads to nearby
+        /// monsters. Server-only.</summary>
+        HasPandemicCharm = 51203,
+        /// <summary>On a player (owner 2026-10-13): the Improved Cleave charm is active - melee cleave reaches further,
+        /// all around, and at least the charm's number of extra targets. Server-only.</summary>
+        HasImprovedCleaveCharm = 51204,
+        /// <summary>Zone Control: the Pandemic charm never spreads a DoT ONTO this creature (a cast on it still lands).
+        /// The zone stat immune_pandemic does the same per zone / tier / rank / wcid. Server-only.</summary>
+        ZcImmunePandemic = 51205,
+        /// <summary>Zone Control: the Chain charm never jumps ONTO this creature (a cast at it still hits). The zone stat
+        /// immune_chain does the same per zone / tier / rank / wcid. Server-only.</summary>
+        ZcImmuneChain = 51206,
+
         // Blacksmithing properties live at 52000+ in every property type (renumbered 2026-10-05: the first numbers,
         // taken next to the newest ones in use, collided with properties added on master the same week).
         /// <summary>Blacksmithing: on an NPC, makes it a forge smith. A weapon handed to it is never taken; the smith notes

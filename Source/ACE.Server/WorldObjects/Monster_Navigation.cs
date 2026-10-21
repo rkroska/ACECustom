@@ -598,6 +598,10 @@ namespace ACE.Server.WorldObjects
             if (DebugMove) Console.WriteLine($"{Name}.MoveToHome()");
 
             if (Home == null) return;
+
+            // owner 2026-10-17: "the second the mob turns back to go home, the dot is removed" (Creature_Pandemic.cs)
+            ZcClearVoidDotsGoingHome();
+
             if (Location.Equals(Home))
             {
                 Sleep();

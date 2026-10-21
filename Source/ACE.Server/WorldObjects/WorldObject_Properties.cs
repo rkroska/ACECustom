@@ -3646,6 +3646,34 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasForkCharm); else SetProperty(PropertyBool.HasForkCharm, value); }
         }
 
+        /// <summary>True while the Split Arrow Charm is activated - a T11+ launcher fires extra arrows (CharmSplitArrow).</summary>
+        public bool HasSplitArrowCharm
+        {
+            get => GetProperty(PropertyBool.HasSplitArrowCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasSplitArrowCharm); else SetProperty(PropertyBool.HasSplitArrowCharm, value); }
+        }
+
+        /// <summary>True while the Chain Charm is activated - a hand-cast war arc / bolt / streak jumps from monster to monster.</summary>
+        public bool HasChainCharm
+        {
+            get => GetProperty(PropertyBool.HasChainCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasChainCharm); else SetProperty(PropertyBool.HasChainCharm, value); }
+        }
+
+        /// <summary>True while the Pandemic Charm is activated - a ticking void DoT spreads to nearby monsters.</summary>
+        public bool HasPandemicCharm
+        {
+            get => GetProperty(PropertyBool.HasPandemicCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasPandemicCharm); else SetProperty(PropertyBool.HasPandemicCharm, value); }
+        }
+
+        /// <summary>True while the Improved Cleave Charm is activated - melee cleave reaches further, all around, more targets.</summary>
+        public bool HasImprovedCleaveCharm
+        {
+            get => GetProperty(PropertyBool.HasImprovedCleaveCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasImprovedCleaveCharm); else SetProperty(PropertyBool.HasImprovedCleaveCharm, value); }
+        }
+
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
         {

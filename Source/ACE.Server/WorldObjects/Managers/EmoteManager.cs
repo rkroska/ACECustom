@@ -3638,6 +3638,9 @@ namespace ACE.Server.WorldObjects.Managers
                                 }
                                 break;
                             default:
+                                // levelled charm upgrade gems (2026-10-17): "CharmLevel_<charm>_<levels>"
+                                if (emote.Message != null && emote.Message.StartsWith(Player.CharmLevelGemPrefix, StringComparison.Ordinal))
+                                    player.UseCharmLevelGem(WorldObject, emote.Message);
                                 break;
 
                         }
