@@ -58,6 +58,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void ValidateAbilityCharms()
         {
+            SyncLevelledCharms(); // levelled charms show the player's level (2026-10-17)
             ActiveCharmLevels.Clear();
             var activeCharmAbilities = new Dictionary<int, int>();
 

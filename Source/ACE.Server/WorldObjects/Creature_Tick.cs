@@ -13,6 +13,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public override void Heartbeat(double currentUnixTime)
         {
+            FlushNearbyHealth();
+
             var expireItems = new List<WorldObject>();
 
             foreach (var wo in EquippedObjects.Values)

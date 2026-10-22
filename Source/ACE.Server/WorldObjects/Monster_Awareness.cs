@@ -140,6 +140,7 @@ namespace ACE.Server.WorldObjects
             SetCombatMode(CombatMode.NonCombat);
 
             CurrentAttack = null;
+            ZcResetMovement();      // monster archetypes: no stale walk into the next fight
             firstUpdate = true;
             AttackTarget = null;
             EmoteManager.ResetSingleLocalBroadcasts();

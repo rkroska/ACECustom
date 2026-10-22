@@ -73,6 +73,10 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // T11+ void lockout (owner 2026-10-14): no missile attacks for a while after a void cast (Player_VoidLockout.cs)
+            if (ZcRefuseAttackAfterVoid())
+                return;
+
             var weapon = GetEquippedMissileWeapon();
             var ammo = GetEquippedAmmo();
 

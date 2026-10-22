@@ -127,6 +127,18 @@ namespace ACE.Server.Managers.ZoneControl
             // collections are per-instance clones (WeenieConverter), so this never touches the shared
             // weenie; despawn/respawn naturally reverts. Guarded by ZonePropGuard.
             ApplyProps(creature, profile);
+
+            // MONSTER ARCHETYPES (owner 2026-10-20): roll melee / missile / magic once per monster, LAST, so no prop stamp
+            // above can undo its kit or pacing. A re-apply onto a live monster is a no-op inside (rolled once).
+            // A bad kit weenie must never cost the spawn itself: log it, the monster stays as it is.
+            try
+            {
+                creature.ApplyArchetype(profile);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"ZoneSpawnScaler: archetype roll failed for {creature.Name} 0x{creature.Guid}:{creature.WeenieClassId}: {ex}");
+            }
         }
 
         /// <summary>Set a rating int prop absolutely on the live spawn when the zone authors its stat.</summary>

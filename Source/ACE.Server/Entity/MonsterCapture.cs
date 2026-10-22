@@ -572,7 +572,8 @@ namespace ACE.Server.Entity
                 return null;
             
             // Get the base creature name (strip ALL "Player's" prefixes - may be nested)
-            var creatureName = creature.Name;
+            // a monster archetype's role word ("Bowyer", "Sorcerer" ...) is not a species: the base name (2026-10-20)
+            var creatureName = creature.ZcBaseName ?? creature.Name;
 
             // Strip the live "Enraged " combat tag so the essence/skin uses the clean creature name.
             // (Asheron's/Resonance lenses can capture enraged creatures, so the tag may be present.)
@@ -671,7 +672,15 @@ namespace ACE.Server.Entity
                 var capturedItems = new System.Collections.Generic.List<string>();
                 var processedWCIDs = new System.Collections.Generic.HashSet<uint>();
 
+                // a monster archetype: its own weapons, not the bow kit it was handed (the stowed melee weapon is its look)
+                var zcItems = new System.Collections.Generic.List<WorldObject>();
                 foreach (var itemObj in creature.EquippedObjects.Values)
+                    if (!creature.ZcIsArchetypeKit(itemObj))
+                        zcItems.Add(itemObj);
+                if (creature.ZcStowedMeleeWeapon != null)
+                    zcItems.Add(creature.ZcStowedMeleeWeapon);
+
+                foreach (var itemObj in zcItems)
                 {
                     if (processedWCIDs.Contains(itemObj.WeenieClassId))
                         continue;

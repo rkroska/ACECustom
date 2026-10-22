@@ -188,6 +188,9 @@ namespace ACE.Server.Entity
             // a weapon with the player's own imbue cannot be handed Armor Rending by the other weapon
             if (!w.IsArmor && !GearEssences.ForgeCanGainArmorRend(wo))
                 w.NoGainKeys.Add(ACE.Server.Managers.ZoneControl.ZoneStatResolver.SpecArmorRend.Key);
+            // Spell Armor Rend is a caster card: a melee or missile weapon is never handed it
+            if (!w.IsArmor && !(wo is Caster))
+                w.NoGainKeys.Add(ACE.Server.Managers.ZoneControl.ZoneStatResolver.SpecSpellArmorRend.Key);
             // On tier 11+ armour the armour level, protections and ratings are what its properties make them (Armor Level,
             // Reinforced, Damage Rating...), so they are never rolled as stats: the properties are rolled instead.
             if (w.IsArmor && w.Tier >= ACE.Server.Factories.LootGenerationFactory.ZoneLootSetMinTier)

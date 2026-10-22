@@ -84,6 +84,17 @@ namespace ACE.Entity.Enum.Properties
         /// Bonded + Attuned, never transferable. 50602, free in EVERY Property enum.
         /// </summary>
         BankedEnlightenmentTokens = 50602,
+        // Levelled charm levels (owner 2026-10-17): the level lives on the PLAYER and is raised with upgrade gems bought for
+        // Prestige Coins; the charm item only shows it (PropertyInt.CharmLevel is mirrored from these). Ids in this lane's
+        // 512xx block (2026-10-20: 50602 is upstream's BankedEnlightenmentTokens, #550).
+        /// <summary>Split Arrow charm level, 1-100 (0 / unset = never had one).</summary>
+        SplitArrowCharmLevel     = 51200,
+        /// <summary>Chain charm level, 1-100.</summary>
+        ChainCharmLevel          = 51201,
+        /// <summary>Pandemic charm level, 1-100.</summary>
+        PandemicCharmLevel       = 51202,
+        /// <summary>Improved Cleave charm level, 1-100.</summary>
+        ImprovedCleaveCharmLevel = 51203,
 
         /// <summary>Blacksmithing: Unix time (seconds) until which PropertyInt.ForgeDyePreview is the colour drawn.</summary>
         ForgeDyePreviewUntil    = 52000,

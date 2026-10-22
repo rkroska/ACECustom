@@ -332,6 +332,9 @@ namespace ACE.Server.WorldObjects
             var abilityId = CharmGrantsAbility!.Value;
             var abilityName = CharmAbilityRegistry.GetDisplayName(abilityId) ?? Name;
 
+            // a levelled charm's level lives on the player (2026-10-17) - this item only shows it
+            player.SyncLevelledCharmItem(this, abilityId);
+
             if (!IsCharmActivated)
             {
                 // Guard: only one charm per ability may be active at a time.
@@ -606,7 +609,9 @@ namespace ACE.Server.WorldObjects
 
 
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
-            return activating ? $"{name} Level {level} activated." : $"{name} deactivated.";
+            // a levelled charm (1-100) says what it does at its level, from the live settings
+            var levelled = activating ? CharmSettingsManager.PlayerTextFor(abilityId, level) : null;
+            return activating ? $"{name} Level {level} activated." + (levelled != null ? " " + levelled : "") : $"{name} deactivated.";
         }
     }
 }

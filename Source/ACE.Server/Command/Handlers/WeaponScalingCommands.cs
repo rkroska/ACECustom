@@ -646,6 +646,7 @@ namespace ACE.Server.Command.Handlers
             public double? Crush;
             public double? ArmorRend;
             public double? ShieldCleave;
+            public double? SpellArmorRend;
             public double? Slayer; public CreatureType SlayerType = CreatureType.Drudge;
             public bool SlayerAll;          // slayertype=all -> PropertyBool.SlayerAllCreatures, no species
             // premade (owner 2026-09-01): the drop-equivalent four-card set for the tier; when set, every
@@ -667,7 +668,7 @@ namespace ACE.Server.Command.Handlers
                 var parts = token.Split('=');
                 var key = parts[0].ToLowerInvariant();
                 var val = parts.Length > 1 ? parts[1] : null;
-                double Num(double dflt) => val != null && double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : dflt;
+                double Num(double dflt) => val != null && TryParseDouble(val, out var d) ? d : dflt;   // NaN / Infinity -> default
                 switch (key)
                 {
                     case "proc": cards.ProcArc = true; cards.ProcRing = true; break;
@@ -688,6 +689,7 @@ namespace ACE.Server.Command.Handlers
                     case "crush": cards.Crush = Math.Clamp(Num(2), 2.0, 10.0); break;
                     case "armorrend": cards.ArmorRend = Math.Clamp(Num(0.5), 0.0, 1.0); break;
                     case "shieldcleave": cards.ShieldCleave = Math.Clamp(Num(0.5), 0.0, 1.0); break;
+                    case "spellarmorrend": cards.SpellArmorRend = Math.Clamp(Num(0.5), 0.0, 1.0); break;
                     case "slayer": cards.Slayer = Math.Clamp(Num(1.5), 1.5, 10.0); break;
                     case "slayertype":
                         if (val != null && val.Equals("all", StringComparison.OrdinalIgnoreCase))
@@ -819,6 +821,17 @@ namespace ACE.Server.Command.Handlers
                     applied.Add($"armorrend {c.ArmorRend.Value:0.##}");
                 }
                 else skipped.Add("armorrend (melee/missile only)");
+            }
+
+            // Spell Armor Rend: the caster twin - a plain float, no imbue bit (the value being present is the card)
+            if (c.SpellArmorRend.HasValue)
+            {
+                if (wo is Caster)
+                {
+                    wo.SetProperty(PropertyFloat.ZcSpellArmorRend, c.SpellArmorRend.Value);
+                    applied.Add($"spellarmorrend {c.SpellArmorRend.Value:0.##}");
+                }
+                else skipped.Add("spellarmorrend (casters only)");
             }
 
             if (c.RendPower.HasValue)
@@ -1142,7 +1155,7 @@ namespace ACE.Server.Command.Handlers
             "Classes: sword sword_ms dagger dagger_ms axe mace spear staff ua cleaver spear2h bow crossbow atlatl wand\n" +
             "cards: proc (Cast on Strike, BOTH slots) procarc procring (one slot only) procrate=0-1 procdmg=<n> procspellcraft=<n> procaugcap=<n> procvariance=0-1 rend (matching rend imbue)\n" +
             "rendpower=1.5-10 cleave=1-10 (melee) split=1-10 splitrange=0-50 splitdmg=0-1 (bows) bite=0-1 (crit chance)\n" +
-            "crush=2-10 (crit damage mult) armorrend=0-1 shieldcleave=0-1 slayer=1.5-10 slayertype=<name|all>\n" +
+            "crush=2-10 (crit damage mult) armorrend=0-1 shieldcleave=0-1 spellarmorrend=0-1 (wands) slayer=1.5-10 slayertype=<name|all>\n" +
             "premade[=bis|avg] = the drop-equivalent set for the tier: Rending, Slayer (all creatures), Biting Strike, Crushing Blow; bis = band top, avg = drop roll; other card keys ignored\n" +
             "bag = mint into a 102-slot \"Weapon Pack\" instead of loose in the main pack (costs one pack slot, reused across runs)\n" +
             "force = mint even if you already hold that exact weapon at that tier (default is to skip it, so repeat presses cannot stack sets)")]

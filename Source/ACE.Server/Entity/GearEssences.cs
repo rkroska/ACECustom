@@ -39,7 +39,7 @@ namespace ACE.Server.Entity
     ///   Chaos, Transmutation, Emptiness, Trade.
     ///
     /// "Property" means an armour modifier LINE (a ZcModifiers catalog key) on armour, shields, jewelry,
-    /// clothing and cloaks, and a graded weapon CARD (record keys -11..-16) on weapons. The player never
+    /// clothing and cloaks, and a graded weapon CARD (record keys -11..-16 and -19) on weapons. The player never
     /// sees the two systems - one essence works on any piece.
     ///
     /// Owner rules:
@@ -112,6 +112,7 @@ namespace ACE.Server.Entity
         {
             ZoneStatResolver.SpecBite, ZoneStatResolver.SpecArmorRend, ZoneStatResolver.SpecRendPower,
             ZoneStatResolver.SpecSlayer, ZoneStatResolver.SpecShieldCleave, ZoneStatResolver.SpecCrush,
+            ZoneStatResolver.SpecSpellArmorRend,
         };
 
         /// <summary>Every damage-type rend imbue (the physical three and the five elements).</summary>
@@ -264,6 +265,9 @@ namespace ACE.Server.Entity
                         continue;   // not a card the forge moves
                     // ForgeMath never draws this (ForgeWeapon.NoGainKeys); held here too so the pairing cannot be made
                     if (add.Card == ZoneStatResolver.SpecArmorRend && !ForgeCanGainArmorRend(target))
+                        continue;
+                    // Spell Armor Rend is a caster card: never onto a melee or missile weapon (NoGainKeys too)
+                    if (add.Card == ZoneStatResolver.SpecSpellArmorRend && !(target is Caster))
                         continue;
                 }
                 else if (!ZoneModifiers.TryGet(key, out add.Def) || IsProtected(add.Def))
@@ -943,6 +947,7 @@ namespace ACE.Server.Entity
                 (ZoneStatResolver.SpecCrush, ZoneStat.WeaponCrushChance, true),
                 (ZoneStatResolver.SpecArmorRend, ZoneStat.WeaponArmorRendChance, physical && armorRendFree),
                 (ZoneStatResolver.SpecShieldCleave, ZoneStat.WeaponShieldCleaveChance, physical),
+                (ZoneStatResolver.SpecSpellArmorRend, ZoneStat.WeaponSpellArmorRendChance, target is Caster),
             };
 
             var candidates = new List<ZoneStatResolver.WeaponSpecial>();
@@ -1535,6 +1540,7 @@ namespace ACE.Server.Entity
             if (card == ZoneStatResolver.SpecRendPower) return FormattableString.Invariant($"+{d * 100:0}% Dmg");
             if (card == ZoneStatResolver.SpecArmorRend) return FormattableString.Invariant($"{d * 100:0}% Armor Ignored");
             if (card == ZoneStatResolver.SpecShieldCleave) return FormattableString.Invariant($"{d * 100:0}% Shield Ignored");
+            if (card == ZoneStatResolver.SpecSpellArmorRend) return FormattableString.Invariant($"{d * 100:0}% Spell Armor Ignored");
             return FormattableString.Invariant($"{d:0.##}");
         }
 
