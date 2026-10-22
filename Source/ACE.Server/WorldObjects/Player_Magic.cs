@@ -2349,11 +2349,22 @@ namespace ACE.Server.WorldObjects
                         {
                             var critDamageResistRatingMod = Creature.GetNegativeRatingMod(creature.GetCritDamageResistRating());
 
+                            var normalDamageRatingMod = damageRatingMod;
+                            var normalDamageResistRatingMod = damageResistRatingMod;
+
                             if (zcCritMirror)
                                 critDamageOnTop = critDamageRatingMod;   // melee: Crit Damage multiplies on its own
                             else
                                 damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
                             damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, critDamageResistRatingMod);
+
+                            // Zone Control crit compression (owner 2026-10-21, as SpellProjectile): the crit bonus's multiple of
+                            // the hit without it x what Crit Damage Rating added; a crit bonus of 0 = left as before
+                            var preCritDamage = preModDamage - critDamageBonus;
+                            var rawCrit = critDamageBonus > 0 && preCritDamage > 0
+                                ? preModDamage / preCritDamage * damageRatingMod * critDamageOnTop / normalDamageRatingMod
+                                : 0f;
+                            damageResistRatingMod = creature.ZcCritResistMod(this, rawCrit, normalDamageResistRatingMod, damageResistRatingMod);
                         }
 
                         if (isPvP)
