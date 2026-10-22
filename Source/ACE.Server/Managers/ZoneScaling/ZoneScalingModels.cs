@@ -152,6 +152,29 @@ namespace ACE.Server.Managers.ZoneScaling
         // ZcImmuneChain (51206).
         public const string ImmunePandemic = "immune_pandemic";
         public const string ImmuneChain = "immune_chain";
+        // MONSTER ARCHETYPES (owner 2026-10-20): every governed monster rolls ONE combination of melee / missile / magic at
+        // spawn (ZoneSpawnScaler.ApplyArchetype), among the ones its body allows. Body flags (1 = may), normally on the wcid
+        // bucket; unset = melee only, so a retail drop-in never grows a bow.
+        public const string ArchetypeCanMissile = "archetype_can_missile";
+        public const string ArchetypeCanMagic = "archetype_can_magic";
+        // roll weights of the 7 combinations; unset = the owner's 15 / 15 / 15 / 15 / 15 / 15 / 10
+        public const string ArchetypeWeightMelee = "archetype_weight_melee";
+        public const string ArchetypeWeightMissile = "archetype_weight_missile";
+        public const string ArchetypeWeightMagic = "archetype_weight_magic";
+        public const string ArchetypeWeightMissileMelee = "archetype_weight_missile_melee";
+        public const string ArchetypeWeightMagicMelee = "archetype_weight_magic_melee";
+        public const string ArchetypeWeightMissileMagic = "archetype_weight_missile_magic";
+        public const string ArchetypeWeightAll = "archetype_weight_all";
+        // the kit a missile archetype is handed at spawn: launcher (or thrown stack) + ammo (0 = thrown, none)
+        public const string ArcherLauncherWcid = "archer_launcher_wcid";
+        public const string ArcherAmmoWcid = "archer_ammo_wcid";
+        // x on that archetype's MISSILE hits / SPELL hits only (melee hits of a hybrid stay x1); read live
+        public const string ArchetypeMissileDamageMult = "archetype_missile_damage_mult";
+        public const string ArchetypeMagicDamageMult = "archetype_magic_damage_mult";
+        public const string CasterMagicDelay = "caster_magic_delay";          // seconds between casts (stamps AiUseMagicDelay)
+        public const string ArchetypeCastChance = "archetype_cast_chance";    // a hybrid with magic casts on this share of attacks (unset 0.5)
+        public const string ArchetypeMeleeRange = "archetype_melee_range";    // missile + melee: melee inside this, bow past 2x (unset 4 m)
+        public const string ArchetypeKeepName = "archetype_keep_name";        // 1 = no role word after the name
         // owner 2026-10-03: 1 = the monster takes NO damage from Rocky Shrapnel (6152) / Ring of Unspeakable Agony (2673).
         // Zone / Tier Default / rank / wcid like any stat; PropertyBool.ZcImmuneShrapnelAgony (50059) does the same per weenie.
         public const string ImmuneShrapnelAgony = "immune_shrapnel_agony";
@@ -728,6 +751,13 @@ namespace ACE.Server.Managers.ZoneScaling
             CurseDamageCut, ImmuneCurseCut,
             // levelled charm immunities (2026-10-13) - APPEND-ONLY
             ImmunePandemic, ImmuneChain,
+            // monster archetypes (2026-10-20) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            ArchetypeCanMissile, ArchetypeCanMagic,
+            ArchetypeWeightMelee, ArchetypeWeightMissile, ArchetypeWeightMagic, ArchetypeWeightMissileMelee,
+            ArchetypeWeightMagicMelee, ArchetypeWeightMissileMagic, ArchetypeWeightAll,
+            ArcherLauncherWcid, ArcherAmmoWcid,
+            ArchetypeMissileDamageMult, ArchetypeMagicDamageMult,
+            CasterMagicDelay, ArchetypeCastChance, ArchetypeMeleeRange, ArchetypeKeepName,
         };
 
         /// <summary>
@@ -861,7 +891,11 @@ namespace ACE.Server.Managers.ZoneScaling
         /// book spell = keep the book's own chance; null on an ADDED spell = default 2.0.</summary>
         public double? Chance { get; set; }
 
-        public ZoneSpellRule Clone() => new ZoneSpellRule { SpellId = SpellId, Disabled = Disabled, Chance = Chance };
+        /// <summary>Caster list entry (2026-10-20): used ONLY by a monster that rolled a magic archetype, and its Chance is
+        /// then a WEIGHT inside that list. Every other monster skips the rule entirely. Missing on older profiles = false.</summary>
+        public bool Caster { get; set; }
+
+        public ZoneSpellRule Clone() => new ZoneSpellRule { SpellId = SpellId, Disabled = Disabled, Chance = Chance, Caster = Caster };
     }
 
     /// <summary>
@@ -1211,7 +1245,8 @@ namespace ACE.Server.Managers.ZoneScaling
                     foreach (var rule in layer.SpellRules)
                     {
                         if (rule == null) continue;
-                        var at = result.SpellRules.FindIndex(r => r.SpellId == rule.SpellId);
+                        // a caster-list entry and a book rule for the same spell are two different rules (2026-10-20)
+                        var at = result.SpellRules.FindIndex(r => r.SpellId == rule.SpellId && r.Caster == rule.Caster);
                         if (at >= 0) result.SpellRules[at] = rule.Clone();
                         else result.SpellRules.Add(rule.Clone());
                     }

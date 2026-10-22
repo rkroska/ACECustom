@@ -116,6 +116,15 @@ namespace ACE.Server.WorldObjects
             if (CombatTable == null)
                 GetCombatTable();
 
+            // a rolled missile / magic archetype picks its own way (Creature_Archetype.cs); null = the master switch is
+            // off or it left its zone: the retail choice below
+            if (ZcArchetypeActive)
+            {
+                var zcType = ZcNextAttackType();
+                if (zcType.HasValue)
+                    return zcType.Value;
+            }
+
             // if caster, roll for spellcasting chance
             if (HasKnownSpells && TryRollSpell())
                 return CombatType.Magic;
@@ -184,11 +193,22 @@ namespace ACE.Server.WorldObjects
             {
                 // select a magic spell
                 //CurrentSpell = GetRandomSpell();
-                if (CurrentSpell.IsProjectile)
+                // a magic archetype's Harm / Drain also needs to see its target: they take the zone's spell_damage, which
+                // retail's few-hundred-point Boost never did through a wall
+                if (CurrentSpell.IsProjectile || (ZcArchetypeActive && ZcHasMagic && ZcIsDamageSpell(CurrentSpell)))
                 {
                     isVisible ??= IsDirectVisible(AttackTarget);
+                    if (isVisible.Value && ZcArchetypeActive)
+                        ZcSightOk();
 
                     // ensure direct los
+                    if (!isVisible.Value && ZcArchetypeActive && !ZcHasMelee && ZcSightApproachAllowed)
+                    {
+                        // a ranged-only archetype never falls back to melee: it walks until it can see the target
+                        // (ZcApproachTick ends the walk and decides again), short range = keep moving meanwhile
+                        ZcStartApproach(sight: true, forSpell: true);
+                        return MaxMeleeRange;
+                    }
                     if (!isVisible.Value)
                     {
                         // reroll attack type

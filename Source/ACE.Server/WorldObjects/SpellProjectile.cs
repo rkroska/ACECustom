@@ -1512,7 +1512,8 @@ namespace ACE.Server.WorldObjects
                 // True Damage, before the cloak / Mana Barrier.
                 if (Spell.IsHarmful && targetPlayer != null)
                 {
-                    var spellDamageMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(sourceCreature, targetPlayer);
+                    // a weapon's Cast on Strike is no spell CAST: it never takes the magic archetype dial
+                    var spellDamageMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultForKind(sourceCreature, targetPlayer, FromProc ? (CombatType?)null : CombatType.Magic);
                     if (spellDamageMult != 1f)
                     {
                         damage *= spellDamageMult;

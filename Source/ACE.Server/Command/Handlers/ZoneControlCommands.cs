@@ -1086,7 +1086,7 @@ namespace ACE.Server.Command.Handlers
                         // Spell-book rules: disable/re-enable a governed mob's spells, override cast
                         // chances (percent per cast opportunity), or ADD spells the weenie doesn't know.
                         // Read-time (Monster_Magic.TryRollSpell) - changes apply LIVE, no respawn needed.
-                        if (args.Count < 3) { Msg("Usage: spell <name> <off|on|add|chance|remove|list> [spellId] [chancePct] [--wcid <id>]"); return; }
+                        if (args.Count < 3) { Msg("Usage: spell <name> <off|on|add|chance|caster|uncaster|remove|list> [spellId] [chancePct|weight] [--wcid <id>]"); return; }
                         var name = args[1];
                         var area = ZoneControlManager.GetArea(name);
                         if (area == null) { Msg($"No zone '{name}' (create it first)."); return; }
@@ -1102,16 +1102,16 @@ namespace ACE.Server.Command.Handlers
                             foreach (var r in rules)
                             {
                                 var spl = new ACE.Server.Entity.Spell(r.SpellId);
-                                Msg($"  {r.SpellId}  {(spl.NotFound ? "(unknown)" : spl.Name)}  {(r.Disabled ? "OFF" : "on")}{(r.Chance.HasValue ? "  chance " + r.Chance.Value.ToString(CultureInfo.InvariantCulture) + " pct" : "")}");
+                                Msg($"  {r.SpellId}  {(spl.NotFound ? "(unknown)" : spl.Name)}  {(r.Disabled ? "OFF" : "on")}{(r.Caster ? "  CASTER weight " + (r.Chance ?? 10.0).ToString(CultureInfo.InvariantCulture) : r.Chance.HasValue ? "  chance " + r.Chance.Value.ToString(CultureInfo.InvariantCulture) + " pct" : "")}");
                             }
                             return;
                         }
 
                         if (args.Count < 4 || !int.TryParse(args[3], out var ruleSpellId) || ruleSpellId <= 0)
-                        { Msg("Usage: spell <name> off|on|add|chance|remove <spellId> [chancePct]"); return; }
+                        { Msg("Usage: spell <name> off|on|add|chance|caster|uncaster|remove <spellId> [chancePct|weight]"); return; }
 
                         var spellCheck = new ACE.Server.Entity.Spell(ruleSpellId);
-                        if (spellCheck.NotFound && op != "remove" && op != "on")
+                        if (spellCheck.NotFound && op != "remove" && op != "on" && op != "uncaster")
                         { Msg($"No spell with id {ruleSpellId}."); return; }
                         var spellLabel = spellCheck.NotFound ? "#" + ruleSpellId : spellCheck.Name;
 
@@ -1125,7 +1125,7 @@ namespace ACE.Server.Command.Handlers
                                 ZoneControlManager.MutateArea(name, a =>
                                 {
                                     var vp2 = wcid.HasValue ? a.Profile.VariantForWcid(wcid.Value, create: true) : a.Profile.Minion;
-                                    var rule = vp2.SpellRules.Find(r => r.SpellId == ruleSpellId);
+                                    var rule = vp2.SpellRules.Find(r => r.SpellId == ruleSpellId && !r.Caster);
                                     if (rule == null) vp2.SpellRules.Add(new ZoneSpellRule { SpellId = ruleSpellId, Disabled = true });
                                     else rule.Disabled = true;
                                 });
@@ -1136,7 +1136,7 @@ namespace ACE.Server.Command.Handlers
                                 ZoneControlManager.MutateArea(name, a =>
                                 {
                                     var vp2 = wcid.HasValue ? a.Profile.VariantForWcid(wcid.Value) : a.Profile.Minion;
-                                    var rule = vp2?.SpellRules.Find(r => r.SpellId == ruleSpellId);
+                                    var rule = vp2?.SpellRules.Find(r => r.SpellId == ruleSpellId && !r.Caster);
                                     if (rule != null)
                                     {
                                         rule.Disabled = false;
@@ -1151,25 +1151,65 @@ namespace ACE.Server.Command.Handlers
                                 ZoneControlManager.MutateArea(name, a =>
                                 {
                                     var vp2 = wcid.HasValue ? a.Profile.VariantForWcid(wcid.Value, create: true) : a.Profile.Minion;
-                                    var rule = vp2.SpellRules.Find(r => r.SpellId == ruleSpellId);
+                                    var rule = vp2.SpellRules.Find(r => r.SpellId == ruleSpellId && !r.Caster);
                                     if (rule == null) vp2.SpellRules.Add(new ZoneSpellRule { SpellId = ruleSpellId, Chance = chanceArg ?? 2.0 });
                                     else { rule.Disabled = false; rule.Chance = chanceArg ?? rule.Chance ?? 2.0; }
                                 });
                                 Msg($"'{name}'{wcidTag} spell {(op == "add" ? "added" : "chance set")}: {spellLabel} at {(chanceArg ?? 2.0).ToString(CultureInfo.InvariantCulture)} pct per cast roll.");
                                 return;
 
+                            case "caster":
+                            {
+                                // MONSTER ARCHETYPES (2026-10-20): a caster-list entry - only a monster that rolled a magic
+                                // archetype casts it, and its number is a WEIGHT inside that list. Damage spells only: a
+                                // projectile (bolt / streak / arc ...) or a Harm / Drain Health, the kinds that take the zone's
+                                // spell_damage; anything else would cast for no damage at all.
+                                if (!ACE.Server.WorldObjects.Creature.ZcIsDamageSpell(spellCheck))
+                                { Msg($"{spellLabel} is not a damage spell (projectile, Harm or Drain Health) - not added to the caster list."); return; }
+                                // a weight that does not read as a number is refused (no silent default), 0 is refused too:
+                                // an entry that can never be picked only clutters the list
+                                if (args.Count >= 5 && !TryFiniteNumber(args[4], out _))
+                                { Msg($"'{args[4]}' is not a number - give the weight as a number above 0 (default 10)."); return; }
+                                if (chanceArg.HasValue && chanceArg.Value <= 0)
+                                { Msg("A caster weight must be above 0 (use uncaster to take a spell off the list)."); return; }
+                                var weight = chanceArg ?? 10.0;
+                                ZoneControlManager.MutateArea(name, a =>
+                                {
+                                    var vp2 = wcid.HasValue ? a.Profile.VariantForWcid(wcid.Value, create: true) : a.Profile.Minion;
+                                    // its own rule beside any book rule for the same spell (the book rule keeps meaning what it says)
+                                    var rule = vp2.SpellRules.Find(r => r.SpellId == ruleSpellId && r.Caster);
+                                    if (rule == null) vp2.SpellRules.Add(new ZoneSpellRule { SpellId = ruleSpellId, Chance = weight, Caster = true });
+                                    else { rule.Disabled = false; rule.Chance = weight; }
+                                });
+                                Msg($"'{name}'{wcidTag} caster list: {spellLabel} at weight {weight.ToString(CultureInfo.InvariantCulture)}. Magic archetypes cast it live.");
+                                return;
+                            }
+
+                            case "uncaster":
+                            {
+                                var uncastered = false;
+                                ZoneControlManager.MutateArea(name, a =>
+                                {
+                                    var vp2 = wcid.HasValue ? a.Profile.VariantForWcid(wcid.Value) : a.Profile.Minion;
+                                    var rule = vp2?.SpellRules.Find(r => r.SpellId == ruleSpellId && r.Caster);
+                                    if (rule != null) { vp2.SpellRules.Remove(rule); uncastered = true; }
+                                });
+                                Msg(uncastered ? $"'{name}'{wcidTag} caster list: {spellLabel} removed." : "That spell is not on this caster list.");
+                                return;
+                            }
+
                             case "remove":
                                 var removedRule = false;
                                 ZoneControlManager.MutateArea(name, a =>
                                 {
                                     var vp2 = wcid.HasValue ? a.Profile.VariantForWcid(wcid.Value) : a.Profile.Minion;
-                                    if (vp2 != null) removedRule = vp2.SpellRules.RemoveAll(r => r.SpellId == ruleSpellId) > 0;
+                                    if (vp2 != null) removedRule = vp2.SpellRules.RemoveAll(r => r.SpellId == ruleSpellId && !r.Caster) > 0;   // caster entries: uncaster
                                 });
                                 Msg(removedRule ? $"'{name}'{wcidTag} spell rule removed for {spellLabel} (back to book default)." : "No rule for that spell.");
                                 return;
 
                             default:
-                                Msg("op must be off | on | add | chance | remove | list");
+                                Msg("op must be off | on | add | chance | caster | uncaster | remove | list");
                                 return;
                         }
                     }
@@ -3875,7 +3915,7 @@ namespace ACE.Server.Command.Handlers
 
             AppendSpecialsOff(sb, vp?.CustomSpecials);
 
-            // Spell-book rules (sparse, rebuilt each sync): sprules=id~disabled~chancePct,...
+            // Spell-book rules (sparse, rebuilt each sync): sprules=id~disabled~chancePct~caster,... (caster appended 2026-10-20)
             // chance blank = book default (or 2 for added spells).
             if (vp?.SpellRules is { Count: > 0 })
             {
@@ -3887,7 +3927,8 @@ namespace ACE.Server.Command.Handlers
                     if (!firstSr) sb.Append(',');
                     firstSr = false;
                     sb.Append(r.SpellId).Append('~').Append(r.Disabled ? 1 : 0).Append('~')
-                      .Append(r.Chance.HasValue ? r.Chance.Value.ToString(CultureInfo.InvariantCulture) : "");
+                      .Append(r.Chance.HasValue ? r.Chance.Value.ToString(CultureInfo.InvariantCulture) : "")
+                      .Append('~').Append(r.Caster ? 1 : 0);
                 }
             }
 
@@ -5745,7 +5786,7 @@ namespace ACE.Server.Command.Handlers
 
             // casting - authored spell damage lands on the mob's own magic skill unless overridden
             r.BookSpells = weenie.PropertiesSpellBook?.Count ?? 0;
-            r.ZoneSpells = eval?.SpellRules?.Count(sr => !sr.Disabled) ?? 0;
+            r.ZoneSpells = eval?.SpellRules?.Count(sr => !sr.Disabled && !sr.Caster) ?? 0;
             r.HasMagicSkill = Has(ZoneStat.MagicSkill);
             r.MagicSkill = r.HasMagicSkill ? (int)Val(ZoneStat.MagicSkill) : 0;
 

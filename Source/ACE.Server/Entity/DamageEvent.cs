@@ -805,7 +805,7 @@ namespace ACE.Server.Entity
 
                 // per-monster DAMAGE MULTIPLIER (owner 2026-10-03, Bestiary): the whole landed hit, normal + True Damage
                 // (a slow swinger like the Kraken hits harder per swing; < 1 softens a monster). 1.0 unless set.
-                var damageMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(attacker, truePlayer);
+                var damageMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultForKind(attacker, truePlayer, CombatType);
                 if (damageMult != 1f)
                 {
                     Damage *= damageMult;

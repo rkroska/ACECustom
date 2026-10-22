@@ -2184,7 +2184,12 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>The factor on a monster's damage to a PLAYER: its multiplier when the monster is governed by Zone
         /// Control (an enabled zone resolves it - never retail), else 1.0. Called on every monster hit / spell on a
         /// player, so the empty-map case returns before any resolve.</summary>
-        public static float MonsterDamageMultFor(Creature attacker, Creature defender)
+        public static float MonsterDamageMultFor(Creature attacker, Creature defender) => MonsterDamageMultForKind(attacker, defender, null);
+
+        /// <summary>MonsterDamageMultFor plus the monster archetype's dial for this attack kind (2026-10-20): missile hits x
+        /// archetype_missile_damage_mult, spell hits x archetype_magic_damage_mult. A separate name, not an overload, so the
+        /// 2-argument method keeps its exact shape for the test mods that bind it by name.</summary>
+        public static float MonsterDamageMultForKind(Creature attacker, Creature defender, CombatType? kind)
         {
             if (!ServerConfig.zonecontrol_enabled.Value || attacker == null || attacker is Player || defender is not Player) return 1f;
             var profile = ResolveCombatProfile(attacker);
@@ -2202,6 +2207,8 @@ namespace ACE.Server.Managers.ZoneControl
             // a player's Destructive Curse on the monster cuts what it deals (owner 2026-10-13) - every path that comes
             // through here: swings with their True Damage, spells, harm, drain, its DoT ticks on a player
             m *= attacker.GetZcCurseDamageDealtMod(profile);
+            // monster archetypes (2026-10-20): a rolled bow user's missile hits / caster's spell hits get their own dial
+            m *= attacker.ZcArchetypeDamageMult(profile, kind);
             return (float)m;
         }
 

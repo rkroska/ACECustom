@@ -582,6 +582,19 @@ namespace ACE.Server.WorldObjects
                 tryBoost = (int)Math.Round(tryBoost * damageCapMultiplier);
             }
 
+            // MONSTER ARCHETYPES (owner 2026-10-20, "harms, drains"): a magic archetype's Harm on a player deals the zone's
+            // spell_damage like its bolts (the retail Boost range is a few hundred points at most); its spell True Damage is
+            // added after the Mana Barrier below, the way the projectile path adds it.
+            var zcHarmTrue = 0f;
+            Player zcHarmed = null;
+            if (!useHarmCap && tryBoost < 0 && spell.VitalDamageType == DamageType.Health && player == null && creature != null
+                && targetCreature is Player zcTarget && Creature.ZcArchetypeSpellDamage(creature, zcTarget, spell, out var zcBase, out var zcTrue))
+            {
+                tryBoost = -(int)Math.Round(zcBase);
+                zcHarmTrue = zcTrue;
+                zcHarmed = zcTarget;
+            }
+
             var resistanceMod = targetCreature.GetResistanceMod(resistanceType);
 
             if (!useHarmCap)
@@ -591,7 +604,7 @@ namespace ACE.Server.WorldObjects
             // player - health damage only, like True Damage
             if (tryBoost < 0 && spell.VitalDamageType == DamageType.Health && player == null && creature != null && targetCreature is Player harmedPlayer)
             {
-                var harmMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(creature, harmedPlayer);
+                var harmMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultForKind(creature, harmedPlayer, creature.ZcOwnCastKind(spell));
                 if (harmMult != 1f)
                     tryBoost = (int)Math.Round(tryBoost * (double)harmMult);
             }
@@ -670,6 +683,10 @@ namespace ACE.Server.WorldObjects
                 tryBoost = -(int)Math.Round(fDamage);
             }
             // ─────────────────────────────────────────────────────────────────────
+
+            // the magic archetype's spell True Damage (computed above), past the barrier, scaled like the rest of its hit
+            if (zcHarmTrue > 0 && zcHarmed != null)
+                tryBoost -= (int)Math.Round(zcHarmTrue * (double)ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultForKind(creature, zcHarmed, creature.ZcOwnCastKind(spell)));
 
             // A creature that refuses damage from this caster takes no harm/drain (heals still apply).
             if (tryBoost < 0 && !targetCreature.CanBeDamagedBy(this))
@@ -963,13 +980,27 @@ namespace ACE.Server.WorldObjects
             if (spell.TransferCap != 0 && srcVitalChange > spell.TransferCap)
                 srcVitalChange = (uint)spell.TransferCap;
 
+            // MONSTER ARCHETYPES (owner 2026-10-20, "harms, drains"): a magic archetype's Drain Health on a player takes the
+            // zone's spell_damage (+ spell True Damage) instead of a share of the player's current health, and is NOT shrunk
+            // to what the caster is missing below - a full-health monster would otherwise drain about nothing.
+            var zcDrain = false;
+            var zcDrainTrueLeft = 0f;
+            if (isDrain && spell.Source == PropertyAttribute2nd.Health && transferSource is Player zcDrained && creature != null
+                && Creature.ZcArchetypeSpellDamage(creature, zcDrained, spell, out var zcDrainBase, out var zcDrainTrue))
+            {
+                // True Damage stays apart and lands after the Mana Barrier and the cloak, as on the projectile path
+                srcVitalChange = (uint)Math.Clamp(Math.Round(zcDrainBase * drainMod), 0, zcDrained.Health.Current);
+                zcDrainTrueLeft = zcDrainTrue;
+                zcDrain = true;
+            }
+
             var drainTakenMult = 1f;
 
             // per-monster DAMAGE MULTIPLIER (owner 2026-10-03: "cover harm, drain and DoTs too"): a monster's Drain Health on a
             // player, after the spell's cap, never more than the player has
             if (isDrain && spell.Source == PropertyAttribute2nd.Health && srcVitalChange > 0 && transferSource is Player drainedPlayer && this is Creature drainer)
             {
-                var drainMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(drainer, drainedPlayer);
+                var drainMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultForKind(drainer, drainedPlayer, (drainer as Creature)?.ZcOwnCastKind(spell));
                 if (drainMult != 1f)
                     srcVitalChange = (uint)Math.Min(Math.Round(srcVitalChange * (double)drainMult), drainedPlayer.Health.Current);
             }
@@ -1011,7 +1042,9 @@ namespace ACE.Server.WorldObjects
             if (spell.TransferCap != 0 && maxDestVitalChange > spell.TransferCap)
                 maxDestVitalChange = (uint)spell.TransferCap;
 
-            if (destVitalChange > maxDestVitalChange)
+            if (zcDrain && destVitalChange > maxDestVitalChange)
+                destVitalChange = maxDestVitalChange;      // the archetype drain keeps its damage; only the heal is capped
+            else if (destVitalChange > maxDestVitalChange)
             {
                 var scalar = (float)maxDestVitalChange / destVitalChange;
 
@@ -1034,7 +1067,17 @@ namespace ACE.Server.WorldObjects
 
                     srcVitalChange = reduced;
                     destVitalChange = (uint)Math.Round(srcVitalChange * (1.0f - spell.LossPercent) * boostMod);
+                    if (zcDrain && destVitalChange > maxDestVitalChange)
+                        destVitalChange = maxDestVitalChange;
                 }
+            }
+
+            // the magic archetype's spell True Damage (computed above), past the barrier and the cloak, scaled like the
+            // rest of its drain, never more than the player has
+            if (zcDrain && zcDrainTrueLeft > 0 && transferSource is Player zcTrueTarget && creature != null)
+            {
+                var add = Math.Round(zcDrainTrueLeft * (double)ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultForKind(creature, zcTrueTarget, creature.ZcOwnCastKind(spell)));
+                srcVitalChange = (uint)Math.Clamp(srcVitalChange + add, 0, zcTrueTarget.Health.Current);
             }
 
             if (player != null)

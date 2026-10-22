@@ -332,6 +332,10 @@ namespace ACE.Server.WorldObjects
             var targetDist = GetDistanceToTarget();
             //Console.WriteLine($"{Name} ({Guid}) - Dist: {targetDist}");
 
+            // monster archetypes: a pending "can't see it" walk starts here, and a running walk ends here (Creature_Archetype)
+            if (ZcArchetypeActive && ZcTickApproach(targetDist))
+                return;
+
             string combatPetAction = null;
 
             if (CurrentAttack != CombatType.Missile)
@@ -352,6 +356,11 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
+                    // a casting archetype stops its run-in where it stands: the sticky MoveTo survives ResetAttack, and
+                    // that is how casters creep into melee range between casts (owner 2026-10-20)
+                    if (ZcArchetypeActive && CurrentAttack == CombatType.Magic)
+                        ZcStopForRangedAttack();
+
                     // perform attack
                     if (AttackReady())
                     {
@@ -379,7 +388,7 @@ namespace ACE.Server.WorldObjects
                     combatPetAction = "MissileStartTurn";
                     StartTurn();
                 }
-                else if (targetDist <= MaxRange)
+                else if (targetDist <= MaxRange && !ZcApproaching)
                 {
                     // perform attack
                     if (AttackReady())
@@ -398,7 +407,16 @@ namespace ACE.Server.WorldObjects
 
                     // should ranged mobs only get CurrentTargets within MaxRange?
                     //Console.WriteLine($"{Name}.MissileAttack({AttackTarget.Name}): targetDist={targetDist}, MaxRange={MaxRange}, switching to melee");
-                    TrySwitchToMeleeAttack();
+                    // a missile archetype walks into range instead of dropping its bow (Creature_Archetype)
+                    // (also the walk of an approach already running: keep moving, do not shoot)
+                    if (ZcHasMissile)
+                    {
+                        if (!ZcApproaching)
+                            ZcStartApproach(sight: false);
+                        StartTurn();
+                    }
+                    else
+                        TrySwitchToMeleeAttack();
                 }
             }
 

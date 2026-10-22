@@ -1997,7 +1997,7 @@ namespace ACE.Server.WorldObjects.Managers
                 // per-monster DAMAGE MULTIPLIER (owner 2026-10-03: "cover harm, drain and DoTs too"): a monster's DoT tick on a
                 // player (the caster is looked up above; a caster that is gone deals no tick at all, as before)
                 if (targetPlayer != null && damager is Creature dotCaster)
-                    tickAmount *= ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(dotCaster, targetPlayer);
+                    tickAmount *= ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultForKind(dotCaster, targetPlayer, CombatType.Magic);
 
                 // a DoT put on by a melee / missile weapon's Cast on Strike takes that weapon's dial, as its other procs do
                 // ("tie it to the weapon", owner 2026-10-12; the kind is fixed at the cast - review 2026-10-20)

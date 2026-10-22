@@ -66,7 +66,7 @@ namespace ACE.Server.WorldObjects
             if (rules == null)
                 return false;
             foreach (var r in rules)
-                if (!r.Disabled && (Biota.PropertiesSpellBook == null || !Biota.PropertiesSpellBook.ContainsKey(r.SpellId)))
+                if (!r.Disabled && !r.Caster && (Biota.PropertiesSpellBook == null || !Biota.PropertiesSpellBook.ContainsKey(r.SpellId)))
                     return true;
             return false;
         }
@@ -137,7 +137,8 @@ namespace ACE.Server.WorldObjects
             {
                 foreach (var rule in zoneRules)
                 {
-                    if (rule.Disabled)
+                    // caster-list entries belong to magic archetypes only (Creature_Archetype.ZcTryRollArchetypeSpell)
+                    if (rule.Disabled || rule.Caster)
                         continue;
                     if (Biota.PropertiesSpellBook != null && Biota.PropertiesSpellBook.ContainsKey(rule.SpellId))
                         continue;
@@ -164,7 +165,7 @@ namespace ACE.Server.WorldObjects
             System.Collections.Generic.IReadOnlyList<ACE.Server.Managers.ZoneScaling.ZoneSpellRule> rules, int spellId)
         {
             for (int i = 0; i < rules.Count; i++)
-                if (rules[i].SpellId == spellId)
+                if (rules[i].SpellId == spellId && !rules[i].Caster)   // a caster-list entry never reweights the book
                     return rules[i];
             return null;
         }
@@ -203,7 +204,8 @@ namespace ACE.Server.WorldObjects
             {
                 foreach (var rule in zoneRules)
                 {
-                    if (rule.Disabled)
+                    // caster-list entries belong to magic archetypes only (Creature_Archetype.ZcTryRollArchetypeSpell)
+                    if (rule.Disabled || rule.Caster)
                         continue;
                     if (Biota.PropertiesSpellBook != null && Biota.PropertiesSpellBook.ContainsKey(rule.SpellId))
                         continue;
@@ -273,7 +275,16 @@ namespace ACE.Server.WorldObjects
                 if (IsDead || AttackTarget == null || target.IsDead)
                     return;
 
-                CastSpell(spell);
+                // monster archetypes: marks THIS cast as the monster's own (Harm / Drain take the zone spell damage)
+                zcOwnCast = spell;
+                try
+                {
+                    CastSpell(spell);
+                }
+                finally
+                {
+                    zcOwnCast = null;
+                }
 
                 PostCastMotion();
             });
