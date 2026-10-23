@@ -1019,6 +1019,10 @@ namespace ACE.Server.WorldObjects
                 if (tr != null) tr.Fork = ForkDamageMult;
             }
 
+            // QB Deeds (13k QB): a separate x1.10 on the player's war / void spell damage against monsters
+            if (Spell.School == MagicSchool.WarMagic || Spell.School == MagicSchool.VoidMagic)
+                finalDamage *= Player.GetDeedsDamageMod(sourcePlayer, target);
+
             // (The 2026-07-27 WYSIWYG felt-damage override that used to live here was REMOVED 2026-08-02:
             // spell_damage is now a plain PRE-mitigation base replacement and rides the retail pipeline.)
 

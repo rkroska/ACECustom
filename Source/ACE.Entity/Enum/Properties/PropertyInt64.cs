@@ -94,6 +94,13 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         OverflowExperience      = 51300,
 
+        /// <summary>
+        /// Server-only (no SendOnLogin): QB Deeds (owner 2026-10-22) - the character's QB (the account's quest-bonus
+        /// count) as last read, saved at login and on every quest stamp. The Deeds level. 56000, free in EVERY Property enum,
+        /// every branch and the shard DBs.
+        /// </summary>
+        DeedsQb          = 56000,
+
         // Pet Bonding System (Combat Pet Devices) — [AssessmentProperty] for identify + plugin PublicUpdateProperty*
         /// <summary>Current bond XP toward next level on a PetDevice.</summary>
         [AssessmentProperty]

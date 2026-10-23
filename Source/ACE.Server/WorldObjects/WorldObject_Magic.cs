@@ -1790,6 +1790,10 @@ namespace ACE.Server.WorldObjects
             // dispel on server and client
             target.EnchantmentManager.Dispel(removeSpells.Select(s => s.Enchantment).ToList());
 
+            // QB Deeds: a monster / trap / other player took a buff off a player - /rebuff waits 120 s
+            if (target is Player dispelledPlayer && target != this && removeSpells.Any(s => s.Spell.IsBeneficial))
+                dispelledPlayer.OnHostileDispel();
+
             var spellList = BuildSpellList(removeSpells);
             var suffix = "";
             if (removeSpells.Count > 0)
@@ -2593,6 +2597,9 @@ namespace ACE.Server.WorldObjects
                 }
             }
             enchantment_statModVal *= skillMod * elementalDamageMod * damageRatingMod;
+
+            // QB Deeds (13k QB): a separate x1.10 on the player's void DoTs on monsters, as on void projectiles
+            enchantment_statModVal *= Player.GetDeedsDamageMod(player, creatureTarget);
 
             return enchantment_statModVal;
         }

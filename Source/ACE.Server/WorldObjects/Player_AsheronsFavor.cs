@@ -115,12 +115,13 @@ namespace ACE.Server.WorldObjects
         {
             const int maxAttempts = 10;
             var attempts = 0;
-            var entry = EnchantmentManager.GetEnchantment(spellId);
+            // (never the QB Deeds layer of the same spell - GetEnchantmentNotDeeds)
+            var entry = GetEnchantmentNotDeeds(spellId);
             while (entry != null && attempts < maxAttempts)
             {
                 EnchantmentManager.Dispel(entry);
                 attempts++;
-                entry = EnchantmentManager.GetEnchantment(spellId);
+                entry = GetEnchantmentNotDeeds(spellId);
             }
             if (attempts >= maxAttempts)
                 log.Warn($"[AsheronsFavor] DispelAsheronsFavorSpell: spell {spellId} still present after {maxAttempts} dispel attempts — possible EnchantmentManager issue.");

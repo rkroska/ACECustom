@@ -1115,7 +1115,10 @@ namespace ACE.Server.WorldObjects
 
                     // handle self procs
                     if (spell.IsHarmful && target != this)
+                    {
                         TryProcEquippedItems(this, this, true, caster);
+                        TryDeedsBreathOfRenewal(target);   // QB Deeds (12k QB), against monsters only
+                    }
 
                     break;
 
@@ -2365,6 +2368,10 @@ namespace ACE.Server.WorldObjects
                         }
 
                         finalDamage *= damageRatingMod * damageResistRatingMod * critDamageOnTop;
+
+                        // QB Deeds (13k QB): a separate x1.10 on war / void rings against monsters, as on the projectile path
+                        if (spell.School == MagicSchool.WarMagic || spell.School == MagicSchool.VoidMagic)
+                            finalDamage *= GetDeedsDamageMod(this, creature);
 
                         // jewelry Cast on Strike (key 54, owner 2026-10-05): a hand-cast of the ring x the piece's rolled power pct
                         if (fromProc && weapon != null)

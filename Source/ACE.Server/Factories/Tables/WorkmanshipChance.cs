@@ -86,7 +86,8 @@ namespace ACE.Server.Factories.Tables
 
             var workmanshipChance = TierTable.Entry(workmanshipChances, tier);
 
-            return workmanshipChance.Roll();
+            // QB Deeds loot luck: the better of two rolls while DeedsLootLuck is active
+            return ACE.Server.Entity.DeedsLootLuck.Better(workmanshipChance, static w => w.Roll());
         }
 
         /// <summary>

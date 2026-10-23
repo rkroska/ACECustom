@@ -188,6 +188,9 @@ namespace ACE.Server.WorldObjects
 
             ValidateAbilityCharms();
 
+            // QB Deeds: save the QB, then put the Deeds buffs back to exactly the reached tiers (after AuditItemSpells above)
+            RefreshDeeds(login: true);
+
             log.Debug($"[LOGIN] Account {Account.AccountName} entered the world with character {Name} (0x{Guid}) at {DateTime.Now}.");
         }
 

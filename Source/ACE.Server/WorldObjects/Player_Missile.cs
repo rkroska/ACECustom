@@ -228,6 +228,7 @@ namespace ACE.Server.WorldObjects
             {
                 // handle self-procs
                 TryProcEquippedItems(this, this, true, weapon);
+                TryDeedsBreathOfRenewal(target);   // QB Deeds (12k QB), against monsters only
 
                 var sound = GetLaunchMissileSound(weapon);
                 EnqueueBroadcast(new GameMessageSound(Guid, sound, 1.0f));

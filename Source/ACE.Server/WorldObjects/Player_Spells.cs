@@ -394,17 +394,21 @@ namespace ACE.Server.WorldObjects
             });
         }
 
-        public void ApplyUltimateBlessings()
+        /// <param name="source">null = the Auto-Rebuff charm (global toggle applies); else the name of the caller shown in
+        /// its messages - the QB Deeds /rebuff, which is not under the Auto-Rebuff toggle</param>
+        public void ApplyUltimateBlessings(string source = null)
         {
-            if (!CharmSettingsManager.AutoRebuff.Enabled)
+            if (source == null && !CharmSettingsManager.AutoRebuff.Enabled)
                 return;
+
+            var sourceName = source ?? "Auto-Rebuff Charm";
 
             var currentTime = ACE.Common.Time.GetUnixTime();
             var dispelLockoutActive = currentTime - LastDispelTimestamp < 180.0;
             if (dispelLockoutActive)
             {
                 var remainingSeconds = (int)Math.Ceiling(180.0 - (currentTime - LastDispelTimestamp));
-                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"You cannot use the Auto-Rebuff Charm while under a dispel lockout. Try again in {remainingSeconds}s.", ChatMessageType.Broadcast));
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"You cannot use the {sourceName} while under a dispel lockout. Try again in {remainingSeconds}s.", ChatMessageType.Broadcast));
                 return;
             }
 
@@ -416,7 +420,11 @@ namespace ACE.Server.WorldObjects
             var tySpell = typeof(SpellId);
             List<BuffMessage> buffMessages = new List<BuffMessage>();
 
-            foreach (var spell in Buffs)
+            // QB Deeds /rebuff (owner 2026-10-22): Shield Mastery too (the Auto-Rebuff charm's list is unchanged)
+            var deedsRebuff = source != null;
+            var buffList = deedsRebuff ? Buffs.Append("ShieldMastery") : Buffs;
+
+            foreach (var spell in buffList)
             {
                 var spellNamPrefix = spell;
                 bool isBane = false;
@@ -513,10 +521,11 @@ namespace ACE.Server.WorldObjects
             }
 
             // 2. Cast Banes and Impen on all gear (both equipped and in all bags recursively)
+            //    - QB Deeds /rebuff (owner 2026-10-22 "Only equipped items"): the worn pieces only, never the packs
             var itemBuffsList = buffMessages.Where(k => k.Bane).ToList();
             if (itemBuffsList.Count > 0)
             {
-                var allGear = GetAllPossessionsDeep()
+                var allGear = (deedsRebuff ? EquippedObjects.Values : GetAllPossessionsDeep())
                     .Where(item => (item.WeenieType == WeenieType.Clothing || item.IsShield) && item.IsEnchantable)
                     .ToList();
 
@@ -537,7 +546,7 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                Session?.Network?.EnqueueSend(new GameMessageSystemChat("The Auto-Rebuff Charm is active, but you do not meet the magic requirements (trained school, focus/augment, learned spell) for any of its buffs.", ChatMessageType.Broadcast));
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"The {sourceName} is active, but you do not meet the magic requirements (trained school, focus/augment, learned spell) for any of its buffs.", ChatMessageType.Broadcast));
             }
         }
 
@@ -793,8 +802,15 @@ namespace ACE.Server.WorldObjects
             // get active item enchantments
             var enchantments = Biota.PropertiesEnchantmentRegistry.Clone(BiotaDatabaseLock).Where(i => i.Duration == -1 && i.SpellId != (int)SpellId.Vitae).ToList();
 
+            // QB Deeds: its buffs are kept while Deeds is ON and the tier reaches them; this clean-up is no dispel for any lockout
+            var deedsTier = DeedsAuditTier();
+            using var ownRemoval = BeginOwnRemoval();
+
             foreach (var enchantment in enchantments)
             {
+                if (IsKeptDeedsEnchantment(enchantment, deedsTier))
+                    continue;
+
                 var isCharm = false;
                 if (allPossessions.TryGetValue(new ObjectGuid(enchantment.CasterObjectId), out var casterItem))
                     isCharm = casterItem.GetProperty(PropertyBool.IsCharm) ?? false;
