@@ -7,12 +7,10 @@ using ACE.Entity.Enum;
 namespace ACE.Server.Entity
 {
     /// <summary>
-    /// QB Deeds (owner spec 2026-10-22, C:\AI\ZoneControl\QB_Paragon_Charm_Spec_2026-10-22.md): 15 cumulative
-    /// tiers, tier N at N x 1,000 QB. THE one table - Player_Deeds applies the buff spells from it, the special-effect
+    /// QB Deeds: 15 cumulative tiers, tier N at N x 1,000 QB. THE one table - Player_Deeds applies the buff spells from it, the special-effect
     /// hooks key off its tier numbers, and /deeds list is printed from it, so the three can never disagree.
     ///
-    /// Spell ids: C:\AI\ZoneControl\QB_Paragon_Charm_Spell_Map_2026-10-22.md, with the owner's fixes (Legendary Summoning
-    /// Prowess, no Prodigal Summoning, Master Voidlock's, Sigil of Vigor XV = 5313, no Icy Shield, Sigil of Fury X = 5324,
+    /// Spell id choices (Legendary Summoning Prowess, no Prodigal Summoning, Master Voidlock's, Sigil of Vigor XV = 5313, no Icy Shield, Sigil of Fury X = 5324,
     /// Timaru's Shelter = 2429, Rare Damage Reduction V = 5192, 7 Masterwork resistances). Every buff keeps its REAL power
     /// level, so a stronger cantrip on gear still wins its category and Deeds never makes a player weaker.
     /// </summary>

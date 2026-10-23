@@ -6,7 +6,7 @@ using ACE.Server.Network;
 namespace ACE.Server.Command.Handlers
 {
     /// <summary>
-    /// QB Deeds (owner 2026-10-22): /deeds and /deeds list = the player's QB, ON / OFF and every tier with what it gives;
+    /// QB Deeds: /deeds and /deeds list = the player's QB, ON / OFF and every tier with what it gives;
     /// /deeds on | off = every Deeds bonus on / off (saved, at once); /rebuff = the 10k QB tier's one-command full rebuff
     /// (/buff is the staff command). See Player_Deeds.cs.
     /// </summary>

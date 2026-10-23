@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 
 using ACE.Common;
+using ACE.Database;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
@@ -17,7 +18,7 @@ using ACE.Server.Network.Structure;
 namespace ACE.Server.WorldObjects
 {
     /// <summary>
-    /// QB Deeds (owner 2026-10-22, C:\AI\ZoneControl\QB_Paragon_Charm_Spec_2026-10-22.md): every 1,000 QB unlocks one of 15
+    /// QB Deeds: every 1,000 QB unlocks one of 15
     /// cumulative tiers of DeedsTiers. No item - /deeds on / off is a saved character flag (PropertyBool.DeedsOff, missing = ON).
     ///
     /// The buffs are Duration -1 enchantments at each spell's REAL power level, with no aug bake, carrying the reserved caster
@@ -27,7 +28,7 @@ namespace ACE.Server.WorldObjects
     /// ones while they are owed (IsKeptDeedsEnchantment); death keeps every Duration -1 enchantment, so they survive it like
     /// item cantrips.
     ///
-    /// PvE only (owner 10-22, "Just monsters"): the T12 / T13 / T14 effects apply only against a non-player creature.
+    /// PvE only: the T12 / T13 / T14 effects apply only against a non-player creature.
     ///
     /// The hooks in shared files read DeedsTier only - a cached int set at login, on /deeds on / off and when a quest stamp
     /// moves the QB across a tier.
@@ -41,7 +42,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public const uint DeedsCasterId = 0x00DEED00;
 
-        /// <summary>/rebuff waits this long after a monster or trap dispels one of the player's buffs (owner 10-22).</summary>
+        /// <summary>/rebuff waits this long after a monster or trap dispels one of the player's buffs.</summary>
         public const double DeedsRebuffDispelLockoutSeconds = 120.0;
 
         /// <summary>When another caster (monster, trap, player) last dispelled a beneficial enchantment off this player.</summary>
@@ -225,7 +226,7 @@ namespace ACE.Server.WorldObjects
 
         // -- special-effect hooks (each one: Deeds ON and the tier reached, via the cached DeedsTier) --------------
 
-        /// <summary>PvE only (owner 10-22): a Deeds combat effect applies against a creature that is not a player.</summary>
+        /// <summary>PvE only: a Deeds combat effect applies against a creature that is not a player.</summary>
         private static bool IsDeedsTarget(WorldObject target) => target is Creature && target is not Player;
 
         /// <summary>T13: the separate x1.10 damage term for every attack style against monsters (1.0 for anyone else / vs players).</summary>
@@ -233,7 +234,7 @@ namespace ACE.Server.WorldObjects
             => attacker is Player p && p.DeedsTier >= DeedsTiers.DamageTier && IsDeedsTarget(defender) ? DeedsTiers.DamageMultiplier : 1.0f;
 
         /// <summary>
-        /// T14 (owner correction 2026-10-22): +100 pct of the BASE crit chance, ADDED on top of the crit chance from every
+        /// T14: +100 pct of the BASE crit chance, ADDED on top of the crit chance from every
         /// other source - the caller passes its own path's base (before Biting Strike / ratings / buffs). 0 for anyone else.
         /// </summary>
         public static float GetDeedsBaseCritBonus(Creature wielder, Creature target, float baseCritChance)
@@ -314,8 +315,8 @@ namespace ACE.Server.WorldObjects
 
         // -- commands ---------------------------------------------------------------------------------------------
 
-        /// <summary>/rebuff (10k QB): every known level 8 self buff, impen and banes at once (the Auto-Rebuff charm's cast routine).
-        /// Refused for 120 s after a monster or trap dispelled the player.</summary>
+        /// <summary>/rebuff (10k QB): every known level 8 self buff (Shield Mastery too), Impenetrability and the banes on the
+        /// equipped armor / shield at once (CastDeedsRebuff). Refused for 120 s after a monster or trap dispelled the player.</summary>
         public void HandleDeedsRebuff()
         {
             if (!DeedsEnabled)
@@ -337,7 +338,65 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            ApplyUltimateBlessings("Deeds /rebuff");
+            CastDeedsRebuff();
+        }
+
+        /// <summary>
+        /// The /rebuff cast: the highest level installed (8, else 7) of each spell on the buffers' list (Buffs) plus Shield
+        /// Mastery - "@" = cast on the equipped items (Impenetrability, the banes) - that the player could cast
+        /// themselves - the school trained or specialized, its focus / augment when the school needs one, the spell learned.
+        /// Self buffs on the player; Impenetrability and the banes on the EQUIPPED armor and shield only,
+        /// never the packs. Normal timed enchantments cast by the player.
+        /// </summary>
+        private void CastDeedsRebuff()
+        {
+            var level = DatabaseManager.World.GetCachedSpell((uint)SpellId.ArmorOther8) != null ? 8 : 7;
+            var selfSpells = new List<Spell>();
+            var gearSpells = new List<Spell>();
+
+            foreach (var entry in Buffs.Append("ShieldMastery"))
+            {
+                var onGear = entry.StartsWith('@');
+                var name = onGear ? entry.Substring(1) : entry;
+                SpellId id;
+                if (onGear)
+                {
+                    if (!Enum.TryParse(name + level, out id))
+                        continue;
+                }
+                else if (!Enum.TryParse(name + "Self" + level, out id) && !Enum.TryParse(name + "Other" + level, out id))
+                    continue;
+
+                var spell = new Spell(id);
+                if (spell.NotFound || !SpellIsKnown((uint)id))
+                    continue;
+
+                var skill = GetCreatureSkill(spell.School);
+                if (skill == null || skill.AdvancementClass < SkillAdvancementClass.Trained)
+                    continue;
+                if (FociWCIDs.ContainsKey(spell.School) && !HasFoci(spell.School))
+                    continue;
+
+                (onGear ? gearSpells : selfSpells).Add(spell);
+            }
+
+            if (selfSpells.Count == 0 && gearSpells.Count == 0)
+            {
+                SendMessage("/rebuff: you do not meet the magic requirements (trained school, focus or augment, learned spell) for any of its spells.");
+                return;
+            }
+
+            foreach (var spell in selfSpells)
+                CreateEnchantmentSilent(spell, this);
+
+            var gear = EquippedObjects.Values.Where(i => (i.WeenieType == WeenieType.Clothing || i.IsShield) && i.IsEnchantable).ToList();
+            foreach (var spell in gearSpells)
+                foreach (var item in gear)
+                    CreateEnchantmentSilent(spell, item);
+
+            var effect = selfSpells.Count > 0 ? selfSpells[0] : gearSpells[0];
+            EnqueueBroadcast(new GameMessageScript(Guid, effect.TargetEffect, 1f));
+            SendMessage("You feel a surge of ultimate blessings flow through you and all your gear!");
         }
 
         /// <summary>Seconds left on the /rebuff dispel lockout (0 when free): 120 s after a monster or trap dispelled a buff.</summary>
