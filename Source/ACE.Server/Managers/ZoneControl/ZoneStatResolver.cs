@@ -288,7 +288,8 @@ namespace ACE.Server.Managers.ZoneControl
         public static int RollGrade(int tier, bool forceMax = false, double floor = 0.0)
         {
             if (forceMax) return GradeMax;
-            var g = RollGradeCore(tier);
+            // QB Deeds loot luck: the better of two grade rolls while a lucky kill's loot is generated
+            var g = ACE.Server.Entity.DeedsLootLuck.Better(tier, static t => RollGradeCore(t));
             // rank loot (owner 2026-09-29): squeeze into the top (1 - floor) of the band; the top stays the top
             floor = double.IsFinite(floor) ? Math.Clamp(floor, 0.0, 0.9) : 0.0;
             return floor <= 0.0 ? g : (int)Math.Round(floor * GradeMax + g * (1.0 - floor));

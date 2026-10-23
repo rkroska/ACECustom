@@ -467,6 +467,10 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Dressing Room: on a CHARACTER, the player chose to show their real gear (/look hide). The saved look is
         /// kept. Server-only - not an assessment property.</summary>
         DressingRoomHidden = 53001,
+        /// <summary>QB Deeds (2026-10-22): on a CHARACTER, the player turned the Deeds bonuses OFF (/deeds off). Missing = ON,
+        /// so a character that never used the command has them. 56001, free in EVERY Property enum, every branch and the DBs.
+        /// Server-only - not an assessment property.</summary>
+        DeedsOff = 56001,
 
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
