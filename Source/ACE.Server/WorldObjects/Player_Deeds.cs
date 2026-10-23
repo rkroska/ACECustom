@@ -106,6 +106,9 @@ namespace ACE.Server.WorldObjects
         /// <summary>HandleCastSpell_Dispel: another caster dispelled beneficial enchantments off this player (starts the /rebuff lockout).</summary>
         public void OnHostileDispel() => LastHostileDispelTimestamp = Time.GetUnixTime();
 
+        /// <summary>True from the start of a Deeds buff sync until one succeeds: RefreshDeeds then syncs again even with the tier unchanged.</summary>
+        private bool deedsSyncPending;
+
         /// <summary>
         /// Called at login (after AuditItemSpells), on /deeds on / off and whenever a quest stamp may have moved the QB. Saves
         /// the QB on the character; when the owed tier changed, makes the Deeds buffs exactly that tier's. Cheap when nothing
@@ -118,16 +121,19 @@ namespace ACE.Server.WorldObjects
                 DeedsQb = qb;
 
             var tier = DeedsEnabled ? DeedsTiers.TierFor(qb) : 0;
-            if (tier == DeedsTier && !login)
+            if (tier == DeedsTier && !login && !deedsSyncPending)
                 return;
 
             var prevTier = DeedsTier;
             DeedsTier = tier;
 
-            // (CodeRabbit #564: a failed sync must never break the login / quest stamp / command that called this)
+            // a failed sync must never break the login / quest stamp / command that called this; it stays pending, so the next
+            // refresh tries again even when the tier has not moved
+            deedsSyncPending = true;
             try
             {
                 SyncDeedsEnchantments();
+                deedsSyncPending = false;
             }
             catch (Exception ex)
             {
