@@ -125,7 +125,8 @@ namespace ACE.Server.WorldObjects
 
             SyncDeedsEnchantments();
 
-            if (!login && DeedsEnabled && tier > prevTier && prevTier > 0)
+            // (CodeRabbit 10-22: the first tier in a session too - 999 -> 1,000 QB says so; login / on-off stay silent)
+            if (!login && DeedsEnabled && tier > prevTier)
                 SendMessage($"Your Deeds grow stronger. Your {qb:N0} QB now unlocks {tier} of {DeedsTiers.MaxTier} tiers.", ChatMessageType.Advancement);
         }
 
