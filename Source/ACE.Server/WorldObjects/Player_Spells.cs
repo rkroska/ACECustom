@@ -404,7 +404,8 @@ namespace ACE.Server.WorldObjects
             var sourceName = source ?? "Auto-Rebuff Charm";
 
             var currentTime = ACE.Common.Time.GetUnixTime();
-            var dispelLockoutActive = currentTime - LastDispelTimestamp < 180.0;
+            // the Auto-Rebuff charm's 180 s rule is the charm's alone - Deeds /rebuff has its own 120 s lockout (CodeRabbit #564)
+            var dispelLockoutActive = source == null && currentTime - LastDispelTimestamp < 180.0;
             if (dispelLockoutActive)
             {
                 var remainingSeconds = (int)Math.Ceiling(180.0 - (currentTime - LastDispelTimestamp));

@@ -123,7 +123,16 @@ namespace ACE.Server.WorldObjects
             var prevTier = DeedsTier;
             DeedsTier = tier;
 
-            SyncDeedsEnchantments();
+            // (CodeRabbit #564: a failed sync must never break the login / quest stamp / command that called this)
+            try
+            {
+                SyncDeedsEnchantments();
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[Deeds] {Name} (0x{Guid}): could not sync the Deeds buffs to tier {tier}", ex);
+                return;
+            }
 
             // (CodeRabbit 10-22: the first tier in a session too - 999 -> 1,000 QB says so; login / on-off stay silent)
             if (!login && DeedsEnabled && tier > prevTier)
