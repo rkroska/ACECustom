@@ -318,6 +318,7 @@ namespace ACE.Server.WorldObjects
 
             // handle self-procs
             TryProcEquippedItems(this, this, true, weapon);
+            TryDeedsBreathOfRenewal(target);   // QB Deeds (12k QB), against monsters only
 
             var prevTime = 0.0f;
             int strikeCounter = 0;

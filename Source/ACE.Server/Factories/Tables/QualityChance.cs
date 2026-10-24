@@ -258,8 +258,11 @@ namespace ACE.Server.Factories.Tables
 
         /// <summary>
         /// Returns a quality level between 1 - 12
+        /// (QB Deeds loot luck: the better of two rolls while DeedsLootLuck is active)
         /// </summary>
-        public static int Roll(TreasureDeath treasureDeath)
+        public static int Roll(TreasureDeath treasureDeath) => ACE.Server.Entity.DeedsLootLuck.Better(treasureDeath, static td => RollOnce(td));
+
+        private static int RollOnce(TreasureDeath treasureDeath)
         {
             // roll for the initial chance for any quality modification -- based on tier
             if (!RollTierChance(treasureDeath))
@@ -287,7 +290,9 @@ namespace ACE.Server.Factories.Tables
         /// linearly interpolates between discrete values
         /// </summary>
         /// <returns>A quality level between 0.0f - 1.0f, higher values = better</returns>
-        public static float RollInterval(TreasureDeath treasureDeath)
+        public static float RollInterval(TreasureDeath treasureDeath) => ACE.Server.Entity.DeedsLootLuck.Better(treasureDeath, static td => RollIntervalOnce(td));
+
+        private static float RollIntervalOnce(TreasureDeath treasureDeath)
         {
             // roll for the initial chance for any quality modification -- based on tier
             if (!RollTierChance(treasureDeath))

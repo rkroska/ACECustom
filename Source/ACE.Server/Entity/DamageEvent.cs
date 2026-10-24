@@ -567,6 +567,9 @@ namespace ACE.Server.Entity
                 }
             }
 
+            // QB Deeds (13k QB): a separate x1.10 on the player's melee / missile damage against monsters, normal hits and crits alike
+            DamageBeforeMitigation *= Player.GetDeedsDamageMod(attacker, defender);
+
             // armor rending and cleaving
             // (zone lock: outside authored areas a ZC weapon's Armor Rend stamp reads as absent)
             var armorRendingMod = 1.0f;
