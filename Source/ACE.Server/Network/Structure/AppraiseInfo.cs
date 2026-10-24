@@ -1385,13 +1385,13 @@ namespace ACE.Server.Network.Structure
 
             // Cleaving (multi-target): the raw prop stores TOTAL targets (extra + 1), so raw-prop
             // readouts look one higher than authored — this line shows the true extra-target count.
-            // (Improved Cleave charm 2026-10-13: the holder's active charm counts - the higher of the two, "(Charm)" when
-            // the charm is what gives the number, with its reach and arc)
+            // (Improved Cleave charm: the holder's active charm counts - the weapon's own plus the charm's, held to the
+            // charm's cap (2026-10-21), "(Charm)" with its reach and arc)
             var cleaveHolder = (weapon.Wielder as Player) ?? examiner;
             var cleaveCharm = cleaveHolder != null ? cleaveHolder.CharmCleaveFor(weapon, zcLocked) : (false, 0, 0f, 0f, false);
             var cleaveOwn = !weapon.IsCleaving ? 0 : !zcLocked ? weapon.CleaveTargets : zcT10 ? Math.Min(weapon.CleaveTargets, ACE.Server.Managers.ZoneControl.ZoneLockFallback.CleaveCap) : 0;
             if (cleaveCharm.Item1)
-                effectDescriptions.Add($"- Cleaving: +{Math.Max(cleaveOwn, cleaveCharm.Item2)} Targets, {cleaveCharm.Item3:0.#} m, {(cleaveCharm.Item4 >= 359.5f ? "all around" : $"{cleaveCharm.Item4:0} degrees")} (Charm)");
+                effectDescriptions.Add($"- Cleaving: +{Creature.CharmCleaveTotal(cleaveOwn, cleaveCharm.Item2, CharmAbilityRegistry.LevelOf(cleaveHolder, CharmAbilityRegistry.ImprovedCleaveAbilityId))} Targets, {cleaveCharm.Item3:0.#} m, {(cleaveCharm.Item4 >= 359.5f ? "all around" : $"{cleaveCharm.Item4:0} degrees")} (Charm)");
             else if (weapon.IsCleaving)
                 effectDescriptions.Add($"- Cleaving: +{cleaveOwn} Targets");
 

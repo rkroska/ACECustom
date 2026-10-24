@@ -91,6 +91,12 @@ namespace ACE.Server.Command.Handlers
             ["improvedcleave"]        = "improvedcleave",
             ["improved cleave"]       = "improvedcleave",
             ["cleave"]                = "improvedcleave",
+
+            ["armorbreaker"]          = "armorbreaker",
+            ["armor breaker"]         = "armorbreaker",
+
+            ["shieldarc"]             = "shieldarc",
+            ["shield arc"]            = "shieldarc",
         };
 
         // Brief descriptions shown by /charms and /charm (no args)
@@ -346,6 +352,8 @@ namespace ACE.Server.Command.Handlers
                 "chain"              => "Chain",
                 "pandemic"           => "Pandemic",
                 "improvedcleave"     => "Improved Cleave",
+                "armorbreaker"       => "Armor Breaker",
+                "shieldarc"          => "Shield Arc",
                 _                    => charmName
             };
         }

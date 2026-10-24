@@ -123,4 +123,4 @@ VALUES (777700035,  1, 'Split Arrow Charm')
      , (777700037,  1, 'Pandemic Charm')
      , (777700037, 14, 'A charm for void mages. Its power grows with its level.')
      , (777700038,  1, 'Improved Cleave Charm')
-     , (777700038, 14, 'A charm for melee fighters. Its power grows with its level.');
+     , (777700038, 14, 'A charm for two-handed fighters. Its power grows with its level.');

@@ -47,6 +47,10 @@ namespace ACE.Server.WorldObjects
         public const int PandemicAbilityId         = 32;
         /// <summary>Levelled charm (1-100): melee cleave reaches further, all around, more targets.</summary>
         public const int ImprovedCleaveAbilityId   = 33;
+        /// <summary>Levelled charm (1-100, 2026-10-21): a dual wielder's hits ignore a share of the armor left.</summary>
+        public const int ArmorBreakerAbilityId     = 34;
+        /// <summary>Levelled charm (1-100, 2026-10-21): the shield guards a wider arc against monster attacks.</summary>
+        public const int ShieldArcAbilityId        = 35;
 
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {
@@ -68,6 +72,8 @@ namespace ACE.Server.WorldObjects
             { ChainAbilityId,           new AbilityEntry(p => p.HasChainCharm,          (p, v) => p.HasChainCharm          = v, "Chain")                },
             { PandemicAbilityId,        new AbilityEntry(p => p.HasPandemicCharm,       (p, v) => p.HasPandemicCharm       = v, "Pandemic")             },
             { ImprovedCleaveAbilityId,  new AbilityEntry(p => p.HasImprovedCleaveCharm, (p, v) => p.HasImprovedCleaveCharm = v, "Improved Cleave")      },
+            { ArmorBreakerAbilityId,    new AbilityEntry(p => p.HasArmorBreakerCharm,   (p, v) => p.HasArmorBreakerCharm   = v, "Armor Breaker")        },
+            { ShieldArcAbilityId,       new AbilityEntry(p => p.HasShieldArcCharm,      (p, v) => p.HasShieldArcCharm      = v, "Shield Arc")           },
         };
 
         /// <summary>The charm level (1-100) the player's active charm of this ability has, 0 when it is not active.</summary>
@@ -112,6 +118,8 @@ namespace ACE.Server.WorldObjects
             { 777700036, ChainAbilityId },
             { 777700037, PandemicAbilityId },
             { 777700038, ImprovedCleaveAbilityId },
+            { 777700039, ArmorBreakerAbilityId },
+            { 777700040, ShieldArcAbilityId },
         };
 
         /// <summary>

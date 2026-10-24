@@ -498,6 +498,8 @@ namespace ACE.Server.WorldObjects
             if (forkEligibleOnImpact
                 && !IsForkProjectile && Chain == null && player != null && player.HasForkCharm
                 && CharmSettingsManager.Fork.Enabled
+                // Chain / Pandemic replace Fork for their spells, never stack on it (owner 2026-10-21)
+                && !player.LeveledCharmReplacesForkAndSplit(Spell, ProjectileLauncher)
                 && (SpellType == ProjectileSpellType.Streak
                     || SpellType == ProjectileSpellType.Arc
                     || SpellType == ProjectileSpellType.Bolt))

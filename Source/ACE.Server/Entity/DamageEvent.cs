@@ -594,6 +594,10 @@ namespace ACE.Server.Entity
 
             var ignoreArmorMod = Math.Min(armorRendingMod, armorCleavingMod);
 
+            // Armor Breaker charm (owner 2026-10-21): a dual wielder's hit also ignores a share of the armor that is LEFT
+            // (1 when the charm does not apply - not dual wielding, a player defender, no charm)
+            ignoreArmorMod *= attacker.ArmorBreakerArmorMod(Weapon, defender);
+
             // get body part / armor pieces / armor modifier
             if (playerDefender != null)
             {
@@ -721,6 +725,10 @@ namespace ACE.Server.Entity
 
             // calculate final output damage
             Damage = DamageBeforeMitigation * ArmorMod * ShieldMod * ResistanceMod * DamageResistanceRatingMod;
+
+            // Shield Arc charm (owner 2026-10-22): sword and shield's own damage bonus on a monster (1 when it does not apply)
+            if (playerAttacker != null && playerDefender == null)
+                Damage *= attacker.ShieldArcDamageMod(Weapon, defender);
 
             // Apply split arrow damage multiplier if this is a split arrow
             if (DamageSource.GetProperty(PropertyBool.IsSplitArrow) == true)

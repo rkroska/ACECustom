@@ -19,6 +19,10 @@ namespace ACE.Server.WorldObjects
             var cs = CharmSettingsManager.ImprovedCleave;
             if (!(this is Player player) || !(weapon is MeleeWeapon) || !cs.Enabled || !player.HasImprovedCleaveCharm)
                 return (false, 0, 0f, 0f, false);
+            // owner 2026-10-21 (Schneebly): the pack-clearing charm is the TWO-HANDER's - dual wield is the boss style and
+            // sword and shield the survivor, so their weapons keep only their own cleave (setting twohandedonly)
+            if (cs.On("twohandedonly") && weapon.WeaponSkill != ACE.Entity.Enum.Skill.TwoHandedCombat)
+                return (false, 0, 0f, 0f, false);
             if (cs.On("t11only") && (locked || ZoneCraftGate.TierOf(weapon) < 11))
                 return (false, 0, 0f, 0f, false);
             var level = CharmAbilityRegistry.LevelOf(player, CharmAbilityRegistry.ImprovedCleaveAbilityId);
@@ -27,6 +31,18 @@ namespace ACE.Server.WorldObjects
                 return (false, 0, 0f, 0f, false);
             // never worse than the cleave everybody has: 2 m, the front half circle
             return (true, targets, Math.Max(CleaveCylRange, cs.NumberAt("range", level)), Math.Max(CleaveAngle, cs.NumberAt("angle", level)), cs.On("los"));
+        }
+
+        /// <summary>
+        /// How many extra monsters a swing cleaves with the charm on (owner 2026-10-21): the weapon's own cleave PLUS the
+        /// charm's targets, held to the charm's 'maxtargets' (0 = no cap). Most two-handers cleave only 1 monster of their
+        /// own, so the charm adds to it rather than taking the higher of the two. The one rule the picker and the panel share.
+        /// </summary>
+        public static int CharmCleaveTotal(int ownCount, int charmTargets, int level)
+        {
+            var total = Math.Max(0, ownCount) + Math.Max(0, charmTargets);
+            var cap = CharmSettingsManager.ImprovedCleave.CountAt("maxtargets", level);
+            return cap > 0 ? Math.Min(total, cap) : total;
         }
 
         /// <summary>How many monsters the WEAPON's own cleave takes (0 = it does not cleave here): its cleave targets, held to

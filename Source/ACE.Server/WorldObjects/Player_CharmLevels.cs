@@ -31,6 +31,8 @@ namespace ACE.Server.WorldObjects
             CharmAbilityRegistry.ChainAbilityId => PropertyInt64.ChainCharmLevel,
             CharmAbilityRegistry.PandemicAbilityId => PropertyInt64.PandemicCharmLevel,
             CharmAbilityRegistry.ImprovedCleaveAbilityId => PropertyInt64.ImprovedCleaveCharmLevel,
+            CharmAbilityRegistry.ArmorBreakerAbilityId => PropertyInt64.ArmorBreakerCharmLevel,
+            CharmAbilityRegistry.ShieldArcAbilityId => PropertyInt64.ShieldArcCharmLevel,
             _ => null,
         };
 

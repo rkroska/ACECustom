@@ -426,6 +426,13 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>On a player (owner 2026-10-13): the Improved Cleave charm is active - melee cleave reaches further,
         /// all around, and at least the charm's number of extra targets. Server-only.</summary>
         HasImprovedCleaveCharm = 51204,
+        /// <summary>On a player (owner 2026-10-21): the Armor Breaker charm is active - a dual wielder's hit ignores a share
+        /// of the armor a monster has left after the weapon's own Armor Rend. Server-only. (51205 / 51206 are the Zone
+        /// Control immunities below, so the new charms take 51207+.)</summary>
+        HasArmorBreakerCharm = 51207,
+        /// <summary>On a player (owner 2026-10-21): the Shield Arc charm is active - the shield guards a wider arc against
+        /// monster attacks. Server-only.</summary>
+        HasShieldArcCharm = 51208,
         /// <summary>Zone Control: the Pandemic charm never spreads a DoT ONTO this creature (a cast on it still lands).
         /// The zone stat immune_pandemic does the same per zone / tier / rank / wcid. Server-only.</summary>
         ZcImmunePandemic = 51205,

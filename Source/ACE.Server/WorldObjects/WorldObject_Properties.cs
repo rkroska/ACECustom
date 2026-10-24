@@ -3674,6 +3674,20 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasImprovedCleaveCharm); else SetProperty(PropertyBool.HasImprovedCleaveCharm, value); }
         }
 
+        /// <summary>True while the Armor Breaker Charm is activated - a dual wielder's hit ignores a share of the armor left.</summary>
+        public bool HasArmorBreakerCharm
+        {
+            get => GetProperty(PropertyBool.HasArmorBreakerCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasArmorBreakerCharm); else SetProperty(PropertyBool.HasArmorBreakerCharm, value); }
+        }
+
+        /// <summary>True while the Shield Arc Charm is activated - the shield guards a wider arc against monster attacks.</summary>
+        public bool HasShieldArcCharm
+        {
+            get => GetProperty(PropertyBool.HasShieldArcCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasShieldArcCharm); else SetProperty(PropertyBool.HasShieldArcCharm, value); }
+        }
+
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
         {

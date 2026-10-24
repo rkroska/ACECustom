@@ -1976,6 +1976,7 @@ namespace ACE.Server.WorldObjects
             if (this is Player player && player.HasSplitCast && CharmSettingsManager.SplitCast.Enabled && target != null &&
                 target.Location != null &&   // guard: target may have been removed from world before projectile launch
                 originOverride == null &&    // don't intercept fork/chain projectiles
+                !player.LeveledCharmReplacesForkAndSplit(spell, weapon) &&   // Chain / Pandemic replace Split Cast (owner 2026-10-21)
                 (spellType == ProjectileSpellType.Streak || spellType == ProjectileSpellType.Arc || spellType == ProjectileSpellType.Bolt))
             {
                 var spellProjectiles = new List<SpellProjectile>();

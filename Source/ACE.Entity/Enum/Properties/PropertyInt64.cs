@@ -95,6 +95,10 @@ namespace ACE.Entity.Enum.Properties
         PandemicCharmLevel       = 51202,
         /// <summary>Improved Cleave charm level, 1-100.</summary>
         ImprovedCleaveCharmLevel = 51203,
+        /// <summary>Armor Breaker charm level, 1-100 (dual wield, 2026-10-21).</summary>
+        ArmorBreakerCharmLevel   = 51204,
+        /// <summary>Shield Arc charm level, 1-100 (shield, 2026-10-21).</summary>
+        ShieldArcCharmLevel      = 51205,
 
         /// <summary>Blacksmithing: Unix time (seconds) until which PropertyInt.ForgeDyePreview is the colour drawn.</summary>
         ForgeDyePreviewUntil    = 52000,
