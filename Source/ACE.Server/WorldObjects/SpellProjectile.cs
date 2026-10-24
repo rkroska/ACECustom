@@ -536,8 +536,13 @@ namespace ACE.Server.WorldObjects
             return "magic";
         }
 
+        /// <summary>The last crit's multiple of the same hit without its crit bonus (CalculateDamage), for crit compression in
+        /// DamageTarget (Creature.ZcCritResistMod). 0 = not a crit / unknown.</summary>
+        private float zcCritBaseMult;
+
         public float? CalculateDamage(WorldObject source, Creature target, ref bool criticalHit, ref bool critDefended, ref bool overpower)
         {
+            zcCritBaseMult = 0f;
             if (source == null || target == null)
                 return null;
             var sourcePlayer = source as Player;
@@ -772,6 +777,9 @@ namespace ACE.Server.WorldObjects
                         // life aug term was added (see lifeMagicDamagePreAug above)
                         : lifeMagicDamagePreAug * 0.5f * weaponCritDamageMod;
 
+                if (criticalHit && lifeMagicDamage > 0)
+                    zcCritBaseMult = (lifeMagicDamage + critDamageBonus) / lifeMagicDamage;
+
                 finalDamage = (lifeMagicDamage + critDamageBonus) * elementalDamageMod * slayerMod * resistanceMod * absorbMod * attribBonus;
             }
             // war/void magic projectiles
@@ -989,6 +997,9 @@ namespace ACE.Server.WorldObjects
                         ? (float)((baseDamage + skillBonus) * weaponCritDamageMod)
                         : Spell.MaxDamage * 0.5f * weaponCritDamageMod;   // retail: half of MAX, skillBonus NOT doubled
                 }
+
+                if (criticalHit && baseDamage + skillBonus > 0)
+                    zcCritBaseMult = (float)((baseDamage + skillBonus + critDamageBonus) / (baseDamage + skillBonus));
 
                 finalDamage = baseDamage + critDamageBonus + skillBonus;
 
@@ -1427,11 +1438,19 @@ namespace ACE.Server.WorldObjects
                     critDamageRatingMod = Creature.GetPositiveRatingMod(sourceCreature?.GetCritDamageRating() ?? 0);
                     critDamageResistRatingMod = Creature.GetNegativeRatingMod(target.GetCritDamageResistRating());
 
+                    var normalDamageRatingMod = damageRatingMod;
+                    var normalDamageResistRatingMod = damageResistRatingMod;
+
                     if (Creature.ZcSpellCritMirrorsMelee(sourceCreature, ProjectileLauncher, target, FromProc))
                         critDamageOnTop = critDamageRatingMod;
                     else
                         damageRatingMod = Creature.AdditiveCombine(damageRatingMod, critDamageRatingMod);
                     damageResistRatingMod = Creature.AdditiveCombine(damageResistRatingMod, critDamageResistRatingMod);
+
+                    // Zone Control crit compression (owner 2026-10-21, as DamageEvent): the crit's multiple of the same hit
+                    // without it = its crit bonus (CalculateDamage) x what Crit Damage Rating added here
+                    var rawCrit = zcCritBaseMult * damageRatingMod * critDamageOnTop / normalDamageRatingMod;
+                    damageResistRatingMod = target.ZcCritResistMod(sourceCreature, rawCrit, normalDamageResistRatingMod, damageResistRatingMod);
                 }
 
                 if (pkBattle)

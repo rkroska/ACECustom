@@ -93,6 +93,9 @@ namespace ACE.Server.Entity
 
         public float CriticalDamageRatingMod;
         public float CriticalDamageResistanceRatingMod;
+        /// <summary>Crit compression (Creature.ZcCritResistMod) fired: the crit's final multiple of a max normal hit, which
+        /// replaced CriticalDamageResistanceRatingMod. 0 = not compressed.</summary>
+        public float ZcCritRatio;
 
         public float DamageBeforeMitigation;
 
@@ -690,6 +693,15 @@ namespace ACE.Server.Entity
                 CriticalDamageResistanceRatingMod = Creature.GetNegativeRatingMod(defender.GetCritDamageResistRating());
 
                 DamageResistanceRatingMod = Creature.AdditiveCombine(DamageResistanceRatingBaseMod, CriticalDamageResistanceRatingMod);
+
+                // Zone Control crit compression (owner 2026-10-21): the crit is CriticalDamageMod x Crit Damage Rating times a max
+                // normal hit (the unified crit block above); on a Zone Control monster it lands at the compressed ratio instead
+                var critResistMod = DamageResistanceRatingMod;
+                DamageResistanceRatingMod = defender.ZcCritResistMod(attacker, CriticalDamageMod * CriticalDamageRatingMod,
+                    DamageResistanceRatingBaseMod, critResistMod);
+                // debug readouts: the crit's final multiple of a max normal hit, once compressed
+                if (DamageResistanceRatingMod != critResistMod && DamageResistanceRatingBaseMod > 0)
+                    ZcCritRatio = CriticalDamageMod * CriticalDamageRatingMod * DamageResistanceRatingMod / DamageResistanceRatingBaseMod;
             }
 
             if (pkBattle)
@@ -1191,7 +1203,9 @@ namespace ACE.Server.Entity
             if (DamageResistanceRatingBaseMod != 0.0f && DamageResistanceRatingBaseMod != 1.0f)
                 info += $"DamageResistanceRatingBaseMod: {DamageResistanceRatingBaseMod}\n";
 
-            if (CriticalDamageResistanceRatingMod != 0.0f && CriticalDamageResistanceRatingMod != 1.0f)
+            if (ZcCritRatio > 0.0f)
+                info += $"CritCompressed: {ZcCritRatio:F2}x a max normal hit (CriticalDamageResistanceRatingMod not used)\n";
+            else if (CriticalDamageResistanceRatingMod != 0.0f && CriticalDamageResistanceRatingMod != 1.0f)
                 info += $"CriticalDamageResistanceRatingMod: {CriticalDamageResistanceRatingMod}\n";
 
             if (PkDamageResistanceMod != 0.0f && PkDamageResistanceMod != 1.0f)
