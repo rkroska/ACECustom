@@ -277,6 +277,11 @@ namespace ACE.Server.WorldObjects
 
             var monsterTier = PrestigeManager.GetKillScalingMonsterTier(this);
 
+            // Tier rewards (owner 2026-10-24): monsterTier above is the retired prestige tier, always 0 at v11-v25 (it counts from a
+            // 1000 offset). A T11+ Zone Control kill passes its real tier separately, down to the per-recipient XP / luminance slots,
+            // which only act on it when zc_tier_dip_xp_enabled is on (TierRewardScale.ScaleXp). 0 for every other kill.
+            var zcKillTier = ACE.Server.Managers.ZoneControl.TierRewardScale.KillTier(this);
+
             var baseXp = WeenieKillXp;
             long? luminanceAward = LuminanceAward;
 
@@ -343,15 +348,16 @@ namespace ACE.Server.WorldObjects
                 var lumGrant = luminanceAward != null ? (long)Math.Round(luminanceAward.Value * damagePercent) : 0L;
                 var hasLum = luminanceAward != null;
                 var tierForGrant = monsterTier;
+                var killTierForGrant = zcKillTier;
                 Action grant = () =>
                 {
                     if (xpGrant > 0)
-                        player.EarnXP(xpGrant, XpType.Kill, ShareType.All, tierForGrant);
+                        player.EarnXP(xpGrant, XpType.Kill, ShareType.All, tierForGrant, killTierForGrant);
                     if (hasLum)
                     {
                         // economy ledger: kill luminance is labeled with the creature
                         using (PyrealLedger.BeginFor(EconomyLedger.SrcKill, this))
-                            player.EarnLuminance(lumGrant, XpType.Kill, ShareType.All, tierForGrant);
+                            player.EarnLuminance(lumGrant, XpType.Kill, ShareType.All, tierForGrant, killTierForGrant);
                     }
                 };
 

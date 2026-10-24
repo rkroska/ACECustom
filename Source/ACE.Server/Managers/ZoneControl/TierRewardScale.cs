@@ -61,6 +61,19 @@ namespace ACE.Server.Managers.ZoneControl
         public static double CreditFor(Player player, int killTier) => Credit(OwnTier(player), killTier);
 
         /// <summary>
+        /// Kill XP / luminance through the tier dip - the per-recipient multiplier slot (owner 2026-10-24: built, OFF by default).
+        /// Unchanged unless zc_tier_dip_xp_enabled is on and <paramref name="killTier"/> is a T11+ tier; call it on
+        /// <paramref name="player"/>'s own thread (it reads their augmentation counters).
+        /// </summary>
+        public static long ScaleXp(long amount, Player player, int killTier)
+        {
+            if (!ServerConfig.zc_tier_dip_xp_enabled.Value || amount <= 0 || player == null || killTier < MinTier || killTier > ZoneRare.MaxTier)
+                return amount;
+
+            return (long)Math.Round(amount * CreditFor(player, killTier));
+        }
+
+        /// <summary>
         /// The tier a kill counts at: the creature's effective variation when Zone Control governs it and that is T11 or
         /// higher, else 0. 0 means "not a T11+ zone kill" - every tier reward leaves such kills exactly as they were.
         /// </summary>

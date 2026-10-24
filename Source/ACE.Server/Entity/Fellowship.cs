@@ -466,7 +466,7 @@ namespace ACE.Server.Entity
         /// <param name="amount">The input amount of XP</param>
         /// <param name="xpType">The type of XP (quest XP is handled differently)</param>
         /// <param name="player">The fellowship member who originated the XP</param>
-        public void SplitXp(ulong amount, XpType xpType, ShareType shareType, Player player, int monsterTier = 0)
+        public void SplitXp(ulong amount, XpType xpType, ShareType shareType, Player player, int monsterTier = 0, int killTier = 0)
         {
             // https://asheron.fandom.com/wiki/Announcements_-_2002/02_-_Fever_Dreams#Letter_to_the_Players_1
 
@@ -523,7 +523,7 @@ namespace ACE.Server.Entity
                         eligibleMembers.Add((member, scalar));
                 }
 
-                ShareXpAmong(eligibleMembers, amount, xpType, shareType, player, monsterTier);
+                ShareXpAmong(eligibleMembers, amount, xpType, shareType, player, monsterTier, killTier);
             }
         }
 
@@ -532,7 +532,7 @@ namespace ACE.Server.Entity
         /// a Zone Share area (ZoneShareManager, 2026-09-23), so both share by the same numbers. shareType must already have
         /// ShareType.Fellowship removed, which is what stops each member's GrantXP from splitting again.
         /// </summary>
-        internal static void ShareXpAmong(List<(Player Member, double Scalar)> eligibleMembers, ulong amount, XpType xpType, ShareType shareType, Player player, int monsterTier)
+        internal static void ShareXpAmong(List<(Player Member, double Scalar)> eligibleMembers, ulong amount, XpType xpType, ShareType shareType, Player player, int monsterTier, int killTier = 0)
         {
             var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent(eligibleMembers.Count));
 
@@ -541,7 +541,7 @@ namespace ACE.Server.Entity
                 if (member == player && ServerConfig.fellowship_additive.Value)
                 {
                     var additiveMember = member;
-                    GrantOnMemberThread(member, () => additiveMember.GrantXP((long)amount, xpType, shareType, monsterTier));
+                    GrantOnMemberThread(member, () => additiveMember.GrantXP((long)amount, xpType, shareType, monsterTier, killTier));
                     continue;
                 }
                 var shareAmount = (double)totalAmount * scalar;
@@ -556,7 +556,9 @@ namespace ACE.Server.Entity
                 var fellowXpType = player == member ? xpType : XpType.Fellowship;
                 var killShare = (member.HasVitae && member.IsVPHardcore) ? 0 : (long)Math.Round(shareAmount);
                 var killMember = member;
-                GrantOnMemberThread(member, () => killMember.GrantXP(killShare, fellowXpType, shareType));
+                // tier dip (off unless zc_tier_dip_xp_enabled): each member's own credit, read on the member's own thread
+                var dipTier = xpType == XpType.Kill ? killTier : 0;
+                GrantOnMemberThread(member, () => killMember.GrantXP(ACE.Server.Managers.ZoneControl.TierRewardScale.ScaleXp(killShare, killMember, dipTier), fellowXpType, shareType));
             }
         }
 
@@ -566,7 +568,7 @@ namespace ACE.Server.Entity
         /// <param name="amount">The input amount of luminance</param>
         /// <param name="xpType">The type of lumaniance (quest luminance is handled differently)</param>
         /// <param name="player">The fellowship member who originated the luminance</param>
-        public void SplitLuminance(ulong amount, XpType xpType, ShareType shareType, Player player, int monsterTier = 0)
+        public void SplitLuminance(ulong amount, XpType xpType, ShareType shareType, Player player, int monsterTier = 0, int killTier = 0)
         {
             // https://asheron.fandom.com/wiki/Announcements_-_2002/02_-_Fever_Dreams#Letter_to_the_Players_1
 
@@ -584,7 +586,7 @@ namespace ACE.Server.Entity
 
                 if (fellowshipMembers.Count == 0)
                 {
-                    GrantOnMemberThread(player, () => player.GrantLuminance((long)amount, xpType, shareType, monsterTier));
+                    GrantOnMemberThread(player, () => player.GrantLuminance((long)amount, xpType, shareType, monsterTier, killTier));
                     return;
                 }
 
@@ -597,7 +599,7 @@ namespace ACE.Server.Entity
                         eligibleMembers.Add((member, scalar));
                 }
 
-                ShareLuminanceAmong(eligibleMembers, amount, xpType, shareType, player, monsterTier);
+                ShareLuminanceAmong(eligibleMembers, amount, xpType, shareType, player, monsterTier, killTier);
             }
         }
 
@@ -605,7 +607,7 @@ namespace ACE.Server.Entity
         /// The luminance twin of <see cref="ShareXpAmong"/>: the fellowship's eligible fellows, or everyone in a Zone Share area.
         /// shareType must already have ShareType.Fellowship removed.
         /// </summary>
-        internal static void ShareLuminanceAmong(List<(Player Member, double Scalar)> eligibleMembers, ulong amount, XpType xpType, ShareType shareType, Player player, int monsterTier)
+        internal static void ShareLuminanceAmong(List<(Player Member, double Scalar)> eligibleMembers, ulong amount, XpType xpType, ShareType shareType, Player player, int monsterTier, int killTier = 0)
         {
             var totalAmount = amount * GetMemberSharePercent(eligibleMembers.Count);
 
@@ -616,7 +618,7 @@ namespace ACE.Server.Entity
                 if (member == player && ServerConfig.fellowship_additive.Value)
                 {
                     var additiveLumType = fellowXpType;
-                    GrantOnMemberThread(player, () => player.GrantLuminance((long)amount, additiveLumType, shareType, monsterTier));
+                    GrantOnMemberThread(player, () => player.GrantLuminance((long)amount, additiveLumType, shareType, monsterTier, killTier));
                     continue;
                 }
 
@@ -631,7 +633,9 @@ namespace ACE.Server.Entity
 
                 var lumShare = (long)Math.Round(playerTotal);
                 var lumMember = member;
-                GrantOnMemberThread(member, () => lumMember.GrantLuminance(lumShare, fellowXpType, shareType));
+                // tier dip (off unless zc_tier_dip_xp_enabled): each member's own credit, read on the member's own thread
+                var dipTier = xpType == XpType.Kill ? killTier : 0;
+                GrantOnMemberThread(member, () => lumMember.GrantLuminance(ACE.Server.Managers.ZoneControl.TierRewardScale.ScaleXp(lumShare, lumMember, dipTier), fellowXpType, shareType));
             }
         }
 

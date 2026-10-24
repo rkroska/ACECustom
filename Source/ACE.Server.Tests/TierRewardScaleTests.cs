@@ -229,6 +229,21 @@ namespace ACE.Server.Tests
             Assert.AreEqual("0", TierRewardScale.FormatProgress(double.NaN));
         }
 
+        // -- XP / luminance hook --
+
+        [TestMethod]
+        public void Defaults_XpDipShipsOff()
+        {
+            Assert.IsFalse(ServerConfig.zc_tier_dip_xp_enabled.Default, "the XP / luminance dip is built but ships OFF");
+        }
+
+        [TestMethod]
+        public void ScaleXp_NoPlayerOrNoTierLeavesXpAlone()
+        {
+            Assert.AreEqual(5_000_000_001L, TierRewardScale.ScaleXp(5_000_000_001L, null, 13));
+            Assert.AreEqual(1234L, TierRewardScale.ScaleXp(1234L, null, 0));
+        }
+
         private static (int, double) Round((int Count, double Fraction) r) => (r.Count, System.Math.Round(r.Fraction, 6));
     }
 }
