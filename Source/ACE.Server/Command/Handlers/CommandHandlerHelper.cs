@@ -1,4 +1,8 @@
 
+using System;
+using System.Globalization;
+using System.Linq;
+
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Server.Managers;
@@ -76,7 +80,7 @@ namespace ACE.Server.Command.Handlers
             var target = session.Player.FindObject(targetID.Value, Player.SearchLocations.Everywhere, out _, out _, out _);
             if (target == null)
             {
-                WriteOutputInfo(session, $"GetLastAppraisedObject() - couldn't find {targetID:X8}");
+                WriteOutputInfo(session, $"GetLastAppraisedObject() - couldn't find 0x{targetID:X8}");
                 return null;
             }
             return target;
@@ -150,6 +154,65 @@ namespace ACE.Server.Command.Handlers
             return target;
         }
 
+        /// <summary>
+        /// The object an admin command acts on (owner 2026-10-19: optional player name or id on the player admin commands).
+        /// The arguments after the command's own ones name the target: a character name (case-insensitive, with or without
+        /// the + admin prefix, spaces allowed, quotes stripped) is an online player anywhere; an id (decimal, or 0x hex) is an
+        /// online player anywhere or an object near the admin. With no such arguments it is the last appraised object, as
+        /// before. A target that is not found is reported and null returned - never the last appraised object instead.
+        /// In game only: chat commands run on the world thread between landblock ticks, so acting on a player in another
+        /// landblock is safe; the server console runs commands on its own thread, so there it is refused.
+        /// </summary>
+        /// <param name="session">The admin's session (null from the server console - refused)</param>
+        /// <param name="parameters">All the command's arguments (CommandManager.ParseCommand has already grouped quoted text)</param>
+        /// <param name="ownParameterCount">How many of them are the command's own (property, value, ...) - the rest name the target</param>
+        /// <returns>The target, or null (already reported)</returns>
+        public static WorldObject GetCommandTarget(Session session, string[] parameters, int ownParameterCount)
+        {
+            if (session?.Player == null)
+            {
+                WriteOutputInfo(session, "Run this command in game - from the server console it would change a player off the world thread.");
+                return null;
+            }
+
+            if (parameters.Length <= ownParameterCount)
+                return GetLastAppraisedObject(session);
+
+            var text = string.Join(" ", parameters, ownParameterCount, parameters.Length - ownParameterCount).Trim();
+
+            // an unclosed quote ("/setproperty PropertyString.Inscription "Gift 1342184765") makes ParseCommand keep the
+            // quoted words AND repeat them as separate words - which would read as a target
+            if (ownParameterCount > 0 && parameters[ownParameterCount - 1].EndsWith(" " + text, StringComparison.Ordinal))
+            {
+                WriteOutputInfo(session, "A quote is not closed - nothing done.");
+                return null;
+            }
+
+            if (TryParseObjectId(text, out var guid))
+                return GetWorldObjectByGuid(session, guid);   // reports when not found
+
+            var player = PlayerManager.GetOnlinePlayer(text);   // case-insensitive, with or without the + admin prefix
+            if (player == null)
+                WriteOutputInfo(session, $"No online player named {text} - nothing done.");
+            return player;
+        }
+
+        /// <summary>
+        /// An object id as an admin types it: all decimal digits, or 0x followed by hex digits
+        /// </summary>
+        /// <param name="text">The text typed</param>
+        /// <param name="guid">The id, when it is one</param>
+        /// <returns>True when the text is an id (a character name is never all digits)</returns>
+        internal static bool TryParseObjectId(string text, out uint guid)
+        {
+            guid = 0;
+            var hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+            var digits = hex ? text[2..] : text;
+            if (digits.Length == 0 || !digits.All(c => hex ? Uri.IsHexDigit(c) : char.IsAsciiDigit(c)))
+                return false;
+            return uint.TryParse(digits, hex ? NumberStyles.HexNumber : NumberStyles.None, CultureInfo.InvariantCulture, out guid);
+        }
+
         public static WorldObject GetWorldObjectByGuid(Session session, uint guid)
         {
             var target = session.Player.FindObject(guid, Player.SearchLocations.Everywhere, out _, out _, out _);
@@ -160,7 +223,7 @@ namespace ACE.Server.Command.Handlers
 
             if (target == null)
             {
-                WriteOutputInfo(session, $"GetWorldObjectByGuid() - couldn't find {guid:X8}");
+                WriteOutputInfo(session, $"GetWorldObjectByGuid() - couldn't find 0x{guid:X8}");
                 return null;
             }
             return target;

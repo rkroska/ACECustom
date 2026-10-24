@@ -576,10 +576,10 @@ namespace ACE.Server.Command.Handlers
         // World Object Properties
         // ==================================
 
-        [CommandHandler("propertydump", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Lists all properties for the last world object you examined.")]
+        [CommandHandler("propertydump", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Lists all properties for the last world object you examined, or the named online player.", "[player name or id]")]
         public static void HandlePropertyDump(Session session, params string[] parameters)
         {
-            var target = CommandHandlerHelper.GetLastAppraisedObject(session);
+            var target = CommandHandlerHelper.GetCommandTarget(session, parameters, 0);   // the last appraised one, or a named player
 
             if (target != null)
                 session.Network.EnqueueSend(new GameMessageSystemChat($"\n{target.DebugOutputString(target)}", ChatMessageType.System));
@@ -1760,14 +1760,16 @@ namespace ACE.Server.Command.Handlers
             Console.WriteLine("Visible: " + visible);
         }
 
-        [CommandHandler("showstats", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Shows a list of a creature's current attribute/skill levels", "showstats")]
+        [CommandHandler("showstats", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Shows a list of a creature's current attribute/skill levels (the last appraised one, or the named online player)", "showstats [player name or id]")]
         public static void HandleShowStats(Session session, params string[] parameters)
         {
-            // get the last appraised object
-            var item = CommandHandlerHelper.GetLastAppraisedObject(session) as Creature;
+            // the last appraised object, or a named player
+            var target = CommandHandlerHelper.GetCommandTarget(session, parameters, 0);
+            if (target == null && parameters.Length > 0) return;   // a named target not found - already reported
+            var item = target as Creature;
             if (item == null)
             {
-                session.Player.SendMessage("ERROR: You must appraise a creature or player to use this function.");
+                session.Player.SendMessage("ERROR: You must appraise a creature or player (or name a player) to use this function.");
                 return;
             }
 
@@ -2116,16 +2118,16 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
-        /// Gets a property for the last appraised object
+        /// Gets a property for the last appraised object, or the target named by player name or id (CommandHandlerHelper.GetCommandTarget)
         /// </summary>
-        [CommandHandler("getproperty", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Gets a property for the last appraised object", "<property>")]
+        [CommandHandler("getproperty", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Gets a property for the last appraised object, or the named / numbered object (an online player anywhere)", "<property> [player name, or object id: decimal or 0x hex]")]
         public static void HandleGetProperty(Session session, params string[] parameters)
         {
-            var obj = CommandHandlerHelper.GetLastAppraisedObject(session);
-            if (obj == null) return;
-
             if (parameters.Length < 1)
                 return;
+
+            var obj = CommandHandlerHelper.GetCommandTarget(session, parameters, 1);   // the last appraised one, or a named player
+            if (obj == null) return;
 
             var prop = parameters[0];
 
@@ -2183,40 +2185,32 @@ namespace ACE.Server.Command.Handlers
             else if (propType.Equals("PropertyDataId", StringComparison.OrdinalIgnoreCase))
                 value = Convert.ToString(obj.GetProperty((PropertyDataId)result));
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"{obj.Name} ({obj.Guid}): {prop} = {value}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"{obj.Name} (0x{obj.Guid.Full:X8}): {prop} = {value}", ChatMessageType.Broadcast));
         }
 
         /// <summary>
-        /// Sets a property for the last appraised object
+        /// Sets a property for the last appraised object, or the target named by player name or id (CommandHandlerHelper.GetCommandTarget);
+        /// for text properties the target is named by id only
         /// </summary>
-        [CommandHandler("setproperty", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 2, "Sets a property for the last appraised object, or the object with the given id (an online player anywhere)", "<property> <value> [object id: decimal or 0x hex]")]
+        [CommandHandler("setproperty", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 2, "Sets a property for the last appraised object, or the named / numbered object (an online player anywhere)", "<property> <value> [player name, or object id: decimal or 0x hex]")]
         public static void HandleSetProperty(Session session, params string[] parameters)
         {
-            string guid = string.Empty;
-            if (parameters.Length > 2)
-            {
-                guid = parameters[2];
-            }
-            WorldObject target;
-            if (guid.Length > 0)
-            {
-                // an id was given (decimal, or 0x hex as the client shows it): that object or nothing - never the last
-                // appraised one, which would put the value on whatever was clicked last
-                var hex = guid.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
-                if (!uint.TryParse(hex ? guid[2..] : guid, hex ? NumberStyles.HexNumber : NumberStyles.None, CultureInfo.InvariantCulture, out var guidVal))
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Not an object id: {guid} (decimal, or 0x hex) - nothing changed", ChatMessageType.Broadcast));
-                    return;
-                }
-                target = CommandHandlerHelper.GetWorldObjectByGuid(session, guidVal);   // it says so when not found
-            }
-            else
-                target = CommandHandlerHelper.GetLastAppraisedObject(session);
-
-            if (target == null) return;
-
             if (parameters.Length < 2)
                 return;
+
+            // a text value with spaces typed without quotes ("PropertyString.Name Big Bob") would spill its last words into
+            // the target and land on a player of that name - for text properties the target is named by id only
+            if (parameters.Length > 2 && parameters[0].StartsWith("PropertyString.", StringComparison.OrdinalIgnoreCase)
+                && !CommandHandlerHelper.TryParseObjectId(string.Join(" ", parameters, 2, parameters.Length - 2).Trim(), out _))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("For a text property, put the value in quotes and name the target by id (decimal or 0x hex) - nothing changed.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // a name or id given: that target or nothing - never the last appraised one, which would put the value on
+            // whatever was clicked last (CommandHandlerHelper.GetCommandTarget says so when it is not found)
+            var target = CommandHandlerHelper.GetCommandTarget(session, parameters, 2);
+            if (target == null) return;
 
             var prop = parameters[0];
             var value = parameters[1];
@@ -2373,7 +2367,7 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} ({target.Guid}): {prop} = {value}{xpNow}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} (0x{target.Guid.Full:X8}): {prop} = {value}{xpNow}", ChatMessageType.Broadcast));
             PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed a property for {target.Name} ({target.Guid}): {prop} = {value}{xpNow}");
         }
 
@@ -2852,10 +2846,10 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("showsession", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Show IP and ID for network session of last appraised character")]
+        [CommandHandler("showsession", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Show IP and ID for network session of last appraised character, or the named online player", "[player name or id]")]
         public static void HandleShowSession(Session session, params string[] parameters)
         {
-            var target = CommandHandlerHelper.GetLastAppraisedObject(session);
+            var target = CommandHandlerHelper.GetCommandTarget(session, parameters, 0);   // the last appraised one, or a named player
 
             if (target != null && target is Player player)
             {
@@ -2864,6 +2858,8 @@ namespace ACE.Server.Command.Handlers
                 else
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Session is null for {player.Name} which shouldn't occur.", ChatMessageType.Broadcast));
             }
+            else if (target != null)
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} is not a player.", ChatMessageType.Broadcast));
         }
 
         [CommandHandler("requirecomps", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
@@ -3207,7 +3203,7 @@ namespace ACE.Server.Command.Handlers
             Console.WriteLine($"Barrier: {barrier}");
         }
 
-        [CommandHandler("targetloc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows the location of the last appraised object")]
+        [CommandHandler("targetloc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows the location of the last appraised object, the object with the given hex guid, or the named online player", "[hex guid, or player name or id]")]
         public static void HandleTargetLoc(Session session, params string[] parameters)
         {
             WorldObject wo = null;
@@ -3219,24 +3215,35 @@ namespace ACE.Server.Command.Handlers
             }
             else
             {
-                if (parameters[0].StartsWith("0x"))
-                    parameters[0] = parameters[0].Substring(2);
+                // one word that is a hex guid (with or without 0x, as this command always took it): the object it names
+                var hexText = parameters.Length == 1 ? parameters[0] : string.Empty;
+                if (hexText.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                    hexText = hexText.Substring(2);
 
-                if (!uint.TryParse(parameters[0], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint guid))
+                if (hexText.Length > 0 && uint.TryParse(hexText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint guid))
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"{parameters[0]} is not a valid guid", ChatMessageType.Broadcast));
-                    return;
+                    wo = session.Player.CurrentLandblock?.GetObject(guid);
+
+                    if (wo == null)
+                        wo = ServerObjectManager.GetObjectA(guid)?.WeenieObj?.WorldObject;
+
+                    wo ??= PlayerManager.GetOnlinePlayer(guid);
+
+                    // a guid as this command always took it (0x, or a digit in it - character names have no digits): not
+                    // found means not found - never retried as a decimal id (another object) or a name
+                    if (wo == null && (parameters[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) || hexText.Any(char.IsAsciiDigit)))
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find {parameters[0]}", ChatMessageType.Broadcast));
+                        return;
+                    }
                 }
 
-                wo = session.Player.CurrentLandblock?.GetObject(guid);
-
-                if (wo == null)
-                    wo = ServerObjectManager.GetObjectA(guid)?.WeenieObj?.WorldObject;
-
+                // otherwise: a player name (a word of hex letters only, like "Face", included), or a decimal id too long
+                // for a hex guid (owner 2026-10-19)
                 if (wo == null)
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find {parameters[0]}", ChatMessageType.Broadcast));
-                    return;
+                    wo = CommandHandlerHelper.GetCommandTarget(session, parameters, 0);
+                    if (wo == null) return;   // already reported
                 }
             }
 
@@ -3252,18 +3259,35 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat(session.Player.DamageHistory.ToString(), ChatMessageType.Broadcast));
         }
 
-        [CommandHandler("remove-vitae", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Removes vitae from last appraised player")]
+        [CommandHandler("remove-vitae", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Removes vitae from last appraised player (or yourself), or the named online player", "[player name or id]")]
         public static void HandleRemoveVitae(Session session, params string[] parameters)
         {
-            var player = CommandHandlerHelper.GetLastAppraisedObject(session) as Player;
+            Player player;
+            if (parameters.Length > 0)
+            {
+                // a named target: that player or nothing - never yourself instead
+                var target = CommandHandlerHelper.GetCommandTarget(session, parameters, 0);
+                if (target == null) return;
+                player = target as Player;
+                if (player == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} is not a player.", ChatMessageType.Broadcast));
+                    return;
+                }
+            }
+            else
+                player = CommandHandlerHelper.GetLastAppraisedObject(session) as Player ?? session.Player;
 
-            if (player == null)
-                player = session.Player;
+            if (player.EnchantmentManager.GetVitae() == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} has no vitae.", ChatMessageType.Broadcast));
+                return;
+            }
 
             player.EnchantmentManager.RemoveVitae();
 
             if (player != session.Player)
-                session.Network.EnqueueSend(new GameMessageSystemChat("Removed vitae for {player.Name}", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Removed vitae for {player.Name}", ChatMessageType.Broadcast));
         }
 
         [CommandHandler("fast", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld)]
