@@ -218,6 +218,7 @@ namespace ACE.Server.Managers
             {
                 quest.LastTimeCompleted = (uint)Time.GetUnixTime();
                 quest.NumTimesCompleted = 1; // initial add / first solve
+                ClearKillTaskFraction(questName);   // tier rewards: a new run never inherits an old kill-task decimal
 
                 quest.CharacterId = IDtoUseForQuestRegistry;
 
@@ -252,6 +253,7 @@ namespace ACE.Server.Managers
                 // update existing quest
                 quest.LastTimeCompleted = (uint)Time.GetUnixTime();
                 quest.NumTimesCompleted++;
+                MoveKillTaskFraction(questName, quest.NumTimesCompleted - 1, quest.NumTimesCompleted);   // tier rewards: a +1 keeps the decimal
 
                 if (Debug) Console.WriteLine($"{Name}.QuestManager.Update({quest}): updated quest ({quest.NumTimesCompleted})");
                 Creature?.EmoteManager?.OnReceiveStamp(questName);
@@ -293,6 +295,9 @@ namespace ACE.Server.Managers
             var numTimesCompleted = maxSolves > -1 ? Math.Min(questCompletions, maxSolves) : Math.Abs(questCompletions);
 
             var quest = GetOrCreateQuest(questName, out var questRegistryWasCreated);
+
+            // tier rewards: the count is being set outright (a task given, reset or restarted) - no kill-task decimal survives it
+            ClearKillTaskFraction(questName);
 
             if (questRegistryWasCreated)
             {
@@ -480,6 +485,7 @@ namespace ACE.Server.Managers
                 // update existing quest
                 existing.LastTimeCompleted = (uint)Time.GetUnixTime();
                 existing.NumTimesCompleted -= amount;
+                ClearKillTaskFraction(questName);   // tier rewards: progress went back, so does the kill-task decimal
 
                 if (Debug) Console.WriteLine($"{Name}.QuestManager.Decrement({quest}): updated quest ({existing.NumTimesCompleted})");
 
@@ -500,6 +506,8 @@ namespace ACE.Server.Managers
                 Console.WriteLine($"{Name}.QuestManager.Erase({questFormat})");
 
             var questName = GetQuestName(questFormat);
+
+            ClearKillTaskFraction(questName);   // tier rewards: turn-in / restart / admin erase - no kill-task decimal carries over
 
             if (Creature is Player player)
             {
@@ -529,6 +537,10 @@ namespace ACE.Server.Managers
 
             if (Creature is Player player)
             {
+                // tier rewards: every quest restarts, so every kill-task decimal goes
+                if (player.GetProperty(PropertyString.KillTaskFractions) != null)
+                    player.RemoveProperty(PropertyString.KillTaskFractions);
+
                 player.Character.EraseAllQuests(out var questNamesErased, player.CharacterDatabaseLock);
 
                 if (questNamesErased.Count > 0)
@@ -726,6 +738,176 @@ namespace ACE.Server.Managers
                 msg += $" You must kill {quest.MaxSolves} to complete your task.";
 
             player.Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
+        }
+
+        /// <summary>
+        /// Decimal kill-task credit for a T11+ Zone Control kill (tier rewards, owner 2026-10-24). Only TierRewards.TryHandleKillTasks
+        /// calls this, on the player's own thread; every other kill goes through <see cref="HandleKillTask"/> unchanged.
+        ///
+        /// <paramref name="shareCredit"/> is this player's credit before the tier dip (1 for a tagger, the fellowship share for
+        /// a sharer, more than 1 for pet multicredit); it is multiplied here by their own tier credit for <paramref name="killTier"/>.
+        /// Whole kills are stamped as usual (so emotes on a stamp still fire); the part of a kill left over is saved on the
+        /// character (PropertyString.KillTaskFractions). Progress is capped at the task target and the overflow dropped.
+        /// </summary>
+        public void HandleKillTaskDecimal(string killQuestName, WorldObject killedCreature, double shareCredit, int killTier)
+        {
+            var player = Creature as Player;
+            if (player == null || killedCreature == null)
+                return;
+
+            var questName = GetQuestName(killQuestName);
+            var quest = DatabaseManager.World.GetCachedQuest(questName);
+
+            if (quest == null)
+            {
+                log.Error($"{Name}.QuestManager.HandleKillTaskDecimal({killQuestName}): couldn't find kill task {questName} in database");
+                return;
+            }
+
+            if (!HasQuest(questName))
+                return;
+
+            var playerQuest = GetQuest(questName);
+            if (playerQuest == null)
+                return;
+
+            var credit = shareCredit * ZoneControl.TierRewardScale.CreditFor(player, killTier);
+            if (!(credit > 0))
+            {
+                player.Session?.Network?.EnqueueSend(new GameMessageSystemChat("This kill is too far below your tier to count toward your task. (/tierdip)", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var count = playerQuest.NumTimesCompleted;
+            var carried = GetKillTaskFraction(player, questName, count);
+            var (newCount, newFraction) = ZoneControl.TierRewardScale.AddKillTaskProgress(count, carried, credit, quest.MaxSolves);
+
+            // one stamp per whole kill; a stamp that does not move the count (max solves) ends it
+            for (var i = count; i < newCount; i++)
+            {
+                var before = playerQuest.NumTimesCompleted;
+                Stamp(killQuestName);
+                playerQuest = GetQuest(questName);
+                if (playerQuest == null || playerQuest.NumTimesCompleted == before)
+                    break;
+            }
+
+            if (playerQuest == null)
+                return;
+
+            var reached = playerQuest.NumTimesCompleted;
+            var fraction = reached == newCount ? newFraction : 0.0;
+            SetKillTaskFraction(player, questName, reached, fraction);
+
+            var progress = ZoneControl.TierRewardScale.FormatProgress(reached + fraction);
+            var plural = killedCreature.GetPluralName();
+
+            string msg;
+            if (quest.MaxSolves > 0)
+            {
+                msg = $"You have killed {progress} of {quest.MaxSolves} {plural}!";
+                if (IsMaxSolves(questName))
+                    msg += " Your task is complete!";
+            }
+            else
+                msg = $"You have killed {progress} {plural}!";
+
+            player.Session?.Network?.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
+        }
+
+        // ---- saved kill-task decimals (PropertyString.KillTaskFractions) ----------------------------------------------------
+        //
+        // "questname|base|fraction;..." - base is the quest's NumTimesCompleted when the fraction was saved. A fraction whose
+        // base no longer matches the quest is stale and ignored, so no path that moves the count without passing through here
+        // can carry an old fraction into a new run. On top of that every path that restarts a quest (SetQuestCompletions,
+        // Decrement, Erase, EraseAll, a new registry row) clears it outright, and a normal +1 stamp moves it along with the count.
+
+        private static Dictionary<string, (int Base, double Fraction)> LoadKillTaskFractions(Player player)
+        {
+            var result = new Dictionary<string, (int, double)>(StringComparer.OrdinalIgnoreCase);
+            var raw = player.GetProperty(PropertyString.KillTaskFractions);
+            if (string.IsNullOrEmpty(raw))
+                return result;
+
+            foreach (var entry in raw.Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = entry.Split('|');
+                if (parts.Length != 3 || parts[0].Length == 0)
+                    continue;
+                if (!int.TryParse(parts[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var b))
+                    continue;
+                if (!double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f) || !(f > 0) || f >= 1)
+                    continue;
+                result[parts[0]] = (b, f);
+            }
+            return result;
+        }
+
+        private static void SaveKillTaskFractions(Player player, Dictionary<string, (int Base, double Fraction)> fractions)
+        {
+            if (fractions.Count == 0)
+            {
+                if (player.GetProperty(PropertyString.KillTaskFractions) != null)
+                    player.RemoveProperty(PropertyString.KillTaskFractions);
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            foreach (var kv in fractions)
+            {
+                if (sb.Length > 0) sb.Append(';');
+                sb.Append(kv.Key).Append('|').Append(kv.Value.Base.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append('|')
+                  .Append(kv.Value.Fraction.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+            }
+            player.SetProperty(PropertyString.KillTaskFractions, sb.ToString());
+        }
+
+        /// <summary>A quest name that can be stored in the "name|base|fraction;" list. Others simply never carry a decimal.</summary>
+        private static bool CanStoreFraction(string questName) => !string.IsNullOrEmpty(questName) && questName.IndexOfAny(new[] { '|', ';' }) < 0;
+
+        /// <summary>The saved decimal for this quest at this count - 0 when there is none or it was saved at another count.</summary>
+        private static double GetKillTaskFraction(Player player, string questName, int count)
+        {
+            if (!CanStoreFraction(questName))
+                return 0.0;
+            return LoadKillTaskFractions(player).TryGetValue(questName, out var e) && e.Base == count ? e.Fraction : 0.0;
+        }
+
+        private static void SetKillTaskFraction(Player player, string questName, int count, double fraction)
+        {
+            if (!CanStoreFraction(questName))
+                return;
+
+            var fractions = LoadKillTaskFractions(player);
+            if (fraction > 0 && fraction < 1)
+                fractions[questName] = (count, fraction);
+            else if (!fractions.Remove(questName))
+                return;   // nothing saved and nothing to save: no write
+            SaveKillTaskFractions(player, fractions);
+        }
+
+        /// <summary>Drops this quest's saved kill-task decimal: its progress is restarting. Players only; no-op when none is saved.</summary>
+        private void ClearKillTaskFraction(string questName)
+        {
+            if (Creature is not Player player || player.GetProperty(PropertyString.KillTaskFractions) == null)
+                return;
+
+            var fractions = LoadKillTaskFractions(player);
+            if (fractions.Remove(questName))
+                SaveKillTaskFractions(player, fractions);
+        }
+
+        /// <summary>A normal +1 stamp: a saved decimal at the old count moves to the new one, so a stock kill keeps it.</summary>
+        private void MoveKillTaskFraction(string questName, int fromCount, int toCount)
+        {
+            if (Creature is not Player player || player.GetProperty(PropertyString.KillTaskFractions) == null)
+                return;
+
+            var fractions = LoadKillTaskFractions(player);
+            if (!fractions.TryGetValue(questName, out var e) || e.Base != fromCount)
+                return;
+            fractions[questName] = (toCount, e.Fraction);
+            SaveKillTaskFractions(player, fractions);
         }
 
         public static string RandomString(int length)

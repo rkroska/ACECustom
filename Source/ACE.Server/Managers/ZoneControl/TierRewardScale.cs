@@ -115,5 +115,53 @@ namespace ACE.Server.Managers.ZoneControl
                 frac = 0.0;
             return ((long)whole, frac);
         }
+
+        // ---- kill-task credit (T11+ Zone Control kills only) ------------------------------------------------------------
+
+        /// <summary>
+        /// One recipient's kill-task credit for one kill, before it is added to their progress. A tagger (did damage, pet
+        /// damage counts for the owner) gets a full kill; a non-damaging sharer gets the fellowship share for
+        /// <paramref name="groupSize"/> (everyone in range, taggers included) - except on a one-solve task (MaxSolves 1),
+        /// where every sharer gets full credit. Everyone's credit is then x their own tier credit.
+        /// </summary>
+        public static double KillTaskCredit(bool tagger, int groupSize, bool singleSolve, double tierCredit, Func<int, double> sharePercent)
+        {
+            var share = tagger || singleSolve ? 1.0 : sharePercent(Math.Max(1, groupSize));
+            if (double.IsNaN(share)) share = 0.0;
+            var t = double.IsNaN(tierCredit) ? 0.0 : Math.Clamp(tierCredit, 0.0, 1.0);
+            return Math.Clamp(share, 0.0, 1.0) * t;
+        }
+
+        /// <summary>
+        /// Decimal kill-task progress: <paramref name="count"/> whole kills + <paramref name="fraction"/> carried, plus
+        /// <paramref name="credit"/>, capped at <paramref name="maxSolves"/> (overflow dropped; a cap of 0 or less = no cap).
+        /// Returns the new whole count and fraction; at the cap the fraction is always 0.
+        /// </summary>
+        public static (int Count, double Fraction) AddKillTaskProgress(int count, double fraction, double credit, int maxSolves)
+        {
+            var f = double.IsFinite(fraction) && fraction > 0 && fraction < 1 ? fraction : 0.0;
+            var c = double.IsFinite(credit) && credit > 0 ? credit : 0.0;
+
+            var total = Math.Max(0, count) + f + c;
+            if (maxSolves > 0 && total >= maxSolves - Epsilon)
+                return (Math.Max(count, maxSolves), 0.0);
+
+            // a hair under the next whole kill (0.85 + 0.15 in floating point) counts as that kill
+            var whole = Math.Floor(total + Epsilon);
+            var frac = total - whole;
+            if (frac < Epsilon) frac = 0.0;
+            return ((int)whole, frac);
+        }
+
+        /// <summary>Rounding slack for decimal kill-task progress: far below anything a share table or tier step produces.</summary>
+        internal const double Epsilon = 1e-6;
+
+        /// <summary>Progress as shown to players: whole numbers stay whole, decimals keep up to two places ("4.5", "4.25").</summary>
+        public static string FormatProgress(double value)
+        {
+            if (!double.IsFinite(value)) value = 0;
+            var rounded = Math.Round(value, 2, MidpointRounding.AwayFromZero);
+            return rounded.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        }
     }
 }

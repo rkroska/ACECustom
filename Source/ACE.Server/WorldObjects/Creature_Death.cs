@@ -73,12 +73,17 @@ namespace ACE.Server.WorldObjects
             // (rift instances live exclusively at negative variations).
             ACE.Server.Managers.Rifts.RiftManager.OnCreatureDeath(this, lastDamager);
 
-            if (KillQuest != null)
-                OnDeath_HandleKillTask(KillQuest);
-            if (KillQuest2 != null)
-                OnDeath_HandleKillTask(KillQuest2);
-            if (KillQuest3 != null)
-                OnDeath_HandleKillTask(KillQuest3);
+            // Tier rewards (owner 2026-10-24): a T11+ Zone Control kill gives decimal kill-task credit (TierRewards); every other
+            // kill keeps the stock kill-task rules below, unchanged.
+            if (!ACE.Server.Managers.ZoneControl.TierRewards.TryHandleKillTasks(this, KillQuest, KillQuest2, KillQuest3))
+            {
+                if (KillQuest != null)
+                    OnDeath_HandleKillTask(KillQuest);
+                if (KillQuest2 != null)
+                    OnDeath_HandleKillTask(KillQuest2);
+                if (KillQuest3 != null)
+                    OnDeath_HandleKillTask(KillQuest3);
+            }
 
             // Pet maturity credit is independent of XP: it only cares who did the damage.
             PetDevice.CreditMaturityKills(this);

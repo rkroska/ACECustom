@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 using log4net;
 
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.WorldObjects;
 
@@ -96,6 +99,199 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 log.Error($"[TierRewards] CreditCoins for {player?.Name}: {ex}");
             }
+        }
+
+        // ---- kill-task credit (T11+ Zone Control kills only) ---------------------------------------------------------------
+
+        /// <summary>One damager's line of the kill: who (a pet's damage counts for its owner), and who they share with.</summary>
+        private sealed class KillTaskRoute
+        {
+            public Player Damager;
+            public bool ByPet;
+            /// <summary>Fellows in kill-task range, or the other members of the Zone Share area - never the damager.</summary>
+            public List<Player> Sharers;
+            /// <summary>Everyone in range of this damager, the damager and other taggers included - the fellowship share size.</summary>
+            public int GroupSize;
+        }
+
+        /// <summary>
+        /// Kill-task credit for a kill (owner 2026-10-24, locked) - ONLY when Zone Control governs the creature at T11+ and
+        /// zc_kt_decimal_credit_enabled is on. Returns false for every other kill, and the caller then runs the stock kill-task
+        /// code exactly as before.
+        ///
+        /// Who gets credit, and how many credits, is the stock rule unchanged (the same fellow_kt_killer gate, the same
+        /// summoning_killtask_multicredit_cap per player and per pet, Zone Share in place of the fellowship). What one credit is
+        /// WORTH is new: a full kill for anyone who damaged the monster (a tagger), the fellowship share
+        /// (Fellowship.GetMemberSharePercent of everyone in range) for a sharer who did not - full on a one-solve task - and
+        /// everyone's credit x their own tier-dip credit, which is read on their own thread. Progress is decimal
+        /// (QuestManager.HandleKillTaskDecimal). The recipient set is built once per kill and reused for all three kill quests.
+        /// </summary>
+        public static bool TryHandleKillTasks(Creature victim, params string[] killQuests)
+        {
+            if (!ServerConfig.zc_kt_decimal_credit_enabled.Value || victim == null || killQuests == null)
+                return false;
+
+            var quests = killQuests.Where(q => !string.IsNullOrEmpty(q)).ToList();
+            if (quests.Count == 0)
+                return false;
+
+            var killTier = TierRewardScale.KillTier(victim);
+            if (killTier == 0)
+                return false;
+
+            try
+            {
+                var routes = BuildKillTaskRoutes(victim);
+                var taggers = new HashSet<Player>(routes.Select(r => r.Damager));
+
+                // per recipient: every kill quest it is credited for, and the share credit before its tier dip
+                var credits = new Dictionary<Player, List<(string Quest, double Credit)>>();
+
+                foreach (var killQuest in quests)
+                {
+                    var singleSolve = QuestManager.GetMaxSolves(killQuest) == 1;
+
+                    foreach (var (player, units, groupSize) in CountKillTaskUnits(routes, killQuest))
+                    {
+                        var perUnit = TierRewardScale.KillTaskCredit(taggers.Contains(player), groupSize, singleSolve, 1.0, Fellowship.GetMemberSharePercent);
+                        var credit = units * perUnit;
+                        if (!(credit > 0))
+                            continue;
+
+                        if (!credits.TryGetValue(player, out var list))
+                            credits[player] = list = new List<(string, double)>();
+                        list.Add((killQuest, credit));
+                    }
+                }
+
+                foreach (var kv in credits)
+                {
+                    var player = kv.Key;
+                    var list = kv.Value;
+
+                    // a damager or sharer may be ticked by another landblock group: the quest write is theirs, on their thread
+                    LandblockManager.RunOnThreadFor(player, ActionType.CreatureDeath_KillTaskCredit, () =>
+                    {
+                        foreach (var (quest, credit) in list)
+                        {
+                            try
+                            {
+                                player.QuestManager.HandleKillTaskDecimal(quest, victim, credit, killTier);
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Error($"[TierRewards] kill task {quest} for {player.Name}: {ex}");
+                            }
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[TierRewards] TryHandleKillTasks: {ex}");
+            }
+
+            return true;
+        }
+
+        /// <summary>Every damager of the kill in damage-history order, with the people they share with. Built once per kill.</summary>
+        private static List<KillTaskRoute> BuildKillTaskRoutes(Creature victim)
+        {
+            var routes = new List<KillTaskRoute>();
+            var sharersFor = new Dictionary<Player, (List<Player> Sharers, int GroupSize)>();
+
+            foreach (var kvp in victim.DamageHistory.TotalDamage)
+            {
+                if (kvp.Value.TotalDamage <= 0)
+                    continue;
+
+                var byPet = false;
+                var damager = kvp.Value.TryGetAttacker() as Player;
+                if (damager == null && kvp.Value.PetOwner != null)
+                {
+                    damager = kvp.Value.TryGetPetOwner();
+                    byPet = true;
+                }
+                if (damager == null)
+                    continue;
+
+                // the same player can appear twice (their own hits and their pet's): their sharers are looked up once
+                if (!sharersFor.TryGetValue(damager, out var share))
+                {
+                    // Zone Share (owner 2026-09-23): everyone in the area, as one fellowship, in place of the damager's own fellows
+                    var zoneMembers = ZoneShareManager.MembersFor(damager);
+                    if (zoneMembers != null)
+                        share = (zoneMembers.Select(m => m.Member).Where(m => m != damager).ToList(), zoneMembers.Count);
+                    else if (damager.Fellowship != null)
+                    {
+                        var fellows = damager.Fellowship.WithinRange(damager);
+                        share = (fellows, fellows.Count + 1);
+                    }
+                    else
+                        share = (new List<Player>(), 1);
+
+                    sharersFor[damager] = share;
+                }
+
+                routes.Add(new KillTaskRoute { Damager = damager, ByPet = byPet, Sharers = share.Sharers, GroupSize = share.GroupSize });
+            }
+
+            return routes;
+        }
+
+        /// <summary>
+        /// The stock credit COUNT for one kill quest (OnDeath_HandleKillTask's rules, unchanged): per player, how many credits
+        /// they would have received, and the smallest group they were reached through (their best fellowship share).
+        /// </summary>
+        private static List<(Player Player, int Units, int GroupSize)> CountKillTaskUnits(List<KillTaskRoute> routes, string killQuest)
+        {
+            var summonCap = (int)ServerConfig.summoning_killtask_multicredit_cap.Value - 1;
+            if (!ServerConfig.allow_summoning_killtask_multicredit.Value)
+                summonCap = 0;
+
+            var playerCredits = new Dictionary<Player, int>();
+            var summonCredits = new Dictionary<Player, int>();
+            var groupSize = new Dictionary<Player, int>();
+
+            void Give(Player p, Dictionary<Player, int> dict, int cap, int size)
+            {
+                dict.TryGetValue(p, out var have);
+                if (have >= cap)
+                    return;
+                dict[p] = have + 1;
+                groupSize[p] = groupSize.TryGetValue(p, out var g) ? Math.Min(g, size) : size;
+            }
+
+            foreach (var route in routes)
+            {
+                var dict = route.ByPet ? summonCredits : playerCredits;
+                var cap = route.ByPet ? summonCap : 1;
+                if (cap <= 0)
+                {
+                    dict = playerCredits;
+                    cap = 1;
+                }
+
+                if (route.Damager.QuestManager.HasQuest(killQuest))
+                    Give(route.Damager, dict, cap, route.GroupSize);
+                else if (!ServerConfig.fellow_kt_killer.Value)
+                    continue;   // the stock gate, kept as it is
+
+                foreach (var fellow in route.Sharers)
+                {
+                    if (fellow.QuestManager.HasQuest(killQuest))
+                        Give(fellow, dict, cap, route.GroupSize);
+                }
+            }
+
+            var result = new List<(Player, int, int)>(groupSize.Count);
+            foreach (var p in groupSize.Keys)
+            {
+                playerCredits.TryGetValue(p, out var a);
+                summonCredits.TryGetValue(p, out var b);
+                result.Add((p, a + b, groupSize[p]));
+            }
+            return result;
         }
     }
 }

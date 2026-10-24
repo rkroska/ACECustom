@@ -140,5 +140,95 @@ namespace ACE.Server.Tests
             Assert.AreEqual(0L, TierRewardScale.AddCoins(0.5, -10).Whole);
             Assert.AreEqual(0L, TierRewardScale.AddCoins(0.5, double.PositiveInfinity).Whole);
         }
+
+        // -- kill-task credit --
+
+        [TestMethod]
+        public void Defaults_KillTaskDecimalCreditOn()
+        {
+            Assert.IsTrue(ServerConfig.zc_kt_decimal_credit_enabled.Default);
+        }
+
+        private static double Share(int n) => ACE.Server.Entity.Fellowship.GetMemberSharePercent(n);
+
+        [TestMethod]
+        public void KillTaskCredit_TaggerFullSharerShare()
+        {
+            Assert.AreEqual(1.0, TierRewardScale.KillTaskCredit(true, 3, false, 1.0, Share), 1e-9, "a tagger gets a full kill");
+            Assert.AreEqual(0.75, TierRewardScale.KillTaskCredit(false, 2, false, 1.0, Share), 1e-9);
+            Assert.AreEqual(0.6, TierRewardScale.KillTaskCredit(false, 3, false, 1.0, Share), 1e-9);
+            Assert.AreEqual(1.0, TierRewardScale.KillTaskCredit(false, 1, false, 1.0, Share), 1e-9, "a group of one is the full share");
+            Assert.AreEqual(1.0, TierRewardScale.KillTaskCredit(false, 0, false, 1.0, Share), 1e-9, "a bad size counts as one");
+        }
+
+        [TestMethod]
+        public void KillTaskCredit_SingleSolveIsFullShare()
+        {
+            Assert.AreEqual(1.0, TierRewardScale.KillTaskCredit(false, 6, true, 1.0, Share), 1e-9);
+            Assert.AreEqual(0.85, TierRewardScale.KillTaskCredit(false, 6, true, 0.85, Share), 1e-9, "the tier dip still applies");
+        }
+
+        [TestMethod]
+        public void KillTaskCredit_TimesTierCredit()
+        {
+            Assert.AreEqual(0.85, TierRewardScale.KillTaskCredit(true, 1, false, 0.85, Share), 1e-9);
+            Assert.AreEqual(0.6 * 0.7, TierRewardScale.KillTaskCredit(false, 3, false, 0.7, Share), 1e-9);
+            Assert.AreEqual(0.0, TierRewardScale.KillTaskCredit(true, 1, false, 0, Share));
+            Assert.AreEqual(0.0, TierRewardScale.KillTaskCredit(true, 1, false, double.NaN, Share));
+            Assert.AreEqual(1.0, TierRewardScale.KillTaskCredit(true, 1, false, 5, Share), "a tier credit above 1 is clamped");
+        }
+
+        [TestMethod]
+        public void AddKillTaskProgress_Decimals()
+        {
+            Assert.AreEqual((4, 0.5), Round(TierRewardScale.AddKillTaskProgress(4, 0, 0.5, 20)));
+            Assert.AreEqual((5, 0.0), Round(TierRewardScale.AddKillTaskProgress(4, 0.5, 0.5, 20)));
+            Assert.AreEqual((5, 0.25), Round(TierRewardScale.AddKillTaskProgress(4, 0.5, 0.75, 20)));
+            Assert.AreEqual((6, 0.0), Round(TierRewardScale.AddKillTaskProgress(4, 0, 2, 20)), "pet multicredit: two whole kills");
+        }
+
+        [TestMethod]
+        public void AddKillTaskProgress_FloatingPointLandsOnTheWholeKill()
+        {
+            // 0.85 + 0.15 is a hair under 1 in floating point - it must still be the whole kill
+            Assert.AreEqual((1, 0.0), Round(TierRewardScale.AddKillTaskProgress(0, 0.85, 0.15, 20)));
+
+            // a sharer at 0.6 x 0.85: 100 kills = 51 whole kills, nothing lost to drift
+            int count = 0;
+            double frac = 0;
+            for (var i = 0; i < 100; i++)
+                (count, frac) = TierRewardScale.AddKillTaskProgress(count, frac, 0.6 * 0.85, 1000);
+            Assert.AreEqual(51, count);
+            Assert.AreEqual(0.0, frac, 1e-6);
+        }
+
+        [TestMethod]
+        public void AddKillTaskProgress_CapDropsOverflow()
+        {
+            Assert.AreEqual((20, 0.0), Round(TierRewardScale.AddKillTaskProgress(19, 0.75, 0.5, 20)));
+            Assert.AreEqual((20, 0.0), Round(TierRewardScale.AddKillTaskProgress(20, 0, 1, 20)), "already complete");
+            Assert.AreEqual((0, 0.85), Round(TierRewardScale.AddKillTaskProgress(0, 0, 0.85, 1)), "a one-solve task keeps the tier dip as a decimal");
+        }
+
+        [TestMethod]
+        public void AddKillTaskProgress_NoCapAndBadInputs()
+        {
+            Assert.AreEqual((30, 0.5), Round(TierRewardScale.AddKillTaskProgress(30, 0, 0.5, -1)), "MaxSolves -1 = no cap");
+            Assert.AreEqual((3, 0.0), Round(TierRewardScale.AddKillTaskProgress(3, 7.0, 0, 20)), "a bad saved decimal is ignored");
+            Assert.AreEqual((3, 0.0), Round(TierRewardScale.AddKillTaskProgress(3, 0, double.NaN, 20)));
+            Assert.AreEqual((3, 0.0), Round(TierRewardScale.AddKillTaskProgress(3, 0, -1, 20)));
+        }
+
+        [TestMethod]
+        public void FormatProgress_ShowsDecimals()
+        {
+            Assert.AreEqual("4.5", TierRewardScale.FormatProgress(4.5));
+            Assert.AreEqual("4", TierRewardScale.FormatProgress(4));
+            Assert.AreEqual("4.25", TierRewardScale.FormatProgress(4.25));
+            Assert.AreEqual("0.51", TierRewardScale.FormatProgress(0.51));
+            Assert.AreEqual("0", TierRewardScale.FormatProgress(double.NaN));
+        }
+
+        private static (int, double) Round((int Count, double Fraction) r) => (r.Count, System.Math.Round(r.Fraction, 6));
     }
 }
