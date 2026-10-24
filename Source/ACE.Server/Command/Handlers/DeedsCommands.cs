@@ -44,12 +44,15 @@ namespace ACE.Server.Command.Handlers
                 case "rebuff":
                     player.HandleDeedsRebuff();
                     break;
+                case "item":
+                    player.HandleDeedsItem();
+                    break;
                 default:
                     CommandHandlerHelper.WriteOutputInfo(session, "Usage: " + Usage);
                     break;
             }
         }
 
-        private const string Usage = "/deeds [list|on|off]  (/deeds or /deeds list: your QB and every tier; on / off: all Deeds bonuses)";
+        private const string Usage = "/deeds [list|on|off|item]  (/deeds or /deeds list: your QB and every tier; on / off: all Deeds bonuses; item: a Deedkeeper's Writ at 10,000 QB)";
     }
 }

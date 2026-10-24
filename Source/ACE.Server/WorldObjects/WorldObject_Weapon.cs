@@ -1510,7 +1510,10 @@ namespace ACE.Server.WorldObjects
                 if (Aetheria.IsAetheria(WeenieClassId) && attacker is Creature wielder)
                     baseChance = Aetheria.CalcProcRate(this, wielder);
 
-                TryProcOneSpell(attacker, target, selfTarget, ProcSpell.Value, Math.Min(baseChance, procCap), chanceMultiplier);
+                // QB Deeds T6: the surge is always on (with the player's augs) - its Aetheria proc does not fire
+                var deedsSurge = attacker is Player surgePlayer && Aetheria.IsAetheria(WeenieClassId) && surgePlayer.HasDeedsSurge(ProcSpell.Value);
+                if (!deedsSurge)
+                    TryProcOneSpell(attacker, target, selfTarget, ProcSpell.Value, Math.Min(baseChance, procCap), chanceMultiplier);
             }
 
             // Slot 2 - the ring. Rolled separately against its own rate.
