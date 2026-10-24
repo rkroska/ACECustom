@@ -378,5 +378,9 @@ namespace ACE.Entity.Enum.Properties
 
         /// <summary>Server-only: UTC timestamp (Unix epoch seconds) until this character is jailed.</summary>
         JailedUntil = 55000,
+
+        /// <summary>Tier rewards (owner 2026-10-24), on a CHARACTER: the part of a Prestige Coin earned from T11+ zone kills that
+        /// has not yet made a whole coin (0 .. 1). Whole coins go straight to BankedPrestigeCoins. Server-only.</summary>
+        PrestigeCoinFraction = 57000,
     }
 }
