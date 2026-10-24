@@ -11,6 +11,7 @@ using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
+using ACE.Server.Factories;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Structure;
@@ -122,7 +123,10 @@ namespace ACE.Server.WorldObjects
 
             var tier = DeedsEnabled ? DeedsTiers.TierFor(qb) : 0;
             if (tier == DeedsTier && !login && !deedsSyncPending)
+            {
+                RebakeDeedsSurges();   // the life augs may have moved since (an aug bought, a Triune Weave)
                 return;
+            }
 
             var prevTier = DeedsTier;
             DeedsTier = tier;
@@ -198,12 +202,17 @@ namespace ACE.Server.WorldObjects
                 if (result?.Enchantment == null)
                     continue;
                 result.Enchantment.CasterObjectId = DeedsCasterId;
+                // T6 surges: the player's own aug bonus, exactly what their own cast of the spell would carry
+                if (DeedsTiers.SurgeSpellIds.Contains(spellId))
+                    BakeDeedsSurge(result.Enchantment, spell);
 
                 Session?.Network.EnqueueSend(new GameEventMagicUpdateEnchantment(Session, new Enchantment(this, result.Enchantment)));
 
                 maxVitalsChanged |= spell.UpdatesMaxVitals.Count > 0;
                 runRateChanged |= spell.UpdatesRunRate;
             }
+
+            RebakeDeedsSurges();   // surges kept from before (a login) take today's augs
 
             if (maxVitalsChanged)
                 SendDeedsMaxVitals();
@@ -212,6 +221,85 @@ namespace ACE.Server.WorldObjects
                 HandleRunRateUpdate();
 
             ChangesDetected = true;
+        }
+
+        /// <summary>
+        /// T6: each Deeds surge carries the player's CURRENT aug bonus - rebuilt from the spell when the augs moved since it was
+        /// baked (AugmentationLevelWhenCast holds the level it was baked at). Cheap: at most three entries.
+        /// </summary>
+        public void RebakeDeedsSurges()
+        {
+            if (DeedsTier < DeedsTiers.SurgeTier)
+                return;
+            foreach (var entry in Biota.PropertiesEnchantmentRegistry.Clone(BiotaDatabaseLock).Where(IsDeedsEnchantment))
+            {
+                if (!DeedsTiers.SurgeSpellIds.Contains((uint)entry.SpellId))
+                    continue;
+                var spell = new Spell((uint)entry.SpellId);
+                if (spell.NotFound)
+                    continue;
+                // the base value BuildEntry starts from (an over-time spell per tick at the player's heartbeat), then the bake
+                var heartbeat = HeartbeatInterval ?? 5.0;
+                var fresh = new PropertiesEnchantmentRegistry { StatModValue = spell.IsDamageOverTime && heartbeat != 5.0 ? spell.GetDamagePerTick((float)heartbeat) : spell.StatModVal };
+                BakeDeedsSurge(fresh, spell);
+                if (fresh.AugmentationLevelWhenCast == entry.AugmentationLevelWhenCast && fresh.StatModValue == entry.StatModValue)
+                    continue;
+                // the live registry entry (Clone copies the list, not the entries)
+                entry.StatModValue = fresh.StatModValue;
+                entry.AugmentationLevelWhenCast = fresh.AugmentationLevelWhenCast;
+                ChangesDetected = true;
+                Session?.Network.EnqueueSend(new GameEventMagicUpdateEnchantment(Session, new Enchantment(this, entry)));
+            }
+        }
+
+        /// <summary>
+        /// T6: a Deeds surge gets what BuildEntry gives the player's own cast of it - the caster aug bake, then for the over-time
+        /// one (Surge of Regeneration, a heal over time) the per-tick aug term too (CalculateDotEnchantment_StatModValue:
+        /// + 0.01 x life augs - 30 becomes 70 at 4,000).
+        /// </summary>
+        private void BakeDeedsSurge(PropertiesEnchantmentRegistry entry, Spell spell)
+        {
+            EnchantmentManager.ApplyCreatureCasterAugs(entry, spell, this);
+            if (spell.IsDamageOverTime)
+                entry.StatModValue = CalculateDotEnchantment_StatModValue(spell, this, null, entry.StatModValue);
+        }
+
+        /// <summary>T6: an Aetheria proc of a surge the player already has from Deeds does not fire (the always-on one replaces it).</summary>
+        public bool HasDeedsSurge(uint spellId) => DeedsTier >= DeedsTiers.SurgeTier && DeedsTiers.SurgeSpellIds.Contains(spellId);
+
+        /// <summary>
+        /// /deeds item: a Deedkeeper's Writ (using it = /rebuff) - Deeds ON, 10,000 QB, and only when the player carries none.
+        /// </summary>
+        public void HandleDeedsItem()
+        {
+            if (!DeedsEnabled)
+            {
+                SendMessage("Your Deeds bonuses are OFF. Type /deeds on to turn them on.");
+                return;
+            }
+            if (DeedsTier < DeedsTiers.RebuffTier)
+            {
+                SendMessage($"The Deedkeeper's Writ unlocks at {DeedsTiers.RebuffTier * DeedsTiers.QbPerTier:N0} QB. You have {ReadDeedsQb():N0}.");
+                return;
+            }
+            if (GetInventoryItemsOfWCID(DeedsTiers.DeedkeepersWritWcid).Count > 0)
+            {
+                SendMessage("You already have a Deedkeeper's Writ.");
+                return;
+            }
+            var writ = WorldObjectFactory.CreateNewWorldObject(DeedsTiers.DeedkeepersWritWcid);
+            if (writ == null)
+            {
+                SendMessage("The Deedkeeper's Writ is not on this server yet.");
+                return;
+            }
+            if (!TryCreateInInventoryWithNetworking(writ))
+            {
+                writ.Destroy();
+                SendMessage("Your packs are full - make room for the Deedkeeper's Writ and try again.");
+                return;
+            }
+            SendMessage("A Deedkeeper's Writ is in your pack. Use it to cast all your known level 8 buffs at once, like /rebuff.");
         }
 
         /// <summary>One delayed max-vital refresh for a whole batch (HandleMaxVitalUpdate sends one per spell).</summary>

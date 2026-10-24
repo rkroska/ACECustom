@@ -296,121 +296,10 @@ namespace ACE.Server.WorldObjects.Managers
                     entry.StartTime = 0;
                 }
             }
-            bool selfCastEligible = (spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful;
-
             //calculate luminance aug additions for statmod
             if (caster != null && caster is Creature)
             {
-                var player = caster as Creature;
-                if (spell.School == MagicSchool.CreatureEnchantment && !spell.IsFellowshipSpell && spell.Id != 5753 && spell.IsBeneficial && spell.IsSelfTargeted)
-                {
-                    entry.StatModValue += player.EffectiveCreatureAugCount;
-                    entry.AugmentationLevelWhenCast = player.EffectiveCreatureAugCount;
-                }
-                else if (spell.School == MagicSchool.CreatureEnchantment && spell.IsHarmful)
-                {
-                    entry.StatModValue -= player.EffectiveCreatureAugCount;
-                    entry.AugmentationLevelWhenCast = player.EffectiveCreatureAugCount;
-                }
-
-                if (spell.School == MagicSchool.ItemEnchantment)
-                {
-                    // Impen: StatModKey == 28, but exclude Brittlemail/Tattercoat spell IDs
-                    if (spell.StatModKey == 28)
-                    {
-                        if (spell.Id == 1487 || spell.Id == 1488 || spell.Id == 1489 || spell.Id == 1490 ||
-                            spell.Id == 1491 || spell.Id == 1492 || spell.Id == 4399 || spell.Id == 2100) // Brittlemail/Tattercoat
-                        {
-                            entry.StatModValue -= (player.EffectiveItemAugCount) * 1.00f;
-                        }
-                        else // Impen
-                        {
-                            entry.StatModValue += (player.EffectiveItemAugCount) * 1.00f;
-                        }
-                        // This is required for sorting in PropertiesEnchantmentRegistryExtensions.GetEnchantmentsTopLayerByStatModType()
-                        // Otherwise, Impenetrability will not be prioritized over spells that arent affected by luminance augs
-                        // Example: ShadowArmor from olthoi infused shadow armor has powerlevel 900 which overrides impen unless we set AugmentationLevelWhenCast
-                        entry.AugmentationLevelWhenCast = player.EffectiveItemAugCount;
-                    }
-                    else if (spell.StatModKey == 360 && selfCastEligible) //blood drinker buffed
-                    {
-                        entry.StatModValue += (player.EffectiveItemAugCount) * 0.5f;
-                    }
-                    else if (spell.StatModKey == 170 && selfCastEligible) //spirit drinker
-                    {
-                        entry.StatModValue += (player.EffectiveItemAugCount) * 0.005f;
-                    }
-                    else if (spell.Name.Contains("Bane") || spell.StatModKey == 171
-                        || spell.StatModKey == 318 || spell.StatModKey ==  317) //banes and surges
-                    {
-                        entry.StatModValue += (player.EffectiveItemAugCount) * 0.01f;
-                    }
-                    // 168 = Heart Seeker (WeaponAuraOffense), 169 = Defender.
-                    //
-                    // INTENTIONAL - DO NOT "FIX" THE PRECEDENCE (owner ruling 2026-08-21).
-                    // This parses as `168 || (169 && selfCastEligible)`: Heart Seeker gets the
-                    // item-aug bonus UNCONDITIONALLY. That is load-bearing: melee attack skill
-                    // ~= skill x (1.2 + 0.001 x itemAugs) ~= 44-64k at endgame, and 200+ custom
-                    // mobs carry MeleeDefense 3k-99k tuned against exactly that scale (60k
-                    // Thrungi, 65k Sagittarii, 99.5k Warren mobs...). Adding parentheses drops
-                    // melee attack ~4.5x and makes all of that content unhittable - it is
-                    // melee-only-hittable BY this mechanism (casters have no aura equivalent
-                    // and bounce off those mobs' 50-100k MagicDefense by design).
-                    else if (spell.StatModKey == 168 || spell.StatModKey == 169 && selfCastEligible)
-                    {
-                        entry.StatModValue += GetItemAugPercentageRating(player.EffectiveItemAugCount); //(player.EffectiveItemAugCount) * 0.01f;
-                    }
-                    else if (spell.StatModKey == 361 && selfCastEligible) //eg atlans alacrity
-                    {
-                        entry.StatModValue -= (player.EffectiveItemAugCount) * 1.0f;
-                    }
-                    if (selfCastEligible)
-                    {
-                        entry.AugmentationLevelWhenCast = player.EffectiveItemAugCount;
-                    }                    
-                }
-                // owner 2026-10-04: a void DoT's bonus on a T11+ monster ramps on the caster's VOID augs (Creature_DebuffCompression).
-                // T11+ monster targets only - the stamp also drives stacking (AddEnchantmentResult), so retail / PvP keep retail stacking
-                if (spell.School == MagicSchool.VoidMagic && spell.IsHarmful && WorldObject is Creature zcTarget && zcTarget.ZcDebuffCompressed)
-                    entry.AugmentationLevelWhenCast = player.EffectiveVoidAugCount;
-                if (spell.School == MagicSchool.LifeMagic)
-                {
-                    if (spell.IsBeneficial && spell.IsSelfTargeted) //buffs
-                    {
-                        if (spell.StatModKey == 0) //armor -- single point
-                        {
-                            entry.StatModValue += (player.EffectiveLifeAugCount);
-                        }
-                        else if (spell.StatModKey == 64 || spell.StatModKey == 65 || spell.StatModKey == 66 //slash, pierce, bludge
-                            || spell.StatModKey == 67 || spell.StatModKey == 68 || spell.StatModKey == 69 || spell.StatModKey == 70) //fire, cold, acid, electric
-                        {
-                            entry.StatModValue -= GetLifeAugProtectRating(player.EffectiveLifeAugCount);
-                        }
-                        else
-                        {
-                            entry.StatModValue += (player.EffectiveLifeAugCount) * 0.10f;
-                        }                        
-                    }
-                    else if (spell.IsHarmful) //debuffs -- single point
-                    {
-                        if (spell.StatModKey == 0)
-                        {
-                            entry.StatModValue -= (player.EffectiveLifeAugCount);
-                        }
-                        else if (spell.StatModKey == 64 || spell.StatModKey == 65 || spell.StatModKey == 66 //slash, pierce, bludge
-                            || spell.StatModKey == 67 || spell.StatModKey == 68 || spell.StatModKey == 69 || spell.StatModKey == 70 //fire, cold, acid, electric
-                            || spell.StatModKey == 312 || spell.StatModKey == 307 || spell.StatModKey == 318 || spell.StatModKey == 308 || spell.StatModKey == 317) //surge of regeneration
-                        {
-                            entry.StatModValue += (player.EffectiveLifeAugCount) * 0.01f;
-                        }
-                        else
-                        {
-                            entry.StatModValue -= (player.EffectiveLifeAugCount) * 0.10f;
-                        }
-                    }
-                    entry.AugmentationLevelWhenCast = player.EffectiveLifeAugCount;
-                }
-
+                ApplyCreatureCasterAugs(entry, spell, caster as Creature);
             }
             else
             {                
@@ -462,6 +351,125 @@ namespace ACE.Server.WorldObjects.Managers
             }
 
             return entry;
+        }
+
+        /// <summary>
+        /// A creature caster's luminance aug bonus baked into a new enchantment entry (StatModValue + AugmentationLevelWhenCast),
+        /// by school and stat - the body BuildEntry has always run. QB Deeds runs it too for its permanent surges, so they carry
+        /// exactly what the player's own cast of the same spell would.
+        /// </summary>
+        public void ApplyCreatureCasterAugs(PropertiesEnchantmentRegistry entry, Spell spell, Creature player)
+        {
+            bool selfCastEligible = (spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful;
+
+            if (spell.School == MagicSchool.CreatureEnchantment && !spell.IsFellowshipSpell && spell.Id != 5753 && spell.IsBeneficial && spell.IsSelfTargeted)
+            {
+                entry.StatModValue += player.EffectiveCreatureAugCount;
+                entry.AugmentationLevelWhenCast = player.EffectiveCreatureAugCount;
+            }
+            else if (spell.School == MagicSchool.CreatureEnchantment && spell.IsHarmful)
+            {
+                entry.StatModValue -= player.EffectiveCreatureAugCount;
+                entry.AugmentationLevelWhenCast = player.EffectiveCreatureAugCount;
+            }
+
+            if (spell.School == MagicSchool.ItemEnchantment)
+            {
+                // Impen: StatModKey == 28, but exclude Brittlemail/Tattercoat spell IDs
+                if (spell.StatModKey == 28)
+                {
+                    if (spell.Id == 1487 || spell.Id == 1488 || spell.Id == 1489 || spell.Id == 1490 ||
+                        spell.Id == 1491 || spell.Id == 1492 || spell.Id == 4399 || spell.Id == 2100) // Brittlemail/Tattercoat
+                    {
+                        entry.StatModValue -= (player.EffectiveItemAugCount) * 1.00f;
+                    }
+                    else // Impen
+                    {
+                        entry.StatModValue += (player.EffectiveItemAugCount) * 1.00f;
+                    }
+                    // This is required for sorting in PropertiesEnchantmentRegistryExtensions.GetEnchantmentsTopLayerByStatModType()
+                    // Otherwise, Impenetrability will not be prioritized over spells that arent affected by luminance augs
+                    // Example: ShadowArmor from olthoi infused shadow armor has powerlevel 900 which overrides impen unless we set AugmentationLevelWhenCast
+                    entry.AugmentationLevelWhenCast = player.EffectiveItemAugCount;
+                }
+                else if (spell.StatModKey == 360 && selfCastEligible) //blood drinker buffed
+                {
+                    entry.StatModValue += (player.EffectiveItemAugCount) * 0.5f;
+                }
+                else if (spell.StatModKey == 170 && selfCastEligible) //spirit drinker
+                {
+                    entry.StatModValue += (player.EffectiveItemAugCount) * 0.005f;
+                }
+                else if (spell.Name.Contains("Bane") || spell.StatModKey == 171
+                    || spell.StatModKey == 318 || spell.StatModKey ==  317) //banes and surges
+                {
+                    entry.StatModValue += (player.EffectiveItemAugCount) * 0.01f;
+                }
+                // 168 = Heart Seeker (WeaponAuraOffense), 169 = Defender.
+                //
+                // INTENTIONAL - DO NOT "FIX" THE PRECEDENCE (owner ruling 2026-08-21).
+                // This parses as `168 || (169 && selfCastEligible)`: Heart Seeker gets the
+                // item-aug bonus UNCONDITIONALLY. That is load-bearing: melee attack skill
+                // ~= skill x (1.2 + 0.001 x itemAugs) ~= 44-64k at endgame, and 200+ custom
+                // mobs carry MeleeDefense 3k-99k tuned against exactly that scale (60k
+                // Thrungi, 65k Sagittarii, 99.5k Warren mobs...). Adding parentheses drops
+                // melee attack ~4.5x and makes all of that content unhittable - it is
+                // melee-only-hittable BY this mechanism (casters have no aura equivalent
+                // and bounce off those mobs' 50-100k MagicDefense by design).
+                else if (spell.StatModKey == 168 || spell.StatModKey == 169 && selfCastEligible)
+                {
+                    entry.StatModValue += GetItemAugPercentageRating(player.EffectiveItemAugCount); //(player.EffectiveItemAugCount) * 0.01f;
+                }
+                else if (spell.StatModKey == 361 && selfCastEligible) //eg atlans alacrity
+                {
+                    entry.StatModValue -= (player.EffectiveItemAugCount) * 1.0f;
+                }
+                if (selfCastEligible)
+                {
+                    entry.AugmentationLevelWhenCast = player.EffectiveItemAugCount;
+                }                    
+            }
+            // owner 2026-10-04: a void DoT's bonus on a T11+ monster ramps on the caster's VOID augs (Creature_DebuffCompression).
+            // T11+ monster targets only - the stamp also drives stacking (AddEnchantmentResult), so retail / PvP keep retail stacking
+            if (spell.School == MagicSchool.VoidMagic && spell.IsHarmful && WorldObject is Creature zcTarget && zcTarget.ZcDebuffCompressed)
+                entry.AugmentationLevelWhenCast = player.EffectiveVoidAugCount;
+            if (spell.School == MagicSchool.LifeMagic)
+            {
+                if (spell.IsBeneficial && spell.IsSelfTargeted) //buffs
+                {
+                    if (spell.StatModKey == 0) //armor -- single point
+                    {
+                        entry.StatModValue += (player.EffectiveLifeAugCount);
+                    }
+                    else if (spell.StatModKey == 64 || spell.StatModKey == 65 || spell.StatModKey == 66 //slash, pierce, bludge
+                        || spell.StatModKey == 67 || spell.StatModKey == 68 || spell.StatModKey == 69 || spell.StatModKey == 70) //fire, cold, acid, electric
+                    {
+                        entry.StatModValue -= GetLifeAugProtectRating(player.EffectiveLifeAugCount);
+                    }
+                    else
+                    {
+                        entry.StatModValue += (player.EffectiveLifeAugCount) * 0.10f;
+                    }                        
+                }
+                else if (spell.IsHarmful) //debuffs -- single point
+                {
+                    if (spell.StatModKey == 0)
+                    {
+                        entry.StatModValue -= (player.EffectiveLifeAugCount);
+                    }
+                    else if (spell.StatModKey == 64 || spell.StatModKey == 65 || spell.StatModKey == 66 //slash, pierce, bludge
+                        || spell.StatModKey == 67 || spell.StatModKey == 68 || spell.StatModKey == 69 || spell.StatModKey == 70 //fire, cold, acid, electric
+                        || spell.StatModKey == 312 || spell.StatModKey == 307 || spell.StatModKey == 318 || spell.StatModKey == 308 || spell.StatModKey == 317) //surge of regeneration
+                    {
+                        entry.StatModValue += (player.EffectiveLifeAugCount) * 0.01f;
+                    }
+                    else
+                    {
+                        entry.StatModValue -= (player.EffectiveLifeAugCount) * 0.10f;
+                    }
+                }
+                entry.AugmentationLevelWhenCast = player.EffectiveLifeAugCount;
+            }
         }
 
         // Implements diminishing returns using the formula (1.0 - (1.0 - r)^a)

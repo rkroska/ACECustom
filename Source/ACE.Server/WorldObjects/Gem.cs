@@ -76,6 +76,13 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // QB Deeds: the Deedkeeper's Writ runs /rebuff - its checks, lockout and messages (never consumed)
+            if (WeenieClassId == DeedsTiers.DeedkeepersWritWcid)
+            {
+                player.HandleDeedsRebuff();
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(UseSendsSignal))
             {
                 player.CurrentLandblock?.EmitSignal(player, UseSendsSignal);

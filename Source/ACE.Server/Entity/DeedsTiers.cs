@@ -20,9 +20,9 @@ namespace ACE.Server.Entity
         public const int MaxTier = 15;
 
         // -- the special-effect tiers (the hooks test DeedsTier against these) --
-        public const int SurgeTier       = 6;    // the three self surges, permanent (they are buff spells in the table)
+        public const int SurgeTier       = 6;    // the three self surges, permanent, the player's life augs baked in; their Aetheria procs stop
         public const int BaneFloorTier   = 9;    // Legendary banes + Legendary Impenetrability as a floor in the armor math
-        public const int RebuffTier      = 10;   // the /rebuff command
+        public const int RebuffTier      = 10;   // the /rebuff command and the Deedkeeper's Writ (/deeds item)
         public const int BreathTier      = 12;   // Breath of Renewal, BreathChance on each attack
         public const int DamageTier      = 13;   // x DamageMultiplier, every attack style
         public const int CritTier        = 14;   // + the BASE crit chance again (base 10 pct -> 20 pct, Biting Strike 25 -> 35)
@@ -31,6 +31,13 @@ namespace ACE.Server.Entity
         public const float BreathChance = 0.20f;
         public const float DamageMultiplier = 1.10f;
         public const uint BreathOfRenewalSpellId = 4100;
+
+        /// <summary>The Deedkeeper's Writ weenie (Database/Updates/World/2026-10-24-00-Deedkeepers-Writ.sql): using it runs /rebuff.</summary>
+        public const uint DeedkeepersWritWcid = 777700311;
+
+        /// <summary>T6: Surge of Destruction / Protection / Regeneration. Kept always on with the player's augs baked in, and an
+        /// Aetheria proc of the same surge does not fire while the player has them.</summary>
+        public static readonly IReadOnlySet<uint> SurgeSpellIds = new HashSet<uint> { 5204, 5206, 5208 };
 
         /// <summary>The T9 armor floor: Legendary Impenetrability (armor level) and the Legendary bane for each damage type.</summary>
         public const uint LegendaryImpenetrabilitySpellId = 6095;
@@ -103,7 +110,8 @@ namespace ACE.Server.Entity
             new Tier { Number = 6, Spells = new uint[]
             {
                 5204, 5206, 5208,                                   // Surge of Destruction / Protection / Regeneration, always on
-            } },
+            },
+                Lines = new[] { "(always on, with your life augs - your Aetheria no longer procs these three)" } },
             new Tier { Number = 7, Spells = new uint[]
             {
                 3738, 3700, 3694, 3730, 3705, 3733,                 // Prodigal Strength .. Willpower
@@ -123,7 +131,7 @@ namespace ACE.Server.Entity
             new Tier { Number = 9,
                 ListedSpells = new uint[] { 6088, 6090, 6092, 6093, 6096, 6097, 6099, 6095 },
                 Lines = new[] { "(on every armor piece you wear, as a floor - never cast on the item)" } },
-            new Tier { Number = 10, Lines = new[] { "/rebuff - cast all your known level 8 buffs in one go" } },
+            new Tier { Number = 10, Lines = new[] { "/rebuff - cast all your known level 8 buffs in one go", "/deeds item - a Deedkeeper's Writ that does the same when used" } },
             new Tier { Number = 11, Spells = new uint[]
             {
                 3684,                                               // Prodigal Armor
