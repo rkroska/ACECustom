@@ -117,7 +117,8 @@ namespace ACE.Server.Factories.Tables
             var table = TierTable.Entry(qualityLevels, profile.Tier);
 
             // quality mod?
-            return table.Roll(profile.LootQualityMod);
+            // (QB Deeds loot luck: the better of two rolls while DeedsLootLuck is active)
+            return ACE.Server.Entity.DeedsLootLuck.Better((table, profile.LootQualityMod), static a => a.table.Roll(a.LootQualityMod));
         }
     }
 }

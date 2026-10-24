@@ -1597,6 +1597,7 @@ namespace ACE.Server.Managers
 
             //player.QuestCompletionCount = player.Account.GetCharacterQuestCompletions();
             player.QuestCompletionCount = player.Account.CachedQuestBonusCount;
+            player.RefreshDeeds();   // QB Deeds: a new account stamp can cross a tier
         }
 
         /// <summary>
@@ -1653,6 +1654,7 @@ namespace ACE.Server.Managers
                         // and the catch below would turn that into a silent no-repair.
                         player.Account.UpdateAccountQuestsCacheByQuestName(name, acctQuest.NumTimesCompleted ?? 0);
                         player.QuestCompletionCount = player.Account.CachedQuestBonusCount;
+                        player.RefreshDeeds();
                         return false;
                     }
 
@@ -1661,6 +1663,7 @@ namespace ACE.Server.Managers
 
                 player.Account.UpdateAccountQuestsCacheByQuestName(name, 1);
                 player.QuestCompletionCount = player.Account.CachedQuestBonusCount;
+                player.RefreshDeeds();   // QB Deeds: a new account stamp can cross a tier
 
                 return true;
             }

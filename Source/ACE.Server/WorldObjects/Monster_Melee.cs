@@ -642,6 +642,9 @@ namespace ACE.Server.WorldObjects
             // armor level additives
             var armorMod = armor.EnchantmentManager.GetArmorMod();
 
+            // QB Deeds (9k QB): Legendary Impenetrability as a floor on the worn piece (math only, nothing cast on it)
+            armorMod += Player.GetDeedsImpenFloor(armor);
+
             if (ignoreMagicArmor)
                 armorMod = (int)Math.Round(IgnoreMagicArmorScaled(armorMod));
 
@@ -650,6 +653,9 @@ namespace ACE.Server.WorldObjects
 
             // resistance additives
             var armorBane = armor.EnchantmentManager.GetArmorModVsType(damageType);
+
+            // QB Deeds (9k QB): the Legendary bane for this damage type as a floor, like the Impenetrability above
+            armorBane += Player.GetDeedsBaneFloor(armor, damageType);
 
             if (ignoreMagicArmor)
                 armorBane = IgnoreMagicArmorScaled(armorBane);

@@ -793,8 +793,15 @@ namespace ACE.Server.WorldObjects
             // get active item enchantments
             var enchantments = Biota.PropertiesEnchantmentRegistry.Clone(BiotaDatabaseLock).Where(i => i.Duration == -1 && i.SpellId != (int)SpellId.Vitae).ToList();
 
+            // QB Deeds: its buffs are kept while Deeds is ON and the tier reaches them; this clean-up is no dispel for any lockout
+            var deedsTier = DeedsAuditTier();
+            using var ownRemoval = BeginOwnRemoval();
+
             foreach (var enchantment in enchantments)
             {
+                if (IsKeptDeedsEnchantment(enchantment, deedsTier))
+                    continue;
+
                 var isCharm = false;
                 if (allPossessions.TryGetValue(new ObjectGuid(enchantment.CasterObjectId), out var casterItem))
                     isCharm = casterItem.GetProperty(PropertyBool.IsCharm) ?? false;

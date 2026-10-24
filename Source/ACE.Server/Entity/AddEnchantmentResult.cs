@@ -200,6 +200,10 @@ namespace ACE.Server.Entity
             // such as 'Monster cast Imperil VI on you, surpassing Imperil VI' when 2 monsters have both cast imperil
             // i am seeing a total of 0 references for this monster scenario
 
+            // no caster (QB Deeds: the target's own permanent buffs) refreshes nothing - it writes its own layer
+            if (caster == null)
+                return;
+
             foreach (var refresh in Refresh)
             {
                 if (refresh.CasterObjectId == caster.Guid.Full)

@@ -1066,6 +1066,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private List<WorldObject> GenerateTreasure(DamageHistoryInfo killer, Corpse corpse)
         {
+            // QB Deeds (15k QB): the killer's loot luck - every quality / grade roll of this kill rolled twice, the better kept
+            using var deedsLuck = DeedsLootLuck.Scope(Player.HasDeedsLootLuck(killer));
+
             var droppedItems = new List<WorldObject>();
             var tier = PrestigeManager.GetKillScalingMonsterTier(this);
 

@@ -73,9 +73,10 @@ namespace ACE.Server.WorldObjects
                 foreach (var armor in armors)
                 {
                     var baseArmor = armor.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ArmorLevel) ?? 0;
-                    var armorMod = ignoreMagicArmor ? 0 : armor.EnchantmentManager.GetArmorModNoAugs();
+                    // (QB Deeds 9k QB: the Legendary Impenetrability / bane floor, as in Monster_Melee.GetArmorMod)
+                    var armorMod = ignoreMagicArmor ? 0 : armor.EnchantmentManager.GetArmorModNoAugs() + Player.GetDeedsImpenFloor(armor);
                     var al = baseArmor + armorMod;
-                    var bane = ignoreMagicArmor ? 0f : armor.EnchantmentManager.GetArmorModVsTypeNoAugs(damageType);
+                    var bane = ignoreMagicArmor ? 0f : armor.EnchantmentManager.GetArmorModVsTypeNoAugs(damageType) + Player.GetDeedsBaneFloor(armor, damageType);
                     var rl = Math.Clamp((float)(GetResistance(armor, damageType) + bane), -2.0f, 2.0f);
                     effectiveAL += al * rl;
                 }

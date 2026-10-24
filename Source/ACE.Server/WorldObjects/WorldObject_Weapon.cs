@@ -505,6 +505,9 @@ namespace ACE.Server.WorldObjects
             if (zoneCrit.HasValue)
                 critRate = zoneCrit.Value;
 
+            // QB Deeds (14k QB): + the BASE chance again vs monsters, on top of every other source (10 -> 20, Biting Strike 25 -> 35)
+            critRate += Player.GetDeedsBaseCritBonus(wielder, target, DefaultPhysicalCritFrequency);
+
             // mitigation
             var critResistRatingMod = Creature.GetNegativeRatingMod(target.GetCritResistRating());
             critRate *= critResistRatingMod;
@@ -621,6 +624,9 @@ namespace ACE.Server.WorldObjects
             var zoneCrit = GetZoneCritChanceOverride(wielder);
             if (zoneCrit.HasValue)
                 critRate = zoneCrit.Value;
+
+            // QB Deeds (14k QB): + this path's BASE chance again vs monsters, on top of every other source
+            critRate += Player.GetDeedsBaseCritBonus(wielder, target, baseRate);
 
             // mitigation
             var critResistRatingMod = Creature.GetNegativeRatingMod(target.GetCritResistRating());
@@ -1504,7 +1510,10 @@ namespace ACE.Server.WorldObjects
                 if (Aetheria.IsAetheria(WeenieClassId) && attacker is Creature wielder)
                     baseChance = Aetheria.CalcProcRate(this, wielder);
 
-                TryProcOneSpell(attacker, target, selfTarget, ProcSpell.Value, Math.Min(baseChance, procCap), chanceMultiplier);
+                // QB Deeds T6: the surge is always on (with the player's augs) - its Aetheria proc does not fire
+                var deedsSurge = attacker is Player surgePlayer && Aetheria.IsAetheria(WeenieClassId) && surgePlayer.HasDeedsSurge(ProcSpell.Value);
+                if (!deedsSurge)
+                    TryProcOneSpell(attacker, target, selfTarget, ProcSpell.Value, Math.Min(baseChance, procCap), chanceMultiplier);
             }
 
             // Slot 2 - the ring. Rolled separately against its own rate.
