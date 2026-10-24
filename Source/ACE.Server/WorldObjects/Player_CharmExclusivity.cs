@@ -20,7 +20,9 @@ namespace ACE.Server.WorldObjects
             if (spell == null)
                 return false;
 
-            if (spell.School == MagicSchool.WarMagic && HasChainCharm)
+            // only the shapes Chain chains (its arcs / bolts / streaks switches): a ring, blast or switched-off shape keeps Fork / Split Cast
+            if (spell.School == MagicSchool.WarMagic && HasChainCharm
+                && SpellProjectile.IsChainShape(spell, SpellProjectile.GetProjectileSpellType(spell.Id)))
                 return Exclusive(CharmSettingsManager.Chain, CharmAbilityRegistry.ChainAbilityId, weapon);
 
             if (spell.School == MagicSchool.VoidMagic && spell.DotDuration > 0 && HasPandemicCharm)

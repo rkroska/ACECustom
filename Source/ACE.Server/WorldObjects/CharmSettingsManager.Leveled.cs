@@ -101,7 +101,7 @@ namespace ACE.Server.WorldObjects
                 Reset();
             }
 
-            // ── reads (combat) ────────────────────────────────────────────────
+            // -- reads (combat) ------------------------------------------------
 
             public bool Enabled => On("enabled");
 
@@ -127,7 +127,7 @@ namespace ACE.Server.WorldObjects
 
             public float NumberAt(string key, int level) => (float)At(key, level);
 
-            // ── ICharmBlock ───────────────────────────────────────────────────
+            // -- ICharmBlock ---------------------------------------------------
 
             public void Reset()
             {
@@ -284,7 +284,7 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            // ── the schedule ──────────────────────────────────────────────────
+            // -- the schedule --------------------------------------------------
 
             /// <summary>"25:1,50:1" -> (25, 1), (50, 1). False = not that shape (levels 2-100, finite amounts).</summary>
             private static bool ParseSteps(string text, List<(int level, double amount)> into)
@@ -419,7 +419,7 @@ namespace ACE.Server.WorldObjects
                 return sb.ToString();
             }
 
-            // ── the plugin's wire line ────────────────────────────────────────
+            // -- the plugin's wire line ----------------------------------------
 
             /// <summary>One line for the client plugin: name | label | key=kind~v1~v100~min~max~levels~steps~every~fill ...
             /// (v100 / fill empty = unset; steps / every appended 2026-10-17, an older plugin ignores them). Help text travels
@@ -459,7 +459,7 @@ namespace ACE.Server.WorldObjects
                 yield return sb.ToString();
             }
 
-            // ── helpers ───────────────────────────────────────────────────────
+            // -- helpers -------------------------------------------------------
 
             private string ShowAt(CharmSettingDef d, int level) =>
                 d.Kind == CharmSettingKind.Int ? CountAt(d.Key, level).ToString(CultureInfo.InvariantCulture) : Show(d, At(d.Key, level));
@@ -497,9 +497,9 @@ namespace ACE.Server.WorldObjects
             private static string Clean(string s) => (s ?? "").Replace('|', '/').Replace('~', '-').Replace('\n', ' ');
         }
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         //  The four levelled charms and their settings
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         /// <summary>Owner 2026-10-17: a charm's level (on the player) is raised with upgrade gems bought for Prestige Coins;
         /// using a gem also charges this many coins for EACH level it adds, read at the level being left - so the cost

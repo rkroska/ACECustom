@@ -59,14 +59,18 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>True for a spell the Chain charm works on: war school, a plain projectile flying as an arc, bolt or
         /// streak (per the charm's three switches). Rings, blasts, volleys, walls, life and void spells never chain.</summary>
-        private bool IsChainShape()
+        private bool IsChainShape() => IsChainShape(Spell, SpellType);
+
+        /// <summary>The same test for a spell before it flies (Player.LeveledCharmReplacesForkAndSplit): Chain replaces Fork and
+        /// Split Cast only for the shapes it actually chains.</summary>
+        internal static bool IsChainShape(Spell spell, ProjectileSpellType shape)
         {
-            if (Spell == null || Spell.School != MagicSchool.WarMagic || Spell.MetaSpellType != ACE.Entity.Enum.SpellType.Projectile)
+            if (spell == null || spell.School != MagicSchool.WarMagic || spell.MetaSpellType != ACE.Entity.Enum.SpellType.Projectile)
                 return false;
             var cs = CharmSettingsManager.Chain;
-            return SpellType == ProjectileSpellType.Arc && cs.On("arcs")
-                || SpellType == ProjectileSpellType.Bolt && cs.On("bolts")
-                || SpellType == ProjectileSpellType.Streak && cs.On("streaks");
+            return shape == ProjectileSpellType.Arc && cs.On("arcs")
+                || shape == ProjectileSpellType.Bolt && cs.On("bolts")
+                || shape == ProjectileSpellType.Streak && cs.On("streaks");
         }
 
         /// <summary>

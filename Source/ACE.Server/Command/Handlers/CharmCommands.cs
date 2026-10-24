@@ -103,6 +103,7 @@ namespace ACE.Server.Command.Handlers
         private static readonly string CharmList =
             "=== Available Charms ===\n" +
             "  - agony              - Tectonic (Bludgeon Ring) spells now cast Ring of Unspeakable Agony.\n" +
+            "  - armorbreaker       - (level 1-100) Dual wield hits ignore a share of the armor left after Armor Rend.\n" +
             "  - artisans           - Provides Crafting and Tinkering bonuses.\n" +
             "  - asheronsfavor      - Grants Health% and Natural Armor bonuses.\n" +
             "  - autorebuff         - Automatically re-applies expiring beneficial buffs.\n" +
@@ -117,6 +118,7 @@ namespace ACE.Server.Command.Handlers
             "  - splitarrow         - (level 1-100) T11+ launchers fire extra arrows at nearby monsters.\n" +
             "  - splitcast          - Streak, Arc, and Bolt spells target multiple nearby enemies simultaneously.\n" +
             "  - omnistrike         - Melee attacks strike with the target's absolute weakest damage type.\n" +
+            "  - shieldarc          - (level 1-100) Your shield guards a wider arc, and melee hits deal more with a shield.\n" +
             "  - shrapnel           - Tectonic (Bludgeon Ring) spells now cast Rocky Shrapnel.\n" +
             "  - universalsummoning - Bypasses summoning mastery skill checks (can use all pet types).\n" +
             "\nUse /charm <name> to see current settings and all adjustable keys.\n" +
@@ -152,7 +154,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            // ── /charm sync [help]  (the client plugin's settings page) ───────
+            // -- /charm sync [help]  (the client plugin's settings page) -------
             if (parameters[0].Equals("sync", StringComparison.OrdinalIgnoreCase))
             {
                 var withHelp = parameters.Length > 1 && parameters[1].Equals("help", StringComparison.OrdinalIgnoreCase);
@@ -164,7 +166,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            // ── /charm level <name> <1-100>  (test tool) ──────────────────────
+            // -- /charm level <name> <1-100>  (test tool) ----------------------
             if (parameters[0].Equals("level", StringComparison.OrdinalIgnoreCase))
             {
                 HandleCharmLevel(session, parameters.Skip(1).ToArray());

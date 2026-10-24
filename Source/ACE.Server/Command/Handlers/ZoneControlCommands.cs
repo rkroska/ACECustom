@@ -5671,7 +5671,7 @@ namespace ACE.Server.Command.Handlers
 
             if (r.SpellCount > 0)
             {
-                if (r.HasMagicSkill) Ok($"{r.BookSpells} book spell(s) + {r.ZoneSpells} zone-added, magic_skill {r.MagicSkill}");
+                if (r.HasMagicSkill) Ok($"{r.BookSpells} book spell(s) + {r.ZoneSpells} zone-added + {r.CasterSpells} caster-list, magic_skill {r.MagicSkill}");
                 else Warn($"casts {r.SpellCount} spell(s) but magic_skill is NOT authored - players will resist them");
             }
             else Ok("no spells - magic_skill not needed");
@@ -5711,8 +5711,9 @@ namespace ACE.Server.Command.Handlers
             public int CreatureType;
             public string CreatureTypeName = "";
             public MobCheckSource CreatureTypeSource;
-            public int BookSpells, ZoneSpells;
-            public int SpellCount => BookSpells + ZoneSpells;
+            public int BookSpells, ZoneSpells, CasterSpells;
+            // caster-list rules count too: a caster-list-only monster still casts once it rolls a magic archetype
+            public int SpellCount => BookSpells + ZoneSpells + CasterSpells;
             public bool HasMagicSkill;
             public int MagicSkill;
             public string RankLabel = "";
@@ -5787,6 +5788,7 @@ namespace ACE.Server.Command.Handlers
             // casting - authored spell damage lands on the mob's own magic skill unless overridden
             r.BookSpells = weenie.PropertiesSpellBook?.Count ?? 0;
             r.ZoneSpells = eval?.SpellRules?.Count(sr => !sr.Disabled && !sr.Caster) ?? 0;
+            r.CasterSpells = eval?.SpellRules?.Count(sr => !sr.Disabled && sr.Caster) ?? 0;
             r.HasMagicSkill = Has(ZoneStat.MagicSkill);
             r.MagicSkill = r.HasMagicSkill ? (int)Val(ZoneStat.MagicSkill) : 0;
 

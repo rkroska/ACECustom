@@ -14,7 +14,7 @@ namespace ACE.Server.Command.Handlers
 {
     public static partial class TestCharacterCommands
     {
-        // ── /testchar preset (owner 2026-10-21, Schneebly) ───────────────────────────────────────────────────────────
+        // -- /testchar preset (owner 2026-10-21, Schneebly) -----------------------------------------------------------
         // One command that builds a tester at a tier and play style - stats, augs, skills, gear, weapons and the style's
         // levelled charm - so testers do not need the plugin's Character tab or a page of numbers. It runs the SAME
         // setters, forges and charm toggles the plugin and the other test commands use, in the plugin's order.
@@ -110,7 +110,12 @@ namespace ACE.Server.Command.Handlers
             var augs = PresetAugs(tier, row, max);
             Msg($"testchar preset: T{tier} {style.Label}, {(max ? "max" : "entry")}, charm level {charmLevel}. Augs (creature,item,life,war,void,duration,specialize,summon,melee,missile) = {augs.Augs}; charms (weave,wrath,nether,steel,trueshot) = {augs.Charms}.");
 
-            // 1. the character - the plugin's preset batch, in its order (attributes and enlightenment before vitals)
+            // 1. the character - the plugin's preset batch, in its order (attributes and enlightenment before vitals).
+            // The reset destroys the charm items but not the abilities they switched on, so turn those off first, or the
+            // previous preset's charm stays live on top of this one.
+            foreach (var abilityId in CharmAbilityRegistry.RegisteredIds.ToList())
+                if (CharmAbilityRegistry.IsActive(player, abilityId))
+                    CharmAbilityRegistry.Apply(player, abilityId, false);
             ResetToTier0(player);
             HandleCharacterSetter(session, player, new[] { "set", "attrs", PresetAttrs });
             HandleCharacterSetter(session, player, new[] { "set", "level", PresetLevel.ToString() });
