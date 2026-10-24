@@ -488,6 +488,7 @@ namespace ACE.Server.Entity.Actions
         Player_CloakSelfViewAtLogin,        // cloak: re-sends what a cloaked (On / Ghost) player's own client draws, a second after login
         DungeonBuilder_LiveEdit,            // dungeon builder: a placed wall / generator moved or turned on its own landblock's thread
         CreatureDeath_BankCorpseCoins,      // pyreal auto-deposit: a kill's coins handed to the killer's bank on the world queue
+        TierRewards_PrestigeCoins,          // tier rewards: a T11+ kill's Prestige Coins handed to the top damager's own thread
     }
     public static class ActionTypeConverter
     {

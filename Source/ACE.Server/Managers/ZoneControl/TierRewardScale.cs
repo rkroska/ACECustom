@@ -75,5 +75,45 @@ namespace ACE.Server.Managers.ZoneControl
             var tier = ZoneControlManager.GetEffectiveVariation(creature);
             return tier >= MinTier && tier <= ZoneRare.MaxTier ? tier : 0;
         }
+
+        // ---- Prestige Coins per kill ------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Coins one kill at this tier is worth before the dip: <paramref name="baseValue"/> at T11, x <paramref name="tierStep"/>
+        /// for each tier above it. 0 below T11, past T25, and for a base of 0 or less (off). A step of 0 or less counts as 1.
+        /// </summary>
+        public static double ZoneValue(int killTier, double baseValue, double tierStep)
+        {
+            if (killTier < MinTier || killTier > ZoneRare.MaxTier)
+                return 0.0;
+            if (double.IsNaN(baseValue) || baseValue <= 0)
+                return 0.0;
+
+            var step = double.IsNaN(tierStep) || tierStep <= 0 ? 1.0 : tierStep;
+            var value = baseValue * Math.Pow(step, killTier - MinTier);
+            return double.IsFinite(value) ? value : 0.0;
+        }
+
+        /// <summary>The live zone value (zc_pcoin_kill_base / zc_pcoin_kill_tier_step).</summary>
+        public static double ZoneValue(int killTier)
+            => ZoneValue(killTier, ServerConfig.zc_pcoin_kill_base.Value, ServerConfig.zc_pcoin_kill_tier_step.Value);
+
+        /// <summary>
+        /// Adds <paramref name="earned"/> coins to a carried fraction: the whole coins to bank, and the fraction left over
+        /// (always in [0, 1)). A bad carried value (NaN, negative, 1 or more from a hand edit) is treated as 0 rather than
+        /// minting coins from it.
+        /// </summary>
+        public static (long Whole, double Fraction) AddCoins(double carried, double earned)
+        {
+            var c = double.IsFinite(carried) && carried >= 0 && carried < 1 ? carried : 0.0;
+            var e = double.IsFinite(earned) && earned > 0 ? earned : 0.0;
+
+            var total = c + e;
+            var whole = Math.Floor(total);
+            var frac = total - whole;
+            if (!(frac >= 0) || frac >= 1)
+                frac = 0.0;
+            return ((long)whole, frac);
+        }
     }
 }

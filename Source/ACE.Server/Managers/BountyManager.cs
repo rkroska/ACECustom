@@ -185,8 +185,9 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Only kills that pay kill XP or luminance count (review 2026-09-24): the same numbers OnDeath_GrantXP uses - the
         /// weenie's, or the governing zone's when it authors them - and nothing on a no-death-XP landblock.
+        /// Also the gate for tier-reward Prestige Coins (TierRewards), so a kill that pays no XP pays no coins either.
         /// </summary>
-        private static bool PaysBounty(Creature victim)
+        internal static bool PaysBounty(Creature victim)
         {
             if (victim.IsOnNoDeathXPLandblock || victim.DamageHistory.TotalHealth == 0)
                 return false;

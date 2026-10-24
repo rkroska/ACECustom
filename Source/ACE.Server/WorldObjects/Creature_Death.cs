@@ -90,6 +90,9 @@ namespace ACE.Server.WorldObjects
             // damager, the player the corpse and its loot belong to.
             BountyManager.OnCreatureKilled(this);
 
+            // Tier rewards (owner 2026-10-24): Prestige Coins for the top damager of a T11+ Zone Control kill. Bounties pay none.
+            ACE.Server.Managers.ZoneControl.TierRewards.OnCreatureKilled(this);
+
             return GetDeathMessage(lastDamager, damageType, criticalHit);
         }
 

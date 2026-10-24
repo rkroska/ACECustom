@@ -68,5 +68,77 @@ namespace ACE.Server.Tests
             Assert.AreEqual(1.0, TierRewardScale.Credit(15, 11, double.NaN, 0));
             Assert.AreEqual(0.4, TierRewardScale.Credit(15, 11, 0.15, double.NaN), 1e-9, "a NaN floor counts as 0");
         }
+        // -- Prestige Coins per kill --
+
+        [TestMethod]
+        public void Defaults_PrestigeCoinsPerKill()
+        {
+            Assert.AreEqual(0.05, ServerConfig.zc_pcoin_kill_base.Default, 1e-9);
+            Assert.AreEqual(1.20, ServerConfig.zc_pcoin_kill_tier_step.Default, 1e-9);
+        }
+
+        [TestMethod]
+        public void ZoneValue_PlusTwentyPctPerTier()
+        {
+            Assert.AreEqual(0.050, TierRewardScale.ZoneValue(11, 0.05, 1.2), 1e-9);
+            Assert.AreEqual(0.060, TierRewardScale.ZoneValue(12, 0.05, 1.2), 1e-9);
+            Assert.AreEqual(0.072, TierRewardScale.ZoneValue(13, 0.05, 1.2), 1e-9);
+            Assert.AreEqual(0.0864, TierRewardScale.ZoneValue(14, 0.05, 1.2), 1e-9);
+            Assert.AreEqual(0.10368, TierRewardScale.ZoneValue(15, 0.05, 1.2), 1e-9);
+        }
+
+        [TestMethod]
+        public void ZoneValue_OnlyT11ToT25()
+        {
+            Assert.AreEqual(0.0, TierRewardScale.ZoneValue(10, 0.05, 1.2), "T10 / Valley of Death pays nothing");
+            Assert.AreEqual(0.0, TierRewardScale.ZoneValue(0, 0.05, 1.2));
+            Assert.AreEqual(0.0, TierRewardScale.ZoneValue(26, 0.05, 1.2));
+            Assert.AreEqual(0.0, TierRewardScale.ZoneValue(13, 0, 1.2), "a base of 0 is off");
+            Assert.AreEqual(0.0, TierRewardScale.ZoneValue(13, double.NaN, 1.2));
+            Assert.AreEqual(0.05, TierRewardScale.ZoneValue(13, 0.05, 0), 1e-9, "a bad step counts as 1");
+        }
+
+        [TestMethod]
+        public void AddCoins_CarriesTheFraction()
+        {
+            var (whole, frac) = TierRewardScale.AddCoins(0, 0.05);
+            Assert.AreEqual(0, whole);
+            Assert.AreEqual(0.05, frac, 1e-12);
+
+            (whole, frac) = TierRewardScale.AddCoins(0.97, 0.05);
+            Assert.AreEqual(1, whole);
+            Assert.AreEqual(0.02, frac, 1e-9);
+
+            (whole, frac) = TierRewardScale.AddCoins(0.5, 2.75);
+            Assert.AreEqual(3, whole);
+            Assert.AreEqual(0.25, frac, 1e-9);
+        }
+
+        [TestMethod]
+        public void AddCoins_TwentyKillsMakeOneCoin()
+        {
+            double carried = 0;
+            long banked = 0;
+            for (var i = 0; i < 20; i++)
+            {
+                var (whole, frac) = TierRewardScale.AddCoins(carried, 0.05);
+                banked += whole;
+                carried = frac;
+            }
+            // 20 x 0.05 in floating point may land a hair under 1; the 21st kill must then finish the coin
+            if (banked == 0)
+                banked += TierRewardScale.AddCoins(carried, 0.05).Whole;
+            Assert.AreEqual(1, banked);
+        }
+
+        [TestMethod]
+        public void AddCoins_BadInputsMintNothing()
+        {
+            Assert.AreEqual((0L, 0.0), TierRewardScale.AddCoins(5.0, 0), "a hand-edited carry of 5 is not 5 coins");
+            Assert.AreEqual((0L, 0.0), TierRewardScale.AddCoins(double.NaN, 0));
+            Assert.AreEqual((0L, 0.0), TierRewardScale.AddCoins(-3, 0));
+            Assert.AreEqual(0L, TierRewardScale.AddCoins(0.5, -10).Whole);
+            Assert.AreEqual(0L, TierRewardScale.AddCoins(0.5, double.PositiveInfinity).Whole);
+        }
     }
 }
