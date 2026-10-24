@@ -122,7 +122,8 @@ namespace ACE.Server.Command.Handlers
             "  - shrapnel           - Tectonic (Bludgeon Ring) spells now cast Rocky Shrapnel.\n" +
             "  - universalsummoning - Bypasses summoning mastery skill checks (can use all pet types).\n" +
             "\nUse /charm <name> to see current settings and all adjustable keys.\n" +
-            "Use /charm level <name> <1-100> to set the level of a levelled charm you carry.";
+            "Use /charm level <name> <1-100> to set the level of a levelled charm you carry.\n" +
+            "Use /charm curve <name> to see the coin price of every level, and /charm coins <name> [set <N>] [player] to see or set the coins put in.";
 
 
         // ── /charms ──────────────────────────────────────────────────────────
@@ -143,6 +144,8 @@ namespace ACE.Server.Command.Handlers
             "  /charm <name> <key> <value>      - set a value (e.g. /charm manabarrier ratio 0.5)\n" +
             "  /charm <name> true|false|on|off  - enable or disable a charm\n" +
             "  /charm level <name> <1-100>      - set the level of the levelled charm you carry (test tool)\n" +
+            "  /charm curve <name>              - the Prestige Coin price of every level of a levelled charm\n" +
+            "  /charm coins <name> [set <N>] [player] - coins put into a levelled charm (yours, or an online player's)\n" +
             "  /charm sync [help]               - every charm's settings as plugin wire lines\n" +
             "\nCharm names are flexible: 'manabarrier' or 'Mana Barrier' both work.")]
         public static void HandleCharm(Session session, params string[] parameters)
@@ -170,6 +173,20 @@ namespace ACE.Server.Command.Handlers
             if (parameters[0].Equals("level", StringComparison.OrdinalIgnoreCase))
             {
                 HandleCharmLevel(session, parameters.Skip(1).ToArray());
+                return;
+            }
+
+            // -- /charm curve <name>  (the coin price of every level) ----------
+            if (parameters[0].Equals("curve", StringComparison.OrdinalIgnoreCase))
+            {
+                HandleCharmCurve(session, parameters.Skip(1).ToArray());
+                return;
+            }
+
+            // -- /charm coins <name> [set <N>] [player]  (the coin ledger) -----
+            if (parameters[0].Equals("coins", StringComparison.OrdinalIgnoreCase))
+            {
+                HandleCharmCoins(session, parameters.Skip(1).ToArray());
                 return;
             }
 
@@ -229,6 +246,18 @@ namespace ACE.Server.Command.Handlers
                 }
                 Broadcast(session, $"[CHARM] {result}");
                 SendWire(session, charmName);
+
+                // a new price curve re-levels everyone from the coins they have put in: the online players now, on their
+                // own threads; the others at their next login (Player.SyncLevelledCharms)
+                if (CharmSettingsManager.LeveledAbilityId(charmName) != 0 && CharmSettingsManager.LeveledCharmBlock.IsCurveKey(key))
+                {
+                    foreach (var online in PlayerManager.GetAllOnline())
+                    {
+                        var p = online;
+                        LandblockManager.RunOnThreadFor(p, ACE.Server.Entity.Actions.ActionType.Charm_RefreshLevels, () => p.SyncLevelledCharms());
+                    }
+                    Reply(session, "Every online player's charm levels were worked out again from the coins they have put in.");
+                }
                 return;
             }
 
@@ -291,7 +320,7 @@ namespace ACE.Server.Command.Handlers
 
         /// <summary>/charm level &lt;name&gt; &lt;1-100&gt;: sets the caller's level of a levelled charm they carry (the level lives on
         /// the player; every copy carried shows it) and, when it is switched on, the level the ability uses at once. A test
-        /// tool - players raise levels with upgrade gems (Player_CharmLevels.cs).</summary>
+        /// tool - players raise levels by putting Prestige Coins in with Charm Infusion Gems (Player_CharmLevels.cs).</summary>
         private static void HandleCharmLevel(Session session, string[] parameters)
         {
             var player = session?.Player;
@@ -311,6 +340,64 @@ namespace ACE.Server.Command.Handlers
             Reply(session, $"{item.Name} is now level {level}" + (item.IsCharmActivated ? " (active - in use at once)." : " (switched off)."));
             Reply(session, CharmSettingsManager.DescribeAtLevel(charmName, level));
             SendMyLevels(session);
+        }
+
+        /// <summary>/charm curve &lt;name&gt;: the Prestige Coin price of a levelled charm's levels, from its live coinbase /
+        /// coingrowth.</summary>
+        private static void HandleCharmCurve(Session session, string[] parameters)
+        {
+            var charmName = parameters.Length > 0 ? ResolveCharmName(parameters, 0, out _) : null;
+            var block = charmName != null && CharmSettingsManager.LeveledBlocks.TryGetValue(charmName, out var b) ? b : null;
+            if (block == null) { Reply(session, "Usage: /charm curve <name>. Levelled charms: " + string.Join(", ", CharmSettingsManager.LeveledBlocks.Keys) + "."); return; }
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"[{block.DisplayName}] coin price curve: coinbase {block.CoinBase:0.##}, coingrowth {block.CoinGrowth:0.####}\n");
+            sb.Append("  To level   This level    Total coins\n");
+            foreach (var level in new[] { 2, 5, 10, 15, 20, 25, 30, 40, 45, 50, 60, 70, 75, 80, 90, 95, 100 })
+                sb.Append($"  {level,8}   {block.CoinsForLevel(level - 1),10:N0}   {block.CoinsToReach(level),12:N0}\n");
+            sb.Append($"Level 100 needs {block.MaxCoins:N0} Prestige Coins in all.");
+            Reply(session, sb.ToString());
+        }
+
+        /// <summary>/charm coins &lt;name&gt; [set &lt;N&gt;] [player]: shows or sets the Prestige Coins put into a levelled charm -
+        /// the caller's, or an online player's. Setting them re-levels the charm at once (a test / fix tool).</summary>
+        private static void HandleCharmCoins(Session session, string[] parameters)
+        {
+            const string usage = "Usage: /charm coins <name> [set <N>] [player name]";
+            var consumed = 0;
+            var charmName = parameters.Length > 0 ? ResolveCharmName(parameters, 0, out consumed) : null;
+            var abilityId = charmName != null ? CharmSettingsManager.LeveledAbilityId(charmName) : 0;
+            var block = abilityId != 0 ? CharmSettingsManager.LeveledBlockFor(abilityId) : null;
+            if (block == null) { Reply(session, usage + ". Levelled charms: " + string.Join(", ", CharmSettingsManager.LeveledBlocks.Keys) + "."); return; }
+
+            var rest = parameters.Skip(consumed).ToList();
+            long? set = null;
+            if (rest.Count > 0 && rest[0].Equals("set", StringComparison.OrdinalIgnoreCase))
+            {
+                if (rest.Count < 2 || !long.TryParse(rest[1].Replace(",", ""), out var n) || n < 0)
+                { Reply(session, usage + " - N is a whole number of coins, 0 or more."); return; }
+                set = n;
+                rest = rest.Skip(2).ToList();
+            }
+
+            var who = rest.Count > 0 ? string.Join(" ", rest) : null;
+            var target = who != null ? PlayerManager.GetOnlinePlayer(who) : session?.Player;
+            if (target == null) { Reply(session, who != null ? $"{who} is not online." : "/charm coins needs a character in the world, or a player name."); return; }
+
+            if (set.HasValue)
+            {
+                var value = set.Value;
+                LandblockManager.RunOnThreadFor(target, ACE.Server.Entity.Actions.ActionType.Charm_RefreshLevels, () =>
+                {
+                    target.SetCharmCoins(abilityId, value);
+                    target.SaveBiotaToDatabase();
+                });
+                var shown = Math.Clamp(value, 0, block.MaxCoins);
+                Broadcast(session, $"[CHARM] {target.Name}: {block.DisplayName} coins set to {shown:N0} ({Player.CharmLevelText(block, shown)}).");
+                return;
+            }
+
+            Reply(session, $"{target.Name}: {Player.CharmProgressText(block, target.GetCharmCoins(abilityId))}");
         }
 
         private static void Reply(Session session, string msg)

@@ -9,93 +9,106 @@ using ACE.Server.Network.GameMessages.Messages;
 namespace ACE.Server.WorldObjects
 {
     /// <summary>
-    /// Levelled charm levels (owner 2026-10-17). The level of Split Arrow, Chain, Pandemic and Improved Cleave lives on the
-    /// PLAYER (PropertyInt64 51200-51203); the charm item only shows it - its PropertyInt.CharmLevel is a mirror, written
-    /// whenever the level changes, at login and when the charm is switched on. Using the charm still switches it on / off.
+    /// Levelled charm coin ledger (owner 2026-10-24). For Split Arrow, Chain, Pandemic, Improved Cleave, Armor Breaker and
+    /// Shield Arc the PLAYER keeps the Prestige Coins put into each charm (PropertyInt64 51200-51205); the level (1-100)
+    /// is worked out from them by the charm's live price curve (CharmSettingsManager: coinbase, coingrowth), so a retune
+    /// re-levels everyone without touching what they spent. The charm item only shows the level - its PropertyInt.CharmLevel
+    /// is a mirror, written whenever the level changes, at login and when the charm is switched on. Using the charm still
+    /// switches it on / off. Charm effects use the whole level; the share of the way to the next one is shown, not used.
     ///
-    /// A level is raised with an upgrade gem bought for Prestige Coins: the gem's Use emote is PromptAddAugment with the
-    /// message "CharmLevel_&lt;charm&gt;_&lt;levels&gt;" (e.g. "CharmLevel_chain_5"). Using it needs the charm in the pack, never
-    /// goes past level 100, and charges the charm's live "gemcost" setting in Prestige Coins (pack first, then the bank)
-    /// for each level it adds, so the cost rises with the level. The gem is used up.
+    /// Coins go in with Charm Infusion Gems, bought from Enephior 1:1 for Prestige Coins (the vendor takes pack or bank).
+    /// A gem is used ON a levelled charm in the player's own possession: it asks first, refuses a gem that would take the
+    /// charm past level 100, checks everything again on Yes, uses up one gem and adds its coins. One gem type works for
+    /// every charm; its PropertyInt.CharmInfusionCoins is what one gem puts in. No refunds - coins put in stay put in.
     /// </summary>
     partial class Player
     {
-        public const string CharmLevelGemPrefix = "CharmLevel_";
-
         private const int MaxCharmLevel = CharmSettingsManager.LeveledCharmBlock.MaxLevel;
 
-        /// <summary>The player property that holds a levelled charm's level; null for any other ability.</summary>
-        public static PropertyInt64? CharmLevelProperty(int abilityId) => abilityId switch
+        /// <summary>The player property that holds the coins put into a levelled charm; null for any other ability.</summary>
+        public static PropertyInt64? CharmCoinsProperty(int abilityId) => abilityId switch
         {
-            CharmAbilityRegistry.SplitArrowAbilityId => PropertyInt64.SplitArrowCharmLevel,
-            CharmAbilityRegistry.ChainAbilityId => PropertyInt64.ChainCharmLevel,
-            CharmAbilityRegistry.PandemicAbilityId => PropertyInt64.PandemicCharmLevel,
-            CharmAbilityRegistry.ImprovedCleaveAbilityId => PropertyInt64.ImprovedCleaveCharmLevel,
-            CharmAbilityRegistry.ArmorBreakerAbilityId => PropertyInt64.ArmorBreakerCharmLevel,
-            CharmAbilityRegistry.ShieldArcAbilityId => PropertyInt64.ShieldArcCharmLevel,
+            CharmAbilityRegistry.SplitArrowAbilityId => PropertyInt64.SplitArrowCharmCoins,
+            CharmAbilityRegistry.ChainAbilityId => PropertyInt64.ChainCharmCoins,
+            CharmAbilityRegistry.PandemicAbilityId => PropertyInt64.PandemicCharmCoins,
+            CharmAbilityRegistry.ImprovedCleaveAbilityId => PropertyInt64.ImprovedCleaveCharmCoins,
+            CharmAbilityRegistry.ArmorBreakerAbilityId => PropertyInt64.ArmorBreakerCharmCoins,
+            CharmAbilityRegistry.ShieldArcAbilityId => PropertyInt64.ShieldArcCharmCoins,
             _ => null,
         };
 
-        /// <summary>The player's level (1-100) of a levelled charm; 0 when they have never had one (or the ability is not levelled).</summary>
-        public int GetCharmLevel(int abilityId)
+        /// <summary>Prestige Coins this player has put into a levelled charm (0 for any other ability).</summary>
+        public long GetCharmCoins(int abilityId)
         {
-            var prop = CharmLevelProperty(abilityId);
-            if (prop == null) return 0;
-            return (int)Math.Clamp(GetProperty(prop.Value) ?? 0, 0, MaxCharmLevel);
+            var prop = CharmCoinsProperty(abilityId);
+            return prop == null ? 0 : Math.Max(0, GetProperty(prop.Value) ?? 0);
         }
 
-        /// <summary>Sets the player's level of a levelled charm, mirrors it onto every copy carried and, when the charm is
-        /// switched on, makes the ability use it at once.</summary>
+        /// <summary>The player's whole level (1-100) of a levelled charm, from the coins put in; 0 when the ability is not a
+        /// levelled charm's.</summary>
+        public int GetCharmLevel(int abilityId)
+        {
+            var block = CharmSettingsManager.LeveledBlockFor(abilityId);
+            return block == null ? 0 : block.LevelFromCoins(GetCharmCoins(abilityId));
+        }
+
+        /// <summary>The level with the share of the way to the next one (41.95 = level 41, 95 pct to 42); 0 when not levelled.</summary>
+        public double GetCharmLevelExact(int abilityId)
+        {
+            var block = CharmSettingsManager.LeveledBlockFor(abilityId);
+            return block == null ? 0 : block.ExactLevelFromCoins(GetCharmCoins(abilityId));
+        }
+
+        /// <summary>Sets the coins put into a levelled charm (held to 0 .. the coins that reach level 100), then shows the
+        /// level it reaches on every copy carried and, when the charm is switched on, makes the ability use it at once.
+        /// Returns the whole level.</summary>
+        public int SetCharmCoins(int abilityId, long coins)
+        {
+            var prop = CharmCoinsProperty(abilityId);
+            var block = CharmSettingsManager.LeveledBlockFor(abilityId);
+            if (prop == null || block == null) return 0;
+
+            coins = Math.Clamp(coins, 0, block.MaxCoins);
+            SetProperty(prop.Value, coins);
+            Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, prop.Value, coins));
+            return ApplyCharmLevel(abilityId, block.LevelFromCoins(coins));
+        }
+
+        /// <summary>Sets a levelled charm to exactly the start of a level (test tools: /charm level, /testchar preset).</summary>
         public void SetCharmLevel(int abilityId, int level)
         {
-            var prop = CharmLevelProperty(abilityId);
-            if (prop == null) return;
+            var block = CharmSettingsManager.LeveledBlockFor(abilityId);
+            if (block == null) return;
+            SetCharmCoins(abilityId, block.CoinsToReach(Math.Clamp(level, 1, MaxCharmLevel)));
+        }
 
-            level = Math.Clamp(level, 1, MaxCharmLevel);
-            SetProperty(prop.Value, level);
-            Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, prop.Value, level));
-
+        /// <summary>Shows a level on every copy of the charm carried and, when the charm is on, in the live ability.</summary>
+        private int ApplyCharmLevel(int abilityId, int level)
+        {
             foreach (var item in GetAllPossessionsDeep())
                 if (item.IsAbilityCharm && item.CharmGrantsAbility == abilityId)
                     MirrorCharmLevel(item, level);
 
             if (CharmAbilityRegistry.IsActive(this, abilityId))
                 ActiveCharmLevels[abilityId] = level;
+            return level;
         }
 
-        /// <summary>Before a levelled charm item is used: makes its shown level the player's. The first charm of its kind
-        /// a player ever has starts the player's level at its own (1 for a bought one).</summary>
+        /// <summary>Before a levelled charm item is used: makes its shown level the player's.</summary>
         public void SyncLevelledCharmItem(WorldObject item, int abilityId)
         {
-            var prop = CharmLevelProperty(abilityId);
-            if (prop == null) return;
-
-            var level = GetCharmLevel(abilityId);
-            if (level == 0)
-            {
-                level = Math.Clamp(item.CharmLevel ?? 1, 1, MaxCharmLevel);
-                SetProperty(prop.Value, level);
-            }
-            MirrorCharmLevel(item, level);
+            if (CharmCoinsProperty(abilityId) == null) return;
+            MirrorCharmLevel(item, GetCharmLevel(abilityId));
         }
 
-        /// <summary>At login: every levelled charm carried shows the player's level. A player with no level yet starts at
-        /// the highest level among the copies carried (charms levelled before 2026-10-17 keep their level).</summary>
+        /// <summary>At login, and after a price curve change: every levelled charm carried shows the level its coins reach
+        /// today, and a switched-on one uses it.</summary>
         public void SyncLevelledCharms()
         {
-            var charms = GetAllPossessionsDeep()
-                .Where(i => i.IsAbilityCharm && i.CharmGrantsAbility.HasValue && CharmLevelProperty(i.CharmGrantsAbility.Value) != null)
-                .GroupBy(i => i.CharmGrantsAbility.Value);
-
-            foreach (var kind in charms)
+            foreach (var block in CharmSettingsManager.LeveledBlocks.Values)
             {
-                var abilityId = kind.Key;
-                if (GetCharmLevel(abilityId) == 0)
-                    SetProperty(CharmLevelProperty(abilityId).Value, Math.Clamp(kind.Max(i => i.CharmLevel ?? 1), 1, MaxCharmLevel));
-
-                var level = GetCharmLevel(abilityId);
-                foreach (var item in kind)
-                    MirrorCharmLevel(item, level);
+                var abilityId = CharmSettingsManager.LeveledAbilityId(block.Name);
+                ApplyCharmLevel(abilityId, block.LevelFromCoins(GetCharmCoins(abilityId)));
             }
         }
 
@@ -106,138 +119,115 @@ namespace ACE.Server.WorldObjects
             item.SaveBiotaToDatabase();
         }
 
-        /// <summary>Prestige Coins in the pack plus the bank.</summary>
-        public long PrestigeCoinsAvailable() => GetNumInventoryItemsOfWCID(PRESTIGE_COIN_WCID) + (BankedPrestigeCoins ?? 0);
+        // -- Charm Infusion Gems ---------------------------------------------
 
-        /// <summary>Takes Prestige Coins, pack first, then the bank (as vendors do). The caller checks there are enough.
-        /// False when they could not all be taken (a pack consume that failed part-way and a bank too small for the rest);
-        /// <paramref name="taken"/> is what WAS taken either way, so the caller can give it back.</summary>
-        private bool SpendPrestigeCoins(long amount, out long taken)
+        /// <summary>True for a Charm Infusion Gem (an item whose CharmInfusionCoins is set).</summary>
+        public static bool IsCharmInfusionGem(WorldObject item) => (item?.GetProperty(PropertyInt.CharmInfusionCoins) ?? 0) > 0;
+
+        /// <summary>"Level 41 (95% to 42)" - or "Level 100 (max)".</summary>
+        public static string CharmLevelText(CharmSettingsManager.LeveledCharmBlock block, long coins)
         {
-            long packBefore = GetNumInventoryItemsOfWCID(PRESTIGE_COIN_WCID);
-            long fromPack = Math.Min(amount, packBefore);
-            if (fromPack > 0 && !TryConsumeFromInventoryWithNetworking(PRESTIGE_COIN_WCID, (int)fromPack))
-                fromPack = Math.Max(0, packBefore - GetNumInventoryItemsOfWCID(PRESTIGE_COIN_WCID));   // what it did take
-
-            taken = fromPack;
-            long fromBank = amount - fromPack;
-            if (fromBank > 0)
-            {
-                if ((BankedPrestigeCoins ?? 0) < fromBank)
-                    return false;
-                BankedPrestigeCoins = (BankedPrestigeCoins ?? 0) - fromBank;
-                taken += fromBank;
-            }
-            return true;
+            var level = block.LevelFromCoins(coins);
+            if (level >= MaxCharmLevel) return $"Level {MaxCharmLevel} (max)";
+            var exact = block.ExactLevelFromCoins(coins);
+            var pct = (int)Math.Floor((exact - level) * 100);
+            return $"Level {level} ({pct}% to {level + 1})";
         }
 
-        /// <summary>Gives Prestige Coins back into the bank (the payment for a gem that could not be completed).</summary>
-        private void RefundPrestigeCoinsToBank(long amount)
+        /// <summary>A Charm Infusion Gem was used on something (Gem.HandleActionUseOnTarget).</summary>
+        public void UseCharmInfusionGem(WorldObject gem, WorldObject target)
         {
-            if (amount <= 0) return;
-            BankedPrestigeCoins = (BankedPrestigeCoins ?? 0) + amount;
-            log.Warn($"[CHARM] {Name}: {amount} Prestige Coins put back in the bank after an upgrade gem could not be completed.");
-        }
+            var amount = (long)(gem.GetProperty(PropertyInt.CharmInfusionCoins) ?? 0);
+            var abilityId = target?.CharmGrantsAbility ?? 0;
+            var block = target != null && target.IsAbilityCharm ? CharmSettingsManager.LeveledBlockFor(abilityId) : null;
 
-        /// <summary>Prestige Coins to raise a levelled charm from <paramref name="from"/> by <paramref name="levels"/>: the
-        /// charm's gemcost at each level being left, added up.</summary>
-        public static long CharmGemCost(CharmSettingsManager.LeveledCharmBlock block, int from, int levels)
-        {
-            double total = 0;
-            for (var level = from; level < from + levels; level++)
-                total += block.At("gemcost", level);
-            return (long)Math.Round(total, MidpointRounding.AwayFromZero);
-        }
-
-        /// <summary>An upgrade gem was used (EmoteManager, PromptAddAugment "CharmLevel_&lt;charm&gt;_&lt;levels&gt;").</summary>
-        public void UseCharmLevelGem(WorldObject gem, string message)
-        {
-            var rest = message.Substring(CharmLevelGemPrefix.Length);
-            var cut = rest.LastIndexOf('_');
-            var charmName = cut > 0 ? rest.Substring(0, cut) : "";
-            if (cut <= 0 || !int.TryParse(rest.Substring(cut + 1), out var levels) || levels < 1
-                || !CharmSettingsManager.LeveledBlocks.TryGetValue(charmName, out var block))
+            if (amount <= 0)
             {
-                TellCharm($"This gem is not set up right ({message}). Please tell a developer.");
+                TellCharm($"This gem is not set up right ({gem.WeenieClassId}). Please tell a developer.");
+                return;
+            }
+            if (block == null)
+            {
+                TellCharm("Use a Charm Infusion Gem on a levelled charm: Split Arrow, Chain, Pandemic, Improved Cleave, Armor Breaker or Shield Arc.");
+                return;
+            }
+            if (!OwnsItem(target) || !OwnsItem(gem))
+            {
+                TellCharm("The gem and the charm must both be in your own pack.");
                 return;
             }
 
-            var abilityId = CharmSettingsManager.LeveledAbilityId(charmName);
-            var charm = GetAllPossessionsDeep().FirstOrDefault(i => i.IsAbilityCharm && i.CharmGrantsAbility == abilityId);
-            if (charm == null)
+            var coins = GetCharmCoins(abilityId);
+            var room = block.MaxCoins - coins;
+            if (room <= 0)
             {
-                TellCharm($"You must possess a {block.DisplayName} charm to use this gem.");
+                TellCharm($"Your {block.DisplayName} charm is already level {MaxCharmLevel}.");
+                return;
+            }
+            if (amount > room)
+            {
+                TellCharm($"Your {block.DisplayName} charm needs only {room:N0} more coins to reach level {MaxCharmLevel}. This gem holds {amount:N0}, so it was not used. Use smaller gems to finish.");
                 return;
             }
 
-            SyncLevelledCharmItem(charm, abilityId);
-            var from = GetCharmLevel(abilityId);
-            var to = from + levels;
-            if (to > MaxCharmLevel)
-            {
-                TellCharm($"Your {block.DisplayName} charm is level {from}. This gem adds {levels} and would take it past level {MaxCharmLevel}, so it was not used.");
-                return;
-            }
-
-            var cost = CharmGemCost(block, from, levels);
-            var have = PrestigeCoinsAvailable();
-            if (have < cost)
-            {
-                TellCharm($"Raising your {block.DisplayName} charm from level {from} to {to} costs {cost:N0} Prestige Coins (pack or bank). You have {have:N0}.");
-                return;
-            }
-
-            if (cost == 0)
-            {
-                ApplyCharmLevelGem(gem, block, abilityId, from, levels, 0);
-                return;
-            }
+            var from = block.ExactLevelFromCoins(coins);
+            var to = block.ExactLevelFromCoins(coins + amount);
 
             // another prompt already open (a second gem, a rare or augment gem): say so, as Gem.cs does, instead of nothing
             if (!ConfirmationManager.EnqueueSend(new Confirmation_Custom(Guid, (response, _) =>
                 {
                     if (response)
-                        ApplyCharmLevelGem(gem, block, abilityId, from, levels, cost);
-                }), $"Spend {cost:N0} Prestige Coins and this gem to raise your {block.DisplayName} charm from level {from} to level {to}?"))
+                        ApplyCharmInfusionGem(gem, target, block, abilityId, coins, amount);
+                }), $"Put {amount:N0} Prestige Coins into your {block.DisplayName} Charm? Level {from:0.00} -> {to:0.00}"))
                 SendWeenieError(WeenieError.ConfirmationInProgress);
         }
 
-        private void ApplyCharmLevelGem(WorldObject gem, CharmSettingsManager.LeveledCharmBlock block, int abilityId, int from, int levels, long cost)
+        private void ApplyCharmInfusionGem(WorldObject gem, WorldObject charm, CharmSettingsManager.LeveledCharmBlock block, int abilityId, long coinsBefore, long amount)
         {
-            // Everything can change between the prompt and the answer (another gem, coins spent, the gem moved) - check again.
-            if (GetCharmLevel(abilityId) != from)
+            // Everything can change between the prompt and the answer (another gem, a retune, the gem or charm moved) - check again.
+            if (!OwnsItem(gem) || !OwnsItem(charm) || charm.CharmGrantsAbility != abilityId)
             {
-                TellCharm($"Your {block.DisplayName} charm's level changed. Use the gem again.");
+                TellCharm("The gem and the charm must both still be in your pack. Nothing was used.");
                 return;
             }
-            if (PrestigeCoinsAvailable() < cost)
+            if (GetCharmCoins(abilityId) != coinsBefore)
             {
-                TellCharm($"You no longer have the {cost:N0} Prestige Coins this needs.");
+                TellCharm($"Your {block.DisplayName} charm changed. Use the gem again.");
                 return;
             }
-            // The coins go first, then the gem (review 2026-10-20 round 2): whatever fails part-way, the player keeps the gem
-            // and every coin taken goes back (to the bank), and a level is never given for less than its price.
-            long taken = 0;
-            if (cost > 0 && !SpendPrestigeCoins(cost, out taken))
+            if (coinsBefore + amount > block.MaxCoins)
             {
-                RefundPrestigeCoinsToBank(taken);
-                TellCharm($"The {cost:N0} Prestige Coins could not all be taken, so nothing was spent and the charm was not raised. Any coins taken are back in your bank.");
-                SaveBiotaToDatabase();
+                TellCharm($"That gem would now take your {block.DisplayName} charm past level {MaxCharmLevel}, so it was not used.");
                 return;
             }
+            // The gem goes first: if it cannot be used up, no coins are added (a gem never adds coins twice).
             if (!TryConsumeFromInventoryWithNetworking(gem, 1))
             {
-                RefundPrestigeCoinsToBank(taken);
-                TellCharm("Failed to consume the gem, so the charm was not raised." + (taken > 0 ? " The coins are back in your bank." : "") + " Please try again.");
-                SaveBiotaToDatabase();
+                TellCharm("The gem could not be used, so nothing changed. Please try again.");
                 return;
             }
 
-            SetCharmLevel(abilityId, from + levels);
-            TellCharm($"Your {block.DisplayName} charm is now level {from + levels}!" + (cost > 0 ? $" ({cost:N0} Prestige Coins spent.)" : ""));
-            TellCharm(block.PlayerText(from + levels));
+            var level = SetCharmCoins(abilityId, coinsBefore + amount);
+            var coins = GetCharmCoins(abilityId);
+            log.Info($"[CHARM] {Name} put {amount} Prestige Coins into {block.DisplayName} with {gem.Name} ({gem.WeenieClassId}): {coinsBefore} -> {coins} coins, level {level}.");
+
+            TellCharm($"Your {block.DisplayName} Charm is now level {block.ExactLevelFromCoins(coins):0.00}! ({amount:N0} Prestige Coins put in.)");
+            TellCharm(CharmProgressText(block, coins));
+            TellCharm(block.PlayerText(level));
             SaveBiotaToDatabase();
         }
+
+        /// <summary>"Armor Breaker Charm - Level 41 (95% to 42) - 14,210 coins put in - next level in 46 coins".</summary>
+        public static string CharmProgressText(CharmSettingsManager.LeveledCharmBlock block, long coins)
+        {
+            var level = block.LevelFromCoins(coins);
+            var next = level >= MaxCharmLevel ? "" : $" - next level in {block.CoinsToReach(level + 1) - coins:N0} coins";
+            return $"{block.DisplayName} Charm - {CharmLevelText(block, coins)} - {coins:N0} coins put in{next}";
+        }
+
+        /// <summary>True when the item is in this player's own pack or worn (not on the ground, not someone else's).</summary>
+        private bool OwnsItem(WorldObject item) =>
+            item != null && FindObject(item.Guid.Full, SearchLocations.MyInventory | SearchLocations.MyEquippedItems) != null;
 
         private void TellCharm(string text) => Session?.Network.EnqueueSend(new GameMessageSystemChat(text, ChatMessageType.Broadcast));
     }

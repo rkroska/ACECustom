@@ -602,17 +602,25 @@ namespace ACE.Server.Network.Structure
                 if (wo.GetProperty(PropertyBool.IsAbilityCharm) == true)
                 {
                     var tier    = wo.GetProperty(PropertyInt.CharmLevel) ?? 1;
-                    // a levelled charm shows its owner's level, which lives on the player (2026-10-17). Charms are
-                    // bonded + attuned, so the one appraising a charm is the one carrying it.
-                    var playerLevel = examiner?.GetCharmLevel(wo.GetProperty(PropertyInt.CharmGrantsAbility) ?? 0) ?? 0;
-                    if (playerLevel > 0) tier = playerLevel;
+                    var charmAbilityId = wo.GetProperty(PropertyInt.CharmGrantsAbility) ?? 0;
+                    // a levelled charm shows its owner's level, worked out from the Prestige Coins they have put in
+                    // (2026-10-24). Charms are bonded + attuned, so the one appraising a charm is the one carrying it.
+                    var charmBlock = CharmSettingsManager.LeveledBlockFor(charmAbilityId);
+                    var charmCoins = charmBlock != null && examiner != null ? examiner.GetCharmCoins(charmAbilityId) : -1;
+                    if (charmCoins >= 0) tier = charmBlock.LevelFromCoins(charmCoins);
                     var maxTier = wo.GetProperty(PropertyInt.CharmMaxLevel);
                     var tierStr = maxTier.HasValue ? $"{tier}/{maxTier}" : $"{tier}";
                     var isOn    = wo.GetProperty(PropertyBool.IsCharmActivated) == true;
                     var status  = isOn ? "Status: ON" : "Status: OFF";
                     // the levelled charms (1-100) say "Level" and what the charm does at this level, from the live settings
-                    var levelled = CharmSettingsManager.PlayerTextFor(wo.GetProperty(PropertyInt.CharmGrantsAbility) ?? 0, tier);
-                    charmHeader = $"Charm [{(levelled != null ? "Level" : "Tier")} {tierStr}]\n\n{status}\n\nDouble click to toggle ability on / off.";
+                    var levelled = CharmSettingsManager.PlayerTextFor(charmAbilityId, tier);
+                    if (charmCoins >= 0)
+                    {
+                        var charmNext = tier >= CharmSettingsManager.LeveledCharmBlock.MaxLevel ? "" : $" - next level in {charmBlock.CoinsToReach(tier + 1) - charmCoins:N0}";
+                        charmHeader = $"Charm [{Player.CharmLevelText(charmBlock, charmCoins)}]\nPrestige Coins put in: {charmCoins:N0}{charmNext}\n\n{status}\n\nDouble click to toggle ability on / off. Use a Charm Infusion Gem on it to raise its level.";
+                    }
+                    else
+                        charmHeader = $"Charm [{(levelled != null ? "Level" : "Tier")} {tierStr}]\n\n{status}\n\nDouble click to toggle ability on / off.";
                     if (levelled != null) charmHeader += $"\n\n{levelled}";
                 }
                 else

@@ -84,21 +84,23 @@ namespace ACE.Entity.Enum.Properties
         /// Bonded + Attuned, never transferable. 50602, free in EVERY Property enum.
         /// </summary>
         BankedEnlightenmentTokens = 50602,
-        // Levelled charm levels (owner 2026-10-17): the level lives on the PLAYER and is raised with upgrade gems bought for
-        // Prestige Coins; the charm item only shows it (PropertyInt.CharmLevel is mirrored from these). Ids in this lane's
-        // 512xx block (2026-10-20: 50602 is upstream's BankedEnlightenmentTokens, #550).
-        /// <summary>Split Arrow charm level, 1-100 (0 / unset = never had one).</summary>
-        SplitArrowCharmLevel     = 51200,
-        /// <summary>Chain charm level, 1-100.</summary>
-        ChainCharmLevel          = 51201,
-        /// <summary>Pandemic charm level, 1-100.</summary>
-        PandemicCharmLevel       = 51202,
-        /// <summary>Improved Cleave charm level, 1-100.</summary>
-        ImprovedCleaveCharmLevel = 51203,
-        /// <summary>Armor Breaker charm level, 1-100 (dual wield, 2026-10-21).</summary>
-        ArmorBreakerCharmLevel   = 51204,
-        /// <summary>Shield Arc charm level, 1-100 (shield, 2026-10-21).</summary>
-        ShieldArcCharmLevel      = 51205,
+        // Levelled charm coin ledger (owner 2026-10-24): the PLAYER keeps the Prestige Coins put into each levelled charm
+        // with Charm Infusion Gems; the level (1-100) is worked out from them by the charm's live price curve, so a retune
+        // re-levels everyone without touching what they spent. The charm item only shows the level (PropertyInt.CharmLevel
+        // is mirrored from this). Ids in this lane's 512xx block (until 2026-10-24 they held the level itself; charms were
+        // never on the live server, so nothing is converted).
+        /// <summary>Prestige Coins put into the Split Arrow charm (0 / unset = level 1).</summary>
+        SplitArrowCharmCoins     = 51200,
+        /// <summary>Prestige Coins put into the Chain charm.</summary>
+        ChainCharmCoins          = 51201,
+        /// <summary>Prestige Coins put into the Pandemic charm.</summary>
+        PandemicCharmCoins       = 51202,
+        /// <summary>Prestige Coins put into the Improved Cleave charm.</summary>
+        ImprovedCleaveCharmCoins = 51203,
+        /// <summary>Prestige Coins put into the Armor Breaker charm (dual wield, 2026-10-21).</summary>
+        ArmorBreakerCharmCoins   = 51204,
+        /// <summary>Prestige Coins put into the Shield Arc charm (shield, 2026-10-21).</summary>
+        ShieldArcCharmCoins      = 51205,
 
         /// <summary>Blacksmithing: Unix time (seconds) until which PropertyInt.ForgeDyePreview is the colour drawn.</summary>
         ForgeDyePreviewUntil    = 52000,

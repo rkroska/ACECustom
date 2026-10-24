@@ -276,6 +276,13 @@ namespace ACE.Server.WorldObjects
 
         public override void HandleActionUseOnTarget(Player player, WorldObject target)
         {
+            // Charm Infusion Gem (owner 2026-10-24): puts its Prestige Coins into the levelled charm it is used on
+            if (Player.IsCharmInfusionGem(this))
+            {
+                player.UseCharmInfusionGem(this, target);
+                return;
+            }
+
             // Monster Capture System - Handle captured appearance on pet device
             if (MonsterCapture.IsCapturedAppearance(this) && target is PetDevice petDevice)
             {

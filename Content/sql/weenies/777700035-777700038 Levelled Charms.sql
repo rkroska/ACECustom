@@ -3,8 +3,9 @@
 -- Ability ids 30-33 (CharmAbilityRegistry), player flags PropertyBool 51201-51204.
 -- The item's panel text is built by the server from the live /charm settings at the item's level; the Use text below
 -- is only the fixed line under it, so it carries no numbers.
--- How players get them: not decided here (owner: Prestige Coins, later). How a charm gains levels: not built
--- (/charm level <name> <n> is the test tool).
+-- How players get them: Enephior (19860002) sells them for Prestige Coins. How a charm gains levels: the player puts
+-- Prestige Coins into it with Charm Infusion Gems (777700089-777700097); the level comes from the coins put in and the
+-- charm's live price curve (Player_CharmLevels.cs). /charm level <name> <n> is the test tool.
 -- Safe to run again: it replaces the four weenies.
 
 DELETE FROM `weenie_properties_bool`   WHERE `object_Id` IN (777700035, 777700036, 777700037, 777700038);

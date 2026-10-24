@@ -7,7 +7,11 @@ namespace ACE.Server.WorldObjects
 {
     /// <summary>
     /// The levelled charms (owner 2026-10-13: "Tiers or Levels of these charms will go from 1 to 100"): Split Arrow, Chain,
-    /// Pandemic, Improved Cleave. One item per charm; its CharmLevel is 1-100.
+    /// Pandemic, Improved Cleave, Armor Breaker, Shield Arc. One item per charm; its CharmLevel is 1-100.
+    ///
+    /// A charm's level comes from the Prestige Coins its owner has put into it (owner 2026-10-24, Player_CharmLevels.cs):
+    /// each charm's "coinbase" (coins for level 1 to 2) and "coingrowth" (each level costs that much more than the one
+    /// before) are its price curve, and changing either re-levels every player from the coins they have put in.
     ///
     /// Every NUMBER of such a charm has two live settings: its value at level 1 (key "jumps") and its value at level 100
     /// (key "jumps_100"), a straight line between them. An unset level-100 value means "the same at every level".
@@ -56,6 +60,9 @@ namespace ACE.Server.WorldObjects
                 new CharmSettingDef(key, CharmSettingKind.Int, false, min, max, def, double.NaN, help);
             public static CharmSettingDef Number(string key, double min, double max, double def, double def100, string help) =>
                 new CharmSettingDef(key, CharmSettingKind.Float, true, min, max, def, def100, help);
+            /// <summary>A number that is the same at every level (no level-100 twin, no schedule).</summary>
+            public static CharmSettingDef FlatNumber(string key, double min, double max, double def, string help) =>
+                new CharmSettingDef(key, CharmSettingKind.Float, false, min, max, def, double.NaN, help);
         }
 
         /// <summary>The settings of one levelled charm. Reads are lock-free (combat threads); writes come from /charm.</summary>
@@ -126,6 +133,62 @@ namespace ACE.Server.WorldObjects
             public int CountAt(string key, int level) => (int)Math.Round(At(key, level), MidpointRounding.AwayFromZero);
 
             public float NumberAt(string key, int level) => (float)At(key, level);
+
+            // -- the coin price curve (owner 2026-10-24) -----------------------
+            // cost of level L -> L+1 = coinbase x coingrowth^(L-1). The level is worked out from the coins a player has put
+            // in, so these are read on every level check and a change re-levels everyone (CharmCommands refreshes the
+            // online players; the others at their next login).
+
+            /// <summary>The setting keys of the price curve - a change to either re-levels every player.</summary>
+            public static bool IsCurveKey(string key) => key is "coinbase" or "coingrowth";
+
+            /// <summary>Coins for level 1 to 2.</summary>
+            public double CoinBase => Math.Max(1, At("coinbase", 1));
+
+            /// <summary>How much more each level costs than the one before (1 = every level the same).</summary>
+            public double CoinGrowth => Math.Max(1, At("coingrowth", 1));
+
+            /// <summary>Whole Prestige Coins needed in all to reach a level (0 for level 1): the sum of the level prices,
+            /// coinbase x (coingrowth^(L-1) - 1) / (coingrowth - 1), rounded up.</summary>
+            public long CoinsToReach(int level)
+            {
+                if (level <= 1) return 0;
+                var l = Math.Min(level, MaxLevel) - 1;
+                var b = CoinBase;
+                var g = CoinGrowth;
+                var total = g - 1 < 1e-9 ? b * l : b * (Math.Pow(g, l) - 1) / (g - 1);
+                return (long)Math.Ceiling(Math.Min(total, 9e15) - 1e-6);
+            }
+
+            /// <summary>Whole coins from a level to the next one; 0 at level 100.</summary>
+            public long CoinsForLevel(int level) => level < 1 || level >= MaxLevel ? 0 : CoinsToReach(level + 1) - CoinsToReach(level);
+
+            /// <summary>Coins that reach level 100 - a charm never holds more.</summary>
+            public long MaxCoins => CoinsToReach(MaxLevel);
+
+            /// <summary>The whole level (1-100) a number of coins put in reaches.</summary>
+            public int LevelFromCoins(long coins)
+            {
+                if (coins <= 0) return 1;
+                var b = CoinBase;
+                var g = CoinGrowth;
+                var estimate = g - 1 < 1e-9 ? 1 + coins / b : 1 + Math.Log(1 + coins * (g - 1) / b) / Math.Log(g);
+                var level = (int)Math.Clamp(double.IsFinite(estimate) ? Math.Floor(estimate) : MaxLevel, 1, MaxLevel);
+                // the rounding of each threshold decides, never the estimate
+                while (level < MaxLevel && CoinsToReach(level + 1) <= coins) level++;
+                while (level > 1 && CoinsToReach(level) > coins) level--;
+                return level;
+            }
+
+            /// <summary>The level with the share of the way to the next one, e.g. 41.95 = level 41, 95 pct of the coins to 42.</summary>
+            public double ExactLevelFromCoins(long coins)
+            {
+                var level = LevelFromCoins(coins);
+                if (level >= MaxLevel) return MaxLevel;
+                var low = CoinsToReach(level);
+                var span = CoinsToReach(level + 1) - low;
+                return span > 0 ? level + Math.Clamp((coins - low) / (double)span, 0, 0.9999) : level;
+            }
 
             // -- ICharmBlock ---------------------------------------------------
 
@@ -382,7 +445,8 @@ namespace ACE.Server.WorldObjects
                         sb.Append($"  - /charm {Name} {d.Key}{Suffix100} {Raw(d, double.IsNaN(d.Default100) ? d.Default : d.Default100)}   (or 'clear' = same at every level)\n");
                         break;
                     }
-                sb.Append($"  - /charm level {Name} 50   - set the level of the {DisplayName} charm you carry");
+                sb.Append($"  - /charm level {Name} 50   - set the level of the {DisplayName} charm you carry\n");
+                sb.Append($"  - /charm curve {Name}      - the coin price of every level");
                 return sb.ToString();
             }
 
@@ -501,11 +565,13 @@ namespace ACE.Server.WorldObjects
         //  The four levelled charms and their settings
         // ---------------------------------------------------------------------
 
-        /// <summary>Owner 2026-10-17: a charm's level (on the player) is raised with upgrade gems bought for Prestige Coins;
-        /// using a gem also charges this many coins for EACH level it adds, read at the level being left - so the cost
-        /// rises in a straight line from level 1 to level 100.</summary>
-        private static CharmSettingDef GemCost() => CharmSettingDef.Number("gemcost", 0, 100000, 1, 10,
-            "Prestige Coins an upgrade gem charges for each level it adds, at the level being left (level 1 value to level 100 value). 0 = free.");
+        // Owner 2026-10-24: the price curve of a levelled charm. ~6 months to level 100 at 20 hours a day, each tier's levels
+        // ~1.3x slower than the last (income +20 pct a tier, ~15 levels a tier, 1.03^15 / 1.2). coinbase assumes the T11
+        // placeholder income of ~15 coins an hour - retune both together.
+        private static CharmSettingDef CoinBase() => CharmSettingDef.FlatNumber("coinbase", 1, 1000000, 230,
+            "Prestige Coins to go from level 1 to level 2; each later level costs coingrowth times the one before. A change re-levels every player from the coins they have put in.");
+        private static CharmSettingDef CoinGrowth() => CharmSettingDef.FlatNumber("coingrowth", 1, 1.2, 1.03,
+            "How much more each level costs than the one before (1.03 = 3 pct more, 1 = every level the same). A change re-levels every player from the coins they have put in.");
 
         private const string T11OnlyHelp = "Needs a T11+ weapon of the right kind in hand, where its power is live. Off = any weapon, anywhere.";
 
@@ -520,7 +586,7 @@ namespace ACE.Server.WorldObjects
             // owner 2026-10-21: the cone never widens - 60 degrees each side of the target (120 in all) at every level
             CharmSettingDef.Number("angle", 0, 180, 60, double.NaN, "How far to either side of the line to the main target, in degrees seen from the archer, a monster may stand (60 = the split arrows everyone has, a 120 degree cone; 180 = all around)."),
             CharmSettingDef.Switch("t11only", true, T11OnlyHelp),
-            GemCost());
+            CoinBase(), CoinGrowth());
 
         public static LeveledCharmBlock Chain { get; } = new LeveledCharmBlock("chain", "Chain",
             "A hand-cast war arc, bolt or streak that hits a monster jumps on to the nearest other monster, then the next. One monster after another, each jump from the last monster hit.",
@@ -544,7 +610,7 @@ namespace ACE.Server.WorldObjects
             CharmSettingDef.Switch("procs", false, "A chained hit can fire the weapon's cast-on-strike spells."),
             CharmSettingDef.Switch("exclusive", true, "While Chain is on, the Fork and Split Cast charms do nothing for war spells (Chain replaces them, never stacks). Off = all three stack."),
             CharmSettingDef.Switch("t11only", true, T11OnlyHelp),
-            GemCost());
+            CoinBase(), CoinGrowth());
 
         public static LeveledCharmBlock Pandemic { get; } = new LeveledCharmBlock("pandemic", "Pandemic",
             "Each time a void damage-over-time spell ticks on a monster (not the tick it lands with), it spreads to nearby monsters that do not carry it. A copy lasts only as long as the DoT it came from has left; with generations 1 (the default) copies do not spread again.",
@@ -582,7 +648,7 @@ namespace ACE.Server.WorldObjects
             CharmSettingDef.Switch("message", true, "Tell the caster when a DoT spreads (at most one line every 5 seconds)."),
             CharmSettingDef.Switch("exclusive", true, "While Pandemic is on, the Fork and Split Cast charms do nothing for void DoT spells (Pandemic replaces them, never stacks). Off = all three stack."),
             CharmSettingDef.Switch("t11only", true, T11OnlyHelp),
-            GemCost());
+            CoinBase(), CoinGrowth());
 
         public static LeveledCharmBlock ImprovedCleave { get; } = new LeveledCharmBlock("improvedcleave", "Improved Cleave",
             "Two-handed cleave swings wider and hits more monsters: the charm's extra targets are added to the weapon's own cleave (held to maxtargets), and the arc opens up to all around. Two-handed weapons only (twohandedonly).",
@@ -602,7 +668,7 @@ namespace ACE.Server.WorldObjects
             CharmSettingDef.Switch("twohandedonly", true, "Only two-handed weapons get the charm. Off = every T11+ melee weapon (dual wield and sword and shield too)."),
             CharmSettingDef.Switch("los", true, "A cleaved monster must be in sight (no cleaving through walls)."),
             CharmSettingDef.Switch("t11only", true, T11OnlyHelp),
-            GemCost());
+            CoinBase(), CoinGrowth());
 
         // owner 2026-10-21 (Schneebly): dual wield is the BOSS style - more single-target damage, no pack damage. A share of
         // the armor LEFT after the weapon's own rend, so it is worth about the same on every weapon and tier and can never
@@ -615,7 +681,7 @@ namespace ACE.Server.WorldObjects
             CharmSettingDef.Number("share", 0, 0.95, 0.20, 0.70, "Share of the armor LEFT after the weapon's Armor Rend that a hit ignores (0.2 = a fifth). Effective rend = rend + share x (1 - rend)."),
             CharmSettingDef.Switch("nocleave", true, "A dual wielder with the charm on does not cleave at all (the weapons' own cleave, Cleave cards and Improved Cleave). Off = cleave works as normal."),
             CharmSettingDef.Switch("t11only", true, T11OnlyHelp),
-            GemCost());
+            CoinBase(), CoinGrowth());
 
         // owner 2026-10-21 (Schneebly): sword and shield is the SURVIVOR - the shield already guards the front half; the
         // charm turns it to cover the sides and, at level 100, every direction. Melee and missile hits only: a shield's
@@ -630,7 +696,7 @@ namespace ACE.Server.WorldObjects
             // shield style's own damage bonus, so it can be tuned without moving every melee style's zone dial
             CharmSettingDef.Number("damage", 0, 5, 0.35, 1.35, "Extra damage of a melee hit on a monster while a shield is in hand, as a fraction (0.5 = +50 pct). 0 = none."),
             CharmSettingDef.Switch("t11only", true, "Needs a T11+ shield in hand. Off = any shield."),
-            GemCost());
+            CoinBase(), CoinGrowth());
 
         /// <summary>The levelled charms by their /charm name. The older charms keep their own blocks and switch tables.</summary>
         public static readonly IReadOnlyDictionary<string, LeveledCharmBlock> LeveledBlocks = new Dictionary<string, LeveledCharmBlock>(StringComparer.Ordinal)

@@ -108,8 +108,8 @@ namespace ACE.Server.Tests
             Assert.AreEqual(CharmAbilityRegistry.ShieldArcAbilityId, CharmSettingsManager.LeveledAbilityId("shieldarc"));
             Assert.AreEqual(CharmAbilityRegistry.ArmorBreakerAbilityId, CharmAbilityRegistry.GetAbilityIdForWCID(777700039));
             Assert.AreEqual(CharmAbilityRegistry.ShieldArcAbilityId, CharmAbilityRegistry.GetAbilityIdForWCID(777700040));
-            Assert.AreEqual(PropertyInt64.ArmorBreakerCharmLevel, Player.CharmLevelProperty(CharmAbilityRegistry.ArmorBreakerAbilityId));
-            Assert.AreEqual(PropertyInt64.ShieldArcCharmLevel, Player.CharmLevelProperty(CharmAbilityRegistry.ShieldArcAbilityId));
+            Assert.AreEqual(PropertyInt64.ArmorBreakerCharmCoins, Player.CharmCoinsProperty(CharmAbilityRegistry.ArmorBreakerAbilityId));
+            Assert.AreEqual(PropertyInt64.ShieldArcCharmCoins, Player.CharmCoinsProperty(CharmAbilityRegistry.ShieldArcAbilityId));
             Assert.IsTrue(CharmAbilityRegistry.RegisteredIds.Contains(CharmAbilityRegistry.ArmorBreakerAbilityId));
             Assert.IsTrue(CharmAbilityRegistry.RegisteredIds.Contains(CharmAbilityRegistry.ShieldArcAbilityId));
         }
