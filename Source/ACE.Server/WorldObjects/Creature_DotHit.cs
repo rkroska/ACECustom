@@ -100,7 +100,11 @@ namespace ACE.Server.WorldObjects
             var damageRatingMod = AdditiveCombine(GetPositiveRatingMod(caster.GetDamageRating()), heritageMod);
             var critDamageRatingMod = GetPositiveRatingMod(caster.GetCritDamageRating());
 
-            var common = (baseDamage + skillBonus) * elementalMod * slayerMod * attribBonus;
+            // Deeds T13 (review 2026-10-24): the separate x1.10 every other attack style gets against monsters. The ticks use
+            // this snapshot instead of the enchantment's value, which is where the old DoT path applied it.
+            var deedsMod = Player.GetDeedsDamageMod(caster, this);
+
+            var common = (baseDamage + skillBonus) * elementalMod * slayerMod * attribBonus * deedsMod;
 
             var snap = new ZcDotSnapshot
             {

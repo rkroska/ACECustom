@@ -144,16 +144,19 @@ namespace ACE.Server.WorldObjects
             if (amount <= 0)
             {
                 TellCharm($"This gem is not set up right ({gem.WeenieClassId}). Please tell a developer.");
+                SendUseDoneEvent();
                 return;
             }
             if (block == null)
             {
                 TellCharm("Use a Charm Infusion Gem on a levelled charm: Split Arrow, Chain, Pandemic, Improved Cleave, Armor Breaker or Shield Arc.");
+                SendUseDoneEvent();
                 return;
             }
             if (!OwnsItem(target) || !OwnsItem(gem))
             {
                 TellCharm("The gem and the charm must both be in your own pack.");
+                SendUseDoneEvent();
                 return;
             }
 
@@ -162,11 +165,13 @@ namespace ACE.Server.WorldObjects
             if (room <= 0)
             {
                 TellCharm($"Your {block.DisplayName} charm is already level {MaxCharmLevel}.");
+                SendUseDoneEvent();
                 return;
             }
             if (amount > room)
             {
                 TellCharm($"Your {block.DisplayName} charm needs only {room:N0} more coins to reach level {MaxCharmLevel}. This gem holds {amount:N0}, so it was not used. Use smaller gems to finish.");
+                SendUseDoneEvent();
                 return;
             }
 
@@ -174,12 +179,17 @@ namespace ACE.Server.WorldObjects
             var to = block.ExactLevelFromCoins(coins + amount);
 
             // another prompt already open (a second gem, a rare or augment gem): say so, as Gem.cs does, instead of nothing
+            // the use ends once the prompt is up, as crafting does (RecipeManager); the answer then applies or does nothing
             if (!ConfirmationManager.EnqueueSend(new Confirmation_Custom(Guid, (response, _) =>
                 {
                     if (response)
                         ApplyCharmInfusionGem(gem, target, block, abilityId, coins, amount);
                 }), $"Put {amount:N0} Prestige Coins into your {block.DisplayName} Charm? Level {from:0.00} -> {to:0.00}"))
-                SendWeenieError(WeenieError.ConfirmationInProgress);
+            {
+                SendUseDoneEvent(WeenieError.ConfirmationInProgress);
+                return;
+            }
+            SendUseDoneEvent();
         }
 
         private void ApplyCharmInfusionGem(WorldObject gem, WorldObject charm, CharmSettingsManager.LeveledCharmBlock block, int abilityId, long coinsBefore, long amount)

@@ -419,6 +419,12 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Chain immunity at impact (review 2026-10-24): a jump flies as a real projectile and can strike a monster
+            // standing between targets. One immune to Chain takes nothing from it - no damage, procs or further jumps.
+            // A hand cast (Chain == null) at that monster is unaffected.
+            if (Chain != null && creatureTarget.IsImmuneToChain())
+                return;
+
             var critical = false;
             var critDefended = false;
             var overpower = false;
