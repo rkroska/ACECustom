@@ -559,6 +559,12 @@ namespace ACE.Server.WorldObjects
 
             int tryBoost = ThreadSafeRandom.Next(minBoostValue, maxBoostValue);
 
+            // QB Deeds T12 (owner 2026-10-25): the Deeds Breath of Renewal heals deeds_breath_heal_mult of the spell's roll and adds
+            // only deeds_breath_life_aug_mult of the life augs below. The Paragon armor gem's Breath of Renewal is a separate cast.
+            var deedsBreath = player != null && player.DeedsBreathCasting && tryBoost > 0;
+            if (deedsBreath)
+                tryBoost = (int)Math.Round(tryBoost * Math.Max(0.0, ServerConfig.deeds_breath_heal_mult.Value));
+
             // HARM CAP - Fixed damage for Harm life magic spells (reuses PropertyBool.UseDamageCap = 9039)
             // Normally, Harm spells apply the target's HealthDrain resistance modifier, which reduces
             // damage based on Life Magic Defense skill and any resistance buffs on the target.
@@ -646,7 +652,9 @@ namespace ACE.Server.WorldObjects
             // When useHarmCap is active, we skip this so the damage stays within the spell's fixed raw range.
             if (!useHarmCap && player != null && tryBoost > 0)
             {
-                tryBoost += (int)player.EffectiveLifeAugCount;
+                tryBoost += deedsBreath
+                    ? (int)Math.Round(player.EffectiveLifeAugCount * Math.Max(0.0, ServerConfig.deeds_breath_life_aug_mult.Value))
+                    : (int)player.EffectiveLifeAugCount;
 
                 // Scale heal proportionally to pet max health so player heals remain effective on 3000+ HP pets
                 if (spell.VitalDamageType == DamageType.Health && targetCreature is CombatPet targetPet && targetPet.IsInMotelOrEncounter())

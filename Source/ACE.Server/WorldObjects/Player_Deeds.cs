@@ -342,9 +342,19 @@ namespace ACE.Server.WorldObjects
         public bool DeedsBreathTargetOk(WorldObject attackTarget)
             => attackTarget == null ? PlayerKillerStatus == PlayerKillerStatus.NPK : IsDeedsTarget(attackTarget);
 
-        /// <summary>T12: the Breath of Renewal roll alone (BreathChance), false below the tier. Separate from any armor-gem proc.</summary>
+        /// <summary>T12: the Breath of Renewal roll alone (ServerConfig.deeds_breath_chance), false below the tier. Separate from any armor-gem proc.</summary>
         public bool RollDeedsBreath()
-            => DeedsTier >= DeedsTiers.BreathTier && ThreadSafeRandom.Next(0.0f, 1.0f) < DeedsTiers.BreathChance;
+            => DeedsTier >= DeedsTiers.BreathTier && ThreadSafeRandom.Next(0.0f, 1.0f) < DeedsBreathChance;
+
+        /// <summary>T12: the live proc chance, clamped to 0..1.</summary>
+        public static double DeedsBreathChance => Math.Clamp(ACE.Server.Managers.ServerConfig.deeds_breath_chance.Value, 0.0, 1.0);
+
+        /// <summary>
+        /// T12: true only while TryDeedsBreathOfRenewal is casting, so HandleCastSpell_Boost scales THIS heal
+        /// (deeds_breath_heal_mult, deeds_breath_life_aug_mult) and never the Paragon armor gem's Breath of Renewal.
+        /// The cast is synchronous, so the flag never outlives the call.
+        /// </summary>
+        public bool DeedsBreathCasting { get; private set; }
 
         /// <summary>
         /// T12: called on each of the player's attacks, next to the self-proc call of melee, missile and spell attacks, with the
@@ -361,7 +371,15 @@ namespace ACE.Server.WorldObjects
                 return;
 
             // the player casts it on themself, as a proc (no item behind it)
-            TryCastSpell(spell, this, null, null, isWeaponSpell: false, fromProc: true, tryResist: false);
+            DeedsBreathCasting = true;
+            try
+            {
+                TryCastSpell(spell, this, null, null, isWeaponSpell: false, fromProc: true, tryResist: false);
+            }
+            finally
+            {
+                DeedsBreathCasting = false;
+            }
         }
 
         private static readonly ConcurrentDictionary<uint, (SpellCategory Category, double Value)> deedsFloorSpells = new();
@@ -527,6 +545,8 @@ namespace ACE.Server.WorldObjects
                     lines.Add($" * {DeedsTiers.SpellName(spellId)}");
                 foreach (var line in tier.Lines)
                     lines.Add($" * {line}");
+                if (tier.Number == DeedsTiers.BreathTier)
+                    lines.Add($" * ({DeedsBreathChance * 100:0.#} percent chance on each of your attacks)");
             }
 
             return lines;

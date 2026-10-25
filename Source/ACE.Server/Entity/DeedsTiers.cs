@@ -23,12 +23,11 @@ namespace ACE.Server.Entity
         public const int SurgeTier       = 6;    // the three self surges, permanent, the player's life augs baked in; their Aetheria procs stop
         public const int BaneFloorTier   = 9;    // Legendary banes + Legendary Impenetrability as a floor in the armor math
         public const int RebuffTier      = 10;   // the /rebuff command and the Deedkeeper's Writ (/deeds item)
-        public const int BreathTier      = 12;   // Breath of Renewal, BreathChance on each attack
+        public const int BreathTier      = 12;   // Breath of Renewal, ServerConfig.deeds_breath_chance on each attack
         public const int DamageTier      = 13;   // x DamageMultiplier, every attack style
         public const int CritTier        = 14;   // + the BASE crit chance again (base 10 pct -> 20 pct, Biting Strike 25 -> 35)
         public const int LootLuckTier    = 15;   // every loot quality / grade roll of a kill rolled twice, the better kept
 
-        public const float BreathChance = 0.20f;
         public const float DamageMultiplier = 1.10f;
         public const uint BreathOfRenewalSpellId = 4100;
 
@@ -138,9 +137,9 @@ namespace ACE.Server.Entity
                 3690, 3729, 3687, 3680, 3702, 3692, 3719,           // Prodigal protections
                 4767, 4783, 4787, 4779, 4763, 4771, 4775,           // Masterwork resistances
             } },
+            // the chance line is added live by Player.BuildDeedsList (ServerConfig.deeds_breath_chance)
             new Tier { Number = 12,
-                ListedSpells = new uint[] { BreathOfRenewalSpellId },
-                Lines = new[] { "(20 percent chance on each of your attacks)" } },
+                ListedSpells = new uint[] { BreathOfRenewalSpellId } },
             new Tier { Number = 13, Lines = new[] { "+10 percent damage with every attack: melee, missile, war and void" } },
             new Tier { Number = 14, Lines = new[] { "+100 percent of your BASE critical chance (10 percent becomes 20)" } },
             new Tier { Number = 15, Lines = new[] { "Loot luck: the quality of every item you loot is rolled twice, the better kept" } },
