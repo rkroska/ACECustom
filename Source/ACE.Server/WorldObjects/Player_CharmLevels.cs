@@ -129,8 +129,10 @@ namespace ACE.Server.WorldObjects
         {
             var level = block.LevelFromCoins(coins);
             if (level >= MaxCharmLevel) return $"Level {MaxCharmLevel} (max)";
-            var exact = block.ExactLevelFromCoins(coins);
-            var pct = (int)Math.Floor((exact - level) * 100);
+            // from the whole-coin thresholds, never a float difference (which could print -1% or 100%)
+            var from = block.CoinsToReach(level);
+            var span = block.CoinsToReach(level + 1) - from;
+            var pct = span > 0 ? (int)Math.Clamp((coins - from) * 100 / span, 0, 99) : 0;
             return $"Level {level} ({pct}% to {level + 1})";
         }
 

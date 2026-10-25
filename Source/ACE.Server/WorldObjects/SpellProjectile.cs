@@ -504,8 +504,9 @@ namespace ACE.Server.WorldObjects
             if (forkEligibleOnImpact
                 && !IsForkProjectile && Chain == null && player != null && player.HasForkCharm
                 && CharmSettingsManager.Fork.Enabled
-                // Chain / Pandemic replace Fork for their spells, never stack on it (owner 2026-10-21)
-                && !player.LeveledCharmReplacesForkAndSplit(Spell, ProjectileLauncher)
+                // Chain / Pandemic replace Fork for their spells, never stack on it (owner 2026-10-21) - but only where the
+                // charm could act: a proc, a wand's built-in spell or a Split Cast extra never starts a chain, so it keeps Fork
+                && (FromProc || IsWeaponSpell || IsSplitCastExtra || !player.LeveledCharmReplacesForkAndSplit(Spell, ProjectileLauncher))
                 && (SpellType == ProjectileSpellType.Streak
                     || SpellType == ProjectileSpellType.Arc
                     || SpellType == ProjectileSpellType.Bolt))

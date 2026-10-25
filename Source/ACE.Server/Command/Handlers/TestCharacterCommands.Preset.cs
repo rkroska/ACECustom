@@ -117,6 +117,10 @@ namespace ACE.Server.Command.Handlers
                 if (CharmAbilityRegistry.IsActive(player, abilityId))
                     CharmAbilityRegistry.Apply(player, abilityId, false);
             ResetToTier0(player);
+            // the coins put into each levelled charm live on the player, so the wipe leaves them: clear all six, or the
+            // previous preset's levels come back on the charms this one hands out
+            foreach (var block in CharmSettingsManager.LeveledBlocks.Values)
+                player.SetCharmCoins(CharmSettingsManager.LeveledAbilityId(block.Name), 0);
             HandleCharacterSetter(session, player, new[] { "set", "attrs", PresetAttrs });
             HandleCharacterSetter(session, player, new[] { "set", "level", PresetLevel.ToString() });
             HandleCharacterSetter(session, player, new[] { "set", "enl", PresetEnlightenment.ToString() });

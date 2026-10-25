@@ -5860,7 +5860,9 @@ namespace ACE.Server.Command.Handlers
               // APPEND-ONLY (2026-09-02): where the rank came from - zone bucket | weenie | none
               .Append("|rank_src=").Append(r.RankSource)
               // APPEND-ONLY (2026-09-03): master switch state
-              .Append("|exempt=").Append(r.Exempt ? 1 : 0);
+              .Append("|exempt=").Append(r.Exempt ? 1 : 0)
+              // APPEND-ONLY (2026-10-24): caster-list spells (a magic archetype's own list), counted apart from zsp
+              .Append("|csp=").Append(r.CasterSpells);
             return sb.ToString();
         }
 

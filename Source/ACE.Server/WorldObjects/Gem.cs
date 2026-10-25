@@ -56,6 +56,14 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // a Charm Infusion Gem only works used ON a levelled charm: a plain use would run the gem path below and use it
+            // up for nothing
+            if (activator is Player gemUser && Player.IsCharmInfusionGem(this))
+            {
+                gemUser.SendTransientError($"Use the {Name} on a levelled charm in your pack.");
+                return;
+            }
+
             ActOnUse(activator, false);
         }
 
