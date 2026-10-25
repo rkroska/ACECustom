@@ -1398,8 +1398,10 @@ namespace ACE.Server.WorldObjects
                 // T11+ zone-kill extras (owner 2026-10-24): T10-style mundane item, summoning essence and aetheria, same gate
                 // as the bag above. Rolled AFTER the gear set is built and placed, so they never count toward the gear budget
                 // or the loot_slot_* counts and never displace a piece; added after the sweep loop so it never restats them.
+                // Gated on where the kill happened (effective variation 11+), not the profile tier: a T11+ profile dying
+                // in a lower governed zone gets none.
                 if (zoneLoot != null && ServerConfig.zonecontrol_enabled.Value
-                    && effectiveTreasure.Tier >= LootGenerationFactory.ZoneLootSetMinTier)
+                    && ACE.Server.Managers.ZoneControl.ZoneControlManager.GetEffectiveVariation(this) >= ACE.Server.Managers.ZoneControl.ZoneControlManager.MinBoundedVariation)
                     AddZoneKillExtras(effectiveTreasure, corpse, droppedItems);
             }
 
