@@ -138,7 +138,7 @@ namespace ACE.Server.Entity
 
             if (!player.TryPayEnlightenmentGateFee(fee, gateLevel, out var shortfall))
             {
-                player.SendMessage($"You no longer have the gate fee of {fee}. You are short {JoinList(shortfall)}. Nothing was taken.", ChatMessageType.Broadcast);
+                player.SendMessage($"The gate fee of {fee} was not paid: you are short {JoinList(shortfall)}. You were not charged.", ChatMessageType.Broadcast);
                 return;
             }
 
