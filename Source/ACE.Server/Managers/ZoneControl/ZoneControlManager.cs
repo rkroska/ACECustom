@@ -547,19 +547,52 @@ namespace ACE.Server.Managers.ZoneControl
             return _storeCapacity;
         }
 
+        /// <summary>The live store as JSON, exactly what Save writes (settings transfer, /settings export).</summary>
+        public static string ExportStoreJson()
+        {
+            EnsureInitialized();
+            lock (_lock)
+                return JsonConvert.SerializeObject(BuildStore());
+        }
+
+        /// <summary>Replaces the whole store with a settings-transfer one (/settings import ... apply): checks it reads as a
+        /// store and fits the column BEFORE anything is written, saves it, then reloads it live - the same build-first
+        /// load the server start uses, so a store that does not load leaves the previous one running.</summary>
+        public static void ImportStoreJson(string json)
+        {
+            json = UpgradeLegacyStoreKeys(json ?? "");
+            if (JsonConvert.DeserializeObject<Store>(json) == null)
+                throw new FormatException("the Zone Control part does not read as a store.");
+            var bytes = System.Text.Encoding.UTF8.GetByteCount(json);
+            lock (_lock)
+            {
+                var cap = StoreValueCapacity();
+                if (cap > 0 && bytes > cap)
+                    throw new InvalidOperationException($"Zone Control store is {bytes:N0} bytes; the DB column holds {cap:N0}. Widen config_properties_string.value to MEDIUMTEXT first.");
+                if (DatabaseManager.ShardConfig.StringExists(StoreKey))
+                    DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = StoreKey, Value = json, Description = "Zone Control store (JSON)" });
+                else
+                    DatabaseManager.ShardConfig.AddString(StoreKey, json, "Zone Control store (JSON)");
+            }
+            Reload();
+            log.Info($"[ZoneControl] store replaced by a settings import ({bytes:N0} bytes) and reloaded.");
+        }
+
+        private static Store BuildStore() => new Store
+        {
+            Areas = _areas.Values.ToList(),
+            VariationDefaults = new Dictionary<int, VariationDefault>(_variationDefaults),
+            LadderApplies = new Dictionary<int, LadderApply>(_ladderApplies),
+            DamageMults = new Dictionary<uint, double>(_damageMults),
+            GearLockSpots = _gearLock.OrderBy(k => k).Select(k => new GearLockSpot { Landblock = (int)(k & 0xFFFF), Variation = (int)(k >> 16) - 1 }).ToList(),
+            ZoneWideBounty = _zoneWideBounty,
+            RegionBounties = new Dictionary<string, BountyConfig>(_regionBounties),
+            AllowedProcSpells = _procAllow.OrderBy(x => x).ToList(),
+        };
+
         private static void Save()
         {
-            var store = new Store
-            {
-                Areas = _areas.Values.ToList(),
-                VariationDefaults = new Dictionary<int, VariationDefault>(_variationDefaults),
-                LadderApplies = new Dictionary<int, LadderApply>(_ladderApplies),
-                DamageMults = new Dictionary<uint, double>(_damageMults),
-                GearLockSpots = _gearLock.OrderBy(k => k).Select(k => new GearLockSpot { Landblock = (int)(k & 0xFFFF), Variation = (int)(k >> 16) - 1 }).ToList(),
-                ZoneWideBounty = _zoneWideBounty,
-                RegionBounties = new Dictionary<string, BountyConfig>(_regionBounties),
-                AllowedProcSpells = _procAllow.OrderBy(x => x).ToList(),
-            };
+            var store = BuildStore();
             _ladderSnapshot = new Dictionary<int, LadderApply>(_ladderApplies);
             var jsonOut = JsonConvert.SerializeObject(store);
 

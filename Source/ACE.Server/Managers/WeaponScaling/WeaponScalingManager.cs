@@ -427,6 +427,25 @@ namespace ACE.Server.Managers.WeaponScaling
             }
         }
 
+        /// <summary>The live config as JSON, exactly what Save writes (settings transfer, /settings export).</summary>
+        public static string ExportJson() => JsonConvert.SerializeObject(Current);
+
+        /// <summary>Replaces the config with a settings-transfer one (/settings import ... apply): read, normalized, saved
+        /// and published at once, as Mutate does. Throws (nothing written) when it does not read as a config.</summary>
+        public static void ImportJson(string json)
+        {
+            var cfg = JsonConvert.DeserializeObject<WeaponScalingConfig>(json ?? "")
+                      ?? throw new FormatException("the weapon scaling part does not read as a config.");
+            Initialize();
+            lock (_lock)
+            {
+                Normalize(cfg);
+                Save(cfg);
+                _current = cfg;
+            }
+            log.Info("WeaponScalingManager: config replaced by a settings import.");
+        }
+
         /// <summary>Discard in-memory state and re-read the store (or defaults when absent).</summary>
         public static void Reload()
         {
