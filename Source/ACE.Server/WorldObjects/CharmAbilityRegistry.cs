@@ -80,8 +80,47 @@ namespace ACE.Server.WorldObjects
         public static int LevelOf(Player player, int abilityId)
         {
             if (player == null || !IsActive(player, abilityId)) return 0;
-            return player.ActiveCharmLevels.TryGetValue(abilityId, out var level) && level > 0 ? level : 1;
+            var level = player.ActiveCharmLevels.TryGetValue(abilityId, out var own) && own > 0 ? own : 1;
+            if (CharmSettingsManager.LeveledBlockFor(abilityId) == null) return level;
+            // a levelled charm works only in T11+ and at no more than the tier's cap where the player stands (owner 2026-10-25)
+            var tier = ACE.Server.Managers.ZoneControl.ZoneControlManager.GetEffectiveVariation(player);
+            return EffectiveLeveledLevel(level, tier, tier >= MinCharmTier ? ZoneCharmLevelCap(player, tier) : null);
         }
+
+        /// <summary>Levelled charms work in T11+ only (owner 2026-10-25): below it they do nothing at all.</summary>
+        public const int MinCharmTier = ACE.Server.Managers.VariationManager.EndgameMinVariation;
+
+        /// <summary>The level a levelled charm works at: 0 below T11, else its own level held to the cap.</summary>
+        public static int EffectiveLeveledLevel(int level, int tier, int? cap) =>
+            tier < MinCharmTier ? 0 : CapLevel(level, cap);
+
+        /// <summary>The levelled-charm cap where this player stands, null when there is none. The governing zone (its own
+        /// row over the tier Default) when one covers the spot; on a T11+ spot no enabled zone covers (just outside a zone,
+        /// a disabled zone) the tier's own Default row, so stepping off a zone never lifts the cap (Fable review 2026-10-25).</summary>
+        public static int? ZoneCharmLevelCap(Player player, int tier)
+        {
+            if (player == null) return null;
+            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveZoneDefaultForPlayer(player);
+            if (zp != null)
+                return zp.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.CharmLevelCap)
+                    ? CapFromSetting(zp.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.CharmLevelCap)) : null;
+            // a single dictionary read of the saved tier row (no profile rebuild on the combat path)
+            var tierRow = ACE.Server.Managers.ZoneControl.ZoneControlManager.GetAnchoredDefaultProfile(tier);
+            return tierRow?.Stats != null && tierRow.Stats.TryGetValue(ACE.Server.Managers.ZoneScaling.ZoneStat.CharmLevelCap, out var curve) && curve != null
+                ? CapFromSetting(curve.Base) : null;
+        }
+
+        /// <summary>A charm_level_cap setting as a cap: below 1 = 1 (0 never means "no cap"), 100 or more = none (the
+        /// highest level), not a number = none; fractions round down.</summary>
+        public static int? CapFromSetting(double value)
+        {
+            if (!double.IsFinite(value) || value >= CharmSettingsManager.LeveledCharmBlock.MaxLevel) return null;
+            return value < 1 ? 1 : (int)Math.Floor(value);
+        }
+
+        /// <summary>A charm level held to a cap (null = none); never below 1, never above the charm's own level.</summary>
+        public static int CapLevel(int level, int? cap) =>
+            cap.HasValue ? Math.Max(1, Math.Min(level, cap.Value)) : level;
 
         /// <summary>Returns all registered ability IDs. Prefer this over hardcoded numeric ranges.</summary>
         public static IEnumerable<int> RegisteredIds => Registry.Keys;

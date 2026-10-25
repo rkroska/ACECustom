@@ -152,6 +152,10 @@ namespace ACE.Server.Managers.ZoneScaling
         // ZcImmuneChain (51206).
         public const string ImmunePandemic = "immune_pandemic";
         public const string ImmuneChain = "immune_chain";
+        // CHARM LEVEL CAP (owner 2026-10-25): the highest level a levelled charm WORKS at in this zone / tier (a charm
+        // above it works at the cap; its coins and level are untouched and count again in a higher tier). Unset = no cap.
+        // Normally on the tier Default rows: /zonecontrol default 15 set charm_level_cap 49.
+        public const string CharmLevelCap = "charm_level_cap";
         // MONSTER ARCHETYPES (owner 2026-10-20): every governed monster rolls ONE combination of melee / missile / magic at
         // spawn (ZoneSpawnScaler.ApplyArchetype), among the ones its body allows. Body flags (1 = may), normally on the wcid
         // bucket; unset = melee only, so a retail drop-in never grows a bow.
@@ -758,6 +762,8 @@ namespace ACE.Server.Managers.ZoneScaling
             ArcherLauncherWcid, ArcherAmmoWcid,
             ArchetypeMissileDamageMult, ArchetypeMagicDamageMult,
             CasterMagicDelay, ArchetypeCastChance, ArchetypeMeleeRange, ArchetypeKeepName,
+            // charm level cap per tier (2026-10-25) - APPEND-ONLY
+            CharmLevelCap,
         };
 
         /// <summary>

@@ -621,6 +621,16 @@ namespace ACE.Server.Network.Structure
                     }
                     else
                         charmHeader = $"Charm [{(levelled != null ? "Level" : "Tier")} {tierStr}]\n\n{status}\n\nDouble click to toggle ability on / off.";
+                    // the tier cap (2026-10-25): where the zone holds the charm lower, say so and describe what it does here
+                    var hereTier = examiner != null ? ACE.Server.Managers.ZoneControl.ZoneControlManager.GetEffectiveVariation(examiner) : 0;
+                    var zoneCap = charmBlock != null && examiner != null && hereTier >= CharmAbilityRegistry.MinCharmTier ? CharmAbilityRegistry.ZoneCharmLevelCap(examiner, hereTier) : null;
+                    if (charmBlock != null && examiner != null && hereTier < CharmAbilityRegistry.MinCharmTier)
+                        charmHeader += "\n\nWorks only in T11+ zones.";
+                    else if (zoneCap.HasValue && tier > zoneCap.Value)
+                    {
+                        charmHeader += $"\n\nWorks at level {zoneCap.Value} here (this tier's charm cap). Its full level counts again in a higher tier.";
+                        levelled = CharmSettingsManager.PlayerTextFor(charmAbilityId, zoneCap.Value);
+                    }
                     if (levelled != null) charmHeader += $"\n\n{levelled}";
                 }
                 else
