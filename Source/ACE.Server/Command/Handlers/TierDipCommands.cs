@@ -62,7 +62,22 @@ namespace ACE.Server.Command.Handlers
 
             var step = (ServerConfig.zc_tier_dip_step.Value * 100).ToString("0.#", CultureInfo.InvariantCulture);
             var floor = (ServerConfig.zc_tier_dip_floor.Value * 100).ToString("0.#", CultureInfo.InvariantCulture);
-            Msg($"Each tier below your own costs {step} pct of a kill's Prestige Coins and kill task credit (never below {floor} pct).");
+            // only the rewards the dip actually reaches right now
+            var rewards = new System.Collections.Generic.List<string>();
+            if (ServerConfig.zc_pcoin_kill_base.Value > 0)
+                rewards.Add("Prestige Coins");
+            if (ServerConfig.zc_kt_decimal_credit_enabled.Value)
+                rewards.Add("kill task credit");
+            if (ServerConfig.zc_tier_dip_xp_enabled.Value)
+                rewards.Add("XP and luminance");
+
+            if (rewards.Count == 0)
+                Msg("No kill reward is reduced by the tier dip right now.");
+            else
+            {
+                var list = rewards.Count == 1 ? rewards[0] : string.Join(", ", rewards.GetRange(0, rewards.Count - 1)) + " and " + rewards[^1];
+                Msg($"Each tier below your own costs {step} pct of a kill's {list} (never below {floor} pct).");
+            }
         }
 
         private static string TierText(int tier) => tier >= TierRewardScale.MinTier ? "T" + tier : "below T11";

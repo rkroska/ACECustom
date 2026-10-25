@@ -124,8 +124,14 @@ namespace ACE.Server.Managers.ZoneControl
             var total = c + e;
             var whole = Math.Floor(total);
             var frac = total - whole;
-            if (!(frac >= 0) || frac >= 1)
+            if (!(frac >= 0))
                 frac = 0.0;
+            else if (frac >= 1 - Epsilon)
+            {
+                // a hair under the next whole coin (20 x 0.05 in floating point) is that coin
+                whole += 1;
+                frac = 0.0;
+            }
             return ((long)whole, frac);
         }
 

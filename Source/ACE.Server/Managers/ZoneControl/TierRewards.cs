@@ -139,6 +139,8 @@ namespace ACE.Server.Managers.ZoneControl
             if (killTier == 0)
                 return false;
 
+            // once any credit is handed off, a failure must not let the stock path credit the same kill again
+            var scheduled = false;
             try
             {
                 var routes = BuildKillTaskRoutes(victim);
@@ -170,6 +172,7 @@ namespace ACE.Server.Managers.ZoneControl
                     var list = kv.Value;
 
                     // a damager or sharer may be ticked by another landblock group: the quest write is theirs, on their thread
+                    scheduled = true;
                     LandblockManager.RunOnThreadFor(player, ActionType.CreatureDeath_KillTaskCredit, () =>
                     {
                         foreach (var (quest, credit) in list)
@@ -189,6 +192,10 @@ namespace ACE.Server.Managers.ZoneControl
             catch (Exception ex)
             {
                 log.Error($"[TierRewards] TryHandleKillTasks: {ex}");
+
+                // failed before handing anything off: let the stock kill-task code credit the kill instead
+                if (!scheduled)
+                    return false;
             }
 
             return true;

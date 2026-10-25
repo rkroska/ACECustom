@@ -125,9 +125,6 @@ namespace ACE.Server.Tests
                 banked += whole;
                 carried = frac;
             }
-            // 20 x 0.05 in floating point may land a hair under 1; the 21st kill must then finish the coin
-            if (banked == 0)
-                banked += TierRewardScale.AddCoins(carried, 0.05).Whole;
             Assert.AreEqual(1, banked);
         }
 
