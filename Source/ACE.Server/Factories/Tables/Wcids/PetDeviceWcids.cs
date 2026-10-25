@@ -579,6 +579,17 @@ namespace ACE.Server.Factories.Tables.Wcids
             return table[petLevelIdx];
         }
 
+        /// <summary>
+        /// An even pick among the essence families at a FIXED pet level (one of 50 ... 300) - Roll above with the level
+        /// roll skipped. Used by the T11+ zone-kill extras, which decide the level themselves (250 or 300).
+        /// </summary>
+        public static WeenieClassName RollAtLevel(int petLevel)
+        {
+            var rng = ThreadSafeRandom.Next(0, petDevices.Count - 1);
+
+            return petDevices[rng][petLevelIndexes[petLevel]];
+        }
+
         private static readonly HashSet<WeenieClassName> _combined = new HashSet<WeenieClassName>();
 
         static PetDeviceWcids()

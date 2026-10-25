@@ -854,6 +854,18 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> legendary_cantrip_drop_rate { get; private set; } = new(1.0, "Scales the chance for legendary cantrips to drop, relative to other cantrip levels in the tier. Defaults to 1.0, as per end of retail");
         public static ConfigProperty<double> advocate_fane_auto_bestow_level { get; private set; } = new(1, "the level that advocates are automatically bestowed by Advocate Fane if advocate_fane_auto_bestow is true");
         public static ConfigProperty<double> aetheria_drop_rate { get; private set; } = new(1.0, "Modifier for Aetheria drop rate, 1 being normal");
+
+        // T11+ ZONE-KILL EXTRAS (owner 2026-10-24): T10-style mundane loot and essences on every Zone Control kill at variation
+        // 11+, ADDED on top of the zone gear set - never counted in loot_drops_min / loot_drops_max or loot_slot_*. Made at tier 10.
+        // Read live on every kill. No siphon lens here: the one per-death lens roll already covers these kills.
+        public static ConfigProperty<double> zc_kill_extra_essence_chance { get; private set; } = new(0.01, "T11+ ZONE-KILL EXTRAS: chance per kill (0-1) of one T10 summoning essence at level 250 or 300. 0 = off.");
+        public static ConfigProperty<double> zc_kill_extra_essence_250_share { get; private set; } = new(0.71, "T11+ ZONE-KILL EXTRAS: share (0-1) of extra essences made at level 250; the rest are level 300.");
+        public static ConfigProperty<double> zc_kill_extra_mundane_chance { get; private set; } = new(0.25, "T11+ ZONE-KILL EXTRAS: chance per kill (0-1) of one mundane item - pyreal stack, mana stone, food/drink or lockpick, by the zc_kill_extra_weight_* weights. 0 = off.");
+        public static ConfigProperty<double> zc_kill_extra_weight_pyreal { get; private set; } = new(0.25, "T11+ ZONE-KILL EXTRAS: relative weight of a pyreal stack (T10 range, 1,000-15,000) in the mundane pick. 0 = never.");
+        public static ConfigProperty<double> zc_kill_extra_weight_manastone { get; private set; } = new(0.25, "T11+ ZONE-KILL EXTRAS: relative weight of a T10 mana stone in the mundane pick. 0 = never.");
+        public static ConfigProperty<double> zc_kill_extra_weight_food { get; private set; } = new(0.25, "T11+ ZONE-KILL EXTRAS: relative weight of a T10 food/drink consumable (tonics and philtres) in the mundane pick. 0 = never.");
+        public static ConfigProperty<double> zc_kill_extra_weight_lockpick { get; private set; } = new(0.25, "T11+ ZONE-KILL EXTRAS: relative weight of a T10 lockpick in the mundane pick. 0 = never.");
+        public static ConfigProperty<bool> zc_kill_extra_aetheria_enabled { get; private set; } = new(true, "T11+ ZONE-KILL EXTRAS: when TRUE each kill also rolls aetheria at the T10 rate (2 pct x aetheria_drop_rate), made at tier 10.");
         public static ConfigProperty<double> chess_ai_start_time { get; private set; } = new(-1.0, "the number of seconds for the chess ai to start. defaults to -1 (disabled)");
         public static ConfigProperty<double> encounter_delay { get; private set; } = new(1800, "the number of seconds a generator profile for regions is delayed from returning to free slots");
         public static ConfigProperty<double> encounter_regen_interval { get; private set; } = new(600, "the number of seconds a generator for regions at which spawns its next set of objects");

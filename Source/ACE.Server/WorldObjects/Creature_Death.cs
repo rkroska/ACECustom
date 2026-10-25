@@ -1394,6 +1394,15 @@ namespace ACE.Server.WorldObjects
                         }
                     }
                 }
+
+                // T11+ zone-kill extras (owner 2026-10-24): T10-style mundane item, summoning essence and aetheria, same gate
+                // as the bag above. Rolled AFTER the gear set is built and placed, so they never count toward the gear budget
+                // or the loot_slot_* counts and never displace a piece; added after the sweep loop so it never restats them.
+                // Gated on where the kill happened (effective variation 11+), not the profile tier: a T11+ profile dying
+                // in a lower governed zone gets none.
+                if (zoneLoot != null && ServerConfig.zonecontrol_enabled.Value
+                    && ACE.Server.Managers.ZoneControl.ZoneControlManager.GetEffectiveVariation(this) >= ACE.Server.Managers.ZoneControl.ZoneControlManager.MinBoundedVariation)
+                    AddZoneKillExtras(effectiveTreasure, corpse, droppedItems);
             }
 
             // move wielded treasure over, which also should include Wielded objects not marked for destroy on death.
@@ -1503,6 +1512,37 @@ namespace ACE.Server.WorldObjects
         /// an item that will not fit is silently lost. Kept below the real cap so quest tokens,
         /// currency and slot specials - all added OUTSIDE the budget - still have room.</summary>
         private const int ZoneCorpseItemCap = 100;
+
+        /// <summary>
+        /// Rolls the T11+ zone-kill extras and puts them on the corpse (or the dropped list for a corpse-less death), only
+        /// while the corpse holds fewer than ZoneCorpseItemCap items. A failed roll never aborts the corpse.
+        /// </summary>
+        private void AddZoneKillExtras(ACE.Database.Models.World.TreasureDeath killTreasure, Corpse corpse, List<WorldObject> droppedItems)
+        {
+            List<WorldObject> extras;
+            try { extras = LootGenerationFactory.CreateZoneKillExtras(killTreasure); }
+            catch (Exception ex) { log.Error($"[ZONELOOT] KILL EXTRAS: roll failed for {Name} ({WeenieClassId}): {ex}"); return; }
+
+            var room = LootGenerationFactory.ZoneKillExtrasRoom(corpse != null ? corpse.Inventory.Count : droppedItems.Count, ZoneCorpseItemCap);
+            foreach (var wo in extras)
+            {
+                if (room <= 0)
+                {
+                    log.Warn($"[ZONELOOT] KILL EXTRAS: {wo.Name} from {Name} ({WeenieClassId}) skipped, the corpse is at its {ZoneCorpseItemCap}-item cap");
+                    wo.Destroy();
+                    continue;
+                }
+                if (corpse == null)
+                    droppedItems.Add(wo);
+                else if (!corpse.TryAddToInventory(wo))
+                {
+                    log.Warn($"[ZONELOOT] KILL EXTRAS: {wo.Name} from {Name} ({WeenieClassId}) did not fit on the corpse and was lost");
+                    wo.Destroy();
+                    continue;
+                }
+                room--;
+            }
+        }
 
         private static ACE.Database.Models.World.TreasureDeath CloneTreasureDeath(ACE.Database.Models.World.TreasureDeath src)
         {
