@@ -73,12 +73,17 @@ namespace ACE.Server.WorldObjects
             // (rift instances live exclusively at negative variations).
             ACE.Server.Managers.Rifts.RiftManager.OnCreatureDeath(this, lastDamager);
 
-            if (KillQuest != null)
-                OnDeath_HandleKillTask(KillQuest);
-            if (KillQuest2 != null)
-                OnDeath_HandleKillTask(KillQuest2);
-            if (KillQuest3 != null)
-                OnDeath_HandleKillTask(KillQuest3);
+            // Tier rewards (owner 2026-10-24): a T11+ Zone Control kill gives decimal kill-task credit (TierRewards); every other
+            // kill keeps the stock kill-task rules below, unchanged.
+            if (!ACE.Server.Managers.ZoneControl.TierRewards.TryHandleKillTasks(this, KillQuest, KillQuest2, KillQuest3))
+            {
+                if (KillQuest != null)
+                    OnDeath_HandleKillTask(KillQuest);
+                if (KillQuest2 != null)
+                    OnDeath_HandleKillTask(KillQuest2);
+                if (KillQuest3 != null)
+                    OnDeath_HandleKillTask(KillQuest3);
+            }
 
             // Pet maturity credit is independent of XP: it only cares who did the damage.
             PetDevice.CreditMaturityKills(this);
@@ -89,6 +94,9 @@ namespace ACE.Server.WorldObjects
             // Bounty (owner 2026-09-23): an item every N kills in a zone or dungeon that has one - credited to the top
             // damager, the player the corpse and its loot belong to.
             BountyManager.OnCreatureKilled(this);
+
+            // Tier rewards (owner 2026-10-24): Prestige Coins for the top damager of a T11+ Zone Control kill. Bounties pay none.
+            ACE.Server.Managers.ZoneControl.TierRewards.OnCreatureKilled(this);
 
             return GetDeathMessage(lastDamager, damageType, criticalHit);
         }
@@ -269,6 +277,11 @@ namespace ACE.Server.WorldObjects
 
             var monsterTier = PrestigeManager.GetKillScalingMonsterTier(this);
 
+            // Tier rewards (owner 2026-10-24): monsterTier above is the retired prestige tier, always 0 at v11-v25 (it counts from a
+            // 1000 offset). A T11+ Zone Control kill passes its real tier separately, down to the per-recipient XP / luminance slots,
+            // which only act on it when zc_tier_dip_xp_enabled is on (TierRewardScale.ScaleXp). 0 for every other kill.
+            var zcKillTier = ACE.Server.Managers.ZoneControl.TierRewardScale.KillTier(this);
+
             var baseXp = WeenieKillXp;
             long? luminanceAward = LuminanceAward;
 
@@ -335,15 +348,16 @@ namespace ACE.Server.WorldObjects
                 var lumGrant = luminanceAward != null ? (long)Math.Round(luminanceAward.Value * damagePercent) : 0L;
                 var hasLum = luminanceAward != null;
                 var tierForGrant = monsterTier;
+                var killTierForGrant = zcKillTier;
                 Action grant = () =>
                 {
                     if (xpGrant > 0)
-                        player.EarnXP(xpGrant, XpType.Kill, ShareType.All, tierForGrant);
+                        player.EarnXP(xpGrant, XpType.Kill, ShareType.All, tierForGrant, killTierForGrant);
                     if (hasLum)
                     {
                         // economy ledger: kill luminance is labeled with the creature
                         using (PyrealLedger.BeginFor(EconomyLedger.SrcKill, this))
-                            player.EarnLuminance(lumGrant, XpType.Kill, ShareType.All, tierForGrant);
+                            player.EarnLuminance(lumGrant, XpType.Kill, ShareType.All, tierForGrant, killTierForGrant);
                     }
                 };
 

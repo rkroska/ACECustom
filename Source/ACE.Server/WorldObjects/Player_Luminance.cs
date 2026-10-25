@@ -12,7 +12,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Applies luminance modifiers before adding luminance
         /// </summary>
-        public void EarnLuminance(long amount, XpType xpType, ShareType shareType = ShareType.All, int monsterTier = 0)
+        public void EarnLuminance(long amount, XpType xpType, ShareType shareType = ShareType.All, int monsterTier = 0, int killTier = 0)
         {
             if (IsOlthoiPlayer || IsMule)
                 return;
@@ -42,13 +42,14 @@ namespace ACE.Server.WorldObjects
                 m_amount = (long)Math.Round(amount * quest * enlightenment * enchantment * modifier);
             }           
 
-            GrantLuminance(m_amount, xpType, shareType, monsterTier);
+            GrantLuminance(m_amount, xpType, shareType, monsterTier, killTier);
         }
 
         /// <summary>
         /// Directly grants luminance to the player, without any additional luminance modifiers
         /// </summary>
-        public void GrantLuminance(long amount, XpType xpType, ShareType shareType = ShareType.All, int monsterTier = 0)
+        /// <param name="killTier">Tier rewards: the T11+ Zone Control tier of the kill, 0 for any other luminance (see TierRewardScale.ScaleXp)</param>
+        public void GrantLuminance(long amount, XpType xpType, ShareType shareType = ShareType.All, int monsterTier = 0, int killTier = 0)
         {
             if (IsOlthoiPlayer)
                 return;
@@ -60,7 +61,7 @@ namespace ACE.Server.WorldObjects
                 var zoneMembers = ZoneShareManager.MembersFor(this);
                 if (zoneMembers != null)
                 {
-                    ACE.Server.Entity.Fellowship.ShareLuminanceAmong(zoneMembers, (ulong)amount, xpType, shareType & ~ShareType.Fellowship, this, monsterTier);
+                    ACE.Server.Entity.Fellowship.ShareLuminanceAmong(zoneMembers, (ulong)amount, xpType, shareType & ~ShareType.Fellowship, this, monsterTier, killTier);
                     return;
                 }
             }
@@ -69,7 +70,7 @@ namespace ACE.Server.WorldObjects
             {
                 // this will divy up the luminance, and re-call this function
                 // with ShareType.Fellowship removed
-                Fellowship.SplitLuminance((ulong)amount, xpType, shareType, this, monsterTier);
+                Fellowship.SplitLuminance((ulong)amount, xpType, shareType, this, monsterTier, killTier);
             }
             else
             {
@@ -83,6 +84,11 @@ namespace ACE.Server.WorldObjects
                     var playerTier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
                     finalAmount = (long)Math.Round(rewardAdjusted * PrestigeManager.GetXPPenaltyMultiplier(playerTier, monsterTier));
                 }
+
+                // tier dip (off unless zc_tier_dip_xp_enabled): this player's own share of a T11+ Zone Control kill
+                if (xpType == XpType.Kill)
+                    finalAmount = ACE.Server.Managers.ZoneControl.TierRewardScale.ScaleXp(finalAmount, this, killTier);
+
                 AddLuminance(finalAmount, xpType, shareType);
             }
         }
