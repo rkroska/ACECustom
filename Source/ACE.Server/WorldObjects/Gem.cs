@@ -632,8 +632,15 @@ namespace ACE.Server.WorldObjects
 
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
             // a levelled charm (1-100) says what it does at its level, from the live settings
-            var levelled = activating ? CharmSettingsManager.PlayerTextFor(abilityId, level) : null;
-            return activating ? $"{name} Level {level} activated." + (levelled != null ? " " + levelled : "") : $"{name} deactivated.";
+            // the tier cap (2026-10-25): a levelled charm above this zone's cap says it works at the cap, and describes that
+            var isLevelled = activating && player != null && CharmSettingsManager.LeveledBlockFor(abilityId) != null;
+            var hereTier = isLevelled ? ACE.Server.Managers.ZoneControl.ZoneControlManager.GetEffectiveVariation(player) : 0;
+            var cap = isLevelled && hereTier >= CharmAbilityRegistry.MinCharmTier ? CharmAbilityRegistry.ZoneCharmLevelCap(player, hereTier) : null;
+            var works = CharmAbilityRegistry.CapLevel(level, cap);
+            var levelled = activating ? CharmSettingsManager.PlayerTextFor(abilityId, works) : null;
+            var capNote = isLevelled && hereTier < CharmAbilityRegistry.MinCharmTier ? " It works only in T11+ zones."
+                : works < level ? $" It works at level {works} here (this tier's charm cap)." : "";
+            return activating ? $"{name} Level {level} activated.{capNote}" + (levelled != null ? " " + levelled : "") : $"{name} deactivated.";
         }
     }
 }
