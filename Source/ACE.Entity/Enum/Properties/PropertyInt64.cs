@@ -84,6 +84,23 @@ namespace ACE.Entity.Enum.Properties
         /// Bonded + Attuned, never transferable. 50602, free in EVERY Property enum.
         /// </summary>
         BankedEnlightenmentTokens = 50602,
+        // Levelled charm coin ledger (owner 2026-10-24): the PLAYER keeps the Prestige Coins put into each levelled charm
+        // with Charm Infusion Gems; the level (1-100) is worked out from them by the charm's live price curve, so a retune
+        // re-levels everyone without touching what they spent. The charm item only shows the level (PropertyInt.CharmLevel
+        // is mirrored from this). Ids in this lane's 512xx block (until 2026-10-24 they held the level itself; charms were
+        // never on the live server, so nothing is converted).
+        /// <summary>Prestige Coins put into the Split Arrow charm (0 / unset = level 1).</summary>
+        SplitArrowCharmCoins     = 51200,
+        /// <summary>Prestige Coins put into the Chain charm.</summary>
+        ChainCharmCoins          = 51201,
+        /// <summary>Prestige Coins put into the Pandemic charm.</summary>
+        PandemicCharmCoins       = 51202,
+        /// <summary>Prestige Coins put into the Improved Cleave charm.</summary>
+        ImprovedCleaveCharmCoins = 51203,
+        /// <summary>Prestige Coins put into the Armor Breaker charm (dual wield, 2026-10-21).</summary>
+        ArmorBreakerCharmCoins   = 51204,
+        /// <summary>Prestige Coins put into the Shield Arc charm (shield, 2026-10-21).</summary>
+        ShieldArcCharmCoins      = 51205,
 
         /// <summary>Blacksmithing: Unix time (seconds) until which PropertyInt.ForgeDyePreview is the colour drawn.</summary>
         ForgeDyePreviewUntil    = 52000,

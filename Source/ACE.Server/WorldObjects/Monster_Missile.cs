@@ -196,7 +196,13 @@ namespace ACE.Server.WorldObjects
                 SwitchToMeleeAttack();*/
 
             if (MonsterProjectile_OnCollideEnvironment_Counter >= 3)
-                TrySwitchToMeleeAttack();
+            {
+                // a missile archetype keeps its bow and walks round the obstacle instead (picked up by its own tick)
+                if (ZcHasMissile)
+                    ZcRequestSightApproach();
+                else
+                    TrySwitchToMeleeAttack();
+            }
         }
 
         public bool SwitchWeaponsPending;
@@ -205,6 +211,9 @@ namespace ACE.Server.WorldObjects
         {
             // 24139 - Invisible Assailant never switches to melee?
             if (AiAllowedCombatStyle == CombatStyle.StubbornMissile || Visibility) return;
+
+            // a missile archetype never destroys its bow (Creature_Archetype: it walks in instead)
+            if (ZcHasMissile) return;
 
             SwitchWeaponsPending = true;
 

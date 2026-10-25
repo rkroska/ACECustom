@@ -38,6 +38,19 @@ namespace ACE.Server.WorldObjects
         public const int UniversalSummoningMasteryAbilityId = 25;
         public const int AutoRebuffAbilityId      = 26;
         public const int ForkAbilityId             = 27;
+        // 28 (Far Shot) and 29 (Mule's Tinkering) are taken by weenies / another branch - the levelled charms start at 30.
+        /// <summary>Levelled charm (1-100): a T11+ launcher fires extra arrows.</summary>
+        public const int SplitArrowAbilityId       = 30;
+        /// <summary>Levelled charm (1-100): hand-cast war arcs / bolts / streaks jump from monster to monster.</summary>
+        public const int ChainAbilityId            = 31;
+        /// <summary>Levelled charm (1-100): a ticking void DoT spreads to nearby monsters.</summary>
+        public const int PandemicAbilityId         = 32;
+        /// <summary>Levelled charm (1-100): melee cleave reaches further, all around, more targets.</summary>
+        public const int ImprovedCleaveAbilityId   = 33;
+        /// <summary>Levelled charm (1-100, 2026-10-21): a dual wielder's hits ignore a share of the armor left.</summary>
+        public const int ArmorBreakerAbilityId     = 34;
+        /// <summary>Levelled charm (1-100, 2026-10-21): the shield guards a wider arc against monster attacks.</summary>
+        public const int ShieldArcAbilityId        = 35;
 
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {
@@ -55,7 +68,20 @@ namespace ACE.Server.WorldObjects
             { UniversalSummoningMasteryAbilityId, new AbilityEntry(p => p.HasUniversalSummoningMastery, (p, v) => p.HasUniversalSummoningMastery = v, "Universal Summoning Mastery") },
             { AutoRebuffAbilityId,      new AbilityEntry(p => p.HasAutoRebuffCharm,     (p, v) => p.HasAutoRebuffCharm = v,     "Auto-Rebuff")          },
             { ForkAbilityId,            new AbilityEntry(p => p.HasForkCharm,           (p, v) => p.HasForkCharm           = v, "Fork")                 },
+            { SplitArrowAbilityId,      new AbilityEntry(p => p.HasSplitArrowCharm,     (p, v) => p.HasSplitArrowCharm     = v, "Split Arrow")          },
+            { ChainAbilityId,           new AbilityEntry(p => p.HasChainCharm,          (p, v) => p.HasChainCharm          = v, "Chain")                },
+            { PandemicAbilityId,        new AbilityEntry(p => p.HasPandemicCharm,       (p, v) => p.HasPandemicCharm       = v, "Pandemic")             },
+            { ImprovedCleaveAbilityId,  new AbilityEntry(p => p.HasImprovedCleaveCharm, (p, v) => p.HasImprovedCleaveCharm = v, "Improved Cleave")      },
+            { ArmorBreakerAbilityId,    new AbilityEntry(p => p.HasArmorBreakerCharm,   (p, v) => p.HasArmorBreakerCharm   = v, "Armor Breaker")        },
+            { ShieldArcAbilityId,       new AbilityEntry(p => p.HasShieldArcCharm,      (p, v) => p.HasShieldArcCharm      = v, "Shield Arc")           },
         };
+
+        /// <summary>The charm level (1-100) the player's active charm of this ability has, 0 when it is not active.</summary>
+        public static int LevelOf(Player player, int abilityId)
+        {
+            if (player == null || !IsActive(player, abilityId)) return 0;
+            return player.ActiveCharmLevels.TryGetValue(abilityId, out var level) && level > 0 ? level : 1;
+        }
 
         /// <summary>Returns all registered ability IDs. Prefer this over hardcoded numeric ranges.</summary>
         public static IEnumerable<int> RegisteredIds => Registry.Keys;
@@ -87,6 +113,13 @@ namespace ACE.Server.WorldObjects
             { 777700300, AutoRebuffAbilityId },
             // Fork Charm (Tiers 1–3)
             { 777700027, ForkAbilityId }, { 777710007, ForkAbilityId }, { 777720007, ForkAbilityId },
+            // Levelled charms (one item each, level 1-100)
+            { 777700035, SplitArrowAbilityId },
+            { 777700036, ChainAbilityId },
+            { 777700037, PandemicAbilityId },
+            { 777700038, ImprovedCleaveAbilityId },
+            { 777700039, ArmorBreakerAbilityId },
+            { 777700040, ShieldArcAbilityId },
         };
 
         /// <summary>

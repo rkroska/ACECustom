@@ -2184,7 +2184,12 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>The factor on a monster's damage to a PLAYER: its multiplier when the monster is governed by Zone
         /// Control (an enabled zone resolves it - never retail), else 1.0. Called on every monster hit / spell on a
         /// player, so the empty-map case returns before any resolve.</summary>
-        public static float MonsterDamageMultFor(Creature attacker, Creature defender)
+        public static float MonsterDamageMultFor(Creature attacker, Creature defender) => MonsterDamageMultForKind(attacker, defender, null);
+
+        /// <summary>MonsterDamageMultFor plus the monster archetype's dial for this attack kind (2026-10-20): missile hits x
+        /// archetype_missile_damage_mult, spell hits x archetype_magic_damage_mult. A separate name, not an overload, so the
+        /// 2-argument method keeps its exact shape for the test mods that bind it by name.</summary>
+        public static float MonsterDamageMultForKind(Creature attacker, Creature defender, CombatType? kind)
         {
             if (!ServerConfig.zonecontrol_enabled.Value || attacker == null || attacker is Player || defender is not Player) return 1f;
             var profile = ResolveCombatProfile(attacker);
@@ -2199,6 +2204,11 @@ namespace ACE.Server.Managers.ZoneControl
                 if (double.IsFinite(zone) && zone >= DamageMultMin && zone <= DamageMultMax)
                     m *= zone;
             }
+            // a player's Destructive Curse on the monster cuts what it deals (owner 2026-10-13) - every path that comes
+            // through here: swings with their True Damage, spells, harm, drain, its DoT ticks on a player
+            m *= attacker.GetZcCurseDamageDealtMod(profile);
+            // monster archetypes (2026-10-20): a rolled bow user's missile hits / caster's spell hits get their own dial
+            m *= attacker.ZcArchetypeDamageMult(profile, kind);
             return (float)m;
         }
 
@@ -2212,6 +2222,52 @@ namespace ACE.Server.Managers.ZoneControl
             if (profile == null || !profile.Has(ZoneStat.MonsterDamageTakenMult)) return 1f;
             var m = profile.Get(ZoneStat.MonsterDamageTakenMult);
             return double.IsFinite(m) && m >= DamageMultMin && m <= DamageMultMax ? (float)m : 1f;
+        }
+
+        /// <summary>The four player attack types a Zone Control monster can be tuned against (owner 2026-10-12: "option 1,
+        /// monster side setting per attack type").</summary>
+        public enum ZcAttackKind { None, Melee, Missile, War, Void }
+
+        /// <summary>Which of the four a player's SPELL is: its school's - except a Cast on Strike proc, which counts as the
+        /// weapon that fired it (owner 2026-10-12: "tie it to the weapon"). A melee or missile weapon's proc is that weapon's
+        /// type; a jewelry proc is whatever the wearer wields (bare hands = melee); a wand's proc is the spell's school.
+        /// None for a monster, a pet, or a school that is neither war nor void.</summary>
+        public static ZcAttackKind AttackKindOfSpell(ACE.Server.WorldObjects.Creature caster, ACE.Server.WorldObjects.WorldObject launcher,
+            ACE.Server.Entity.Spell spell, bool fromProc)
+        {
+            if (!(caster is ACE.Server.WorldObjects.Player player) || spell == null)
+                return ZcAttackKind.None;
+            if (fromProc)
+            {
+                var weapon = launcher;
+                if (!(weapon is ACE.Server.WorldObjects.MeleeWeapon) && !(weapon is ACE.Server.WorldObjects.MissileLauncher) && !(weapon is ACE.Server.WorldObjects.Caster))
+                    weapon = player.GetEquippedWeapon() ?? player.GetEquippedWand();
+                if (weapon is ACE.Server.WorldObjects.MissileLauncher)
+                    return ZcAttackKind.Missile;
+                if (!(weapon is ACE.Server.WorldObjects.Caster))
+                    return ZcAttackKind.Melee;
+            }
+            return spell.School == ACE.Entity.Enum.MagicSchool.WarMagic ? ZcAttackKind.War
+                 : spell.School == ACE.Entity.Enum.MagicSchool.VoidMagic ? ZcAttackKind.Void
+                 : ZcAttackKind.None;
+        }
+
+        /// <summary><see cref="MonsterDamageTakenMultFor(Creature)"/> x the setting for that attack type
+        /// (melee_ / missile_ / war_ / void_damage_taken_mult). Same gates and bounds; unset or None = the overall one alone.</summary>
+        public static float MonsterDamageTakenMultFor(Creature defender, ZcAttackKind kind)
+        {
+            var m = MonsterDamageTakenMultFor(defender);
+            if (kind == ZcAttackKind.None || !ServerConfig.zonecontrol_enabled.Value || defender == null || defender is Player || defender is CombatPet)
+                return m;
+            var stat = kind == ZcAttackKind.Melee ? ZoneStat.MeleeDamageTakenMult
+                     : kind == ZcAttackKind.Missile ? ZoneStat.MissileDamageTakenMult
+                     : kind == ZcAttackKind.War ? ZoneStat.WarDamageTakenMult
+                     : ZoneStat.VoidDamageTakenMult;
+            var profile = ResolveCombatProfile(defender);
+            if (profile == null || !profile.Has(stat))
+                return m;
+            var v = profile.Get(stat);
+            return double.IsFinite(v) && v >= DamageMultMin && v <= DamageMultMax ? (float)(m * v) : m;
         }
 
         /// <summary>`/zonecontrol damagemult`: set (or clear with null / 1.0) one monster's multiplier. Persists.</summary>

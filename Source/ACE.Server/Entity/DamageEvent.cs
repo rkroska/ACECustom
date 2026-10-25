@@ -594,6 +594,10 @@ namespace ACE.Server.Entity
 
             var ignoreArmorMod = Math.Min(armorRendingMod, armorCleavingMod);
 
+            // Armor Breaker charm (owner 2026-10-21): a dual wielder's hit also ignores a share of the armor that is LEFT
+            // (1 when the charm does not apply - not dual wielding, a player defender, no charm)
+            ignoreArmorMod *= attacker.ArmorBreakerArmorMod(Weapon, defender);
+
             // get body part / armor pieces / armor modifier
             if (playerDefender != null)
             {
@@ -722,6 +726,10 @@ namespace ACE.Server.Entity
             // calculate final output damage
             Damage = DamageBeforeMitigation * ArmorMod * ShieldMod * ResistanceMod * DamageResistanceRatingMod;
 
+            // Shield Arc charm (owner 2026-10-22): sword and shield's own damage bonus on a monster (1 when it does not apply)
+            if (playerAttacker != null && playerDefender == null)
+                Damage *= attacker.ShieldArcDamageMod(Weapon, defender);
+
             // Apply split arrow damage multiplier if this is a split arrow
             if (DamageSource.GetProperty(PropertyBool.IsSplitArrow) == true)
             {
@@ -733,6 +741,10 @@ namespace ACE.Server.Entity
                     ?? DefaultSplitArrowDamageMultiplier);
                 Damage *= splitMultiplier;
             }
+
+            // Improved Cleave charm damage share (owner 2026-10-14): set by the melee path only around a cleaved hit
+            if (attacker is Creature cleaver && cleaver.PendingCleaveDamageScale is float cleaveScale)
+                Damage *= cleaveScale;
 
             // NEW: Apply enrage damage reduction to the final output damage if the defender is a mob and enraged
             if (defender.IsEnraged && !(defender is Player))
@@ -816,7 +828,7 @@ namespace ACE.Server.Entity
 
                 // per-monster DAMAGE MULTIPLIER (owner 2026-10-03, Bestiary): the whole landed hit, normal + True Damage
                 // (a slow swinger like the Kraken hits harder per swing; < 1 softens a monster). 1.0 unless set.
-                var damageMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultFor(attacker, truePlayer);
+                var damageMult = ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultForKind(attacker, truePlayer, CombatType);
                 if (damageMult != 1f)
                 {
                     Damage *= damageMult;
@@ -839,7 +851,11 @@ namespace ACE.Server.Entity
             // on a Zone Control monster, key 44 included - the "more HP" knob. 1.0 unless set. Key 44 is only ever scaled DOWN
             // by it: above 1 its NO-KILL amount would become a killing blow.
             var takenMult = Damage > 0 && playerDefender == null
-                ? ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(defender) : 1f;
+                ? ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageTakenMultFor(defender,
+                    // per attack type (owner 2026-10-12): a player's swing is melee, a shot is missile
+                    playerAttacker == null ? ACE.Server.Managers.ZoneControl.ZoneControlManager.ZcAttackKind.None
+                    : CombatType == CombatType.Missile ? ACE.Server.Managers.ZoneControl.ZoneControlManager.ZcAttackKind.Missile
+                    : ACE.Server.Managers.ZoneControl.ZoneControlManager.ZcAttackKind.Melee) : 1f;
             DamageBeforeZoneTaken = Damage;
             Damage = Damage * takenMult + pctHpAdd * Math.Min(takenMult, 1f);
 

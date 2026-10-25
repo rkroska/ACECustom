@@ -32,7 +32,8 @@ never reads as real salvage. The client receives exactly three icon layers (icon
 
 - **Armor, shields, jewelry, clothing, cloaks:** the Zone Control modifier lines (the "Modifiers:" block).
 - **Weapons:** the graded cards: Biting Strike, Crushing Blow, Rending (with its Rend Power), Armor Rending,
-  Shield Cleaving and Slayer. Cast on Strike, Cleave and Split Arrow are not touched (Transmutation
+  Shield Cleaving, Slayer and Spell Armor Rend (casters only: a bag never adds it to a melee or missile weapon).
+  Cast on Strike, Cleave and Split Arrow are not touched (Transmutation
   does re-pick the Cast on Strike spells to the new type).
 
 ## Rules

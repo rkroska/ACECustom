@@ -1479,6 +1479,10 @@ namespace ACE.Server.WorldObjects
             TryProcItemWithChanceMod(attacker, target, selfTarget, 1.0f);
         }
 
+        /// <summary>QB Deeds T6: true when this Aetheria's proc is the surge the player already has always on - it does not fire.</summary>
+        private bool IsReplacedByDeedsSurge(WorldObject attacker, uint procSpellId) =>
+            attacker is Player player && Aetheria.IsAetheria(WeenieClassId) && player.HasDeedsSurge(procSpellId);
+
         /// <summary>
         /// Try to proc with an external chance multiplier applied to the computed proc rate.
         /// </summary>
@@ -1511,8 +1515,7 @@ namespace ACE.Server.WorldObjects
                     baseChance = Aetheria.CalcProcRate(this, wielder);
 
                 // QB Deeds T6: the surge is always on (with the player's augs) - its Aetheria proc does not fire
-                var deedsSurge = attacker is Player surgePlayer && Aetheria.IsAetheria(WeenieClassId) && surgePlayer.HasDeedsSurge(ProcSpell.Value);
-                if (!deedsSurge)
+                if (!IsReplacedByDeedsSurge(attacker, ProcSpell.Value))
                     TryProcOneSpell(attacker, target, selfTarget, ProcSpell.Value, Math.Min(baseChance, procCap), chanceMultiplier);
             }
 
@@ -1530,6 +1533,9 @@ namespace ACE.Server.WorldObjects
         public void ForceProcSpell(WorldObject attacker, Creature target, bool selfTarget)
         {
             if (ProcSpell == null)
+                return;
+            // the staff /buff pre-cast follows the same T6 rule as a real proc
+            if (IsReplacedByDeedsSurge(attacker, ProcSpell.Value))
                 return;
             TryProcOneSpell(attacker, target, selfTarget, ProcSpell.Value, 1.0, 1.0f);
         }

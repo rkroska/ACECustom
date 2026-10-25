@@ -489,6 +489,8 @@ namespace ACE.Server.Entity.Actions
         DungeonBuilder_LiveEdit,            // dungeon builder: a placed wall / generator moved or turned on its own landblock's thread
         CreatureDeath_BankCorpseCoins,      // pyreal auto-deposit: a kill's coins handed to the killer's bank on the world queue
         TierRewards_PrestigeCoins,          // tier rewards: a T11+ kill's Prestige Coins handed to the top damager's own thread
+        MonsterArchetype_SwapWeapons,       // monster archetypes: a missile + melee monster swaps bow <-> melee after the stance change
+        Charm_RefreshLevels,                // charm coin ledger: a price curve change re-levels an online player's charms on their own thread
     }
     public static class ActionTypeConverter
     {

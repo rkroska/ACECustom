@@ -163,6 +163,7 @@ namespace ACE.Server.Managers.ZoneControl
             ZoneLootMutator.ArmorRendOverridePropId,
             ZoneLootMutator.SplitArrowRangeFloatId,
             ZoneLootMutator.SplitArrowDmgFloatId,
+            (int)PropertyFloat.ZcSpellArmorRend,
         };
 
         /// <summary>The item's tier, as max(ZcTier, WeaponAugScaleTier).
@@ -501,6 +502,7 @@ namespace ACE.Server.Managers.ZoneControl
             if (propId == ZoneLootMutator.SplitArrowRangeFloatId) return "Split Arrow range";
             if (propId == ZoneLootMutator.SplitArrowDmgFloatId) return "Split Arrow damage";
             if (propId == (int)PropertyInt.SlayerCreatureType) return "Slayer target";
+            if (propId == (int)PropertyFloat.ZcSpellArmorRend) return "Spell Armor Rend";
             return "property " + propId;
         }
     }

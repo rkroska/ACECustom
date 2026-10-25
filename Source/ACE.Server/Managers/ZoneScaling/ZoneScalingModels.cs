@@ -132,6 +132,49 @@ namespace ACE.Server.Managers.ZoneScaling
         // DoT ticks - from any attacker. The mirror of monster_damage_mult, and the "more HP" knob without touching the 1M HP
         // (ZoneControlManager.MonsterDamageTakenMultFor). 0.8 = takes 20 pct less = fights last 1.25x. Unset = x1.
         public const string MonsterDamageTakenMult = "monster_damage_taken_mult";
+        // DAMAGE TAKEN PER ATTACK TYPE (owner 2026-10-12: "option 1, monster side setting per attack type"): x what a Zone
+        // Control monster takes from a PLAYER's melee weapon, missile weapon, war spells, void spells (void DoT ticks included),
+        // on top of monster_damage_taken_mult - the dials that bring the four to the same kill times. A Cast on Strike proc
+        // counts as the weapon that fired it ("tie it to the weapon"). Same bounds; unset = x1.
+        // (ZoneControlManager.MonsterDamageTakenMultFor(defender, kind)).
+        public const string MeleeDamageTakenMult = "melee_damage_taken_mult";
+        public const string MissileDamageTakenMult = "missile_damage_taken_mult";
+        public const string WarDamageTakenMult = "war_damage_taken_mult";
+        public const string VoidDamageTakenMult = "void_damage_taken_mult";
+        // DESTRUCTIVE CURSE DAMAGE CUT (owner 2026-10-13): while a player's Destructive Curse is on the monster, everything it
+        // deals to a player is cut by this share (0.25 = 25 pct less). Unset = 0.25; 0 = no cut here; never above 0.9.
+        public const string CurseDamageCut = "curse_damage_cut";
+        // 1 = the Curse does not cut this monster's damage (it still takes the Curse's own damage); the per-weenie twin is
+        // PropertyBool.ZcImmuneCurseCut (51200).
+        public const string ImmuneCurseCut = "immune_curse_cut";
+        // LEVELLED CHARMS (owner 2026-10-13): 1 = the Pandemic charm never spreads a DoT ONTO this monster / the Chain charm
+        // never jumps ONTO it (a cast at it works as always). Per-weenie twins: PropertyBool.ZcImmunePandemic (51205),
+        // ZcImmuneChain (51206).
+        public const string ImmunePandemic = "immune_pandemic";
+        public const string ImmuneChain = "immune_chain";
+        // MONSTER ARCHETYPES (owner 2026-10-20): every governed monster rolls ONE combination of melee / missile / magic at
+        // spawn (ZoneSpawnScaler.ApplyArchetype), among the ones its body allows. Body flags (1 = may), normally on the wcid
+        // bucket; unset = melee only, so a retail drop-in never grows a bow.
+        public const string ArchetypeCanMissile = "archetype_can_missile";
+        public const string ArchetypeCanMagic = "archetype_can_magic";
+        // roll weights of the 7 combinations; unset = the owner's 15 / 15 / 15 / 15 / 15 / 15 / 10
+        public const string ArchetypeWeightMelee = "archetype_weight_melee";
+        public const string ArchetypeWeightMissile = "archetype_weight_missile";
+        public const string ArchetypeWeightMagic = "archetype_weight_magic";
+        public const string ArchetypeWeightMissileMelee = "archetype_weight_missile_melee";
+        public const string ArchetypeWeightMagicMelee = "archetype_weight_magic_melee";
+        public const string ArchetypeWeightMissileMagic = "archetype_weight_missile_magic";
+        public const string ArchetypeWeightAll = "archetype_weight_all";
+        // the kit a missile archetype is handed at spawn: launcher (or thrown stack) + ammo (0 = thrown, none)
+        public const string ArcherLauncherWcid = "archer_launcher_wcid";
+        public const string ArcherAmmoWcid = "archer_ammo_wcid";
+        // x on that archetype's MISSILE hits / SPELL hits only (melee hits of a hybrid stay x1); read live
+        public const string ArchetypeMissileDamageMult = "archetype_missile_damage_mult";
+        public const string ArchetypeMagicDamageMult = "archetype_magic_damage_mult";
+        public const string CasterMagicDelay = "caster_magic_delay";          // seconds between casts (stamps AiUseMagicDelay)
+        public const string ArchetypeCastChance = "archetype_cast_chance";    // a hybrid with magic casts on this share of attacks (unset 0.5)
+        public const string ArchetypeMeleeRange = "archetype_melee_range";    // missile + melee: melee inside this, bow past 2x (unset 4 m)
+        public const string ArchetypeKeepName = "archetype_keep_name";        // 1 = no role word after the name
         // owner 2026-10-03: 1 = the monster takes NO damage from Rocky Shrapnel (6152) / Ring of Unspeakable Agony (2673).
         // Zone / Tier Default / rank / wcid like any stat; PropertyBool.ZcImmuneShrapnelAgony (50059) does the same per weenie.
         public const string ImmuneShrapnelAgony = "immune_shrapnel_agony";
@@ -428,6 +471,9 @@ namespace ACE.Server.Managers.ZoneScaling
         public const string WeaponShieldCleaveChance = "weapon_shield_cleave_chance"; // Shield Cleaving
         public const string WeaponShieldCleaveMin = "weapon_shield_cleave_min"; //   fraction of shield ignored 0..1 (default 0.5)
         public const string WeaponShieldCleaveMax = "weapon_shield_cleave_max";
+        public const string WeaponSpellArmorRendChance = "weapon_spell_armor_rend_chance"; // Spell Armor Rend (2026-10-12): casters only
+        public const string WeaponSpellArmorRendMin = "weapon_spell_armor_rend_min"; //   fraction of the monster's Spell Armor level ignored 0..1
+        public const string WeaponSpellArmorRendMax = "weapon_spell_armor_rend_max";
         // REMOVED 2026-08-25 (owner): weapon_phantom_chance, the Phantom (hollow) card's chance stat.
         // The card is gone from ZoneLootMutator; the retail IgnoreMagicArmor / IgnoreMagicResist
         // properties it used to stamp are untouched. Zones that authored the key keep a dead store row
@@ -697,6 +743,21 @@ namespace ACE.Server.Managers.ZoneScaling
             LootSlotClothing, LootSlotClothingMax, LootWeightClothing,
             // Blood / Spirit Thirst chance (2026-10-06) - APPEND-ONLY
             ItemSpellThirstChance, "item_spell_thirst_chance_t25",
+            // Spell Armor Rend, the caster weapon card (2026-10-12) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            WeaponSpellArmorRendChance, WeaponSpellArmorRendMin, WeaponSpellArmorRendMax,
+            "weapon_spell_armor_rend_chance_t25", "weapon_spell_armor_rend_min_t25", "weapon_spell_armor_rend_max_t25",
+            // damage taken per attack type (2026-10-12) - APPEND-ONLY
+            MeleeDamageTakenMult, MissileDamageTakenMult, WarDamageTakenMult, VoidDamageTakenMult,
+            CurseDamageCut, ImmuneCurseCut,
+            // levelled charm immunities (2026-10-13) - APPEND-ONLY
+            ImmunePandemic, ImmuneChain,
+            // monster archetypes (2026-10-20) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            ArchetypeCanMissile, ArchetypeCanMagic,
+            ArchetypeWeightMelee, ArchetypeWeightMissile, ArchetypeWeightMagic, ArchetypeWeightMissileMelee,
+            ArchetypeWeightMagicMelee, ArchetypeWeightMissileMagic, ArchetypeWeightAll,
+            ArcherLauncherWcid, ArcherAmmoWcid,
+            ArchetypeMissileDamageMult, ArchetypeMagicDamageMult,
+            CasterMagicDelay, ArchetypeCastChance, ArchetypeMeleeRange, ArchetypeKeepName,
         };
 
         /// <summary>
@@ -830,7 +891,11 @@ namespace ACE.Server.Managers.ZoneScaling
         /// book spell = keep the book's own chance; null on an ADDED spell = default 2.0.</summary>
         public double? Chance { get; set; }
 
-        public ZoneSpellRule Clone() => new ZoneSpellRule { SpellId = SpellId, Disabled = Disabled, Chance = Chance };
+        /// <summary>Caster list entry (2026-10-20): used ONLY by a monster that rolled a magic archetype, and its Chance is
+        /// then a WEIGHT inside that list. Every other monster skips the rule entirely. Missing on older profiles = false.</summary>
+        public bool Caster { get; set; }
+
+        public ZoneSpellRule Clone() => new ZoneSpellRule { SpellId = SpellId, Disabled = Disabled, Chance = Chance, Caster = Caster };
     }
 
     /// <summary>
@@ -1180,7 +1245,8 @@ namespace ACE.Server.Managers.ZoneScaling
                     foreach (var rule in layer.SpellRules)
                     {
                         if (rule == null) continue;
-                        var at = result.SpellRules.FindIndex(r => r.SpellId == rule.SpellId);
+                        // a caster-list entry and a book rule for the same spell are two different rules (2026-10-20)
+                        var at = result.SpellRules.FindIndex(r => r.SpellId == rule.SpellId && r.Caster == rule.Caster);
                         if (at >= 0) result.SpellRules[at] = rule.Clone();
                         else result.SpellRules.Add(rule.Clone());
                     }

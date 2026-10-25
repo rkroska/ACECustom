@@ -79,7 +79,7 @@ namespace ACE.Server.Network.Structure
             Success = success;
 
             BuildProperties(wo, examiner);
-            BuildSpells(wo);
+            BuildSpells(wo, examiner);
 
             // Live Stat Resolution (owner 2026-08-22, plan 3b): a piece with a ZcModifiers record is
             // resolved from its grades against the LIVE ladder for the RESPONSE COPY only - wo is
@@ -602,11 +602,26 @@ namespace ACE.Server.Network.Structure
                 if (wo.GetProperty(PropertyBool.IsAbilityCharm) == true)
                 {
                     var tier    = wo.GetProperty(PropertyInt.CharmLevel) ?? 1;
+                    var charmAbilityId = wo.GetProperty(PropertyInt.CharmGrantsAbility) ?? 0;
+                    // a levelled charm shows its owner's level, worked out from the Prestige Coins they have put in
+                    // (2026-10-24). Charms are bonded + attuned, so the one appraising a charm is the one carrying it.
+                    var charmBlock = CharmSettingsManager.LeveledBlockFor(charmAbilityId);
+                    var charmCoins = charmBlock != null && examiner != null ? examiner.GetCharmCoins(charmAbilityId) : -1;
+                    if (charmCoins >= 0) tier = charmBlock.LevelFromCoins(charmCoins);
                     var maxTier = wo.GetProperty(PropertyInt.CharmMaxLevel);
                     var tierStr = maxTier.HasValue ? $"{tier}/{maxTier}" : $"{tier}";
                     var isOn    = wo.GetProperty(PropertyBool.IsCharmActivated) == true;
                     var status  = isOn ? "Status: ON" : "Status: OFF";
-                    charmHeader = $"Charm [Tier {tierStr}]\n\n{status}\n\nDouble click to toggle ability on / off.";
+                    // the levelled charms (1-100) say "Level" and what the charm does at this level, from the live settings
+                    var levelled = CharmSettingsManager.PlayerTextFor(charmAbilityId, tier);
+                    if (charmCoins >= 0)
+                    {
+                        var charmNext = tier >= CharmSettingsManager.LeveledCharmBlock.MaxLevel ? "" : $" - next level in {charmBlock.CoinsToReach(tier + 1) - charmCoins:N0}";
+                        charmHeader = $"Charm [{Player.CharmLevelText(charmBlock, charmCoins)}]\nPrestige Coins put in: {charmCoins:N0}{charmNext}\n\n{status}\n\nDouble click to toggle ability on / off. Use a Charm Infusion Gem on it to raise its level.";
+                    }
+                    else
+                        charmHeader = $"Charm [{(levelled != null ? "Level" : "Tier")} {tierStr}]\n\n{status}\n\nDouble click to toggle ability on / off.";
+                    if (levelled != null) charmHeader += $"\n\n{levelled}";
                 }
                 else
                 {
@@ -855,12 +870,28 @@ namespace ACE.Server.Network.Structure
                 PropertiesInt.Remove(PropertyInt.AppraisalLongDescDecoration);
         }
 
-        private void BuildSpells(WorldObject wo)
+
+        private void BuildSpells(WorldObject wo, Player examiner = null)
         {
             SpellBook = new List<uint>();
 
             if (wo is Creature)
+            {
+                // Mob HUD (owner 2026-10-17: "Need a way to see the dots on the other mobs too ... Also what we spread to"):
+                // a player who switched on nearby health (/nearbyhealth on) also sees, when appraising a monster, the void
+                // DoTs on it that THEY cast - by hand or spread by Pandemic - as enchantment entries (the high bit, as items
+                // show theirs). Nobody else sees any change.
+                // (and the server switch is on; the void-DoT test is the same id check Pandemic uses - review 2026-10-20)
+                if (examiner != null && wo is not Player && NearbyHealth.IsOn(examiner) && ServerConfig.nearby_health_updates.Value)
+                {
+                    var all = wo.Biota.PropertiesEnchantmentRegistry.Clone(wo.BiotaDatabaseLock);
+                    if (all != null)
+                        foreach (var e in all)
+                            if (e.CasterObjectId == examiner.Guid.Full && Creature.IsVoidDotSpell((uint)e.SpellId))
+                                SpellBook.Add((uint)e.SpellId | EnchantmentMask);
+                }
                 return;
+            }
 
             if (wo.SpellDID.HasValue)
                 SpellBook.Add(wo.SpellDID.Value);
@@ -1362,8 +1393,15 @@ namespace ACE.Server.Network.Structure
 
             // Cleaving (multi-target): the raw prop stores TOTAL targets (extra + 1), so raw-prop
             // readouts look one higher than authored — this line shows the true extra-target count.
-            if (weapon.IsCleaving)
-                effectDescriptions.Add($"- Cleaving: +{(!zcLocked ? weapon.CleaveTargets : zcT10 ? Math.Min(weapon.CleaveTargets, ACE.Server.Managers.ZoneControl.ZoneLockFallback.CleaveCap) : 0)} Targets");
+            // (Improved Cleave charm: the holder's active charm counts - the weapon's own plus the charm's, held to the
+            // charm's cap (2026-10-21), "(Charm)" with its reach and arc)
+            var cleaveHolder = (weapon.Wielder as Player) ?? examiner;
+            var cleaveCharm = cleaveHolder != null ? cleaveHolder.CharmCleaveFor(weapon, zcLocked) : (false, 0, 0f, 0f, false);
+            var cleaveOwn = !weapon.IsCleaving ? 0 : !zcLocked ? weapon.CleaveTargets : zcT10 ? Math.Min(weapon.CleaveTargets, ACE.Server.Managers.ZoneControl.ZoneLockFallback.CleaveCap) : 0;
+            if (cleaveCharm.Item1)
+                effectDescriptions.Add($"- Cleaving: +{Creature.CharmCleaveTotal(cleaveOwn, cleaveCharm.Item2, CharmAbilityRegistry.LevelOf(cleaveHolder, CharmAbilityRegistry.ImprovedCleaveAbilityId))} Targets, {cleaveCharm.Item3:0.#} m, {(cleaveCharm.Item4 >= 359.5f ? "all around" : $"{cleaveCharm.Item4:0} degrees")} (Charm)");
+            else if (weapon.IsCleaving)
+                effectDescriptions.Add($"- Cleaving: +{cleaveOwn} Targets");
 
             // Resistance Cleaving (Fixed Resistance Modifier)
             if (weapon.ResistanceModifier.HasValue && weapon.ResistanceModifierType.HasValue)
@@ -1383,9 +1421,16 @@ namespace ACE.Server.Network.Structure
 
             // Split Arrow - the same reader combat uses, so a locked launcher shows its T10 split (its own count, or the +2
             // a launcher without Split Arrows gets while locked)
-            var splitShown = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon, zcLocked);
+            // (Split Arrow charm 2026-10-13: the holder's active charm counts too - the three-argument reader; "(Charm)" when
+            // the charm is what gives or raises the number)
+            var splitHolder = (weapon.Wielder as Player) ?? examiner;
+            var splitOwn = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon, zcLocked);
+            var splitShown = ACE.Server.Managers.ZoneControl.ZoneLockFallback.SplitFor(weapon, zcLocked, splitHolder);
             if (weapon.GetProperty(PropertyBool.SplitArrows) == true || splitShown.On)
-                effectDescriptions.Add($"- Split Arrow: +{(splitShown.On ? splitShown.Count : 0)} Targets, {splitShown.Damage:P0} Dmg");
+            {
+                var splitByCharm = splitShown.On && (!splitOwn.On || splitShown.Count > splitOwn.Count || splitShown.Damage > splitOwn.Damage || splitShown.Range > splitOwn.Range);
+                effectDescriptions.Add($"- Split Arrow: +{(splitShown.On ? splitShown.Count : 0)} Targets, {splitShown.Damage:P0} Dmg{(splitByCharm ? " (Charm)" : "")}");
+            }
 
             // Crushing Blow: engine crit damage = 1 + CriticalMultiplier, so the true multiplier the
             // player actually deals is prop + 1 (a stored 1.0 = normal 2x crit).
@@ -1475,6 +1520,12 @@ namespace ACE.Server.Network.Structure
             // the weapon (PropertyFloat.IgnoreShield); GetIgnoreShieldMod reads it at hit time.
             if (weapon.IgnoreShield.HasValue && weapon.IgnoreShield.Value > 0)
                 effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(weapon.IgnoreShield.Value, 0.0, 1.0)):P0} Shield Ignored");   // locked: off (owner 2026-10-07)
+
+            // Spell Armor Rend (casters): fraction of the monster's Spell Armor level the wand's spells ignore. Stored directly
+            // on the weapon (PropertyFloat.ZcSpellArmorRend); Creature.GetZcSpellArmorMod reads it at hit time.
+            var spellArmorRend = weapon.GetProperty(PropertyFloat.ZcSpellArmorRend);
+            if (spellArmorRend.HasValue && spellArmorRend.Value > 0)
+                effectDescriptions.Add($"- Spell Armor Rend: {(zcLocked ? 0.0 : Math.Clamp(spellArmorRend.Value, 0.0, 1.0)):P0} Spell Armor Ignored");   // locked: off, like the other cards
 
             // Phantom (hollow): the weapon bypasses the target's protective magic - Impen/Banes on armor
             // and Life prots. RETAIL ONLY as of 2026-08-25: our loot card was deleted, so every weapon

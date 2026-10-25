@@ -192,7 +192,10 @@ namespace ACE.Server.WorldObjects
                         {
                             // Apply weapon-only, per-target procs for split arrows, governed by single toggle
                             // Divide chance by number of split arrows configured on the weapon
-                            var splitCount = worldObject.ProjectileLauncher?.GetProperty(PropertyInt.SplitArrowCount) ?? 0;
+                            // (the count the shot fired with is stamped on the arrow: a charm's or the zone lock's split is not
+                            // on the launcher)
+                            var splitCount = worldObject.GetProperty(PropertyInt.SplitArrowCount)
+                                ?? worldObject.ProjectileLauncher?.GetProperty(PropertyInt.SplitArrowCount) ?? 0;
                             sourceCreature.TryProcWeaponOnCleaveTarget(sourceCreature, targetCreature, worldObject.ProjectileLauncher, splitCount);
                         }
                         else
