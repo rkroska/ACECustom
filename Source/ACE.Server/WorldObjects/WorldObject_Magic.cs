@@ -650,7 +650,8 @@ namespace ACE.Server.WorldObjects
             }
             // Normally, life augs (gem count + Triune Weave) add a flat bonus to all Boost spell damage/healing.
             // When useHarmCap is active, we skip this so the damage stays within the spell's fixed raw range.
-            if (!useHarmCap && player != null && tryBoost > 0)
+            // (a Deeds Breath qualifies on its original roll, so deeds_breath_heal_mult 0 still adds the life aug share)
+            if (!useHarmCap && player != null && (tryBoost > 0 || deedsBreath))
             {
                 tryBoost += deedsBreath
                     ? (int)Math.Round(player.EffectiveLifeAugCount * Math.Max(0.0, ServerConfig.deeds_breath_life_aug_mult.Value))
