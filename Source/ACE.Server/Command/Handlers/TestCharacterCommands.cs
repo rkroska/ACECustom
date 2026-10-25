@@ -18,11 +18,12 @@ using ACE.Entity.Models;
 
 namespace ACE.Server.Command.Handlers
 {
-    public static class TestCharacterCommands
+    public static partial class TestCharacterCommands
     {
         [CommandHandler("testchar", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Test-character builder: wipe to Tier 0, or set stats / apply unlocks / mint extras granularly (driven by the plugin's Character tab). Gear comes from /asforge premade and /wsforge.",
-            "Usage: /testchar T0 (wipe)  |  /testchar set attrs|vitals|level|enl|augs|charms|raugs <csv>  |  /testchar apply skills,spells,aetheria,manastone  |  /testchar extra <keys>  |  /testchar save  |  /testchar report\n" +
+            "Usage: /testchar preset <tier 11-25> <2h|dw|shield|bow|war|void> [entry|max] [charm level 1-100]  (one-step tester)\n" +
+            "  |  /testchar T0 (wipe)  |  /testchar set attrs|vitals|level|enl|augs|charms|raugs <csv>  |  /testchar apply skills,spells,aetheria,manastone  |  /testchar extra <keys>  |  /testchar save  |  /testchar report\n" +
             "Also: /testchar gems  |  /testchar charms  |  /testchar print <wcid>")]
         public static void HandleTestChar(Session session, params string[] parameters)
         {
@@ -33,6 +34,14 @@ namespace ACE.Server.Command.Handlers
             // plugin applies a tier preset as a short batch of these. Dispatched BEFORE the
             // tier parsing below, which would reject them as bad tiers.
             var sub0 = parameters[0].ToLowerInvariant();
+
+            // one-step tester (owner 2026-10-21): tier + style -> stats, augs, gear, weapons, levelled charm
+            if (sub0 == "preset")
+            {
+                HandlePreset(session, player, parameters);
+                return;
+            }
+
             if (sub0 == "set" || sub0 == "apply" || sub0 == "save" || sub0 == "extra" || sub0 == "report")
             {
                 HandleCharacterSetter(session, player, parameters);
@@ -51,12 +60,13 @@ namespace ACE.Server.Command.Handlers
             if (sub0 == "charms")
             {
                 SpawnCharms(player);
-                player.SendMessage("All ability charms (T1) and Charm Catalysts added to your inventory.");
+                SpawnLeveledCharms(player);   // the six levelled charms (2026-10-21) - also tops up an older charms pack
+                player.SendMessage("All ability charms (T1), the six levelled charms and Charm Catalysts added to your inventory. Set a levelled charm's level with /charm level <name> <1-100>.");
                 player.SaveBiotaToDatabase();
                 return;
             }
 
-            const string usage = "Usage: /testchar T0 (wipe) | set ... | apply ... | extra ... | save | report";
+            const string usage = "Usage: /testchar preset <tier> <style> [entry|max] [charm level] | T0 (wipe) | set ... | apply ... | extra ... | save | report";
 
             if (parameters.Length == 1)
             {
@@ -1377,6 +1387,7 @@ namespace ACE.Server.Command.Handlers
             "<piece|suit|jewel|all> [tier 10-25, default 11] [cards:key=val,key,...]\n" +
             "premade <tier 10-25> <avg|bis> [force] = the 18-piece suit with EXPLICIT modifier lines: bis = core at cap + max lines at band max; avg = core at midpoint + expected lines at band midpoint. Minted loose into your main pack (no suit bag since 2026-09-03). Tier 10 = the ENTRY-CASE suit: the measured top T10 set (no lines, no wield gate).\n" +
             "Pieces: helm coat pauldrons bracers gloves girth tassets greaves sollerets shirt pants cloak neck ring bracelet trinket\n" +
+            "shield <tier 11-25> = one T11+ shield through the real drop path (an ordinary drop, not a rare).\n" +
             "suit = 9 armor + shirt/pants/cloak; jewel = necklace + 2 rings + 2 bracelets + trinket; all = both.\n" +
             "ring/bracelet mint the left + right pair.\n" +
             "cards: albonus=N (AL over tier baseline) prot=X (uniform 8-element mod)\n" +
@@ -1397,6 +1408,16 @@ namespace ACE.Server.Command.Handlers
             if (key == "premade")
             {
                 HandleAsForgePremade(session, player, parameters);
+                return;
+            }
+
+            // a T11+ shield through the real drop path (owner 2026-10-21) - the VoD look set has no shield
+            if (key == "shield")
+            {
+                var shieldTier = 11;
+                if (parameters.Length > 1 && int.TryParse(parameters[1], out var st))
+                    shieldTier = Math.Clamp(st, 11, 25);
+                Msg(MintZoneShield(player, shieldTier));
                 return;
             }
 

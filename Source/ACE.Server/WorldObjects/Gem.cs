@@ -56,6 +56,14 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // a Charm Infusion Gem only works used ON a levelled charm: a plain use would run the gem path below and use it
+            // up for nothing
+            if (activator is Player gemUser && Player.IsCharmInfusionGem(this))
+            {
+                gemUser.SendTransientError($"Use the {Name} on a levelled charm in your pack.");
+                return;
+            }
+
             ActOnUse(activator, false);
         }
 
@@ -276,6 +284,13 @@ namespace ACE.Server.WorldObjects
 
         public override void HandleActionUseOnTarget(Player player, WorldObject target)
         {
+            // Charm Infusion Gem (owner 2026-10-24): puts its Prestige Coins into the levelled charm it is used on
+            if (Player.IsCharmInfusionGem(this))
+            {
+                player.UseCharmInfusionGem(this, target);
+                return;
+            }
+
             // Monster Capture System - Handle captured appearance on pet device
             if (MonsterCapture.IsCapturedAppearance(this) && target is PetDevice petDevice)
             {
@@ -338,6 +353,9 @@ namespace ACE.Server.WorldObjects
         {
             var abilityId = CharmGrantsAbility!.Value;
             var abilityName = CharmAbilityRegistry.GetDisplayName(abilityId) ?? Name;
+
+            // a levelled charm's level lives on the player (2026-10-17) - this item only shows it
+            player.SyncLevelledCharmItem(this, abilityId);
 
             if (!IsCharmActivated)
             {
@@ -613,7 +631,9 @@ namespace ACE.Server.WorldObjects
 
 
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
-            return activating ? $"{name} Level {level} activated." : $"{name} deactivated.";
+            // a levelled charm (1-100) says what it does at its level, from the live settings
+            var levelled = activating ? CharmSettingsManager.PlayerTextFor(abilityId, level) : null;
+            return activating ? $"{name} Level {level} activated." + (levelled != null ? " " + levelled : "") : $"{name} deactivated.";
         }
     }
 }

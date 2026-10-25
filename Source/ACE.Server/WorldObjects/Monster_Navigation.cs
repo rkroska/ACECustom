@@ -146,7 +146,8 @@ namespace ACE.Server.WorldObjects
 
             // send network actions
             var targetDist = GetCachedDistanceToTarget();
-            var turnTo = IsRanged || (CurrentAttack == CombatType.Magic && targetDist <= GetSpellMaxRange()) || AiImmobile;
+            // an approaching archetype (Creature_Archetype) runs in like a melee monster instead of only turning
+            var turnTo = AiImmobile || (!ZcApproaching && (IsRanged || (CurrentAttack == CombatType.Magic && targetDist <= GetSpellMaxRange())));
             if (turnTo)
                 TurnTo(AttackTarget);
             else
@@ -164,6 +165,9 @@ namespace ACE.Server.WorldObjects
                 PhysicsObj.TurnToObject(AttackTarget.PhysicsObj, mvp);
             else
                 PhysicsObj.MoveToObject(AttackTarget.PhysicsObj, mvp);
+            // monster archetypes: a ranged attack stops this run-in where it stands. Set AFTER the physics call: a move or
+            // turn still running is cancelled inside it, and that OnMoveComplete clears the flag
+            ZcRunIn = !turnTo;
 
             // prevent initial snap
             PhysicsObj.UpdateTime = PhysicsTimer.CurrentTime;
@@ -178,6 +182,7 @@ namespace ACE.Server.WorldObjects
             if (DebugMove)
                 Console.WriteLine($"{Name} ({Guid}) - OnMoveComplete({status})");
 
+            ZcRunIn = false;        // whatever ended, it is no longer running in
             if (status != WeenieError.None) {
                 IsMoving = false;
                 return;
@@ -542,7 +547,7 @@ namespace ACE.Server.WorldObjects
             mvp.Flags &= ~MovementParamFlags.CanWalk;
 
             var distance = targetDistance ?? GetCachedDistanceToTarget();
-            var turnTo = IsRanged || (CurrentAttack == CombatType.Magic && distance <= GetSpellMaxRange()) || AiImmobile;
+            var turnTo = AiImmobile || (!ZcApproaching && (IsRanged || (CurrentAttack == CombatType.Magic && distance <= GetSpellMaxRange())));
 
             if (!turnTo)
                 mvp.Flags |= MovementParamFlags.FailWalk | MovementParamFlags.UseFinalHeading | MovementParamFlags.Sticky | MovementParamFlags.MoveAway;
@@ -598,6 +603,12 @@ namespace ACE.Server.WorldObjects
             if (DebugMove) Console.WriteLine($"{Name}.MoveToHome()");
 
             if (Home == null) return;
+
+            ZcResetMovement();      // monster archetypes: the walk home is a plain move, never an approach
+
+            // owner 2026-10-17: "the second the mob turns back to go home, the dot is removed" (Creature_Pandemic.cs)
+            ZcClearVoidDotsGoingHome();
+
             if (Location.Equals(Home))
             {
                 Sleep();

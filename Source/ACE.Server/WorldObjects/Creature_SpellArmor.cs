@@ -1,3 +1,6 @@
+using System;
+
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Managers;
 using ACE.Server.Managers.ZoneScaling;
 
@@ -13,11 +16,20 @@ namespace ACE.Server.WorldObjects
     /// spells - no Spell Armor deduction is a bunch of 1 shots"; the proc exemption was removed 2026-10-05); only reduces damage, never a
     /// miss (landing stays magic_defense); Imperil and Armor Rend never touch it; players, pets and monster-on-monster never.
     /// Wired into SpellProjectile.CalculateDamage (both paths), Player_Magic ring damage and the DoT tick.
+    ///
+    /// SPELL ARMOR REND (2026-10-12): the one thing that does touch it. A caster weapon card (PropertyFloat.ZcSpellArmorRend,
+    /// 0..1) - the wand's spells ignore that fraction of the LEVEL: effective level = level x (1 - value). Casters only, and off
+    /// while the wand's Zone power is locked, like every other card. A void DoT tick takes the card as it stood at the cast (Creature_DotHit.cs).
     /// </summary>
     partial class Creature
     {
         /// <summary>x damage this monster takes from a spell of <paramref name="source"/>; 1.0 when Spell Armor does not apply.</summary>
         public float GetZcSpellArmorMod(WorldObject source)
+            => GetZcSpellArmorMod(source, null);   // kept as its own 1-argument method (not an optional parameter): mods are compiled against it
+
+        /// <summary>The same, with the wand the spell came from: its Spell Armor Rend card takes its fraction off the level
+        /// first. <paramref name="weapon"/> null, not a caster, or zone locked = no rend.</summary>
+        public float GetZcSpellArmorMod(WorldObject source, WorldObject weapon)
         {
             if (!(source is Player) || this is Player || this is CombatPet)
                 return 1.0f;
@@ -27,7 +39,43 @@ namespace ACE.Server.WorldObjects
                 return 1.0f;
 
             var level = zp.Get(ZoneStat.SpellArmor);
-            return double.IsFinite(level) && level > 0 ? SkillFormula.CalcArmorMod((float)level) : 1.0f;   // non-finite = unset
+            if (!double.IsFinite(level) || level <= 0)
+                return 1.0f;   // non-finite = unset
+
+            level *= 1.0 - ZcSpellArmorRendOf(weapon, source as Creature);
+
+            return level > 0 ? SkillFormula.CalcArmorMod((float)level) : 1.0f;
+        }
+
+        /// <summary>The fraction of Spell Armor this wand's Spell Armor Rend card ignores, 0..1. Casters only; zone lock:
+        /// outside authored areas the card stays OFF like the other cards (the card is read first, so a wand without one
+        /// never asks the lock).</summary>
+        public static double ZcSpellArmorRendOf(WorldObject weapon, Creature wielder)
+        {
+            if (!(weapon is Caster))
+                return 0.0;
+            var card = weapon.GetProperty(PropertyFloat.ZcSpellArmorRend) ?? 0.0;
+            return double.IsFinite(card) && card > 0 && !ZcPowerSuppressed(weapon, wielder)   // Math.Clamp passes NaN through
+                ? Math.Clamp(card, 0.0, 1.0) : 0.0;
+        }
+
+        /// <summary>Spell Armor with a rend fraction already in hand - a DoT tick, whose wand was read at the cast
+        /// (Creature_DotHit.cs).</summary>
+        public float GetZcSpellArmorModRended(WorldObject source, double rend)
+        {
+            if (!(source is Player) || this is Player || this is CombatPet)
+                return 1.0f;
+
+            var zp = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveCombatProfile(this);
+            if (zp == null || !zp.Has(ZoneStat.SpellArmor))
+                return 1.0f;
+
+            var level = zp.Get(ZoneStat.SpellArmor);
+            if (!double.IsFinite(level) || level <= 0)
+                return 1.0f;
+
+            level *= 1.0 - (double.IsFinite(rend) ? Math.Clamp(rend, 0.0, 1.0) : 0.0);
+            return level > 0 ? SkillFormula.CalcArmorMod((float)level) : 1.0f;
         }
 
         /// <summary>

@@ -869,6 +869,10 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>On a player: the level of the currently active charm.</summary>
         ActiveCharmLevel = 50016,
 
+        /// <summary>On a Charm Infusion Gem (owner 2026-10-24): the Prestige Coins ONE gem puts into a levelled charm when
+        /// it is used on it. 51210, free in EVERY Property enum.</summary>
+        CharmInfusionCoins = 51210,
+
         // -- ILT Player UI Preferences (50101+) --------------------------------------
         /// <summary>
         /// Player's damage number display mode.

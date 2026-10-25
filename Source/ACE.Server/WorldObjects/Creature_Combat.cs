@@ -714,9 +714,10 @@ namespace ACE.Server.WorldObjects
 
             // is monster in front of player,
             // within shield effectiveness area?
-            var effectiveAngle = 180.0f;
+            // (Shield Arc charm, owner 2026-10-21: a player's charm widens the arc against monsters, up to all around)
+            var effectiveAngle = ShieldArcFor(shield, attacker);
             var angle = GetAngle(attacker);
-            if (Math.Abs(angle) > effectiveAngle / 2.0f)
+            if (effectiveAngle < 360.0f && Math.Abs(angle) > effectiveAngle / 2.0f)
                 return 1.0f;
 
             // get base shield AL
@@ -726,7 +727,12 @@ namespace ACE.Server.WorldObjects
             // impenetrability, brittlemail
             var ignoreMagicArmor = (weapon?.IgnoreMagicArmor ?? false) || (attacker?.IgnoreMagicArmor ?? false);
 
-            var modSL = shield.EnchantmentManager.GetArmorMod();
+            // Zone Control aug curves (owner 2026-10-21): against a curves-on tier's monster, body armor already drops the
+            // item-aug part of Impenetrability / Banes (Creature_ZoneAugCurves.ZoneArmorMod) - the shield now does too, so
+            // a 4000-item-aug shield gets 240 Impenetrability there instead of 4240
+            var curvesOn = this is Player && ZoneAugCurveProfile(attacker) != null;
+
+            var modSL = curvesOn ? shield.EnchantmentManager.GetArmorModNoAugs() : shield.EnchantmentManager.GetArmorMod();
 
             if (ignoreMagicArmor)
                 modSL = attacker is Player ? (int)Math.Round(IgnoreMagicArmorScaled(modSL)) : 0;
@@ -738,7 +744,7 @@ namespace ACE.Server.WorldObjects
 
             // shield RL item enchantment additives:
             // banes, lures
-            var modRL = shield.EnchantmentManager.GetArmorModVsType(damageType);
+            var modRL = curvesOn ? shield.EnchantmentManager.GetArmorModVsTypeNoAugs(damageType) : shield.EnchantmentManager.GetArmorModVsType(damageType);
 
             if (ignoreMagicArmor)
                 modRL = attacker is Player ? IgnoreMagicArmorScaled(modRL) : 0.0f;
@@ -773,7 +779,9 @@ namespace ACE.Server.WorldObjects
             // SL is multiplied by existing AL
             var shieldMod = SkillFormula.CalcArmorMod(effectiveLevel);
             //Console.WriteLine("ShieldMod: " + shieldMod);
-            return shieldMod;
+
+            // T11+ shield cap (owner 2026-10-21): against a Zone Control monster at least 1 - zc_shield_max_block gets through
+            return CapShieldModVsZoneMonster(shieldMod, attacker);
         }
 
         /// <summary>

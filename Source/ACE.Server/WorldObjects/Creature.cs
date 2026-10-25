@@ -410,6 +410,8 @@ namespace ACE.Server.WorldObjects
                 else
                     selectedTargets.Remove(kvp.Key);
             }
+
+            NearbyHealthChanged();   // players who opted in to /nearbyhealth (Creature_NearbyHealth.cs)
         }
     }
 }

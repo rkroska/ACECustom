@@ -970,9 +970,12 @@ namespace ACE.Server.WorldObjects
             if (creature == null)
                 return null;
 
-            var melee = creature.GetEquippedMeleeWeapon();
+            // a monster archetype: its own (stowed) melee weapon, never the bow kit it was handed
+            var melee = creature.GetEquippedMeleeWeapon() ?? creature.ZcStowedMeleeWeapon;
             var launcher = creature.GetEquippedMissileWeapon();
             var ammo = creature.GetMissileAmmo();
+            if (creature.ZcIsArchetypeKit(launcher))
+                launcher = ammo = null;
 
             if (melee != null)
                 return PickPrimaryPhysicalDamageType(melee.W_DamageType);
@@ -1085,9 +1088,12 @@ namespace ACE.Server.WorldObjects
             if (creature == null)
                 return null;
 
-            var melee = creature.GetEquippedMeleeWeapon();
+            // a monster archetype: its own (stowed) melee weapon, never the bow kit it was handed
+            var melee = creature.GetEquippedMeleeWeapon() ?? creature.ZcStowedMeleeWeapon;
             var launcher = creature.GetEquippedMissileWeapon();
             var ammo = creature.GetMissileAmmo();
+            if (creature.ZcIsArchetypeKit(launcher))
+                launcher = ammo = null;
 
             DamageType? raw = null;
 

@@ -1435,6 +1435,11 @@ namespace ACE.Server.WorldObjects
 
                 if (TryDequipObjectWithBroadcasting(item.Guid, out var wo, out var wieldedLocation))
                     EnqueueBroadcast(new GameMessagePublicUpdateInstanceID(item, PropertyInstanceId.Wielder, ObjectGuid.Invalid));
+                else if (item == ZcStowedMeleeWeapon)
+                    // a monster archetype's stowed melee weapon sits in its PACK: off the creature first - left in its
+                    // Inventory, the creature's Destroy() right after the corpse is made would destroy it on the corpse.
+                    // Only that one item: every other monster's pack keeps exactly its old behaviour.
+                    TryRemoveFromInventory(item.Guid);
 
                 if (corpse != null)
                 {

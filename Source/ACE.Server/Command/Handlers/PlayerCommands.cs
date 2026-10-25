@@ -395,6 +395,53 @@ namespace ACE.Server.Command.Handlers
         }
 
 
+        [CommandHandler("nearbyhealth", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
+            "Nearby health updates: also receive the health of the creatures around you, not only of the one you have selected.",
+            "[on|off]  (on / off are silent; no argument = show whether it is on). Off by default; switched off again when you log out. The nearest creatures only (nearby_health_max_creatures), never other players.")]
+        public static void HandleNearbyHealth(Session session, params string[] parameters)
+        {
+            var player = session?.Player;
+            if (player == null)
+                return;
+
+            void Msg(string text) => session.Network.EnqueueSend(new GameMessageSystemChat(text, ChatMessageType.Broadcast));
+
+            var serverOn = ServerConfig.nearby_health_updates.Value;
+
+            if (parameters == null || parameters.Length == 0)
+            {
+                Msg(!serverOn ? "Nearby health updates are switched off on this server."
+                    : "Nearby health updates: " + (NearbyHealth.IsOn(player) ? "on" : "off") + ".");
+                return;
+            }
+
+            var arg = parameters[0].ToLowerInvariant();
+            if (arg != "on" && arg != "off")
+            {
+                Msg("Usage: /nearbyhealth [on|off]");
+                return;
+            }
+
+            // switching on or off is SILENT (owner 2026-10-20: the green line at every login "needs to go away" - Warpath and
+            // AC:Unreal send /nearbyhealth on by themselves at login); /nearbyhealth with no argument still says on or off
+            // while the server switch is off the choice is still kept (silently), so it works as soon as the switch is back
+            // on - the player tick sends nothing until then (review 2026-10-20)
+            var on = NearbyHealth.Set(player, arg == "on");
+            if (!on || !serverOn)
+                return;
+
+            // choose the creatures now and send a first reading of each, so nothing waits for its next health change - at
+            // most once a second, however often the command comes (review 2026-10-20: on / off spam)
+            try
+            {
+                player.ChooseNearbyHealthSetIfDue();
+            }
+            catch (Exception ex)
+            {
+                log.Warn($"[NearbyHealth] first readings for {player.Name} failed: {ex}");
+            }
+        }
+
         [CommandHandler("aug", AccessLevel.Player, CommandHandlerFlag.None, "Handles Augmentation Reporting", "")]
         public static void HandleAugmentReport(Session session, params string[] parameters)
         {

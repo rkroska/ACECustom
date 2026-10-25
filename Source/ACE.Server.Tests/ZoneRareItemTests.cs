@@ -44,14 +44,15 @@ namespace ACE.Server.Tests
         // -- weapon card eligibility --
 
         [TestMethod]
-        public void Eligibility_TenCards_InTheMutatorsOrder()
+        public void Eligibility_ElevenCards_InTheMutatorsOrder()
         {
             // ZoneLootMutator.TrySpecialRolls writes its won / chance arrays positionally in this order
-            Assert.AreEqual(10, ZoneRare.CardCount);
-            CollectionAssert.AreEqual(new[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }, new[]
+            Assert.AreEqual(11, ZoneRare.CardCount);
+            CollectionAssert.AreEqual(new[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, new[]
             {
                 ZoneRare.CardRend, ZoneRare.CardSlayer, ZoneRare.CardBite, ZoneRare.CardCrush, ZoneRare.CardArmorRend,
                 ZoneRare.CardShieldCleave, ZoneRare.CardCleave, ZoneRare.CardSplit, ZoneRare.CardProcArc, ZoneRare.CardProcRing,
+                ZoneRare.CardSpellArmorRend,
             });
         }
 
@@ -61,10 +62,12 @@ namespace ACE.Server.Tests
             var melee = Melee();
             Assert.IsTrue(melee[ZoneRare.CardArmorRend] && melee[ZoneRare.CardShieldCleave] && melee[ZoneRare.CardCleave]);
             Assert.IsFalse(melee[ZoneRare.CardSplit], "a melee weapon has no arrows to split");
+            Assert.IsFalse(melee[ZoneRare.CardSpellArmorRend], "spell armor rend does nothing for a swing");
 
             var missile = Missile();
             Assert.IsTrue(missile[ZoneRare.CardArmorRend] && missile[ZoneRare.CardShieldCleave] && missile[ZoneRare.CardSplit]);
             Assert.IsFalse(missile[ZoneRare.CardCleave]);
+            Assert.IsFalse(missile[ZoneRare.CardSpellArmorRend], "spell armor rend does nothing for an arrow");
 
             var caster = Caster();
             Assert.IsFalse(caster[ZoneRare.CardArmorRend], "armor rend does nothing for magic");
@@ -72,6 +75,8 @@ namespace ACE.Server.Tests
             Assert.IsFalse(caster[ZoneRare.CardCleave] || caster[ZoneRare.CardSplit]);
             Assert.IsTrue(caster[ZoneRare.CardRend] && caster[ZoneRare.CardSlayer] && caster[ZoneRare.CardBite] && caster[ZoneRare.CardCrush]);
             Assert.IsTrue(caster[ZoneRare.CardProcArc] && caster[ZoneRare.CardProcRing]);
+            Assert.IsTrue(caster[ZoneRare.CardSpellArmorRend], "spell armor rend is the caster's own card");
+            Assert.IsTrue(Caster(rend: false, slayer: false, procs: false)[ZoneRare.CardSpellArmorRend], "it needs no element, creature type or proc slot");
         }
 
         [TestMethod]
@@ -119,8 +124,10 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void Cards_CasterNeverGetsArmorRendOrShieldCleave_AndFillsFromItsProcs()
+        public void Cards_CasterNeverGetsArmorRendOrShieldCleave_AndFillsFromItsProcsOrSpellArmorRend()
         {
+            var extras = new[] { ZoneRare.CardProcArc, ZoneRare.CardProcRing, ZoneRare.CardSpellArmorRend };
+            var seen = new HashSet<int>();
             for (var seed = 0; seed < 50; seed++)
             {
                 var cards = ZoneRare.PickWeaponCards(Caster(), All(true), 3, Stride(seed));
@@ -128,8 +135,10 @@ namespace ACE.Server.Tests
                 Assert.IsFalse(cards[ZoneRare.CardShieldCleave]);
                 Assert.IsTrue(cards[ZoneRare.CardRend] && cards[ZoneRare.CardSlayer]);
                 Assert.AreEqual(3, Count(cards), "two core cards + one extra");
-                Assert.IsTrue(cards[ZoneRare.CardProcArc] ^ cards[ZoneRare.CardProcRing], "the one extra is one of the two Cast on Strike slots");
+                Assert.AreEqual(1, extras.Count(e => cards[e]), "the one extra is one of the two Cast on Strike slots or Spell Armor Rend");
+                seen.UnionWith(extras.Where(e => cards[e]));
             }
+            CollectionAssert.AreEquivalent(extras, seen.ToList(), "each of the three is reachable: Spell Armor Rend is an ordinary extra, not core");
         }
 
         [TestMethod]
@@ -164,24 +173,37 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void Cards_T14Caster_CapSix_FillsWithCrushThenBite()
         {
-            // the owner's wand: a caster can only carry Rending, Slayer and the two procs besides the fillers
+            // the owner's wand: a caster can only carry Rending, Slayer, the two procs and Spell Armor Rend besides the fillers
+            var own = new[] { ZoneRare.CardRend, ZoneRare.CardSlayer, ZoneRare.CardProcArc, ZoneRare.CardProcRing, ZoneRare.CardSpellArmorRend };
             for (var seed = 0; seed < 50; seed++)
             {
+                // cap six: one slot left after the five - Crushing Blow goes first
                 var cards = ZoneRare.PickWeaponCards(Caster(), All(true), 6, Stride(seed));
                 Assert.AreEqual(6, Count(cards), "6 of 6");
-                foreach (var card in new[] { ZoneRare.CardRend, ZoneRare.CardSlayer, ZoneRare.CardProcArc, ZoneRare.CardProcRing, ZoneRare.CardCrush, ZoneRare.CardBite })
+                foreach (var card in own)
                     Assert.IsTrue(cards[card]);
-            }
+                Assert.IsTrue(cards[ZoneRare.CardCrush]);
+                Assert.IsFalse(cards[ZoneRare.CardBite]);
 
-            // one slot left after the four: Crushing Blow goes first
-            var five = ZoneRare.PickWeaponCards(Caster(), All(true), 5, Stride(0));
-            Assert.IsTrue(five[ZoneRare.CardCrush]);
-            Assert.IsFalse(five[ZoneRare.CardBite]);
-            Assert.AreEqual(5, Count(five));
+                // two slots left: Crushing Blow, then Biting Strike
+                var seven = ZoneRare.PickWeaponCards(Caster(), All(true), 7, Stride(seed));
+                Assert.AreEqual(7, Count(seven), "7 of 7");
+                foreach (var card in own.Concat(new[] { ZoneRare.CardCrush, ZoneRare.CardBite }))
+                    Assert.IsTrue(seven[card]);
+
+                // no slot left after the five: neither filler
+                var five = ZoneRare.PickWeaponCards(Caster(), All(true), 5, Stride(seed));
+                Assert.AreEqual(5, Count(five));
+                foreach (var card in own)
+                    Assert.IsTrue(five[card]);
+                Assert.IsFalse(five[ZoneRare.CardCrush] || five[ZoneRare.CardBite]);
+            }
 
             // no creature type for the Slayer (the dev mint without a target): the fillers still close the gap
             var noSlayer = ZoneRare.PickWeaponCards(Caster(slayer: false), All(true), 6, Stride(0));
-            Assert.AreEqual(5, Count(noSlayer), "Rend, Arc, Ring, Crush, Bite - all a wand without a Slayer can hold");
+            Assert.AreEqual(6, Count(noSlayer), "Rend, Arc, Ring, Spell Armor Rend, Crush, Bite - all a wand without a Slayer can hold");
+            Assert.IsTrue(noSlayer[ZoneRare.CardCrush] && noSlayer[ZoneRare.CardBite]);
+            Assert.IsFalse(noSlayer[ZoneRare.CardSlayer]);
         }
 
         [TestMethod]
@@ -193,7 +215,7 @@ namespace ACE.Server.Tests
             var noCrush = ZoneRare.PickWeaponCards(Caster(), enabled, Uncapped, Stride(0));
             Assert.IsFalse(noCrush[ZoneRare.CardCrush]);
             Assert.IsTrue(noCrush[ZoneRare.CardBite], "the other filler still fills");
-            Assert.AreEqual(5, Count(noCrush));
+            Assert.AreEqual(6, Count(noCrush));   // Rend, Slayer, both procs, Spell Armor Rend, then Bite
 
             // nothing enabled: the forced core only, as before
             Assert.AreEqual(2, Count(ZoneRare.PickWeaponCards(Caster(), All(false), Uncapped, Stride(0))));
@@ -232,6 +254,12 @@ namespace ACE.Server.Tests
             Assert.AreEqual(9, Count(missile));
             Assert.IsTrue(missile[ZoneRare.CardSplit]);
             Assert.IsFalse(missile[ZoneRare.CardCleave]);
+            Assert.IsFalse(melee[ZoneRare.CardSpellArmorRend] || missile[ZoneRare.CardSpellArmorRend], "a caster card, whatever the cap");
+
+            var caster = ZoneRare.PickWeaponCards(Caster(), All(true), Uncapped, Stride(3));
+            // core 2 (no Armor Rend) + both procs + Spell Armor Rend, then the two last-resort fillers
+            Assert.AreEqual(7, Count(caster));
+            Assert.IsTrue(caster[ZoneRare.CardSpellArmorRend]);
         }
 
         [TestMethod]

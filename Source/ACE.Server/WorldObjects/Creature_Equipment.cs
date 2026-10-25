@@ -644,6 +644,10 @@ namespace ACE.Server.WorldObjects
             if (!Attackable)
                 return;
 
+            // a monster archetype stowed (or destroyed) this item before the delayed activation ran: not on it any more
+            if (zcArchetypeRolled && (item.Wielder != this || item.IsDestroyed))
+                return;
+
             // check activation requirements?
             foreach (var spell in item.Biota.GetKnownSpellsIds(BiotaDatabaseLock))
                 CreateItemSpell(item, (uint)spell);
