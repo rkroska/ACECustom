@@ -128,7 +128,7 @@ namespace ACE.Server.Command.Handlers
 
             var current = Capture();
             say($"settings import: {file} from '{Ascii(incoming.Source)}', exported {incoming.CreatedUtc:yyyy-MM-dd HH:mm} UTC.");
-            foreach (var line in SettingsTransfer.Preview(current, incoming, copyServer))
+            foreach (var line in SettingsTransfer.Preview(current, incoming, copyServer, charmDefaults: CharmSettingsManager.ExportDefaults()))
                 say(line);
 
             if (!apply)
@@ -145,7 +145,12 @@ namespace ACE.Server.Command.Handlers
             if (incoming.ZoneControl != null)
             {
                 var merged = SettingsTransfer.MergeZoneControl(current.ZoneControl, incoming.ZoneControl, copyServer);
-                ZoneControlManager.ImportStoreJson(merged.ToString(Newtonsoft.Json.Formatting.None));
+                try { ZoneControlManager.ImportStoreJson(merged.ToString(Newtonsoft.Json.Formatting.None)); }
+                catch (Exception ex)
+                {
+                    say($"Zone Control: NOT applied - {Ascii(ex.GetBaseException().Message)}. Nothing else was imported; this server's store is unchanged.");
+                    return;
+                }
                 say("Zone Control: applied and reloaded.");
             }
             if (incoming.WeaponScaling != null)

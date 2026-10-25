@@ -85,11 +85,14 @@ namespace ACE.Server.Managers
                 ZoneControl = ObjectOrNull(root, "zoneControl"),
                 WeaponScaling = ObjectOrNull(root, "weaponScaling"),
             };
-            if (root["charms"] is JObject charms)
+            var charms = ObjectOrNull(root, "charms");
+            if (charms != null)
                 foreach (var charm in charms.Properties())
-                    if (charm.Value is JObject keys)
-                        b.Charms[charm.Name] = new SortedDictionary<string, string>(
-                            keys.Properties().ToDictionary(p => p.Name, p => p.Value.Type == JTokenType.Null ? "" : p.Value.ToString()), StringComparer.Ordinal);
+                {
+                    var keys = charm.Value as JObject ?? throw new FormatException($"charm \"{charm.Name}\" must be an object of settings, not {charm.Value.Type}.");
+                    b.Charms[charm.Name] = new SortedDictionary<string, string>(
+                        keys.Properties().ToDictionary(p => p.Name, p => p.Value.Type == JTokenType.Null ? "" : p.Value.ToString()), StringComparer.Ordinal);
+                }
             return b;
         }
 
@@ -142,8 +145,12 @@ namespace ACE.Server.Managers
         // -- the preview -----------------------------------------------------------------------------------------------
 
         /// <summary>What an import would change, as short plain-ASCII lines: per tier and per zone for Zone Control, a count
-        /// for weapon scaling, every changed key for charms. Empty = no changes. The target side is what it has NOW.</summary>
-        public static List<string> Preview(Bundle current, Bundle incoming, bool copyServerOwned, int maxLines = 40)
+        /// for weapon scaling, every changed key for charms. Empty = no changes. The target side is what it has NOW.
+        /// charmDefaults (charm -> key -> default, from CharmSettingsManager.ExportDefaults): an import resets each charm it
+        /// names before applying the file's keys, so a key the file leaves out goes back to its default - with the defaults
+        /// given, the preview shows those changes too.</summary>
+        public static List<string> Preview(Bundle current, Bundle incoming, bool copyServerOwned, int maxLines = 40,
+            IDictionary<string, IDictionary<string, string>> charmDefaults = null)
         {
             var lines = new List<string>();
 
@@ -167,9 +174,14 @@ namespace ACE.Server.Managers
             else lines.Add("Weapon scaling: not in the file - left as it is.");
 
             var charmLines = new List<string>();
-            foreach (var (name, keys) in incoming.Charms)
+            foreach (var (name, fileKeys) in incoming.Charms)
             {
                 current.Charms.TryGetValue(name, out var now);
+                // what the charm ends up with: its defaults, the file's keys on top (the same reset-then-apply as ImportAll)
+                var keys = new SortedDictionary<string, string>(StringComparer.Ordinal);
+                if (charmDefaults != null && charmDefaults.TryGetValue(name, out var defaults) && defaults != null)
+                    foreach (var (key, value) in defaults) keys[key] = value ?? "";
+                foreach (var (key, value) in fileKeys) keys[key] = value;
                 foreach (var (key, value) in keys)
                 {
                     var old = now != null && now.TryGetValue(key, out var v) ? v : null;
@@ -206,10 +218,12 @@ namespace ACE.Server.Managers
             var aa = (Prop(after, "areas") as JArray ?? new JArray()).OfType<JObject>().GroupBy(a => (string)Prop(a, "name") ?? "").ToDictionary(g => g.Key, g => g.First());
             foreach (var name in ab.Keys.Union(aa.Keys).OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
             {
-                if (!aa.ContainsKey(name)) { lines.Add($"zone {name}: REMOVED"); continue; }
-                if (!ab.ContainsKey(name)) { lines.Add($"zone {name}: new"); continue; }
+                // the preview goes to the game client: the zone name in 7-bit ASCII
+                var shown = Ascii(name);
+                if (!aa.ContainsKey(name)) { lines.Add($"zone {shown}: REMOVED"); continue; }
+                if (!ab.ContainsKey(name)) { lines.Add($"zone {shown}: new"); continue; }
                 var n = Differences(ab[name], aa[name], "", 1000).Count;
-                if (n > 0) lines.Add($"zone {name}: {n} value(s)");
+                if (n > 0) lines.Add($"zone {shown}: {n} value(s)");
             }
 
             // everything else at the top level
@@ -278,9 +292,10 @@ namespace ACE.Server.Managers
         private static string Show(string v)
         {
             if (v == null) return "unset";
-            var s = v.Length > 40 ? v.Substring(0, 37) + "..." : v;
-            // the preview goes to the game client: 7-bit ASCII only
-            return new string(s.Select(c => c < 32 || c > 126 ? '?' : c).ToArray());
+            return Ascii(v.Length > 40 ? v.Substring(0, 37) + "..." : v);
         }
+
+        /// <summary>The preview goes to the game client: 7-bit printable ASCII only.</summary>
+        private static string Ascii(string s) => new string((s ?? "").Select(c => c < 32 || c > 126 ? '?' : c).ToArray());
     }
 }

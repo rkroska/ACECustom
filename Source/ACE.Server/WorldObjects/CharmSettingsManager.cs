@@ -332,6 +332,23 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             return all;
         }
 
+        /// <summary>Every charm's DEFAULT settings, by its /charm name - what Reset() gives a block, read from a fresh block
+        /// so the live ones are never touched (the settings import preview: a key the file leaves out goes back to this).</summary>
+        public static Dictionary<string, IDictionary<string, string>> ExportDefaults()
+        {
+            var all = new Dictionary<string, IDictionary<string, string>>(StringComparer.Ordinal);
+            foreach (var (name, block) in AllBlocks())
+            {
+                var fresh = block is LeveledCharmBlock leveled ? leveled.Fresh() : (ICharmBlock)Activator.CreateInstance(block.GetType());
+                fresh.Reset();
+                var keys = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var (key, value) in fresh.GetAllRaw())
+                    keys[key] = value ?? "";
+                all[name] = keys;
+            }
+            return all;
+        }
+
         /// <summary>Applies charms from a settings file: each charm named is reset to its defaults, given the file's
         /// values and saved whole. Charms the file does not name are left alone. Returns the names this server does not
         /// know (skipped).</summary>

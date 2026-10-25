@@ -270,7 +270,8 @@ namespace ACE.Server.Command.Handlers
                     }
 
                     case "reload":
-                        ZoneControlManager.Reload();
+                        try { ZoneControlManager.Reload(); }
+                        catch (Exception ex) { Msg($"Zone Control reload FAILED - the previous zones are still running: {ex.GetBaseException().Message}"); return; }
                         Msg("Zone Control store reloaded from shard.");
                         return;
 

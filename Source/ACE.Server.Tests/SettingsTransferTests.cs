@@ -61,6 +61,10 @@ namespace ACE.Server.Tests
             var empty = SettingsTransfer.Parse(@"{""format"":""acecustom-settings"",""version"":1,""zoneControl"":null}");
             Assert.IsNull(empty.ZoneControl, "an explicit null is still accepted");
             Assert.IsNull(empty.WeaponScaling, "a missing part is still accepted");
+            // charms: missing or null = none; a non-object, or a charm entry that is not an object, is refused
+            Assert.ThrowsExactly<FormatException>(() => SettingsTransfer.Parse(@"{""format"":""acecustom-settings"",""version"":1,""charms"":[]}"));
+            Assert.ThrowsExactly<FormatException>(() => SettingsTransfer.Parse(@"{""format"":""acecustom-settings"",""version"":1,""charms"":{""chain"":""x""}}"));
+            Assert.AreEqual(0, SettingsTransfer.Parse(@"{""format"":""acecustom-settings"",""version"":1,""charms"":null}").Charms.Count);
         }
 
         [TestMethod]
@@ -126,6 +130,48 @@ namespace ACE.Server.Tests
             StringAssert.Contains(text, "T15 Default: 1 value(s) (monster_damage_mult 1.2 -> 1.26)");
             StringAssert.Contains(text, "zone Tou Tou 15: REMOVED");
             StringAssert.Contains(text, "zone Tou Tou 15b: new");
+        }
+
+        [TestMethod]
+        public void Preview_ZoneNamesArePlainAscii()
+        {
+            var before = JObject.Parse(@"{""Areas"":[{""Name"":""Caf\u00e9 \u2014 15"",""Variation"":15}]}");
+            var lines = SettingsTransfer.ZonePreview(before, new JObject());
+            CollectionAssert.Contains(lines, "zone Caf? ? 15: REMOVED");
+        }
+
+        [TestMethod]
+        public void Preview_CharmKeysTheFileLeavesOutGoBackToDefaults()
+        {
+            // the import resets the charm before applying the file, so a key the file omits returns to its default
+            var current = Sample();
+            var incoming = SettingsTransfer.Make("x", null, null, new Dictionary<string, IDictionary<string, string>>
+            {
+                ["armorbreaker"] = new Dictionary<string, string> { ["share"] = "0.2", ["enabled"] = "true" },
+            }, DateTime.UtcNow);
+            var defaults = new Dictionary<string, IDictionary<string, string>>
+            {
+                ["armorbreaker"] = new Dictionary<string, string> { ["share"] = "0.2", ["share_100"] = "0.7", ["enabled"] = "true" },
+            };
+            var text = string.Join("\n", SettingsTransfer.Preview(current, incoming, true, charmDefaults: defaults));
+            StringAssert.Contains(text, "armorbreaker.share_100: 0.45 -> 0.7");
+            StringAssert.Contains(text, "Charms: 1 setting(s) change:");
+        }
+
+        [TestMethod]
+        public void CharmDefaults_AreWhatResetGives_AndLeaveTheLiveBlocksAlone()
+        {
+            CharmSettingsManager.ArmorBreaker.TrySet("share_100", "0.45");
+            try
+            {
+                var defaults = CharmSettingsManager.ExportDefaults();
+                Assert.AreEqual("0.7", defaults["armorbreaker"]["share_100"]);
+                Assert.AreEqual("0.45", CharmSettingsManager.ExportAll()["armorbreaker"]["share_100"], "the live block is untouched");
+                CollectionAssert.AreEquivalent(CharmSettingsManager.ExportAll().Keys.ToList(), defaults.Keys.ToList(), "every charm has defaults");
+                foreach (var (name, keys) in CharmSettingsManager.ExportAll())
+                    CollectionAssert.AreEquivalent(keys.Keys.ToList(), defaults[name].Keys.ToList(), name);
+            }
+            finally { CharmSettingsManager.ArmorBreaker.Reset(); }
         }
 
         [TestMethod]

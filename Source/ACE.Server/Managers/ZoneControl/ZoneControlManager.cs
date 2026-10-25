@@ -557,26 +557,42 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>Replaces the whole store with a settings-transfer one (/settings import ... apply): checks it reads as a
-        /// store and fits the column BEFORE anything is written, saves it, then reloads it live - the same build-first
-        /// load the server start uses, so a store that does not load leaves the previous one running.</summary>
+        /// store and fits the column BEFORE anything is written, then saves and reloads it live under one hold of _lock (no
+        /// Zone Control edit can land in between and overwrite it). The reload is the same build-first load the server start
+        /// uses; if it fails, the previous store is written back, the previous zones keep running and the error is thrown.</summary>
         public static void ImportStoreJson(string json)
         {
             json = UpgradeLegacyStoreKeys(json ?? "");
-            if (JsonConvert.DeserializeObject<Store>(json) == null)
+            var parsed = JsonConvert.DeserializeObject<Store>(json);
+            if (parsed == null)
                 throw new FormatException("the Zone Control part does not read as a store.");
+            if (parsed.Areas == null)
+                throw new FormatException("the Zone Control part has no areas list.");
             var bytes = System.Text.Encoding.UTF8.GetByteCount(json);
             lock (_lock)
             {
                 var cap = StoreValueCapacity();
                 if (cap > 0 && bytes > cap)
                     throw new InvalidOperationException($"Zone Control store is {bytes:N0} bytes; the DB column holds {cap:N0}. Widen config_properties_string.value to MEDIUMTEXT first.");
-                if (DatabaseManager.ShardConfig.StringExists(StoreKey))
-                    DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = StoreKey, Value = json, Description = "Zone Control store (JSON)" });
-                else
-                    DatabaseManager.ShardConfig.AddString(StoreKey, json, "Zone Control store (JSON)");
+                var existed = DatabaseManager.ShardConfig.StringExists(StoreKey);
+                var previous = existed ? DatabaseManager.ShardConfig.GetString(StoreKey)?.Value : null;
+                WriteStore(existed, json);
+                try { Reload(); }
+                catch
+                {
+                    if (previous != null) WriteStore(true, previous);
+                    throw;
+                }
             }
-            Reload();
             log.Info($"[ZoneControl] store replaced by a settings import ({bytes:N0} bytes) and reloaded.");
+        }
+
+        private static void WriteStore(bool exists, string json)
+        {
+            if (exists)
+                DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = StoreKey, Value = json, Description = "Zone Control store (JSON)" });
+            else
+                DatabaseManager.ShardConfig.AddString(StoreKey, json, "Zone Control store (JSON)");
         }
 
         private static Store BuildStore() => new Store
@@ -2801,13 +2817,15 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>Force a reload from the shard store (e.g. after out-of-band edits).</summary>
+        /// <summary>Re-reads the store from the shard. Load is build-then-commit, so on a failure the previous zones keep
+        /// running - and the error is thrown, so the caller never reports a reload that did not happen.</summary>
         public static void Reload()
         {
             lock (_lock)
             {
-                _initialized = false;
                 _questRows = null;   // quest registry re-reads from ace_world on next pull
-                EnsureInitialized();
+                Load();
+                _initialized = true;
             }
         }
 
