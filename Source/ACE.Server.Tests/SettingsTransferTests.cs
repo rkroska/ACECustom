@@ -55,6 +55,12 @@ namespace ACE.Server.Tests
             Assert.ThrowsExactly<FormatException>(() => SettingsTransfer.Parse(@"{""areas"":[]}"), "a bare store is not a settings file");
             Assert.ThrowsExactly<FormatException>(() => SettingsTransfer.Parse(@"{""format"":""acecustom-settings"",""version"":99}"), "newer than this build");
             Assert.ThrowsExactly<FormatException>(() => SettingsTransfer.Parse(@"{""format"":""acecustom-settings"",""version"":0}"));
+            // a store part that is there but not an object is broken, never "not in the file"
+            Assert.ThrowsExactly<FormatException>(() => SettingsTransfer.Parse(@"{""format"":""acecustom-settings"",""version"":1,""zoneControl"":""x""}"));
+            Assert.ThrowsExactly<FormatException>(() => SettingsTransfer.Parse(@"{""format"":""acecustom-settings"",""version"":1,""weaponScaling"":[]}"));
+            var empty = SettingsTransfer.Parse(@"{""format"":""acecustom-settings"",""version"":1,""zoneControl"":null}");
+            Assert.IsNull(empty.ZoneControl, "an explicit null is still accepted");
+            Assert.IsNull(empty.WeaponScaling, "a missing part is still accepted");
         }
 
         [TestMethod]
@@ -107,6 +113,19 @@ namespace ACE.Server.Tests
             StringAssert.Contains(text, "armorbreaker.share_100: 0.45 -> 0.7");
             StringAssert.Contains(text, "kept as this server has them");
             Assert.IsTrue(lines.All(l => l.All(c => c >= 32 && c <= 126)), "the preview is plain ASCII for the client");
+        }
+
+        [TestMethod]
+        public void Preview_ReadsTheServersOwnPascalCaseExport()
+        {
+            // ExportStoreJson serializes the CLR names: Areas / Name / VariationDefaults / Profile / Stats / Base
+            const string pascal = @"{""Areas"":[{""Name"":""Tou Tou 15"",""Variation"":15}],
+                ""VariationDefaults"":{""15"":{""Profile"":{""Stats"":{""monster_damage_mult"":{""Base"":1.2,""Growth"":1.0}}}}}}";
+            var changed = pascal.Replace(@"""Base"":1.2", @"""Base"":1.26").Replace(@"""Name"":""Tou Tou 15""", @"""Name"":""Tou Tou 15b""");
+            var text = string.Join("\n", SettingsTransfer.ZonePreview(JObject.Parse(pascal), JObject.Parse(changed)));
+            StringAssert.Contains(text, "T15 Default: 1 value(s) (monster_damage_mult 1.2 -> 1.26)");
+            StringAssert.Contains(text, "zone Tou Tou 15: REMOVED");
+            StringAssert.Contains(text, "zone Tou Tou 15b: new");
         }
 
         [TestMethod]

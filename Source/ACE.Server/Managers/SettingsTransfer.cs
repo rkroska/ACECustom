@@ -82,8 +82,8 @@ namespace ACE.Server.Managers
             {
                 Source = (string)root["source"] ?? "",
                 CreatedUtc = DateTime.TryParse((string)root["createdUtc"], null, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var t) ? t : DateTime.MinValue,
-                ZoneControl = root["zoneControl"] as JObject,
-                WeaponScaling = root["weaponScaling"] as JObject,
+                ZoneControl = ObjectOrNull(root, "zoneControl"),
+                WeaponScaling = ObjectOrNull(root, "weaponScaling"),
             };
             if (root["charms"] is JObject charms)
                 foreach (var charm in charms.Properties())
@@ -91,6 +91,15 @@ namespace ACE.Server.Managers
                         b.Charms[charm.Name] = new SortedDictionary<string, string>(
                             keys.Properties().ToDictionary(p => p.Name, p => p.Value.Type == JTokenType.Null ? "" : p.Value.ToString()), StringComparer.Ordinal);
             return b;
+        }
+
+        /// <summary>A store part of the file: missing or null = not in the file; anything but an object is refused, so a
+        /// broken part is never read as "leave this store alone".</summary>
+        private static JObject ObjectOrNull(JObject root, string name)
+        {
+            var token = root[name];
+            if (token == null || token.Type == JTokenType.Null) return null;
+            return token as JObject ?? throw new FormatException($"\"{name}\" must be an object or null, not {token.Type}.");
         }
 
         // -- names ---------------------------------------------------------------------------------------------------
@@ -186,14 +195,15 @@ namespace ACE.Server.Managers
             {
                 var diffs = Differences(vb[tier] ?? new JObject(), va[tier] ?? new JObject(), "", 1000);
                 if (diffs.Count == 0) continue;
-                var stats = diffs.Where(d => d.Path.StartsWith("profile/stats/", StringComparison.Ordinal)).ToList();
+                // the server's own export writes the CLR names (Profile/Stats/Base), a hand-made store camelCase
+                var stats = diffs.Where(d => d.Path.StartsWith("profile/stats/", StringComparison.OrdinalIgnoreCase)).ToList();
                 var sample = string.Join(", ", stats.Take(3).Select(d => $"{StatName(d.Path)} {Show(d.Before)} -> {Show(d.After)}"));
                 lines.Add($"T{tier} Default: {diffs.Count} value(s)" + (sample.Length > 0 ? $" ({sample}{(stats.Count > 3 ? ", ..." : "")})" : ""));
             }
 
             // zones, by name
-            var ab = (Prop(before, "areas") as JArray ?? new JArray()).OfType<JObject>().GroupBy(a => (string)a["name"] ?? "").ToDictionary(g => g.Key, g => g.First());
-            var aa = (Prop(after, "areas") as JArray ?? new JArray()).OfType<JObject>().GroupBy(a => (string)a["name"] ?? "").ToDictionary(g => g.Key, g => g.First());
+            var ab = (Prop(before, "areas") as JArray ?? new JArray()).OfType<JObject>().GroupBy(a => (string)Prop(a, "name") ?? "").ToDictionary(g => g.Key, g => g.First());
+            var aa = (Prop(after, "areas") as JArray ?? new JArray()).OfType<JObject>().GroupBy(a => (string)Prop(a, "name") ?? "").ToDictionary(g => g.Key, g => g.First());
             foreach (var name in ab.Keys.Union(aa.Keys).OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
             {
                 if (!aa.ContainsKey(name)) { lines.Add($"zone {name}: REMOVED"); continue; }
@@ -260,7 +270,7 @@ namespace ACE.Server.Managers
         private static string Show(JToken v)
         {
             if (v == null || v.Type == JTokenType.Null) return "unset";
-            if (v is JObject o && o["base"] != null) return Show(o["base"]);
+            if (v is JObject o && Prop(o, "base") is JToken b) return Show(b);
             var s = v.Type == JTokenType.Float ? ((double)v).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) : v.ToString(Formatting.None);
             return Show(s);
         }

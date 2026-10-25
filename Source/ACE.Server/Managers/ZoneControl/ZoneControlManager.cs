@@ -375,6 +375,7 @@ namespace ACE.Server.Managers.ZoneControl
                 a.Landblocks ??= new HashSet<ushort>();
                 a.TerrainOverrides ??= new Dictionary<ushort, string>();
                 a.Profile ??= new ZoneScalingProfile();
+                a.Profile.WcidOverrides ??= new Dictionary<uint, ZoneVariantProfile>();   // an imported store may carry an explicit null map
                 a.Effects ??= new ZoneEffects();
                 a.AppearanceDefault ??= new ZoneAppearance();
                 a.AppearanceByWcid ??= new Dictionary<uint, ZoneAppearance>();
