@@ -47,9 +47,9 @@ SELECT * FROM (
   SELECT 1 AS `sort_order`, 1 AS `min_target_enl`, 5 AS `max_target_enl`, CAST(0 AS SIGNED) AS `lum_base_per_target`, NULL AS `lum_step_anchor`, NULL AS `lum_step_every`, NULL AS `lum_step_increment`, NULL AS `item_wcid`, NULL AS `item_count_target_minus`, NULL AS `item_label`, NULL AS `quest_stamp`, NULL AS `quest_failure_message`
   UNION ALL SELECT 2, 6, 50, 0, NULL, NULL, NULL, 300000, 5, 'Enlightenment Tokens', NULL, NULL
   UNION ALL SELECT 3, 51, 150, 100000000, NULL, NULL, NULL, 300000, 5, 'Enlightenment Tokens', NULL, NULL
-  UNION ALL SELECT 4, 151, 300, 1000000000, NULL, NULL, NULL, 90000217, 5, 'Enlightenment Medallions', 'ParagonEnlCompleted', 'You must have completed 50th Paragon to enlighten beyond level 150.'
-  UNION ALL SELECT 5, 301, 325, 2000000000, 300, 50, 0.5000, 300101189, 5, 'Enlightenment Sigils', 'ParagonArmorCompleted', 'You must have completed 50th Armor Paragon to enlighten beyond level 300.'
-  UNION ALL SELECT 6, 326, NULL, 2000000000, 300, 50, 0.5000, 98769999, 5, 'Crest of Enlightenment', 'ParagonArmorCompleted', 'You must have completed 50th Armor Paragon to enlighten beyond level 300.'
+  UNION ALL SELECT 4, 151, 300, 1000000000, NULL, NULL, NULL, 90000217, 5, 'Enlightenment Medallions', 'ParagonEnlCompleted|EnlGate150Bypass', 'You must have completed 50th Paragon to enlighten beyond level 150.'
+  UNION ALL SELECT 5, 301, 325, 2000000000, 300, 50, 0.5000, 300101189, 5, 'Enlightenment Sigils', 'ParagonArmorCompleted|EnlGate300Bypass', 'You must have completed 50th Armor Paragon to enlighten beyond level 300.'
+  UNION ALL SELECT 6, 326, NULL, 2000000000, 300, 50, 0.5000, 98769999, 5, 'Crest of Enlightenment', 'ParagonArmorCompleted|EnlGate300Bypass', 'You must have completed 50th Armor Paragon to enlighten beyond level 300.'
 ) AS `seed`
 WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
 
@@ -184,6 +184,24 @@ WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
             return tier != null;
         }
 
+        /// <summary>
+        /// The enlightenment a quest flag gates: one below the lowest band that accepts the flag (150 for the band
+        /// starting at 151). Read from the live tier rows, so the gate fee follows the table if a band moves.
+        /// Returns null when no band lists the flag.
+        /// </summary>
+        public static int? GetGateLevel(string questFlag)
+        {
+            int? lowest = null;
+            foreach (var t in _tiers)
+            {
+                if (!t.QuestStamps.Contains(questFlag, StringComparer.OrdinalIgnoreCase))
+                    continue;
+                if (lowest == null || t.MinTargetEnl < lowest.Value)
+                    lowest = t.MinTargetEnl;
+            }
+            return lowest - 1;
+        }
+
         public static long CalculateLuminanceCost(int targetEnlightenment)
         {
             if (!TryGetTier(targetEnlightenment, out var tier))
@@ -270,11 +288,11 @@ WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
                 new(0, 1, 5, 0, null, null, null, null, null, null, null, null),
                 new(0, 6, 50, 0, null, null, null, 300000, 5, "Enlightenment Tokens", null, null),
                 new(0, 51, 150, enl50, null, null, null, 300000, 5, "Enlightenment Tokens", null, null),
-                new(0, 151, 300, enl150, null, null, null, 90000217, 5, "Enlightenment Medallions", "ParagonEnlCompleted",
+                new(0, 151, 300, enl150, null, null, null, 90000217, 5, "Enlightenment Medallions", "ParagonEnlCompleted|EnlGate150Bypass",
                     "You must have completed 50th Paragon to enlighten beyond level 150."),
-                new(0, 301, 325, enl300, 300, 50, 0.5m, 300101189, 5, "Enlightenment Sigils", "ParagonArmorCompleted",
+                new(0, 301, 325, enl300, 300, 50, 0.5m, 300101189, 5, "Enlightenment Sigils", "ParagonArmorCompleted|EnlGate300Bypass",
                     "You must have completed 50th Armor Paragon to enlighten beyond level 300."),
-                new(0, 326, null, enl300, 300, 50, 0.5m, 98769999, 5, "Crest of Enlightenment", "ParagonArmorCompleted",
+                new(0, 326, null, enl300, 300, 50, 0.5m, 98769999, 5, "Crest of Enlightenment", "ParagonArmorCompleted|EnlGate300Bypass",
                     "You must have completed 50th Armor Paragon to enlighten beyond level 300."),
             };
         }
@@ -294,6 +312,12 @@ WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
         public string ItemLabel { get; }
         public string QuestStamp { get; }
         public string QuestFailureMessage { get; }
+
+        /// <summary>
+        /// <see cref="QuestStamp"/> split on '|'. Any one of these flags passes the tier, so a Paragon gate can also
+        /// list the flag bought with the gate fee (owner 2026-10-24), e.g. "ParagonEnlCompleted|EnlGate150Bypass".
+        /// </summary>
+        public IReadOnlyList<string> QuestStamps { get; }
 
         public EnlightenmentTierSnapshot(
             int id,
@@ -320,6 +344,9 @@ WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
             ItemCountTargetMinus = itemCountTargetMinus;
             ItemLabel = string.IsNullOrWhiteSpace(itemLabel) ? null : itemLabel.Trim();
             QuestStamp = string.IsNullOrWhiteSpace(questStamp) ? null : questStamp.Trim();
+            QuestStamps = QuestStamp == null
+                ? Array.Empty<string>()
+                : QuestStamp.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             QuestFailureMessage = string.IsNullOrWhiteSpace(questFailureMessage) ? null : questFailureMessage.Trim();
         }
 

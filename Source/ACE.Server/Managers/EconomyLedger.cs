@@ -38,6 +38,8 @@ namespace ACE.Server.Managers
         public const string SrcKill = "Kill";
         public const string SrcAllegiance = "Allegiance";
         public const string SrcEnlighten = "Enlighten";
+        /// <summary>The fee paid to enlighten past the 150 or 300 gate without the Paragon; the detail is the gate.</summary>
+        public const string SrcEnlightenGate = "EnlightenGate";
         public const string SrcPowerball = "Powerball";
         public const string SrcFellowship = "Fellowship";
         public const string SrcQuest = "Quest";

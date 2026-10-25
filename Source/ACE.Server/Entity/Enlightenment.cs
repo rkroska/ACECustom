@@ -188,7 +188,7 @@ namespace ACE.Server.Entity
                 return false;
             }
 
-            if (!VerifyTierItemAndQuest(player, targetEnlightenment))
+            if (!VerifyTierItemAndQuest(player, targetEnlightenment, isRevalidation))
                 return false;
 
             if (targetEnlightenment > 10)
@@ -212,7 +212,7 @@ namespace ACE.Server.Entity
             return true;
         }
 
-        private static bool VerifyTierItemAndQuest(Player player, int targetEnlightenment)
+        private static bool VerifyTierItemAndQuest(Player player, int targetEnlightenment, bool isRevalidation)
         {
             if (!EnlightenmentTierManager.TryGetTier(targetEnlightenment, out var tier))
             {
@@ -236,14 +236,17 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (!string.IsNullOrEmpty(tier.QuestStamp))
+            // Any one of the tier's flags passes: the Paragon, or the gate fee flag (owner 2026-10-24)
+            if (tier.QuestStamps.Count > 0 && !tier.QuestStamps.Any(stamp => player.QuestManager.GetCurrentSolves(stamp) >= 1))
             {
-                if (player.QuestManager.GetCurrentSolves(tier.QuestStamp) < 1)
-                {
-                    var msg = tier.QuestFailureMessage ?? "You lack a required quest completion for this enlightenment tier.";
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
-                    return false;
-                }
+                var msg = tier.QuestFailureMessage ?? "You lack a required quest completion for this enlightenment tier.";
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
+
+                // the refusal above stays first and unchanged; the offer follows it
+                if (!isRevalidation)
+                    EnlightenmentGate.OfferFee(player, tier);
+
+                return false;
             }
 
             return true;
