@@ -167,5 +167,10 @@ namespace ACE.Entity.Enum.Properties
         /// sets the next fee. Drawn in place of the real gear by Creature.CalculateObjDesc. Server-only - not an assessment
         /// property, so it is never sent to a player. See DressingRoomLook.</summary>
         DressingRoomLook = 53000,
+
+        /// <summary>Tier rewards (owner 2026-10-24), on a CHARACTER: the decimal part of kill-task progress earned from T11+ Zone
+        /// Control kills, per quest - "questname|base|fraction;..." (base = the quest's NumTimesCompleted when the fraction was
+        /// saved; a fraction whose base no longer matches is stale and ignored). Cleared whenever the quest restarts. Server-only.</summary>
+        KillTaskFractions = 57000,
     }
 }

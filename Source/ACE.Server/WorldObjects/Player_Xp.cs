@@ -40,7 +40,8 @@ namespace ACE.Server.WorldObjects
         /// <param name="amount">The amount of XP being added</param>
         /// <param name="xpType">The source of XP being added</param>
         /// <param name="shareable">True if this XP can be shared with Fellowship</param>
-        public void EarnXP(long amount, XpType xpType, ShareType shareType = ShareType.All, int monsterTier = 0)
+        /// <param name="killTier">Tier rewards: the T11+ Zone Control tier of the kill, 0 for any other XP (see TierRewardScale.ScaleXp)</param>
+        public void EarnXP(long amount, XpType xpType, ShareType shareType = ShareType.All, int monsterTier = 0, int killTier = 0)
         {
             //Console.WriteLine($"{Name}.EarnXP({amount}, {sharable}, {fixedAmount})");
             if (IsMule)
@@ -80,7 +81,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            GrantXP(m_amount, xpType, shareType, monsterTier);
+            GrantXP(m_amount, xpType, shareType, monsterTier, killTier);
         }
 
         /// <summary>
@@ -89,7 +90,7 @@ namespace ACE.Server.WorldObjects
         /// <param name="amount">The amount of XP to grant to the player</param>
         /// <param name="xpType">The source of the XP being granted</param>
         /// <param name="shareable">If TRUE, this XP can be shared with fellowship members</param>
-        public void GrantXP(long amount, XpType xpType, ShareType shareType = ShareType.All, int monsterTier = 0)
+        public void GrantXP(long amount, XpType xpType, ShareType shareType = ShareType.All, int monsterTier = 0, int killTier = 0)
         {
             if (IsOlthoiPlayer || IsMule)
             {
@@ -106,7 +107,7 @@ namespace ACE.Server.WorldObjects
                 var zoneMembers = ZoneShareManager.MembersFor(this);
                 if (zoneMembers != null)
                 {
-                    ACE.Server.Entity.Fellowship.ShareXpAmong(zoneMembers, (ulong)amount, xpType, shareType & ~ShareType.Fellowship, this, monsterTier);
+                    ACE.Server.Entity.Fellowship.ShareXpAmong(zoneMembers, (ulong)amount, xpType, shareType & ~ShareType.Fellowship, this, monsterTier, killTier);
                     return;
                 }
             }
@@ -115,7 +116,7 @@ namespace ACE.Server.WorldObjects
             {
                 // this will divy up the XP, and re-call this function
                 // with ShareType.Fellowship removed
-                Fellowship.SplitXp((ulong)amount, xpType, shareType, this, monsterTier);
+                Fellowship.SplitXp((ulong)amount, xpType, shareType, this, monsterTier, killTier);
                 return;
             }
 
@@ -131,6 +132,10 @@ namespace ACE.Server.WorldObjects
                 var playerTier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
                 finalAmount = (long)Math.Round(rewardAdjusted * PrestigeManager.GetXPPenaltyMultiplier(playerTier, monsterTier));
             }
+
+            // tier dip (off unless zc_tier_dip_xp_enabled): this player's own share of a T11+ Zone Control kill
+            if (xpType == XpType.Kill)
+                finalAmount = ACE.Server.Managers.ZoneControl.TierRewardScale.ScaleXp(finalAmount, this, killTier);
 
             // Make sure UpdateXpAndLevel is done on this players thread
             EnqueueAction(new ActionEventDelegate(ActionType.PlayerXp_UpdateXpAndLevel, () => UpdateXpAndLevel(finalAmount, xpType)));
