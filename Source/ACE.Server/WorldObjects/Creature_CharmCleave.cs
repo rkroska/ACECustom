@@ -34,6 +34,34 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// The Improved Cleave charm's damage bonus (owner 2026-10-25, mirrors ShieldArcDamageMod): a player's two-handed melee hit
+        /// on a monster - the main target and every cleaved one - deals 1 + bonus times as much. 1 when the charm does not apply:
+        /// PvP, not melee, no charm, switched off, not two-handed (twohandedonly), below T11 (t11only), or a bonus of 0.
+        /// </summary>
+        public float ImprovedCleaveDamageMod(WorldObject weapon, Creature defender)
+        {
+            if (!(this is Player player) || !player.HasImprovedCleaveCharm || defender == null || defender is Player)
+                return 1f;
+            if (!(weapon is MeleeWeapon))
+                return 1f;
+
+            var cs = CharmSettingsManager.ImprovedCleave;
+            if (!cs.Enabled)
+                return 1f;
+            if (cs.On("twohandedonly") && weapon.WeaponSkill != ACE.Entity.Enum.Skill.TwoHandedCombat)
+                return 1f;
+            if (cs.On("t11only") && ZoneCraftGate.TierOf(weapon) < 11)
+                return 1f;
+
+            var level = CharmAbilityRegistry.LevelOf(player, CharmAbilityRegistry.ImprovedCleaveAbilityId);
+            if (level < 1)
+                return 1f;
+
+            var bonus = cs.NumberAt("bonus", level);
+            return float.IsFinite(bonus) ? 1f + Math.Clamp(bonus, 0f, 5f) : 1f;
+        }
+
+        /// <summary>
         /// How many extra monsters a swing cleaves with the charm on (owner 2026-10-21): the weapon's own cleave PLUS the
         /// charm's targets, held to the charm's 'maxtargets' (0 = no cap). Most two-handers cleave only 1 monster of their
         /// own, so the charm adds to it rather than taking the higher of the two. The one rule the picker and the panel share.
