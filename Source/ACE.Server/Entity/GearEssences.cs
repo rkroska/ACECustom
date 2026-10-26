@@ -149,6 +149,17 @@ namespace ACE.Server.Entity
         /// tier sets no limit; null below tier 11.</summary>
         public static string PropertiesAppraisalLine(WorldObject wo)
         {
+            var p = PropertiesCount(wo);
+            if (p == null)
+                return null;
+            var (count, cap) = p.Value;
+            return cap == int.MaxValue ? $"- Properties: {count}" : $"- Properties: {count} of {cap}";
+        }
+
+        /// <summary>The two numbers behind <see cref="PropertiesAppraisalLine"/>: the lines or cards that use a slot, and the tier's
+        /// limit (int.MaxValue when the tier sets none). Null below tier 11. The loot properties (ZoneLootProps) send the same pair.</summary>
+        public static (int Count, int Cap)? PropertiesCount(WorldObject wo)
+        {
             if (wo == null)
                 return null;
             var tier = ZoneStatResolver.TierOf(wo);
@@ -156,8 +167,7 @@ namespace ACE.Server.Entity
                 return null;
             var weapon = IsWeapon(wo);
             var count = weapon ? CardCount(wo) : LineCount(wo);
-            var cap = CachedCap(tier, weapon);
-            return cap == int.MaxValue ? $"- Properties: {count}" : $"- Properties: {count} of {cap}";
+            return (count, CachedCap(tier, weapon));
         }
 
         /// <summary>How long an appraisal reuses a tier's limit: every appraisal of a T11+ piece shows it (loot ID'ing included),
