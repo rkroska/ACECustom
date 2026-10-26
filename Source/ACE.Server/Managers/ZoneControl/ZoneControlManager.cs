@@ -574,13 +574,22 @@ namespace ACE.Server.Managers.ZoneControl
                 var cap = StoreValueCapacity();
                 if (cap > 0 && bytes > cap)
                     throw new InvalidOperationException($"Zone Control store is {bytes:N0} bytes; the DB column holds {cap:N0}. Widen config_properties_string.value to MEDIUMTEXT first.");
-                var existed = DatabaseManager.ShardConfig.StringExists(StoreKey);
-                var previous = existed ? DatabaseManager.ShardConfig.GetString(StoreKey)?.Value : null;
-                WriteStore(existed, json);
+                var previous = DatabaseManager.ShardConfig.GetString(StoreKey);   // null = this server has no store row yet
+                WriteStore(previous != null, json);
                 try { Reload(); }
-                catch
+                catch (Exception ex)
                 {
-                    if (previous != null) WriteStore(true, previous);
+                    // put the shard back exactly as it was - the old value, or no row at all - so a restart never loads
+                    // the import that just failed; a failed restore is logged and the reload error still goes up
+                    try
+                    {
+                        if (previous != null) WriteStore(true, previous.Value);
+                        else DatabaseManager.ShardConfig.RemoveString(StoreKey);
+                    }
+                    catch (Exception restoreEx)
+                    {
+                        log.Error($"[ZoneControl] settings import failed to reload ({ex.GetBaseException().Message}) AND the previous store could not be put back: {restoreEx.GetBaseException().Message}. Check the {StoreKey} row before the next restart.");
+                    }
                     throw;
                 }
             }
