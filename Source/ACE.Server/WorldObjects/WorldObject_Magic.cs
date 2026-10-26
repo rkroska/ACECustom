@@ -331,11 +331,14 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
+            var directDot = spell.MetaSpellType == SpellType.EnchantmentProjectile
+                && ZcDirectDot(spell, targetCreature, itemCaster, isWeaponSpell, fromProc);
+
             switch (spell.MetaSpellType)
             {
                 case SpellType.Enchantment:
                 case SpellType.FellowEnchantment:
-                case SpellType.EnchantmentProjectile when ZcDirectDot(spell, targetCreature, itemCaster, isWeaponSpell, fromProc):
+                case SpellType.EnchantmentProjectile when directDot:
 
                     // TODO: replace with some kind of 'rootOwner unless equip' concept?
                     if (itemCaster != null && (equip || itemCaster is Gem || itemCaster is Food))
@@ -405,6 +408,11 @@ namespace ACE.Server.WorldObjects
 
             // play spell effects
             DoSpellEffects(spell, this, target);
+
+            // A direct DoT is still a bolt spell (IsProjectile), so the call above plays only the cast effect - the
+            // target effect waits for a bolt hit that never comes. Play the hit on the monster here, as the bolt did.
+            if (directDot)
+                DoSpellEffects(spell, this, target, projectileHit: true);
 
             return true;
         }
