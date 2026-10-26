@@ -728,7 +728,11 @@ namespace ACE.Server.Entity
 
             // Shield Arc charm (owner 2026-10-22): sword and shield's own damage bonus on a monster (1 when it does not apply)
             if (playerAttacker != null && playerDefender == null)
+            {
                 Damage *= attacker.ShieldArcDamageMod(Weapon, defender);
+                // Improved Cleave charm (owner 2026-10-25): the two-hander's own damage bonus, every hit (1 when it does not apply)
+                Damage *= attacker.ImprovedCleaveDamageMod(Weapon, defender);
+            }
 
             // Apply split arrow damage multiplier if this is a split arrow
             if (DamageSource.GetProperty(PropertyBool.IsSplitArrow) == true)
