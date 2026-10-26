@@ -660,7 +660,7 @@ namespace ACE.Server.WorldObjects
                        + (b.CountAt("maxtargets", lv) > 0 ? $" (at most {b.CountAt("maxtargets", lv)} in all)" : "")
                        + $", within {M(b.At("range", lv))}, "
                        + (b.At("angle", lv) >= 359.5 ? "all around you." : $"in a {b.At("angle", lv):0} degree arc in front of you.")
-                       + (b.At("bonus", lv) > 0 ? $" Your two-handed hits on monsters deal {Pct(b.At("bonus", lv))} more damage." : ""),
+                       + (b.At("bonus", lv) > 0 ? $" Your {(b.On("twohandedonly") ? "two-handed" : "melee")} hits on monsters deal {Pct(b.At("bonus", lv))} more damage." : ""),
             // owner 2026-10-21 (Schneebly): the two-hander is the pack clearer - added targets, a wider arc, full damage,
             // and melee reach (2 m -> 5 m), not the 10-15 m that made cleave hit half the room
             CharmSettingDef.Count("targets", 0, 10, 1, 5, "Extra monsters a swing cleaves ON TOP of the weapon's own cleave.").Sched(steps: "25:1,50:1,75:1,100:1"),
@@ -672,7 +672,7 @@ namespace ACE.Server.WorldObjects
             CharmSettingDef.Number("damage", 0, 2, 1, double.NaN, "Damage of a cleaved hit the charm adds, as a fraction of a normal hit (0.5 = half). The main target and the weapon's own cleave always take the full hit."),
             // owner 2026-10-25: the two-hander's own damage bonus, like Shield Arc's - on EVERY hit (the main target too), so 2H can
             // be tuned without moving every melee style's zone dial. Off (0) until set.
-            CharmSettingDef.Number("bonus", 0, 5, 0, 0, "Extra damage of every two-handed melee hit on a monster while the charm is on, main target and cleaved ones alike, as a fraction (0.3 = +30 pct). 0 = none."),
+            CharmSettingDef.Number("bonus", 0, 5, 0, 0, "Extra damage of every melee hit on a monster while the charm is on, main target and cleaved ones alike, as a fraction (0.3 = +30 pct). Two-handed hits only while twohandedonly is on, every eligible melee hit when it is off. 0 = none."),
             CharmSettingDef.Switch("twohandedonly", true, "Only two-handed weapons get the charm. Off = every T11+ melee weapon (dual wield and sword and shield too)."),
             CharmSettingDef.Switch("los", true, "A cleaved monster must be in sight (no cleaving through walls)."),
             CharmSettingDef.Switch("t11only", true, T11OnlyHelp),
