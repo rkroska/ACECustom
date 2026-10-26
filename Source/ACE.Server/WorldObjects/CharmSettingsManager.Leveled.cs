@@ -108,6 +108,10 @@ namespace ACE.Server.WorldObjects
                 Reset();
             }
 
+            /// <summary>A new block with the same settings list, at its defaults (Defs[0] is the "enabled" switch the
+            /// constructor adds itself).</summary>
+            public LeveledCharmBlock Fresh() => new LeveledCharmBlock(Name, DisplayName, Summary, playerText, Defs[1..]);
+
             // -- reads (combat) ------------------------------------------------
 
             public bool Enabled => On("enabled");

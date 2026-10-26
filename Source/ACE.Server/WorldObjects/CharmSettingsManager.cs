@@ -314,6 +314,71 @@ CREATE TABLE IF NOT EXISTS `charm_settings` (
             }
         }
 
+        // -- settings transfer (owner 2026-10-25: /settings export | import) --------------------------------------
+
+        /// <summary>Every charm's full current settings, charm name -> key -> raw value (the defaults included, so an
+        /// import defines each charm completely, whatever the target had saved).</summary>
+        public static Dictionary<string, IDictionary<string, string>> ExportAll()
+        {
+            var all = new Dictionary<string, IDictionary<string, string>>(StringComparer.Ordinal);
+            lock (Sync)
+                foreach (var (name, block) in AllBlocks())
+                {
+                    var keys = new Dictionary<string, string>(StringComparer.Ordinal);
+                    foreach (var (key, value) in block.GetAllRaw())
+                        keys[key] = value ?? "";
+                    all[name] = keys;
+                }
+            return all;
+        }
+
+        /// <summary>Every charm's DEFAULT settings, by its /charm name - what Reset() gives a block, read from a fresh block
+        /// so the live ones are never touched (the settings import preview: a key the file leaves out goes back to this).</summary>
+        public static Dictionary<string, IDictionary<string, string>> ExportDefaults()
+        {
+            var all = new Dictionary<string, IDictionary<string, string>>(StringComparer.Ordinal);
+            foreach (var (name, block) in AllBlocks())
+            {
+                var fresh = block is LeveledCharmBlock leveled ? leveled.Fresh() : (ICharmBlock)Activator.CreateInstance(block.GetType());
+                fresh.Reset();
+                var keys = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var (key, value) in fresh.GetAllRaw())
+                    keys[key] = value ?? "";
+                all[name] = keys;
+            }
+            return all;
+        }
+
+        /// <summary>Applies charms from a settings file: each charm named is reset to its defaults, given the file's
+        /// values and saved whole. Charms the file does not name are left alone. Returns the names this server does not
+        /// know (skipped).</summary>
+        public static List<string> ImportAll(IDictionary<string, SortedDictionary<string, string>> charms)
+        {
+            var unknown = new List<string>();
+            lock (Sync)
+                foreach (var (name, keys) in charms)
+                {
+                    ICharmBlock block = null;
+                    foreach (var (blockName, candidate) in AllBlocks())
+                        if (blockName == name) { block = candidate; break; }
+                    if (block == null) { unknown.Add(name); continue; }
+                    block.Reset();
+                    foreach (var (key, value) in keys)
+                        block.ApplyRaw(key, value);
+                    PersistBlock(name, block);
+                }
+            return unknown;
+        }
+
+        /// <summary>Every charm block once, by its /charm name: the levelled ones, then the older ones.</summary>
+        private static IEnumerable<(string name, ICharmBlock block)> AllBlocks()
+        {
+            foreach (var block in LeveledBlocks.Values)
+                yield return (block.Name, block);
+            foreach (var (name, _, block) in OlderBlocks())
+                yield return (name, block);
+        }
+
         private static void PersistBlock(string charmName, ICharmBlock block)
         {
             foreach (var (key, val) in block.GetAllRaw())

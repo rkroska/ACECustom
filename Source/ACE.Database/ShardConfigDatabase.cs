@@ -102,6 +102,21 @@ namespace ACE.Database
             }
         }
 
+        /// <summary>Deletes the string row; does nothing when there is none.</summary>
+        public void RemoveString(string key)
+        {
+            using (var context = new ShardDbContext())
+            {
+                var row = context.ConfigPropertiesString.FirstOrDefault(r => r.Key == key);
+                if (row == null)
+                    return;
+
+                context.ConfigPropertiesString.Remove(row);
+
+                context.SaveChanges();
+            }
+        }
+
 
         public ConfigPropertiesBoolean GetBool(string key)
         {

@@ -375,6 +375,7 @@ namespace ACE.Server.Managers.ZoneControl
                 a.Landblocks ??= new HashSet<ushort>();
                 a.TerrainOverrides ??= new Dictionary<ushort, string>();
                 a.Profile ??= new ZoneScalingProfile();
+                a.Profile.WcidOverrides ??= new Dictionary<uint, ZoneVariantProfile>();   // an imported store may carry an explicit null map
                 a.Effects ??= new ZoneEffects();
                 a.AppearanceDefault ??= new ZoneAppearance();
                 a.AppearanceByWcid ??= new Dictionary<uint, ZoneAppearance>();
@@ -547,19 +548,77 @@ namespace ACE.Server.Managers.ZoneControl
             return _storeCapacity;
         }
 
+        /// <summary>The live store as JSON, exactly what Save writes (settings transfer, /settings export).</summary>
+        public static string ExportStoreJson()
+        {
+            EnsureInitialized();
+            lock (_lock)
+                return JsonConvert.SerializeObject(BuildStore());
+        }
+
+        /// <summary>Replaces the whole store with a settings-transfer one (/settings import ... apply): checks it reads as a
+        /// store and fits the column BEFORE anything is written, then saves and reloads it live under one hold of _lock (no
+        /// Zone Control edit can land in between and overwrite it). The reload is the same build-first load the server start
+        /// uses; if it fails, the previous store is written back, the previous zones keep running and the error is thrown.</summary>
+        public static void ImportStoreJson(string json)
+        {
+            json = UpgradeLegacyStoreKeys(json ?? "");
+            var parsed = JsonConvert.DeserializeObject<Store>(json);
+            if (parsed == null)
+                throw new FormatException("the Zone Control part does not read as a store.");
+            if (parsed.Areas == null)
+                throw new FormatException("the Zone Control part has no areas list.");
+            var bytes = System.Text.Encoding.UTF8.GetByteCount(json);
+            lock (_lock)
+            {
+                var cap = StoreValueCapacity();
+                if (cap > 0 && bytes > cap)
+                    throw new InvalidOperationException($"Zone Control store is {bytes:N0} bytes; the DB column holds {cap:N0}. Widen config_properties_string.value to MEDIUMTEXT first.");
+                var previous = DatabaseManager.ShardConfig.GetString(StoreKey);   // null = this server has no store row yet
+                WriteStore(previous != null, json);
+                try { Reload(); }
+                catch (Exception ex)
+                {
+                    // put the shard back exactly as it was - the old value, or no row at all - so a restart never loads
+                    // the import that just failed; a failed restore is logged and the reload error still goes up
+                    try
+                    {
+                        if (previous != null) WriteStore(true, previous.Value);
+                        else DatabaseManager.ShardConfig.RemoveString(StoreKey);
+                    }
+                    catch (Exception restoreEx)
+                    {
+                        log.Error($"[ZoneControl] settings import failed to reload ({ex.GetBaseException().Message}) AND the previous store could not be put back: {restoreEx.GetBaseException().Message}. Check the {StoreKey} row before the next restart.");
+                    }
+                    throw;
+                }
+            }
+            log.Info($"[ZoneControl] store replaced by a settings import ({bytes:N0} bytes) and reloaded.");
+        }
+
+        private static void WriteStore(bool exists, string json)
+        {
+            if (exists)
+                DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = StoreKey, Value = json, Description = "Zone Control store (JSON)" });
+            else
+                DatabaseManager.ShardConfig.AddString(StoreKey, json, "Zone Control store (JSON)");
+        }
+
+        private static Store BuildStore() => new Store
+        {
+            Areas = _areas.Values.ToList(),
+            VariationDefaults = new Dictionary<int, VariationDefault>(_variationDefaults),
+            LadderApplies = new Dictionary<int, LadderApply>(_ladderApplies),
+            DamageMults = new Dictionary<uint, double>(_damageMults),
+            GearLockSpots = _gearLock.OrderBy(k => k).Select(k => new GearLockSpot { Landblock = (int)(k & 0xFFFF), Variation = (int)(k >> 16) - 1 }).ToList(),
+            ZoneWideBounty = _zoneWideBounty,
+            RegionBounties = new Dictionary<string, BountyConfig>(_regionBounties),
+            AllowedProcSpells = _procAllow.OrderBy(x => x).ToList(),
+        };
+
         private static void Save()
         {
-            var store = new Store
-            {
-                Areas = _areas.Values.ToList(),
-                VariationDefaults = new Dictionary<int, VariationDefault>(_variationDefaults),
-                LadderApplies = new Dictionary<int, LadderApply>(_ladderApplies),
-                DamageMults = new Dictionary<uint, double>(_damageMults),
-                GearLockSpots = _gearLock.OrderBy(k => k).Select(k => new GearLockSpot { Landblock = (int)(k & 0xFFFF), Variation = (int)(k >> 16) - 1 }).ToList(),
-                ZoneWideBounty = _zoneWideBounty,
-                RegionBounties = new Dictionary<string, BountyConfig>(_regionBounties),
-                AllowedProcSpells = _procAllow.OrderBy(x => x).ToList(),
-            };
+            var store = BuildStore();
             _ladderSnapshot = new Dictionary<int, LadderApply>(_ladderApplies);
             var jsonOut = JsonConvert.SerializeObject(store);
 
@@ -2767,13 +2826,15 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>Force a reload from the shard store (e.g. after out-of-band edits).</summary>
+        /// <summary>Re-reads the store from the shard. Load is build-then-commit, so on a failure the previous zones keep
+        /// running - and the error is thrown, so the caller never reports a reload that did not happen.</summary>
         public static void Reload()
         {
             lock (_lock)
             {
-                _initialized = false;
                 _questRows = null;   // quest registry re-reads from ace_world on next pull
-                EnsureInitialized();
+                Load();
+                _initialized = true;
             }
         }
 
