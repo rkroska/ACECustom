@@ -90,7 +90,7 @@ namespace ACE.Server.Network.Structure
 
             // Loot properties (owner 2026-10-26): the tier 11+ numbers the panel prints, as ints / floats a loot rule can read.
             // Added after the AssessmentProperties filter on purpose - they are response-only and never stored on the item.
-            if (!(wo is Creature))
+            if (Success && !(wo is Creature))
                 ACE.Server.Managers.ZoneControl.ZoneLootProps.Collect(wo, zcResolved, GearEssences.PropertiesCount(wo), IsLegacyTextBlock(zcResolved),
                     PropertiesInt, PropertiesFloat);
 

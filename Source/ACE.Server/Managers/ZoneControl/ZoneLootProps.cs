@@ -24,7 +24,7 @@ namespace ACE.Server.Managers.ZoneControl
     /// Id block 58000-58999 (free in every property type; 53000 = Dressing Room, 56000 = Deeds):
     ///   58000 + catalog key   gear line VALUE (int)       58500 + catalog key   gear line GRADE 0-1000 (int)
     ///   58100 - weapon key    weapon card VALUE (float)   58600 - weapon key    weapon card GRADE 0-1000 (int)
-    ///   58900 Gear Grade 0-1000 · 58901 Properties used · 58902 Properties limit · 58903 All Creatures slayer (1)
+    ///   58900 Gear Grade 0-1000 | 58901 Properties used | 58902 Properties limit | 58903 All Creatures slayer (1)
     ///   58999 format version - present on every tier 11+ item, so a loot profile can tell an old server from a new one.
     /// Catalog keys are 19-54 (legacy core resists c1..c4 report as their Always Rolled twins 50-53); weapon keys are
     /// -11..-30. Both are stable (saved records), so these ids are too. NEVER renumber: loot profiles in the wild use them.
