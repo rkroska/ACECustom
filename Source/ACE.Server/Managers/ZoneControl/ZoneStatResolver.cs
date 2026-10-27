@@ -633,6 +633,17 @@ namespace ACE.Server.Managers.ZoneControl
         /// </summary>
         public static string GearGradeLine(WorldObject wo)
         {
+            var g = GearGrade(wo);
+            if (g == null)
+                return null;
+            var (avg, count) = g.Value;
+            return $"- Gear Grade: {ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetQualitySubGrade(avg)} (average of {count} rolled line{(count == 1 ? "" : "s")})";
+        }
+
+        /// <summary>The number behind <see cref="GearGradeLine"/>: the floored average grade (0-1000) and how many lines it averages.
+        /// Null when the piece has no graded line. The loot properties (ZoneLootProps) send the same average.</summary>
+        public static (int Grade, int Lines)? GearGrade(WorldObject wo)
+        {
             if (wo == null)
                 return null;
             var grades = Read(wo)
@@ -642,8 +653,7 @@ namespace ACE.Server.Managers.ZoneControl
             if (grades.Count == 0)
                 return null;
             // floored: S is the single perfect 1000, so only an all-perfect piece may show it (999.5 must not round up into S)
-            var avg = (int)Math.Floor(grades.Average());
-            return $"- Gear Grade: {ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetQualitySubGrade(avg)} (average of {grades.Count} rolled line{(grades.Count == 1 ? "" : "s")})";
+            return ((int)Math.Floor(grades.Average()), grades.Count);
         }
 
         /// <summary>Parse the record. Unknown / malformed entries are skipped, never thrown on.</summary>

@@ -88,6 +88,12 @@ namespace ACE.Server.Network.Structure
             if (zcResolved != null)
                 SubstituteZoneResolvedInts(wo, zcResolved);
 
+            // Loot properties (owner 2026-10-26): the tier 11+ numbers the panel prints, as ints / floats a loot rule can read.
+            // Added after the AssessmentProperties filter on purpose - they are response-only and never stored on the item.
+            if (Success && !(wo is Creature))
+                ACE.Server.Managers.ZoneControl.ZoneLootProps.Collect(wo, zcResolved, GearEssences.PropertiesCount(wo), IsLegacyTextBlock(zcResolved),
+                    PropertiesInt, PropertiesFloat);
+
             // Help us make sure the item identify properly
             NPCLooksLikeObject = wo.GetProperty(PropertyBool.NpcLooksLikeObject) ?? false;
 
@@ -1052,6 +1058,24 @@ namespace ACE.Server.Network.Structure
         }
 
         private const string ReinforcedLineName = "Reinforced";
+
+        /// <summary>True for a piece whose modifier block would come from baked "Zone Cantrip:" text only - no record, and at least
+        /// one baked line other than Reinforced. The same rule PromoteZoneModifierLines uses to leave off "Properties: X of Y".</summary>
+        private bool IsLegacyTextBlock(ZoneStatResolver.Resolved resolved)
+        {
+            if (resolved != null || !PropertiesString.TryGetValue(PropertyString.LongDesc, out var ld) || string.IsNullOrEmpty(ld))
+                return false;
+            foreach (var raw in ld.Split('\n'))
+            {
+                var line = raw.Trim();
+                if (!line.StartsWith(LegacyModifierMarker, StringComparison.Ordinal))
+                    continue;
+                var name = line.Substring(LegacyModifierMarker.Length).Trim();
+                if (name.Length > 0 && !name.StartsWith(ReinforcedLineName, StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
 
         /// <param name="resolved">Live Stat Resolution record (null = legacy piece / weapon): when present
         /// the bullets come from the record (record order, specials, Armor Level and the Always Rolled
