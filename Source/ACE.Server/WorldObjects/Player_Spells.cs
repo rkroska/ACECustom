@@ -394,6 +394,11 @@ namespace ACE.Server.WorldObjects
             });
         }
 
+        /// <summary>
+        /// The Auto-Rebuff Charm: when it is on and no dispel lockout is running (180 s), casts every spell on the Buffs list
+        /// the player qualifies for (school trained, focus or augment, spell learned) at level 8 (else 7) - the buffs on the
+        /// player, Impenetrability and the banes on their armor and shields, equipped and in their packs.
+        /// </summary>
         public void ApplyUltimateBlessings()
         {
             if (!CharmSettingsManager.AutoRebuff.Enabled)
@@ -443,6 +448,7 @@ namespace ACE.Server.WorldObjects
                 {
                     continue;
                 }
+                spellID = ResolveBuffSpellId(spellNamPrefix, spellID);
 
                 var buffMsg = BuildBuffMessage(spellID);
                 if (buffMsg != null)
@@ -552,6 +558,18 @@ namespace ACE.Server.WorldObjects
 
                 targetPlayer.HandleSpellHooks(spell);
             }
+        }
+
+        /// <summary>
+        /// The spell to cast for a Buffs entry: <paramref name="spellId"/>, or its "8Cast" twin when the player knows the
+        /// twin but not <paramref name="spellId"/>. Blood Drinker has two level 8 spells with the same name and effect:
+        /// 4395 (BloodDrinkerSelf8, the one the Buffs lookup finds) and 5183 (BloodDrinker8Cast), the one players learn.
+        /// </summary>
+        private uint ResolveBuffSpellId(string buffName, uint spellId)
+        {
+            if (!SpellIsKnown(spellId) && Enum.TryParse(buffName + "8Cast", out SpellId castId) && SpellIsKnown((uint)castId))
+                return (uint)castId;
+            return spellId;
         }
 
         // TODO: switch this over to SpellProgressionTables
@@ -899,6 +917,7 @@ namespace ACE.Server.WorldObjects
                     spellID = (uint)parsedAlt;
                 else
                     continue;
+                spellID = ResolveBuffSpellId(spellPrefix, spellID);
 
                 // Resolve the spell object to check school
                 var spell = new Spell(spellID);
