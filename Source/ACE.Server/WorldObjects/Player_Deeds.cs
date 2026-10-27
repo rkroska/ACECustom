@@ -479,8 +479,8 @@ namespace ACE.Server.WorldObjects
                 else if (!Enum.TryParse(name + "Self" + level, out id) && !Enum.TryParse(name + "Other" + level, out id))
                     continue;
 
-                var spell = new Spell(id);
-                if (spell.NotFound || !SpellIsKnown((uint)id))
+                var spell = new Spell(ResolveBuffSpellId(name, (uint)id));
+                if (spell.NotFound || !SpellIsKnown(spell.Id))
                     continue;
 
                 var skill = GetCreatureSkill(spell.School);
