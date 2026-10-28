@@ -955,7 +955,7 @@ namespace ACE.Server.Managers
             {
                 if (sb.Length > 0) sb.Append(';');
                 sb.Append(kv.Key).Append('|')
-                  .Append(kv.Value.Kills.ToString("0.######", CultureInfo.InvariantCulture)).Append('|')
+                  .Append(kv.Value.Kills.ToString("R", CultureInfo.InvariantCulture)).Append('|')   // round-trip: no tiny credit lost
                   .Append(kv.Value.LastAward.ToString("0", CultureInfo.InvariantCulture));
             }
 
