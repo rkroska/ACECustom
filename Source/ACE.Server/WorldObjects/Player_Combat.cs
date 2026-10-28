@@ -1771,6 +1771,11 @@ namespace ACE.Server.WorldObjects
 
             var damageType = damageSource.W_DamageType;
 
+            // T11+ melee weapon with Slash Rending on a Slashing/Piercing base: Slash on every swing, thrusts included
+            // (owner 2026-10-28). Load and drop already rewrite the stored type; this covers a weapon that became
+            // eligible mid-session. One int compare for every other weapon.
+            damageType = ACE.Server.Managers.ZoneControl.ZoneSlashRendDamageType.Effective(damageSource, damageType);
+
             if (damageType == DamageType.Undef)
             {
                 log.Warn($"{Name}.GetDamageType(): {damageSource} ({damageSource.Guid}, {damageSource.WeenieClassId}): no DamageType");
