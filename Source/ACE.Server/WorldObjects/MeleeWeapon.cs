@@ -21,6 +21,10 @@ namespace ACE.Server.WorldObjects
         public MeleeWeapon(Biota biota) : base(biota)
         {
             SetEphemeralValues();
+
+            // T11+ Slash Rending on a Slashing/Piercing weapon -> Slashing only (owner 2026-10-28). Retroactive:
+            // the rewrite marks the biota changed, so it is saved with the owner's next save.
+            ACE.Server.Managers.ZoneControl.ZoneSlashRendDamageType.Normalize(this, existingItem: true);
         }
 
         private void SetEphemeralValues()

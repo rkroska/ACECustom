@@ -1831,6 +1831,10 @@ namespace ACE.Server.WorldObjects
                 // the drop KEEPS its rolled material, so it can be salvaged (owner 2026-10-05: salvaging is back on
                 // T11+; ApplyZoneMaterialClear removed). Gear that dropped before keeps no material - by ruling, not repaired.
 
+                // Slash Rending on a Slashing/Piercing melee weapon -> Slashing only (owner 2026-10-28). After the tier
+                // stamp (Applies reads it) and before the tint, so the tint is Slashing alone.
+                ACE.Server.Managers.ZoneControl.ZoneSlashRendDamageType.Normalize(wo, existingItem: false);
+
                 // name tinted by damage element (trial 2026-07-20, may revert)
                 LootGenerationFactory.ApplyZoneElementTint(wo);
             }

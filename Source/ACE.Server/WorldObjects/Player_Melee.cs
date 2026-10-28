@@ -490,7 +490,15 @@ namespace ACE.Server.WorldObjects
             var animSpeedMod = IsDualWieldAttack ? 1.2f : 1.0f;     // dual wield swing animation 20% faster
             var animSpeed = baseSpeed * animSpeedMod;
 
-            var swingAnimation = GetSwingAnimation();
+            var swingAnimation = GetSwingAnimation(out var paceAnimation);
+
+            // a slash standing in for a thrust (T11+ Slash Rending, see GetSwingAnimation) plays in the thrust's time:
+            // speed scaled by slash length / thrust length, so animLength below is exactly the thrust's and attack
+            // speed is unchanged. CanReplace already checked both lengths are above zero.
+            if (paceAnimation != swingAnimation)
+                animSpeed *= MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, swingAnimation)
+                    / MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, paceAnimation);
+
             var animLength = MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, swingAnimation, animSpeed);
             //Console.WriteLine($"AnimSpeed: {animSpeed}, AnimLength: {animLength}");
 
@@ -524,7 +532,9 @@ namespace ACE.Server.WorldObjects
         /// Returns the melee swing animation - based on weapon,
         /// current stance, power bar, and attack height
         /// </summary>
-        public MotionCommand GetSwingAnimation()
+        /// <param name="paceAnimation">The animation whose length this swing must take: the swing itself, or - when a
+        /// T11+ Slash Rending weapon's thrust was swapped for a slash - the thrust it replaced.</param>
+        public MotionCommand GetSwingAnimation(out MotionCommand paceAnimation)
         {
             if (IsDualWieldAttack)
                 DualWieldAlternate = !DualWieldAlternate;
@@ -553,6 +563,27 @@ namespace ACE.Server.WorldObjects
 
             // higher-powered animation always in first slot ?
             var motion = motions.Count > 1 && PowerLevel < subdivision ? motions[1] : motions[0];
+            paceAnimation = motion;
+
+            // T11+ Slash Rending weapon that deals Slashing only (owner 2026-10-28): a thrust plays as the matching slash
+            // (same hand, same hit count), picked from its list by the same power rule. Only when this stance has that
+            // slash with as many hits as the thrust (CanReplace); otherwise the thrust stays. DoSwingMotion keeps the
+            // thrust's length, so this never changes attack speed.
+            if (weapon != null && ACE.Server.Managers.ZoneControl.ZoneSlashRendDamageType.SwingsAsSlash(weapon))
+            {
+                var slashType = ACE.Server.Managers.ZoneControl.ZoneSlashRendDamageType.SlashFor(AttackType);
+                if (slashType != AttackType)
+                {
+                    var slashMotions = CombatTable.GetMotion(CurrentMotionState.Stance, AttackHeight.Value, slashType, PrevMotionCommand);
+                    var slash = slashMotions.Count > 1 && PowerLevel < subdivision ? slashMotions[1] : slashMotions[0];
+
+                    if (ACE.Server.Managers.ZoneControl.ZoneSlashRendDamageType.CanReplace(MotionTableId, CurrentMotionState.Stance, motion, slash))
+                    {
+                        AttackType = slashType;
+                        motion = slash;
+                    }
+                }
+            }
 
             PrevMotionCommand = motion;
 

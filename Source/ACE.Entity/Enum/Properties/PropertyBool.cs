@@ -479,6 +479,12 @@ namespace ACE.Entity.Enum.Properties
         /// Server-only - not an assessment property.</summary>
         DeedsOff = 56001,
 
+        /// <summary>T11+ Slash Rending (2026-10-28): on a melee weapon whose Slashing/Piercing damage type was rewritten to
+        /// Slashing only (ZoneSlashRendDamageType.Normalize). Tells a converted weapon from one that was always Slashing, so
+        /// only converted weapons play slashes in place of thrusts. 59000, free in EVERY Property enum on master and the
+        /// deeds branch, and outside the loot property block (58000-58999). Server-only - not an assessment property.</summary>
+        ZcSlashPierceToSlash = 59000,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }
