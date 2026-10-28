@@ -68,6 +68,7 @@ namespace ACE.Server.Command.Handlers
                 rewards.Add("Prestige Coins");
             if (ServerConfig.zc_kt_decimal_credit_enabled.Value)
                 rewards.Add("kill task credit");
+            rewards.Add("bounty credit");   // always: BountyManager follows zc_tier_dip_enabled alone
             if (ServerConfig.zc_tier_dip_xp_enabled.Value)
                 rewards.Add("XP and luminance");
 

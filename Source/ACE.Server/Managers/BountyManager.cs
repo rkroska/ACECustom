@@ -90,7 +90,9 @@ namespace ACE.Server.Managers
 
                 // The player may be ticked by another landblock group (a pet or a DoT finished the kill after a portal): the
                 // credit, the progress and the pack are the player's, so they are touched on the player's thread only.
-                LandblockManager.RunOnThreadFor(player, ActionType.Bounty_Credit, () => Credit(player, victimArea));
+                // The kill's tier is read here, on the victim's thread; the player's own tier on theirs (TIER DIP below).
+                var killTier = TierRewardScale.KillTier(victim);
+                LandblockManager.RunOnThreadFor(player, ActionType.Bounty_Credit, () => Credit(player, victimArea, killTier));
             }
             catch (Exception ex)
             {
@@ -99,7 +101,7 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>The player-thread half of a kill: count it, save, then hand over whatever it completed.</summary>
-        private static void Credit(Player player, string victimArea)
+        private static void Credit(Player player, string victimArea, int killTier)
         {
             try
             {
@@ -111,6 +113,17 @@ namespace ACE.Server.Managers
                 // does not count, and neither does a kill that lands while the killer is somewhere else.
                 if (!TryResolve(player, out var areaKey, out var cfg) || areaKey != victimArea)
                     return;
+
+                // TIER DIP (owner 2026-10-28): a T11+ kill below the player's own tier counts for less, exactly as it does for
+                // kill tasks (TierRewardScale.Credit: 100 / 85 / 70 ... pct). Kills below T11 and at or above their tier count in
+                // full. A kill worth nothing counts toward no reward here. Zone Control bounties only (owner 2026-10-28): the
+                // all-zones and per-zone bounties; a dungeon's own bounty counts every kill in full even inside a T11+ zone.
+                var credit = IsZoneArea(areaKey) ? TierRewardScale.CreditFor(player, killTier) : 1.0;
+                if (!(credit > 0))
+                {
+                    Tell(player, "This kill is too far below your tier to count toward your bounty. (/tierdip)");
+                    return;
+                }
 
                 var now = Time.GetUnixTime();
                 var progress = LoadProgress(player);
@@ -137,14 +150,14 @@ namespace ACE.Server.Managers
 
                     // The first kill that counts after a cooldown says so (owner 2026-09-23) - once per cycle, and not for a
                     // one-kill bounty, which this same kill completes.
-                    if (entry.Kills == 0 && entry.LastAward > 0 && cooldownSeconds > 0 && reward.Kills > 1)
+                    if (entry.Kills <= 0 && entry.LastAward > 0 && cooldownSeconds > 0 && reward.Kills > 1)
                         Tell(player, $"Bounty unlocked: {RoomAssignManager.ItemName(reward.Wcid)} - {KillsText(reward.Kills)} required.");
 
-                    entry.Kills++;
+                    var (kills, done) = TierRewardScale.AddBountyProgress(entry.Kills, credit, reward.Kills);
+                    entry.Kills = kills;
 
-                    if (entry.Kills >= reward.Kills)
+                    if (done)
                     {
-                        entry.Kills = 0;
                         entry.LastAward = now;
                         completed.Add(reward);
                     }
@@ -339,7 +352,7 @@ namespace ACE.Server.Managers
             var wait = (int)Math.Ceiling(Math.Min(unlockAt - now, int.MaxValue));
             return wait > 0
                 ? $"unlocks in {FormatWait(wait)}, then {KillsText(reward.Kills)} required"
-                : $"{entry.Kills:N0} of {reward.Kills:N0} kills";
+                : $"{TierRewardScale.FormatProgress(entry.Kills)} of {reward.Kills:N0} kills";
         }
 
         /// <summary>The same area key TryResolve builds for a zone (progress is saved under it).</summary>
@@ -347,6 +360,10 @@ namespace ACE.Server.Managers
 
         /// <summary>The all-zones bounty's progress key - one per character for every v11+ zone (owner 2026-10-05).</summary>
         public const string ZoneWideAreaKey = "zonewide";
+
+        /// <summary>A Zone Control bounty area - the all-zones bounty or one zone's - and not a dungeon or a region.</summary>
+        private static bool IsZoneArea(string areaKey)
+            => areaKey == ZoneWideAreaKey || (areaKey != null && areaKey.StartsWith("zone:", StringComparison.Ordinal));
 
         /// <summary>A region bounty's progress key (owner 2026-10-07): one per region, every variation below T11.</summary>
         private static string RegionAreaKey(string regionKey) => "region:" + regionKey.ToLowerInvariant();
@@ -910,7 +927,7 @@ namespace ACE.Server.Managers
 
         private struct Entry
         {
-            public int Kills;
+            public double Kills;        // decimal since the tier dip (2026-10-28); older saves hold whole numbers
             public double LastAward;   // unix seconds, 0 = never
         }
 
@@ -924,9 +941,9 @@ namespace ACE.Server.Managers
             {
                 var f = part.Split('|');
                 if (f.Length != 3 || f[0].Length == 0) continue;
-                int.TryParse(f[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var kills);
+                double.TryParse(f[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var kills);
                 double.TryParse(f[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var last);
-                map[f[0]] = new Entry { Kills = Math.Max(kills, 0), LastAward = double.IsFinite(last) ? last : 0 };
+                map[f[0]] = new Entry { Kills = double.IsFinite(kills) ? Math.Max(kills, 0) : 0, LastAward = double.IsFinite(last) ? last : 0 };
             }
             return map;
         }
@@ -938,7 +955,7 @@ namespace ACE.Server.Managers
             {
                 if (sb.Length > 0) sb.Append(';');
                 sb.Append(kv.Key).Append('|')
-                  .Append(kv.Value.Kills.ToString(CultureInfo.InvariantCulture)).Append('|')
+                  .Append(kv.Value.Kills.ToString("R", CultureInfo.InvariantCulture)).Append('|')   // round-trip: no tiny credit lost
                   .Append(kv.Value.LastAward.ToString("0", CultureInfo.InvariantCulture));
             }
 
