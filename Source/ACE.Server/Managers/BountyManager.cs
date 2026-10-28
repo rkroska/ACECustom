@@ -116,8 +116,9 @@ namespace ACE.Server.Managers
 
                 // TIER DIP (owner 2026-10-28): a T11+ kill below the player's own tier counts for less, exactly as it does for
                 // kill tasks (TierRewardScale.Credit: 100 / 85 / 70 ... pct). Kills below T11 and at or above their tier count in
-                // full. A kill worth nothing counts toward no reward here.
-                var credit = TierRewardScale.CreditFor(player, killTier);
+                // full. A kill worth nothing counts toward no reward here. Zone Control bounties only (owner 2026-10-28): the
+                // all-zones and per-zone bounties; a dungeon's own bounty counts every kill in full even inside a T11+ zone.
+                var credit = IsZoneArea(areaKey) ? TierRewardScale.CreditFor(player, killTier) : 1.0;
                 if (!(credit > 0))
                 {
                     Tell(player, "This kill is too far below your tier to count toward your bounty. (/tierdip)");
@@ -359,6 +360,10 @@ namespace ACE.Server.Managers
 
         /// <summary>The all-zones bounty's progress key - one per character for every v11+ zone (owner 2026-10-05).</summary>
         public const string ZoneWideAreaKey = "zonewide";
+
+        /// <summary>A Zone Control bounty area - the all-zones bounty or one zone's - and not a dungeon or a region.</summary>
+        private static bool IsZoneArea(string areaKey)
+            => areaKey == ZoneWideAreaKey || (areaKey != null && areaKey.StartsWith("zone:", StringComparison.Ordinal));
 
         /// <summary>A region bounty's progress key (owner 2026-10-07): one per region, every variation below T11.</summary>
         private static string RegionAreaKey(string regionKey) => "region:" + regionKey.ToLowerInvariant();
