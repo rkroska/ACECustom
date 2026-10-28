@@ -129,5 +129,67 @@ namespace ACE.Server.Tests
 
             Assert.AreEqual(SlashPierce, loaded.W_DamageType);
         }
+
+        // ---- swing animation: a thrust plays as a slash (owner 2026-10-28)
+
+        [TestMethod]
+        public void SwingsAsSlash_BeforeAndAfterTheRewrite()
+        {
+            var w = Sword(SlashPierce, ImbuedEffectType.SlashRending);
+            w.W_AttackType = AttackType.Thrust | AttackType.Slash;
+            Assert.IsTrue(ZoneSlashRendDamageType.SwingsAsSlash(w), "Slash|Pierce, not yet rewritten");
+
+            ZoneSlashRendDamageType.Normalize(w, existingItem: true);
+            Assert.AreEqual(DamageType.Slash, w.W_DamageType);
+            Assert.IsTrue(ZoneSlashRendDamageType.SwingsAsSlash(w), "still slashes once its damage type reads Slash");
+
+            var multi = Sword(DamageType.Slash, ImbuedEffectType.SlashRending, weaponTier: 20);
+            multi.W_AttackType = AttackType.DoubleThrust | AttackType.DoubleSlash;
+            Assert.IsTrue(ZoneSlashRendDamageType.SwingsAsSlash(multi));
+        }
+
+        [TestMethod]
+        public void SwingsAsSlash_NeverForOtherWeapons()
+        {
+            MeleeWeapon W(DamageType dt, ImbuedEffectType imbue, AttackType at, int? tier = 11)
+            {
+                var w = Sword(dt, imbue, tier);
+                w.W_AttackType = at;
+                return w;
+            }
+
+            var thrustSlash = AttackType.Thrust | AttackType.Slash;
+            Assert.IsFalse(ZoneSlashRendDamageType.SwingsAsSlash(W(SlashPierce, ImbuedEffectType.SlashRending, thrustSlash, tier: 10)), "tier 10");
+            Assert.IsFalse(ZoneSlashRendDamageType.SwingsAsSlash(W(SlashPierce, ImbuedEffectType.PierceRending, thrustSlash)), "pierce rend");
+            Assert.IsFalse(ZoneSlashRendDamageType.SwingsAsSlash(W(SlashPierce, ImbuedEffectType.Undef, thrustSlash)), "no rend");
+            Assert.IsFalse(ZoneSlashRendDamageType.SwingsAsSlash(W(DamageType.Pierce, ImbuedEffectType.SlashRending, thrustSlash)), "pierce damage");
+            Assert.IsFalse(ZoneSlashRendDamageType.SwingsAsSlash(W(DamageType.Slash | DamageType.Bludgeon, ImbuedEffectType.SlashRending, thrustSlash)), "slash/bludgeon damage");
+            Assert.IsFalse(ZoneSlashRendDamageType.SwingsAsSlash(W(DamageType.Slash, ImbuedEffectType.SlashRending, AttackType.Thrust)), "a thrust-only weapon is never made to slash");
+        }
+
+        [TestMethod]
+        public void SlashFor_KeepsHandAndHitCount()
+        {
+            Assert.AreEqual(AttackType.Slash, ZoneSlashRendDamageType.SlashFor(AttackType.Thrust));
+            Assert.AreEqual(AttackType.DoubleSlash, ZoneSlashRendDamageType.SlashFor(AttackType.DoubleThrust));
+            Assert.AreEqual(AttackType.TripleSlash, ZoneSlashRendDamageType.SlashFor(AttackType.TripleThrust));
+            Assert.AreEqual(AttackType.OffhandSlash, ZoneSlashRendDamageType.SlashFor(AttackType.OffhandThrust));
+            Assert.AreEqual(AttackType.OffhandDoubleSlash, ZoneSlashRendDamageType.SlashFor(AttackType.OffhandDoubleThrust));
+            Assert.AreEqual(AttackType.OffhandTripleSlash, ZoneSlashRendDamageType.SlashFor(AttackType.OffhandTripleThrust));
+
+            // anything that is not a thrust comes back unchanged
+            foreach (var other in new[] { AttackType.Slash, AttackType.DoubleSlash, AttackType.OffhandSlash, AttackType.Punch, AttackType.Kick })
+                Assert.AreEqual(other, ZoneSlashRendDamageType.SlashFor(other));
+        }
+
+        [TestMethod]
+        public void CanReplace_RefusesInvalidOrIdenticalMotions()
+        {
+            // no motion table (id 0) and the CMT's "not found" answer are both refusals - no dat needed for these
+            Assert.IsFalse(ZoneSlashRendDamageType.CanReplace(0, MotionStance.SwordCombat, MotionCommand.Invalid, MotionCommand.Invalid));
+            Assert.IsFalse(ZoneSlashRendDamageType.CanReplace(0, MotionStance.SwordCombat, MotionCommand.ThrustMed, MotionCommand.Invalid));
+            Assert.IsFalse(ZoneSlashRendDamageType.CanReplace(0, MotionStance.SwordCombat, MotionCommand.ThrustMed, MotionCommand.ThrustMed));
+            Assert.IsFalse(ZoneSlashRendDamageType.CanReplace(0, MotionStance.SwordCombat, MotionCommand.ThrustMed, MotionCommand.SlashMed), "motion table 0 has no lengths");
+        }
     }
 }

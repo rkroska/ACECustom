@@ -1,5 +1,6 @@
 using ACE.Entity.Enum;
 using ACE.Server.Factories;
+using ACE.Server.Physics.Animation;
 using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Managers.ZoneControl
@@ -26,6 +27,12 @@ namespace ACE.Server.Managers.ZoneControl
     ///   - Player.GetDamageType: <see cref="Effective"/> makes a weapon that only became eligible mid-session
     ///     (an essence or forge result, an admin command) hit as Slash at once; its stored type is fixed on the
     ///     next load.
+    ///
+    /// ANIMATION (owner 2026-10-28, same day). The damage fix left the swing itself a thrust. A weapon that passes
+    /// <see cref="SwingsAsSlash"/> now plays the matching slash in place of a thrust (Player.GetSwingAnimation),
+    /// sped up or slowed down so it takes exactly as long as the thrust would have (Player.DoSwingMotion). Same
+    /// swing length and same hits per swing, so attack speed and DPS do not change. Where the stance has no
+    /// matching slash with the same hit count (<see cref="CanReplace"/>), the thrust stays; its damage is Slash anyway.
     /// </summary>
     public static class ZoneSlashRendDamageType
     {
@@ -48,6 +55,50 @@ namespace ACE.Server.Managers.ZoneControl
         public static DamageType Effective(WorldObject wo, DamageType damageType)
         {
             return damageType == SlashPierce && Applies(wo) ? DamageType.Slash : damageType;
+        }
+
+        /// <summary>True when a thrust swing of this weapon should play as a slash: a tier 11+ melee weapon with Slash
+        /// Rending whose damage is Slashing only - already rewritten (Slash) or about to be (Slash|Pierce) - and which
+        /// has slash swings of its own, so a thrust-only weapon is never made to slash. Runs on every swing.</summary>
+        public static bool SwingsAsSlash(WorldObject wo)
+        {
+            if (wo is not MeleeWeapon)
+                return false;
+            var dt = wo.W_DamageType;
+            return (dt == DamageType.Slash || dt == SlashPierce)
+                && (wo.W_AttackType & AttackType.Slashes) != 0
+                && (wo.GetImbuedEffects() & ImbuedEffectType.SlashRending) != 0
+                && ZoneCraftGate.TierOf(wo) >= LootGenerationFactory.ZoneLootSetMinTier;
+        }
+
+        /// <summary>The slash with the same hand and hit count as a thrust attack type (Thrust -> Slash, DoubleThrust ->
+        /// DoubleSlash, OffhandTripleThrust -> OffhandTripleSlash ...). Anything that is not a thrust comes back unchanged.</summary>
+        public static AttackType SlashFor(AttackType attackType)
+        {
+            switch (attackType)
+            {
+                case AttackType.Thrust:              return AttackType.Slash;
+                case AttackType.DoubleThrust:        return AttackType.DoubleSlash;
+                case AttackType.TripleThrust:        return AttackType.TripleSlash;
+                case AttackType.OffhandThrust:       return AttackType.OffhandSlash;
+                case AttackType.OffhandDoubleThrust: return AttackType.OffhandDoubleSlash;
+                case AttackType.OffhandTripleThrust: return AttackType.OffhandTripleSlash;
+                default:                             return attackType;
+            }
+        }
+
+        /// <summary>True when <paramref name="slash"/> can stand in for <paramref name="thrust"/> without changing DPS: both
+        /// motions exist in this motion table and stance, both have a length, and they have the same number of attack
+        /// frames (hits per swing). Player.DoSwingMotion then matches the lengths with the animation speed.</summary>
+        public static bool CanReplace(uint motionTableId, MotionStance stance, MotionCommand thrust, MotionCommand slash)
+        {
+            if (thrust == MotionCommand.Invalid || slash == MotionCommand.Invalid || thrust == slash)
+                return false;
+            if (MotionTable.GetAnimationLength(motionTableId, stance, thrust) <= 0
+                || MotionTable.GetAnimationLength(motionTableId, stance, slash) <= 0)
+                return false;
+            return MotionTable.GetAttackFrames(motionTableId, stance, thrust).Count
+                == MotionTable.GetAttackFrames(motionTableId, stance, slash).Count;
         }
 
         /// <summary>Rewrites a covered weapon to Slashing only and drops the Piercing bit from its element tint
