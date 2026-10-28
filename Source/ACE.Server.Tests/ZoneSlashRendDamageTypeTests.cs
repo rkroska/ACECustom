@@ -40,6 +40,27 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void SlashRendInALaterImbueSlot_NeverApplies()
+        {
+            // combat (GetWeaponResistanceModifier) and the appraisal read Slash Rending from ImbuedEffect only, so a rend
+            // in ImbuedEffect2-5 never applies - converting that weapon would cost its Pierce and give it nothing (CodeRabbit)
+            foreach (var slot in new[] { PropertyInt.ImbuedEffect2, PropertyInt.ImbuedEffect3, PropertyInt.ImbuedEffect4, PropertyInt.ImbuedEffect5 })
+            {
+                var w = Sword(SlashPierce, ImbuedEffectType.Undef);
+                w.W_AttackType = AttackType.Thrust | AttackType.Slash;
+                w.SetProperty(slot, (int)ImbuedEffectType.SlashRending);
+                Assert.IsTrue((w.GetImbuedEffects() & ImbuedEffectType.SlashRending) != 0, $"{slot}: set up");
+                Assert.IsFalse(w.HasImbuedEffect(ImbuedEffectType.SlashRending), $"{slot}: combat does not see it");
+
+                Assert.IsFalse(ZoneSlashRendDamageType.Applies(w), $"{slot}: Applies");
+                Assert.AreEqual(SlashPierce, ZoneSlashRendDamageType.Effective(w, w.W_DamageType), $"{slot}: Effective");
+                Assert.IsFalse(ZoneSlashRendDamageType.Normalize(w, existingItem: true), $"{slot}: Normalize");
+                Assert.AreEqual(SlashPierce, w.W_DamageType, $"{slot}: still Slash/Pierce");
+                Assert.IsFalse(ZoneSlashRendDamageType.SwingsAsSlash(w), $"{slot}: SwingsAsSlash");
+            }
+        }
+
+        [TestMethod]
         public void Tier10AndBelow_NeverApplies()
         {
             Assert.IsFalse(ZoneSlashRendDamageType.Applies(Sword(SlashPierce, ImbuedEffectType.SlashRending, weaponTier: 10)));

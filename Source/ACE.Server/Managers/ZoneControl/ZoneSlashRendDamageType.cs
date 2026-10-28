@@ -17,8 +17,10 @@ namespace ACE.Server.Managers.ZoneControl
     ///
     /// SCOPE. Only weapons that pass <see cref="Applies"/>: a MeleeWeapon (not missile, thrown or caster),
     /// tier 11+ by ZoneCraftGate.TierOf (ZcTier or the legacy WeaponAugScaleTier), damage type exactly
-    /// Slash|Pierce, Slash Rending in any imbue slot. A Slash/Pierce weapon with Pierce Rending, no rend, or
-    /// tier 10 and below is left alone.
+    /// Slash|Pierce, Slash Rending in ImbuedEffect - the one slot combat (GetWeaponResistanceModifier) and the
+    /// appraisal read, so a weapon is only converted when its rend actually applies (CodeRabbit review; every rend
+    /// this server writes - loot card, essences, recipes - goes to that slot). A Slash/Pierce weapon with Pierce
+    /// Rending, no rend, or tier 10 and below is left alone.
     ///
     /// WHERE IT RUNS.
     ///   - MeleeWeapon(Biota) ctor: every weapon loaded from the shard is rewritten and saved on its owner's
@@ -49,7 +51,7 @@ namespace ACE.Server.Managers.ZoneControl
         {
             return wo is MeleeWeapon
                 && wo.W_DamageType == SlashPierce
-                && (wo.GetImbuedEffects() & ImbuedEffectType.SlashRending) != 0
+                && wo.HasImbuedEffect(ImbuedEffectType.SlashRending)   // ImbuedEffect only, as combat reads it
                 && ZoneCraftGate.TierOf(wo) >= LootGenerationFactory.ZoneLootSetMinTier;
         }
 
@@ -76,7 +78,7 @@ namespace ACE.Server.Managers.ZoneControl
 
             return dt == DamageType.Slash
                 && wo.GetProperty(PropertyBool.ZcSlashPierceToSlash) == true
-                && (wo.GetImbuedEffects() & ImbuedEffectType.SlashRending) != 0
+                && wo.HasImbuedEffect(ImbuedEffectType.SlashRending)
                 && ZoneCraftGate.TierOf(wo) >= LootGenerationFactory.ZoneLootSetMinTier;
         }
 
