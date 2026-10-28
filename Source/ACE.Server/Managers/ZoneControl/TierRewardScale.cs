@@ -13,7 +13,7 @@ namespace ACE.Server.Managers.ZoneControl
     /// "Own tier" is AUG-BASED: the highest tier whose monsters the player can hit (TierHitGate.PlayerTier) narrowed to the
     /// highest tier that has an enabled zone (ZoneRare.OwnTier) - the same own tier the rare odds use.
     ///
-    /// The credit scales Prestige Coins per kill and kill-task credit (and, behind zc_tier_dip_xp_enabled, kill XP and
+    /// The credit scales Prestige Coins per kill, kill-task credit and bounty kills (and, behind zc_tier_dip_xp_enabled, kill XP and
     /// luminance). Rares keep their own ZoneRare.BelowTierScale. The rules here are pure functions so they can be tested
     /// without a world; the live wrappers read ServerConfig on every call.
     /// </summary>
@@ -170,6 +170,25 @@ namespace ACE.Server.Managers.ZoneControl
             var frac = total - whole;
             if (frac < Epsilon) frac = 0.0;
             return ((int)whole, frac);
+        }
+
+        // ---- bounty credit (owner 2026-10-28: the same tier dip as kill tasks) -----------------------------------------
+
+        /// <summary>
+        /// Decimal bounty progress: <paramref name="kills"/> so far plus one kill's <paramref name="credit"/> toward a
+        /// <paramref name="target"/>-kill bounty. Reaching the target completes it and starts the next count at 0 (overflow
+        /// dropped, like kill tasks). A hair under the target counts as reaching it.
+        /// </summary>
+        public static (double Kills, bool Completed) AddBountyProgress(double kills, double credit, int target)
+        {
+            var k = double.IsFinite(kills) && kills > 0 ? kills : 0.0;
+            var c = double.IsFinite(credit) && credit > 0 ? credit : 0.0;
+
+            var total = k + c;
+            if (total >= Math.Max(1, target) - Epsilon)
+                return (0.0, true);
+
+            return (total, false);
         }
 
         /// <summary>Rounding slack for decimal kill-task progress: far below anything a share table or tier step produces.</summary>

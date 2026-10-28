@@ -1056,8 +1056,8 @@ namespace ACE.Server.Managers
 
         // TIER DIP (owner 2026-10-24, locked): a T11+ kill is worth less to a player hunting below their own (aug-based) tier -
         // credit = max(floor, 1 - step x tiers below), 1 at or above own tier, never applied below T11. Scales Prestige Coins per
-        // kill and kill-task credit; kill XP / luminance only when zc_tier_dip_xp_enabled is on. Read live. See TierRewardScale.
-        public static ConfigProperty<bool> zc_tier_dip_enabled { get; private set; } = new(true, "TIER DIP: when TRUE a T11+ Zone Control kill made BELOW the killer's own tier (highest tier they can hit that has an enabled zone) gives less credit - Prestige Coins per kill and kill-task credit (XP / luminance only with zc_tier_dip_xp_enabled). FALSE = full credit everywhere. See /tierdip.");
+        // kill, kill-task credit and bounty kills; kill XP / luminance only when zc_tier_dip_xp_enabled is on. Read live. See TierRewardScale.
+        public static ConfigProperty<bool> zc_tier_dip_enabled { get; private set; } = new(true, "TIER DIP: when TRUE a T11+ Zone Control kill made BELOW the killer's own tier (highest tier they can hit that has an enabled zone) gives less credit - Prestige Coins per kill, kill-task credit and bounty kills (XP / luminance only with zc_tier_dip_xp_enabled). FALSE = full credit everywhere. See /tierdip.");
         public static ConfigProperty<double> zc_tier_dip_step { get; private set; } = new(0.15, "TIER DIP: credit lost per tier hunted below your own tier (0.15 = 100 / 85 / 70 / 55 pct ...). 0 = no cut.");
         public static ConfigProperty<double> zc_tier_dip_floor { get; private set; } = new(0.0, "TIER DIP: the lowest credit a kill can fall to however far below your tier it is (0 = a kill far enough below gives nothing, 0.25 = never under 25 pct).");
 

@@ -216,6 +216,44 @@ namespace ACE.Server.Tests
             Assert.AreEqual((3, 0.0), Round(TierRewardScale.AddKillTaskProgress(3, 0, -1, 20)));
         }
 
+        // -- bounty credit --
+
+        [TestMethod]
+        public void AddBountyProgress_FullKillsStillCountOneEach()
+        {
+            Assert.AreEqual((3.0, false), TierRewardScale.AddBountyProgress(2, 1.0, 100));
+            Assert.AreEqual((0.0, true), TierRewardScale.AddBountyProgress(99, 1.0, 100));
+            Assert.AreEqual((0.0, true), TierRewardScale.AddBountyProgress(0, 1.0, 1), "a one-kill bounty");
+        }
+
+        [TestMethod]
+        public void AddBountyProgress_DipCountsDecimals()
+        {
+            var (kills, done) = TierRewardScale.AddBountyProgress(0.85, 0.85, 100);
+            Assert.AreEqual(1.7, kills, 1e-9);
+            Assert.IsFalse(done);
+
+            // 100 kills one tier down at 0.85: 85 kills of progress, no drift
+            double k = 0;
+            var completions = 0;
+            for (var i = 0; i < 100; i++)
+            {
+                (k, done) = TierRewardScale.AddBountyProgress(k, 0.85, 1000);
+                if (done) completions++;
+            }
+            Assert.AreEqual(85.0, k, 1e-6);
+            Assert.AreEqual(0, completions);
+        }
+
+        [TestMethod]
+        public void AddBountyProgress_CompletesAtTargetAndDropsOverflow()
+        {
+            Assert.AreEqual((0.0, true), TierRewardScale.AddBountyProgress(99.5, 0.7, 100), "overflow 0.2 dropped");
+            Assert.AreEqual((0.0, true), TierRewardScale.AddBountyProgress(99.85, 0.15, 100), "a hair under the target in floating point still completes");
+            Assert.AreEqual((5.0, false), TierRewardScale.AddBountyProgress(5, double.NaN, 100));
+            Assert.AreEqual((0.0, false), TierRewardScale.AddBountyProgress(double.NaN, 0, 100), "a bad saved count starts at 0");
+        }
+
         [TestMethod]
         public void FormatProgress_ShowsDecimals()
         {
