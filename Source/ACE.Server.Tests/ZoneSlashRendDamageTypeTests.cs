@@ -93,6 +93,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(DamageType.Slash, w.W_DamageType);
             Assert.AreEqual(UiEffects.Slashing | UiEffects.Magical, w.UiEffects);
             Assert.IsTrue(w.HasImbuedEffect(ImbuedEffectType.SlashRending), "the rend stays");
+            Assert.AreEqual(true, w.GetProperty(PropertyBool.ZcSlashPierceToSlash), "marked as converted");
 
             Assert.IsFalse(ZoneSlashRendDamageType.Normalize(w, existingItem: false), "second call is a no-op");
         }
@@ -117,6 +118,7 @@ namespace ACE.Server.Tests
 
             Assert.AreEqual(DamageType.Slash, loaded.W_DamageType);
             Assert.AreEqual((int)DamageType.Slash, loaded.Biota.PropertiesInt[PropertyInt.DamageType], "written to the biota, not an ephemeral copy");
+            Assert.IsTrue(loaded.Biota.PropertiesBool[PropertyBool.ZcSlashPierceToSlash], "the conversion mark is saved too");
             Assert.IsTrue(loaded.ChangesDetected, "the rewrite must be saved with the owner's next save");
         }
 
@@ -143,9 +145,28 @@ namespace ACE.Server.Tests
             Assert.AreEqual(DamageType.Slash, w.W_DamageType);
             Assert.IsTrue(ZoneSlashRendDamageType.SwingsAsSlash(w), "still slashes once its damage type reads Slash");
 
-            var multi = Sword(DamageType.Slash, ImbuedEffectType.SlashRending, weaponTier: 20);
+            var multi = Sword(SlashPierce, ImbuedEffectType.SlashRending, weaponTier: 20);
             multi.W_AttackType = AttackType.DoubleThrust | AttackType.DoubleSlash;
-            Assert.IsTrue(ZoneSlashRendDamageType.SwingsAsSlash(multi));
+            ZoneSlashRendDamageType.Normalize(multi, existingItem: true);
+            Assert.IsTrue(ZoneSlashRendDamageType.SwingsAsSlash(multi), "multi-strike, converted");
+        }
+
+        [TestMethod]
+        public void SwingsAsSlash_NeverForAWeaponThatWasAlwaysSlashing()
+        {
+            // same stored type as a converted weapon, but never converted: no ZcSlashPierceToSlash mark (CodeRabbit review)
+            var native = Sword(DamageType.Slash, ImbuedEffectType.SlashRending, weaponTier: 20);
+            native.W_AttackType = AttackType.Thrust | AttackType.Slash;
+            Assert.IsFalse(ZoneSlashRendDamageType.SwingsAsSlash(native));
+            Assert.IsFalse(ZoneSlashRendDamageType.Normalize(native, existingItem: true), "nothing to convert");
+            Assert.IsNull(native.GetProperty(PropertyBool.ZcSlashPierceToSlash));
+
+            // a converted weapon that later lost its Slash Rending, or dropped below tier 11, stops swapping too
+            var converted = Sword(SlashPierce, ImbuedEffectType.SlashRending);
+            converted.W_AttackType = AttackType.Thrust | AttackType.Slash;
+            ZoneSlashRendDamageType.Normalize(converted, existingItem: true);
+            converted.ImbuedEffect = ImbuedEffectType.Undef;
+            Assert.IsFalse(ZoneSlashRendDamageType.SwingsAsSlash(converted), "rend gone");
         }
 
         [TestMethod]

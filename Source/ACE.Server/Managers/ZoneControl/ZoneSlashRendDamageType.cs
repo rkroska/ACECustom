@@ -1,4 +1,5 @@
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Factories;
 using ACE.Server.Physics.Animation;
 using ACE.Server.WorldObjects;
@@ -33,6 +34,8 @@ namespace ACE.Server.Managers.ZoneControl
     /// sped up or slowed down so it takes exactly as long as the thrust would have (Player.DoSwingMotion). Same
     /// swing length and same hits per swing, so attack speed and DPS do not change. Where the stance has no
     /// matching slash with the same hit count (<see cref="CanReplace"/>), the thrust stays; its damage is Slash anyway.
+    /// Only weapons this rule covers swap: Normalize marks what it converts (PropertyBool.ZcSlashPierceToSlash), so a
+    /// weapon that was always Slashing-only keeps its thrusts (CodeRabbit review).
     /// </summary>
     public static class ZoneSlashRendDamageType
     {
@@ -57,16 +60,22 @@ namespace ACE.Server.Managers.ZoneControl
             return damageType == SlashPierce && Applies(wo) ? DamageType.Slash : damageType;
         }
 
-        /// <summary>True when a thrust swing of this weapon should play as a slash: a tier 11+ melee weapon with Slash
-        /// Rending whose damage is Slashing only - already rewritten (Slash) or about to be (Slash|Pierce) - and which
-        /// has slash swings of its own, so a thrust-only weapon is never made to slash. Runs on every swing.</summary>
+        /// <summary>True when a thrust swing of this weapon should play as a slash: a weapon this rule covers - one
+        /// <see cref="Applies"/> to (Slash|Pierce, not rewritten yet), or one <see cref="Normalize"/> rewrote to Slash
+        /// (marked ZcSlashPierceToSlash) that is still a tier 11+ Slash Rending melee weapon - and that has slash swings
+        /// of its own. A weapon that was always Slashing-only is never swapped, nor is a thrust-only one. Runs on every
+        /// swing.</summary>
         public static bool SwingsAsSlash(WorldObject wo)
         {
-            if (wo is not MeleeWeapon)
+            if (wo is not MeleeWeapon || (wo.W_AttackType & AttackType.Slashes) == 0)
                 return false;
+
             var dt = wo.W_DamageType;
-            return (dt == DamageType.Slash || dt == SlashPierce)
-                && (wo.W_AttackType & AttackType.Slashes) != 0
+            if (dt == SlashPierce)
+                return Applies(wo);
+
+            return dt == DamageType.Slash
+                && wo.GetProperty(PropertyBool.ZcSlashPierceToSlash) == true
                 && (wo.GetImbuedEffects() & ImbuedEffectType.SlashRending) != 0
                 && ZoneCraftGate.TierOf(wo) >= LootGenerationFactory.ZoneLootSetMinTier;
         }
@@ -101,7 +110,8 @@ namespace ACE.Server.Managers.ZoneControl
                 == MotionTable.GetAttackFrames(motionTableId, stance, slash).Count;
         }
 
-        /// <summary>Rewrites a covered weapon to Slashing only and drops the Piercing bit from its element tint
+        /// <summary>Rewrites a covered weapon to Slashing only, marks it ZcSlashPierceToSlash (what tells it apart from a
+        /// weapon that was always Slashing - <see cref="SwingsAsSlash"/>), and drops the Piercing bit from its element tint
         /// (LootGenerationFactory.ApplyZoneElementTint gave it Slashing + Piercing). Returns true when the item
         /// changed; a second call is a no-op. Call only before the item is sent to a client (load, drop) - the
         /// tint is part of the object description and is not re-sent here. <paramref name="existingItem"/> = an item
@@ -113,6 +123,7 @@ namespace ACE.Server.Managers.ZoneControl
                 return false;
 
             wo.W_DamageType = DamageType.Slash;
+            wo.SetProperty(PropertyBool.ZcSlashPierceToSlash, true);
 
             var fx = wo.UiEffects;
             if (fx.HasValue && (fx.Value & UiEffects.Piercing) != 0)
