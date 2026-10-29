@@ -1191,8 +1191,9 @@ namespace ACE.Server.Network.Structure
                 cantrips.AddRange(reinforced);
             }
 
-            // the T11+ cloak proc, under the lines - "(off here)" where the armor zone lock holds worn gear, as combat does
-            var cloakLine = hasCloakProc ? ZcCloakProcs.AppraisalLine(wo, wornLocked) : null;
+            // the T11+ cloak proc, under the lines - "(off here)" where the armor zone lock holds worn gear, as combat does. Its
+            // numbers are the Zone Control dials where that same holder stands (the wearer of a worn cloak, else the examiner).
+            var cloakLine = hasCloakProc ? ZcCloakProcs.AppraisalLine(wo, wornLocked, wornHolder) : null;
             if (cloakLine != null)
                 cantrips.Add(cloakLine);
 

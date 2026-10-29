@@ -14,7 +14,8 @@ namespace ACE.Server.Command.Handlers
 {
     /// <summary>
     /// /cloakproc - developer testing for the T11+ cloak procs (ZcCloakProcs): status, test cloaks, force the next proc.
-    /// The numbers are server properties (zc_cloak_*), tuned live with @modifybool / @modifylong / @modifydouble.
+    /// The numbers are server properties (zc_cloak_*), tuned live with @modifybool / @modifylong / @modifydouble, and a zone or
+    /// tier Default can re-tune them with the Zone Control stats cloak_* (/zonecontrol set ... cloak_proc_chance 0.03).
     /// Every line it prints is plain ASCII.
     /// </summary>
     public static class CloakProcCommands
@@ -29,7 +30,8 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("cloakproc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
             "T11+ cloak procs: status, test cloaks, force the next proc.",
             "status | create <breeze|smoke|dodger|grace|all> | force\n" +
-            "Settings: zc_cloak_procs_enabled, zc_cloak_proc_chance, zc_cloak_proc_cooldown, zc_cloak_breeze_heal, zc_cloak_dodger_hits, zc_cloak_dodger_window, zc_cloak_dodger_stamina_mult, zc_cloak_grace_seconds")]
+            "Settings: zc_cloak_procs_enabled, zc_cloak_proc_chance, zc_cloak_proc_cooldown, zc_cloak_breeze_heal, zc_cloak_dodger_hits, zc_cloak_dodger_window, zc_cloak_dodger_stamina_mult, zc_cloak_grace_seconds\n" +
+            "Zone Control stats (per zone / tier Default): cloak_proc_chance, cloak_proc_cooldown, cloak_breeze_heal, cloak_dodger_hits, cloak_dodger_window, cloak_dodger_stamina_mult, cloak_grace_seconds")]
         /// <summary>/cloakproc [status | create &lt;breeze|smoke|dodger|grace|all&gt; | force] - developer testing for the T11+
         /// cloak procs. No argument = status.</summary>
         public static void HandleCloakProc(Session session, params string[] parameters)
@@ -60,7 +62,8 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        /// <summary>Prints the live settings, the worn cloak's proc, and this player's cooldown, Dodger charges and Grace time.</summary>
+        /// <summary>Prints the numbers in force where the player stands (and the server's own when a zone changes them), the worn
+        /// cloak's proc, and this player's cooldown, Dodger charges and Grace time.</summary>
         private static void Status(Session session, Player player)
         {
             var now = Time.GetUnixTime();
@@ -69,8 +72,11 @@ namespace ACE.Server.Command.Handlers
                 : !ServerConfig.zonecontrol_enabled.Value ? "OFF (Zone Control is off)"
                 : "ON";
             Say(session, $"T11+ cloak procs: {mode}");
-            Say(session, $"Chance {ZcCloakProcs.Chance * 100:0.##}% per hit, cooldown {ZcCloakProcs.Cooldown:0.#}s");
-            Say(session, $"Calming Breeze {ZcCloakProcs.BreezeHeal:N0} | Artful Dodger {ZcCloakProcs.DodgerHits} hits / {ZcCloakProcs.DodgerWindow:0.#}s at {ZcCloakProcs.DodgerStaminaMult:0.##}x stamina | Asheron's Grace {ZcCloakProcs.GraceSeconds:0.#}s");
+            // the numbers where you stand (Zone Control dials cloak_* over the server settings zc_cloak_*), then the server's own
+            var here = ZcCloakProcs.DialsFor(player);
+            SayDials(session, "Here", here);
+            if (here.Source != ZcCloakProcs.ServerDials().Source)
+                SayDials(session, "Server", ZcCloakProcs.ServerDials());
 
             var cloak = player.EquippedCloak;
             if (cloak == null)
@@ -87,6 +93,13 @@ namespace ACE.Server.Command.Handlers
             if (player.ZcDodgerHitsLeft > 0 && now < player.ZcDodgerUntil) parts.Add($"Dodger {player.ZcDodgerHitsLeft} left ({player.ZcDodgerUntil - now:0.#}s)");
             if (now < player.ZcCloakGraceUntil) parts.Add($"Grace {player.ZcCloakGraceUntil - now:0.#}s");
             Say(session, "You: " + string.Join(", ", parts));
+        }
+
+        /// <summary>Two lines: one set of dials and where they came from.</summary>
+        private static void SayDials(Session session, string label, ZcCloakProcs.Dials d)
+        {
+            Say(session, $"{label} ({d.Source}): chance {d.Chance * 100:0.##}% per hit, cooldown {d.Cooldown:0.#}s");
+            Say(session, $"  Calming Breeze {d.BreezeHeal:N0} | Artful Dodger {d.DodgerHits} hits / {d.DodgerWindow:0.#}s at {d.DodgerStaminaMult:0.##}x stamina | Asheron's Grace {d.GraceSeconds:0.#}s");
         }
 
         /// <summary>Puts tier 11 test cloaks in the player's pack: the one proc named, or all four. Stops at a full pack.</summary>

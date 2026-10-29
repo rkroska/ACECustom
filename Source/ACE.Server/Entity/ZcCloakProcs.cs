@@ -5,6 +5,7 @@ using ACE.Entity.Enum;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
 using ACE.Server.Managers.ZoneControl;
+using ACE.Server.Managers.ZoneScaling;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 
@@ -35,6 +36,9 @@ namespace ACE.Server.Entity
     ///                                          lifestone shield. Built on the Cheat Death window (Player.ZcDamageImmune),
     ///                                          not on real lifestone protection, which the wearer's own swing dispels.
     ///
+    /// Every number above is a server setting that a zone or a tier Default can re-tune with the Zone Control stats cloak_*
+    /// (owner 2026-10-29), read where the wearer stands - see <see cref="DialsFor"/>.
+    ///
     /// Nothing on the cloak is rewritten: the mapping is read at proc time, so every T11+ cloak already in a pack, a bank or
     /// a house changes at once, and zc_cloak_procs_enabled FALSE (or Zone Control off) puts them all back on retail.
     /// Retail cloaks below T11 never change. The armor zone lock makes the proc dormant, like the other worn specials.
@@ -61,13 +65,134 @@ namespace ACE.Server.Entity
 
         public static bool Enabled => ServerConfig.zc_cloak_procs_enabled.Value && ServerConfig.zonecontrol_enabled.Value;
 
-        public static double Chance => Math.Clamp(ServerConfig.zc_cloak_proc_chance.Value, 0.0, 1.0);
-        public static double Cooldown => Math.Max(0.0, ServerConfig.zc_cloak_proc_cooldown.Value);
-        public static int BreezeHeal => (int)Math.Clamp(ServerConfig.zc_cloak_breeze_heal.Value, 0, int.MaxValue);
-        public static int DodgerHits => (int)Math.Clamp(ServerConfig.zc_cloak_dodger_hits.Value, 0, 1000);
-        public static double DodgerWindow => Math.Max(0.0, ServerConfig.zc_cloak_dodger_window.Value);
-        public static double DodgerStaminaMult => Math.Clamp(ServerConfig.zc_cloak_dodger_stamina_mult.Value, 0.01, 1000.0);
-        public static double GraceSeconds => Math.Max(0.0, ServerConfig.zc_cloak_grace_seconds.Value);
+        /// <summary>
+        /// The proc numbers in force at one spot, already clamped. The server settings (zc_cloak_*) are the defaults everywhere;
+        /// a zone or a tier Default re-tunes any of them with the Zone Control stats cloak_* (owner 2026-10-29: "Zone Control
+        /// dials"). <see cref="Source"/> says where the authored values came from, for /cloakproc status (ASCII).
+        /// </summary>
+        public readonly struct Dials
+        {
+            public double Chance { get; }
+            public double Cooldown { get; }
+            public int BreezeHeal { get; }
+            public int DodgerHits { get; }
+            public double DodgerWindow { get; }
+            public double DodgerStaminaMult { get; }
+            public double GraceSeconds { get; }
+            public string Source { get; }
+
+            private Dials(double chance, double cooldown, int breezeHeal, int dodgerHits, double dodgerWindow, double dodgerStaminaMult,
+                double graceSeconds, string source)
+            {
+                Chance = chance;
+                Cooldown = cooldown;
+                BreezeHeal = breezeHeal;
+                DodgerHits = dodgerHits;
+                DodgerWindow = dodgerWindow;
+                DodgerStaminaMult = dodgerStaminaMult;
+                GraceSeconds = graceSeconds;
+                Source = source;
+            }
+
+            /// <summary>
+            /// The one place the numbers are held to their ranges - a server setting and a zone stat alike, since neither is
+            /// checked when it is set. Chance 0..1; cooldown, windows and Grace 0..3600 s; heal 0..int.MaxValue; hits 0..1000;
+            /// stamina per point 0.01..1000. A value that is not a number falls back to the shipped default.
+            /// </summary>
+            public static Dials Clamped(double chance, double cooldown, double breezeHeal, double dodgerHits, double dodgerWindow,
+                double dodgerStaminaMult, double graceSeconds, string source)
+                => new Dials(
+                    Clean(chance, 0.0, 1.0, 0.02),
+                    Clean(cooldown, 0.0, 3600.0, 7.0),
+                    (int)Math.Round(Clean(breezeHeal, 0.0, int.MaxValue, 500.0)),
+                    (int)Math.Round(Clean(dodgerHits, 0.0, 1000.0, 3.0)),
+                    Clean(dodgerWindow, 0.0, 3600.0, 7.0),
+                    Clean(dodgerStaminaMult, 0.01, 1000.0, 10.0),
+                    Clean(graceSeconds, 0.0, 3600.0, 2.0),
+                    source);
+
+            private static double Clean(double value, double min, double max, double fallback)
+                => double.IsFinite(value) ? Math.Clamp(value, min, max) : fallback;
+        }
+
+        /// <summary>The server settings alone (zc_cloak_*), clamped - what every spot uses until Zone Control authors a dial.</summary>
+        public static Dials ServerDials() => Dials.Clamped(
+            ServerConfig.zc_cloak_proc_chance.Value,
+            ServerConfig.zc_cloak_proc_cooldown.Value,
+            ServerConfig.zc_cloak_breeze_heal.Value,
+            ServerConfig.zc_cloak_dodger_hits.Value,
+            ServerConfig.zc_cloak_dodger_window.Value,
+            ServerConfig.zc_cloak_dodger_stamina_mult.Value,
+            ServerConfig.zc_cloak_grace_seconds.Value,
+            "server settings");
+
+        /// <summary>
+        /// The dials where this player stands (owner 2026-10-29). Same order as the charm level cap
+        /// (CharmAbilityRegistry.ZoneCharmLevelCap): the governing zone's Default row (its own stats over the tier Default), else
+        /// on a T11+ spot no enabled zone covers the tier's own Default row (one dictionary read, no profile rebuild), else the
+        /// server settings - per dial, so a zone that sets only the heal keeps the server chance. Read where the WEARER stands,
+        /// not through the attacker, so melee, spells, PvP and hits with no attacker all resolve alike. Players have no rank, so
+        /// rank rows never apply. Zone Control off = the server settings. Lock-free snapshot reads; safe on the hit path.
+        /// </summary>
+        public static Dials DialsFor(Player player)
+        {
+            var server = ServerDials();
+            if (player == null || !ServerConfig.zonecontrol_enabled.Value)
+                return server;
+
+            EvaluatedProfile zone = null;
+            ZoneVariantProfile tierRow = null;
+            var tier = 0;
+            try
+            {
+                zone = ZoneControlManager.ResolveZoneDefaultForPlayer(player);
+                if (zone == null)
+                {
+                    tier = ZoneControlManager.GetEffectiveVariation(player);
+                    if (tier >= VariationManager.EndgameMinVariation)
+                        tierRow = ZoneControlManager.GetAnchoredDefaultProfile(tier);
+                }
+            }
+            catch
+            {
+                // never let zone resolution break a damage path
+                return server;
+            }
+
+            if (zone == null && tierRow == null)
+                return server;
+
+            var authored = false;
+            var dials = Dials.Clamped(
+                Pick(zone, tierRow, ZoneStat.CloakProcChance, server.Chance, ref authored),
+                Pick(zone, tierRow, ZoneStat.CloakProcCooldown, server.Cooldown, ref authored),
+                Pick(zone, tierRow, ZoneStat.CloakBreezeHeal, server.BreezeHeal, ref authored),
+                Pick(zone, tierRow, ZoneStat.CloakDodgerHits, server.DodgerHits, ref authored),
+                Pick(zone, tierRow, ZoneStat.CloakDodgerWindow, server.DodgerWindow, ref authored),
+                Pick(zone, tierRow, ZoneStat.CloakDodgerStaminaMult, server.DodgerStaminaMult, ref authored),
+                Pick(zone, tierRow, ZoneStat.CloakGraceSeconds, server.GraceSeconds, ref authored),
+                !authored ? server.Source : zone != null ? "Zone Control (this zone)" : $"Zone Control (T{tier} Default)");
+            return dials;
+        }
+
+        /// <summary>One dial: the zone's value when it has one, else the tier row's, else the server's.</summary>
+        private static double Pick(EvaluatedProfile zone, ZoneVariantProfile tierRow, string stat, double server, ref bool authored)
+        {
+            if (zone != null)
+            {
+                if (!zone.Has(stat))
+                    return server;
+                authored = true;
+                return zone.Get(stat, server);
+            }
+
+            if (tierRow != null && tierRow.TryGet(stat, out var curve) && curve != null)
+            {
+                authored = true;
+                return curve.Base;
+            }
+            return server;
+        }
 
         /// <summary>Which T11+ proc this item carries, or None when it is not a T11+ cloak, the system is off, or its retail
         /// proc is not one of the 13 retail cloak procs (it then keeps that proc).</summary>
@@ -120,28 +245,31 @@ namespace ACE.Server.Entity
             _ => null,
         };
 
-        /// <summary>What the proc does, from the live settings (ASCII only - the client renders this).</summary>
-        public static string DescriptionOf(ZcCloakProc proc) => proc switch
+        /// <summary>What the proc does, from the given dials (ASCII only - the client renders this).</summary>
+        public static string DescriptionOf(ZcCloakProc proc, Dials dials) => proc switch
         {
-            ZcCloakProc.CalmingBreeze => $"heals you for {BreezeHeal:N0} health",
+            ZcCloakProc.CalmingBreeze => $"heals you for {dials.BreezeHeal:N0} health",
             ZcCloakProc.SmokeScreen => "negates all damage from that hit",
-            ZcCloakProc.ArtfulDodger => $"your next {DodgerHits} {(DodgerHits == 1 ? "hit" : "hits")} within {DodgerWindow:0.#}s strike stamina at {DodgerStaminaMult:0.##}x instead of health",
-            ZcCloakProc.AsheronsGrace => $"protects you from all damage for {GraceSeconds:0.#}s",
+            ZcCloakProc.ArtfulDodger => $"your next {dials.DodgerHits} {(dials.DodgerHits == 1 ? "hit" : "hits")} within {dials.DodgerWindow:0.#}s strike stamina at {dials.DodgerStaminaMult:0.##}x instead of health",
+            ZcCloakProc.AsheronsGrace => $"protects you from all damage for {dials.GraceSeconds:0.#}s",
             _ => null,
         };
 
         /// <summary>The cloak's line for the item panel's modifier block, or null for anything this system does not own.
-        /// Built live, never baked into the item, so a settings change reads on every cloak at once.</summary>
-        public static string AppraisalLine(WorldObject cloak, bool off = false)
+        /// Built live, never baked into the item, so a settings change reads on every cloak at once. The numbers are the dials
+        /// where the EXAMINER stands (as the charm level cap shows), the server settings when there is no examiner; a spot whose
+        /// chance is 0 reads "(off here)" like the armor zone lock.</summary>
+        public static string AppraisalLine(WorldObject cloak, bool off = false, Player examiner = null)
         {
             var proc = Classify(cloak);
             if (proc == ZcCloakProc.None)
                 return null;
 
-            if (off)
+            var dials = examiner != null ? DialsFor(examiner) : ServerDials();
+            if (off || dials.Chance <= 0)
                 return $"- {NameOf(proc)} (off here)";
 
-            return $"- {NameOf(proc)}: {Chance * 100:0.#}% when hit, {DescriptionOf(proc)} ({Cooldown:0.#}s cooldown)";
+            return $"- {NameOf(proc)}: {dials.Chance * 100:0.#}% when hit, {DescriptionOf(proc, dials)} ({dials.Cooldown:0.#}s cooldown)";
         }
 
         /// <summary>
@@ -187,7 +315,8 @@ namespace ACE.Server.Entity
             {
                 if (now < defender.ZcDodgerUntil)
                 {
-                    TakeOnStamina(defender, source, ref normal, ref trueDamage);
+                    // stamina per point from the dials where the hit lands
+                    TakeOnStamina(defender, source, ref normal, ref trueDamage, DialsFor(defender).DodgerStaminaMult);
                     return ZcCloakProc.None;
                 }
                 defender.ZcDodgerHitsLeft = 0;
@@ -202,12 +331,14 @@ namespace ACE.Server.Entity
             {
                 if (now < defender.ZcCloakProcReadyAt)
                     return ZcCloakProc.None;
-
-                if (ThreadSafeRandom.Next(0.0f, 1.0f) >= Chance)
-                    return ZcCloakProc.None;
             }
+
+            // the chance and cooldown where the hit lands - resolved only now, for a T11+ cloak off cooldown
+            var dials = DialsFor(defender);
+            if (!defender.ZcCloakProcForceNext && ThreadSafeRandom.Next(0.0f, 1.0f) >= dials.Chance)
+                return ZcCloakProc.None;
             defender.ZcCloakProcForceNext = false;
-            defender.ZcCloakProcReadyAt = now + Cooldown;
+            defender.ZcCloakProcReadyAt = now + dials.Cooldown;
 
             switch (proc)
             {
@@ -231,15 +362,18 @@ namespace ACE.Server.Entity
         /// <summary>After the hit's health damage has landed. Only acts while the wearer is alive.</summary>
         public static void PostHit(Player defender, ZcCloakProc proc)
         {
-            if (defender == null || defender.IsDead || defender.Health.Current <= 0)
+            if (proc == ZcCloakProc.None || defender == null || defender.IsDead || defender.Health.Current <= 0)
                 return;
+
+            // the dials where the wearer is now (a proc is rare, so this read is too)
+            var dials = DialsFor(defender);
 
             switch (proc)
             {
                 case ZcCloakProc.CalmingBreeze:
                 {
                     // static: a straight health delta, never the heal path, so no Healing Boost, spell, rating or aug changes it
-                    var healed = defender.UpdateVitalDelta(defender.Health, BreezeHeal);
+                    var healed = defender.UpdateVitalDelta(defender.Health, dials.BreezeHeal);
                     if (healed > 0)
                         defender.DamageHistory.OnHeal((uint)healed);
                     AnnounceWeave(defender, proc);
@@ -250,7 +384,7 @@ namespace ACE.Server.Entity
 
                 case ZcCloakProc.AsheronsGrace:
                 {
-                    var seconds = GraceSeconds;
+                    var seconds = dials.GraceSeconds;
                     if (seconds <= 0)
                         break;
                     var until = Time.GetUnixTime() + seconds;
@@ -274,8 +408,8 @@ namespace ACE.Server.Entity
 
                 case ZcCloakProc.ArtfulDodger:
                 {
-                    var hits = DodgerHits;
-                    var window = DodgerWindow;
+                    var hits = dials.DodgerHits;
+                    var window = dials.DodgerWindow;
                     if (hits <= 0 || window <= 0)
                         break;
                     var until = Time.GetUnixTime() + window;
@@ -301,14 +435,14 @@ namespace ACE.Server.Entity
             }
         }
 
-        /// <summary>One Artful Dodger charge: the whole hit (True Damage included) comes off stamina at DodgerStaminaMult stamina
-        /// per point; the damage stamina cannot pay for stays on the hit, split between its two parts as before.</summary>
-        private static void TakeOnStamina(Player defender, WorldObject source, ref float normal, ref float trueDamage)
+        /// <summary>One Artful Dodger charge: the whole hit (True Damage included) comes off stamina at <paramref name="mult"/>
+        /// stamina per point (the dials where the hit lands); the damage stamina cannot pay for stays on the hit, split between its
+        /// two parts as before.</summary>
+        private static void TakeOnStamina(Player defender, WorldObject source, ref float normal, ref float trueDamage, double mult)
         {
             // stamina pays zc_cloak_dodger_stamina_mult per point of damage (owner 2026-10-29: 10x - a 500 hit costs 5,000
             // stamina), so a long fight runs the pool dry; the damage stamina could not pay for goes to health at 1 for 1
             var total = normal + trueDamage;
-            var mult = DodgerStaminaMult;
             // rounded UP (review 2026-10-29): a small positive cost never becomes 0 and lets the hit through with stamina left
             var want = (int)Math.Min(int.MaxValue, Math.Ceiling((double)total * mult));
             var taken = want > 0 ? -defender.UpdateVitalDelta(defender.Stamina, -want) : 0;
