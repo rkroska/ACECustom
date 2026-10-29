@@ -38,6 +38,13 @@ namespace ACE.Server.Network.Structure
 
         public List<uint> SpellBook;
 
+        /// <summary>
+        /// Zone Control weapon cards as the item would have them once equipped (<see cref="ZoneStatResolver.FloatsIfEquipped(WorldObject, ZoneStatResolver.Resolved)"/>);
+        /// empty for anything without a record. BuildWeapon reads its card values through <see cref="ZcFloat"/> so a stale
+        /// muled weapon shows its real numbers.
+        /// </summary>
+        private Dictionary<PropertyFloat, double> zcFloats = new();
+
         public ArmorProfile ArmorProfile;
         public CreatureProfile CreatureProfile;
         public WeaponProfile WeaponProfile;
@@ -86,7 +93,15 @@ namespace ACE.Server.Network.Structure
             // never written, never marked dirty (equip is the only re-stamp site: ApplyIfStale).
             var zcResolved = ZoneStatResolver.Compute(wo);
             if (zcResolved != null)
+            {
                 SubstituteZoneResolvedInts(wo, zcResolved);
+                // Weapon cards too (owner 2026-10-29): the stamped float only moves on equip, so an unworn weapon kept showing
+                // its pre-retune number. Display only, like the ints: wo is never written.
+                zcFloats = ZoneStatResolver.FloatsIfEquipped(wo, zcResolved);
+                foreach (var kv in zcFloats)
+                    if (PropertiesFloat.ContainsKey(kv.Key))
+                        PropertiesFloat[kv.Key] = kv.Value;
+            }
 
             // Loot properties (owner 2026-10-26): the tier 11+ numbers the panel prints, as ints / floats a loot rule can read.
             // Added after the AssessmentProperties filter on purpose - they are response-only and never stored on the item.
@@ -1351,6 +1366,10 @@ namespace ACE.Server.Network.Structure
             // add ratings from equipped items?
         }
 
+        /// <summary>A weapon card's value as the item would have it once equipped (<see cref="zcFloats"/>), else the stored prop.</summary>
+        private double? ZcFloat(WorldObject weapon, PropertyFloat prop) =>
+            zcFloats.TryGetValue(prop, out var v) ? v : weapon.GetProperty(prop);
+
         private void BuildWeapon(WorldObject weapon, Player examiner)
         {
             if (!Success)
@@ -1409,8 +1428,8 @@ namespace ACE.Server.Network.Structure
             var slayerAll = weapon.GetProperty(PropertyBool.SlayerAllCreatures) == true;
             if (weapon.SlayerCreatureType.HasValue || slayerAll)
             {
-                var bonus = !zcLocked ? weapon.SlayerDamageBonus ?? 1.0
-                    : zcT10 ? Math.Min(weapon.SlayerDamageBonus ?? 1.0, ACE.Server.Managers.ZoneControl.ZoneLockFallback.SlayerCap)
+                var bonus = !zcLocked ? ZcFloat(weapon, PropertyFloat.SlayerDamageBonus) ?? 1.0
+                    : zcT10 ? Math.Min(ZcFloat(weapon, PropertyFloat.SlayerDamageBonus) ?? 1.0, ACE.Server.Managers.ZoneControl.ZoneLockFallback.SlayerCap)
                     : 1.0;
                 var niceName = slayerAll
                     ? "All Creatures"
@@ -1421,7 +1440,7 @@ namespace ACE.Server.Network.Structure
             // Biting Strike
             if (weapon.CriticalFrequency.HasValue)
             {
-                var val = zcLocked ? WorldObject.LockedCritFrequency(weapon) : weapon.CriticalFrequency.Value;   // locked: the combat fallback crit rate
+                var val = zcLocked ? WorldObject.LockedCritFrequency(weapon) : ZcFloat(weapon, PropertyFloat.CriticalFrequency).Value;   // locked: the combat fallback crit rate
                 effectDescriptions.Add($"- Biting Strike: +{val:P0} Crit Chance");
             }
 
@@ -1468,9 +1487,9 @@ namespace ACE.Server.Network.Structure
 
             // Crushing Blow: engine crit damage = 1 + CriticalMultiplier, so the true multiplier the
             // player actually deals is prop + 1 (a stored 1.0 = normal 2x crit).
-            if (weapon.GetProperty(PropertyFloat.CriticalMultiplier) > 1.0f)
+            if (ZcFloat(weapon, PropertyFloat.CriticalMultiplier) > 1.0f)
             {
-                var val = zcLocked ? WorldObject.LockedCritDamageMultiplier(weapon) + 1.0 : weapon.GetProperty(PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (T10 cap, or a plain 2x crit with the master switch off)
+                var val = zcLocked ? WorldObject.LockedCritDamageMultiplier(weapon) + 1.0 : ZcFloat(weapon, PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (T10 cap, or a plain 2x crit with the master switch off)
                 effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
             }
 
@@ -1496,7 +1515,7 @@ namespace ACE.Server.Network.Structure
             // value mislabeled as "Ignored" and never reflected the Zone override.)
             if (weapon.HasImbuedEffect(ImbuedEffectType.ArmorRending))
             {
-                var rendOverride = weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ArmorRendOverridePropId);
+                var rendOverride = ZcFloat(weapon, (PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ArmorRendOverridePropId);
                 var ignored = zcLocked ? 0.0
                     : rendOverride.HasValue
                     ? Math.Clamp(rendOverride.Value, 0.0, 1.0)
@@ -1537,7 +1556,7 @@ namespace ACE.Server.Network.Structure
                     // Zone Control loot: the rend power override substitutes for the skill formula
                     // (rendingMod = 1 + override), mirroring GetWeaponResistanceModifier, so the tooltip
                     // shows exactly the configured strength (e.g. wire 7.0 -> +700% Dmg).
-                    var rendOverride = zcT10 ? null : weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId);
+                    var rendOverride = zcT10 ? null : ZcFloat(weapon, (PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId);
                     if (rendOverride.HasValue && rendOverride.Value > 0)
                         mod = 1.0f + (float)rendOverride.Value;
 
@@ -1553,11 +1572,11 @@ namespace ACE.Server.Network.Structure
             // Shield Cleaving: fraction of the target's shield AL the weapon ignores. Stored directly on
             // the weapon (PropertyFloat.IgnoreShield); GetIgnoreShieldMod reads it at hit time.
             if (weapon.IgnoreShield.HasValue && weapon.IgnoreShield.Value > 0)
-                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(weapon.IgnoreShield.Value, 0.0, 1.0)):P0} Shield Ignored");   // locked: off (owner 2026-10-07)
+                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(ZcFloat(weapon, PropertyFloat.IgnoreShield).Value, 0.0, 1.0)):P0} Shield Ignored");   // locked: off (owner 2026-10-07)
 
             // Spell Armor Rend (casters): fraction of the monster's Spell Armor level the wand's spells ignore. Stored directly
             // on the weapon (PropertyFloat.ZcSpellArmorRend); Creature.GetZcSpellArmorMod reads it at hit time.
-            var spellArmorRend = weapon.GetProperty(PropertyFloat.ZcSpellArmorRend);
+            var spellArmorRend = ZcFloat(weapon, PropertyFloat.ZcSpellArmorRend);
             if (spellArmorRend.HasValue && spellArmorRend.Value > 0)
                 effectDescriptions.Add($"- Spell Armor Rend: {(zcLocked ? 0.0 : Math.Clamp(spellArmorRend.Value, 0.0, 1.0)):P0} Spell Armor Ignored");   // locked: off, like the other cards
 

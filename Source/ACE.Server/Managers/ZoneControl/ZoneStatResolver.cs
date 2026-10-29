@@ -1098,6 +1098,52 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
+        /// May a re-resolve on <paramref name="tier"/> LOWER a stamped value? Yes when the last `ladder apply` was passed
+        /// --nerf, or while Zone Control is off (owner 2026-08-23: fallback numbers on existing items). The one rule
+        /// <see cref="ApplyIfStale"/> and <see cref="FloatsIfEquipped(WorldObject, Resolved)"/> share.
+        /// </summary>
+        private static bool NerfAllowed(int tier) =>
+            ZoneControlManager.GetLadderVersion(tier).AllowNerf || !ServerConfig.zonecontrol_enabled.Value;
+
+        /// <summary>
+        /// PURE: the weapon card floats <see cref="ApplyIfStale"/> would leave on the item if it were equipped now, under the
+        /// tier's live nerf rule (<see cref="NerfAllowed"/>). For the appraisal panel and the loot properties (owner
+        /// 2026-10-29: a muled T15 bow kept showing its pre-retune 2.67x slayer until equipped, so muled weapons could not
+        /// be compared). Never touches the item.
+        /// </summary>
+        /// <param name="wo">The item as stored.</param>
+        /// <param name="r">Its <see cref="Compute"/> result; null for a piece without a record.</param>
+        /// <returns>Prop -> engine-space value for every float in <paramref name="r"/>; empty when there are none.</returns>
+        public static Dictionary<PropertyFloat, double> FloatsIfEquipped(WorldObject wo, Resolved r)
+        {
+            if (wo == null || r == null || r.Floats.Count == 0)
+                return new Dictionary<PropertyFloat, double>();
+            return FloatsIfEquipped(wo, r, NerfAllowed(r.Tier));
+        }
+
+        /// <summary>
+        /// <see cref="FloatsIfEquipped(WorldObject, Resolved)"/> with the nerf rule passed in (no ladder lookup, so tests can
+        /// call it): each resolved float, or the stamped one where <paramref name="allowNerf"/> is false and the resolved
+        /// value is lower - the same guard <see cref="Apply"/> uses.
+        /// </summary>
+        /// <param name="wo">The item as stored.</param>
+        /// <param name="r">Its <see cref="Compute"/> result; null for a piece without a record.</param>
+        /// <param name="allowNerf">False: a value below what is stamped keeps the stamped number.</param>
+        /// <returns>Prop -> engine-space value for every float in <paramref name="r"/>; empty when there are none.</returns>
+        public static Dictionary<PropertyFloat, double> FloatsIfEquipped(WorldObject wo, Resolved r, bool allowNerf)
+        {
+            var result = new Dictionary<PropertyFloat, double>();
+            if (wo == null || r == null)
+                return result;
+            foreach (var kv in r.Floats)
+            {
+                var cur = wo.GetProperty(kv.Key);
+                result[kv.Key] = !allowNerf && cur.HasValue && kv.Value < cur.Value ? cur.Value : kv.Value;
+            }
+            return result;
+        }
+
+        /// <summary>
         /// Write a Resolved set onto the item (SET semantics - ZC owns these props on a T11+ piece). With
         /// allowNerf false a value that would DROP below what is stamped keeps the stamped number (owner
         /// policy: an accidental apply fixes under-tuned gear, never silently cuts anyone). Stamps the
@@ -1170,7 +1216,6 @@ namespace ACE.Server.Managers.ZoneControl
                 return false;
             var tier = TierOf(wo);
             if (tier <= 0) return false;
-            var ladder = ZoneControlManager.GetLadderVersion(tier);
             var seen = wo.GetProperty(PropertyInt.ZcResolvedVersion) ?? 0;
             // a piece Steel-tinkered BEFORE ZcTinkerBonus existed (2026-10-05): its bonus is only read back from TinkerLog, so the
             // appraisal could show a Steel an earlier re-stamp already wiped off the item. Re-stamp it once now - that puts the
@@ -1180,8 +1225,7 @@ namespace ACE.Server.Managers.ZoneControl
                 return false;
             var r = Compute(wo);
             if (r == null) return false;
-            var allowNerf = ladder.AllowNerf || !ServerConfig.zonecontrol_enabled.Value;
-            var changed = Apply(wo, r, allowNerf);
+            var changed = Apply(wo, r, NerfAllowed(tier));
             if (migrate)
             {
                 WriteTinkerBonus(wo, ReadTinkerBonus(wo));
