@@ -16,7 +16,7 @@ Do **not** use bare `7878` (legacy stub).
 | `78780013` | **Savage Echo** | Pet potency currency; internal doc alias: Essence Residue |
 | `78780014` | **Essence Resonator** | Salvage tool: converts spare captured essences → Savage Echo |
 | `78780015`–`78780019` | **Spare** | Reserved |
-| `78780020`–`78780029` | World / NPC / generators | Echo Weaver (20), Lens Collector (22), Crystal Gen (23), Schneebly NPC (24, foot-tapping; `Database/Updates/World/2026-09-23-00-Schneebly-NPC.sql`), Flawless NPC (25, shivering Tumerok; `Database/Updates/World/2026-09-23-01-Flawless-NPC.sql`). Next free: 26 (21 is an unexplained gap - check prod before using it) |
+| `78780020`–`78780029` | World / NPC / generators | Echo Weaver (20), Lens Collector (22), Crystal Gen (23), Schneebly NPC (24, foot-tapping; `Database/Updates/World/2026-09-23-00-Schneebly-NPC.sql`), Flawless NPC (25, shivering Tumerok; `Database/Updates/World/2026-09-23-01-Flawless-NPC.sql`), Paragon Collector NPC (26, Thalion the Lightkeeper; PropertyBool 56100 ParagonCollector, `ParagonCollectorService`; `Database/Updates/World/2026-10-29-00-Paragon-Collector-NPC.sql`). Next free: 27 (21 is an unexplained gap - check prod before using it) |
 | **`78780030`–`78780089`** | **Ability charms (ILT)** | **Allocate new toggle charms here only** |
 | `78780090`–`78780098` | **Spare buffer** | Emergency items; stay below debug. **Overlaps QuestBuilder** (see below) |
 | `78780099` | Debug siphon lens | Keep fixed. **Inside the QuestBuilder auto-allocation range** (see below) |

@@ -4023,6 +4023,15 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Paragon Collector: the item stays with the player; a finished Paragon / Illuminated / Quiddity item is offered
+            // for luminance in a popup and only taken on Yes.
+            if (target.GetProperty(PropertyBool.ParagonCollector) == true)
+            {
+                Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+                ACE.Server.Entity.ParagonCollectorService.HandleGive(this, target, item, itemWasEquipped);
+                return;
+            }
+
             var acceptAll = target.AiAcceptEverything && !item.IsStickyAttunedOrContainsStickyAttuned;
 
             if (target.HasGiveOrRefuseEmoteForItem(Session, item, out var emoteResult) || acceptAll)
