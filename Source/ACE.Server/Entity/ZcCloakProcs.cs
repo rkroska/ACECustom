@@ -309,7 +309,8 @@ namespace ACE.Server.Entity
             // stamina), so a long fight runs the pool dry; the damage stamina could not pay for goes to health at 1 for 1
             var total = normal + trueDamage;
             var mult = DodgerStaminaMult;
-            var want = (int)Math.Min(int.MaxValue, Math.Round((double)total * mult));
+            // rounded UP (review 2026-10-29): a small positive cost never becomes 0 and lets the hit through with stamina left
+            var want = (int)Math.Min(int.MaxValue, Math.Ceiling((double)total * mult));
             var taken = want > 0 ? -defender.UpdateVitalDelta(defender.Stamina, -want) : 0;
             if (taken < 0) taken = 0;
 
