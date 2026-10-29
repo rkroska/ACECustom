@@ -80,6 +80,14 @@ namespace ACE.Server.Network.Structure
             BuildProfile(wo, examiner, success);
         }
 
+        /// <summary>
+        /// Builds the whole appraisal response for <paramref name="wo"/> as <paramref name="examiner"/> sees it: properties,
+        /// spells, the Zone Control resolve (T11+ ratings and weapon cards as the item would have them once equipped - display
+        /// only, the item is never written), the weapon / armor / creature profiles and the loot properties.
+        /// </summary>
+        /// <param name="wo">The object being appraised.</param>
+        /// <param name="examiner">The player appraising it.</param>
+        /// <param name="success">False for a failed appraisal: most details are then withheld.</param>
         public void BuildProfile(WorldObject wo, Player examiner, bool success = true)
         {
             //Console.WriteLine("Appraise: " + wo.Guid);
@@ -1370,6 +1378,14 @@ namespace ACE.Server.Network.Structure
         private double? ZcFloat(WorldObject weapon, PropertyFloat prop) =>
             zcFloats.TryGetValue(prop, out var v) ? v : weapon.GetProperty(prop);
 
+        /// <summary>
+        /// The weapon half of the appraisal: the damage profile and the Property Details lines (slayer, crit cards, cleaving,
+        /// rends, split arrow, Weapon Grade, wield gate...). Zone Control card values are read through <see cref="ZcFloat"/>
+        /// (the if-equipped value), and while the examiner stands where the weapon's Zone power is locked each line shows the
+        /// combat fallback instead.
+        /// </summary>
+        /// <param name="weapon">The weapon being appraised.</param>
+        /// <param name="examiner">The player appraising it (skills, zone lock, charms).</param>
         private void BuildWeapon(WorldObject weapon, Player examiner)
         {
             if (!Success)
