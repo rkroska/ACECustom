@@ -81,6 +81,15 @@ namespace ACE.Server.Network.Structure
             BuildProperties(wo, examiner);
             BuildSpells(wo, examiner);
 
+            // T11+ cloak procs (owner 2026-10-28): the client draws a cloak's retail proc from these two (the spell, or the
+            // "reduce damage by 200" text for weave 2). Both stay on the item as the key ZcCloakProcs reads, but the panel
+            // shows the new proc in the modifier block instead (PromoteZoneModifierLines).
+            if (ZcCloakProcs.Owns(wo))
+            {
+                PropertiesInt?.Remove(PropertyInt.CloakWeaveProc);
+                PropertiesDID?.Remove(PropertyDataId.ProcSpell);
+            }
+
             // Live Stat Resolution (owner 2026-08-22, plan 3b): a piece with a ZcModifiers record is
             // resolved from its grades against the LIVE ladder for the RESPONSE COPY only - wo is
             // never written, never marked dirty (equip is the only re-stamp site: ApplyIfStale).
@@ -923,7 +932,9 @@ namespace ACE.Server.Network.Structure
             var zcArcDmg = wo.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcArcDamagePropId);
             var zcHasProcCard = zcArcDmg.HasValue && zcArcDmg.Value > 0;
 
-            if (wo.ProcSpell.HasValue && !zcHasProcCard)
+            // a T11+ cloak casts nothing any more (ZcCloakProcs): its retail proc spell stays on the item as the mapping key
+            // but is not shown - the modifier block names the new proc instead
+            if (wo.ProcSpell.HasValue && !zcHasProcCard && !ZcCloakProcs.Owns(wo))
                 SpellBook.Add(wo.ProcSpell.Value);
 
             var woSpellDID = wo.SpellDID;   // prevent recursive lock
@@ -1097,7 +1108,9 @@ namespace ACE.Server.Network.Structure
             // built live from its flag (weapons say it in Property Details, BuildWeapon - never twice). A rare always
             // shows the block, even in the odd case that it carries no line at all.
             var rareLine = GearEssences.IsWeapon(wo) ? null : ACE.Server.Managers.ZoneControl.ZoneRare.AppraisalLine(wo);
-            if (!worked && !fromRecord && rareLine == null && ld.IndexOf(LegacyModifierMarker, StringComparison.Ordinal) < 0)
+            // T11+ cloak proc (owner 2026-10-28): built live from the cloak's retail proc and the current settings, never baked
+            var hasCloakProc = ZcCloakProcs.Owns(wo);
+            if (!worked && !fromRecord && rareLine == null && !hasCloakProc && ld.IndexOf(LegacyModifierMarker, StringComparison.Ordinal) < 0)
                 return;
 
             var cantrips = new List<string>();
@@ -1168,6 +1181,11 @@ namespace ACE.Server.Network.Structure
                 cantrips.AddRange(reinforced);
             }
 
+            // the T11+ cloak proc, under the lines - "(off here)" where the armor zone lock holds worn gear, as combat does
+            var cloakLine = hasCloakProc ? ZcCloakProcs.AppraisalLine(wo, wornLocked) : null;
+            if (cloakLine != null)
+                cantrips.Add(cloakLine);
+
             if (showTainted)
                 cantrips.Add(GearEssences.TaintedAppraisalLine);
 
@@ -1177,7 +1195,7 @@ namespace ACE.Server.Network.Structure
             // "Properties: 3 of 5" heads the block (owner 2026-10-04): the slot count the drop limit and the bags use. Not on
             // a legacy piece whose bullets come from baked text only (no record to count - a number there could be wrong).
             // Reinforced is always baked text (earned and frozen, never in the record) and the count includes it, so it is not "legacy"
-            var legacyText = resolved == null && cantrips.Any(c => c != GearEssences.TaintedAppraisalLine
+            var legacyText = resolved == null && cantrips.Any(c => c != GearEssences.TaintedAppraisalLine && c != cloakLine
                 && !c.StartsWith("- " + ReinforcedLineName, StringComparison.Ordinal));
             // weapons carry the counter in Property Details (BuildWeapon) - never twice
             var propertiesLine = legacyText || GearEssences.IsWeapon(wo) ? null : GearEssences.PropertiesAppraisalLine(wo);

@@ -71,7 +71,7 @@ namespace ACE.Server.Tests
                 Assert.IsTrue(ids.Add(ZoneLootProps.WeaponGradeId(key)));
             }
             foreach (var id in new[] { ZoneLootProps.GearGradeId, ZoneLootProps.PropertiesUsedId, ZoneLootProps.PropertiesLimitId,
-                                       ZoneLootProps.SlayerAllCreaturesId, ZoneLootProps.VersionId })
+                                       ZoneLootProps.SlayerAllCreaturesId, ZoneLootProps.CloakProcId, ZoneLootProps.VersionId })
                 Assert.IsTrue(ids.Add(id));
             Assert.IsTrue(ids.All(id => id >= ZoneLootProps.BlockMin && id <= ZoneLootProps.BlockMax));
         }

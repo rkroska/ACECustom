@@ -1408,6 +1408,7 @@ namespace ACE.Server.WorldObjects
             var pkDamageResistRatingMod = 1.0f;
 
             WorldObject equippedCloak = null;
+            var zcCloakProc = ZcCloakProc.None;   // T11+ cloak proc fired by this hit (ZcCloakProcs)
 
             if (target.CanEnrage && !target.IsEnraged && target.Health.Current > 0)
             {
@@ -1557,6 +1558,14 @@ namespace ACE.Server.WorldObjects
                 //Console.WriteLine($"Damage rating: " + Creature.ModToRating(damageRatingMod));
 
                 equippedCloak = target.EquippedCloak;
+
+                // T11+ cloak procs (owner 2026-10-28): both parts of the hit, before the barrier. Smoke Screen / Artful Dodger
+                // act here; Calming Breeze / Asheron's Grace after the hit (PostHit, in the alive block below).
+                if (targetPlayer != null && Spell.IsHarmful)
+                {
+                    zcCloakProc = ZcCloakProcs.PreHit(targetPlayer, ProjectileSource, ref damage, ref spellTrueDamage);
+                    percent = damage / target.Health.MaxValue;
+                }
 
                 if (equippedCloak != null && Cloak.HasDamageProc(equippedCloak) && Cloak.RollProc(equippedCloak, percent))
                 {
@@ -1721,6 +1730,10 @@ namespace ACE.Server.WorldObjects
 
                 if (!nonHealth)
                 {
+                    // T11+ cloak procs: Calming Breeze / Asheron's Grace, now that the hit has landed
+                    if (targetPlayer != null)
+                        ZcCloakProcs.PostHit(targetPlayer, zcCloakProc);
+
                     if (equippedCloak != null && Cloak.HasProcSpell(equippedCloak))
                         Cloak.TryProcSpell(target, ProjectileSource, equippedCloak, percent);
                 }
