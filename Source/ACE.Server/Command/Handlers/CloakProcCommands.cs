@@ -30,6 +30,8 @@ namespace ACE.Server.Command.Handlers
             "T11+ cloak procs: status, test cloaks, force the next proc.",
             "status | create <breeze|smoke|dodger|grace|all> | force\n" +
             "Settings: zc_cloak_procs_enabled, zc_cloak_proc_chance, zc_cloak_proc_cooldown, zc_cloak_breeze_heal, zc_cloak_dodger_hits, zc_cloak_dodger_window, zc_cloak_grace_seconds")]
+        /// <summary>/cloakproc [status | create &lt;breeze|smoke|dodger|grace|all&gt; | force] - developer testing for the T11+
+        /// cloak procs. No argument = status.</summary>
         public static void HandleCloakProc(Session session, params string[] parameters)
         {
             var player = session?.Player;
@@ -58,6 +60,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        /// <summary>Prints the live settings, the worn cloak's proc, and this player's cooldown, Dodger charges and Grace time.</summary>
         private static void Status(Session session, Player player)
         {
             var now = Time.GetUnixTime();
@@ -86,6 +89,7 @@ namespace ACE.Server.Command.Handlers
             Say(session, "You: " + string.Join(", ", parts));
         }
 
+        /// <summary>Puts tier 11 test cloaks in the player's pack: the one proc named, or all four. Stops at a full pack.</summary>
         private static void Create(Session session, Player player, string which)
         {
             var procs = which switch
@@ -135,6 +139,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        /// <summary>Gives a test cloak a retail proc spell - the key ZcCloakProcs reads to pick the new proc.</summary>
         private static void SetSpell(WorldObject wo, uint spell)
         {
             wo.ProcSpell = spell;
@@ -142,6 +147,7 @@ namespace ACE.Server.Command.Handlers
             wo.ProcSpellSelfTargeted = spell == CloakedInSkill;
         }
 
+        /// <summary>One line of command output.</summary>
         private static void Say(Session session, string text) => CommandHandlerHelper.WriteOutputInfo(session, text, ChatMessageType.Broadcast);
     }
 }

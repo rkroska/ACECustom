@@ -73,6 +73,11 @@ namespace ACE.Server.Network.Structure
             BuildProfile(wo, examiner, success);
         }
 
+        /// <summary>
+        /// Fills this response for <paramref name="examiner"/> appraising <paramref name="wo"/>: properties, spells, the Zone
+        /// Control resolved stats and loot properties, the armor / creature / weapon profiles, the Modifiers block (a T11+
+        /// cloak's proc among it) and the flags.
+        /// </summary>
         public void BuildProfile(WorldObject wo, Player examiner, bool success = true)
         {
             //Console.WriteLine("Appraise: " + wo.Guid);
@@ -896,6 +901,11 @@ namespace ACE.Server.Network.Structure
         }
 
 
+        /// <summary>
+        /// Fills the SpellBook: a creature's DoTs cast by the examiner (nearby health), or an item's spell, its proc spell and
+        /// its known spells. A Zone Control Cast on Strike and a T11+ cloak proc (ZcCloakProcs) are left out - the panel
+        /// names those itself.
+        /// </summary>
         private void BuildSpells(WorldObject wo, Player examiner = null)
         {
             SpellBook = new List<uint>();

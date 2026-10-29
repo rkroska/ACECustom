@@ -108,6 +108,7 @@ namespace ACE.Server.Entity
         /// <summary>True when this cloak's retail proc is replaced (Cloak.HasProcSpell / HasDamageProc answer false for it).</summary>
         public static bool Owns(WorldObject cloak) => Classify(cloak) != ZcCloakProc.None;
 
+        /// <summary>The proc's in-game name, or null for None.</summary>
         public static string NameOf(ZcCloakProc proc) => proc switch
         {
             ZcCloakProc.CalmingBreeze => CalmingBreezeName,
@@ -334,6 +335,7 @@ namespace ACE.Server.Entity
                 WorldObject.LocalBroadcastRange, ChatMessageType.Spellcasting);
         }
 
+        /// <summary>" from &lt;name&gt;" for a chat line, or nothing when the hit has no source.</summary>
         private static string FromWhom(WorldObject source) => source != null ? " from " + source.Name : "";
     }
 }

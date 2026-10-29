@@ -1997,6 +1997,12 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         internal static readonly float RingSightHeightFactor = ProjHeight;
 
+        /// <summary>
+        /// Applies this player's smart ring spell to every creature in range, without physics collision: the low-tier proc
+        /// resist, the resist roll, damage (parity with SpellProjectile.CalculateDamage), the ratings, the cloak procs of a
+        /// player it hits (T11+ ZcCloakProcs and the retail ones) and the hit messages. The optional arguments are the
+        /// overrides the proc paths pass (Explosive Arrow, Cast on Strike rings).
+        /// </summary>
         internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0, WorldObject losOrigin = null, WorldObject losExempt = null, WorldObject lowTierItem = null)
         {
             var center = centerOverride ?? Location;

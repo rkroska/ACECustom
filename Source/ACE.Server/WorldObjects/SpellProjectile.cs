@@ -1563,8 +1563,20 @@ namespace ACE.Server.WorldObjects
                 // act here; Calming Breeze / Asheron's Grace after the hit (PostHit, in the alive block below).
                 if (targetPlayer != null && Spell.IsHarmful)
                 {
+                    var zcHitBefore = damage + spellTrueDamage;
                     zcCloakProc = ZcCloakProcs.PreHit(targetPlayer, ProjectileSource, ref damage, ref spellTrueDamage);
                     percent = damage / target.Health.MaxValue;
+
+                    // negated (Smoke Screen) or wholly taken on stamina (Artful Dodger): nothing reaches health, so stop here as
+                    // the melee path does - no Battle Mending off a hit that did no damage, no "hits you for 0 points" lines
+                    // (review 2026-10-29). The proc printed its own message; keep the attacker as the player's current target.
+                    var zcHitAfter = damage + spellTrueDamage;
+                    if (zcHitAfter != zcHitBefore && zcHitAfter < 0.5f)
+                    {
+                        if (sourceCreature != null)
+                            targetPlayer.SetCurrentAttacker(sourceCreature);
+                        return;
+                    }
                 }
 
                 if (equippedCloak != null && Cloak.HasDamageProc(equippedCloak) && Cloak.RollProc(equippedCloak, percent))

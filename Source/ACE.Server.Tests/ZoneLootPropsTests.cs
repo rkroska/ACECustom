@@ -56,6 +56,8 @@ namespace ACE.Server.Tests
                 }
         }
 
+        /// <summary>Every loot property id - gear lines, weapon cards and the single ids such as the cloak proc (58904) - is
+        /// unique and inside the 58000-58999 block.</summary>
         [TestMethod]
         public void IdRanges_NeverOverlap()
         {

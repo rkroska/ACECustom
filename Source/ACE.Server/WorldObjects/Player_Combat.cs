@@ -1008,6 +1008,13 @@ namespace ACE.Server.WorldObjects
             return TakeDamageInternal(source, damageType, _amount, bodyPart, out _, crit, attackConditions, trueDamage);
         }
 
+        /// <summary>
+        /// Applies a physical hit (melee, missile, cleave, hotspot) to this player: lifestone protection, the T11+ cloak proc
+        /// (ZcCloakProcs - hotspots excluded), the retail cloak -200, Mana Barrier, Cheat Death and Battle Mending, then the
+        /// messages and the death check. Returns the health actually lost.
+        /// </summary>
+        /// <param name="amountAbsorbed">what the Mana Barrier absorbed</param>
+        /// <param name="trueDamage">the True Damage part of <paramref name="_amount"/>; the barrier never absorbs it</param>
         private int TakeDamageInternal(WorldObject source, DamageType damageType, float _amount, BodyPart bodyPart, out uint amountAbsorbed, bool crit, AttackConditions attackConditions, float trueDamage = 0f)
         {
             amountAbsorbed = 0;
