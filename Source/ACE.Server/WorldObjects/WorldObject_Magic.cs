@@ -663,7 +663,20 @@ namespace ACE.Server.WorldObjects
                     ? (int)Math.Round(player.EffectiveLifeAugCount * (double)harmTakenMult) : 0;
                 float zcHarmNormal = (tryBoost < 0 ? -tryBoost : 0) + zcHarmAug;
                 var zcHarmNormalBefore = zcHarmNormal;
+                var zcHarmBefore = zcHarmNormal + zcHarmTrueFinal;
                 zcCloakProc = ZcCloakProcs.PreHit(zcHarmTarget, this, ref zcHarmNormal, ref zcHarmTrueFinal);
+
+                // taken whole (Smoke Screen, a spent Artful Dodger charge, the Grace / Cheat Death window): nothing reaches health,
+                // so stop here as the spell-bolt and melee paths do - no barrier, no "drains 0 points" lines (review 2026-10-29).
+                // The proc printed its own message; keep the caster as the player's current attacker.
+                var zcHarmAfter = zcHarmNormal + zcHarmTrueFinal;
+                if (zcHarmAfter != zcHarmBefore && zcHarmAfter < 0.5f)
+                {
+                    if (creature != null)
+                        zcHarmTarget.SetCurrentAttacker(creature);
+                    return;
+                }
+
                 if (zcHarmNormal != zcHarmNormalBefore)
                 {
                     tryBoost = boost = -(int)Math.Round(zcHarmNormal);
@@ -1090,7 +1103,20 @@ namespace ACE.Server.WorldObjects
                     ? (uint)Math.Round(player.EffectiveLifeAugCount * (double)drainTakenMult) : 0u;
                 float zcDrainNormal = srcVitalChange + zcDrainAug;
                 var zcDrainNormalBefore = zcDrainNormal;
+                var zcDrainBefore = zcDrainNormal + zcDrainTrueFinal;
                 zcCloakProc = ZcCloakProcs.PreHit(zcDrainTarget, this, ref zcDrainNormal, ref zcDrainTrueFinal);
+
+                // taken whole (Smoke Screen, a spent Artful Dodger charge, the Grace / Cheat Death window): nothing is drained and
+                // the caster gains nothing, so stop here as the other paths do - no "lose 0 / gain 0 points" lines (review
+                // 2026-10-29). The proc printed its own message; keep the caster as the player's current attacker.
+                var zcDrainAfter = zcDrainNormal + zcDrainTrueFinal;
+                if (zcDrainAfter != zcDrainBefore && zcDrainAfter < 0.5f)
+                {
+                    if (destination is Creature zcDrainAttacker)
+                        zcDrainTarget.SetCurrentAttacker(zcDrainAttacker);
+                    return;
+                }
+
                 if (zcDrainNormal != zcDrainNormalBefore)
                 {
                     srcVitalChange = (uint)Math.Round(zcDrainNormal);
