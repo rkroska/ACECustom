@@ -1440,7 +1440,7 @@ namespace ACE.Server.Network.Structure
             // Biting Strike
             if (weapon.CriticalFrequency.HasValue)
             {
-                var val = zcLocked ? WorldObject.LockedCritFrequency(weapon) : ZcFloat(weapon, PropertyFloat.CriticalFrequency).Value;   // locked: the combat fallback crit rate
+                var val = zcLocked ? WorldObject.LockedCritFrequency(weapon, ZcFloat(weapon, PropertyFloat.CriticalFrequency)) : ZcFloat(weapon, PropertyFloat.CriticalFrequency).Value;   // locked: the combat fallback crit rate
                 effectDescriptions.Add($"- Biting Strike: +{val:P0} Crit Chance");
             }
 
@@ -1489,7 +1489,7 @@ namespace ACE.Server.Network.Structure
             // player actually deals is prop + 1 (a stored 1.0 = normal 2x crit).
             if (ZcFloat(weapon, PropertyFloat.CriticalMultiplier) > 1.0f)
             {
-                var val = zcLocked ? WorldObject.LockedCritDamageMultiplier(weapon) + 1.0 : ZcFloat(weapon, PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (T10 cap, or a plain 2x crit with the master switch off)
+                var val = zcLocked ? WorldObject.LockedCritDamageMultiplier(weapon, ZcFloat(weapon, PropertyFloat.CriticalMultiplier)) + 1.0 : ZcFloat(weapon, PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (T10 cap, or a plain 2x crit with the master switch off)
                 effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
             }
 
