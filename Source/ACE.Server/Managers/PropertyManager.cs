@@ -866,6 +866,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> zc_cloak_proc_cooldown { get; private set; } = new(7.0, "T11+ cloak procs: seconds between procs, per character.");
         public static ConfigProperty<long> zc_cloak_breeze_heal { get; private set; } = new(500, "T11+ cloak procs: Calming Breeze heals this much health. Static - no buff, spell, rating or aug changes it.");
         public static ConfigProperty<long> zc_cloak_dodger_hits { get; private set; } = new(3, "T11+ cloak procs: Artful Dodger - how many of the following hits strike stamina instead of health.");
+        public static ConfigProperty<double> zc_cloak_dodger_stamina_mult { get; private set; } = new(10.0, "T11+ cloak procs: Artful Dodger - stamina lost per point of damage it redirects (10 = a 500 hit costs 5,000 stamina). What stamina cannot cover goes to health at 1 for 1.");
         public static ConfigProperty<double> zc_cloak_dodger_window { get; private set; } = new(7.0, "T11+ cloak procs: Artful Dodger - seconds the redirected hits stay available after the proc.");
         public static ConfigProperty<double> zc_cloak_grace_seconds { get; private set; } = new(2.0, "T11+ cloak procs: Asheron's Grace - seconds of protection from all damage.");
         public static ConfigProperty<double> minor_cantrip_drop_rate { get; private set; } = new(1.0, "Scales the chance for minor cantrips to drop, relative to other cantrip levels in the tier. Defaults to 1.0, as per end of retail");

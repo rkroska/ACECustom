@@ -29,7 +29,8 @@ namespace ACE.Server.Entity
     ///   the 8 rings        -> Calming Breeze : heal zc_cloak_breeze_heal (500), static - no buff, rating or aug touches it
     ///   the 3 Shrouds      -> Smoke Screen   : the hit is negated, True Damage included
     ///   the -200 weave     -> Artful Dodger  : the next zc_cloak_dodger_hits (3) hits within zc_cloak_dodger_window (7 s)
-    ///                                          take stamina instead of health; what stamina can't cover goes to health
+    ///                                          take stamina instead of health, zc_cloak_dodger_stamina_mult (10) stamina
+    ///                                          per point of damage; what stamina can't cover goes to health
     ///   Cloaked in Skill   -> Asheron's Grace: zc_cloak_grace_seconds (2 s) of protection from all damage, with the
     ///                                          lifestone shield. Built on the Cheat Death window (Player.ZcDamageImmune),
     ///                                          not on real lifestone protection, which the wearer's own swing dispels.
@@ -65,6 +66,7 @@ namespace ACE.Server.Entity
         public static int BreezeHeal => (int)Math.Clamp(ServerConfig.zc_cloak_breeze_heal.Value, 0, int.MaxValue);
         public static int DodgerHits => (int)Math.Clamp(ServerConfig.zc_cloak_dodger_hits.Value, 0, 1000);
         public static double DodgerWindow => Math.Max(0.0, ServerConfig.zc_cloak_dodger_window.Value);
+        public static double DodgerStaminaMult => Math.Clamp(ServerConfig.zc_cloak_dodger_stamina_mult.Value, 0.01, 1000.0);
         public static double GraceSeconds => Math.Max(0.0, ServerConfig.zc_cloak_grace_seconds.Value);
 
         /// <summary>Which T11+ proc this item carries, or None when it is not a T11+ cloak, the system is off, or its retail
@@ -123,7 +125,7 @@ namespace ACE.Server.Entity
         {
             ZcCloakProc.CalmingBreeze => $"heals you for {BreezeHeal:N0} health",
             ZcCloakProc.SmokeScreen => "negates all damage from that hit",
-            ZcCloakProc.ArtfulDodger => $"your next {DodgerHits} {(DodgerHits == 1 ? "hit" : "hits")} within {DodgerWindow:0.#}s strike stamina instead of health",
+            ZcCloakProc.ArtfulDodger => $"your next {DodgerHits} {(DodgerHits == 1 ? "hit" : "hits")} within {DodgerWindow:0.#}s strike stamina at {DodgerStaminaMult:0.##}x instead of health",
             ZcCloakProc.AsheronsGrace => $"protects you from all damage for {GraceSeconds:0.#}s",
             _ => null,
         };
@@ -299,16 +301,20 @@ namespace ACE.Server.Entity
             }
         }
 
-        /// <summary>One Artful Dodger charge: the whole hit (True Damage included) comes off stamina; whatever stamina cannot
-        /// cover stays on the hit, split between its two parts as before.</summary>
+        /// <summary>One Artful Dodger charge: the whole hit (True Damage included) comes off stamina at DodgerStaminaMult stamina
+        /// per point; the damage stamina cannot pay for stays on the hit, split between its two parts as before.</summary>
         private static void TakeOnStamina(Player defender, WorldObject source, ref float normal, ref float trueDamage)
         {
+            // stamina pays zc_cloak_dodger_stamina_mult per point of damage (owner 2026-10-29: 10x - a 500 hit costs 5,000
+            // stamina), so a long fight runs the pool dry; the damage stamina could not pay for goes to health at 1 for 1
             var total = normal + trueDamage;
-            var want = (int)Math.Min(int.MaxValue, Math.Round((double)total));
+            var mult = DodgerStaminaMult;
+            var want = (int)Math.Min(int.MaxValue, Math.Round((double)total * mult));
             var taken = want > 0 ? -defender.UpdateVitalDelta(defender.Stamina, -want) : 0;
             if (taken < 0) taken = 0;
 
-            var left = Math.Max(0f, total - taken);
+            var covered = (float)Math.Min(total, taken / mult);
+            var left = Math.Max(0f, total - covered);
             var scale = total > 0 ? left / total : 0f;
             normal *= scale;
             trueDamage *= scale;
@@ -325,7 +331,7 @@ namespace ACE.Server.Entity
 
             defender.EnqueueBroadcast(new GameMessageScript(defender.Guid, DodgerHitEffect));
             var through = left >= 0.5f ? $" {Math.Round(left):N0} gets through to your health." : "";
-            defender.SendMessage($"Artful Dodger turns {taken:N0} points of damage{FromWhom(source)} into stamina loss.{through}{remaining}", ChatMessageType.Magic);
+            defender.SendMessage($"Artful Dodger turns {Math.Round(covered):N0} points of damage{FromWhom(source)} into {taken:N0} stamina loss.{through}{remaining}", ChatMessageType.Magic);
         }
 
         /// <summary>The same nearby broadcast the retail weave used, with the new name.</summary>

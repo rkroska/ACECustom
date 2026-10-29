@@ -29,7 +29,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("cloakproc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
             "T11+ cloak procs: status, test cloaks, force the next proc.",
             "status | create <breeze|smoke|dodger|grace|all> | force\n" +
-            "Settings: zc_cloak_procs_enabled, zc_cloak_proc_chance, zc_cloak_proc_cooldown, zc_cloak_breeze_heal, zc_cloak_dodger_hits, zc_cloak_dodger_window, zc_cloak_grace_seconds")]
+            "Settings: zc_cloak_procs_enabled, zc_cloak_proc_chance, zc_cloak_proc_cooldown, zc_cloak_breeze_heal, zc_cloak_dodger_hits, zc_cloak_dodger_window, zc_cloak_dodger_stamina_mult, zc_cloak_grace_seconds")]
         /// <summary>/cloakproc [status | create &lt;breeze|smoke|dodger|grace|all&gt; | force] - developer testing for the T11+
         /// cloak procs. No argument = status.</summary>
         public static void HandleCloakProc(Session session, params string[] parameters)
@@ -70,7 +70,7 @@ namespace ACE.Server.Command.Handlers
                 : "ON";
             Say(session, $"T11+ cloak procs: {mode}");
             Say(session, $"Chance {ZcCloakProcs.Chance * 100:0.##}% per hit, cooldown {ZcCloakProcs.Cooldown:0.#}s");
-            Say(session, $"Calming Breeze {ZcCloakProcs.BreezeHeal:N0} | Artful Dodger {ZcCloakProcs.DodgerHits} hits / {ZcCloakProcs.DodgerWindow:0.#}s | Asheron's Grace {ZcCloakProcs.GraceSeconds:0.#}s");
+            Say(session, $"Calming Breeze {ZcCloakProcs.BreezeHeal:N0} | Artful Dodger {ZcCloakProcs.DodgerHits} hits / {ZcCloakProcs.DodgerWindow:0.#}s at {ZcCloakProcs.DodgerStaminaMult:0.##}x stamina | Asheron's Grace {ZcCloakProcs.GraceSeconds:0.#}s");
 
             var cloak = player.EquippedCloak;
             if (cloak == null)
