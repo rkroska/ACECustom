@@ -150,6 +150,7 @@ namespace ACE.Server.Entity
             UsePrefix = "Quiddity Essence strength is level",
         };
 
+        /// <summary>The rule for a line, or null for <see cref="ParagonTrack.None"/>.</summary>
         public static ParagonTrackRule RuleFor(ParagonTrack track) => track switch
         {
             ParagonTrack.Armor => Armor,
@@ -160,6 +161,10 @@ namespace ACE.Server.Entity
             _ => null,
         };
 
+        /// <summary>
+        /// Luminance paid for one finished item of the line, read live from ServerConfig (paragon_collector_lum_*). 0 or less
+        /// means the collector refuses that line; <see cref="ParagonTrack.None"/> is always 0.
+        /// </summary>
         public static long RewardFor(ParagonTrack track) => track switch
         {
             ParagonTrack.Armor => ServerConfig.paragon_collector_lum_armor.Value,
@@ -172,6 +177,10 @@ namespace ACE.Server.Entity
 
         // ---------------------------------------------------------------- classification (pure)
 
+        /// <summary>
+        /// True for a melee weapon, missile launcher or caster - by weenie type, or by item type for the few Generic-typed
+        /// missile weapons. Shields are armor, not weapons.
+        /// </summary>
         public static bool IsWeapon(WeenieType weenieType, ItemType itemType)
         {
             if (weenieType == WeenieType.MeleeWeapon || weenieType == WeenieType.MissileLauncher || weenieType == WeenieType.Caster)
@@ -214,6 +223,11 @@ namespace ACE.Server.Entity
         /// <summary>True when the item has reached the top tier of its line.</summary>
         public static bool IsFinished(ParagonTrackRule rule, int? itemMaxLevel) => rule != null && (itemMaxLevel ?? 0) >= rule.RequiredLevel;
 
+        /// <summary>
+        /// True when the line's tool (<see cref="ParagonTrackRule.TrackToolWcid"/>) has a cook_book row for this WCID, i.e. the
+        /// line's own gems or essences can be applied to it. Misses are cached by the world database too. Always false for
+        /// weapons, which have no tool.
+        /// </summary>
         private static bool IsTrackTarget(ParagonTrackRule rule, uint wcid)
         {
             if (rule.TrackToolWcid == 0)
@@ -221,6 +235,7 @@ namespace ACE.Server.Entity
             return DatabaseManager.World.GetCachedCookbook(rule.TrackToolWcid, wcid) != null;
         }
 
+        /// <summary>Which line a world object is on, read from its own properties and the world DB cook_book.</summary>
         public static ParagonTrack Classify(WorldObject item)
         {
             return Classify(item.WeenieType, item.ItemType, item.GetProperty(PropertyInt.EquipmentSetId), item.GetProperty(PropertyString.Use),
@@ -329,6 +344,7 @@ namespace ACE.Server.Entity
                 Say(player, collector, "Answer the popup you already have open first.");
         }
 
+        /// <summary>The collector tells the player <paramref name="text"/> (plain ASCII).</summary>
         private static void Say(Player player, WorldObject collector, string text)
         {
             player.Session.Network.EnqueueSend(new GameEventTell(collector, text, player, ChatMessageType.Tell));

@@ -18,8 +18,10 @@ namespace ACE.Server.Tests
         private const string IlluminatedSetUse15 = "Illuminated from the craftsmanship of the Tumerok through level 15. This item has the powers of the Heroic Destroyer Set.";
         private const string TrinketUse6 = "Quiddity Essence strength is level 6.";
 
+        /// <summary>A stand-in for the cook_book lookup: the item counts as a target of exactly the given lines.</summary>
         private static Func<ParagonTrackRule, bool> TargetOf(params ParagonTrack[] tracks) => rule => Array.IndexOf(tracks, rule.Track) >= 0;
 
+        /// <summary>Classifies an item described by its weenie type, item type, EquipmentSetId and Use text.</summary>
         private static ParagonTrack Classify(WeenieType wt, ItemType it, int? set, string use, params ParagonTrack[] targetOf)
             => ParagonCollectorService.Classify(wt, it, set, use, TargetOf(targetOf));
 
@@ -93,6 +95,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual("AlignMyQuiddity", ParagonCollectorService.Trinket.Stamp);
         }
 
+        /// <summary>Every refusal and thanks fragment reaches the AC client, so it must be printable 7-bit ASCII.</summary>
         [TestMethod]
         public void PlayerText_IsPlainAscii()
         {

@@ -3985,6 +3985,11 @@ namespace ACE.Server.WorldObjects
             actionChain.EnqueueChain();
         }
 
+        /// <summary>
+        /// Hands an item to an NPC. Town Crier IOUs, forge smiths and Paragon Collectors are handed off to their own code first
+        /// (smiths and collectors never take the item here); otherwise the NPC's Give / Refuse emote for the item decides, or
+        /// AiAcceptEverything takes it.
+        /// </summary>
         private void GiveObjectToNPC(WorldObject target, WorldObject item, Container itemFoundInContainer, Container itemRootOwner, bool itemWasEquipped, int amount)
         {
             if (target == null || item == null) return;
