@@ -1124,12 +1124,21 @@ namespace ACE.Server.WorldObjects
                 // as it does for an unredirected drain: the barrier and the caster's gain see the base drain only, and the aug
                 // term's share is added where the aug term always is (review 2026-10-29: the gain was taken from the augmented
                 // hit, so a small stamina payment could heal the caster more than the same drain with no proc).
+                // What is left is rounded ONCE and split in whole points, so no point is lost to rounding each part (review
+                // 2026-10-29). The aug term takes its share rounded down, the base drain the rest - at least 1 point of a hit that
+                // has any left, since the aug term is only added to a drain that moves something below - and never more than the
+                // base drain was.
                 if (zcDrainNormal != zcDrainNormalBefore)
                 {
                     var zcDrainLeft = zcDrainNormalBefore > 0 ? zcDrainNormal / zcDrainNormalBefore : 0f;
-                    srcVitalChange = (uint)Math.Round(srcVitalChange * zcDrainLeft);
+                    var zcDrainLeftTotal = (uint)Math.Round(zcDrainNormal);
+                    var zcDrainAugShare = Math.Min(zcDrainLeftTotal, (uint)Math.Floor(zcDrainAug * zcDrainLeft));
+                    var zcDrainBaseShare = Math.Min(srcVitalChange, zcDrainLeftTotal - zcDrainAugShare);
+                    if (zcDrainBaseShare == 0 && zcDrainLeftTotal > 0)
+                        zcDrainBaseShare = Math.Min(1u, srcVitalChange);
+                    srcVitalChange = zcDrainBaseShare;
                     destVitalChange = (uint)Math.Round(srcVitalChange * (1.0f - spell.LossPercent) * boostMod);
-                    zcDrainAugLeft = (uint)Math.Round(zcDrainAug * zcDrainLeft);
+                    zcDrainAugLeft = zcDrainLeftTotal - zcDrainBaseShare;
                     zcDrainAugIncluded = true;
                 }
             }
