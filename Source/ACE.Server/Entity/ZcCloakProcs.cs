@@ -1,5 +1,7 @@
 using System;
 
+using log4net;
+
 using ACE.Common;
 using ACE.Entity.Enum;
 using ACE.Server.Entity.Actions;
@@ -50,6 +52,8 @@ namespace ACE.Server.Entity
     /// </summary>
     public static class ZcCloakProcs
     {
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         public const string CalmingBreezeName = "Calming Breeze";
         public const string SmokeScreenName = "Smoke Screen";
         public const string ArtfulDodgerName = "Artful Dodger";
@@ -65,10 +69,22 @@ namespace ACE.Server.Entity
 
         public static bool Enabled => ServerConfig.zc_cloak_procs_enabled.Value && ServerConfig.zonecontrol_enabled.Value;
 
+        /// <summary>Where a set of dials came from.</summary>
+        public enum DialSource
+        {
+            /// <summary>No Zone Control value: the server settings (zc_cloak_*).</summary>
+            Server,
+            /// <summary>The governing zone's Default row (its own stats over the tier Default stack).</summary>
+            Zone,
+            /// <summary>The tier's Default row (with the v11 anchor under T12+), on a T11+ spot no enabled zone covers.</summary>
+            TierDefault,
+        }
+
         /// <summary>
         /// The proc numbers in force at one spot, already clamped. The server settings (zc_cloak_*) are the defaults everywhere;
         /// a zone or a tier Default re-tunes any of them with the Zone Control stats cloak_* (owner 2026-10-29: "Zone Control
-        /// dials"). <see cref="Source"/> says where the authored values came from, for /cloakproc status (ASCII).
+        /// dials"). <see cref="Origin"/> / <see cref="Tier"/> say where the authored values came from; <see cref="Source"/> is
+        /// that as text for /cloakproc status, built only when asked for, never on the hit path (ASCII).
         /// </summary>
         public readonly struct Dials
         {
@@ -79,10 +95,19 @@ namespace ACE.Server.Entity
             public double DodgerWindow { get; }
             public double DodgerStaminaMult { get; }
             public double GraceSeconds { get; }
-            public string Source { get; }
+            public DialSource Origin { get; }
+            public int Tier { get; }
+
+            /// <summary>Where these values came from, as text (ASCII).</summary>
+            public string Source => Origin switch
+            {
+                DialSource.Zone => "Zone Control - the zone you are in",
+                DialSource.TierDefault => $"Zone Control - T{Tier} Default",
+                _ => "server settings",
+            };
 
             private Dials(double chance, double cooldown, int breezeHeal, int dodgerHits, double dodgerWindow, double dodgerStaminaMult,
-                double graceSeconds, string source)
+                double graceSeconds, DialSource origin, int tier)
             {
                 Chance = chance;
                 Cooldown = cooldown;
@@ -91,25 +116,28 @@ namespace ACE.Server.Entity
                 DodgerWindow = dodgerWindow;
                 DodgerStaminaMult = dodgerStaminaMult;
                 GraceSeconds = graceSeconds;
-                Source = source;
+                Origin = origin;
+                Tier = tier;
             }
 
             /// <summary>
             /// The one place the numbers are held to their ranges - a server setting and a zone stat alike, since neither is
-            /// checked when it is set. Chance 0..1; cooldown, windows and Grace 0..3600 s; heal 0..int.MaxValue; hits 0..1000;
-            /// stamina per point 0.01..1000. A value that is not a number falls back to the shipped default.
+            /// checked when it is set. Chance 0..1; cooldown, windows and Grace 0..3600 s (new caps: a server setting was
+            /// unbounded above before); heal 0..int.MaxValue; hits 0..1000; stamina per point 0.01..1000. Whole-number dials round
+            /// half away from zero. A value that is not a number takes the setting's declared default (PropertyManager) - a zone
+            /// value that is not a number never gets here (<see cref="DialsFor"/> keeps the server value for it).
             /// </summary>
             public static Dials Clamped(double chance, double cooldown, double breezeHeal, double dodgerHits, double dodgerWindow,
-                double dodgerStaminaMult, double graceSeconds, string source)
+                double dodgerStaminaMult, double graceSeconds, DialSource origin = DialSource.Server, int tier = 0)
                 => new Dials(
-                    Clean(chance, 0.0, 1.0, 0.02),
-                    Clean(cooldown, 0.0, 3600.0, 7.0),
-                    (int)Math.Round(Clean(breezeHeal, 0.0, int.MaxValue, 500.0)),
-                    (int)Math.Round(Clean(dodgerHits, 0.0, 1000.0, 3.0)),
-                    Clean(dodgerWindow, 0.0, 3600.0, 7.0),
-                    Clean(dodgerStaminaMult, 0.01, 1000.0, 10.0),
-                    Clean(graceSeconds, 0.0, 3600.0, 2.0),
-                    source);
+                    Clean(chance, 0.0, 1.0, ServerConfig.zc_cloak_proc_chance.Default),
+                    Clean(cooldown, 0.0, 3600.0, ServerConfig.zc_cloak_proc_cooldown.Default),
+                    (int)Math.Round(Clean(breezeHeal, 0.0, int.MaxValue, ServerConfig.zc_cloak_breeze_heal.Default), MidpointRounding.AwayFromZero),
+                    (int)Math.Round(Clean(dodgerHits, 0.0, 1000.0, ServerConfig.zc_cloak_dodger_hits.Default), MidpointRounding.AwayFromZero),
+                    Clean(dodgerWindow, 0.0, 3600.0, ServerConfig.zc_cloak_dodger_window.Default),
+                    Clean(dodgerStaminaMult, 0.01, 1000.0, ServerConfig.zc_cloak_dodger_stamina_mult.Default),
+                    Clean(graceSeconds, 0.0, 3600.0, ServerConfig.zc_cloak_grace_seconds.Default),
+                    origin, tier);
 
             private static double Clean(double value, double min, double max, double fallback)
                 => double.IsFinite(value) ? Math.Clamp(value, min, max) : fallback;
@@ -123,16 +151,17 @@ namespace ACE.Server.Entity
             ServerConfig.zc_cloak_dodger_hits.Value,
             ServerConfig.zc_cloak_dodger_window.Value,
             ServerConfig.zc_cloak_dodger_stamina_mult.Value,
-            ServerConfig.zc_cloak_grace_seconds.Value,
-            "server settings");
+            ServerConfig.zc_cloak_grace_seconds.Value);
 
         /// <summary>
-        /// The dials where this player stands (owner 2026-10-29). Same order as the charm level cap
-        /// (CharmAbilityRegistry.ZoneCharmLevelCap): the governing zone's Default row (its own stats over the tier Default), else
-        /// on a T11+ spot no enabled zone covers the tier's own Default row (one dictionary read, no profile rebuild), else the
-        /// server settings - per dial, so a zone that sets only the heal keeps the server chance. Read where the WEARER stands,
-        /// not through the attacker, so melee, spells, PvP and hits with no attacker all resolve alike. Players have no rank, so
-        /// rank rows never apply. Zone Control off = the server settings. Lock-free snapshot reads; safe on the hit path.
+        /// The dials where this player stands (owner 2026-10-29). Same rule as the charm level cap
+        /// (CharmAbilityRegistry.LevelOf / ZoneCharmLevelCap): T11+ spots only - retail is never touched, whatever a zone below
+        /// v11 authors - then the governing zone's Default row (its own stats over the tier Default), else on a spot no enabled
+        /// zone covers the tier's own Default row (one dictionary read, no profile rebuild), else the server settings. Per dial,
+        /// so a zone that sets only the heal keeps the server chance; an authored value that is not a number keeps the server
+        /// value. Read where the WEARER stands, not through the attacker, so melee, spells, PvP and hits with no attacker all
+        /// resolve alike. Players have no rank, so rank rows never apply. Zone Control off = the server settings. No allocation
+        /// on the hit path.
         /// </summary>
         public static Dials DialsFor(Player player)
         {
@@ -140,22 +169,23 @@ namespace ACE.Server.Entity
             if (player == null || !ServerConfig.zonecontrol_enabled.Value)
                 return server;
 
-            EvaluatedProfile zone = null;
+            EvaluatedProfile zone;
             ZoneVariantProfile tierRow = null;
-            var tier = 0;
+            int tier;
             try
             {
+                tier = ZoneControlManager.GetEffectiveVariation(player);
+                if (tier < VariationManager.EndgameMinVariation)
+                    return server;
+
                 zone = ZoneControlManager.ResolveZoneDefaultForPlayer(player);
                 if (zone == null)
-                {
-                    tier = ZoneControlManager.GetEffectiveVariation(player);
-                    if (tier >= VariationManager.EndgameMinVariation)
-                        tierRow = ZoneControlManager.GetAnchoredDefaultProfile(tier);
-                }
+                    tierRow = ZoneControlManager.GetAnchoredDefaultProfile(tier);
             }
-            catch
+            catch (Exception ex)
             {
-                // never let zone resolution break a damage path
+                // never let zone resolution break a damage path - the server settings stand, and the log says so (once a minute)
+                WarnResolveFailed(player, ex);
                 return server;
             }
 
@@ -163,35 +193,52 @@ namespace ACE.Server.Entity
                 return server;
 
             var authored = false;
-            var dials = Dials.Clamped(
-                Pick(zone, tierRow, ZoneStat.CloakProcChance, server.Chance, ref authored),
-                Pick(zone, tierRow, ZoneStat.CloakProcCooldown, server.Cooldown, ref authored),
-                Pick(zone, tierRow, ZoneStat.CloakBreezeHeal, server.BreezeHeal, ref authored),
-                Pick(zone, tierRow, ZoneStat.CloakDodgerHits, server.DodgerHits, ref authored),
-                Pick(zone, tierRow, ZoneStat.CloakDodgerWindow, server.DodgerWindow, ref authored),
-                Pick(zone, tierRow, ZoneStat.CloakDodgerStaminaMult, server.DodgerStaminaMult, ref authored),
-                Pick(zone, tierRow, ZoneStat.CloakGraceSeconds, server.GraceSeconds, ref authored),
-                !authored ? server.Source : zone != null ? "Zone Control (this zone)" : $"Zone Control (T{tier} Default)");
-            return dials;
+            var chance = Pick(zone, tierRow, ZoneStat.CloakProcChance, server.Chance, ref authored);
+            var cooldown = Pick(zone, tierRow, ZoneStat.CloakProcCooldown, server.Cooldown, ref authored);
+            var heal = Pick(zone, tierRow, ZoneStat.CloakBreezeHeal, server.BreezeHeal, ref authored);
+            var hits = Pick(zone, tierRow, ZoneStat.CloakDodgerHits, server.DodgerHits, ref authored);
+            var window = Pick(zone, tierRow, ZoneStat.CloakDodgerWindow, server.DodgerWindow, ref authored);
+            var mult = Pick(zone, tierRow, ZoneStat.CloakDodgerStaminaMult, server.DodgerStaminaMult, ref authored);
+            var grace = Pick(zone, tierRow, ZoneStat.CloakGraceSeconds, server.GraceSeconds, ref authored);
+            if (!authored)
+                return server;
+
+            return Dials.Clamped(chance, cooldown, heal, hits, window, mult, grace,
+                zone != null ? DialSource.Zone : DialSource.TierDefault, tier);
         }
 
-        /// <summary>One dial: the zone's value when it has one, else the tier row's, else the server's.</summary>
+        /// <summary>One dial: the zone's value when it has one, else the tier row's, else the server's. A value that is not a
+        /// number counts as unset.</summary>
         private static double Pick(EvaluatedProfile zone, ZoneVariantProfile tierRow, string stat, double server, ref bool authored)
         {
+            double value;
             if (zone != null)
             {
                 if (!zone.Has(stat))
                     return server;
-                authored = true;
-                return zone.Get(stat, server);
+                value = zone.Get(stat, server);
             }
+            else if (tierRow != null && tierRow.TryGet(stat, out var curve) && curve != null)
+                value = curve.Base;
+            else
+                return server;
 
-            if (tierRow != null && tierRow.TryGet(stat, out var curve) && curve != null)
-            {
-                authored = true;
-                return curve.Base;
-            }
-            return server;
+            if (!double.IsFinite(value))
+                return server;
+            authored = true;
+            return value;
+        }
+
+        private static double nextResolveWarnAt;
+
+        /// <summary>Logs a failed Zone Control lookup at most once a minute (it is on the hit path).</summary>
+        private static void WarnResolveFailed(Player player, Exception ex)
+        {
+            var now = Time.GetUnixTime();
+            if (now < nextResolveWarnAt)
+                return;
+            nextResolveWarnAt = now + 60.0;
+            log.Warn($"[ZcCloakProcs] Zone Control lookup failed for {player?.Name}; using the server settings. {ex.GetType().Name}: {ex.Message}");
         }
 
         /// <summary>Which T11+ proc this item carries, or None when it is not a T11+ cloak, the system is off, or its retail
@@ -257,15 +304,16 @@ namespace ACE.Server.Entity
 
         /// <summary>The cloak's line for the item panel's modifier block, or null for anything this system does not own.
         /// Built live, never baked into the item, so a settings change reads on every cloak at once. The numbers are the dials
-        /// where the EXAMINER stands (as the charm level cap shows), the server settings when there is no examiner; a spot whose
-        /// chance is 0 reads "(off here)" like the armor zone lock.</summary>
-        public static string AppraisalLine(WorldObject cloak, bool off = false, Player examiner = null)
+        /// where <paramref name="holder"/> stands - the panel passes the wearer of a worn cloak, else the examiner, the same
+        /// holder the armor zone lock is judged for - and the server settings when there is none. A spot whose chance is 0
+        /// reads "(off here)", like the armor zone lock.</summary>
+        public static string AppraisalLine(WorldObject cloak, bool off = false, Player holder = null)
         {
             var proc = Classify(cloak);
             if (proc == ZcCloakProc.None)
                 return null;
 
-            var dials = examiner != null ? DialsFor(examiner) : ServerDials();
+            var dials = holder != null ? DialsFor(holder) : ServerDials();
             if (off || dials.Chance <= 0)
                 return $"- {NameOf(proc)} (off here)";
 

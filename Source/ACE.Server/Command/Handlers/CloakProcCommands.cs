@@ -75,7 +75,7 @@ namespace ACE.Server.Command.Handlers
             // the numbers where you stand (Zone Control dials cloak_* over the server settings zc_cloak_*), then the server's own
             var here = ZcCloakProcs.DialsFor(player);
             SayDials(session, "Here", here);
-            if (here.Source != ZcCloakProcs.ServerDials().Source)
+            if (here.Origin != ZcCloakProcs.DialSource.Server)
                 SayDials(session, "Server", ZcCloakProcs.ServerDials());
 
             var cloak = player.EquippedCloak;

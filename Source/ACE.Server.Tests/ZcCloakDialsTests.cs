@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 
 using ACE.Server.Entity;
+using ACE.Server.Managers;
 using ACE.Server.Managers.ZoneScaling;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -45,7 +46,7 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void Clamped_HoldsEveryDialToItsRange()
         {
-            var high = ZcCloakProcs.Dials.Clamped(5.0, 99999.0, 1e12, 5000.0, 99999.0, 5000.0, 99999.0, "test");
+            var high = ZcCloakProcs.Dials.Clamped(5.0, 99999.0, 1e12, 5000.0, 99999.0, 5000.0, 99999.0);
             Assert.AreEqual(1.0, high.Chance);
             Assert.AreEqual(3600.0, high.Cooldown);
             Assert.AreEqual(int.MaxValue, high.BreezeHeal);
@@ -54,7 +55,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(1000.0, high.DodgerStaminaMult);
             Assert.AreEqual(3600.0, high.GraceSeconds);
 
-            var low = ZcCloakProcs.Dials.Clamped(-1.0, -3.0, -5.0, -2.0, -1.0, 0.0, -1.0, "test");
+            var low = ZcCloakProcs.Dials.Clamped(-1.0, -3.0, -5.0, -2.0, -1.0, 0.0, -1.0);
             Assert.AreEqual(0.0, low.Chance);
             Assert.AreEqual(0.0, low.Cooldown);
             Assert.AreEqual(0, low.BreezeHeal);
@@ -64,11 +65,11 @@ namespace ACE.Server.Tests
             Assert.AreEqual(0.0, low.GraceSeconds);
         }
 
-        /// <summary>In-range values pass through; the whole-number dials round.</summary>
+        /// <summary>In-range values pass through; the whole-number dials round (half away from zero); the origin is kept.</summary>
         [TestMethod]
         public void Clamped_KeepsInRangeValues()
         {
-            var d = ZcCloakProcs.Dials.Clamped(0.03, 5.0, 800.4, 2.6, 9.0, 4.0, 1.5, "Zone Control (this zone)");
+            var d = ZcCloakProcs.Dials.Clamped(0.03, 5.0, 800.4, 2.5, 9.0, 4.0, 1.5, ZcCloakProcs.DialSource.TierDefault, 14);
             Assert.AreEqual(0.03, d.Chance);
             Assert.AreEqual(5.0, d.Cooldown);
             Assert.AreEqual(800, d.BreezeHeal);
@@ -76,22 +77,27 @@ namespace ACE.Server.Tests
             Assert.AreEqual(9.0, d.DodgerWindow);
             Assert.AreEqual(4.0, d.DodgerStaminaMult);
             Assert.AreEqual(1.5, d.GraceSeconds);
-            Assert.AreEqual("Zone Control (this zone)", d.Source);
+            Assert.AreEqual(ZcCloakProcs.DialSource.TierDefault, d.Origin);
+            Assert.AreEqual(14, d.Tier);
+            Assert.AreEqual("Zone Control - T14 Default", d.Source);
         }
 
-        /// <summary>A value that is not a number falls back to the shipped default, never to NaN.</summary>
+        /// <summary>A value that is not a number takes the setting's declared default, never NaN; the origin defaults to the
+        /// server settings.</summary>
         [TestMethod]
-        public void Clamped_NotANumber_FallsBackToShippedDefaults()
+        public void Clamped_NotANumber_FallsBackToDeclaredDefaults()
         {
             var d = ZcCloakProcs.Dials.Clamped(double.NaN, double.PositiveInfinity, double.NaN, double.NegativeInfinity, double.NaN,
-                double.NaN, double.PositiveInfinity, "test");
-            Assert.AreEqual(0.02, d.Chance);
-            Assert.AreEqual(7.0, d.Cooldown);
-            Assert.AreEqual(500, d.BreezeHeal);
-            Assert.AreEqual(3, d.DodgerHits);
-            Assert.AreEqual(7.0, d.DodgerWindow);
-            Assert.AreEqual(10.0, d.DodgerStaminaMult);
-            Assert.AreEqual(2.0, d.GraceSeconds);
+                double.NaN, double.PositiveInfinity);
+            Assert.AreEqual(ServerConfig.zc_cloak_proc_chance.Default, d.Chance);
+            Assert.AreEqual(ServerConfig.zc_cloak_proc_cooldown.Default, d.Cooldown);
+            Assert.AreEqual((int)ServerConfig.zc_cloak_breeze_heal.Default, d.BreezeHeal);
+            Assert.AreEqual((int)ServerConfig.zc_cloak_dodger_hits.Default, d.DodgerHits);
+            Assert.AreEqual(ServerConfig.zc_cloak_dodger_window.Default, d.DodgerWindow);
+            Assert.AreEqual(ServerConfig.zc_cloak_dodger_stamina_mult.Default, d.DodgerStaminaMult);
+            Assert.AreEqual(ServerConfig.zc_cloak_grace_seconds.Default, d.GraceSeconds);
+            Assert.AreEqual(ZcCloakProcs.DialSource.Server, d.Origin);
+            Assert.AreEqual("server settings", d.Source);
         }
     }
 }
