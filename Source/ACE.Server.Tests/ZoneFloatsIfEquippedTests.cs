@@ -64,7 +64,7 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void NoRecord_IsEmpty()
+        public void NullResolveOrItem_IsEmpty()
         {
             var w = CreateWeapon();
             Assert.AreEqual(0, ZoneStatResolver.FloatsIfEquipped(w, null).Count);

@@ -104,10 +104,11 @@ namespace ACE.Server.Network.Structure
             {
                 SubstituteZoneResolvedInts(wo, zcResolved);
                 // Weapon cards too (owner 2026-10-29): the stamped float only moves on equip, so an unworn weapon kept showing
-                // its pre-retune number. Display only, like the ints: wo is never written.
+                // its pre-retune number. Display only, like the ints: wo is never written. A card equip would ADD (no stored
+                // prop yet) is sent too, but only a prop the client is normally sent, and only on a successful appraisal.
                 zcFloats = ZoneStatResolver.FloatsIfEquipped(wo, zcResolved);
                 foreach (var kv in zcFloats)
-                    if (PropertiesFloat.ContainsKey(kv.Key))
+                    if (Success && AssessmentProperties.PropertiesDouble.Contains(kv.Key))
                         PropertiesFloat[kv.Key] = kv.Value;
             }
 
@@ -115,7 +116,7 @@ namespace ACE.Server.Network.Structure
             // Added after the AssessmentProperties filter on purpose - they are response-only and never stored on the item.
             if (Success && !(wo is Creature))
                 ACE.Server.Managers.ZoneControl.ZoneLootProps.Collect(wo, zcResolved, GearEssences.PropertiesCount(wo), IsLegacyTextBlock(zcResolved),
-                    PropertiesInt, PropertiesFloat);
+                    PropertiesInt, PropertiesFloat, zcFloats);
 
             // Help us make sure the item identify properly
             NPCLooksLikeObject = wo.GetProperty(PropertyBool.NpcLooksLikeObject) ?? false;
@@ -1453,10 +1454,11 @@ namespace ACE.Server.Network.Structure
                 effectDescriptions.Add($"- {niceName} Slayer: {bonus:0.##}x Damage");
             }
 
-            // Biting Strike
-            if (weapon.CriticalFrequency.HasValue)
+            // Biting Strike - shown from the if-equipped value, like every other card
+            var critFrequency = ZcFloat(weapon, PropertyFloat.CriticalFrequency);
+            if (critFrequency.HasValue)
             {
-                var val = zcLocked ? WorldObject.LockedCritFrequency(weapon, ZcFloat(weapon, PropertyFloat.CriticalFrequency)) : ZcFloat(weapon, PropertyFloat.CriticalFrequency).Value;   // locked: the combat fallback crit rate
+                var val = zcLocked ? WorldObject.LockedCritFrequency(weapon, critFrequency) : critFrequency.Value;   // locked: the combat fallback crit rate
                 effectDescriptions.Add($"- Biting Strike: +{val:P0} Crit Chance");
             }
 

@@ -1106,8 +1106,9 @@ namespace ACE.Server.Managers.ZoneControl
             ZoneControlManager.GetLadderVersion(tier).AllowNerf || !ServerConfig.zonecontrol_enabled.Value;
 
         /// <summary>
-        /// PURE: the weapon card floats <see cref="ApplyIfStale"/> would leave on the item if it were equipped now. Empty when the
-        /// next equip would not re-stamp it (<see cref="WouldRestamp"/>: the piece is current, so it keeps its stored values);
+        /// PURE: the weapon card floats <see cref="ApplyIfStale"/> would leave on an UNWORN item if it were equipped now. Empty for a
+        /// worn piece (combat uses its stored values until the next re-equip / relog / ladder apply, so the panel shows those),
+        /// and when the next equip would not re-stamp it (<see cref="WouldRestamp"/>: the piece is current, so it keeps its stored values);
         /// otherwise the resolved values under the tier's live nerf rule (<see cref="NerfAllowed"/>). For the appraisal panel
         /// and the loot properties (owner 2026-10-29: a muled T15 bow kept showing its pre-retune 2.67x slayer until equipped,
         /// so muled weapons could not be compared). Never touches the item.
@@ -1118,7 +1119,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// current (callers then read the stored props).</returns>
         public static Dictionary<PropertyFloat, double> FloatsIfEquipped(WorldObject wo, Resolved r)
         {
-            if (wo == null || r == null || r.Floats.Count == 0 || !WouldRestamp(wo, out var tier, out _))
+            if (wo == null || r == null || r.Floats.Count == 0 || wo.Wielder != null || !WouldRestamp(wo, out var tier, out _))
                 return new Dictionary<PropertyFloat, double>();
             return FloatsIfEquipped(wo, r, NerfAllowed(tier));
         }
