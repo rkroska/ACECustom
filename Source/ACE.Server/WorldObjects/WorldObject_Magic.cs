@@ -1094,9 +1094,11 @@ namespace ACE.Server.WorldObjects
             // and waiting Artful Dodger charges act here; the rest after the drain lands (below). PreHit is also this path's Grace /
             // Cheat Death guard. The caster's gain is re-derived from what is left; the heal cap below still applies.
             // The caster's life-aug term, added to the drain further down, is part of the hit too (review 2026-10-29: as for Harm);
-            // it is taken from here only when the proc changed the hit, otherwise it is added below exactly as before.
+            // when the proc changed the hit, the share of it that is left is added below in its place, otherwise it is added below
+            // exactly as before.
             var zcCloakProc = ZcCloakProc.None;
             var zcDrainAugIncluded = false;
+            uint zcDrainAugLeft = 0;
             if (isDrain && spell.Source == PropertyAttribute2nd.Health && transferSource != this && transferSource is Player zcDrainTarget)
             {
                 var zcDrainAug = player != null && srcVitalChange > 0
@@ -1117,10 +1119,17 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
+                // a partial Artful Dodger payment: TakeOnStamina scaled both parts of the hit by the share stamina could not pay
+                // for. That share is split back over the base drain and the caster's life-aug term, so the rest of the path runs
+                // as it does for an unredirected drain: the barrier and the caster's gain see the base drain only, and the aug
+                // term's share is added where the aug term always is (review 2026-10-29: the gain was taken from the augmented
+                // hit, so a small stamina payment could heal the caster more than the same drain with no proc).
                 if (zcDrainNormal != zcDrainNormalBefore)
                 {
-                    srcVitalChange = (uint)Math.Round(zcDrainNormal);
+                    var zcDrainLeft = zcDrainNormalBefore > 0 ? zcDrainNormal / zcDrainNormalBefore : 0f;
+                    srcVitalChange = (uint)Math.Round(srcVitalChange * zcDrainLeft);
                     destVitalChange = (uint)Math.Round(srcVitalChange * (1.0f - spell.LossPercent) * boostMod);
+                    zcDrainAugLeft = (uint)Math.Round(zcDrainAug * zcDrainLeft);
                     zcDrainAugIncluded = true;
                 }
             }
@@ -1188,9 +1197,11 @@ namespace ACE.Server.WorldObjects
             {
                 // Only boost a transfer that is actually moving something. These are unsigned
                 // magnitudes, so subtracting from a zero change wraps to ~uint.MaxValue.
-                // (a T11+ cloak proc that changed the drain already took this in, above)
-                if (srcVitalChange > 0 && !zcDrainAugIncluded)
-                    srcVitalChange += (uint)Math.Round(player.EffectiveLifeAugCount * (double)drainTakenMult);   // 1.0 off Zone Control monsters
+                // (a T11+ cloak proc that changed the drain: only the share of the aug term it left, worked out above)
+                if (srcVitalChange > 0)
+                    srcVitalChange += zcDrainAugIncluded
+                        ? zcDrainAugLeft
+                        : (uint)Math.Round(player.EffectiveLifeAugCount * (double)drainTakenMult);   // 1.0 off Zone Control monsters
 
                 if (destVitalChange > 0)
                     destVitalChange += (uint)player.EffectiveLifeAugCount;
