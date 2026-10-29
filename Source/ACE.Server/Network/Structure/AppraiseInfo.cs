@@ -1571,8 +1571,9 @@ namespace ACE.Server.Network.Structure
 
             // Shield Cleaving: fraction of the target's shield AL the weapon ignores. Stored directly on
             // the weapon (PropertyFloat.IgnoreShield); GetIgnoreShieldMod reads it at hit time.
-            if (weapon.IgnoreShield.HasValue && weapon.IgnoreShield.Value > 0)
-                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(ZcFloat(weapon, PropertyFloat.IgnoreShield).Value, 0.0, 1.0)):P0} Shield Ignored");   // locked: off (owner 2026-10-07)
+            var ignoreShield = ZcFloat(weapon, PropertyFloat.IgnoreShield);
+            if (ignoreShield.HasValue && ignoreShield.Value > 0)
+                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(ignoreShield.Value, 0.0, 1.0)):P0} Shield Ignored");   // locked: off (owner 2026-10-07)
 
             // Spell Armor Rend (casters): fraction of the monster's Spell Armor level the wand's spells ignore. Stored directly
             // on the weapon (PropertyFloat.ZcSpellArmorRend); Creature.GetZcSpellArmorMod reads it at hit time.
