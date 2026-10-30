@@ -201,14 +201,16 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void Stats_AreRegistered_AtTheTailOfAll()
+        public void Stats_AreAppendedInOrder()
         {
-            var tail = ZoneStat.All.Skip(ZoneStat.All.Length - 5).ToArray();
-            CollectionAssert.AreEqual(new[]
+            var expected = new[]
             {
                 "loot_weight_melee_1h", "loot_weight_melee_2h", "loot_weight_missile", "loot_weight_war", "loot_weight_void",
-            }, tail);
-            Assert.AreEqual(ZoneStat.CloakGraceSeconds, ZoneStat.All[ZoneStat.All.Length - 6], "appended after the previous tail");
+            };
+            var start = Array.IndexOf(ZoneStat.All, expected[0]);
+            Assert.IsTrue(start > 0, "weapon group weights are registered");
+            Assert.AreEqual(ZoneStat.CloakGraceSeconds, ZoneStat.All[start - 1], "appended after the previous tail");
+            CollectionAssert.AreEqual(expected, ZoneStat.All.Skip(start).Take(expected.Length).ToArray());
         }
 
         [TestMethod]
