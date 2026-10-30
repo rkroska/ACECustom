@@ -1191,7 +1191,8 @@ namespace ACE.Server.WorldObjects
                     if (perSlotTotal > ZoneCorpseItemCap)
                     {
                         log.Warn($"[ZoneLoot] {Name} (0x{Guid}): per-slot counts total {perSlotTotal}, above the corpse cap {ZoneCorpseItemCap}; rolling a capped budget instead.");
-                        slotCounts = LootGenerationFactory.RollBudgetedCounts(slotCounts, ZoneCorpseItemCap, 1.0, 1.0, 1.0, 1.0, LootGenerationFactory.ZoneLootClothingWeightDefault);
+                        slotCounts = LootGenerationFactory.RollBudgetedCounts(slotCounts, ZoneCorpseItemCap, 1.0, 1.0, 1.0, 1.0, LootGenerationFactory.ZoneLootClothingWeightDefault,
+                            LootGenerationFactory.WeaponGroupWeights.Default);
                     }
                 }
 
@@ -1222,7 +1223,14 @@ namespace ACE.Server.WorldObjects
                         zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightJewelry, 1.0),
                         zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightCloak, 1.0),
                         // 0.5 by default: retail T10 drops clothing ~13 pct, about half of armor's 24 (TreasureItemTypeChances)
-                        zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightClothing, LootGenerationFactory.ZoneLootClothingWeightDefault));
+                        zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightClothing, LootGenerationFactory.ZoneLootClothingWeightDefault),
+                        // weapon groups (2026-10-30): which kind each weapon pick is - unset = the code defaults (Void = War / 7)
+                        new LootGenerationFactory.WeaponGroupWeights(
+                            zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightMelee1H, LootGenerationFactory.ZoneLootWeaponGroupWeightDefault),
+                            zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightMelee2H, LootGenerationFactory.ZoneLootWeaponGroupWeightDefault),
+                            zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightMissile, LootGenerationFactory.ZoneLootWeaponGroupWeightDefault),
+                            zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightWar, LootGenerationFactory.ZoneLootWeaponGroupWeightDefault),
+                            zoneLoot.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LootWeightVoid, LootGenerationFactory.ZoneLootVoidWeightDefault)));
                 }
 
                 // rank loot (owner 2026-09-29): the kill's grade floor reaches the value rolls inside item creation

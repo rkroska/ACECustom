@@ -34,12 +34,14 @@ namespace ACE.Server.Tests
         }
 
         /// <summary>The plugin matches stats by name and mirrors the tail of All: the dials were appended there, in this order,
-        /// which is also the |cloakdefs= order.</summary>
+        /// which is also the |cloakdefs= order. Later stats append after them, so check the run, not the very end.</summary>
         [TestMethod]
-        public void CloakStats_AreTheTailOfAll()
+        public void CloakStats_AreAppendedInOrder()
         {
-            var tail = ZoneStat.All.Skip(ZoneStat.All.Length - CloakStats.Length).ToArray();
-            CollectionAssert.AreEqual(CloakStats, tail);
+            var start = Array.IndexOf(ZoneStat.All, CloakStats[0]);
+            Assert.IsTrue(start > 0, "cloak dials are registered");
+            Assert.AreEqual(ZoneStat.CharmLevelCap, ZoneStat.All[start - 1], "appended after the previous tail");
+            CollectionAssert.AreEqual(CloakStats, ZoneStat.All.Skip(start).Take(CloakStats.Length).ToArray());
         }
 
         /// <summary>Out-of-range values are held to the documented ranges.</summary>
