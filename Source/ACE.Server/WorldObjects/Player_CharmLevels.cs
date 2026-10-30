@@ -220,38 +220,41 @@ namespace ACE.Server.WorldObjects
             var coins = GetCharmCoins(abilityId);
             log.Info($"[CHARM] {Name} put {amount} Prestige Coins into {block.DisplayName} with {gem.Name} ({gem.WeenieClassId}): {coinsBefore} -> {coins} coins, level {level}.");
 
-            TellCharm($"Your {block.DisplayName} Charm now has {coins:N0} coins put in (+{amount:N0}). {CharmLevelText(block, coins)}.");
+            TellCharm($"You put {amount:N0} Prestige {(amount == 1 ? "Coin" : "Coins")} into your {block.DisplayName} Charm.");
             TellCharm(CharmProgressText(block, coins));
             TellCharm(block.PlayerText(level));
             SaveBiotaToDatabase();
         }
 
         /// <summary>The Yes / No pop-up for a gem. Coins lead, as one coin can be well under 0.01 of a level:
-        /// "Put 1 Prestige Coin into your Pandemic Charm?\n\nCoins: 963 -> 964\nLevel 5 (0% to 6), 258 more coins to level 6".</summary>
+        /// "Put 1 Prestige Coin into your Pandemic Charm?\n\nCoins: 963 -> 964\nLevel 5, 258 more coins to level 6".</summary>
         public static string CharmInfusionPromptText(CharmSettingsManager.LeveledCharmBlock block, long coinsBefore, long amount)
         {
             var coinsAfter = coinsBefore + amount;
             var levelBefore = block.LevelFromCoins(coinsBefore);
             var levelAfter = block.LevelFromCoins(coinsAfter);
 
-            string levelLine;
-            if (levelAfter > levelBefore || levelAfter >= MaxCharmLevel)
-                levelLine = $"Level {levelBefore} -> {CharmLevelText(block, coinsAfter)}";
-            else
-            {
-                var toNext = block.CoinsToReach(levelAfter + 1) - coinsAfter;
-                levelLine = $"{CharmLevelText(block, coinsAfter)}, {toNext:N0} more {(toNext == 1 ? "coin" : "coins")} to level {levelAfter + 1}";
-            }
+            var levelLine = levelAfter > levelBefore || levelAfter >= MaxCharmLevel
+                ? $"Level {levelBefore} -> {CharmLevelText(block, coinsAfter)}"
+                : $"Level {levelAfter}, {CoinsToNextLevelText(block, coinsAfter)}";
 
             return $"Put {amount:N0} Prestige {(amount == 1 ? "Coin" : "Coins")} into your {block.DisplayName} Charm?\n\nCoins: {coinsBefore:N0} -> {coinsAfter:N0}\n{levelLine}";
         }
 
-        /// <summary>"Armor Breaker Charm - Level 41 (95% to 42) - 14,210 coins put in - next level in 46 coins".</summary>
-        public static string CharmProgressText(CharmSettingsManager.LeveledCharmBlock block, long coins)
+        /// <summary>"258 more coins to level 6" ("1 more coin ..."); null at level 100.</summary>
+        public static string CoinsToNextLevelText(CharmSettingsManager.LeveledCharmBlock block, long coins)
         {
             var level = block.LevelFromCoins(coins);
-            var next = level >= MaxCharmLevel ? "" : $" - next level in {block.CoinsToReach(level + 1) - coins:N0} coins";
-            return $"{block.DisplayName} Charm - {CharmLevelText(block, coins)} - {coins:N0} coins put in{next}";
+            if (level >= MaxCharmLevel) return null;
+            var toNext = block.CoinsToReach(level + 1) - coins;
+            return $"{toNext:N0} more {(toNext == 1 ? "coin" : "coins")} to level {level + 1}";
+        }
+
+        /// <summary>"Armor Breaker Charm - Level 41 (95% to 42) - 14,210 coins put in - 46 more coins to level 42".</summary>
+        public static string CharmProgressText(CharmSettingsManager.LeveledCharmBlock block, long coins)
+        {
+            var next = CoinsToNextLevelText(block, coins);
+            return $"{block.DisplayName} Charm - {CharmLevelText(block, coins)} - {coins:N0} coins put in{(next == null ? "" : " - " + next)}";
         }
 
         /// <summary>True when the item is in this player's own pack or worn (not on the ground, not someone else's).</summary>
