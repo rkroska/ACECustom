@@ -208,7 +208,7 @@ namespace ACE.Server.Tests
             {
                 "loot_weight_melee_1h", "loot_weight_melee_2h", "loot_weight_missile", "loot_weight_war", "loot_weight_void",
             }, tail);
-            Assert.AreEqual(ZoneStat.CharmLevelCap, ZoneStat.All[ZoneStat.All.Length - 6], "appended after the previous tail");
+            Assert.AreEqual(ZoneStat.CloakGraceSeconds, ZoneStat.All[ZoneStat.All.Length - 6], "appended after the previous tail");
         }
 
         [TestMethod]

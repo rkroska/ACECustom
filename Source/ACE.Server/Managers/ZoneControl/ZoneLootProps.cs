@@ -25,6 +25,8 @@ namespace ACE.Server.Managers.ZoneControl
     ///   58000 + catalog key   gear line VALUE (int)       58500 + catalog key   gear line GRADE 0-1000 (int)
     ///   58100 - weapon key    weapon card VALUE (float)   58600 - weapon key    weapon card GRADE 0-1000 (int)
     ///   58900 Gear Grade 0-1000 | 58901 Properties used | 58902 Properties limit | 58903 All Creatures slayer (1)
+    ///   58904 T11+ cloak proc (ZcCloakProc: 1 Calming Breeze, 2 Smoke Screen, 3 Artful Dodger, 4 Asheron's Grace) - the panel
+    ///         hides the cloak's retail proc spell / weave, so a loot rule reads this instead
     ///   58999 format version - present on every tier 11+ item, so a loot profile can tell an old server from a new one.
     /// Catalog keys are 19-54 (legacy core resists c1..c4 report as their Always Rolled twins 50-53); weapon keys are
     /// -11..-30. Both are stable (saved records), so these ids are too. NEVER renumber: loot profiles in the wild use them.
@@ -41,6 +43,7 @@ namespace ACE.Server.Managers.ZoneControl
         public const int PropertiesUsedId = 58901;
         public const int PropertiesLimitId = 58902;
         public const int SlayerAllCreaturesId = 58903;
+        public const int CloakProcId = 58904;
         public const int VersionId = 58999;
 
         public const int BlockMin = 58000;
@@ -66,9 +69,11 @@ namespace ACE.Server.Managers.ZoneControl
         /// <see cref="GearEssences.PropertiesCount"/> (passed in so the tier-limit lookup stays out of the pure part).
         /// <paramref name="legacyText"/> is true for a piece whose block comes from baked "Zone Cantrip:" text only (no record):
         /// the panel shows no Properties count for it, because there is nothing to count.
+        /// <paramref name="ifEquipped"/> is the appraisal's <see cref="ZoneStatResolver.FloatsIfEquipped(WorldObject, ZoneStatResolver.Resolved)"/>
+        /// result, passed in so it is worked out once per appraisal; null = work it out here.
         /// </summary>
         public static void Collect(WorldObject wo, ZoneStatResolver.Resolved resolved, (int Count, int Cap)? properties, bool legacyText,
-            IDictionary<PropertyInt, int> ints, IDictionary<PropertyFloat, double> floats)
+            IDictionary<PropertyInt, int> ints, IDictionary<PropertyFloat, double> floats, IReadOnlyDictionary<PropertyFloat, double> ifEquipped = null)
         {
             if (wo == null || wo is Creature || ints == null || floats == null)
                 return;
@@ -104,13 +109,15 @@ namespace ACE.Server.Managers.ZoneControl
             if (rank > 0)
                 ints[(PropertyInt)GearLineValueId(ZoneModifiers.ReinforcedKey)] = rank;
 
-            // weapon cards: the item's own property (bandit hilt included, as the panel shows it) in display space, and the
-            // recorded grade. Only cards in the record - a retail Biting Strike with no card is not a tier 11+ roll.
+            // weapon cards: the value the item would have once equipped (bandit hilt included, as the panel shows it; owner
+            // 2026-10-29: an unworn weapon's stored number lags a band retune until equip) in display space, and the recorded
+            // grade. Only cards in the record - a retail Biting Strike with no card is not a tier 11+ roll.
+            var current = ifEquipped ?? ZoneStatResolver.FloatsIfEquipped(wo, resolved);
             foreach (var rec in ZoneStatResolver.Read(wo))
             {
                 if (!ZoneStatResolver.IsWeaponKey(rec.Key) || !ZoneStatResolver.TryGetWeapon(rec.Key, out var ws))
                     continue;
-                var stored = wo.GetProperty(ws.Prop);
+                var stored = current.TryGetValue(ws.Prop, out var now) ? now : wo.GetProperty(ws.Prop);
                 if (stored == null)
                     continue;
                 var value = ws.DisplayIsMultiplier ? stored.Value + 1.0 : stored.Value;
@@ -139,6 +146,11 @@ namespace ACE.Server.Managers.ZoneControl
 
             if (wo.GetProperty(PropertyBool.SlayerAllCreatures) == true)
                 ints[(PropertyInt)SlayerAllCreaturesId] = 1;
+
+            // T11+ cloak proc (2026-10-28): which of the four, while the system owns the cloak (ZcCloakProcs)
+            var cloakProc = ZcCloakProcs.Classify(wo);
+            if (cloakProc != ZcCloakProc.None)
+                ints[(PropertyInt)CloakProcId] = (int)cloakProc;
         }
 
         /// <summary>The cards the panel prints as a clamped 0-100 pct (BuildWeapon: Armor Cleaving, Shield Cleaving, Spell Armor Rend).</summary>

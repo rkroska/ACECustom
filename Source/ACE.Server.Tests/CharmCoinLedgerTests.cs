@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using ACE.Entity.Enum.Properties;
 using ACE.Server.WorldObjects;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -85,6 +87,37 @@ namespace ACE.Server.Tests
             Assert.AreEqual("Level 1 (50% to 2)", Player.CharmLevelText(Block, 115));
             Assert.AreEqual("Level 2 (0% to 3)", Player.CharmLevelText(Block, 230));
             Assert.AreEqual("Level 100 (max)", Player.CharmLevelText(Block, Block.MaxCoins));
+        }
+
+        [TestMethod]
+        public void InfusionPrompt_ShowsCoins_SoOneCoinIsVisible()
+        {
+            // level 5 starts at 963 coins, level 6 at 1,222, level 7 at 1,488
+            // {:N0} groups digits by the current culture - pin en-US so "1,263" matches on any machine
+            var culture = CultureInfo.CurrentCulture;
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+            try
+            {
+                Assert.AreEqual("Put 1 Prestige Coin into your Armor Breaker Charm?\n\nCoins: 963 -> 964\nLevel 5, 258 more coins to level 6",
+                    Player.CharmInfusionPromptText(Block, 963, 1));
+                Assert.AreEqual("Put 300 Prestige Coins into your Armor Breaker Charm?\n\nCoins: 963 -> 1,263\nLevel 5 -> Level 6 (15% to 7)",
+                    Player.CharmInfusionPromptText(Block, 963, 300));
+                Assert.IsTrue(Player.CharmInfusionPromptText(Block, 1220, 1).EndsWith("Level 5, 1 more coin to level 6"));
+                Assert.IsTrue(Player.CharmInfusionPromptText(Block, Block.MaxCoins - 1, 1).EndsWith("Level 99 -> Level 100 (max)"));
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = culture;
+            }
+        }
+
+        [TestMethod]
+        public void ProgressText_SharesTheNextLevelWording()
+        {
+            Assert.AreEqual("Armor Breaker Charm - Level 5 (0% to 6) - 964 coins put in - 258 more coins to level 6", Player.CharmProgressText(Block, 964));
+            Assert.IsTrue(Player.CharmProgressText(Block, 1221).EndsWith(" - 1 more coin to level 6"));
+            Assert.AreEqual($"Armor Breaker Charm - Level 100 (max) - {Block.MaxCoins:N0} coins put in", Player.CharmProgressText(Block, Block.MaxCoins));
+            Assert.IsNull(Player.CoinsToNextLevelText(Block, Block.MaxCoins));
         }
 
         [TestMethod]
