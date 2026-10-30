@@ -424,6 +424,17 @@ namespace ACE.Server.Managers.ZoneScaling
         public const string CheatDeathImmunity = "cheatdeath_immunity";    // immunity window, seconds (default 5)
         public const string LifeOnHitCap = "lifeonhit_cap";                 // key 48: worn-total cap in pct of max HP per hit (default 25)
         public const string LifeOnHitCooldown = "lifeonhit_cooldown";       // key 48: per-character seconds between heals (default 3)
+        // T11+ CLOAK PROCS (owner 2026-10-29, PR #579): per zone / tier re-tunes of the zc_cloak_* server settings. Read where the
+        // WEARER stands - the governing zone's Default row, else on a T11+ spot no enabled zone covers the tier's Default row
+        // (ZcCloakProcs.DialsFor, the charm_level_cap order). Unset = the server setting; zc_cloak_procs_enabled stays the
+        // server-wide switch. cloak_proc_chance 0 = no cloak procs in that zone.
+        public const string CloakProcChance = "cloak_proc_chance";               // chance per hit taken, fraction 0..1 (server 0.02)
+        public const string CloakProcCooldown = "cloak_proc_cooldown";           // seconds between procs, per character (server 7)
+        public const string CloakBreezeHeal = "cloak_breeze_heal";               // Calming Breeze heal, health (server 500)
+        public const string CloakDodgerHits = "cloak_dodger_hits";               // Artful Dodger hits that strike stamina (server 3)
+        public const string CloakDodgerWindow = "cloak_dodger_window";           // Artful Dodger window, seconds (server 7)
+        public const string CloakDodgerStaminaMult = "cloak_dodger_stamina_mult"; // stamina per point of damage redirected (server 10)
+        public const string CloakGraceSeconds = "cloak_grace_seconds";           // Asheron's Grace, seconds (server 2)
         // key 54 Cast on Strike on JEWELRY (owner 2026-10-05): per-hit proc rate = rate + U(0, rand), clamped 0..1
         public const string JewelryProcRate = "jewelry_proc_rate";           // base proc rate, fraction (default 0.10, max 1.0)
         public const string JewelryProcRateRand = "jewelry_proc_rate_rand";  // random part added per drop, fraction (default 0.05)
@@ -764,6 +775,9 @@ namespace ACE.Server.Managers.ZoneScaling
             CasterMagicDelay, ArchetypeCastChance, ArchetypeMeleeRange, ArchetypeKeepName,
             // charm level cap per tier (2026-10-25) - APPEND-ONLY
             CharmLevelCap,
+            // T11+ cloak procs (2026-10-29, PR #579) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            CloakProcChance, CloakProcCooldown, CloakBreezeHeal, CloakDodgerHits, CloakDodgerWindow, CloakDodgerStaminaMult,
+            CloakGraceSeconds,
         };
 
         /// <summary>
