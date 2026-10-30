@@ -479,6 +479,12 @@ namespace ACE.Entity.Enum.Properties
         /// Server-only - not an assessment property.</summary>
         DeedsOff = 56001,
 
+        /// <summary>Paragon Collector (2026-10-29): on an NPC, makes it a Paragon collector. A finished Paragon armor piece or
+        /// weapon, or a finished Illuminated clothing / jewelry piece or Quiddity trinket, handed to it is offered for luminance
+        /// in a Yes/No popup and destroyed on Yes (ParagonCollectorService.HandleGive). 56100, free in EVERY Property enum.
+        /// Server-only - not an assessment property.</summary>
+        ParagonCollector = 56100,
+
         /// <summary>T11+ Slash Rending (2026-10-28): on a melee weapon whose Slashing/Piercing damage type was rewritten to
         /// Slashing only (ZoneSlashRendDamageType.Normalize). Tells a converted weapon from one that was always Slashing, so
         /// only converted weapons play slashes in place of thrusts. 59000, free in EVERY Property enum on master and the
