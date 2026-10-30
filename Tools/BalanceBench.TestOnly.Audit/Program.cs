@@ -18,6 +18,13 @@ try
     var assembly=AssemblyLoadContext.Default.LoadFromAssemblyPath(mod);
     var audit=assembly.GetType("BalanceBench.TestOnlyAudit",true)!.GetMethod("Inspect",BindingFlags.Public|BindingFlags.Static)!;
     var errors=(string[])audit.Invoke(null,null)!;
+    var policy=assembly.GetType("BalanceBench.TestOnlyPolicy")?.GetMethod("BlocksMeasuredSetup",BindingFlags.NonPublic|BindingFlags.Static);
+    if(errors.Length==0&&policy!=null)
+    {
+        foreach(var command in new[]{"refill","charm","mirror","suitlines","surges","deedsrefresh","strip","dropgear","dropweapons","equip","cloneitem","healat","pack","PACK"})
+            if(!(bool)policy.Invoke(null,new object[]{command})!)throw new InvalidOperationException("Unsafe measured setup command: "+command);
+        if((bool)policy.Invoke(null,new object[]{"status"})!)throw new InvalidOperationException("Read-only status was blocked.");
+    }
     bool? patchSmoke=null;int? patchedMethods=null;
     if(errors.Length==0&&args.Length==3&&args[2]=="--patch-smoke")
     {

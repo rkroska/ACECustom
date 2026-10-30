@@ -1,5 +1,24 @@
 services:
+  fracture-config-init:
+    image: local/ace-nether-fracture:20261028
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        if [ ! -e /config/nether-fracture.json ]; then
+          cp -n /ace/defaults/nether-fracture.json /config/nether-fracture.json
+          chown app:app /config/nether-fracture.json
+        fi
+        chown app:app /config
+    volumes:
+      - ./Config:/config
+    restart: "no"
   ace-server:
     image: local/ace-nether-fracture:20261028
+    depends_on:
+      fracture-config-init:
+        condition: service_completed_successfully
     environment:
       ACE_NETHER_FRACTURE_CONFIG: /ace/Config/nether-fracture.json
+    volumes:
+      - ./Config:/ace/Config

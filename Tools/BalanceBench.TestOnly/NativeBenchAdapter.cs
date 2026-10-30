@@ -20,12 +20,14 @@ internal static class NativeBenchAdapter
 
 internal static class TestOnlyPolicy
 {
+    internal static bool BlocksMeasuredSetup(string sub) =>
+        new[]{"refill","charm","mirror","suitlines","surges","deedsrefresh","strip","dropgear","dropweapons","equip","cloneitem","healat","pack"}.Contains(sub,StringComparer.OrdinalIgnoreCase);
     internal static void CheckBench(Player p,string[] args)
     {
         if(!PatchClass.IsBench(p)) throw new InvalidOperationException("Only the five designated test characters are allowed.");
         if(args.Length==0)return;
         var sub=args[0].ToLowerInvariant();
-        if(Bench.For(p).Run!=null && new[]{"refill","charm","mirror","suitlines","surges","deedsrefresh","strip","dropgear","dropweapons"}.Contains(sub))
+        if(Bench.For(p).Run!=null && BlocksMeasuredSetup(sub))
             throw new InvalidOperationException("Stop the run before changing its kit, charm level or vitals.");
     }
     internal static void CheckExternal(Player p,string command,string[] args)

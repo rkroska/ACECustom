@@ -23,32 +23,45 @@ namespace ACE.Server.Managers
         private static NetherFractureConfigurationStore store;
         private static string path;
         private static string configuredModsDirectory;
-        private static DateTime nextRead, nextWarning;
+        private static long nextReadTicks;
+        private static DateTime lastStamp, nextWarning;
+        private static long lastLength = -1;
+        private static int modGeneration;
         internal static NetherFractureConfiguration CurrentConfiguration => Config();
 
         public static void Initialize(string configPath)
         {
             // Throw on missing/invalid startup configuration. Do not guess damage coefficients.
+            var info = new FileInfo(configPath);
+            info.Refresh(); // Stamp the file before reading, so a racing replacement is polled again.
             var initial = new NetherFractureConfigurationStore(File.ReadAllText(configPath));
-            if (initial.Current.Enabled && PrototypePresent())
+            if (initial.Current.Enabled && PrototypePresent(System.Threading.Volatile.Read(ref configuredModsDirectory)))
                 throw new InvalidDataException("Remove the BalanceBench prototype mod before enabling native Nether Fracture (double application).");
-            lock (ConfigGate) { path = configPath; store = initial; nextRead = DateTime.UtcNow.AddSeconds(1); }
+            lock (ConfigGate)
+            {
+                path = configPath; lastStamp = info.LastWriteTimeUtc; lastLength = info.Length;
+                System.Threading.Volatile.Write(ref store, initial);
+                System.Threading.Interlocked.Exchange(ref nextReadTicks, DateTime.UtcNow.AddSeconds(1).Ticks);
+            }
             Log.Info($"Native Nether Fracture config validated: enabled={initial.Current.Enabled}, zones={initial.Current.Zones.Count}");
         }
 
-        private static bool PrototypePresent()
+        private static bool PrototypePresent(string modsDirectory)
         {
             var mods = Path.Combine(AppContext.BaseDirectory, "Mods");
-            return new[] { mods, configuredModsDirectory }.Where(p => !string.IsNullOrEmpty(p)).Distinct()
+            return new[] { mods, modsDirectory }.Where(p => !string.IsNullOrEmpty(p)).Distinct()
                 .Any(p => Directory.Exists(p) && Directory.EnumerateFiles(p, "BalanceBench.dll", SearchOption.AllDirectories).Any());
         }
 
         public static void ValidateModDirectory(string modsDirectory)
         {
+            // Scan only on startup/mod-load validation, or a changed configuration.
+            var prototype = PrototypePresent(modsDirectory);
             lock (ConfigGate)
             {
                 configuredModsDirectory = modsDirectory;
-                if (store?.Current.Enabled == true && PrototypePresent())
+                modGeneration++;
+                if (store?.Current.Enabled == true && prototype)
                     throw new InvalidDataException("Remove the BalanceBench prototype from the configured ModsDirectory before enabling native Nether Fracture.");
             }
         }
@@ -70,50 +83,100 @@ namespace ACE.Server.Managers
                 "fracture" => "Fracture", "rupture" => "Fracture", "radius" => "Radius", _ => null
             };
             if (canonical == null || !double.IsFinite(amount)) throw new ArgumentException("Unknown source or non-finite amount.");
+            _ = Config(); // Poll before taking the administrative write lock.
+            var playerKey = Key(p);
             lock (ConfigGate)
             {
-                var cfg = Config(); var key = Key(p);
-                if (cfg == null || key == null || !cfg.Zones.ContainsKey(key)) throw new ArgumentException("Stand inside a configured named ZC.");
+                var cfg = store?.Current;
+                var key = StoredZoneKey(cfg, playerKey);
+                if (cfg == null || key == null) throw new ArgumentException("Stand inside a configured named ZC.");
                 var node = System.Text.Json.JsonSerializer.SerializeToNode(cfg);
                 node["Zones"][key][canonical] = amount;
                 var json = node.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-                var valid = NetherFractureConfiguration.Parse(json);
-                if (valid.Enabled && PrototypePresent()) throw new InvalidDataException("Remove the prototype mod first.");
+                _ = NetherFractureConfiguration.Parse(json);
                 var temp = path + ".tmp";
                 File.WriteAllText(temp, json);
                 File.Move(temp, path, true);
                 if (!store.TryReload(json, out var error)) throw new InvalidDataException(error);
+                var info = new FileInfo(path); lastStamp = info.LastWriteTimeUtc; lastLength = info.Length;
                 Log.Info($"Nether Fracture admin tuning: actor={p.Name}, zone={key}, source={canonical}, amount={amount:R}");
             }
         }
 
-        private static NetherFractureConfiguration Config()
+        internal static string StoredZoneKey(NetherFractureConfiguration cfg, string key) =>
+            key == null ? null : cfg?.Zones.Keys.FirstOrDefault(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase));
+
+        // Internal hooks keep file-reload tests deterministic and leave no global test state.
+        internal static void ResetForTests()
         {
             lock (ConfigGate)
             {
-                if (store == null) return null; // Unit tests / uninitialized host: feature inactive.
-                if (DateTime.UtcNow >= nextRead)
+                System.Threading.Volatile.Write(ref store, null);
+                path = configuredModsDirectory = null;
+                lastStamp = nextWarning = default; lastLength = -1; modGeneration = 0;
+                System.Threading.Interlocked.Exchange(ref nextReadTicks, 0);
+            }
+        }
+        internal static void ForceReloadForTests()
+        {
+            lock (ConfigGate)
+            {
+                lastStamp = default; lastLength = -1;
+                System.Threading.Interlocked.Exchange(ref nextReadTicks, 0);
+            }
+        }
+        internal static void PollForTests() => System.Threading.Interlocked.Exchange(ref nextReadTicks, 0);
+
+        private static NetherFractureConfiguration Config()
+        {
+            var snapshot = System.Threading.Volatile.Read(ref store);
+            if (snapshot == null) return null;
+            var now = DateTime.UtcNow;
+            var due = System.Threading.Volatile.Read(ref nextReadTicks);
+            if (now.Ticks < due || System.Threading.Interlocked.CompareExchange(ref nextReadTicks,
+                now.AddSeconds(1).Ticks, due) != due) return snapshot.Current;
+
+            string file, mods; DateTime stamp; long length; int generation;
+            NetherFractureConfiguration before;
+            lock (ConfigGate)
+            {
+                if (!ReferenceEquals(store, snapshot)) return store?.Current;
+                file = path; mods = configuredModsDirectory; generation = modGeneration;
+                stamp = lastStamp; length = lastLength; before = snapshot.Current;
+            }
+            string error = null;
+            try
+            {
+                var info = new FileInfo(file);
+                if (!info.Exists) throw new FileNotFoundException("Native Nether Fracture configuration is missing.", file);
+                if (info.LastWriteTimeUtc == stamp && info.Length == length) return snapshot.Current;
+                var json = File.ReadAllText(file);
+                var candidate = NetherFractureConfiguration.Parse(json);
+                if (candidate.Enabled && PrototypePresent(mods)) error = "BalanceBench prototype mod is still installed.";
+                else
                 {
-                    nextRead = DateTime.UtcNow.AddSeconds(1);
-                    string error = null;
-                    try
+                    lock (ConfigGate)
                     {
-                        var json = File.ReadAllText(path);
-                        var candidate = NetherFractureConfiguration.Parse(json);
-                        if (candidate.Enabled && PrototypePresent()) error = "BalanceBench prototype mod is still installed.";
-                        else store.TryReload(json, out error);
-                    }
-                    catch (Exception ex) when (ex is IOException || ex is InvalidDataException || ex is UnauthorizedAccessException) { error = ex.Message; }
-                    catch (System.Text.Json.JsonException ex) { error = ex.Message; }
-                    catch (ArgumentException ex) { error = ex.Message; }
-                    if (error != null && DateTime.UtcNow >= nextWarning)
-                    {
-                        nextWarning = DateTime.UtcNow.AddMinutes(1);
-                        Log.Error("Nether Fracture reload rejected; retaining last valid configuration: " + error);
+                        // An admin write, initialization or mod reload must not be overwritten by an older poll.
+                        if (ReferenceEquals(store, snapshot) && ReferenceEquals(snapshot.Current, before)
+                            && path == file && modGeneration == generation)
+                        {
+                            snapshot.TryReload(json, out error);
+                            if (error == null) { lastStamp = info.LastWriteTimeUtc; lastLength = info.Length; }
+                        }
                     }
                 }
-                return store.Current;
             }
+            catch (Exception ex) when (ex is IOException || ex is InvalidDataException || ex is UnauthorizedAccessException
+                || ex is System.Text.Json.JsonException || ex is ArgumentException) { error = ex.Message; }
+            if (error != null)
+            {
+                var warn = false;
+                lock (ConfigGate)
+                    if (now >= nextWarning) { nextWarning = now.AddMinutes(1); warn = true; }
+                if (warn) Log.Error("Nether Fracture reload rejected; retaining last valid configuration: " + error);
+            }
+            return System.Threading.Volatile.Read(ref store)?.Current;
         }
 
         public static bool CharmEligible(Player p)
@@ -154,7 +217,7 @@ namespace ACE.Server.Managers
             var key = Key(target); var playerKey = Key(p);
             return key != null && playerKey != null && cfg.Zones.ContainsKey(playerKey) && cfg.Zones.TryGetValue(key, out zone);
         }
-        public static bool CanTarget(Player p, Creature c) => TryTuning(p, c, out _) && c.CanBeDamagedBy(p) && p.CanDamage(c);
+        public static bool CanTarget(Player p, Creature c) => c != null && !c.Invincible && TryTuning(p, c, out _) && c.CanBeDamagedBy(p) && p.CanDamage(c);
         private static double Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
 
         private static bool Three(Player p, Creature target)
@@ -193,7 +256,7 @@ namespace ACE.Server.Managers
 
         public static void Died(Creature target)
         {
-            if (!Monster(target) || target.Location == null) return;
+            if (!Monster(target) || target.Location == null || !Tuned(target)) return;
             foreach (var p in PlayerManager.GetAllOnline())
             {
                 var s = p.NetherFracture;

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -36,7 +37,7 @@ namespace ACE.Server.Managers
             {
                 var parts = pair.Key.Split(':', 2);
                 var z = pair.Value;
-                if (parts.Length != 2 || !ushort.TryParse(parts[0], out var variation) || variation < 1 || string.IsNullOrWhiteSpace(parts[1]) || !keys.Add(pair.Key) || z == null)
+                if (parts.Length != 2 || !ushort.TryParse(parts[0], out var variation) || variation < 1 || parts[0] != variation.ToString(CultureInfo.InvariantCulture) || string.IsNullOrWhiteSpace(parts[1]) || parts[1] != parts[1].Trim() || !keys.Add(pair.Key) || z == null)
                     throw new InvalidDataException("Invalid or duplicate Nether Fracture named zone.");
                 if (new[] { z.Corrosion, z.Corruption, z.Curse, z.Streak }.Any(n => !double.IsFinite(n) || n < 0 || n > 5)
                     || !double.IsFinite(z.Fracture) || z.Fracture < 0 || z.Fracture > 10

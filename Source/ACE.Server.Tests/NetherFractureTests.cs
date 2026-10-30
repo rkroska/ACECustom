@@ -12,6 +12,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace ACE.Server.Tests
 {
     [TestClass]
+    [DoNotParallelize]
     public class NetherFractureTests
     {
         private const string Valid = "{\"SchemaVersion\":1,\"Enabled\":true,\"Zones\":{\"14:Tou Tou 14\":{\"Corrosion\":0.22564000000000003,\"Corruption\":0.5076900000000001,\"Curse\":0.5641,\"Streak\":0.5641,\"Fracture\":6,\"Radius\":5}}}";
@@ -174,26 +175,92 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void MissingAndMalformedRuntimeFilesRetainLastValidManagerSnapshot()
+        [DataRow("014:Tou Tou 14")]
+        [DataRow("+14:Tou Tou 14")]
+        [DataRow(" 14:Tou Tou 14")]
+        [DataRow("14: Tou Tou 14")]
+        [DataRow("14:Tou Tou 14 ")]
+        public void ZoneKeysMustMatchRuntimeCanonicalFormat(string key)
         {
+            Assert.ThrowsExactly<InvalidDataException>(() => NetherFractureConfiguration.Parse(Valid.Replace("14:Tou Tou 14", key)));
+        }
+
+        [TestMethod]
+        public void CaseInsensitiveZoneLookupPreservesSerializedKey()
+        {
+            var cfg = NetherFractureConfiguration.Parse(Valid.Replace("14:Tou Tou 14", "14:tou tou 14"));
+            var key = NetherFractureManager.StoredZoneKey(cfg, "14:Tou Tou 14");
+            Assert.AreEqual("14:tou tou 14", key);
+            var node = JsonSerializer.SerializeToNode(cfg);
+            node["Zones"][key]["Corrosion"] = .3;
+            var updated = NetherFractureConfiguration.Parse(node.ToJsonString());
+            Assert.AreEqual(1, updated.Zones.Count);
+            Assert.AreEqual(.3, updated.Zones["14:Tou Tou 14"].Corrosion);
+            Assert.IsNull(NetherFractureManager.StoredZoneKey(cfg, "15:Unknown"));
+            Assert.IsNull(NetherFractureManager.StoredZoneKey(null, "14:Tou Tou 14"));
+        }
+
+        [TestMethod]
+        public void TimestampPollSkipsUnchangedFileAndAcceptsValidChangedFile()
+        {
+            NetherFractureManager.ResetForTests();
             var path = Path.GetTempFileName();
             try
             {
-                File.WriteAllText(path, Valid.Replace("\"Enabled\":true", "\"Enabled\":false"));
+                var json = Valid.Replace("\"Enabled\":true", "\"Enabled\":false");
+                File.WriteAllText(path, json);
+                NetherFractureManager.Initialize(path);
+                var original = NetherFractureManager.CurrentConfiguration;
+                var stamp = File.GetLastWriteTimeUtc(path);
+                NetherFractureManager.PollForTests();
+                Assert.AreSame(original, NetherFractureManager.CurrentConfiguration);
+                File.WriteAllText(path, json.Replace("0.5641", "0.6641"));
+                File.SetLastWriteTimeUtc(path, stamp.AddSeconds(2)); // Deterministic same-length update.
+                NetherFractureManager.PollForTests();
+                var changed = NetherFractureManager.CurrentConfiguration;
+                Assert.AreNotSame(original, changed);
+                Assert.AreEqual(.6641, changed.Zones["14:Tou Tou 14"].Streak);
+                NetherFractureManager.PollForTests();
+                Assert.AreSame(changed, NetherFractureManager.CurrentConfiguration);
+            }
+            finally { NetherFractureManager.ResetForTests(); File.Delete(path); }
+        }
+
+        [TestMethod]
+        public void MissingAndMalformedRuntimeFilesRetainLastValidManagerSnapshot()
+        {
+            NetherFractureManager.ResetForTests();
+            var path = Path.GetTempFileName();
+            try
+            {
+                var disabled = Valid.Replace("\"Enabled\":true", "\"Enabled\":false");
+                File.WriteAllText(path, disabled);
                 NetherFractureManager.Initialize(path);
                 var initial = NetherFractureManager.CurrentConfiguration;
+                NetherFractureManager.PollForTests();
+                Assert.AreSame(initial, NetherFractureManager.CurrentConfiguration, "An unchanged file must keep its existing snapshot.");
                 foreach (var invalid in new[] { "{", Valid.Replace("\"Radius\":5", "\"Radius\":9"), Valid.Replace("\"Enabled\":true", "\"Enabled\":true,\"Enabled\":false") })
                 {
                     File.WriteAllText(path, invalid);
-                    System.Threading.Thread.Sleep(1100);
+                    NetherFractureManager.ForceReloadForTests();
                     Assert.AreSame(initial, NetherFractureManager.CurrentConfiguration);
                 }
+                File.WriteAllText(path, disabled.Replace("0.22564000000000003", "0.3"));
+                NetherFractureManager.ForceReloadForTests();
+                var updated = NetherFractureManager.CurrentConfiguration;
+                Assert.AreNotSame(initial, updated, "A valid changed file must be accepted.");
+                Assert.AreEqual(.3, updated.Zones["14:Tou Tou 14"].Corrosion);
                 File.Delete(path);
-                System.Threading.Thread.Sleep(1100);
-                Assert.AreSame(initial, NetherFractureManager.CurrentConfiguration);
+                NetherFractureManager.ForceReloadForTests();
+                Assert.AreSame(updated, NetherFractureManager.CurrentConfiguration);
                 Assert.ThrowsExactly<FileNotFoundException>(() => NetherFractureManager.Initialize(path));
             }
-            finally { if (File.Exists(path)) File.Delete(path); }
+            finally
+            {
+                NetherFractureManager.ResetForTests();
+                if (File.Exists(path)) File.Delete(path);
+            }
+            Assert.IsNull(NetherFractureManager.CurrentConfiguration, "No manager/path state may escape this test.");
         }
     }
 }

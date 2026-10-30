@@ -16,8 +16,10 @@ public static class TestOnlyAudit
         foreach(var method in types.SelectMany(t=>t.GetMethods(BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Static|BindingFlags.Instance|BindingFlags.DeclaredOnly)))
         {
             var attrs=method.CustomAttributes.Select(a=>a.AttributeType.Name).ToArray();
-            if(attrs.Any(a=>a is "HarmonyTranspiler" or "HarmonyReversePatch"))errors.Add("Code-rewriting patch: "+method.Name);
-            if(!attrs.Any(a=>a is "HarmonyPrefix" or "HarmonyPostfix" or "HarmonyFinalizer"))continue;
+            var patchType=method.DeclaringType?.CustomAttributes.Any(a=>a.AttributeType.Name=="HarmonyPatch")==true;
+            if(attrs.Any(a=>a is "HarmonyTranspiler" or "HarmonyReversePatch") || patchType&&method.Name=="Transpiler")errors.Add("Code-rewriting patch: "+method.Name);
+            if(!attrs.Any(a=>a is "HarmonyPrefix" or "HarmonyPostfix" or "HarmonyFinalizer")
+                && !(patchType&&(method.Name is "Prefix" or "Postfix" or "Finalizer")))continue;
             roots.Add(method);
             if(method.ReturnType!=typeof(void))errors.Add("Non-observer patch return type: "+method.Name);
             foreach(var p in method.GetParameters())

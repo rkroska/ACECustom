@@ -4,7 +4,7 @@ SELECT `key`, `value`
 FROM ace_shard.config_properties_string
 WHERE `key` = 'zonecontrol_data';
 
-SELECT 'boolean' AS setting_type, `key`, CAST(`value` AS CHAR) AS setting_value
+SELECT 'boolean' AS setting_type, `key`, CAST(CAST(`value` AS UNSIGNED) AS CHAR) AS setting_value
 FROM ace_shard.config_properties_boolean
 WHERE LEFT(`key`, 3) = 'zc_' OR LEFT(`key`, 12) = 'zonecontrol_'
 UNION ALL
