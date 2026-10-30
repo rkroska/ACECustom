@@ -69,9 +69,11 @@ namespace ACE.Server.Managers.ZoneControl
         /// <see cref="GearEssences.PropertiesCount"/> (passed in so the tier-limit lookup stays out of the pure part).
         /// <paramref name="legacyText"/> is true for a piece whose block comes from baked "Zone Cantrip:" text only (no record):
         /// the panel shows no Properties count for it, because there is nothing to count.
+        /// <paramref name="ifEquipped"/> is the appraisal's <see cref="ZoneStatResolver.FloatsIfEquipped(WorldObject, ZoneStatResolver.Resolved)"/>
+        /// result, passed in so it is worked out once per appraisal; null = work it out here.
         /// </summary>
         public static void Collect(WorldObject wo, ZoneStatResolver.Resolved resolved, (int Count, int Cap)? properties, bool legacyText,
-            IDictionary<PropertyInt, int> ints, IDictionary<PropertyFloat, double> floats)
+            IDictionary<PropertyInt, int> ints, IDictionary<PropertyFloat, double> floats, IReadOnlyDictionary<PropertyFloat, double> ifEquipped = null)
         {
             if (wo == null || wo is Creature || ints == null || floats == null)
                 return;
@@ -107,13 +109,15 @@ namespace ACE.Server.Managers.ZoneControl
             if (rank > 0)
                 ints[(PropertyInt)GearLineValueId(ZoneModifiers.ReinforcedKey)] = rank;
 
-            // weapon cards: the item's own property (bandit hilt included, as the panel shows it) in display space, and the
-            // recorded grade. Only cards in the record - a retail Biting Strike with no card is not a tier 11+ roll.
+            // weapon cards: the value the item would have once equipped (bandit hilt included, as the panel shows it; owner
+            // 2026-10-29: an unworn weapon's stored number lags a band retune until equip) in display space, and the recorded
+            // grade. Only cards in the record - a retail Biting Strike with no card is not a tier 11+ roll.
+            var current = ifEquipped ?? ZoneStatResolver.FloatsIfEquipped(wo, resolved);
             foreach (var rec in ZoneStatResolver.Read(wo))
             {
                 if (!ZoneStatResolver.IsWeaponKey(rec.Key) || !ZoneStatResolver.TryGetWeapon(rec.Key, out var ws))
                     continue;
-                var stored = wo.GetProperty(ws.Prop);
+                var stored = current.TryGetValue(ws.Prop, out var now) ? now : wo.GetProperty(ws.Prop);
                 if (stored == null)
                     continue;
                 var value = ws.DisplayIsMultiplier ? stored.Value + 1.0 : stored.Value;
