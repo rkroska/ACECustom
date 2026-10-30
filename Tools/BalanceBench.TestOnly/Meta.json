@@ -1,0 +1,10 @@
+{
+  "Name": "BalanceBench.TestOnly",
+  "Author": "Schneebly",
+  "Description": "Native-only test automation and read-only telemetry. No gameplay modifiers.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": false,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

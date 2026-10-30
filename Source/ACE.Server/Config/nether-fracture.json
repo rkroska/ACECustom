@@ -1,0 +1,46 @@
+{
+  "SchemaVersion": 1,
+  "Enabled": true,
+  "Zones": {
+    "11:Tou Tou": {
+      "Corrosion": 0.19036,
+      "Corruption": 0.42831,
+      "Curse": 0.4759,
+      "Streak": 0.4759,
+      "Fracture": 6,
+      "Radius": 5
+    },
+    "12:Tou Tou 12": {
+      "Corrosion": 0.24280000000000002,
+      "Corruption": 0.5463,
+      "Curse": 0.607,
+      "Streak": 0.607,
+      "Fracture": 6,
+      "Radius": 5
+    },
+    "13:Tou Tou 13": {
+      "Corrosion": 0.28108,
+      "Corruption": 0.63243,
+      "Curse": 0.7027,
+      "Streak": 0.7027,
+      "Fracture": 6,
+      "Radius": 5
+    },
+    "14:Tou Tou 14": {
+      "Corrosion": 0.22564000000000003,
+      "Corruption": 0.5076900000000001,
+      "Curse": 0.5641,
+      "Streak": 0.5641,
+      "Fracture": 6,
+      "Radius": 5
+    },
+    "15:Tou Tou 15": {
+      "Corrosion": 0.263744,
+      "Corruption": 0.593424,
+      "Curse": 0.65936,
+      "Streak": 0.65936,
+      "Fracture": 6,
+      "Radius": 5
+    }
+  }
+}

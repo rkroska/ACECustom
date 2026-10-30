@@ -480,7 +480,11 @@ namespace ACE.Server.WorldObjects
             // hand cast, charm on or off: the arm first clears what a refreshed DoT carried over, and marks it only when the
             // charm is on (review 2026-10-20 round 2: with the charm off a recast kept spreading and kept the crit bonus).
             if (zcHandCast && !fromProc && !aetheriaProc && !cloakProc && player != null && target is Creature pandemicTarget)
+            {
                 pandemicTarget.ZcPandemicArm(player, spell, addResult.Enchantment);
+                if (addResult.Enchantment != null && Creature.IsVoidDotSpell(spell.Id))
+                    NetherFractureManager.Applied(player, pandemicTarget);
+            }
 
             // build message
             var suffix = "";

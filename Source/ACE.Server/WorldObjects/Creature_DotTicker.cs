@@ -121,6 +121,7 @@ namespace ACE.Server.WorldObjects
                 if (IsDestroyed || IsDead || CurrentLandblock == null || !ZcDebuffCompressed) return;
                 var top = PropertiesEnchantmentRegistryExtensions.GetEnchantmentsTopLayer(
                     Biota.PropertiesEnchantmentRegistry, BiotaDatabaseLock, SpellSet.SetSpells);
+                top = IndependentVoidDots.Select(this, top);
                 if (top == null || !top.Contains(entry)) return;
                 var heartbeat = HeartbeatInterval ?? DefaultHeartbeatSeconds;
                 var scale = UsesDotTicker ? (float)(DotTickSeconds / (heartbeat > 0 ? heartbeat : DefaultHeartbeatSeconds)) : 1.0f;

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework><AssemblyName>BalanceBench.TestOnly</AssemblyName><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="ACE.Server"><HintPath>$(AceBin)/ACE.Server.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ACE.Entity"><HintPath>$(AceBin)/ACE.Entity.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ACE.Common"><HintPath>$(AceBin)/ACE.Common.dll</HintPath><Private>false</Private></Reference>
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+    <Compile Include="../../BalanceBench.TestOnly/TestOnlyAudit.cs" Link="TestOnlyAudit.cs" />
+  </ItemGroup>
+</Project>
