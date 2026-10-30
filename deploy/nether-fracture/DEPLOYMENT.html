@@ -1,0 +1,74 @@
+<!doctype html><html lang="en"><meta charset="utf-8">
+<title>Native Nether Fracture - existing server deployment</title>
+<style>body{font:16px system-ui;max-width:950px;margin:32px auto;padding:20px;line-height:1.6}pre{background:#eee;padding:16px;overflow:auto}</style>
+<h1>Native Nether Fracture</h1>
+<p>Use the existing server installation and launcher. No new release layout, environment variable, database migration, replacement charm, or client plugin is required.</p>
+<h2>Production steps</h2><ol>
+<li>Back up the current complete server output, configuration and mod layout. Stop the server gracefully before building.</li>
+<li>Build the native branch using the existing workflow:</li></ol>
+<pre>Set-Location C:\Scripting\ACECustom
+dotnet build .\Source\ACE.Server\ACE.Server.csproj -c Release -p:Platform=x64 -m:1</pre>
+<p>Do not start if the build fails. Source Config/nether-fracture.json contains the enabled, tested five-zone profile and is copied to the normal build/publish output automatically. Do not copy another profile after every build. Keep existing Config.js, database settings, Pandemic charm levels and native ZC dials unchanged.</p>
+<ol start="3"><li>Keep legacy BalanceBench.dll outside the entire scanned Mods directory. BalanceBench.TestOnly.dll is an optional observer/testing harness; neither mod is needed for production gameplay.</li>
+<li>Start once with the normal launcher. An existing ACE_NETHER_FRACTURE_CONFIG override takes precedence over the bundled file: if one is already configured, inspect that override before rollout. No new override is required.</li>
+<li>As a Developer/admin in each named zone, run /netherfracture show. Confirm enabled=True, the exact zone key, the values below and radius 5. Test three own direct DoTs then Nether Streak, priming/combat feedback, and a second caster. Check startup errors and normal login/combat.</li></ol>
+<h2>ZC updates</h2>
+<p>No SQL or ZC setter commands are required: the source JSON supplies these exact named-zone overrides. Do not apply the same reductions again to native ZC dials. Names and variation IDs must match production exactly; unmatched zones do not receive these overrides. Use /netherfracture show at each zone to verify.</p>
+<table border="1" cellpadding="6"><tr><th>Zone key</th><th>Corrosion</th><th>Corruption</th><th>Curse</th><th>Streak</th><th>Fracture</th><th>Radius</th></tr>
+<tr><td>11:Tou Tou</td><td>0.19036</td><td>0.42831</td><td>0.4759</td><td>0.4759</td><td>6</td><td>5</td></tr>
+<tr><td>12:Tou Tou 12</td><td>0.24280000000000002</td><td>0.5463</td><td>0.607</td><td>0.607</td><td>6</td><td>5</td></tr>
+<tr><td>13:Tou Tou 13</td><td>0.28108</td><td>0.63243</td><td>0.7027</td><td>0.7027</td><td>6</td><td>5</td></tr>
+<tr><td>14:Tou Tou 14</td><td>0.22564000000000003</td><td>0.5076900000000001</td><td>0.5641</td><td>0.5641</td><td>6</td><td>5</td></tr>
+<tr><td>15:Tou Tou 15</td><td>0.263744</td><td>0.593424</td><td>0.65936</td><td>0.65936</td><td>6</td><td>5</td></tr>
+
+</table><p>The developer command /netherfracture set &lt;source&gt; &lt;value&gt; is for deliberate later tuning, not a deployment requirement. Keep the tested values.</p>
+<h2>Rollback</h2><p>To disable the feature while keeping the new server, stop it, set Enabled to false in the source Config/nether-fracture.json, rebuild and start normally. If an external config override is already in use, disable that active file instead. This disables the entire feature, including its source scaling and independent stacking. Do not delete or corrupt the config: invalid hot reload retains the last valid settings.</p>
+<p>For full rollback, stop, restore the complete backed-up output/configuration and prior mod layout, then start normally. Do not mix assemblies. Nether Fracture requires no database rollback.</p>
+<h2>Validation and limits</h2><p>The native branch completed 209 main camps / 828 kills (two intentional T11-entry deaths), plus 90 accepted T13 comparison camps / 360 kills. One separate harness geometry incident/outside-trial death is documented in the QA report. The dependency rollback Release build and 90 selected regression tests passed. Enabling the source profile changes no balance coefficients or gameplay code.</p>
+<p>Existing dependency security advisories remain unresolved; this is not a clean security certification. Confirm the actual production environment during rollout. No production deployment has been performed.</p>
+<h2>Per-setting production commands</h2>
+<p>If changing individual native Fracture values, use the following commands while standing in the specified named ZC/variation, with Developer access. Each setter preserves other settings. The feature must be enabled and the zone entry must exist. The source config includes the tested entries; these commands are redundant when those values are already active. Run show first and record the old values for reversal.</p>
+<h3>11:Tou Tou</h3><pre>/netherfracture show
+/netherfracture set corrosion 0.19036
+/netherfracture set corruption 0.42831
+/netherfracture set curse 0.4759
+/netherfracture set streak 0.4759
+/netherfracture set fracture 6
+/netherfracture set radius 5
+/netherfracture show</pre>
+<h3>12:Tou Tou 12</h3><pre>/netherfracture show
+/netherfracture set corrosion 0.24280000000000002
+/netherfracture set corruption 0.5463
+/netherfracture set curse 0.607
+/netherfracture set streak 0.607
+/netherfracture set fracture 6
+/netherfracture set radius 5
+/netherfracture show</pre>
+<h3>13:Tou Tou 13</h3><pre>/netherfracture show
+/netherfracture set corrosion 0.28108
+/netherfracture set corruption 0.63243
+/netherfracture set curse 0.7027
+/netherfracture set streak 0.7027
+/netherfracture set fracture 6
+/netherfracture set radius 5
+/netherfracture show</pre>
+<h3>14:Tou Tou 14</h3><pre>/netherfracture show
+/netherfracture set corrosion 0.22564000000000003
+/netherfracture set corruption 0.5076900000000001
+/netherfracture set curse 0.5641
+/netherfracture set streak 0.5641
+/netherfracture set fracture 6
+/netherfracture set radius 5
+/netherfracture show</pre>
+<h3>15:Tou Tou 15</h3><pre>/netherfracture show
+/netherfracture set corrosion 0.263744
+/netherfracture set corruption 0.593424
+/netherfracture set curse 0.65936
+/netherfracture set streak 0.65936
+/netherfracture set fracture 6
+/netherfracture set radius 5
+/netherfracture show</pre>
+<h2>Compare production before changing underlying DoT settings</h2>
+<p>Run PRODUCTION-SETTINGS-READONLY.sql against production and return its complete result sets. It reads the existing ZC store, persisted ZC flags (including DoT spell math/landing tick) and Pandemic charm schedules. It writes nothing. Missing rows can mean code defaults. This export does not include the file-backed native Fracture profile: also capture /netherfracture show in each zone after the native code is installed.</p>
+<p>Do not change shared Void multipliers, DoT multipliers, resistances, ranks or Pandemic schedules blindly, and do not apply the new Fracture coefficients to those older dials. Compare the export to the tested baseline first. A final list of additional production delta commands is pending that comparison; no claim is made that all existing production values match the test server.</p>
+</html>
