@@ -1997,6 +1997,12 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         internal static readonly float RingSightHeightFactor = ProjHeight;
 
+        /// <summary>
+        /// Applies this player's smart ring spell to every creature in range, without physics collision: the low-tier proc
+        /// resist, the resist roll, damage (parity with SpellProjectile.CalculateDamage), the ratings, the cloak procs of a
+        /// player it hits (T11+ ZcCloakProcs and the retail ones) and the hit messages. The optional arguments are the
+        /// overrides the proc paths pass (Explosive Arrow, Cast on Strike rings).
+        /// </summary>
         internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0, WorldObject losOrigin = null, WorldObject losExempt = null, WorldObject lowTierItem = null)
         {
             var center = centerOverride ?? Location;
@@ -2494,6 +2500,23 @@ namespace ACE.Server.WorldObjects
 
                     if (finalDamage <= 0) continue;
 
+                    // T11+ cloak procs (owner 2026-10-28) on a player in the ring: Smoke Screen / Artful Dodger here, Calming
+                    // Breeze / Asheron's Grace after the hit (below). PreHit is also this path's Grace / Cheat Death guard -
+                    // Creature.TakeDamage below has none.
+                    var zcCloakProc = ZcCloakProc.None;
+                    if (creature is Player zcRingTarget && spell.IsHarmful)
+                    {
+                        var zcNoTrue = 0f;
+                        var zcRingBefore = finalDamage;
+                        zcCloakProc = ZcCloakProcs.PreHit(zcRingTarget, this, ref finalDamage, ref zcNoTrue);
+                        // negated (Smoke Screen / Grace) or wholly taken on stamina (Artful Dodger): nothing reaches health
+                        if (finalDamage != zcRingBefore && finalDamage < 0.5f)
+                        {
+                            dbgHit++;
+                            continue;
+                        }
+                    }
+
                     // --- 2. Cloak Damage Reduction Proc ---
                     var equippedCloak = creature.EquippedCloak;
                     var percent = finalDamage / creature.Health.MaxValue;
@@ -2540,6 +2563,10 @@ namespace ACE.Server.WorldObjects
                             : $"{critMsg}You {verb} {creature.Name} for {amtStr} points with {spell.Name}.";
                         if (!SquelchManager.Squelches.Contains(creature, ACE.Entity.Enum.ChatMessageType.Magic))
                             Session?.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ACE.Entity.Enum.ChatMessageType.Magic));
+
+                        // T11+ cloak procs: Calming Breeze / Asheron's Grace, now that the hit has landed
+                        if (creature is Player zcRingHit)
+                            ZcCloakProcs.PostHit(zcRingHit, zcCloakProc);
 
                         // --- 3. Cloak Spell Proc ---
                         if (!fromProc && equippedCloak != null && Cloak.HasProcSpell(equippedCloak))

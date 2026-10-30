@@ -68,11 +68,26 @@ namespace ACE.Server.WorldObjects
         public double ZcCheatDeathImmuneUntil;
         public double ZcLifeOnHitReadyAt;
 
+        // T11+ cloak procs (ZcCloakProcs, owner 2026-10-28) - transient like the timers above
+        public double ZcCloakProcReadyAt;       // per-character proc cooldown
+        public double ZcCloakGraceUntil;        // Asheron's Grace window
+        public int ZcDodgerHitsLeft;            // Artful Dodger charges ...
+        public double ZcDodgerUntil;            // ... usable until this time
+        public bool ZcCloakProcForceNext;       // /cloakproc force: the next eligible hit procs, ignoring chance and cooldown
+
         /// <summary>Cheat Death window: TRUE while the player is immune to ALL damage. OR'd into every
         /// Invincible guard and unguarded HP writer (melee/missile/magic/DoT/zone tick/hotspot/falling/
         /// boundary drain). Deliberately NOT PropertyBool.Invincible - that one is persisted and admin-owned.
-        /// Nothing the player does clears the window; it simply expires.</summary>
-        public bool ZcDamageImmune => Time.GetUnixTime() < ZcCheatDeathImmuneUntil;
+        /// Nothing the player does clears the window; it simply expires.
+        /// The T11+ cloak's Asheron's Grace (2026-10-28) opens the same window for its own few seconds.</summary>
+        public bool ZcDamageImmune
+        {
+            get
+            {
+                var now = Time.GetUnixTime();
+                return now < ZcCheatDeathImmuneUntil || now < ZcCloakGraceUntil;
+            }
+        }
 
         /// <summary>
         /// Per-zone tuning knob for the specials, read from the governing zone's DEFAULT profile
@@ -114,11 +129,20 @@ namespace ACE.Server.WorldObjects
             return sec > 0 ? $"{m}m {sec}s" : $"{m}m";
         }
 
-        /// <summary>While the Cheat Death window is open, every absorbed hit is announced (owner 2026-08-23).</summary>
+        /// <summary>While the Cheat Death window is open, every absorbed hit is announced (owner 2026-08-23). Asheron's Grace
+        /// (the T11+ cloak proc, 2026-10-28) says its own name and shows the lifestone shield on each one, as lifestone
+        /// protection does.</summary>
         public void ZcAnnounceAbsorb(WorldObject source, string what)
         {
             if (!ZcDamageImmune || Invincible) return;
-            SendMessage($"Cheat Death absorbs {what}{(source != null ? " from " + source.Name : "")}.", ChatMessageType.Broadcast);
+            var from = source != null ? " from " + source.Name : "";
+            if (Time.GetUnixTime() < ZcCheatDeathImmuneUntil)
+            {
+                SendMessage($"Cheat Death absorbs {what}{from}.", ChatMessageType.Broadcast);
+                return;
+            }
+            EnqueueBroadcast(new GameMessageScript(Guid, ZcCloakProcs.GraceEffect));
+            SendMessage($"{ZcCloakProcs.AsheronsGraceName} protects you from {what}{from}.", ChatMessageType.Broadcast);
         }
 
         public uint ZcTryCheatDeath(WorldObject source, uint amount)
@@ -976,13 +1000,21 @@ namespace ACE.Server.WorldObjects
             return TakeDamageInternal(source, damageType, _amount, bodyPart, out _, crit, attackConditions);
         }
 
-        /// <param name="trueDamage">the True Damage part of _amount (owner 2026-10-01): the cloak proc and Mana Barrier act
-        /// only on the rest, and the cloak's proc chance is rolled on the rest too.</param>
+        /// <param name="trueDamage">the True Damage part of _amount (owner 2026-10-01): the retail cloak proc and Mana Barrier act
+        /// only on the rest, and the retail cloak's proc chance is rolled on the rest too. A T11+ cloak's proc (ZcCloakProcs)
+        /// acts on the whole hit.</param>
         public int TakeDamage(WorldObject source, DamageType damageType, float _amount, BodyPart bodyPart, bool crit, AttackConditions attackConditions, float trueDamage)
         {
             return TakeDamageInternal(source, damageType, _amount, bodyPart, out _, crit, attackConditions, trueDamage);
         }
 
+        /// <summary>
+        /// Applies a physical hit (melee, missile, cleave, hotspot) to this player: lifestone protection, the T11+ cloak proc
+        /// (ZcCloakProcs - hotspots excluded), the retail cloak -200, Mana Barrier, Cheat Death and Battle Mending, then the
+        /// messages and the death check. Returns the health actually lost.
+        /// </summary>
+        /// <param name="amountAbsorbed">what the Mana Barrier absorbed</param>
+        /// <param name="trueDamage">the True Damage part of <paramref name="_amount"/>; the barrier never absorbs it</param>
         private int TakeDamageInternal(WorldObject source, DamageType damageType, float _amount, BodyPart bodyPart, out uint amountAbsorbed, bool crit, AttackConditions attackConditions, float trueDamage = 0f)
         {
             amountAbsorbed = 0;
@@ -1020,6 +1052,31 @@ namespace ACE.Server.WorldObjects
             var percent = targetVitalMax > 0 ? (float)amount / targetVitalMax : 0.0f;
 
             var equippedCloak = EquippedCloak;
+
+            // T11+ cloak procs (owner 2026-10-28): rolled on every hit, both parts - a hotspot tick is not a hit. Smoke Screen and
+            // waiting Artful Dodger charges act here, before the barrier; the rest after the hit lands (PostHit, below).
+            var zcCloakProc = ZcCloakProc.None;
+            if (!isVitalDrainDamage && !(source is Hotspot))
+            {
+                float zcNormal = amount, zcTrue = trueAmount;
+                zcCloakProc = ZcCloakProcs.PreHit(this, source, ref zcNormal, ref zcTrue);
+
+                // only write back what the proc changed (a float round trip loses precision on huge hits)
+                if (zcNormal != (float)amount || zcTrue != (float)trueAmount)
+                {
+                    amount = (uint)Math.Round(zcNormal);
+                    trueAmount = (uint)Math.Round(zcTrue);
+                    percent = targetVitalMax > 0 ? (float)amount / targetVitalMax : 0.0f;
+
+                    // negated (Smoke Screen) or wholly taken on stamina (Artful Dodger): nothing reaches health
+                    if (amount + trueAmount == 0)
+                    {
+                        if (source is Player zcPkAttacker)
+                            UpdatePKTimers(zcPkAttacker, this);
+                        return 0;
+                    }
+                }
+            }
 
             if (!isVitalDrainDamage && equippedCloak != null && Cloak.HasDamageProc(equippedCloak) && Cloak.RollProc(equippedCloak, percent))
             {
@@ -1196,6 +1253,9 @@ namespace ACE.Server.WorldObjects
 
                 EnqueueBroadcast(new GameMessageSound(Guid, woundSound, 1.0f));
             }
+
+            // T11+ cloak procs: Calming Breeze / Asheron's Grace, now that the hit has landed and the player is alive
+            ZcCloakProcs.PostHit(this, zcCloakProc);
 
             if (!isVitalDrainDamage && equippedCloak != null && Cloak.HasProcSpell(equippedCloak))
                 Cloak.TryProcSpell(this, source, equippedCloak, percent);

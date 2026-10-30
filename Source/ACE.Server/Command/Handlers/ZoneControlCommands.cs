@@ -3234,6 +3234,23 @@ namespace ACE.Server.Command.Handlers
             sb.Append("|bountyqb=1");
         }
 
+        /// <summary>"|cloakdefs=chance,cooldown,heal,hits,window,staminamult,grace" - the T11+ cloak proc SERVER settings (zc_cloak_*,
+        /// clamped as combat clamps them), so the plugin can show what a cloak_* dial falls back to when a zone or tier Default leaves
+        /// it unset (owner 2026-10-29). Fixed order = the cloak_* tail of ZoneStat.All. Sent LAST on both [[ZC]] and [[ZCSESS]]; an
+        /// older plugin ignores the unknown key. APPEND-ONLY: the plugin indexes this list positionally.</summary>
+        private static void AppendCloakDefs(StringBuilder sb)
+        {
+            var d = ACE.Server.Entity.ZcCloakProcs.ServerDials();
+            sb.Append("|cloakdefs=")
+              .Append(d.Chance.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(d.Cooldown.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(d.BreezeHeal.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(d.DodgerHits.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(d.DodgerWindow.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(d.DodgerStaminaMult.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(d.GraceSeconds.ToString(CultureInfo.InvariantCulture));
+        }
+
         /// <summary>REGION BOUNTIES (2026-10-07): "|regionbounty_vod=0|regionbountylist_vod=..." per region (same list format as
         /// zonebountylist). Sent LAST on both [[ZC]] and [[ZCSESS]]; an older plugin ignores the unknown keys. APPEND-ONLY.</summary>
         private static void AppendRegionBounty(StringBuilder sb)
@@ -3290,6 +3307,7 @@ namespace ACE.Server.Command.Handlers
             AppendZoneBounty(sb);     // APPEND-ONLY (2026-10-06): the zone-wide bounty, after the gear lock
             AppendProcAllow(sb);      // APPEND-ONLY (2026-10-06): the allowed proc spells, after the zone-wide bounty
             AppendRegionBounty(sb);   // APPEND-ONLY (2026-10-07): Valley of Death / Thaelaryn Island bounties, after the procs
+            AppendCloakDefs(sb);      // APPEND-ONLY (2026-10-29): the T11+ cloak proc server defaults, after the region bounties
             return sb.ToString();
         }
 
@@ -4041,6 +4059,7 @@ namespace ACE.Server.Command.Handlers
             AppendZoneBounty(sb);
             AppendProcAllow(sb);
             AppendRegionBounty(sb);
+            AppendCloakDefs(sb);
             return sb.ToString();
         }
 

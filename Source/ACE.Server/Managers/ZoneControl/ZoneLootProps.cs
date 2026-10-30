@@ -25,6 +25,8 @@ namespace ACE.Server.Managers.ZoneControl
     ///   58000 + catalog key   gear line VALUE (int)       58500 + catalog key   gear line GRADE 0-1000 (int)
     ///   58100 - weapon key    weapon card VALUE (float)   58600 - weapon key    weapon card GRADE 0-1000 (int)
     ///   58900 Gear Grade 0-1000 | 58901 Properties used | 58902 Properties limit | 58903 All Creatures slayer (1)
+    ///   58904 T11+ cloak proc (ZcCloakProc: 1 Calming Breeze, 2 Smoke Screen, 3 Artful Dodger, 4 Asheron's Grace) - the panel
+    ///         hides the cloak's retail proc spell / weave, so a loot rule reads this instead
     ///   58999 format version - present on every tier 11+ item, so a loot profile can tell an old server from a new one.
     /// Catalog keys are 19-54 (legacy core resists c1..c4 report as their Always Rolled twins 50-53); weapon keys are
     /// -11..-30. Both are stable (saved records), so these ids are too. NEVER renumber: loot profiles in the wild use them.
@@ -41,6 +43,7 @@ namespace ACE.Server.Managers.ZoneControl
         public const int PropertiesUsedId = 58901;
         public const int PropertiesLimitId = 58902;
         public const int SlayerAllCreaturesId = 58903;
+        public const int CloakProcId = 58904;
         public const int VersionId = 58999;
 
         public const int BlockMin = 58000;
@@ -143,6 +146,11 @@ namespace ACE.Server.Managers.ZoneControl
 
             if (wo.GetProperty(PropertyBool.SlayerAllCreatures) == true)
                 ints[(PropertyInt)SlayerAllCreaturesId] = 1;
+
+            // T11+ cloak proc (2026-10-28): which of the four, while the system owns the cloak (ZcCloakProcs)
+            var cloakProc = ZcCloakProcs.Classify(wo);
+            if (cloakProc != ZcCloakProc.None)
+                ints[(PropertyInt)CloakProcId] = (int)cloakProc;
         }
 
         /// <summary>The cards the panel prints as a clamped 0-100 pct (BuildWeapon: Armor Cleaving, Shield Cleaving, Spell Armor Rend).</summary>

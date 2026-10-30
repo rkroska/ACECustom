@@ -56,6 +56,8 @@ namespace ACE.Server.Tests
                 }
         }
 
+        /// <summary>Every loot property id - gear lines, weapon cards and the single ids such as the cloak proc (58904) - is
+        /// unique and inside the 58000-58999 block.</summary>
         [TestMethod]
         public void IdRanges_NeverOverlap()
         {
@@ -71,7 +73,7 @@ namespace ACE.Server.Tests
                 Assert.IsTrue(ids.Add(ZoneLootProps.WeaponGradeId(key)));
             }
             foreach (var id in new[] { ZoneLootProps.GearGradeId, ZoneLootProps.PropertiesUsedId, ZoneLootProps.PropertiesLimitId,
-                                       ZoneLootProps.SlayerAllCreaturesId, ZoneLootProps.VersionId })
+                                       ZoneLootProps.SlayerAllCreaturesId, ZoneLootProps.CloakProcId, ZoneLootProps.VersionId })
                 Assert.IsTrue(ids.Add(id));
             Assert.IsTrue(ids.All(id => id >= ZoneLootProps.BlockMin && id <= ZoneLootProps.BlockMax));
         }
