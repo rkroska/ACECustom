@@ -1464,9 +1464,12 @@ namespace ACE.Server.Entity
         /// <summary>A name that starts with a damage-type word follows the new type in the weapon kind's own words
         /// ("Frost Ono" -> "Flaming Ono", "Piercing Bow" -> "Blunt Bow"), so the name never says the wrong type (owner review
         /// item 2026-10-04 night); a physical melee type drops the word ("Frost Ono" -> "Ono", the retail physical name).
-        /// A name with no type word is left alone.</summary>
-        private static void RenameForElement(WorldObject target, DamageType element)
+        /// A name with no type word is left alone, and so is a name the player chose with @item-name ("Frost Fang" stays).</summary>
+        internal static void RenameForElement(WorldObject target, DamageType element)
         {
+            if (ItemRename.HasCustomName(target))
+                return;
+
             var renamed = ElementRename(target.Name, element, StyleOf(target));
             if (renamed != null)
                 target.Name = renamed;

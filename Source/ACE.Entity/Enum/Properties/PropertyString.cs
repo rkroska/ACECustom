@@ -172,5 +172,10 @@ namespace ACE.Entity.Enum.Properties
         /// Control kills, per quest - "questname|base|fraction;..." (base = the quest's NumTimesCompleted when the fraction was
         /// saved; a fraction whose base no longer matches is stale and ignored). Cleared whenever the quest restarts. Server-only.</summary>
         KillTaskFractions = 57000,
+
+        /// <summary>Item rename (owner 2026-10-30), on a WEAPON: the name it had before its first staff-approved @item-name
+        /// rename. Set once and never overwritten, so a second rename still remembers the true original. Its presence also
+        /// marks the name as player-chosen, so nothing rewrites it (an element change keeps it). Shown in the appraisal.</summary>
+        OriginalItemName = 58000,
     }
 }

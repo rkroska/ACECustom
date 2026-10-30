@@ -137,7 +137,7 @@ namespace ACE.Server.Managers
             new(PortalPages.PortalSecurity, "Portal Security", "/portal-security", "Server Management", DefaultRestrictedPageMinLevel),
             new(PortalPages.PatchNotesAdmin, "Patch Notes", "/patch-notes/manage", "Server Management", DefaultRestrictedPageMinLevel),
             new(PortalPages.CorpseFinder, "Corpse Finder", "/corpse-finder", "Monitoring", DefaultRestrictedPageMinLevel),
-            new(PortalPages.PetNaming, "Pet Name Approvals", "/pet-names", "Monitoring", DefaultRestrictedPageMinLevel),
+            new(PortalPages.PetNaming, "Name Approvals", "/pet-names", "Monitoring", DefaultRestrictedPageMinLevel),
         };
 
         /// <summary>True when at least one page level has been saved to the database.</summary>

@@ -44,7 +44,7 @@ export const PORTAL_ROUTES: PortalRouteDefinition[] = [
   { key: 'patch-notes', path: '/patch-notes', label: 'Patch Notes', section: 'Player', icon: FileText },
   { key: 'players', path: '/players', label: 'Player List', section: 'Monitoring', icon: Users },
   { key: 'corpse-finder', path: '/corpse-finder', label: 'Corpse Finder', section: 'Monitoring', icon: Skull },
-  { key: 'pet-naming', path: '/pet-names', label: 'Pet Name Approvals', section: 'Monitoring', icon: Tag },
+  { key: 'pet-naming', path: '/pet-names', label: 'Name Approvals', section: 'Monitoring', icon: Tag },
   { key: 'audit-log', path: '/audit', label: 'Audit Log', section: 'Monitoring', icon: ClipboardList },
   { key: 'pyreal-ledger', path: '/audit/pyreals', label: 'Pyreal Ledger', section: 'Monitoring', icon: Coins },
   { key: 'economy', path: '/audit/economy', label: 'Economy', section: 'Monitoring', icon: Landmark },
