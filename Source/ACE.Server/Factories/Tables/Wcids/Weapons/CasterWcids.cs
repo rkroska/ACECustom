@@ -248,6 +248,49 @@ namespace ACE.Server.Factories.Tables.Wcids
             return TierTable.Entry(casterTiers, tier).Roll();
         }
 
+        /// <summary>The nether (Void) casters - the only nether entries in any row above. T1-T2 have none.</summary>
+        private static readonly HashSet<WeenieClassName> netherCasters = new HashSet<WeenieClassName>
+        {
+            WeenieClassName.ace43381_nethersceptre,
+            WeenieClassName.ace43382_netherbaton,
+            WeenieClassName.ace43383_netherstaff,
+        };
+
+        public static bool IsNether(WeenieClassName wcid) => netherCasters.Contains(wcid);
+
+        /// <summary>
+        /// Rolls the tier's row restricted to its nether casters (<paramref name="nether"/> true, the Void weapon group) or to
+        /// everything else (false, the War group), keeping the row's relative weights. undef when the row has no such entry
+        /// (no nether below T3). Walks the tuples by hand: a filtered ChanceTable would fail VerifyTable (it no longer sums
+        /// to 1.0, so it logs an error) and its Roll() would fall through to the last entry for the missing share.
+        /// </summary>
+        public static WeenieClassName RollFiltered(int tier, bool nether)
+        {
+            tier = Math.Clamp(tier, 1, 10);
+            var row = TierTable.Entry(casterTiers, tier);
+
+            var total = 0.0f;
+            foreach (var (result, chance) in row)
+                if (chance > 0 && IsNether(result) == nether)
+                    total += chance;
+            if (total <= 0)
+                return WeenieClassName.undef;
+
+            var roll = ACE.Common.ThreadSafeRandom.Next(0.0f, total);
+            var run = 0.0f;
+            var last = WeenieClassName.undef;
+            foreach (var (result, chance) in row)
+            {
+                if (chance <= 0 || IsNether(result) != nether)
+                    continue;
+                run += chance;
+                last = result;
+                if (roll < run)
+                    return result;
+            }
+            return last;   // float rounding at the very top of the range
+        }
+
         private static readonly HashSet<WeenieClassName> _combined = new HashSet<WeenieClassName>();
 
         static CasterWcids()

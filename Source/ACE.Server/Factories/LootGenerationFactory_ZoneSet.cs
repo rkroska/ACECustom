@@ -60,12 +60,12 @@ namespace ACE.Server.Factories
             public int Cloak;
             public int Clothing;   // shirts / pants (undergarment coverage) from the retail clothing table (2026-10-06)
 
-            /// <summary>BUDGET MODE only: the exact weapon families to create, one weapon each. Null in
-            /// legacy mode, where Weapons is instead a MULTIPLIER over every family (1 = all nine).</summary>
-            public List<int> WeaponFamilyPicks;
+            /// <summary>BUDGET MODE only: the exact weapons to create, one each - a family plus the group variant it
+            /// was drawn for. Null in legacy mode, where Weapons is instead a MULTIPLIER over every family (1 = all nine).</summary>
+            public List<ZoneSetWeaponPick> WeaponPicks;
 
             public bool Any =>
-                (WeaponFamilyPicks != null && WeaponFamilyPicks.Count > 0) ||
+                (WeaponPicks != null && WeaponPicks.Count > 0) ||
                 Weapons > 0 || Helm > 0 || Chest > 0 || Shoulder > 0 || Bracer > 0 || Glove > 0 ||
                 Girth > 0 || UpperLeg > 0 || LowerLeg > 0 || Boot > 0 || Shield > 0 ||
                 Amulet > 0 || Ring > 0 || Bracelet > 0 || Trinket > 0 || Cloak > 0 || Clothing > 0;
@@ -136,6 +136,53 @@ namespace ACE.Server.Factories
         /// <summary>The clothing slot's default budget weight (loot_weight_clothing): retail T10 drops clothing ~13 pct, about half
         /// of armor's 24 (TreasureItemTypeChances).</summary>
         public const double ZoneLootClothingWeightDefault = 0.5;
+
+        /// <summary>
+        /// The budget-mode weapon GROUP weights (2026-10-30, the loot_weight_melee_1h / _melee_2h / _missile / _war / _void
+        /// zone stats). Each weapon pick draws a group by these weights, then a family inside it. Defaults: the four
+        /// "one weapon covers you" groups at 1, Void at 1/7 - a War mage needs a caster per element (7), a Void mage one, so
+        /// Void at War / 7 gives both the same drops per weapon needed. That is also exactly the share today's caster table
+        /// gives nether (3 of 24 equally weighted entries). Bad values (NaN, negative, infinite) count as 0: an infinite
+        /// weight would pass every `&gt; 0` check, make the total infinite and push every pick onto the last group.
+        /// </summary>
+        public readonly record struct WeaponGroupWeights
+        {
+            public double Melee1H { get; }
+            public double Melee2H { get; }
+            public double Missile { get; }
+            public double War { get; }
+            public double Void { get; }
+
+            public WeaponGroupWeights(double melee1H, double melee2H, double missile, double war, double @void)
+            {
+                Melee1H = Clean(melee1H);
+                Melee2H = Clean(melee2H);
+                Missile = Clean(missile);
+                War = Clean(war);
+                Void = Clean(@void);
+            }
+
+            public double Total => Melee1H + Melee2H + Missile + War + Void;
+
+            public static WeaponGroupWeights Default { get; } =
+                new(ZoneLootWeaponGroupWeightDefault, ZoneLootWeaponGroupWeightDefault, ZoneLootWeaponGroupWeightDefault,
+                    ZoneLootWeaponGroupWeightDefault, ZoneLootVoidWeightDefault);
+
+            private static double Clean(double w) => double.IsFinite(w) && w > 0 ? w : 0.0;
+        }
+
+        /// <summary>Default weight of the 1H melee, 2H melee, missile and War weapon groups.</summary>
+        public const double ZoneLootWeaponGroupWeightDefault = 1.0;
+
+        /// <summary>Default weight of the Void weapon group: War / 7 (see <see cref="WeaponGroupWeights"/>).</summary>
+        public const double ZoneLootVoidWeightDefault = 1.0 / 7.0;
+
+        /// <summary>Which group a weapon pick was drawn for. Any = no constraint: today's roll inside the family (legacy
+        /// per-slot mode and the `/zcrare weapon|melee|caster` dev mint).</summary>
+        public enum ZoneSetWeaponVariant { Any, OneHanded, TwoHanded, War, Void }
+
+        /// <summary>One weapon to create: an index into the private family list plus the group variant.</summary>
+        public readonly record struct ZoneSetWeaponPick(int Family, ZoneSetWeaponVariant Variant);
 
         /// <summary>
         /// The tier-11+ wield gates (StampTierGates: item / Creature / Life augs at T11-T15, Triune Weave from T16), replacing
@@ -690,9 +737,9 @@ namespace ACE.Server.Factories
         private static readonly int zoneSetCasterFamily = System.Array.IndexOf(zoneSetFamilies, ZoneSetFamily.Caster);
 
         /// <summary>
-        /// One weapon family index for <see cref="ZoneLootSetCounts.WeaponFamilyPicks"/>, drawn uniformly from the
-        /// lanes asked for (the `/zcrare` dev mint, 2026-10-08: "one melee weapon", "one caster"). The family enum is
-        /// private to this class, so a caller outside it cannot name a lane any other way. -1 when no lane is asked for.
+        /// One weapon family index, drawn uniformly from the lanes asked for (the `/zcrare` dev mint, 2026-10-08: "one melee
+        /// weapon", "one caster"). The family enum is private to this class, so a caller outside it cannot name a lane any
+        /// other way. -1 when no lane is asked for.
         /// </summary>
         internal static int RollZoneSetWeaponFamily(bool melee, bool missile, bool caster)
         {
@@ -708,11 +755,53 @@ namespace ACE.Server.Factories
         }
 
         /// <summary>
+        /// The one weapon pick a `/zcrare` kind names: weapon / melee / missile / caster roll as before (variant Any), and the
+        /// weapon groups (2026-10-30) 1h / 2h / war / void force that group. Null for a kind that is not a weapon.
+        /// </summary>
+        internal static ZoneSetWeaponPick? ZoneSetWeaponPickFor(string kind)
+        {
+            switch (kind)
+            {
+                case "weapon": return new ZoneSetWeaponPick(RollZoneSetWeaponFamily(true, true, true), ZoneSetWeaponVariant.Any);
+                case "melee": return new ZoneSetWeaponPick(RollZoneSetWeaponFamily(true, false, false), ZoneSetWeaponVariant.Any);
+                case "missile": return new ZoneSetWeaponPick(zoneSetMissileFamily, ZoneSetWeaponVariant.Any);
+                case "caster": return new ZoneSetWeaponPick(zoneSetCasterFamily, ZoneSetWeaponVariant.Any);
+                case "1h": return new ZoneSetWeaponPick(RollZoneSetWeaponFamily(true, false, false), ZoneSetWeaponVariant.OneHanded);
+                case "2h": return new ZoneSetWeaponPick(zoneSetTwoHandedFamilies[ThreadSafeRandom.Next(0, zoneSetTwoHandedFamilies.Length - 1)], ZoneSetWeaponVariant.TwoHanded);
+                case "war": return new ZoneSetWeaponPick(zoneSetCasterFamily, ZoneSetWeaponVariant.War);
+                case "void": return new ZoneSetWeaponPick(zoneSetCasterFamily, ZoneSetWeaponVariant.Void);
+                default: return null;
+            }
+        }
+
+        /// <summary>The melee families that have a two-handed line (axe, mace, spear, sword), as family indices.</summary>
+        private static readonly int[] zoneSetTwoHandedFamilies =
+        {
+            System.Array.IndexOf(zoneSetFamilies, ZoneSetFamily.Axe), System.Array.IndexOf(zoneSetFamilies, ZoneSetFamily.Mace),
+            System.Array.IndexOf(zoneSetFamilies, ZoneSetFamily.Spear), System.Array.IndexOf(zoneSetFamilies, ZoneSetFamily.Sword),
+        };
+
+        private static bool CanTwoHand(ZoneSetFamily family) =>
+            family == ZoneSetFamily.Axe || family == ZoneSetFamily.Mace || family == ZoneSetFamily.Spear || family == ZoneSetFamily.Sword;
+
+        /// <summary>The group variant that keeps a melee piece's kind: a two-handed weapon stays two-handed, anything else
+        /// stays one-handed (Ascendant re-roll, 2026-10-30 - before this a 2H could come back one-handed).</summary>
+        internal static ZoneSetWeaponVariant MeleeVariantLike(ACE.Entity.Enum.WeaponType weaponType) =>
+            weaponType == ACE.Entity.Enum.WeaponType.TwoHanded ? ZoneSetWeaponVariant.TwoHanded : ZoneSetWeaponVariant.OneHanded;
+
+        /// <summary>The group variant that keeps a caster's kind: nether stays Void, anything else stays War. HasFlag, as the
+        /// caster card code does (ZoneLootMutator), so a combined-flag weenie is still read as nether. Casters keep their
+        /// damage type - only melee pieces have it rewritten (ZoneSlashRendDamageType).</summary>
+        internal static ZoneSetWeaponVariant CasterVariantLike(ACE.Entity.Enum.DamageType damageType) =>
+            damageType.HasFlag(ACE.Entity.Enum.DamageType.Nether) ? ZoneSetWeaponVariant.Void : ZoneSetWeaponVariant.War;
+
+        /// <summary>
         /// The one-item slot counts that make CreateZoneLootSet produce a piece of the SAME KIND as this one: the same weapon
         /// family, the same armor slot, the same jewelry slot, a shield, a cloak or a shirt / pants piece. For the Ascendant
         /// rare (2026-10-09), which replaces the piece the kill rolled with one generated at a higher tier - the kind is kept,
-        /// the exact weenie is rolled again (a sword stays in the Sword family but may change weight class; a two-handed
-        /// weapon that is not a spear re-rolls among the families that can be two-handed). Null for anything that is not
+        /// the exact weenie is rolled again (a one-handed sword stays a one-handed sword but may change weight class; a
+        /// two-handed weapon that is not a spear re-rolls among the families that can be two-handed and stays two-handed; a
+        /// Void caster stays Void and a War caster stays War - weapon groups, 2026-10-30). Null for anything that is not
         /// zone-set gear.
         /// </summary>
         internal static ZoneLootSetCounts ZoneSetCountsLike(WorldObject wo)
@@ -723,9 +812,9 @@ namespace ACE.Server.Factories
             var one = new ZoneLootSetCounts();
 
             if (wo is Caster)
-                one.WeaponFamilyPicks = new List<int> { zoneSetCasterFamily };
+                one.WeaponPicks = new List<ZoneSetWeaponPick> { new(zoneSetCasterFamily, CasterVariantLike(wo.W_DamageType)) };
             else if (wo is MissileLauncher)
-                one.WeaponFamilyPicks = new List<int> { zoneSetMissileFamily };
+                one.WeaponPicks = new List<ZoneSetWeaponPick> { new(zoneSetMissileFamily, ZoneSetWeaponVariant.Any) };
             else if (wo is MeleeWeapon)
             {
                 ZoneSetFamily family;
@@ -749,7 +838,7 @@ namespace ACE.Server.Factories
                     default:
                         return null;
                 }
-                one.WeaponFamilyPicks = new List<int> { System.Array.IndexOf(zoneSetFamilies, family) };
+                one.WeaponPicks = new List<ZoneSetWeaponPick> { new(System.Array.IndexOf(zoneSetFamilies, family), MeleeVariantLike(wo.W_WeaponType)) };
             }
             else if (wo.IsShield)
                 one.Shield = 1;
@@ -795,13 +884,13 @@ namespace ACE.Server.Factories
         /// per-slot weights carried on <paramref name="w"/>. Per-item sampling is what makes "on
         /// average 3 armor" true: the split varies kill to kill and converges on the weights.
         ///
-        /// 🔴 WEAPONS ARE DRAWN LANE-FIRST (owner 2026-08-31): "1/3 should be melee, 1/3 missile,
-        /// 1/3 caster - that's the goal". Every weapon pick chooses a LANE at equal weight, THEN a
-        /// family inside it. Within melee the seven families are still drawn WITHOUT REPLACEMENT
-        /// (three melee picks yield three different families, never three swords); missile and
-        /// caster are single families and DO repeat, which is what makes the thirds hold - see
-        /// the block comment at the weapon case. Armor and jewelry allow repeats too - two rings
-        /// is a legitimate roll.
+        /// 🔴 WEAPONS ARE DRAWN GROUP-FIRST (2026-10-30, replacing the owner's equal-thirds lanes of
+        /// 2026-08-31). Every weapon pick chooses a GROUP by <paramref name="groups"/> - 1H melee, 2H melee,
+        /// missile, War, Void - THEN a family inside it. Inside a melee group the families are drawn
+        /// WITHOUT REPLACEMENT until every one has dropped, then the list refills: a big boss budget can
+        /// carry two swords, but never at the cost of the group's share. Missile and the casters are single
+        /// families and repeat. See the block comment at the weapon case. Armor and jewelry allow repeats
+        /// too - two rings is a legitimate roll.
         ///
         /// The budget is a CEILING, not a quota: armor coverage credit (one coat covering chest +
         /// abdomen + upper arms) can satisfy several sampled slots with a single item, so the corpse
@@ -809,11 +898,14 @@ namespace ACE.Server.Factories
         /// </summary>
         /// <param name="wClothing">The clothing (shirts / pants) category weight - loot_weight_clothing, default
         /// ZoneLootClothingWeightDefault. Required: a missing weight must never silently drop clothing.</param>
+        /// <param name="groups">The weapon group weights - the loot_weight_melee_1h / _melee_2h / _missile / _war / _void
+        /// zone stats, <see cref="WeaponGroupWeights.Default"/> when unset. All five at 0 turns weapons off.</param>
         public static ZoneLootSetCounts RollBudgetedCounts(
             ZoneLootSetCounts w, int budget,
-            double wWeapon, double wArmor, double wJewelry, double wCloak, double wClothing)
+            double wWeapon, double wArmor, double wJewelry, double wCloak, double wClothing,
+            WeaponGroupWeights groups)
         {
-            var result = new ZoneLootSetCounts { WeaponFamilyPicks = new List<int>() };
+            var result = new ZoneLootSetCounts { WeaponPicks = new List<ZoneSetWeaponPick>() };
             if (budget <= 0)
                 return result;
 
@@ -828,18 +920,31 @@ namespace ACE.Server.Factories
                 (0, w.Amulet), (1, w.Ring), (2, w.Bracelet), (3, w.Trinket),
             };
 
-            // melee families only - the two ranged lanes are single families that repeat, so they
-            // are never consumed and never need a free-list
-            var freeMelee = new List<int>();
-            for (var i = 0; i < zoneSetFamilies.Length; i++)
-                if (i != zoneSetMissileFamily && i != zoneSetCasterFamily)
-                    freeMelee.Add(i);
+            // weapon groups, paired with their weight (0 = never): 0 = 1H melee, 1 = 2H melee, 2 = missile, 3 = War, 4 = Void
+            var weaponGroups = new (int Slot, double Weight)[]
+            {
+                (0, groups.Melee1H), (1, groups.Melee2H), (2, groups.Missile), (3, groups.War), (4, groups.Void),
+            };
+            var weaponGroupTotal = groups.Total;
+
+            // free-lists for the two melee groups - missile and the casters are single families that repeat, so
+            // they are never consumed and never need one
+            var free1H = new List<int>();
+            var free2H = new List<int>();
 
             static double Sum((int Slot, double Weight)[] a)
             {
                 var t = 0.0;
                 foreach (var e in a) if (e.Weight > 0) t += e.Weight;
                 return t;
+            }
+
+            static int TakeRandom(List<int> free)
+            {
+                var fi = ACE.Common.ThreadSafeRandom.Next(0, free.Count - 1);
+                var family = free[fi];
+                free.RemoveAt(fi);
+                return family;
             }
 
             static int PickSlot((int Slot, double Weight)[] a, double total)
@@ -858,17 +963,18 @@ namespace ACE.Server.Factories
 
             for (var n = 0; n < budget; n++)
             {
-                // rebuild category availability each pick: weapons fall out once all nine are drawn,
-                // and a category whose every slot is weighted 0 must never be chosen
+                // rebuild category availability each pick: a category whose every slot is weighted 0
+                // must never be chosen
                 var armorTotal = Sum(armorSlots);
                 var jewelTotal = Sum(jewelSlots);
                 var cats = new List<(int Cat, double Weight)>();
                 // w.Weapons gates the category on/off exactly like every other slot ("a slot at 0 is
                 // off"). Without this the weapon pool is always non-empty, so a sub-tier-11 profile -
                 // where TierDefault zeroes every slot - would drop WEAPONS ONLY instead of nothing.
-                // No free-list test any more: missile and caster repeat, so the weapon category can
-                // never run dry the way it did when all nine families were consumable.
-                if (wWeapon > 0 && w.Weapons > 0) cats.Add((0, wWeapon));
+                // All five group weights at 0 is the same "off" - the pick goes to another category
+                // instead of being lost. No free-list test: the melee lists refill and the other
+                // groups repeat, so the weapon category never runs dry.
+                if (wWeapon > 0 && w.Weapons > 0 && weaponGroupTotal > 0) cats.Add((0, wWeapon));
                 if (wArmor > 0 && armorTotal > 0) cats.Add((1, wArmor));
                 if (wJewelry > 0 && jewelTotal > 0) cats.Add((2, wJewelry));
                 if (wCloak > 0 && w.Cloak > 0) cats.Add((3, wCloak));
@@ -889,41 +995,52 @@ namespace ACE.Server.Factories
 
                 switch (picked)
                 {
-                    case 0:   // weapon - LANE first (equal thirds), then the family inside the lane
+                    case 0:   // weapon - GROUP first (weighted), then the family inside the group
                         //
-                        // 🔴 WHY LANE-FIRST AND NOT A WEIGHT ON THE FAMILY DRAW. The obvious fix for
-                        // "melee is 7 of 9 families" is to weight the flat family pick - melee 1 each,
-                        // missile and caster 16. Measured, that DOES land 33.5/33.2/33.3 today, and it
-                        // is a fitted number that silently rots: because missile and caster were single
-                        // families drawn WITHOUT replacement they were hard-capped at one per corpse,
-                        // so the split moves with how many weapons a corpse drops. Same weight of 16 at
-                        // budget 10-14 gives melee 44.1 pct; at weapon category weight 4 it gives 45.1
-                        // pct. The thirds would quietly break every time someone touched an unrelated
-                        // Drop Table knob, with nothing in the GUI to say so.
-                        // Choosing the LANE first makes the ratio STRUCTURAL: measured 33.3/33.4/33.3
-                        // and flat across budget 4-6 / 7-9 / 10-14 and weapon weights 1, 2 and 4.
+                        // 🔴 WHY GROUPS (2026-10-30). The equal thirds before this (melee / missile / caster,
+                        // owner 2026-08-31) were even per LANE but not per player: melee split its third
+                        // four ways and Two-handed only existed as the 4th skill option in 4 of 7 families,
+                        // so it got 4.8 pct of weapon drops against Missile's 33.3. Players treat Heavy /
+                        // Light / Finesse as one bucket, so the groups are 1H melee, 2H melee, missile, War
+                        // and Void, weighted by how many weapons each needs to be effective: a War mage needs
+                        // a caster per element (7), a Void mage one, so Void defaults to War / 7.
                         //
-                        // 🔴 MISSILE AND CASTER MUST BE ALLOWED TO REPEAT. Capping either at one per
-                        // corpse re-introduces the exact bias this replaces (measured: missile capped
-                        // = 37.2 melee / 25.5 missile / 37.4 caster). Repeats are harmless - each entry
-                        // re-rolls its own sub-type downstream in CreateZoneSetWeapon, so two missile
-                        // picks are usually a bow and a crossbow, and CasterWcids is one pool anyway.
-                        // About 12.6 pct of corpses now carry two or more of one ranged lane; that is
-                        // the intended cost of a true third (owner ruled "caster repeats allowed").
+                        // 🔴 WHY GROUP-FIRST AND NOT A WEIGHT ON THE FAMILY DRAW. A weight on a flat family pick
+                        // is a fitted number that moves with how many weapons a corpse drops (measured for the
+                        // thirds: the same weight gave melee 33.5 pct at the old budget and 44.1 at 10-14).
+                        // Choosing the GROUP first makes each group's share STRUCTURAL - its weight over the
+                        // total, flat across every budget and weapon weight.
+                        //
+                        // 🔴 EVERY GROUP MUST BE ABLE TO REPEAT. Capping one at one per corpse re-introduces
+                        // the bias (measured for the thirds: missile capped = 37.2 / 25.5 / 37.4). Missile and
+                        // the casters repeat as single families; the melee groups draw their families without
+                        // replacement for variety and refill when empty, so a 15-item boss never loses a
+                        // group's share - it can carry two swords instead.
                     {
-                        var lanes = new List<int>(3);
-                        if (freeMelee.Count > 0) lanes.Add(0);   // melee - only while a family is left
-                        lanes.Add(1);                            // missile - repeats
-                        lanes.Add(2);                            // caster  - repeats
-                        var lane = lanes[ACE.Common.ThreadSafeRandom.Next(0, lanes.Count - 1)];
-                        if (lane == 0)
+                        switch (PickSlot(weaponGroups, weaponGroupTotal))
                         {
-                            var fi = ACE.Common.ThreadSafeRandom.Next(0, freeMelee.Count - 1);
-                            result.WeaponFamilyPicks.Add(freeMelee[fi]);
-                            freeMelee.RemoveAt(fi);
+                            case 0:
+                                if (free1H.Count == 0)
+                                    for (var i = 0; i < zoneSetFamilies.Length; i++)
+                                        if (i != zoneSetMissileFamily && i != zoneSetCasterFamily)
+                                            free1H.Add(i);
+                                result.WeaponPicks.Add(new ZoneSetWeaponPick(TakeRandom(free1H), ZoneSetWeaponVariant.OneHanded));
+                                break;
+                            case 1:
+                                if (free2H.Count == 0)
+                                    free2H.AddRange(zoneSetTwoHandedFamilies);
+                                result.WeaponPicks.Add(new ZoneSetWeaponPick(TakeRandom(free2H), ZoneSetWeaponVariant.TwoHanded));
+                                break;
+                            case 2:
+                                result.WeaponPicks.Add(new ZoneSetWeaponPick(zoneSetMissileFamily, ZoneSetWeaponVariant.Any));
+                                break;
+                            case 3:
+                                result.WeaponPicks.Add(new ZoneSetWeaponPick(zoneSetCasterFamily, ZoneSetWeaponVariant.War));
+                                break;
+                            case 4:
+                                result.WeaponPicks.Add(new ZoneSetWeaponPick(zoneSetCasterFamily, ZoneSetWeaponVariant.Void));
+                                break;
                         }
-                        else
-                            result.WeaponFamilyPicks.Add(lane == 1 ? zoneSetMissileFamily : zoneSetCasterFamily);
                     }
                         break;
 
@@ -974,17 +1091,17 @@ namespace ACE.Server.Factories
         {
             var items = new List<WorldObject>();
 
-            if (counts.WeaponFamilyPicks != null)
+            if (counts.WeaponPicks != null)
             {
-                // budget mode: exactly the sampled families, ONE weapon each
-                foreach (var famIdx in counts.WeaponFamilyPicks)
+                // budget mode: exactly the sampled picks, ONE weapon each
+                foreach (var pick in counts.WeaponPicks)
                 {
-                    var family = (ZoneSetFamily)famIdx;
-                    var weapon = CreateZoneSetWeapon(profile, family);
+                    var family = (ZoneSetFamily)pick.Family;
+                    var weapon = CreateZoneSetWeapon(profile, family, pick.Variant);
                     if (weapon != null)
                         items.Add(weapon);
                     else
-                        log.Warn($"[ZONELOOT] CreateZoneLootSet({profile.TreasureType}): failed to create {family} weapon");
+                        log.Warn($"[ZONELOOT] CreateZoneLootSet({profile.TreasureType}): failed to create {family} ({pick.Variant}) weapon");
                 }
             }
             else
@@ -994,7 +1111,7 @@ namespace ACE.Server.Factories
                 {
                     foreach (var family in zoneSetFamilies)
                     {
-                        var weapon = CreateZoneSetWeapon(profile, family);
+                        var weapon = CreateZoneSetWeapon(profile, family, ZoneSetWeaponVariant.Any);
                         if (weapon != null)
                             items.Add(weapon);
                         else
@@ -1458,7 +1575,11 @@ namespace ACE.Server.Factories
                 log.Warn($"[ZONELOOT] CreateZoneLootSet({profile.TreasureType}): failed to create {itemType} piece");
         }
 
-        private static WorldObject CreateZoneSetWeapon(TreasureDeath profile, ZoneSetFamily family)
+        /// <summary>Tiers already warned about having no nether caster to roll, so the Void fallback logs once per tier
+        /// instead of once per kill.</summary>
+        private static readonly ConcurrentDictionary<int, bool> zoneSetVoidFallbackWarned = new();
+
+        private static WorldObject CreateZoneSetWeapon(TreasureDeath profile, ZoneSetFamily family, ZoneSetWeaponVariant variant)
         {
             var treasureRoll = new TreasureRoll(TreasureItemType_Orig.Weapon);
 
@@ -1489,11 +1610,26 @@ namespace ACE.Server.Factories
 
                 case ZoneSetFamily.Caster:
                     treasureRoll.WeaponType = TreasureWeaponType.Caster;
-                    treasureRoll.Wcid = CasterWcids.Roll(profile.Tier);
+                    if (variant == ZoneSetWeaponVariant.Void)
+                    {
+                        treasureRoll.Wcid = CasterWcids.RollFiltered(profile.Tier, nether: true);
+                        // tier 1-2 rows carry no nether caster (only reachable when a zone turns the set on below
+                        // tier 11): give a War caster rather than nothing
+                        if (treasureRoll.Wcid == WeenieClassName.undef)
+                        {
+                            if (zoneSetVoidFallbackWarned.TryAdd(profile.Tier, true))
+                                log.Warn($"[ZONELOOT] CreateZoneSetWeapon: tier {profile.Tier} has no nether caster; Void picks drop a War caster instead");
+                            treasureRoll.Wcid = CasterWcids.RollFiltered(profile.Tier, nether: false);
+                        }
+                    }
+                    else if (variant == ZoneSetWeaponVariant.War)
+                        treasureRoll.Wcid = CasterWcids.RollFiltered(profile.Tier, nether: false);
+                    else
+                        treasureRoll.Wcid = CasterWcids.Roll(profile.Tier);
                     break;
 
                 default:
-                    RollZoneSetMeleeWeapon(family, treasureRoll);
+                    RollZoneSetMeleeWeapon(family, variant, treasureRoll);
                     break;
             }
 
@@ -1504,13 +1640,28 @@ namespace ACE.Server.Factories
             return CreateAndMutateWcid(profile, treasureRoll, false);
         }
 
-        private static void RollZoneSetMeleeWeapon(ZoneSetFamily family, TreasureRoll treasureRoll)
+        /// <summary>
+        /// The melee skill to roll: 1 = Heavy, 2 = Light, 3 = Finesse, 4 = TwoHanded. OneHanded picks Heavy / Light /
+        /// Finesse evenly (one bucket, 2026-10-30); TwoHanded is always 4 when the family has a two-handed line; Any is the
+        /// pre-group roll - TwoHanded folded in as a 4th option where the family has one (legacy mode, `/zcrare melee`).
+        /// </summary>
+        internal static int RollZoneSetMeleeSkill(ZoneSetWeaponVariant variant, bool canTwoHand)
         {
-            var canTwoHand = family == ZoneSetFamily.Axe || family == ZoneSetFamily.Mace ||
-                             family == ZoneSetFamily.Spear || family == ZoneSetFamily.Sword;
+            if (variant == ZoneSetWeaponVariant.TwoHanded && canTwoHand)
+                return 4;
+            if (variant == ZoneSetWeaponVariant.Any)
+                return ThreadSafeRandom.Next(1, canTwoHand ? 4 : 3);
+            return ThreadSafeRandom.Next(1, 3);
+        }
 
-            // 1 = Heavy, 2 = Light, 3 = Finesse, 4 = TwoHanded (folded into the family skill roll)
-            var skill = ThreadSafeRandom.Next(1, canTwoHand ? 4 : 3);
+        private static void RollZoneSetMeleeWeapon(ZoneSetFamily family, ZoneSetWeaponVariant variant, TreasureRoll treasureRoll)
+        {
+            var canTwoHand = CanTwoHand(family);
+
+            if (variant == ZoneSetWeaponVariant.TwoHanded && !canTwoHand)
+                log.Warn($"[ZONELOOT] RollZoneSetMeleeWeapon: {family} has no two-handed line; rolling it one-handed");
+
+            var skill = RollZoneSetMeleeSkill(variant, canTwoHand);
 
             if (skill == 4)
             {

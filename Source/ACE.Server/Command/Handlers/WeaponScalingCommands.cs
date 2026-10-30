@@ -1249,11 +1249,11 @@ namespace ACE.Server.Command.Handlers
         // comes from the creature the caller last appraised, or an argument), and no server-wide broadcast. The audit
         // channel and the log line still run, marked as a dev mint, so a minted rare is never mistaken for a found one.
 
-        private static readonly string[] ZcRareKinds = { "weapon", "melee", "missile", "caster", "armor", "shield", "jewelry", "cloak", "clothing" };
+        private static readonly string[] ZcRareKinds = { "weapon", "melee", "missile", "caster", "1h", "2h", "war", "void", "armor", "shield", "jewelry", "cloak", "clothing" };
 
         [CommandHandler("zcrare", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "T11+ rares: mint a Pristine or Ascendant test item through the real drop path, or show your rare odds.",
-            "pristine <weapon|melee|missile|caster|armor|shield|jewelry|cloak|clothing> [tier 11-25, default your own tier] [creature type for the Slayer]\n" +
+            "pristine <weapon|melee|missile|caster|1h|2h|war|void|armor|shield|jewelry|cloak|clothing> [tier 11-25, default your own tier] [creature type for the Slayer]\n" +
             "    One Pristine item of that kind in your pack, made by the same generation + sweep a kill uses. The Slayer type is the\n" +
             "    creature you last appraised, else the creature type argument (e.g. Olthoi), else the weapon gets no Slayer.\n" +
             "    Audited and logged as a dev mint; never broadcast.\n" +
@@ -1392,10 +1392,16 @@ namespace ACE.Server.Command.Handlers
             var one = new ACE.Server.Factories.LootGenerationFactory.ZoneLootSetCounts();
             switch (kind)
             {
-                case "weapon": one.WeaponFamilyPicks = new List<int> { ACE.Server.Factories.LootGenerationFactory.RollZoneSetWeaponFamily(true, true, true) }; break;
-                case "melee": one.WeaponFamilyPicks = new List<int> { ACE.Server.Factories.LootGenerationFactory.RollZoneSetWeaponFamily(true, false, false) }; break;
-                case "missile": one.WeaponFamilyPicks = new List<int> { ACE.Server.Factories.LootGenerationFactory.RollZoneSetWeaponFamily(false, true, false) }; break;
-                case "caster": one.WeaponFamilyPicks = new List<int> { ACE.Server.Factories.LootGenerationFactory.RollZoneSetWeaponFamily(false, false, true) }; break;
+                case "weapon":
+                case "melee":
+                case "missile":
+                case "caster":
+                case "1h":
+                case "2h":
+                case "war":
+                case "void":
+                    one.WeaponPicks = new List<ACE.Server.Factories.LootGenerationFactory.ZoneSetWeaponPick> { ACE.Server.Factories.LootGenerationFactory.ZoneSetWeaponPickFor(kind).Value };
+                    break;
                 case "shield": one.Shield = 1; break;
                 case "cloak": one.Cloak = 1; break;
                 case "clothing": one.Clothing = 1; break;

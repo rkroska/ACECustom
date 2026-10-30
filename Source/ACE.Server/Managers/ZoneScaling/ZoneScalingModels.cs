@@ -573,6 +573,20 @@ namespace ACE.Server.Managers.ZoneScaling
         public const string LootSlotClothingMax = "loot_slot_clothing_max";
         public const string LootWeightClothing = "loot_weight_clothing";
 
+        // WEAPON GROUP weights (2026-10-30): which KIND of weapon each budget-mode weapon pick is, relative weights
+        // inside the weapon category, normalized at roll time. Replaces the hardcoded equal thirds (melee / missile /
+        // caster, owner 2026-08-31) that left Two-handed at 4.8 pct of weapon drops. Heavy / Light / Finesse are ONE
+        // bucket (players use them interchangeably); War and Void are split by how many casters a player needs - War
+        // one per element (7), Void one (nether) - so Void defaults to War / 7. Unset = the code default
+        // (LootGenerationFactory.WeaponGroupWeights.Default). 0 = never. A group is turned OFF with `set ... 0`: a
+        // stat toggled off resolves to the code default, not to 0. All five at 0 = no weapons (the budget goes to
+        // the other categories).
+        public const string LootWeightMelee1H = "loot_weight_melee_1h";   // one-handed melee: Heavy / Light / Finesse, evenly
+        public const string LootWeightMelee2H = "loot_weight_melee_2h";   // Two-handed: the axe / mace / spear / sword lines
+        public const string LootWeightMissile = "loot_weight_missile";    // bow / crossbow / atlatl, 1/3 each
+        public const string LootWeightWar = "loot_weight_war";            // non-nether casters (the seven War elements)
+        public const string LootWeightVoid = "loot_weight_void";          // nether casters
+
         // C5. ARMOR BASE VALUES (owner 2026-08-24, Armor_Base_Values_Plan_2026-08-24.md sections 2.1-2.3).
         // The three numbers a T11+ armour piece was built on that had no authoring surface at all.
         //
@@ -764,6 +778,8 @@ namespace ACE.Server.Managers.ZoneScaling
             CasterMagicDelay, ArchetypeCastChance, ArchetypeMeleeRange, ArchetypeKeepName,
             // charm level cap per tier (2026-10-25) - APPEND-ONLY
             CharmLevelCap,
+            // weapon group weights (2026-10-30) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            LootWeightMelee1H, LootWeightMelee2H, LootWeightMissile, LootWeightWar, LootWeightVoid,
         };
 
         /// <summary>
