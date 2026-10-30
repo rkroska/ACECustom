@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using ACE.Entity.Enum.Properties;
 using ACE.Server.WorldObjects;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -91,12 +93,22 @@ namespace ACE.Server.Tests
         public void InfusionPrompt_ShowsCoins_SoOneCoinIsVisible()
         {
             // level 5 starts at 963 coins, level 6 at 1,222, level 7 at 1,488
-            Assert.AreEqual("Put 1 Prestige Coin into your Armor Breaker Charm?\n\nCoins: 963 -> 964\nLevel 5, 258 more coins to level 6",
-                Player.CharmInfusionPromptText(Block, 963, 1));
-            Assert.AreEqual("Put 300 Prestige Coins into your Armor Breaker Charm?\n\nCoins: 963 -> 1,263\nLevel 5 -> Level 6 (15% to 7)",
-                Player.CharmInfusionPromptText(Block, 963, 300));
-            Assert.IsTrue(Player.CharmInfusionPromptText(Block, 1220, 1).EndsWith("Level 5, 1 more coin to level 6"));
-            Assert.IsTrue(Player.CharmInfusionPromptText(Block, Block.MaxCoins - 1, 1).EndsWith("Level 99 -> Level 100 (max)"));
+            // {:N0} groups digits by the current culture - pin en-US so "1,263" matches on any machine
+            var culture = CultureInfo.CurrentCulture;
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+            try
+            {
+                Assert.AreEqual("Put 1 Prestige Coin into your Armor Breaker Charm?\n\nCoins: 963 -> 964\nLevel 5, 258 more coins to level 6",
+                    Player.CharmInfusionPromptText(Block, 963, 1));
+                Assert.AreEqual("Put 300 Prestige Coins into your Armor Breaker Charm?\n\nCoins: 963 -> 1,263\nLevel 5 -> Level 6 (15% to 7)",
+                    Player.CharmInfusionPromptText(Block, 963, 300));
+                Assert.IsTrue(Player.CharmInfusionPromptText(Block, 1220, 1).EndsWith("Level 5, 1 more coin to level 6"));
+                Assert.IsTrue(Player.CharmInfusionPromptText(Block, Block.MaxCoins - 1, 1).EndsWith("Level 99 -> Level 100 (max)"));
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = culture;
+            }
         }
 
         [TestMethod]
