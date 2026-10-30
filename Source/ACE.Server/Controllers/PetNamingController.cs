@@ -266,7 +266,8 @@ namespace ACE.Server.Controllers
                     return NotFound(new { message = "Pet name request not found or already reviewed." });
 
                 // An item request's fee goes back to the player's bank (once; see ItemRename.ClaimRefund).
-                var refunded = RefundIfItem(con, id, reason == null ? "Your item rename request was denied." : $"Your item rename request was denied: {reason}");
+                var shownReason = ItemRename.ReasonForPlayer(reason);
+                var refunded = RefundIfItem(con, id, shownReason == null ? "Your item rename request was denied." : $"Your item rename request was denied: {shownReason}.");
                 return Ok(new { message = refunded > 0 ? $"Name request denied. Fee of {refunded:N0} refunded." : "Name request denied." });
             }
             catch (Exception ex)

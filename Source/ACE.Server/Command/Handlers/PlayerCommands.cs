@@ -2260,14 +2260,24 @@ namespace ACE.Server.Command.Handlers
                     var replacedIds = SubmitItemNameRequest(characterId, characterName, itemGuid, oldName, requestedName, fee);
 
                     // A replaced request was denied by the line above; its fee goes back now (the new request paid its own).
-                    using (var ctx = new ACE.Database.Models.Shard.ShardDbContext())
+                    // The new request is already committed, so a failure here must not reach the submit handler below:
+                    // that would refund the new fee and report a failed submit for a request that is waiting for review.
+                    if (replacedIds.Count > 0)
                     {
-                        var con = ctx.Database.GetDbConnection();
-                        if (con.State != System.Data.ConnectionState.Open) con.Open();
-                        foreach (var id in replacedIds)
+                        try
                         {
-                            var refund = ItemRename.ClaimRefund(con, id, out var refundCharacterId, out var refundItem);
-                            ItemRename.QueueRefund(refundCharacterId, refund, $"Your earlier request to rename {refundItem} was replaced by this one.");
+                            using var ctx = new ACE.Database.Models.Shard.ShardDbContext();
+                            var con = ctx.Database.GetDbConnection();
+                            if (con.State != System.Data.ConnectionState.Open) con.Open();
+                            foreach (var id in replacedIds)
+                            {
+                                var refund = ItemRename.ClaimRefund(con, id, out var refundCharacterId, out var refundItem);
+                                ItemRename.QueueRefund(refundCharacterId, refund, $"Your earlier request to rename {refundItem} was replaced by this one.");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"{ItemRename.Tag} {characterName}: refunding replaced request(s) {string.Join(", ", replacedIds)} failed; check fee_refunded on those rows and credit by hand if needed", ex);
                         }
                     }
 

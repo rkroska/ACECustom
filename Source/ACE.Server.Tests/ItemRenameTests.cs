@@ -85,6 +85,19 @@ namespace ACE.Server.Tests
             Assert.AreEqual("Frost Fang", ItemRename.FinalName("Frost Fang", 99));
         }
 
+        // ---- denial reasons ---------------------------------------------------------------------
+
+        [TestMethod]
+        public void DenialReason_IsAsciiWithoutTrailingPeriods()
+        {
+            Assert.AreEqual("bad name", ItemRename.ReasonForPlayer("bad name"));
+            Assert.AreEqual("bad name", ItemRename.ReasonForPlayer("  bad name... "));
+            Assert.AreEqual("too long - try again", ItemRename.ReasonForPlayer("too long — try again"));
+            Assert.AreEqual("line one line two", ItemRename.ReasonForPlayer("line one\r\nline two"));
+            Assert.IsNull(ItemRename.ReasonForPlayer("..."));
+            Assert.IsNull(ItemRename.ReasonForPlayer(null));
+        }
+
         // ---- appraisal and element changes ---------------------------------------------------------
 
         [TestMethod]

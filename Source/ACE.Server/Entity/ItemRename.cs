@@ -88,6 +88,19 @@ namespace ACE.Server.Entity
             return "- Originally: " + original;
         }
 
+        /// <summary>A staff denial reason as the player sees it in chat: printable ASCII only (the client draws anything else as
+        /// garbage), no trailing periods (the caller adds one), or null when nothing is left.</summary>
+        public static string ReasonForPlayer(string reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+                return null;
+            var sb = new System.Text.StringBuilder(reason.Length);
+            foreach (var c in reason)
+                sb.Append(c >= 0x20 && c <= 0x7E ? c : c is '–' or '—' or '−' ? '-' : ' ');
+            var text = Regex.Replace(sb.ToString(), " {2,}", " ").Trim().TrimEnd('.').TrimEnd();
+            return text.Length == 0 ? null : text;
+        }
+
         /// <summary>True when the item's name was chosen by a player, so automatic renames (an element change) leave it alone.</summary>
         public static bool HasCustomName(WorldObject wo) => wo?.GetProperty(PropertyString.OriginalItemName) != null;
 
