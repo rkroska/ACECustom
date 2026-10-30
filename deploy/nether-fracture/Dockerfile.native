@@ -1,0 +1,9 @@
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+WORKDIR /ace
+COPY server/ ./
+RUN mkdir -p /ace/Logs /ace/Mods /ace/Content /ace/defaults \
+    && cp /ace/Config/nether-fracture.json /ace/defaults/nether-fracture.json \
+    && chown -R app:app /ace
+USER app
+ENTRYPOINT ["dotnet", "ACE.Server.dll"]
+EXPOSE 9000-9001/udp

@@ -47,6 +47,7 @@ namespace ACE.Server.WorldObjects
             // PANDEMIC charm (Creature_Pandemic.cs): 0 = this DoT does not spread; else the charm level it was cast with
             public int PandemicLevel;
             public int Generation;        // 0 = the cast itself, 1 = a copy of it, 2 = a copy of a copy ...
+            public bool FractureHandCast; // Never inherited by copies or weapon procs.
             public double PandemicEndsAt; // unix time the ORIGINAL cast ends; no copy spreads or is made after it
             public float LeashCastDistance; // metres caster -> monster at the cast (0 for a copy); the leash's clear allows this much
             /// <summary>The Pandemic charm's extra crit chance, SET (never added) by the arm / a copy, kept apart from the
@@ -174,7 +175,7 @@ namespace ACE.Server.WorldObjects
             if (crit)
                 damageResistRatingMod = AdditiveCombine(damageResistRatingMod, GetNegativeRatingMod(GetCritDamageResistRating()));
 
-            return amount * resistanceMod * damageResistRatingMod * GetZcDotMults(snap.SpellId);
+            return IndependentVoidDots.Scale(this, snap, damager, amount * resistanceMod * damageResistRatingMod * GetZcDotMults(snap.SpellId));
         }
     }
 }

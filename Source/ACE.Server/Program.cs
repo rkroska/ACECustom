@@ -45,6 +45,26 @@ namespace ACE.Server
 
         public static async Task Main(string[] args)
         {
+            // Validate before registering world/database shutdown handlers. A config-only
+            // smoke check must not initialize or stop managers that were never started.
+            var fractureConfig = Environment.GetEnvironmentVariable("ACE_NETHER_FRACTURE_CONFIG")
+                ?? Path.Combine(AppContext.BaseDirectory, "Config", "nether-fracture.json");
+            if (Array.Exists(args, a => a == "--check-nether-fracture-config"))
+            {
+                try
+                {
+                    NetherFractureManager.Initialize(fractureConfig);
+                    Console.WriteLine("Nether Fracture configuration smoke check passed; no database or world started.");
+                }
+                catch (Exception ex) when (ex is IOException || ex is InvalidDataException || ex is UnauthorizedAccessException || ex is System.Text.Json.JsonException || ex is ArgumentException)
+                {
+                    Console.Error.WriteLine("Nether Fracture configuration rejected: " + ex.Message);
+                    Environment.ExitCode = 1;
+                }
+                return;
+            }
+            NetherFractureManager.Initialize(fractureConfig);
+
             var consoleTitle = $"ACEmulator - v{ServerBuildInfo.FullVersion}";
 
             Console.Title = consoleTitle;
@@ -138,6 +158,7 @@ namespace ACE.Server
 
             log.Info("Starting ACEmulator...");
 
+
             if (IsRunningInContainer)
                 log.Info("ACEmulator is running in a container...");
             
@@ -173,6 +194,12 @@ namespace ACE.Server
 
             log.Info($"Initializing ConfigManager with {configFile}...");
             ConfigManager.Initialize(configFile);
+            try { NetherFractureManager.ValidateModDirectory(ConfigManager.Config.Server.ModsDirectory); }
+            catch
+            {
+                AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;
+                throw;
+            }
 
             log.Info("Initializing ModManager...");
             ModManager.Initialize();

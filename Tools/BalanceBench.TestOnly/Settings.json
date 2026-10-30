@@ -1,0 +1,11 @@
+{
+  "CommandAccess": "Developer",
+  "Characters": [
+    "Balanceeleven",
+    "Balancetwelve",
+    "Balancethirteen",
+    "Balancefourteen",
+    "Balancefifteen"
+  ],
+  "ControlDir": "C:/ACE/BalanceBench/control"
+}

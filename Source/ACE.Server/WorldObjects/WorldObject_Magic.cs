@@ -480,7 +480,11 @@ namespace ACE.Server.WorldObjects
             // hand cast, charm on or off: the arm first clears what a refreshed DoT carried over, and marks it only when the
             // charm is on (review 2026-10-20 round 2: with the charm off a recast kept spreading and kept the crit bonus).
             if (zcHandCast && !fromProc && !aetheriaProc && !cloakProc && player != null && target is Creature pandemicTarget)
+            {
                 pandemicTarget.ZcPandemicArm(player, spell, addResult.Enchantment);
+                if (addResult.Enchantment != null && Creature.IsVoidDotSpell(spell.Id))
+                    NetherFractureManager.Applied(player, pandemicTarget);
+            }
 
             // build message
             var suffix = "";
@@ -643,6 +647,47 @@ namespace ACE.Server.WorldObjects
             // handle cloak damage proc for harm other
             var equippedCloak = targetCreature?.EquippedCloak;
 
+            // the magic archetype's spell True Damage, scaled now (it is added after the barrier, below) so the T11+ cloak proc
+            // sees the whole hit
+            var zcHarmTrueFinal = zcHarmTrue > 0 && zcHarmed != null
+                ? (float)Math.Round(zcHarmTrue * (double)ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultForKind(creature, zcHarmed, creature.ZcOwnCastKind(spell)))
+                : 0f;
+
+            // T11+ cloak procs (owner 2026-10-28): both parts of the Harm, before the barrier. Smoke Screen / Artful Dodger act
+            // here; Calming Breeze / Asheron's Grace after it lands (below). PreHit is also this path's Grace / Cheat Death guard.
+            // The caster's life-aug damage term is added further down; it is part of the hit the cloak acts on (review 2026-10-29), so
+            // PreHit sees it too. Only when the proc changed the hit is the aug term taken from here - otherwise the code below adds
+            // it exactly as before.
+            var zcCloakProc = ZcCloakProc.None;
+            var zcHarmAugIncluded = false;
+            if (targetCreature != this && targetCreature is Player zcHarmTarget && spell.VitalDamageType == DamageType.Health
+                && (tryBoost < 0 || zcHarmTrueFinal > 0))
+            {
+                var zcHarmAug = !useHarmCap && player != null && tryBoost < 0
+                    ? (int)Math.Round(player.EffectiveLifeAugCount * (double)harmTakenMult) : 0;
+                float zcHarmNormal = (tryBoost < 0 ? -tryBoost : 0) + zcHarmAug;
+                var zcHarmNormalBefore = zcHarmNormal;
+                var zcHarmBefore = zcHarmNormal + zcHarmTrueFinal;
+                zcCloakProc = ZcCloakProcs.PreHit(zcHarmTarget, this, ref zcHarmNormal, ref zcHarmTrueFinal);
+
+                // taken whole (Smoke Screen, a spent Artful Dodger charge, the Grace / Cheat Death window): nothing reaches health,
+                // so stop here as the spell-bolt and melee paths do - no barrier, no "drains 0 points" lines (review 2026-10-29).
+                // The proc printed its own message; keep the caster as the player's current attacker.
+                var zcHarmAfter = zcHarmNormal + zcHarmTrueFinal;
+                if (zcHarmAfter != zcHarmBefore && zcHarmAfter < 0.5f)
+                {
+                    if (creature != null)
+                        zcHarmTarget.SetCurrentAttacker(creature);
+                    return;
+                }
+
+                if (zcHarmNormal != zcHarmNormalBefore)
+                {
+                    tryBoost = boost = -(int)Math.Round(zcHarmNormal);
+                    zcHarmAugIncluded = true;
+                }
+            }
+
             if (targetCreature != this && spell.VitalDamageType == DamageType.Health && tryBoost < 0)
             {
                 var percent = (float)-tryBoost / targetCreature.Health.MaxValue;
@@ -677,7 +722,7 @@ namespace ACE.Server.WorldObjects
                     }
                 }
             }
-            if (!useHarmCap && player != null && tryBoost < 0)
+            if (!useHarmCap && player != null && tryBoost < 0 && !zcHarmAugIncluded)   // a T11+ cloak proc already took it in (above)
             {
                 // scaled by the zone's damage-taken multiplier like the rest of the Harm (1.0 everywhere else)
                 tryBoost -= (int)Math.Round(player.EffectiveLifeAugCount * (double)harmTakenMult);
@@ -701,9 +746,10 @@ namespace ACE.Server.WorldObjects
             }
             // ─────────────────────────────────────────────────────────────────────
 
-            // the magic archetype's spell True Damage (computed above), past the barrier, scaled like the rest of its hit
-            if (zcHarmTrue > 0 && zcHarmed != null)
-                tryBoost -= (int)Math.Round(zcHarmTrue * (double)ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultForKind(creature, zcHarmed, creature.ZcOwnCastKind(spell)));
+            // the magic archetype's spell True Damage (computed above), past the barrier, scaled like the rest of its hit (and
+            // after the T11+ cloak proc, which can cancel or redirect it)
+            if (zcHarmTrueFinal > 0)
+                tryBoost -= (int)Math.Round(zcHarmTrueFinal);
 
             // A creature that refuses damage from this caster takes no harm/drain (heals still apply).
             if (tryBoost < 0 && !targetCreature.CanBeDamagedBy(this))
@@ -837,6 +883,10 @@ namespace ACE.Server.WorldObjects
 
                 targetPlayer.SendChatMessage(player, targetMessage, ChatMessageType.Magic);
             }
+
+            // T11+ cloak procs: Calming Breeze / Asheron's Grace, now that the Harm has landed
+            if (zcCloakProc != ZcCloakProc.None && targetCreature is Player zcHarmed2)
+                ZcCloakProcs.PostHit(zcHarmed2, zcCloakProc);
 
             if (targetCreature != this && boost < 0)
             {
@@ -1038,6 +1088,65 @@ namespace ACE.Server.WorldObjects
 
             destVitalChange = (uint)Math.Round(srcVitalChange * (1.0f - spell.LossPercent) * boostMod);
 
+            // the magic archetype's spell True Damage, scaled now (it is added after the barrier and the cloak, below) so the
+            // T11+ cloak proc sees the whole drain
+            var zcDrainTrueFinal = zcDrain && zcDrainTrueLeft > 0 && transferSource is Player zcDrainTrueTarget && creature != null
+                ? (float)Math.Round(zcDrainTrueLeft * (double)ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultForKind(creature, zcDrainTrueTarget, creature.ZcOwnCastKind(spell)))
+                : 0f;
+
+            // T11+ cloak procs (owner 2026-10-28): both parts of the drain, before the barrier as on every other path. Smoke Screen
+            // and waiting Artful Dodger charges act here; the rest after the drain lands (below). PreHit is also this path's Grace /
+            // Cheat Death guard. The caster's gain is re-derived from what is left; the heal cap below still applies.
+            // The caster's life-aug term, added to the drain further down, is part of the hit too (review 2026-10-29: as for Harm);
+            // when the proc changed the hit, the share of it that is left is added below in its place, otherwise it is added below
+            // exactly as before.
+            var zcCloakProc = ZcCloakProc.None;
+            var zcDrainAugIncluded = false;
+            uint zcDrainAugLeft = 0;
+            if (isDrain && spell.Source == PropertyAttribute2nd.Health && transferSource != this && transferSource is Player zcDrainTarget)
+            {
+                var zcDrainAug = player != null && srcVitalChange > 0
+                    ? (uint)Math.Round(player.EffectiveLifeAugCount * (double)drainTakenMult) : 0u;
+                float zcDrainNormal = srcVitalChange + zcDrainAug;
+                var zcDrainNormalBefore = zcDrainNormal;
+                var zcDrainBefore = zcDrainNormal + zcDrainTrueFinal;
+                zcCloakProc = ZcCloakProcs.PreHit(zcDrainTarget, this, ref zcDrainNormal, ref zcDrainTrueFinal);
+
+                // taken whole (Smoke Screen, a spent Artful Dodger charge, the Grace / Cheat Death window): nothing is drained and
+                // the caster gains nothing, so stop here as the other paths do - no "lose 0 / gain 0 points" lines (review
+                // 2026-10-29). The proc printed its own message; keep the caster as the player's current attacker.
+                var zcDrainAfter = zcDrainNormal + zcDrainTrueFinal;
+                if (zcDrainAfter != zcDrainBefore && zcDrainAfter < 0.5f)
+                {
+                    if (destination is Creature zcDrainAttacker)
+                        zcDrainTarget.SetCurrentAttacker(zcDrainAttacker);
+                    return;
+                }
+
+                // a partial Artful Dodger payment: TakeOnStamina scaled both parts of the hit by the share stamina could not pay
+                // for. That share is split back over the base drain and the caster's life-aug term, so the rest of the path runs
+                // as it does for an unredirected drain: the barrier and the caster's gain see the base drain only, and the aug
+                // term's share is added where the aug term always is (review 2026-10-29: the gain was taken from the augmented
+                // hit, so a small stamina payment could heal the caster more than the same drain with no proc).
+                // What is left is rounded ONCE and split in whole points, so no point is lost to rounding each part (review
+                // 2026-10-29). The aug term takes its share rounded down, the base drain the rest - at least 1 point of a hit that
+                // has any left, since the aug term is only added to a drain that moves something below - and never more than the
+                // base drain was.
+                if (zcDrainNormal != zcDrainNormalBefore)
+                {
+                    var zcDrainLeft = zcDrainNormalBefore > 0 ? zcDrainNormal / zcDrainNormalBefore : 0f;
+                    var zcDrainLeftTotal = (uint)Math.Round(zcDrainNormal);
+                    var zcDrainAugShare = Math.Min(zcDrainLeftTotal, (uint)Math.Floor(zcDrainAug * zcDrainLeft));
+                    var zcDrainBaseShare = Math.Min(srcVitalChange, zcDrainLeftTotal - zcDrainAugShare);
+                    if (zcDrainBaseShare == 0 && zcDrainLeftTotal > 0)
+                        zcDrainBaseShare = Math.Min(1u, srcVitalChange);
+                    srcVitalChange = zcDrainBaseShare;
+                    destVitalChange = (uint)Math.Round(srcVitalChange * (1.0f - spell.LossPercent) * boostMod);
+                    zcDrainAugLeft = zcDrainLeftTotal - zcDrainBaseShare;
+                    zcDrainAugIncluded = true;
+                }
+            }
+
             // ── Mana Barrier (Drain-type spells) ──────────────────────────────────────────────────
             var mbResult = new ManaBarrierResult();
             if (isDrain && spell.Source == PropertyAttribute2nd.Health && srcVitalChange > 0)
@@ -1091,9 +1200,9 @@ namespace ACE.Server.WorldObjects
 
             // the magic archetype's spell True Damage (computed above), past the barrier and the cloak, scaled like the
             // rest of its drain, never more than the player has
-            if (zcDrain && zcDrainTrueLeft > 0 && transferSource is Player zcTrueTarget && creature != null)
+            if (zcDrainTrueFinal > 0 && transferSource is Player zcTrueTarget)
             {
-                var add = Math.Round(zcDrainTrueLeft * (double)ACE.Server.Managers.ZoneControl.ZoneControlManager.MonsterDamageMultForKind(creature, zcTrueTarget, creature.ZcOwnCastKind(spell)));
+                var add = Math.Round((double)zcDrainTrueFinal);
                 srcVitalChange = (uint)Math.Clamp(srcVitalChange + add, 0, zcTrueTarget.Health.Current);
             }
 
@@ -1101,8 +1210,11 @@ namespace ACE.Server.WorldObjects
             {
                 // Only boost a transfer that is actually moving something. These are unsigned
                 // magnitudes, so subtracting from a zero change wraps to ~uint.MaxValue.
+                // (a T11+ cloak proc that changed the drain: only the share of the aug term it left, worked out above)
                 if (srcVitalChange > 0)
-                    srcVitalChange += (uint)Math.Round(player.EffectiveLifeAugCount * (double)drainTakenMult);   // 1.0 off Zone Control monsters
+                    srcVitalChange += zcDrainAugIncluded
+                        ? zcDrainAugLeft
+                        : (uint)Math.Round(player.EffectiveLifeAugCount * (double)drainTakenMult);   // 1.0 off Zone Control monsters
 
                 if (destVitalChange > 0)
                     destVitalChange += (uint)player.EffectiveLifeAugCount;
@@ -1227,6 +1339,10 @@ namespace ACE.Server.WorldObjects
                 var mbSuffix = isDrain && transferSource == targetPlayer ? targetPlayer.GetManaBarrierSuffix(mbResult) : "";
                 targetPlayer.SendChatMessage(caster, targetMsg + mbSuffix, ChatMessageType.Magic);
             }
+
+            // T11+ cloak procs: Calming Breeze / Asheron's Grace, now that the drain has landed
+            if (zcCloakProc != ZcCloakProc.None && transferSource is Player zcDrainHit)
+                ZcCloakProcs.PostHit(zcDrainHit, zcCloakProc);
 
             if (isDrain && srcVitalChange > 0)
             {

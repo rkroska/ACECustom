@@ -43,6 +43,7 @@ namespace ACE.Server.Mods
         /// </summary>
         public static void FindMods(bool registerCommands = false)
         {
+            NetherFractureManager.ValidateModDirectory(ModPath);
             //if (ACE.Common.ConfigManager.Config.Server.ModsDirectory is null)
             //    log.Warn($"You are missing the ModsDirectory setting in your Config.js.  Defaulting to:\r\n{ModPath}");
 

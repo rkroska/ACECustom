@@ -3985,6 +3985,11 @@ namespace ACE.Server.WorldObjects
             actionChain.EnqueueChain();
         }
 
+        /// <summary>
+        /// Hands an item to an NPC. Town Crier IOUs, forge smiths and Paragon Collectors are handed off to their own code first
+        /// (smiths and collectors never take the item here); otherwise the NPC's Give / Refuse emote for the item decides, or
+        /// AiAcceptEverything takes it.
+        /// </summary>
         private void GiveObjectToNPC(WorldObject target, WorldObject item, Container itemFoundInContainer, Container itemRootOwner, bool itemWasEquipped, int amount)
         {
             if (target == null || item == null) return;
@@ -4020,6 +4025,15 @@ namespace ACE.Server.WorldObjects
             {
                 Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
                 ACE.Server.Entity.ForgeService.HandleGive(this, target, item);
+                return;
+            }
+
+            // Paragon Collector: the item stays with the player; a finished Paragon / Illuminated / Quiddity item is offered
+            // for luminance in a popup and only taken on Yes.
+            if (target.GetProperty(PropertyBool.ParagonCollector) == true)
+            {
+                Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+                ACE.Server.Entity.ParagonCollectorService.HandleGive(this, target, item, itemWasEquipped);
                 return;
             }
 

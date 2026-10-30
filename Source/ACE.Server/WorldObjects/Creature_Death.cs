@@ -163,6 +163,8 @@ namespace ACE.Server.WorldObjects
             if (dieEntered) return;
 
             dieEntered = true;
+            try { NetherFractureManager.Died(this); }
+            catch (Exception ex) { log.Error($"Nether Fracture death hook failed for {Name} ({Guid.Full:X8}); continuing death sequence.", ex); }
 
             UpdateVital(Health, 0);
 

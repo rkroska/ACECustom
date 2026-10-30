@@ -38,6 +38,13 @@ namespace ACE.Server.Network.Structure
 
         public List<uint> SpellBook;
 
+        /// <summary>
+        /// Zone Control weapon cards as the item would have them once equipped (<see cref="ZoneStatResolver.FloatsIfEquipped(WorldObject, ZoneStatResolver.Resolved)"/>);
+        /// empty for anything without a record. BuildWeapon reads its card values through <see cref="ZcFloat"/> so a stale
+        /// muled weapon shows its real numbers.
+        /// </summary>
+        private Dictionary<PropertyFloat, double> zcFloats = new();
+
         public ArmorProfile ArmorProfile;
         public CreatureProfile CreatureProfile;
         public WeaponProfile WeaponProfile;
@@ -73,6 +80,14 @@ namespace ACE.Server.Network.Structure
             BuildProfile(wo, examiner, success);
         }
 
+        /// <summary>
+        /// Builds the whole appraisal response for <paramref name="wo"/> as <paramref name="examiner"/> sees it: properties,
+        /// spells, the Zone Control resolve (T11+ ratings and weapon cards as the item would have them once equipped - display
+        /// only, the item is never written), the weapon / armor / creature profiles and the loot properties.
+        /// </summary>
+        /// <param name="wo">The object being appraised.</param>
+        /// <param name="examiner">The player appraising it.</param>
+        /// <param name="success">False for a failed appraisal: most details are then withheld.</param>
         public void BuildProfile(WorldObject wo, Player examiner, bool success = true)
         {
             //Console.WriteLine("Appraise: " + wo.Guid);
@@ -81,18 +96,36 @@ namespace ACE.Server.Network.Structure
             BuildProperties(wo, examiner);
             BuildSpells(wo, examiner);
 
+            // T11+ cloak procs (owner 2026-10-28): the client draws a cloak's retail proc from these two (the spell, or the
+            // "reduce damage by 200" text for weave 2). Both stay on the item as the key ZcCloakProcs reads, but the panel
+            // shows the new proc in the modifier block instead (PromoteZoneModifierLines).
+            if (ZcCloakProcs.Owns(wo))
+            {
+                PropertiesInt?.Remove(PropertyInt.CloakWeaveProc);
+                PropertiesDID?.Remove(PropertyDataId.ProcSpell);
+            }
+
             // Live Stat Resolution (owner 2026-08-22, plan 3b): a piece with a ZcModifiers record is
             // resolved from its grades against the LIVE ladder for the RESPONSE COPY only - wo is
             // never written, never marked dirty (equip is the only re-stamp site: ApplyIfStale).
             var zcResolved = ZoneStatResolver.Compute(wo);
             if (zcResolved != null)
+            {
                 SubstituteZoneResolvedInts(wo, zcResolved);
+                // Weapon cards too (owner 2026-10-29): the stamped float only moves on equip, so an unworn weapon kept showing
+                // its pre-retune number. Display only, like the ints: wo is never written. A card equip would ADD (no stored
+                // prop yet) is sent too, but only a prop the client is normally sent, and only on a successful appraisal.
+                zcFloats = ZoneStatResolver.FloatsIfEquipped(wo, zcResolved);
+                foreach (var kv in zcFloats)
+                    if (Success && AssessmentProperties.PropertiesDouble.Contains(kv.Key))
+                        PropertiesFloat[kv.Key] = kv.Value;
+            }
 
             // Loot properties (owner 2026-10-26): the tier 11+ numbers the panel prints, as ints / floats a loot rule can read.
             // Added after the AssessmentProperties filter on purpose - they are response-only and never stored on the item.
             if (Success && !(wo is Creature))
                 ACE.Server.Managers.ZoneControl.ZoneLootProps.Collect(wo, zcResolved, GearEssences.PropertiesCount(wo), IsLegacyTextBlock(zcResolved),
-                    PropertiesInt, PropertiesFloat);
+                    PropertiesInt, PropertiesFloat, zcFloats);
 
             // Help us make sure the item identify properly
             NPCLooksLikeObject = wo.GetProperty(PropertyBool.NpcLooksLikeObject) ?? false;
@@ -887,6 +920,11 @@ namespace ACE.Server.Network.Structure
         }
 
 
+        /// <summary>
+        /// Fills the SpellBook: a creature's DoTs cast by the examiner (nearby health), or an item's spell, its proc spell and
+        /// its known spells. A Zone Control Cast on Strike and a T11+ cloak proc (ZcCloakProcs) are left out - the panel
+        /// names those itself.
+        /// </summary>
         private void BuildSpells(WorldObject wo, Player examiner = null)
         {
             SpellBook = new List<uint>();
@@ -923,7 +961,9 @@ namespace ACE.Server.Network.Structure
             var zcArcDmg = wo.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ProcArcDamagePropId);
             var zcHasProcCard = zcArcDmg.HasValue && zcArcDmg.Value > 0;
 
-            if (wo.ProcSpell.HasValue && !zcHasProcCard)
+            // a T11+ cloak casts nothing any more (ZcCloakProcs): its retail proc spell stays on the item as the mapping key
+            // but is not shown - the modifier block names the new proc instead
+            if (wo.ProcSpell.HasValue && !zcHasProcCard && !ZcCloakProcs.Owns(wo))
                 SpellBook.Add(wo.ProcSpell.Value);
 
             var woSpellDID = wo.SpellDID;   // prevent recursive lock
@@ -1097,7 +1137,9 @@ namespace ACE.Server.Network.Structure
             // built live from its flag (weapons say it in Property Details, BuildWeapon - never twice). A rare always
             // shows the block, even in the odd case that it carries no line at all.
             var rareLine = GearEssences.IsWeapon(wo) ? null : ACE.Server.Managers.ZoneControl.ZoneRare.AppraisalLine(wo);
-            if (!worked && !fromRecord && rareLine == null && ld.IndexOf(LegacyModifierMarker, StringComparison.Ordinal) < 0)
+            // T11+ cloak proc (owner 2026-10-28): built live from the cloak's retail proc and the current settings, never baked
+            var hasCloakProc = ZcCloakProcs.Owns(wo);
+            if (!worked && !fromRecord && rareLine == null && !hasCloakProc && ld.IndexOf(LegacyModifierMarker, StringComparison.Ordinal) < 0)
                 return;
 
             var cantrips = new List<string>();
@@ -1168,6 +1210,12 @@ namespace ACE.Server.Network.Structure
                 cantrips.AddRange(reinforced);
             }
 
+            // the T11+ cloak proc, under the lines - "(off here)" where the armor zone lock holds worn gear, as combat does. Its
+            // numbers are the Zone Control dials where that same holder stands (the wearer of a worn cloak, else the examiner).
+            var cloakLine = hasCloakProc ? ZcCloakProcs.AppraisalLine(wo, wornLocked, wornHolder) : null;
+            if (cloakLine != null)
+                cantrips.Add(cloakLine);
+
             if (showTainted)
                 cantrips.Add(GearEssences.TaintedAppraisalLine);
 
@@ -1177,7 +1225,7 @@ namespace ACE.Server.Network.Structure
             // "Properties: 3 of 5" heads the block (owner 2026-10-04): the slot count the drop limit and the bags use. Not on
             // a legacy piece whose bullets come from baked text only (no record to count - a number there could be wrong).
             // Reinforced is always baked text (earned and frozen, never in the record) and the count includes it, so it is not "legacy"
-            var legacyText = resolved == null && cantrips.Any(c => c != GearEssences.TaintedAppraisalLine
+            var legacyText = resolved == null && cantrips.Any(c => c != GearEssences.TaintedAppraisalLine && c != cloakLine
                 && !c.StartsWith("- " + ReinforcedLineName, StringComparison.Ordinal));
             // weapons carry the counter in Property Details (BuildWeapon) - never twice
             var propertiesLine = legacyText || GearEssences.IsWeapon(wo) ? null : GearEssences.PropertiesAppraisalLine(wo);
@@ -1351,6 +1399,18 @@ namespace ACE.Server.Network.Structure
             // add ratings from equipped items?
         }
 
+        /// <summary>A weapon card's value as the item would have it once equipped (<see cref="zcFloats"/>), else the stored prop.</summary>
+        private double? ZcFloat(WorldObject weapon, PropertyFloat prop) =>
+            zcFloats.TryGetValue(prop, out var v) ? v : weapon.GetProperty(prop);
+
+        /// <summary>
+        /// The weapon half of the appraisal: the damage profile and the Property Details lines (slayer, crit cards, cleaving,
+        /// rends, split arrow, Weapon Grade, wield gate...). Zone Control card values are read through <see cref="ZcFloat"/>
+        /// (the if-equipped value), and while the examiner stands where the weapon's Zone power is locked each line shows the
+        /// combat fallback instead.
+        /// </summary>
+        /// <param name="weapon">The weapon being appraised.</param>
+        /// <param name="examiner">The player appraising it (skills, zone lock, charms).</param>
         private void BuildWeapon(WorldObject weapon, Player examiner)
         {
             if (!Success)
@@ -1409,8 +1469,8 @@ namespace ACE.Server.Network.Structure
             var slayerAll = weapon.GetProperty(PropertyBool.SlayerAllCreatures) == true;
             if (weapon.SlayerCreatureType.HasValue || slayerAll)
             {
-                var bonus = !zcLocked ? weapon.SlayerDamageBonus ?? 1.0
-                    : zcT10 ? Math.Min(weapon.SlayerDamageBonus ?? 1.0, ACE.Server.Managers.ZoneControl.ZoneLockFallback.SlayerCap)
+                var bonus = !zcLocked ? ZcFloat(weapon, PropertyFloat.SlayerDamageBonus) ?? 1.0
+                    : zcT10 ? Math.Min(ZcFloat(weapon, PropertyFloat.SlayerDamageBonus) ?? 1.0, ACE.Server.Managers.ZoneControl.ZoneLockFallback.SlayerCap)
                     : 1.0;
                 var niceName = slayerAll
                     ? "All Creatures"
@@ -1418,10 +1478,11 @@ namespace ACE.Server.Network.Structure
                 effectDescriptions.Add($"- {niceName} Slayer: {bonus:0.##}x Damage");
             }
 
-            // Biting Strike
-            if (weapon.CriticalFrequency.HasValue)
+            // Biting Strike - shown from the if-equipped value, like every other card
+            var critFrequency = ZcFloat(weapon, PropertyFloat.CriticalFrequency);
+            if (critFrequency.HasValue)
             {
-                var val = zcLocked ? WorldObject.LockedCritFrequency(weapon) : weapon.CriticalFrequency.Value;   // locked: the combat fallback crit rate
+                var val = zcLocked ? WorldObject.LockedCritFrequency(weapon, critFrequency) : critFrequency.Value;   // locked: the combat fallback crit rate
                 effectDescriptions.Add($"- Biting Strike: +{val:P0} Crit Chance");
             }
 
@@ -1468,9 +1529,9 @@ namespace ACE.Server.Network.Structure
 
             // Crushing Blow: engine crit damage = 1 + CriticalMultiplier, so the true multiplier the
             // player actually deals is prop + 1 (a stored 1.0 = normal 2x crit).
-            if (weapon.GetProperty(PropertyFloat.CriticalMultiplier) > 1.0f)
+            if (ZcFloat(weapon, PropertyFloat.CriticalMultiplier) > 1.0f)
             {
-                var val = zcLocked ? WorldObject.LockedCritDamageMultiplier(weapon) + 1.0 : weapon.GetProperty(PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (T10 cap, or a plain 2x crit with the master switch off)
+                var val = zcLocked ? WorldObject.LockedCritDamageMultiplier(weapon, ZcFloat(weapon, PropertyFloat.CriticalMultiplier)) + 1.0 : ZcFloat(weapon, PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (T10 cap, or a plain 2x crit with the master switch off)
                 effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
             }
 
@@ -1496,7 +1557,7 @@ namespace ACE.Server.Network.Structure
             // value mislabeled as "Ignored" and never reflected the Zone override.)
             if (weapon.HasImbuedEffect(ImbuedEffectType.ArmorRending))
             {
-                var rendOverride = weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ArmorRendOverridePropId);
+                var rendOverride = ZcFloat(weapon, (PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.ArmorRendOverridePropId);
                 var ignored = zcLocked ? 0.0
                     : rendOverride.HasValue
                     ? Math.Clamp(rendOverride.Value, 0.0, 1.0)
@@ -1537,7 +1598,7 @@ namespace ACE.Server.Network.Structure
                     // Zone Control loot: the rend power override substitutes for the skill formula
                     // (rendingMod = 1 + override), mirroring GetWeaponResistanceModifier, so the tooltip
                     // shows exactly the configured strength (e.g. wire 7.0 -> +700% Dmg).
-                    var rendOverride = zcT10 ? null : weapon.GetProperty((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId);
+                    var rendOverride = zcT10 ? null : ZcFloat(weapon, (PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId);
                     if (rendOverride.HasValue && rendOverride.Value > 0)
                         mod = 1.0f + (float)rendOverride.Value;
 
@@ -1552,12 +1613,13 @@ namespace ACE.Server.Network.Structure
 
             // Shield Cleaving: fraction of the target's shield AL the weapon ignores. Stored directly on
             // the weapon (PropertyFloat.IgnoreShield); GetIgnoreShieldMod reads it at hit time.
-            if (weapon.IgnoreShield.HasValue && weapon.IgnoreShield.Value > 0)
-                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(weapon.IgnoreShield.Value, 0.0, 1.0)):P0} Shield Ignored");   // locked: off (owner 2026-10-07)
+            var ignoreShield = ZcFloat(weapon, PropertyFloat.IgnoreShield);
+            if (ignoreShield.HasValue && ignoreShield.Value > 0)
+                effectDescriptions.Add($"- Shield Cleaving: {(zcLocked ? 0.0 : Math.Clamp(ignoreShield.Value, 0.0, 1.0)):P0} Shield Ignored");   // locked: off (owner 2026-10-07)
 
             // Spell Armor Rend (casters): fraction of the monster's Spell Armor level the wand's spells ignore. Stored directly
             // on the weapon (PropertyFloat.ZcSpellArmorRend); Creature.GetZcSpellArmorMod reads it at hit time.
-            var spellArmorRend = weapon.GetProperty(PropertyFloat.ZcSpellArmorRend);
+            var spellArmorRend = ZcFloat(weapon, PropertyFloat.ZcSpellArmorRend);
             if (spellArmorRend.HasValue && spellArmorRend.Value > 0)
                 effectDescriptions.Add($"- Spell Armor Rend: {(zcLocked ? 0.0 : Math.Clamp(spellArmorRend.Value, 0.0, 1.0)):P0} Spell Armor Ignored");   // locked: off, like the other cards
 

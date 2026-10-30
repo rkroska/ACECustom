@@ -262,18 +262,20 @@ namespace ACE.Server.Entity
         /// <summary>
         /// Returns TRUE If cloak has a damage reduction proc
         /// Matches client logic
+        /// A T11+ cloak answers FALSE: its weave is Artful Dodger now (ZcCloakProcs), never the -200.
         /// </summary>
         public static bool HasDamageProc(WorldObject cloak)
         {
-            return cloak?.CloakWeaveProc == 2;
+            return cloak?.CloakWeaveProc == 2 && !ZcCloakProcs.Owns(cloak);
         }
 
         /// <summary>
         /// Returns TRUE if cloak has a spell proc
+        /// A T11+ cloak answers FALSE: it casts nothing, its proc is one of the four ZcCloakProcs.
         /// </summary>
         public static bool HasProcSpell(WorldObject cloak)
         {
-            return cloak?.ProcSpell != null;
+            return cloak?.ProcSpell != null && !ZcCloakProcs.Owns(cloak);
         }
     }
 }

@@ -435,14 +435,18 @@ namespace ACE.Server.WorldObjects
         /// 2026-10-07: locked gear keeps what a T10 weapon can have - its Biting Strike, capped at the best T10 craft (0.33),
         /// plus a Bandit Hilt's +0.25 - never below the base (a caster the retail magic base 0.05 - with the master switch off,
         /// the old rule: endgame 0.10 for ZC gear - every other weapon the physical base).</summary>
-        internal static float LockedCritFrequency(WorldObject weapon)
+        /// <param name="weapon">The weapon.</param>
+        /// <param name="cardOverride">The Biting Strike to cap instead of the stored prop - the appraisal's if-equipped value
+        /// (ZoneStatResolver.FloatsIfEquipped); null = the stored prop, as combat reads it.</param>
+        /// <returns>The locked crit rate.</returns>
+        internal static float LockedCritFrequency(WorldObject weapon, double? cardOverride = null)
         {
             // a locked caster is T10 gear (retail rules, EndgameRulesApply): the retail 0.05 magic base. Master switch off: as before.
             var floor = weapon is Caster
                 ? (!ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active && ACE.Server.Managers.ZoneControl.ZoneControlManager.EndgameRulesApplyToPlayerGear(weapon)
                     ? DefaultMagicCritFrequency : RetailMagicCritFrequency)
                 : DefaultPhysicalCritFrequency;
-            var card = weapon?.GetProperty(PropertyFloat.CriticalFrequency);
+            var card = cardOverride ?? weapon?.GetProperty(PropertyFloat.CriticalFrequency);
             if (card == null || !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
                 return floor;
             var cap = ACE.Server.Managers.ZoneControl.ZoneLockFallback.BitingStrikeCap
@@ -453,9 +457,13 @@ namespace ACE.Server.WorldObjects
         /// <summary>The crit damage multiplier (stored / engine space) a weapon falls back to while locked (owner 2026-10-07):
         /// its Crushing Blow capped at the common T10 craft (Bag of Abyssal-Touched Gems, 2.25 stored = 3.25x - what normal
         /// T10 weapons carry) plus a Bandit Hilt's +0.175 - never below the default.</summary>
-        internal static float LockedCritDamageMultiplier(WorldObject weapon)
+        /// <param name="weapon">The weapon.</param>
+        /// <param name="cardOverride">The Crushing Blow (stored / engine space) to cap instead of the stored prop - the appraisal's
+        /// if-equipped value (ZoneStatResolver.FloatsIfEquipped); null = the stored prop, as combat reads it.</param>
+        /// <returns>The locked crit damage multiplier, stored / engine space.</returns>
+        internal static float LockedCritDamageMultiplier(WorldObject weapon, double? cardOverride = null)
         {
-            var card = weapon?.GetProperty(PropertyFloat.CriticalMultiplier);
+            var card = cardOverride ?? weapon?.GetProperty(PropertyFloat.CriticalMultiplier);
             if (card == null || !ACE.Server.Managers.ZoneControl.ZoneLockFallback.Active)
                 return DefaultCritDamageMultiplier;
             var cap = ACE.Server.Managers.ZoneControl.ZoneLockFallback.CrushingBlowCapStored
