@@ -213,7 +213,10 @@ CREATE TABLE IF NOT EXISTS `pet_name_requests` (
                 return 0;
             characterId = (uint)reader.GetInt64(0);
             itemName = reader.GetString(2);
-            return reader.GetInt64(1);
+            var fee = reader.GetInt64(1);
+            // The credit follows on the world queue; a claim line with no "refunded" line after it means a crash in between.
+            log.Info($"{Tag} claimed refund of {fee} pyreals on request {requestId} for character 0x{characterId:X8}");
+            return fee;
         }
 
         /// <summary>

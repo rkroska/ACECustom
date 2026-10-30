@@ -435,10 +435,28 @@ namespace ACE.Server.Controllers
             // Same authoritative record as the online path, so the name survives the next summon.
             biota.SetProperty(PropertyString.PetCustomName, newName, rwLock, out _);
 
-            if (!DatabaseManager.Shard.BaseDatabase.SaveBiota(biota, rwLock))
-                return RenameResult.Failed("the shard database rejected the biota save");
+            var saveError = SaveOfflineRename(biota, rwLock, essenceName);
+            return saveError == null ? RenameResult.Renamed() : RenameResult.Failed(saveError);
+        }
 
-            return RenameResult.Renamed();
+        /// <summary>
+        /// Saves an offline rename and reads the row back, so a save that reported success without writing (SaveBiota returns
+        /// true on a concurrency conflict and expects a later re-save, which a detached offline copy never gets) is caught.
+        /// Returns why it was not saved, or null. A failure sends the request back to pending.
+        /// </summary>
+        private static string SaveOfflineRename(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock, string expectedName)
+        {
+            if (!DatabaseManager.Shard.BaseDatabase.SaveBiota(biota, rwLock))
+                return "the shard database rejected the biota save";
+
+            var saved = DatabaseManager.Shard.BaseDatabase.GetBiota(biota.Id, skipCache: true);
+            string savedName = null;
+            if (saved?.BiotaPropertiesString != null)
+                foreach (var row in saved.BiotaPropertiesString)
+                    if (row.Type == (ushort)PropertyString.Name)
+                        savedName = row.Value;
+
+            return string.Equals(savedName, expectedName, StringComparison.Ordinal) ? null : "the biota save did not reach the shard database";
         }
 
         /// <summary>
@@ -528,10 +546,8 @@ namespace ACE.Server.Controllers
                 biota.SetProperty(PropertyString.OriginalItemName, oldName, rwLock, out _);
             biota.SetProperty(PropertyString.Name, finalName, rwLock, out _);
 
-            if (!DatabaseManager.Shard.BaseDatabase.SaveBiota(biota, rwLock))
-                return RenameResult.Failed("the shard database rejected the biota save");
-
-            return RenameResult.Renamed();
+            var saveError = SaveOfflineRename(biota, rwLock, finalName);
+            return saveError == null ? RenameResult.Renamed() : RenameResult.Failed(saveError);
         }
 
         /// <summary>Refunds a denied item request's fee (claimed once in the database, credited on the world queue). Returns the
