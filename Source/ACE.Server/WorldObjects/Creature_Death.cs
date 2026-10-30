@@ -163,6 +163,7 @@ namespace ACE.Server.WorldObjects
             if (dieEntered) return;
 
             dieEntered = true;
+            NetherFractureManager.Died(this);
 
             UpdateVital(Health, 0);
 

@@ -1,0 +1,5 @@
+services:
+  ace-server:
+    image: local/ace-nether-fracture:20261028
+    environment:
+      ACE_NETHER_FRACTURE_CONFIG: /ace/Config/nether-fracture.json

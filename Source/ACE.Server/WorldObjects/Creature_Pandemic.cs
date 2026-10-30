@@ -53,6 +53,7 @@ namespace ACE.Server.WorldObjects
 
             // a hand cast is always the start of its own infection: nothing carried over from a refreshed snapshot
             snap.PandemicLevel = 0;
+            snap.FractureHandCast = false;
             snap.Generation = 0;
             snap.CharmCritBonus = 0f;
             // the leash's clear counts from here (owner 2026-10-14: "only clear once i move away after casting")
@@ -75,6 +76,7 @@ namespace ACE.Server.WorldObjects
             snap.Generation = 0;
             snap.PandemicEndsAt = Time.GetUnixTime() + Math.Max(0.0, entry.Duration + entry.StartTime);
             snap.PandemicLevel = level;
+            snap.FractureHandCast = true;
             // milestone bonus (owner 2026-10-17): extra crit chance on every tick of the charm-holder's void DoTs - SET, never
             // added, so a refresh cannot stack it
             snap.CharmCritBonus = Math.Clamp(cs.NumberAt("critchance", level), 0f, 1f);

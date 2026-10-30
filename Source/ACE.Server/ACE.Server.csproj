@@ -30,6 +30,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="ACE.Server.Tests" />
+    <None Update="Config\nether-fracture.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <None Remove="Entity\Mutations\ArmorLevel\armor_level_extremity.txt" />

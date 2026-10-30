@@ -1799,6 +1799,8 @@ namespace ACE.Server.WorldObjects.Managers
         /// <param name="enchantments">A list of active enchantments at the top layers</param>
         public void HeartBeat_DamageOverTime(List<PropertiesEnchantmentRegistry> enchantments, bool includeDamage = true, bool includeHeals = true, float tickScale = 1f)
         {
+            if (includeDamage && WorldObject is Creature voidTarget)
+                enchantments = IndependentVoidDots.Select(voidTarget, enchantments);
             var dots = new List<PropertiesEnchantmentRegistry>();
             var netherDots = new List<PropertiesEnchantmentRegistry>();
             var aetheriaDots = new List<PropertiesEnchantmentRegistry>();
@@ -1875,6 +1877,9 @@ namespace ACE.Server.WorldObjects.Managers
 
             bool isDead = false;
             var damagers = new Dictionary<WorldObject, float>();
+            var fractureBefore = creature.Health.Current;
+            var fractureContributions = new Dictionary<WorldObject, ulong>();
+            var fractureBatch = enchantments.Count > 0 && enchantments.All(e => Creature.IsVoidDotSpell((uint)e.SpellId));
 
             var targetPlayer = WorldObject as Player;
 
@@ -2027,6 +2032,8 @@ namespace ACE.Server.WorldObjects.Managers
                     damagers.Add(damager, tickAmount);
 
                 creature.DamageHistory.Add(damager, damageType, (uint)Math.Round(tickAmount));
+                if (fractureBatch && tickAmount > 0)
+                    fractureContributions[damager] = fractureContributions.GetValueOrDefault(damager) + (uint)Math.Round(tickAmount);
 
                 tickAmountTotal += tickAmount;
 
@@ -2050,6 +2057,15 @@ namespace ACE.Server.WorldObjects.Managers
                     Remove(entry, false);
 
             creature.TakeDamageOverTime(tickAmountTotal, damageType);
+            if (fractureBatch && creature.Health.Current < fractureBefore)
+            {
+                var parts = fractureContributions.ToArray();
+                var allocation = NetherFractureMath.Allocate(fractureBefore - creature.Health.Current,
+                    parts.Select(p => (p.Key.Guid.Full, p.Value)).ToArray());
+                for (var i = 0; i < parts.Length; i++)
+                    if (parts[i].Key is Player fractureCaster)
+                        NetherFractureManager.Credit(fractureCaster, creature, allocation[i]);
+            }
 
             // health readings (selected and /nearbyhealth): the tick's damage landed without a health report (the ones from
             // DamageHistory.Add came before it and were held), so one goes out now with the new value - a tick that kills

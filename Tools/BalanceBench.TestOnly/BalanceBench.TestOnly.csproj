@@ -1,0 +1,76 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<AssemblyName>BalanceBench.TestOnly</AssemblyName>
+		<RootNamespace>BalanceBench</RootNamespace>
+		<NoWarn>0436;1073;8509</NoWarn>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<!-- Builds land in the repo. Run deploy-mod.ps1 to copy into the server's Mods folder. -->
+		<OutputPath>bin\$(Configuration)\</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<GenerateDependencyFile>false</GenerateDependencyFile>
+		<PlatformTarget>x64</PlatformTarget>
+		<AceBin Condition="'$(AceBin)'==''">..\..\Source\ACE.Server\bin\$(Configuration)\net10.0</AceBin>
+	</PropertyGroup>
+
+	<!-- No symbols and no source paths in what gets deployed. -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<DebugType>none</DebugType>
+		<DebugSymbols>false</DebugSymbols>
+		<Deterministic>true</Deterministic>
+		<PathMap>$(MSBuildProjectDirectory)=.</PathMap>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<PublicizerClearCacheOnClean>true</PublicizerClearCacheOnClean>
+	</PropertyGroup>
+	<ItemGroup>
+		<Publicize Include="ACE.Server" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="ACEmulator.ACE.Shared" Version="1.0.9" />
+		<PackageReference Include="Krafs.Publicizer" Version="2.3.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Lib.Harmony" Version="2.4.2" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="ACE.Adapter"><HintPath>$(AceBin)\ACE.Adapter.dll</HintPath><Private>False</Private></Reference>
+		<Reference Include="ACE.Common"><HintPath>$(AceBin)\ACE.Common.dll</HintPath><Private>False</Private></Reference>
+		<Reference Include="ACE.Database"><HintPath>$(AceBin)\ACE.Database.dll</HintPath><Private>False</Private></Reference>
+		<Reference Include="ACE.DatLoader"><HintPath>$(AceBin)\ACE.DatLoader.dll</HintPath><Private>False</Private></Reference>
+		<Reference Include="ACE.Entity"><HintPath>$(AceBin)\ACE.Entity.dll</HintPath><Private>False</Private></Reference>
+		<Reference Include="ACE.Server"><HintPath>$(AceBin)\ACE.Server.dll</HintPath><Private>False</Private></Reference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="Meta.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<!-- Shipped so a first deploy starts cleanly: ACE.Shared reports failure when it has to create the file itself. -->
+		<None Update="Settings.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<!--Get rid of assemblies that should be present in ACE-->
+	<Target Name="CleanupFiles" AfterTargets="PostBuildEvent">
+		<ItemGroup>
+			<FilesToDelete Include="$(OutDir)0Harmony.dll" />
+			<FilesToDelete Include="$(OutDir)Humanizer.dll" />
+			<FilesToDelete Include="$(OutDir)ACE.*.dll" Exclude="$(OutDir)ACE.Shared.dll" />
+			<FilesToDelete Include="$(OutDir)Microsoft.*.dll" />
+			<FilesToDelete Include="$(OutDir)Mono.*.dll" />
+			<FilesToDelete Include="$(OutDir)MonoMod.*.dll" />
+			<FilesToDelete Include="$(OutDir)System.*.dll" Exclude="$(OutDir)System.Text.*.dll" />
+		</ItemGroup>
+		<Delete Files="@(FilesToDelete)" />
+	</Target>
+</Project>

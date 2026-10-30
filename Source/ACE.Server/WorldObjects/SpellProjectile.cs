@@ -1384,6 +1384,9 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            if (ProjectileSource is Player fractureCaster && NetherFractureManager.IsHandCastVoidStreak(Spell.Category, FromProc, IsWeaponSpell, HandCastFork))
+                NetherFractureManager.BeforeStreak(fractureCaster, target, ref damage);
+
             var traceVital = Spell.Category == SpellCategory.StaminaLowering ? DamageType.Stamina
                            : Spell.Category == SpellCategory.ManaLowering ? DamageType.Mana : DamageType.Health;
             var traceBefore = tr != null ? PetTrace.VitalCurrent(target, traceVital) : 0u;

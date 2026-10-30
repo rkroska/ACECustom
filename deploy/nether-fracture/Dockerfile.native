@@ -1,0 +1,5 @@
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+WORKDIR /ace
+COPY server/ ./
+ENTRYPOINT ["dotnet", "ACE.Server.dll"]
+EXPOSE 9000-9001/udp
