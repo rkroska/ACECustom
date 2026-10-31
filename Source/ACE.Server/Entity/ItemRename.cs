@@ -104,6 +104,11 @@ namespace ACE.Server.Entity
         /// <summary>True when the item's name was chosen by a player, so automatic renames (an element change) leave it alone.</summary>
         public static bool HasCustomName(WorldObject wo) => wo?.GetProperty(PropertyString.OriginalItemName) != null;
 
+        /// <summary>The material players are told about. The client puts it in front of the name ("Fire Opal Ursuin Blaster"), so a
+        /// renamed item shows none. Display only: the item keeps its MaterialType for salvage, tinkering and recipes, and the rule
+        /// follows HasCustomName, so items renamed earlier need no migration.</summary>
+        public static MaterialType? ClientMaterial(WorldObject wo) => HasCustomName(wo) ? null : wo?.MaterialType;
+
         // -- database ----------------------------------------------------------------------------------------------
 
         private static volatile bool schemaReady;

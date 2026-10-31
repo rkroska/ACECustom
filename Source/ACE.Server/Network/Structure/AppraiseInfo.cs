@@ -745,6 +745,8 @@ namespace ACE.Server.Network.Structure
         private void BuildProperties(WorldObject wo, Player examiner = null)
         {
             PropertiesInt = wo.GetAllPropertyInt().Where(x => AssessmentProperties.PropertiesInt.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            if (ItemRename.HasCustomName(wo))
+                PropertiesInt.Remove(PropertyInt.MaterialType);   // a renamed item shows no material (ItemRename.ClientMaterial)
             PropertiesInt64 = wo.GetAllPropertyInt64().Where(x => AssessmentProperties.PropertiesInt64.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
             PropertiesBool = wo.GetAllPropertyBools().Where(x => AssessmentProperties.PropertiesBool.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
             PropertiesFloat = wo.GetAllPropertyFloat().Where(x => AssessmentProperties.PropertiesDouble.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
@@ -908,7 +910,7 @@ namespace ACE.Server.Network.Structure
 
             if (wo.ItemWorkmanship > 0)
                 appraisalLongDescDecoration |= AppraisalLongDescDecorations.PrependWorkmanship;
-            if (wo.MaterialType > 0)
+            if (ItemRename.ClientMaterial(wo) > 0)
                 appraisalLongDescDecoration |= AppraisalLongDescDecorations.PrependMaterial;
             if (wo.GemType > 0 && wo.GemCount > 0)
                 appraisalLongDescDecoration |= AppraisalLongDescDecorations.AppendGemInfo;

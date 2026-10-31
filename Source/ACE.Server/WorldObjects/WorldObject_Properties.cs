@@ -1008,7 +1008,7 @@ namespace ACE.Server.WorldObjects
         {
             var name = stackSize != null && stackSize != 1 ? GetPluralName() : Name;
 
-            if (MaterialType == null)
+            if (ItemRename.ClientMaterial(this) == null)
                 return name;
 
             var material = RecipeManager.GetMaterialName(MaterialType ?? 0);
