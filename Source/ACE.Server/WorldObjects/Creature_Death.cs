@@ -1769,7 +1769,11 @@ namespace ACE.Server.WorldObjects
             // T11+ RARES, Ascendant (owner 2026-10-09): the tier it dropped in goes on the piece FIRST, so the wield gates
             // stamped further down are that tier's from the very first stamp. Does nothing for any other piece.
             if (rare != ACE.Server.Managers.ZoneControl.ZoneRareTier.None)
+            {
                 ACE.Server.Managers.ZoneControl.ZoneRare.StampGateTier(wo, rare, rareGateTier);
+                // the element the dying monster is weakest to, before anything below reads the damage type (2026-10-30)
+                ACE.Server.Managers.ZoneControl.ZoneRare.ApplyWeakestElement(wo, killed);
+            }
 
             // T11+ deterministic per-slot gear budget (fixed base; cantrips carry the
             // variance). BEFORE MutateLootItem so the cantrip

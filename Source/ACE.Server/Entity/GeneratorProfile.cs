@@ -394,6 +394,10 @@ namespace ACE.Server.Entity
                 else
                     success = Spawn_Default(obj);
 
+                // after the spawn: the generator link (exempt generators) and the final location are only set by now
+                if (success && obj is Creature poolCreature)
+                    Managers.ZoneControl.ZoneSlayerPool.RecordGenerated(poolCreature, Generator, MaxCreate);
+
                 if (bossGroup != null && success)
                     BossGroupManager.OnBossSpawned(bossGroup.Value, Generator, obj);
 

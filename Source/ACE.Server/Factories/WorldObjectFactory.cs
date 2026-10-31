@@ -348,6 +348,7 @@ namespace ACE.Server.Factories
                     PrestigeManager.ApplyPrestigeScaling(creature, variationId);
                     Managers.ZoneControl.ZoneSpawnScaler.ApplyToSpawn(creature);
                     Managers.Rifts.RiftManager.TryApplyRiftScaling(creature, variationId);
+                    Managers.ZoneControl.ZoneSlayerPool.RecordPlaced(creature);
                 }
 
                 if (worldObject != null)

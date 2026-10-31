@@ -222,14 +222,6 @@ namespace ACE.Server.Tests
             StringAssert.Contains(src, "LootGenerationFactory.WeaponGroupWeights.Default");
         }
 
-        private static string Source(params string[] parts)
-        {
-            var dir = AppContext.BaseDirectory;
-            while (dir != null && !File.Exists(Path.Combine(dir, "ACE.sln")))
-                dir = Path.GetDirectoryName(dir);
-            if (dir == null)
-                Assert.Inconclusive("source tree not found next to the test binaries");
-            return File.ReadAllText(Path.Combine(dir, Path.Combine(parts)));
-        }
+        private static string Source(params string[] parts) => TestSource.Read(parts);
     }
 }
