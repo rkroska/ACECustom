@@ -501,6 +501,9 @@ namespace ACE.Server.Controllers
             item.Name = finalName;
             item.ChangesDetected = true;
             item.SaveBiotaToDatabase();
+            // As in RenameOnline: the rushed player save below writes it again, so a save that reported success on a
+            // concurrency conflict does not leave the new name unsaved until the item next changes.
+            item.ChangesDetected = true;
 
             owner.UpdateProperty(item, PropertyString.Name, finalName);
             owner.EnqueueBroadcast(new GameMessageUpdateObject(item));
