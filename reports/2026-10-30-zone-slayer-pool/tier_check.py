@@ -1,10 +1,8 @@
 """Read-only: resist pattern per zone/tier, bag settings, and the real Slayer chance after the card floor/cap."""
-import json, re, random, collections, pymysql
+import json, random, collections, pymysql
+from _paths import load_config
 
-cfg = open(r"C:\Scripting\ACECustom\Source\ACE.Server\bin\x64\Release\net10.0\Config.js", encoding="utf-8").read()
-cfg = re.sub(r"/\*.*?\*/", "", cfg, flags=re.S)
-cfg = re.sub(r"(?m)^\s*//.*$", "", cfg)
-s = json.loads(cfg)["MySql"]["Shard"]
+s = load_config()["MySql"]["Shard"]
 c = pymysql.connect(host=s["Host"], port=int(s["Port"]), user=s["Username"], password=s["Password"], database=s["Database"]).cursor()
 c.execute("select value from config_properties_string where `key`='zonecontrol_data'")
 store = json.loads(c.fetchone()[0])

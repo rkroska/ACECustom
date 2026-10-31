@@ -1,19 +1,17 @@
 """Read-only: the real damage-type mix of T11+ weapon drops per weapon group, then the Slayer + matching rend rates."""
-import json, re, collections, pymysql
-D = r"C:\Scripting\ACECustom-slayerpool\Source\ACE.Server\Factories\Tables\Wcids\Weapons\\"
-enum_src = open(r"C:\Scripting\ACECustom-slayerpool\Source\ACE.Server\Factories\Enum\WeenieClassName.cs", encoding="utf-8").read()
+import re, collections, pymysql
+from _paths import load_config, read_source, source_path
+WEAPONS = ("ACE.Server", "Factories", "Tables", "Wcids", "Weapons")
+enum_src = read_source("ACE.Server", "Factories", "Enum", "WeenieClassName.cs")
 enum = {m.group(1): int(m.group(2)) for m in re.finditer(r"^\s*(\w+)\s*=\s*(\d+)", enum_src, flags=re.M)}
 
-cfg = open(r"C:\Scripting\ACECustom\Source\ACE.Server\bin\x64\Release\net10.0\Config.js", encoding="utf-8").read()
-cfg = re.sub(r"/\*.*?\*/", "", cfg, flags=re.S)
-cfg = re.sub(r"(?m)^\s*//.*$", "", cfg)
-s = json.loads(cfg)["MySql"]["World"]
+s = load_config()["MySql"]["World"]
 c = pymysql.connect(host=s["Host"], port=int(s["Port"]), user=s["Username"], password=s["Password"], database=s["Database"]).cursor()
 c.execute("select object_Id,value from weenie_properties_int where type=45")
 dmg = dict(c.fetchall())
 
 def tables(fn):
-    src = open(D + fn, encoding="utf-8").read()
+    src = source_path(*WEAPONS, fn).read_text(encoding="utf-8")
     out = {}
     for m in re.finditer(r"ChanceTable<WeenieClassName>\s+(\w+)\s*=\s*new ChanceTable<WeenieClassName>[^{]*\{(.*?)\};", src, flags=re.S):
         rows = re.findall(r"WeenieClassName\.(\w+)\s*,\s*([\d.]+)f?", m.group(2))
@@ -88,7 +86,8 @@ for name, (n, e) in sp.items():
     row = f"{name:<11}{e:<9}"
     for g, m in groups.items():
         base = W * SL[g] * GS * K * m[e]
-        other = 0.5 * base * n / el[e]
+        # the shipped pool ignores the element: any zone species, by its share of the zone
+        other = 0.5 * base * n / T
         hunt = 0.5 * base + other
         row += f"{60/base if base else 0:>9.0f}m {60/hunt if hunt else 0:>6.0f}m {1/other if other else 0:>7.1f}h"
     print(row)
@@ -97,8 +96,7 @@ print("\nPER GROUP: per hour, all species")
 for g, m in groups.items():
     base = W * SL[g] * GS * K
     today = sum(m[e] * el[e] / T for e in el)
-    plain = 1 - m["Nether"] - m["Undef"]
-    print(f"{g:<10} slayer+rend/hr {base:5.1f}  matching today(zone mix) {base*today:5.2f}  at 0.5 {base*(0.5*today+0.5*plain):5.2f}  usable-element share {plain:.1%}")
+    print(f"{g:<10} slayer+rend/hr {base:5.1f}  matching today(zone mix) {base*today:5.2f}  at any share {base*today:5.2f} (the pool moves species, not this total)")
 
 print("\nRARE matches its Slayer's species today (zone mix) per group, vs 1/7 = 14.3%:")
 for g, m in groups.items():

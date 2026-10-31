@@ -4,14 +4,12 @@ Sources: landblock_instance rows at the zone's variation (direct creatures + gen
 recursively through weenie_properties_generator), and outdoor encounters on the zone's landblocks.
 """
 import json, re, sys, collections, pymysql
+from _paths import load_config, read_source
 
 ZONE = sys.argv[1] if len(sys.argv) > 1 else "Tou Tou"
 VAR = int(sys.argv[2]) if len(sys.argv) > 2 else 11
 
-cfg = open(r"C:\Scripting\ACECustom\Source\ACE.Server\bin\x64\Release\net10.0\Config.js", encoding="utf-8").read()
-cfg = re.sub(r"/\*.*?\*/", "", cfg, flags=re.S)
-cfg = re.sub(r"(?m)^\s*//.*$", "", cfg)
-cfg = json.loads(cfg)
+cfg = load_config()
 
 def connect(k):
     s = cfg["MySql"][k]
@@ -22,13 +20,13 @@ shard.execute("select value from config_properties_string where `key`='zonecontr
 data = json.loads(shard.fetchone()[0])
 area = next(a for a in data["areas"] if a["variation"] == VAR and a["name"].startswith(ZONE))
 lbs = sorted(int(x) for x in area["landblocks"])
-print(f"zone {area['name']!r} v{VAR}: {len(lbs)} landblocks, exempt wcids {len(area.get('exemptWcids') or [])}")
+print(f"zone {area['name']!r} v{VAR}: {len(lbs)} landblocks, exempt wcids {len(area['profile'].get('exemptWcids') or [])}")
 
 w = connect("World").cursor()
 ph = ",".join(["%s"] * len(lbs))
 
 # CreatureType enum names from the source
-ct_src = open(r"C:\Scripting\ACECustom\Source\ACE.Entity\Enum\CreatureType.cs", encoding="utf-8").read()
+ct_src = read_source("ACE.Entity", "Enum", "CreatureType.cs")
 body = ct_src[ct_src.index("{", ct_src.index("enum CreatureType")) + 1:]
 body = body[:body.index("}")]
 ct_names, nextv = {}, 0
@@ -44,10 +42,14 @@ def weenie_info(wcids):
         return {}
     p = ",".join(["%s"] * len(wcids))
     w.execute(f"select w.class_Id, w.type, s.value from weenie w left join weenie_properties_string s on s.object_Id=w.class_Id and s.type=1 where w.class_Id in ({p})", list(wcids))
-    info = {r[0]: {"wtype": r[1], "name": r[2], "ct": None} for r in w.fetchall()}
+    info = {r[0]: {"wtype": r[1], "name": r[2], "ct": None, "attackable": True} for r in w.fetchall()}
     w.execute(f"select object_Id, value from weenie_properties_int where type=2 and object_Id in ({p})", list(wcids))
     for oid, v in w.fetchall():
         info[oid]["ct"] = v
+    # bools come back as bytes: bool(b"\x00") is True
+    w.execute(f"select object_Id, value from weenie_properties_bool where type=19 and object_Id in ({p})", list(wcids))
+    for oid, v in w.fetchall():
+        info[oid]["attackable"] = v == b"\x01"
     return info
 
 def gen_children(wcids):
@@ -76,7 +78,7 @@ while frontier and depth < 6:
     nxt = set()
     for wcid in frontier:
         i = info.get(wcid)
-        if i and i["ct"]:
+        if i and i["ct"] and i["attackable"]:
             creatures[wcid] += 1
     for parent, child in gen_children(frontier):
         if child not in seen:
@@ -86,7 +88,7 @@ while frontier and depth < 6:
     depth += 1
 
 info = weenie_info(set(creatures))
-exempt = set(area.get("exemptWcids") or [])
+exempt = {int(x) for x in (area["profile"].get("exemptWcids") or [])}
 by_ct = collections.defaultdict(list)
 for wcid in creatures:
     i = info[wcid]

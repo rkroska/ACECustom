@@ -1,11 +1,9 @@
 """Read-only: real element resists, spawn weights and Slayer odds for a zone, from the local DBs."""
 import json, re, sys, collections, pymysql
+from _paths import load_config, read_source
 
 ZONE, VAR = sys.argv[1], int(sys.argv[2])
-cfg = open(r"C:\Scripting\ACECustom\Source\ACE.Server\bin\x64\Release\net10.0\Config.js", encoding="utf-8").read()
-cfg = re.sub(r"/\*.*?\*/", "", cfg, flags=re.S)
-cfg = re.sub(r"(?m)^\s*//.*$", "", cfg)
-cfg = json.loads(cfg)
+cfg = load_config()
 def connect(k):
     s = cfg["MySql"][k]
     return pymysql.connect(host=s["Host"], port=int(s["Port"]), user=s["Username"], password=s["Password"], database=s["Database"]).cursor()
@@ -20,12 +18,12 @@ over = prof.get("wcidOverrides") or {}
 exempt = {int(x) for x in (prof.get("exemptWcids") or [])}
 lbs = sorted(int(x) for x in area["landblocks"])
 
-src = open(r"C:\Scripting\ACECustom\Source\ACE.Entity\Enum\Properties\PropertyInt.cs", encoding="utf-8").read()
+src = read_source("ACE.Entity", "Enum", "Properties", "PropertyInt.cs")
 MASK_ID = int(re.search(r"ElementalWeaknessMask\s*=\s*(\d+)", src).group(1))
-src = open(r"C:\Scripting\ACECustom\Source\ACE.Entity\Enum\Properties\PropertyFloat.cs", encoding="utf-8").read()
+src = read_source("ACE.Entity", "Enum", "Properties", "PropertyFloat.cs")
 FACTOR_ID = int(re.search(r"ElementalWeaknessFactor\s*=\s*(\d+)", src).group(1))
 RESIST_IDS = {n: int(re.search(r"\bResist%s\s*=\s*(\d+)" % n, src).group(1)) for n in ["Slash", "Pierce", "Bludgeon", "Fire", "Cold", "Acid", "Electric", "Nether"]}
-ct_src = open(r"C:\Scripting\ACECustom\Source\ACE.Entity\Enum\CreatureType.cs", encoding="utf-8").read()
+ct_src = read_source("ACE.Entity", "Enum", "CreatureType.cs")
 body = ct_src[ct_src.index("{", ct_src.index("enum CreatureType")) + 1:]
 body = body[:body.index("}")]
 ct, nv = {}, 0
@@ -78,7 +76,7 @@ for o, t, v in w.fetchall():
 w.execute(f"select object_Id,value from weenie_properties_bool where type=19 and object_Id in ({ph})", ids)
 for o, v in w.fetchall():
     if o in info:
-        info[o]["attackable"] = bool(v)
+        info[o]["attackable"] = v == b"\x01"   # bools come back as bytes: bool(b"\x00") is True
 w.execute(f"select object_Id,type,value from weenie_properties_float where type in ({','.join(str(x) for x in list(RESIST_IDS.values())+[FACTOR_ID])}) and object_Id in ({ph})", ids)
 rev = {v: k for k, v in RESIST_IDS.items()}
 for o, t, v in w.fetchall():
@@ -175,16 +173,10 @@ weak = {k: {e for e, v in s["r"].items() if abs(v - max(s["r"].values())) < 1e-6
 print(f"\nSLAYER PER HOUR, one weapon group, {KPH} kills/hr, {W} weapons/corpse, chance {ch} (before the modifier floor/cap):")
 base = W * ch * GROUP * KPH
 print(f"  group Slayer weapons per hour = {base:.1f}")
-print(f"{'species':<14} {'share':>6} {'hunting it: today':>18} {'50/50':>7} {'pool':>7} | {'aligned today':>13} {'50/50':>7} {'pool':>7} {'pool+element':>13}")
+print(f"{'species':<14} {'share':>6} {'hunting it: today':>18} {'50/50':>7} {'pool':>7} | {'aligned today':>13} {'50/50':>7} {'pool':>7}")
 for k, s in sorted(sp.items(), key=lambda kv: -kv[1]["n"]):
     p = shares[k]
     a = len(weak[k]) / 7
     # hunting species k only; pool draws by zone share
     today, blend, pool = base, base * (0.5 + 0.5 * p), base * p
-    # element-matched pool: for each random element, choose among species weak to it, share-weighted
-    filt = 0.0
-    for e in EL7:
-        cands = [x for x in sp if e in weak[x]]
-        if k in cands:
-            filt += (1 / 7) * shares[k] / sum(shares[x] for x in cands)
-    print(f"{str(k)[:14]:<14} {p:>6.1%} {today:>18.1f} {blend:>7.1f} {pool:>7.1f} | {today*a:>13.2f} {blend*a:>7.2f} {pool*a:>7.2f} {base*filt:>13.2f}")
+    print(f"{str(k)[:14]:<14} {p:>6.1%} {today:>18.1f} {blend:>7.1f} {pool:>7.1f} | {today*a:>13.2f} {blend*a:>7.2f} {pool*a:>7.2f}")
