@@ -1708,6 +1708,11 @@ namespace ACE.Server.Network.Structure
             if (rareLine != null)
                 effectDescriptions.Insert(0, rareLine);
 
+            // Item rename (owner 2026-10-30): a weapon renamed with @item-name says what it was, right under the rare line.
+            var originalName = ItemRename.OriginalNameLine(weapon);
+            if (originalName != null)
+                effectDescriptions.Insert(rareLine != null ? 1 : 0, originalName);
+
             // Cast on Strike (owner 2026-08-27: "Appraisal line should show Force Arc (13% proc chance)").
             // One line PER SLOT - the arc and the ring are separate entities with separate rates, so a
             // single merged line would hide which one a given rate belongs to. Names come from our own

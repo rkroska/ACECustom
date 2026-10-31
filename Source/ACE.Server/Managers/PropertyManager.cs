@@ -1213,6 +1213,13 @@ namespace ACE.Server.Managers
 
         /// <summary>The most one piece can ever cost. 0 = no cap.</summary>
         public static ConfigProperty<long> dressing_room_fee_cap { get; private set; } = new(250_000_000L, "Dressing Room: the most one piece can cost however many times its slot has been locked. 0 = no cap. Use /modifylong dressing_room_fee_cap.");
+
+        // -- Item rename (2026-10-30) ---------------------------------------------------------------
+        /// <summary>Master switch for @item-name. Requests already waiting can still be approved or denied (and refunded) when FALSE.</summary>
+        public static ConfigProperty<bool> item_rename_enabled { get; private set; } = new(true, "Item rename: if TRUE, players can request a new name for a weapon or caster with @item-name, for staff approval on the portal's Name Approvals page. Waiting requests can still be reviewed when FALSE. Use /modifybool item_rename_enabled.");
+
+        /// <summary>Pyreals charged when an @item-name request is made, refunded if it is denied.</summary>
+        public static ConfigProperty<long> item_rename_fee { get; private set; } = new(12_500_000L, "Item rename: pyreals charged when an @item-name request is made (banked pyreals first, then pyreal coins in the pack), refunded to the bank if staff deny it. 12,500,000 = 50 MMD notes. 0 = free. Use /modifylong item_rename_fee.");
     }
 
     public static class PropertyManager

@@ -2103,6 +2103,7 @@ namespace ACE.Server.Command.Handlers
             using var ctx = new ACE.Database.Models.Shard.ShardDbContext();
             var con = ctx.Database.GetDbConnection();
             if (con.State != System.Data.ConnectionState.Open) con.Open();
+            ItemRename.EnsureSchema(con);
 
             static void AddParam(System.Data.IDbCommand cmd, string name, object value)
             {
@@ -2115,6 +2116,7 @@ namespace ACE.Server.Command.Handlers
             // One transaction, so there is never a moment with two pending rows or none. A reviewer's approve
             // claims the old row with WHERE status = 0 too: whichever runs first wins the row lock, and the
             // other then matches nothing, so an old name is either approved as seen or replaced, never both.
+            // Only pet rows: a pending @item-name request is separate and stays.
             using var tx = con.BeginTransaction();
             bool replaced;
 
@@ -2123,9 +2125,10 @@ namespace ACE.Server.Command.Handlers
                 closeCmd.Transaction = tx;
                 closeCmd.CommandText =
                     "UPDATE `pet_name_requests` SET `status` = 2, `review_note` = @note, `reviewed_at` = UTC_TIMESTAMP(), `reviewed_by` = 'system' " +
-                    "WHERE `character_id` = @characterId AND `status` = 0";
+                    "WHERE `character_id` = @characterId AND `status` = 0 AND `kind` = @kind";
                 AddParam(closeCmd, "@note", ReplacedRequestNote);
                 AddParam(closeCmd, "@characterId", (long)characterId);
+                AddParam(closeCmd, "@kind", ItemRename.KindPet);
                 replaced = closeCmd.ExecuteNonQuery() > 0;
             }
 
@@ -2140,6 +2143,237 @@ namespace ACE.Server.Command.Handlers
                 AddParam(insertCmd, "@petGuid", petGuid);
                 AddParam(insertCmd, "@oldName", oldName);
                 AddParam(insertCmd, "@requestedName", requestedName);
+                insertCmd.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+            return replaced;
+        }
+
+        /// <summary>
+        /// Requests a new name for a weapon or caster the player carries or wields (owner 2026-10-30). The fee
+        /// (item_rename_fee) is taken now and given back if staff deny it; the name only changes when staff approve
+        /// it on the portal's Name Approvals page.
+        /// </summary>
+        [CommandHandler("item-name", AccessLevel.Player, CommandHandlerFlag.RequiresWorld,
+            "Request a new name for a weapon or caster (costs a fee, subject to staff approval)",
+            "Usage: select a weapon or caster you carry, then @item-name <name>")]
+        public static void HandleItemName(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+
+            void Reply(string text) => session.Network.EnqueueSend(new GameMessageSystemChat(text, ChatMessageType.Broadcast));
+
+            if (!ServerConfig.item_rename_enabled.Value)
+            {
+                Reply("Item renaming is currently disabled.");
+                return;
+            }
+
+            var fee = Math.Max(0, ServerConfig.item_rename_fee.Value);
+
+            if (parameters == null || parameters.Length == 0)
+            {
+                Reply($"Usage: select a weapon or caster you carry, then @item-name <name>. A request costs {fee:N0} pyreals, returned if staff deny it.");
+                return;
+            }
+
+            var requestedName = string.Join(" ", parameters).Trim();
+            var nameError = ItemRename.ValidateName(requestedName);
+            if (nameError != null)
+            {
+                Reply(nameError);
+                return;
+            }
+
+            var selected = CommandHandlerHelper.GetSelected(session);
+            var item = selected == null ? null : player.FindObject(selected.Guid.Full, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems);
+            if (item == null)
+            {
+                Reply("Select the weapon or caster you want to rename. It must be in your pack or wielded.");
+                return;
+            }
+
+            if (!ItemRename.IsRenamable(item))
+            {
+                Reply("Only weapons and casters can be renamed (not arrows, bolts or thrown stacks).");
+                return;
+            }
+
+            var oldName = item.Name;
+            if (string.IsNullOrWhiteSpace(oldName))
+            {
+                Reply("That item has no current name, so it cannot be renamed. Please contact staff.");
+                return;
+            }
+
+            if (string.Equals(ItemRename.FinalName(requestedName, item.GetProperty(PropertyInt.ZcRare)), oldName, StringComparison.Ordinal))
+            {
+                Reply($"{oldName} already has that name.");
+                return;
+            }
+
+            // Same per-character cooldown as @pet-name, taken before any work so a burst of commands cannot queue a burst
+            // of charges, DB writes and Discord posts.
+            var characterId = player.Character.Id;
+            var now = DateTime.UtcNow;
+            if (ItemNameRequestCooldowns.TryGetValue(characterId, out var last) && now - last < PetNameRequestCooldown)
+            {
+                var wait = (int)Math.Ceiling((PetNameRequestCooldown - (now - last)).TotalSeconds);
+                Reply($"You may submit another item name request in {wait} second{(wait == 1 ? "" : "s")}.");
+                return;
+            }
+
+            if (!PyrealFee.CanPay(player, fee))
+            {
+                Reply($"Renaming an item costs {fee:N0} pyreals (bank first, then pyreal coins in your pack). You have {PyrealFee.Funds(player):N0}.");
+                return;
+            }
+
+            ItemNameRequestCooldowns[characterId] = now;
+            PruneItemNameRequestCooldowns(now);
+
+            using (PyrealLedger.Begin(PyrealLedger.SrcFee, "ItemRename", "Item rename", player))
+            {
+                if (!PyrealFee.Charge(player, fee, ItemRename.Tag))
+                {
+                    ItemNameRequestCooldowns.TryRemove(characterId, out _);
+                    Reply("The fee could not be taken, so no request was made.");
+                    return;
+                }
+            }
+
+            // Everything the background task needs, as plain values: it must not touch the player, the item or the session.
+            var characterName = player.Name;
+            var itemGuid = item.Guid.Full;
+            var channelId = ConfigManager.Config?.Chat?.AdminChannelId ?? ConfigManager.Config?.Chat?.AdminAuditId ?? 0;
+
+            Reply(fee > 0
+                ? $"{fee:N0} pyreals taken. Submitting your request to rename {oldName} to \"{requestedName}\"..."
+                : $"Submitting your request to rename {oldName} to \"{requestedName}\"...");
+
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                string reply;
+                try
+                {
+                    var replacedIds = SubmitItemNameRequest(characterId, characterName, itemGuid, oldName, requestedName, fee);
+
+                    // A replaced request was denied by the line above; its fee goes back now (the new request paid its own).
+                    // The new request is already committed, so a failure here must not reach the submit handler below:
+                    // that would refund the new fee and report a failed submit for a request that is waiting for review.
+                    if (replacedIds.Count > 0)
+                    {
+                        try
+                        {
+                            using var ctx = new ACE.Database.Models.Shard.ShardDbContext();
+                            var con = ctx.Database.GetDbConnection();
+                            if (con.State != System.Data.ConnectionState.Open) con.Open();
+                            foreach (var id in replacedIds)
+                            {
+                                var refund = ItemRename.ClaimRefund(con, id, out var refundCharacterId, out var refundItem);
+                                ItemRename.QueueRefund(refundCharacterId, refund, $"Your earlier request to rename {refundItem} was replaced by this one.");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"{ItemRename.Tag} {characterName}: refunding replaced request(s) {string.Join(", ", replacedIds)} failed; check fee_refunded on those rows and credit by hand if needed", ex);
+                        }
+                    }
+
+                    if (channelId > 0)
+                    {
+                        _ = DiscordChatManager.SendDiscordChannelEmbedAsync(
+                            replacedIds.Count > 0 ? "Item Rename Request (updated)" : "Item Rename Request",
+                            $"**Player:** {characterName}\n**Item:** {oldName}\n**Requested name:** {requestedName}\n**Fee paid:** {fee:N0}\n**GUID:** 0x{itemGuid:X8}",
+                            null,
+                            channelId);
+                    }
+
+                    reply = $"Your request to rename {oldName} to \"{requestedName}\" has been submitted for staff review.";
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"{ItemRename.Tag} Failed to save item name request for {characterName}: {ex.Message}", ex);
+                    ItemNameRequestCooldowns.TryRemove(characterId, out _);
+                    ItemRename.QueueRefund(characterId, fee, "Your item rename request could not be submitted.");
+                    reply = "Failed to submit your item name request. Please try again later.";
+                }
+
+                // Thread audit: delivered on the world queue; the player is re-resolved there because they may have logged out.
+                WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.PetNaming_RequestResult, () =>
+                {
+                    var online = PlayerManager.GetOnlinePlayer(characterId);
+                    online?.Session?.Network.EnqueueSend(new GameMessageSystemChat(reply, ChatMessageType.Broadcast));
+                }));
+            });
+        }
+
+        private static readonly ConcurrentDictionary<uint, DateTime> ItemNameRequestCooldowns = new();
+
+        private static void PruneItemNameRequestCooldowns(DateTime now)
+        {
+            if (ItemNameRequestCooldowns.Count < 1000)
+                return;
+
+            foreach (var entry in ItemNameRequestCooldowns)
+            {
+                if (now - entry.Value >= PetNameRequestCooldown)
+                    ItemNameRequestCooldowns.TryRemove(entry.Key, out _);
+            }
+        }
+
+        /// <summary>
+        /// Background thread only. Like <see cref="SubmitPetNameRequest"/>: a character has at most one pending item request,
+        /// so a new one closes the pending one as denied ("Replaced by a newer request") in the same transaction and inserts
+        /// a fresh row. Returns the ids it closed, whose fees the caller refunds.
+        /// </summary>
+        private static List<long> SubmitItemNameRequest(uint characterId, string characterName, uint itemGuid, string oldName, string requestedName, long fee)
+        {
+            using var ctx = new ACE.Database.Models.Shard.ShardDbContext();
+            var con = ctx.Database.GetDbConnection();
+            if (con.State != System.Data.ConnectionState.Open) con.Open();
+            ItemRename.EnsureSchema(con);
+
+            using var tx = con.BeginTransaction();
+            var replaced = new List<long>();
+
+            using (var findCmd = con.CreateCommand())
+            {
+                findCmd.Transaction = tx;
+                findCmd.CommandText = "SELECT `id` FROM `pet_name_requests` WHERE `character_id` = @characterId AND `status` = 0 AND `kind` = @kind FOR UPDATE";
+                ItemRename.AddParam(findCmd, "@characterId", (long)characterId);
+                ItemRename.AddParam(findCmd, "@kind", ItemRename.KindItem);
+                using var reader = findCmd.ExecuteReader();
+                while (reader.Read())
+                    replaced.Add(reader.GetInt64(0));
+            }
+
+            foreach (var id in replaced)
+            {
+                using var closeCmd = con.CreateCommand();
+                closeCmd.Transaction = tx;
+                closeCmd.CommandText =
+                    "UPDATE `pet_name_requests` SET `status` = 2, `review_note` = @note, `reviewed_at` = UTC_TIMESTAMP(), `reviewed_by` = 'system' " +
+                    "WHERE `id` = @id AND `status` = 0";
+                ItemRename.AddParam(closeCmd, "@note", ReplacedRequestNote);
+                ItemRename.AddParam(closeCmd, "@id", id);
+                closeCmd.ExecuteNonQuery();
+            }
+
+            using (var insertCmd = con.CreateCommand())
+            {
+                insertCmd.Transaction = tx;
+                insertCmd.CommandText =
+                    "INSERT INTO `pet_name_requests` (`kind`, `character_id`, `character_name`, `pet_guid`, `old_name`, `requested_name`, `fee_paid`) " +
+                    "VALUES (@kind, @characterId, @characterName, @itemGuid, @oldName, @requestedName, @fee)";
+                ItemRename.AddParam(insertCmd, "@kind", ItemRename.KindItem);
+                ItemRename.AddParam(insertCmd, "@characterId", (long)characterId);
+                ItemRename.AddParam(insertCmd, "@characterName", characterName);
+                ItemRename.AddParam(insertCmd, "@itemGuid", itemGuid);
+                ItemRename.AddParam(insertCmd, "@oldName", oldName);
+                ItemRename.AddParam(insertCmd, "@requestedName", requestedName);
+                ItemRename.AddParam(insertCmd, "@fee", fee);
                 insertCmd.ExecuteNonQuery();
             }
 

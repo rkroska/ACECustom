@@ -15,6 +15,10 @@ interface PetNameRequest {
   createdAt: string
   reviewedAt: string | null
   reviewedBy: string | null
+  /** 0 = pet (@pet-name), 1 = weapon or caster (@item-name) */
+  kind: number
+  feePaid: number
+  feeRefunded: boolean
 }
 
 type StatusFilter = 'pending' | 'approved' | 'denied' | 'all'
@@ -52,7 +56,7 @@ export default function PetNameApprovals() {
       const data = await api.get<PetNameRequest[]>('/api/PetNaming/requests?limit=200')
       setRequests(data ?? [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load pet name requests.')
+      setError(err instanceof Error ? err.message : 'Failed to load name requests.')
     } finally {
       setIsLoading(false)
     }
@@ -98,7 +102,7 @@ export default function PetNameApprovals() {
 
   return (
     <div className="p-6">
-      <PageHeader title="Pet Name Approvals" icon={Heart}>
+      <PageHeader title="Name Approvals" icon={Heart}>
         <button
           onClick={load}
           disabled={isLoading}
@@ -136,6 +140,7 @@ export default function PetNameApprovals() {
           <thead className="bg-neutral-900 text-neutral-400 text-left">
             <tr>
               <th className="px-4 py-3 font-medium">Player</th>
+              <th className="px-4 py-3 font-medium">Type</th>
               <th className="px-4 py-3 font-medium">Old Name</th>
               <th className="px-4 py-3 font-medium">Requested Name</th>
               <th className="px-4 py-3 font-medium">Status</th>
@@ -147,14 +152,22 @@ export default function PetNameApprovals() {
           <tbody className="divide-y divide-neutral-800">
             {filtered.length === 0 && !isLoading && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-neutral-500">
-                  No pet name requests found.
+                <td colSpan={8} className="px-4 py-8 text-center text-neutral-500">
+                  No name requests found.
                 </td>
               </tr>
             )}
             {filtered.map(r => (
               <tr key={r.id} className="text-neutral-200 hover:bg-neutral-900/50">
                 <td className="px-4 py-3">{r.characterName}</td>
+                <td className="px-4 py-3 text-neutral-400">
+                  {r.kind === 1 ? 'Weapon' : 'Pet'}
+                  {r.feePaid > 0 && (
+                    <div className="text-xs text-neutral-500 mt-1">
+                      Fee {r.feePaid.toLocaleString()}{r.feeRefunded ? ' (refunded)' : ''}
+                    </div>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-neutral-400">{r.oldName}</td>
                 <td className="px-4 py-3 font-medium">{r.requestedName}</td>
                 <td className="px-4 py-3">

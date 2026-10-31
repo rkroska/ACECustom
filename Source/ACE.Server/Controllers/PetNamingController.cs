@@ -9,6 +9,7 @@ using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
+using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
@@ -46,6 +47,10 @@ namespace ACE.Server.Controllers
             public DateTime CreatedAt { get; set; }
             public DateTime? ReviewedAt { get; set; }
             public string ReviewedBy { get; set; }
+            /// <summary>0 = pet (@pet-name), 1 = item (@item-name). PetGuid is the item's GUID for an item request.</summary>
+            public int Kind { get; set; }
+            public long FeePaid { get; set; }
+            public bool FeeRefunded { get; set; }
         }
 
         public class DenyRequestDto
@@ -97,10 +102,11 @@ namespace ACE.Server.Controllers
                 using var ctx = new ShardDbContext();
                 var con = ctx.Database.GetDbConnection();
                 if (con.State != ConnectionState.Open) con.Open();
+                ItemRename.EnsureSchema(con);
                 using var cmd = con.CreateCommand();
                 cmd.CommandText =
                     "SELECT `id`, `character_id`, `character_name`, `pet_guid`, `old_name`, `requested_name`, " +
-                    "`status`, `review_note`, `created_at`, `reviewed_at`, `reviewed_by` " +
+                    "`status`, `review_note`, `created_at`, `reviewed_at`, `reviewed_by`, `kind`, `fee_paid`, `fee_refunded` " +
                     "FROM `pet_name_requests` ORDER BY (`status` = 0) DESC, `created_at` DESC LIMIT " + take;
 
                 using var reader = cmd.ExecuteReader();
@@ -119,6 +125,9 @@ namespace ACE.Server.Controllers
                         CreatedAt = reader.GetDateTime(8),
                         ReviewedAt = reader.IsDBNull(9) ? null : reader.GetDateTime(9),
                         ReviewedBy = reader.IsDBNull(10) ? null : reader.GetString(10),
+                        Kind = Convert.ToInt32(reader.GetValue(11)),
+                        FeePaid = reader.GetInt64(12),
+                        FeeRefunded = Convert.ToInt32(reader.GetValue(13)) != 0,
                     });
                 }
 
@@ -150,6 +159,7 @@ namespace ACE.Server.Controllers
                 using var ctx = new ShardDbContext();
                 var con = ctx.Database.GetDbConnection();
                 if (con.State != ConnectionState.Open) con.Open();
+                ItemRename.EnsureSchema(con);
 
                 // Claim: only a pending row moves to approved, and only one caller sees rows == 1.
                 using (var claimCmd = con.CreateCommand())
@@ -175,10 +185,11 @@ namespace ACE.Server.Controllers
                 uint petGuid;
                 string oldName;
                 string requestedName;
+                int kind;
 
                 using (var selectCmd = con.CreateCommand())
                 {
-                    selectCmd.CommandText = "SELECT `character_id`, `pet_guid`, `old_name`, `requested_name` FROM `pet_name_requests` WHERE `id` = @id LIMIT 1";
+                    selectCmd.CommandText = "SELECT `character_id`, `pet_guid`, `old_name`, `requested_name`, `kind` FROM `pet_name_requests` WHERE `id` = @id LIMIT 1";
                     AddParam(selectCmd, "@id", id);
                     using var reader = selectCmd.ExecuteReader();
                     if (!reader.Read())
@@ -188,23 +199,32 @@ namespace ACE.Server.Controllers
                     petGuid = (uint)reader.GetInt64(1);
                     oldName = reader.GetString(2);
                     requestedName = reader.GetString(3);
+                    kind = Convert.ToInt32(reader.GetValue(4));
                 }
 
-                var result = await RenamePetAsync((uint)characterId, petGuid, oldName, requestedName);
+                var isItem = kind == ItemRename.KindItem;
+                var result = isItem
+                    ? await RenameAsync((uint)characterId,
+                        player => RenameItemOnline(player, petGuid, oldName, requestedName),
+                        () => RenameItemOffline((uint)characterId, petGuid, oldName, requestedName))
+                    : await RenameAsync((uint)characterId,
+                        player => RenameOnline(player, petGuid, oldName, requestedName),
+                        () => RenameOffline((uint)characterId, petGuid, oldName, requestedName));
 
                 switch (result.Outcome)
                 {
                     case RenameOutcome.Renamed:
-                        return Ok(new { message = $"Pet renamed to \"{requestedName}\"." });
+                        return Ok(new { message = isItem ? $"Item renamed to \"{requestedName}\"." : $"Pet renamed to \"{requestedName}\"." });
 
                     case RenameOutcome.Mismatch:
                         SetStatus(con, id, StatusDenied, "Auto-denied: " + result.Reason, reviewer);
-                        return Conflict(new { message = $"Request denied automatically: {result.Reason}" });
+                        var refunded = RefundIfItem(con, id, $"Your request to rename {oldName} was denied: {result.Reason}.");
+                        return Conflict(new { message = $"Request denied automatically: {result.Reason}{(refunded > 0 ? $". Fee of {refunded:N0} refunded." : "")}" });
 
                     default:
                         SetStatus(con, id, StatusPending, null, null);
                         Log.Warn($"[PetNaming] Approve of request {id} (pet 0x{petGuid:X8}) failed and was returned to pending: {result.Reason}");
-                        return StatusCode(500, new { message = $"Failed to rename the pet ({result.Reason}). The request is still pending; try again." });
+                        return StatusCode(500, new { message = $"Failed to rename the {(isItem ? "item" : "pet")} ({result.Reason}). The request is still pending; try again." });
                 }
             }
             catch (Exception ex)
@@ -225,6 +245,7 @@ namespace ACE.Server.Controllers
                 using var ctx = new ShardDbContext();
                 var con = ctx.Database.GetDbConnection();
                 if (con.State != ConnectionState.Open) con.Open();
+                ItemRename.EnsureSchema(con);
 
                 using var cmd = con.CreateCommand();
                 cmd.CommandText =
@@ -244,7 +265,10 @@ namespace ACE.Server.Controllers
                 if (rows == 0)
                     return NotFound(new { message = "Pet name request not found or already reviewed." });
 
-                return Ok(new { message = "Pet name request denied." });
+                // An item request's fee goes back to the player's bank (once; see ItemRename.ClaimRefund).
+                var shownReason = ItemRename.ReasonForPlayer(reason);
+                var refunded = RefundIfItem(con, id, shownReason == null ? "Your item rename request was denied." : $"Your item rename request was denied: {shownReason}.");
+                return Ok(new { message = refunded > 0 ? $"Name request denied. Fee of {refunded:N0} refunded." : "Name request denied." });
             }
             catch (Exception ex)
             {
@@ -260,7 +284,7 @@ namespace ACE.Server.Controllers
         /// the shard DB. Both paths verify the object is still the requested device: a PetDevice, possessed by
         /// the requesting character, and still carrying the request's old name (dynamic GUIDs are recycled).
         /// </summary>
-        private static async Task<RenameResult> RenamePetAsync(uint characterId, uint petGuid, string oldName, string newName)
+        private static async Task<RenameResult> RenameAsync(uint characterId, Func<Player, RenameResult> renameOnline, Func<RenameResult> renameOffline)
         {
             if (PlayerManager.GetOnlinePlayer(characterId) != null)
             {
@@ -276,7 +300,7 @@ namespace ACE.Server.Controllers
                     {
                         // Re-resolve on the world thread: the player may have logged out since the check above.
                         var player = PlayerManager.GetOnlinePlayer(characterId);
-                        tcs.TrySetResult(player == null ? null : RenameOnline(player, petGuid, oldName, newName));
+                        tcs.TrySetResult(player == null ? null : renameOnline(player));
                     }
                     catch (Exception ex)
                     {
@@ -315,7 +339,7 @@ namespace ACE.Server.Controllers
             if (PlayerManager.GetOnlinePlayer(characterId) != null)
                 return RenameResult.Failed("the owner logged in while the rename was being processed; approve it again");
 
-            return RenameOffline(characterId, petGuid, oldName, newName);
+            return renameOffline();
         }
 
         /// <summary>Runs on the world queue. Verifies and renames the live device in the owner's possession.</summary>
@@ -411,10 +435,28 @@ namespace ACE.Server.Controllers
             // Same authoritative record as the online path, so the name survives the next summon.
             biota.SetProperty(PropertyString.PetCustomName, newName, rwLock, out _);
 
-            if (!DatabaseManager.Shard.BaseDatabase.SaveBiota(biota, rwLock))
-                return RenameResult.Failed("the shard database rejected the biota save");
+            var saveError = SaveOfflineRename(biota, rwLock, essenceName);
+            return saveError == null ? RenameResult.Renamed() : RenameResult.Failed(saveError);
+        }
 
-            return RenameResult.Renamed();
+        /// <summary>
+        /// Saves an offline rename and reads the row back, so a save that reported success without writing (SaveBiota returns
+        /// true on a concurrency conflict and expects a later re-save, which a detached offline copy never gets) is caught.
+        /// Returns why it was not saved, or null. A failure sends the request back to pending.
+        /// </summary>
+        private static string SaveOfflineRename(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock, string expectedName)
+        {
+            if (!DatabaseManager.Shard.BaseDatabase.SaveBiota(biota, rwLock))
+                return "the shard database rejected the biota save";
+
+            var saved = DatabaseManager.Shard.BaseDatabase.GetBiota(biota.Id, skipCache: true);
+            string savedName = null;
+            if (saved?.BiotaPropertiesString != null)
+                foreach (var row in saved.BiotaPropertiesString)
+                    if (row.Type == (ushort)PropertyString.Name)
+                        savedName = row.Value;
+
+            return string.Equals(savedName, expectedName, StringComparison.Ordinal) ? null : "the biota save did not reach the shard database";
         }
 
         /// <summary>
@@ -435,6 +477,99 @@ namespace ACE.Server.Controllers
             return built.Replace(placeholder, newName);
         }
 
+        /// <summary>
+        /// Runs on the world queue. Verifies and renames a weapon or caster the owner carries or wields (@item-name). A real
+        /// T11+ rare keeps its tier word in front; the first rename records the original name.
+        /// </summary>
+        private static RenameResult RenameItemOnline(Player owner, uint itemGuid, string oldName, string newName)
+        {
+            var item = owner.FindObject(itemGuid, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems);
+            if (item == null)
+                // Same reason as RenameOnline: never edit the shard copy of an item that is loaded somewhere else.
+                return RenameResult.Mismatch("the item is not in the owner's possession");
+
+            if (!ItemRename.IsRenamable(item))
+                return RenameResult.Mismatch("the object with that GUID is no longer a weapon or caster");
+
+            if (!string.Equals(item.Name, oldName, StringComparison.Ordinal))
+                return RenameResult.Mismatch($"the item is now named \"{item.Name}\", not \"{oldName}\"");
+
+            var finalName = ItemRename.FinalName(newName, item.GetProperty(PropertyInt.ZcRare));
+
+            if (item.GetProperty(PropertyString.OriginalItemName) == null)
+                item.SetProperty(PropertyString.OriginalItemName, oldName);
+            item.Name = finalName;
+            item.ChangesDetected = true;
+            item.SaveBiotaToDatabase();
+            // As in RenameOnline: the rushed player save below writes it again, so a save that reported success on a
+            // concurrency conflict does not leave the new name unsaved until the item next changes.
+            item.ChangesDetected = true;
+
+            owner.UpdateProperty(item, PropertyString.Name, finalName);
+            owner.EnqueueBroadcast(new GameMessageUpdateObject(item));
+            owner.RushNextPlayerSave(0);
+
+            owner.Session?.Network.EnqueueSend(new GameMessageSystemChat(
+                $"Your item rename request has been approved: {oldName} is now \"{finalName}\".", ChatMessageType.Broadcast));
+
+            return RenameResult.Renamed();
+        }
+
+        /// <summary>Verifies and renames the item's shard biota while its owner is offline. Same checks as the online path.</summary>
+        private static RenameResult RenameItemOffline(uint characterId, uint itemGuid, string oldName, string newName)
+        {
+            var rawBiota = DatabaseManager.Shard.BaseDatabase.GetBiota(itemGuid, skipCache: true);
+            if (rawBiota == null)
+                return RenameResult.Mismatch("the item no longer exists");
+
+            var biota = ACE.Database.Adapter.BiotaConverter.ConvertToEntityBiota(rawBiota);
+
+            int itemType = 0, maxStack = 0;
+            var hasItemType = biota.PropertiesInt?.TryGetValue(PropertyInt.ItemType, out itemType) == true;
+            var hasMaxStack = biota.PropertiesInt?.TryGetValue(PropertyInt.MaxStackSize, out maxStack) == true;
+            if (!ItemRename.IsRenamable(hasItemType ? itemType : null, rawBiota.WeenieType, hasMaxStack ? maxStack : null))
+                return RenameResult.Mismatch("the object with that GUID is no longer a weapon or caster");
+
+            if (!IsPossessedBy(biota, characterId))
+                return RenameResult.Mismatch("the item is no longer in the requesting character's possession");
+
+            string currentName = null;
+            biota.PropertiesString?.TryGetValue(PropertyString.Name, out currentName);
+            if (!string.Equals(currentName, oldName, StringComparison.Ordinal))
+                return RenameResult.Mismatch($"the item is now named \"{currentName}\", not \"{oldName}\"");
+
+            int zcRare = 0;
+            var hasRare = biota.PropertiesInt?.TryGetValue(PropertyInt.ZcRare, out zcRare) == true;
+            var finalName = ItemRename.FinalName(newName, hasRare ? zcRare : null);
+
+            // Only reached when the owner is genuinely offline (see RenameOffline), so a local lock is sufficient.
+            using var rwLock = new ReaderWriterLockSlim();
+            string original = null;
+            if (biota.PropertiesString?.TryGetValue(PropertyString.OriginalItemName, out original) != true || original == null)
+                biota.SetProperty(PropertyString.OriginalItemName, oldName, rwLock, out _);
+            biota.SetProperty(PropertyString.Name, finalName, rwLock, out _);
+
+            var saveError = SaveOfflineRename(biota, rwLock, finalName);
+            return saveError == null ? RenameResult.Renamed() : RenameResult.Failed(saveError);
+        }
+
+        /// <summary>Refunds a denied item request's fee (claimed once in the database, credited on the world queue). Returns the
+        /// amount refunded, 0 for a pet request, a free one, or one already refunded.</summary>
+        private long RefundIfItem(IDbConnection con, long id, string reason)
+        {
+            try
+            {
+                var amount = ItemRename.ClaimRefund(con, id, out var characterId, out _);
+                ItemRename.QueueRefund(characterId, amount, reason);
+                return amount;
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"{ItemRename.Tag} refund for request {id} failed; check fee_refunded on that row and credit it by hand if needed", ex);
+                return 0;
+            }
+        }
+
         private static bool IsPossessedBy(ACE.Entity.Models.Biota biota, uint characterId)
         {
             if (biota.PropertiesIID == null)
@@ -442,8 +577,9 @@ namespace ACE.Server.Controllers
 
             biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var containerId);
             biota.PropertiesIID.TryGetValue(PropertyInstanceId.Owner, out var ownerId);
+            biota.PropertiesIID.TryGetValue(PropertyInstanceId.Wielder, out var wielderId);
 
-            if (containerId == characterId || ownerId == characterId)
+            if (containerId == characterId || ownerId == characterId || wielderId == characterId)
                 return true;
 
             // One level of nesting: a pack in the character's inventory.

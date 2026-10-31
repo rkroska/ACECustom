@@ -492,6 +492,7 @@ namespace ACE.Server.Entity.Actions
         Charm_RefreshLevels,                // charm coin ledger: a price curve change re-levels an online player's charms on their own thread
         TierRewards_PrestigeCoins,          // tier rewards: a T11+ kill's Prestige Coins handed to the top damager's own thread
         Player_ZcCloakProcExpired,          // T11+ cloak procs: Asheron's Grace / Artful Dodger window closed notice
+        ItemRename_Refund,                  // item rename: a denied / failed request's fee credited back to the bank on the world queue
     }
     public static class ActionTypeConverter
     {
