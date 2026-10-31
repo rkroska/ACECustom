@@ -1398,14 +1398,7 @@ namespace ACE.Server.Entity
         /// type's pair), the name tint and a leading damage-type word all follow, so they keep matching.</summary>
         private static void ApplyElement(WorldObject target, DamageType element)
         {
-            target.W_DamageType = element;
-
-            if ((target.ImbuedEffect & DamageRends) != 0)
-            {
-                var rend = RendFor(element);
-                target.ImbuedEffect = (target.ImbuedEffect & ~DamageRends) | rend;
-                ZoneLootMutator.ApplyRendUnderlay(target, rend);
-            }
+            SetElementAndRend(target, element);
 
             if (ZoneLootMutator.TryGetProcSpells(element, out var arc, out var ring))
             {
@@ -1422,6 +1415,46 @@ namespace ACE.Server.Entity
             // the wield gates from the tier row (slot 4 is the Life-aug gate since 2026-10-05; the old T16+ charm gate is retired) -
             // re-stamped here because this path returns before the resolve that would
             LootGenerationFactory.RefreshWieldGate(target, ZoneStatResolver.TierOf(target));
+        }
+
+        /// <summary>Element words a name can carry after its start, beyond <see cref="TypeWords"/>.</summary>
+        private static readonly string[] LaterElementWords = { "Flame", "Flames", "Ice", "Storm", "Storms" };
+
+        /// <summary>The damage type, and a rend if the weapon has one, to the new type's.</summary>
+        private static void SetElementAndRend(WorldObject target, DamageType element)
+        {
+            target.W_DamageType = element;
+
+            if ((target.ImbuedEffect & DamageRends) != 0)
+            {
+                var rend = RendFor(element);
+                target.ImbuedEffect = (target.ImbuedEffect & ~DamageRends) | rend;
+                ZoneLootMutator.ApplyRendUnderlay(target, rend);
+            }
+        }
+
+        /// <summary>A new drop's damage type, set before its sweep: the sweep then rolls the rend and procs for this type and
+        /// does the tint and wield gates itself, which is why this is not <see cref="ApplyElement"/>.</summary>
+        internal static void RetypeDrop(WorldObject target, DamageType element)
+        {
+            SetElementAndRend(target, element);
+
+            var renamed = DropRename(target.Name, element, StyleOf(target));
+            if (renamed != null)
+                target.Name = renamed;
+        }
+
+        /// <summary><see cref="ElementRename"/>, except a physical melee drop going elemental gains its word ("Ono" ->
+        /// "Flaming Ono"), so the name matches the tint. A name that states an element later on ("... of Black Fire") is left
+        /// alone: a word in front would give it two. Null when the name stays as it is.</summary>
+        internal static string DropRename(string name, DamageType element, NameStyle style)
+        {
+            if (string.IsNullOrEmpty(name))
+                return null;
+            var word = TypeWord(style, element);
+            if (word != null && !TypeWords.Any(old => name.StartsWith(old + " ", StringComparison.Ordinal)))
+                return name.Split(' ').Any(w => TypeWords.Contains(w) || LaterElementWords.Contains(w)) ? null : word + " " + name;
+            return ElementRename(name, element, style);
         }
 
         /// <summary>How a weapon kind names its damage type (from the retail weenie names, counted 2026-10-04): melee says

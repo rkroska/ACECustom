@@ -795,10 +795,13 @@ namespace ACE.Server.Managers.ZoneControl
             // engine read site (DamageEvent, Creature_Combat, Creature_BodyPart, Monster_Melee) and the
             // appraisal line - the ~830 existing hollow weapons still work and still read as hollow.
 
-            // slayer attuned against the killed monster's own kind
+            // slayer attuned against the killed monster's own kind, or (slayer_pool_share) any species in the zone. A rare
+            // always takes the kill's: it can never be changed afterwards.
             if (gotSlayer)
             {
-                wo.SlayerCreatureType = slayerType;
+                wo.SlayerCreatureType = isRare
+                    ? slayerType
+                    : ZoneSlayerPool.PickFor(killed, p, lootTier) ?? slayerType;
                 // damage multiplier vs that creature type, rolled per drop; floor 1.5x (a normal slayer),
                 // cap 10x (=1000%). One box = exact, both = roll in range; neither = the tier ladder
                 // (1.80-2.10 at T11 -> 2.40-3.00 at T25) instead of the old flat 1.5.

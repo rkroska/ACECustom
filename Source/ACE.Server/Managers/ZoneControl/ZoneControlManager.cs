@@ -1035,6 +1035,19 @@ namespace ACE.Server.Managers.ZoneControl
             || ExemptBoolOf(creature);   // cached bool read - no biota lock on the per-hit path (2026-09-04)
 
         /// <summary>
+        /// A key for the zone governing this creature (name + variation), or null when none does: the same answer loot and
+        /// combat get, so an exempt monster or generator and any pet have no key. FindZoneRef alone would miss the creature's
+        /// own exempt bool and pets. Used by ZoneSlayerPool.
+        /// </summary>
+        public static string ZoneKeyFor(Creature creature)
+        {
+            if (IsZoneScalingExempt(creature))
+                return null;
+            var best = FindZoneRef(creature);
+            return best == null ? null : $"{best.Name}|{best.Variation}";
+        }
+
+        /// <summary>
         /// The zone profile for a COMBAT-MODEL read (True Damage, the damage multiplier, aug curves, Spell Armor, DoT armor /
         /// multipliers, the debuff bonus, the Shrapnel / Agony immunity): <see cref="ResolveForCreature"/>, but null while
         /// zonecontrol_enabled is OFF - RULING 1, "fully inert", like every other combat gate (CodeRabbit #539: the damage

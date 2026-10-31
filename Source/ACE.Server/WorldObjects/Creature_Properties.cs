@@ -2,6 +2,7 @@ using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Managers;
 using System;
+using System.Linq;
 using static Google.Protobuf.Compiler.CodeGeneratorResponse.Types;
 
 namespace ACE.Server.WorldObjects
@@ -286,26 +287,81 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        /// <summary>The creature-level resist multiplier for a type: the zone's value over the weenie's (1.0 neutral).</summary>
+        private double GetResistMult(DamageType damageType)
+        {
+            switch (damageType)
+            {
+                case DamageType.Slash:
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistSlash, ResistSlash ?? 1.0);
+                case DamageType.Pierce:
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistPierce, ResistPierce ?? 1.0);
+                case DamageType.Bludgeon:
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistBludgeon, ResistBludgeon ?? 1.0);
+                case DamageType.Fire:
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistFire, ResistFire ?? 1.0);
+                case DamageType.Cold:
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistCold, ResistCold ?? 1.0);
+                case DamageType.Acid:
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistAcid, ResistAcid ?? 1.0);
+                case DamageType.Electric:
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistElectric, ResistElectric ?? 1.0);
+                case DamageType.Nether:
+                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistNether, ResistNether ?? 1.0);
+                default:
+                    return 1.0;
+            }
+        }
+
+        /// <summary>
+        /// The element(s) this monster is weakest to, as a mask; Undef when all are equal. Reads the monster's own numbers -
+        /// zone resists and armor-vs-type over its weenie's, plus its weakness mask - with no attacker, so a vuln on it or the
+        /// player's rend cannot change the answer (which is why this is not DamageEvent.GetWeakestElement).
+        /// </summary>
+        public DamageType GetWeakestElements()
+        {
+            var order = ACE.Server.Managers.ZoneControl.ZoneSlayerPool.ElementOrder;
+            var resist = new double[order.Count];
+            var armorVs = new double[order.Count];
+            for (var i = 0; i < order.Count; i++)
+            {
+                resist[i] = GetResistMult(order[i]);
+                armorVs[i] = GetArmorVsType(order[i]);
+            }
+
+            var zone = ACE.Server.Managers.ZoneControl.ZoneControlManager.ResolveForCreature(this);
+            var baseArmor = zone != null && zone.Has(ACE.Server.Managers.ZoneScaling.ZoneStat.ArmorLevel)
+                ? zone.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.ArmorLevel)
+                : Biota.PropertiesBodyPart != null && Biota.PropertiesBodyPart.Count > 0
+                    ? Biota.PropertiesBodyPart.Values.Average(bp => bp.BaseArmor)
+                    : ArmorLevel ?? 0;
+
+            var weakMask = (DamageType)(GetProperty(PropertyInt.ElementalWeaknessMask) ?? 0);
+            var weakFactor = GetProperty(PropertyFloat.ElementalWeaknessFactor) ?? ServerConfig.elemental_weakness_default_factor.Value;
+
+            return ACE.Server.Managers.ZoneControl.ZoneSlayerPool.WeakestElements(resist, weakMask, weakFactor, armorVs, baseArmor);
+        }
+
         public double GetResistanceMod(ResistanceType resistance, WorldObject attacker = null, WorldObject weapon = null, float weaponResistanceMod = 1.0f)
         {
             switch (resistance)
             {
                 case ResistanceType.Slash:
-                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistSlash, ResistSlash ?? 1.0) * GetResistanceMod(DamageType.Slash, attacker, weapon, weaponResistanceMod);
+                    return GetResistMult(DamageType.Slash) * GetResistanceMod(DamageType.Slash, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Pierce:
-                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistPierce, ResistPierce ?? 1.0) * GetResistanceMod(DamageType.Pierce, attacker, weapon, weaponResistanceMod);
+                    return GetResistMult(DamageType.Pierce) * GetResistanceMod(DamageType.Pierce, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Bludgeon:
-                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistBludgeon, ResistBludgeon ?? 1.0) * GetResistanceMod(DamageType.Bludgeon, attacker, weapon, weaponResistanceMod);
+                    return GetResistMult(DamageType.Bludgeon) * GetResistanceMod(DamageType.Bludgeon, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Fire:
-                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistFire, ResistFire ?? 1.0) * GetResistanceMod(DamageType.Fire, attacker, weapon, weaponResistanceMod);
+                    return GetResistMult(DamageType.Fire) * GetResistanceMod(DamageType.Fire, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Cold:
-                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistCold, ResistCold ?? 1.0) * GetResistanceMod(DamageType.Cold, attacker, weapon, weaponResistanceMod);
+                    return GetResistMult(DamageType.Cold) * GetResistanceMod(DamageType.Cold, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Acid:
-                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistAcid, ResistAcid ?? 1.0) * GetResistanceMod(DamageType.Acid, attacker, weapon, weaponResistanceMod);
+                    return GetResistMult(DamageType.Acid) * GetResistanceMod(DamageType.Acid, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Electric:
-                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistElectric, ResistElectric ?? 1.0) * GetResistanceMod(DamageType.Electric, attacker, weapon, weaponResistanceMod);
+                    return GetResistMult(DamageType.Electric) * GetResistanceMod(DamageType.Electric, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Nether:
-                    return ZoneStatOr(ACE.Server.Managers.ZoneScaling.ZoneStat.ResistNether, ResistNether ?? 1.0) * GetResistanceMod(DamageType.Nether, attacker, weapon, weaponResistanceMod) * GetNetherResistRatingMod();
+                    return GetResistMult(DamageType.Nether) * GetResistanceMod(DamageType.Nether, attacker, weapon, weaponResistanceMod) * GetNetherResistRatingMod();
                 case ResistanceType.HealthBoost:
                     return (ResistHealthBoost ?? 1.0) * GetHealingRatingMod();
                 case ResistanceType.HealthDrain:

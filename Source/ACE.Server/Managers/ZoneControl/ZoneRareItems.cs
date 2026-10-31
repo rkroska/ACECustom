@@ -540,6 +540,22 @@ namespace ACE.Server.Managers.ZoneControl
             wo.SetProperty(PropertyInt.ZcRareGateTier, gateTier);
         }
 
+        /// <summary>
+        /// A rare weapon deals the element the monster that dropped it is weakest to (owner 2026-10-30). Its Slayer is that
+        /// monster's species and neither can ever change, so a random element would leave most rares with a Slayer for a
+        /// species that resists them: at a 4x resist, a normal right-element drop out-damages the rare on its own target.
+        /// Does nothing for a dev mint (no kill). The choice is ZoneSlayerPool.ChooseRareElement.
+        /// </summary>
+        public static void ApplyWeakestElement(WorldObject wo, Creature killed)
+        {
+            if (killed == null || !(wo is MeleeWeapon || wo is MissileLauncher || wo is Caster))
+                return;
+
+            var element = ZoneSlayerPool.ChooseRareElement(wo.W_DamageType, killed.GetWeakestElements());
+            if (element.HasValue)
+                GearEssences.RetypeDrop(wo, element.Value);
+        }
+
         // -- making the item -----------------------------------------------------------------------------
 
         /// <summary>

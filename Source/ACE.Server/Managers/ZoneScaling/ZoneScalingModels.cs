@@ -598,6 +598,11 @@ namespace ACE.Server.Managers.ZoneScaling
         public const string LootWeightWar = "loot_weight_war";            // non-nether casters (the seven War elements)
         public const string LootWeightVoid = "loot_weight_void";          // nether casters
 
+        // T11+ zone Slayer pool (owner 2026-10-30): the chance a normal Slayer drop names any species in the zone instead
+        // of the killed species (ZoneSlayerPool). Unset / 0 = always the killed species. Rares and Bags of Vengeance never
+        // use it. Deliberately not weapon_*_chance: that shape makes a stat a weapon card (BuildWeaponCardChances).
+        public const string SlayerPoolShare = "slayer_pool_share";
+
         // C5. ARMOR BASE VALUES (owner 2026-08-24, Armor_Base_Values_Plan_2026-08-24.md sections 2.1-2.3).
         // The three numbers a T11+ armour piece was built on that had no authoring surface at all.
         //
@@ -794,6 +799,8 @@ namespace ACE.Server.Managers.ZoneScaling
             CloakGraceSeconds,
             // weapon group weights (2026-10-30) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
             LootWeightMelee1H, LootWeightMelee2H, LootWeightMissile, LootWeightWar, LootWeightVoid,
+            // zone Slayer pool (2026-10-30) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            SlayerPoolShare,
         };
 
         /// <summary>

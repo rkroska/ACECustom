@@ -1249,6 +1249,38 @@ namespace ACE.Server.Command.Handlers
         // comes from the creature the caller last appraised, or an argument), and no server-wide broadcast. The audit
         // channel and the log line still run, marked as a dev mint, so a minted rare is never mistaken for a found one.
 
+        [CommandHandler("zcslayerpool", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
+            "T11+ zone Slayer pool: the species each zone has counted, or empty it.",
+            "[part of a zone name]\n" +
+            "    Species and spawn count per zone.\n" +
+            "clear\n" +
+            "    Empties every pool. They refill as monsters spawn.")]
+        public static void HandleZcSlayerPool(Session session, params string[] parameters)
+        {
+            void Msg(string s) => ChatPacket.SendServerMessage(session, s, ChatMessageType.Broadcast);
+
+            var arg = string.Join(" ", parameters ?? Array.Empty<string>()).Trim();
+            if (arg.Equals("clear", StringComparison.OrdinalIgnoreCase))
+            {
+                ZoneSlayerPool.Clear();
+                Msg("Zone Slayer pools cleared.");
+                return;
+            }
+
+            var zones = ZoneSlayerPool.Snapshot().Where(z => arg.Length == 0 || z.Zone.Contains(arg, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (zones.Count == 0)
+            {
+                Msg("No zone Slayer pool matches. Pools fill as monsters spawn.");
+                return;
+            }
+            foreach (var (zone, entries) in zones)
+            {
+                Msg($"{zone}: {entries.Length} species, {entries.Sum(e => e.Count)} spawns");
+                foreach (var e in entries)
+                    Msg($"  {e.Species} - {e.Count}");
+            }
+        }
+
         private static readonly string[] ZcRareKinds = { "weapon", "melee", "missile", "caster", "1h", "2h", "war", "void", "armor", "shield", "jewelry", "cloak", "clothing" };
 
         [CommandHandler("zcrare", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
