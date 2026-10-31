@@ -799,7 +799,7 @@ namespace ACE.Server.WorldObjects
             if ((IconOverlayId != null) && (IconOverlayId != 0))
                 weenieHeaderFlag |= WeenieHeaderFlag.IconOverlay;
 
-            if (MaterialType != null)
+            if (ItemRename.ClientMaterial(this) != null)
                 weenieHeaderFlag |= WeenieHeaderFlag.MaterialType;
 
             return weenieHeaderFlag;

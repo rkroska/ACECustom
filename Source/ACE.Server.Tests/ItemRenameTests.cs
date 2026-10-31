@@ -116,6 +116,55 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void ClientMaterial_IsHiddenOnRenamedItems_ButTheItemKeepsIt()
+        {
+            var stock = Weapon("Ursuin Staff");
+            stock.MaterialType = MaterialType.FireOpal;
+            Assert.AreEqual(MaterialType.FireOpal, ItemRename.ClientMaterial(stock));
+
+            var renamed = Weapon("Ursuin Blaster");
+            renamed.MaterialType = MaterialType.FireOpal;
+            renamed.SetProperty(PropertyString.OriginalItemName, "Ursuin Staff");
+            Assert.IsNull(ItemRename.ClientMaterial(renamed));
+            Assert.AreEqual(MaterialType.FireOpal, renamed.MaterialType);
+            Assert.AreEqual("Ursuin Blaster", renamed.NameWithMaterial);
+
+            Assert.IsNull(ItemRename.ClientMaterial(Weapon("No Material")));
+            Assert.IsNull(ItemRename.ClientMaterial(null));
+        }
+
+        private static MeleeWeapon WithMaterial(string name, string originalName = null)
+        {
+            var w = Weapon(name);
+            w.MaterialType = MaterialType.FireOpal;
+            if (originalName != null)
+                w.SetProperty(PropertyString.OriginalItemName, originalName);
+            return w;
+        }
+
+        private static WeenieHeaderFlag HeaderFlags(WorldObject wo) =>
+            (WeenieHeaderFlag)typeof(WorldObject)
+                .GetMethod("CalculateWeenieHeaderFlag", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                .Invoke(wo, null);
+
+        [TestMethod]
+        public void Header_SendsMaterialOnlyOnStockItems()
+        {
+            Assert.IsTrue(HeaderFlags(WithMaterial("Ursuin Staff")).HasFlag(WeenieHeaderFlag.MaterialType));
+            Assert.IsFalse(HeaderFlags(WithMaterial("Ursuin Blaster", "Ursuin Staff")).HasFlag(WeenieHeaderFlag.MaterialType));
+        }
+
+        [TestMethod]
+        public void Appraisal_HidesMaterialOnRenamedItems()
+        {
+            // new AppraiseInfo needs the dats (SpellSet), so this pins the two lines instead
+            var source = TestSource.Read("ACE.Server", "Network", "Structure", "AppraiseInfo.cs");
+            StringAssert.Contains(source, "if (ItemRename.HasCustomName(wo))");
+            StringAssert.Contains(source, "PropertiesInt.Remove(PropertyInt.MaterialType);");
+            StringAssert.Contains(source, "if (ItemRename.ClientMaterial(wo) > 0)");
+        }
+
+        [TestMethod]
         public void ElementChange_RenamesStockNames_ButNotPlayerChosenOnes()
         {
             var stock = Weapon("Frost Ono");
