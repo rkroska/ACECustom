@@ -126,9 +126,8 @@ namespace ACE.Server.WorldObjects
             if (chance < 1.0 && ThreadSafeRandom.Next(0.0f, 1.0f) >= chance)
                 return;
             var cap = cs.CountAt("maxinfected", level);
+            // no early out when the cap is full: a monster that already holds a slot can still catch this caster's other DoTs
             var room = cap > 0 ? cap - caster.PandemicCarried(now) : int.MaxValue;
-            if (room <= 0)
-                return;
             if (Location == null || CurrentLandblock == null)
                 return;
             // the leash (owner 2026-10-14: "If the mob is on your radar, is should still work. If not, then no.") - for the
@@ -172,15 +171,18 @@ namespace ACE.Server.WorldObjects
             candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
 
             var los = cs.On("los");
-            var limit = Math.Min(maxTargets, room);
             var sent = 0;
+            var newMonsters = 0;
             ACE.Server.Physics.PhysicsObj sightObj = null;
             try
             {
                 foreach ((Creature neighbour, float _) in candidates)
                 {
-                    if (sent >= limit)
+                    if (sent >= maxTargets)
                         break;
+                    var holdsSlot = caster.PandemicHoldsSlot(neighbour);
+                    if (!ZcPandemicMaySend(holdsSlot, newMonsters, room))
+                        continue;
                     if (los && PhysicsObj != null)
                     {
                         if (sightObj == null)
@@ -193,6 +195,8 @@ namespace ACE.Server.WorldObjects
                     }
 
                     sent++;
+                    if (!holdsSlot)
+                        newMonsters++;
                     var endsAt = snap.PandemicEndsAt;
                     var generation = snap.Generation + 1;
                     var castWeapon = snap.CastWeapon;   // the cast's wand travels with the infection (round 2)
@@ -205,6 +209,10 @@ namespace ACE.Server.WorldObjects
                 sightObj?.DestroyObject();
             }
         }
+
+        /// <summary>The cap counts monsters, not DoTs: a monster already holding a slot can catch another DoT with the cap full;
+        /// only a monster new to the list needs room (2026-11-01: Corrosion filled the slots and blocked Corruption and Curse).</summary>
+        internal static bool ZcPandemicMaySend(bool holdsSlot, int newMonsters, int room) => holdsSlot || newMonsters < room;
 
         /// <summary>True when this monster would be on the player's radar: within the radar range of where the player stands
         /// (25 m indoors, 75 m outdoors, flat distance) and in the player's view - the test fellowship sharing uses
@@ -271,7 +279,7 @@ namespace ACE.Server.WorldObjects
             // the cap again, now that the copy lands: two monsters ticking at the same moment both saw room for one more
             // (measured 2026-10-14: cap 2 let 3 carry at once)
             var cap = cs.CountAt("maxinfected", level);
-            if (cap > 0 && caster.PandemicCarried(Time.GetUnixTime()) >= cap)
+            if (cap > 0 && caster.PandemicCarried(Time.GetUnixTime()) >= cap && !caster.PandemicHoldsSlot(this))
                 return;
 
             // the tier hit gate always holds (an under-augmented caster's spells never land on a T11+ monster); the plain
@@ -366,6 +374,9 @@ namespace ACE.Server.WorldObjects
             return n;
         }
 
+        /// <summary>True when this monster is on the cap's list, so another DoT of this player's needs no new slot on it.</summary>
+        public bool PandemicHoldsSlot(Creature monster) => monster != null && pandemicCarried.ContainsKey(monster.Guid.Full);
+
         /// <summary>A DoT of this player's has spread to a monster: count it for the cap, and tell the player - at most one
         /// line every 5 s, with how many monsters since the last line. <paramref name="track"/> false (no cap, maxinfected 0):
         /// nothing is kept - only PandemicCarried prunes the list, and it runs only under a cap (round 2: the list grew for
@@ -374,7 +385,8 @@ namespace ACE.Server.WorldObjects
         {
             if (monster == null) return;
             if (track)
-                pandemicCarried[monster.Guid.Full] = (monster, endsAt);
+                // the slot lasts as long as the longest copy on the monster: a shorter copy must not end it early
+                pandemicCarried.AddOrUpdate(monster.Guid.Full, (monster, endsAt), (_, held) => (monster, Math.Max(held.EndsAt, endsAt)));
             else if (!pandemicCarried.IsEmpty)
                 PandemicCarried(Time.GetUnixTime());   // prune what has ended - never wipe what a capped cast still counts on
             if (!tell || Session == null) return;
