@@ -384,6 +384,10 @@ namespace ACE.Server.Managers.ZoneControl
                 if (player == null || !ReferenceEquals(player, attacker) || player.IsLoggingOut || player.IsMule || player.IsOlthoiPlayer)
                     return;
 
+                // the gem roll (SchoolGems.AddToCorpse, after this on the same death) must read the week count BEFORE this kill:
+                // the credit below may run at once (one tick group) or later (another), so the count is taken here, first
+                // (CodeRabbit #590: the roll read kills + 1, a band edge late and 1 instead of 0 right after the reset)
+                victim.TriuneWeekKillsAtDeath = WeekKills(player, cfg);
                 LandblockManager.RunOnThreadFor(player, ActionType.TriuneEarning_Credit, () => Credit(player, killTier, cfg, row));
             }
             catch (Exception ex)

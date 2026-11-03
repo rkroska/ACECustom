@@ -126,8 +126,10 @@ namespace ACE.Server.Managers.ZoneControl
                 if (TierRewardScale.OwnTier(player) != killTier)
                     return;
 
-                // the week's band (a read; the count itself is moved on the player's own thread by TriuneEarning)
-                var chance = TriuneEarning.GemChance(row, TriuneEarning.WeekKills(player, cfg));
+                // the week's band, as it stood BEFORE this kill: the count TriuneEarning took at the death, ahead of its credit
+                // (the count itself is moved on the player's own thread); a kill it did not see reads the count as it is now
+                var killsBefore = victim.TriuneWeekKillsAtDeath ?? TriuneEarning.WeekKills(player, cfg);
+                var chance = TriuneEarning.GemChance(row, killsBefore);
                 if (!(chance > 0))
                     return;
 
