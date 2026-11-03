@@ -65,7 +65,7 @@ namespace ACE.Server.WorldObjects
                     // home): one delayed flush on this creature's own thread per caster window
                     var chain = new ActionChain();
                     chain.AddDelaySeconds(System.Math.Max(0.0, at - now) + DotSpellLineSlack);
-                    chain.AddAction(this, ActionType.ControlFlowDelay, () => { if (!IsDestroyed) DotSpellLineFlush(false); });
+                    chain.AddAction(this, ActionType.ControlFlowDelay, () => { if (!IsDestroyed) DotSpellLineFlushSafe(false); });
                     chain.EnqueueChain();
                 }
             }
