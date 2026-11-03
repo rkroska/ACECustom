@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 
 using ACE.Common;
 using ACE.Database;
+using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
@@ -28,6 +29,10 @@ namespace ACE.Server.WorldObjects
     /// refreshes (times out) the Deeds one, and /deeds off never touches the player's casts. AuditItemSpells keeps the Deeds
     /// ones while they are owed (IsKeptDeedsEnchantment); death keeps every Duration -1 enchantment, so they survive it like
     /// item cantrips.
+    ///
+    /// Worn gear (an item's spell, a set's spell such as Aetheria's Sigils) never holds a second copy of a spell Deeds gives:
+    /// Deeds takes the spell, the gear's copy comes back when Deeds no longer gives it (SyncEquippedCopies). A stronger spell
+    /// on gear is a different spell and still wins its category.
     ///
     /// PvE only: the T12 / T13 / T14 effects apply only against a non-player creature.
     ///
@@ -221,6 +226,80 @@ namespace ACE.Server.WorldObjects
                 HandleRunRateUpdate();
 
             ChangesDetected = true;
+
+            SyncEquippedCopies(want);   // last: Deeds' own buffs and vitals are done even if this fails (RefreshDeeds retries it)
+        }
+
+        /// <summary>CreateItemSpell: worn gear does not add a spell that Deeds already holds on the player.</summary>
+        public bool DeedsReplacesGearSpell(WorldObject item, Spell spell)
+            => LandsOnWearer(spell) && EquippedObjects.ContainsKey(item.Guid) && EnchantmentManager.GetEnchantment(spell.Id, DeedsCasterId) != null;
+
+        /// <summary>False for an item spell that enchants the item itself: no copy on the player to replace.</summary>
+        private static bool LandsOnWearer(Spell spell) => spell.School != MagicSchool.ItemEnchantment || spell.HasItemCategory;
+
+        /// <summary>
+        /// One copy of a spell: the gear's copy goes for a buff Deeds gives now (the Deeds one is already on, so there is no gap),
+        /// and comes back for a Deeds spell it does not give (/deeds off, a lower tier, a spell that was not owed). Silent like the
+        /// Deeds buffs: no cast path, so no chat line or effect per spell, and it also lands on a dead player.
+        /// </summary>
+        private void SyncEquippedCopies(HashSet<uint> want)
+        {
+            var replaced = Biota.PropertiesEnchantmentRegistry.Clone(BiotaDatabaseLock)
+                .Where(e => e.Duration == -1 && e.CasterObjectId != DeedsCasterId && want.Contains((uint)e.SpellId)
+                    && (e.HasSpellSetId || EquippedObjects.ContainsKey(new ObjectGuid(e.CasterObjectId)))
+                    && EnchantmentManager.GetEnchantment((uint)e.SpellId, DeedsCasterId) != null)
+                .ToList();
+            if (replaced.Count > 0)
+            {
+                using (BeginOwnRemoval())
+                    EnchantmentManager.Dispel(replaced);
+            }
+
+            var notGiven = DeedsTiers.SpellTier.Keys.Where(id => !want.Contains(id)).ToHashSet();
+            if (notGiven.Count == 0)
+                return;
+
+            var maxVitalsChanged = false;
+            var runRateChanged = false;
+
+            void Restore(WorldObject item, Spell spell)
+            {
+                if (spell.NotFound || !LandsOnWearer(spell))
+                    return;
+                var result = EnchantmentManager.Add(spell, item, item, true);
+                if (result?.Enchantment == null)
+                    return;
+                Session?.Network.EnqueueSend(new GameEventMagicUpdateEnchantment(Session, new Enchantment(this, result.Enchantment)));
+                maxVitalsChanged |= spell.UpdatesMaxVitals.Count > 0;
+                runRateChanged |= spell.UpdatesRunRate;
+            }
+
+            var equipped = EquippedObjects.Values.ToList();
+            foreach (var item in equipped.Where(i => i.IsAffecting))
+            {
+                foreach (var knownSpell in item.Biota.GetKnownSpellsIds(item.BiotaDatabaseLock))
+                {
+                    var spellId = (uint)knownSpell;
+                    if (notGiven.Contains(spellId) && !item.HasProcSpell(spellId) && spellId != item.SpellDID
+                        && EnchantmentManager.GetEnchantment(spellId, item.Guid.Full) == null)
+                        Restore(item, new Spell(spellId));
+                }
+            }
+            foreach (var set in equipped.Where(i => i.HasItemSet).GroupBy(i => i.EquipmentSetId.Value))
+            {
+                var setItems = set.ToList();
+                foreach (var spell in GetSpellSet(setItems))
+                {
+                    if (notGiven.Contains(spell.Id) && EnchantmentManager.GetEnchantment(spell.Id, set.Key) == null)
+                        Restore(setItems.Last(), new Spell(spell.Id));   // GetSpellSet's spells carry no spell row
+                }
+            }
+
+            if (maxVitalsChanged)
+                SendDeedsMaxVitals();
+
+            if (runRateChanged && ACE.Server.Managers.ServerConfig.runrate_add_hooks.Value)
+                HandleRunRateUpdate();
         }
 
         /// <summary>
