@@ -46,6 +46,10 @@ namespace ACE.Server.WorldObjects
 
             onDeathEntered = true;
 
+            // DoT SPELL LINES: what the DoTs dealt since the last line goes out now (a streak can kill between two lines) -
+            // a chat line must never stop a death
+            DotSpellLineFlushSafe(force: true);
+
             // [PetTrace] once per death, before the history is consumed by XP / maturity credit.
             if (PetTrace.Enabled)
                 PetTrace.CombatDeath(this, lastDamager, damageType, criticalHit);
@@ -97,6 +101,9 @@ namespace ACE.Server.WorldObjects
 
             // Tier rewards (owner 2026-10-24): Prestige Coins for the top damager of a T11+ Zone Control kill. Bounties pay none.
             ACE.Server.Managers.ZoneControl.TierRewards.OnCreatureKilled(this);
+
+            // Triune earning (owner 2026-11-01): Triune Weave per own-tier T15+ kill, weekly floor / ceiling bands per tier.
+            ACE.Server.Managers.ZoneControl.TriuneEarning.OnCreatureKilled(this);
 
             return GetDeathMessage(lastDamager, damageType, criticalHit);
         }
@@ -1528,6 +1535,9 @@ namespace ACE.Server.WorldObjects
 
             // Zone Scaler: inject the custom bonus-currency token (independent of the loot table).
             InjectZoneBonusCurrency(zoneLoot, killer, corpse, droppedItems);
+
+            // School gems past the cap (owner 2026-11-01): the corpse owner's earned +1 school gems, on the corpse only
+            ACE.Server.Managers.ZoneControl.SchoolGems.AddToCorpse(this, corpse);
 
             return droppedItems;
         }

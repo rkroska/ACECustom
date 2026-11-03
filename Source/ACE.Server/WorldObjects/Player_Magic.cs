@@ -1189,6 +1189,20 @@ namespace ACE.Server.WorldObjects
 
             var selfTarget = !hasWindupGestures && MagicState.CastSpellParams.Target == this;
 
+            // A void DoT at a Zone Control monster can recoil shorter (owner 2026-11-02: the next DoT may start sooner).
+            // Hand casts only, like the wind-up and direct-DoT tweaks (a caster item's DoT keeps 1 s), and the Incantations only
+            // (level 8): a cheap lower level would otherwise cycle much faster just to roll the per-cast procs. Read before
+            // OnCastDone, which clears the cast's params. Every other spell keeps the flat 1 s.
+            var recoil = 1.0f;
+            var castParams = MagicState.CastSpellParams;
+            if (castParams?.Spell != null && castParams.CasterItem == null && castParams.Target is Creature zcTarget && !(zcTarget is Player)
+                && zcTarget.ZcDebuffCompressed && Creature.IsVoidDotSpell(castParams.Spell.Id) && castParams.Spell.Level >= 8)
+            {
+                var seconds = ServerConfig.zc_dot_recoil_seconds.Value;
+                if (double.IsFinite(seconds))
+                    recoil = (float)Math.Clamp(seconds, 0.0, 1.0);
+            }
+
             MagicState.OnCastDone();
 
             IsBusy = true;
@@ -1226,7 +1240,7 @@ namespace ACE.Server.WorldObjects
                 EnqueueBroadcastMotion(returnStance);
 
                 var actionChain = new ActionChain();
-                actionChain.AddDelaySeconds(1.0f);   // TODO: get actual recoil timing
+                actionChain.AddDelaySeconds(recoil);   // TODO: get actual recoil timing
                 actionChain.AddAction(this, ActionType.PlayerMagic_ReturnToReadyStance, () => {
 
                     IsBusy = false;

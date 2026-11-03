@@ -84,6 +84,11 @@ namespace ACE.Entity.Enum.Properties
         /// Bonded + Attuned, never transferable. 50602, free in EVERY Property enum.
         /// </summary>
         BankedEnlightenmentTokens = 50602,
+        /// <summary>
+        /// Triune earning (owner 2026-11-01), on a CHARACTER: the start of the week its Triune kill count belongs to (Unix
+        /// seconds of the last weekly reset). A kill in a newer week resets the count. 50650, free in EVERY Property enum.
+        /// </summary>
+        TriuneWeekStart        = 50650,
         // Levelled charm coin ledger (owner 2026-10-24): the PLAYER keeps the Prestige Coins put into each levelled charm
         // with Charm Infusion Gems; the level (1-100) is worked out from them by the charm's live price curve, so a retune
         // re-levels everyone without touching what they spent. The charm item only shows the level (PropertyInt.CharmLevel

@@ -493,6 +493,7 @@ namespace ACE.Server.Entity.Actions
         TierRewards_PrestigeCoins,          // tier rewards: a T11+ kill's Prestige Coins handed to the top damager's own thread
         Player_ZcCloakProcExpired,          // T11+ cloak procs: Asheron's Grace / Artful Dodger window closed notice
         ItemRename_Refund,                  // item rename: a denied / failed request's fee credited back to the bank on the world queue
+        TriuneEarning_Credit,               // Triune earning: an own-tier T15+ kill's Triune share handed to the top damager's own thread
     }
     public static class ActionTypeConverter
     {

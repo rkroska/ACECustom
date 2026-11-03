@@ -883,6 +883,12 @@ namespace ACE.Entity.Enum.Properties
         DamageNumberFormat = 50101,
 
         /// <summary>
+        /// Player's DoT spell lines (/ilt dotlines, 2026-11-02): seconds between the per-spell void DoT damage lines.
+        /// Absent / 0 = off, 1-10 = on at that interval.
+        /// </summary>
+        DotLineSeconds = 50160,
+
+        /// <summary>
         /// Group ID for the Empowered aura system. A creature with IsEmpowerSource only
         /// empowers nearby creatures with CanBeEmpowered if they share the same EmpowerGroup value.
         /// Example: Pirates = 1, Golems = 2, Gromnies = 3, etc.
@@ -958,6 +964,9 @@ namespace ACE.Entity.Enum.Properties
         PortalReqType5 = 50118,
         PortalReqValue5 = 50119,
         PortalReqMaxValue5 = 50120,
+        /// <summary>School gems past the cap (owner 2026-11-01): the tier an earned school gem dropped in. Its ceiling is
+        /// TriuneEarning.GemCeiling(tier). 50651, free in EVERY Property enum.</summary>
+        EarnedGemTier = 50651,
 
         /// <summary>Gear Essences (2026-10-02): the ZcModifiers record key a Bag of Locking locked on this item
         /// (negative = a weapon card). Other essences skip it. Server-only - not an assessment property.</summary>

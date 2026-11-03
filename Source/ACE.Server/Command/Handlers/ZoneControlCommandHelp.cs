@@ -7,7 +7,7 @@ namespace ACE.Server.Command.Handlers
 {
     /// <summary>
     /// THE registry of every chat command the ZoneControl plugin sends, plus the player commands this registry lists
-    /// (/bounty, /vault) (owner 2026-09-03: a GM Tools > Chat Commands tab "that we keep updated"). The plugin renders
+    /// (/bounty, /vault, /triune) (owner 2026-09-03: a GM Tools > Chat Commands tab "that we keep updated"). The plugin renders
     /// this list; it never carries its own.
     /// `/zonecontrol help` prints it as prose, `/zonecontrol help --wire` emits one [[ZCHELP]] row per entry.
     ///
@@ -123,6 +123,8 @@ namespace ACE.Server.Command.Handlers
             E("Rewards", "/zonecontrol bounty", "<name> show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>", "Bounty: items every N of a player's own kills, at most once per cooldown. qb=N: only players with at least N QB count toward that reward (0 = everyone; set without qb= keeps it). v11+ only. Changing it needs Admin."),
             E("Rewards", "/zonecontrol regionbounty", "<vod|t10> show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>", "Bounty for Valley of Death or Thaelaryn Island (T10): items every N of a player's own kills, at most once per cooldown. Below T11 only. qb=N: only players with at least N QB count toward that reward. Changing it needs Admin."),
             E("Rewards", "/bounty", "[list|all]", "Any player: the bounties where you stand - kills so far, how long until the next one unlocks, or the QB a reward needs - and anything held for you. list/all: every bounty on the server and your progress on each."),
+            E("Rewards", "/zonecontrol triune", "[show] | get | on | off | gems on|off | gembase <n> | reload | reset <day> <hour> [tz] | tier <15-25|all> [floor <kph>] [ceiling <kph>] [slow <weeks>] [fast <weeks>] [points <n>] [gemslow <weeks>] [gemfast <weeks>]", "Triune per own-tier kill and the earned school gems on the corpse: weekly floor / ceiling pace per tier and the weekly reset. Changing it needs Admin."),
+            E("Rewards", "/triune", "", "Any player: your Triune Weave, your school gem progress, this week's kills, the pace and when the week turns."),
 
             // ── Readiness ─────────────────────────────────────────────────────
             E("Readiness", "/zonecontrol mobcheck", "[<zone>] [<wcid>]", "Is this monster ready in this zone? No wcid = the creature you have selected."),

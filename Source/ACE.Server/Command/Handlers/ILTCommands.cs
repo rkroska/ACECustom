@@ -44,7 +44,7 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("ilt", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
             "ILT custom server commands and player preferences.",
-            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train|smartring [on|off]|ringmode|ringrange|arrowdebug]")]
+            "Usage: /ilt [help|features|dmgformat|showoverkill|dotlines [on|off|1-10]|levelskills|trainskills|xp level|train|smartring [on|off]|ringmode|ringrange|arrowdebug]")]
         public static void HandleILT(Session session, params string[] parameters)
         {
             var player = session.Player;
@@ -178,6 +178,33 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat(
                     $"Show Overkill: {state}. The [Overkill] suffix will {(newValue ? "now" : "no longer")} appear on kill and death messages.",
                     ChatMessageType.System));
+            }
+            else if (sub == "dotlines")
+            {
+                // DoT spell lines (Creature_DotSpellLines.cs): one chat line per void DoT spell, every 1-10 s
+                if (parameters.Length >= 2)
+                {
+                    var opt = parameters[1].ToLower();
+                    if (opt == "off" || opt == "0")
+                        player.DotLineSeconds = 0;
+                    else if (opt == "on")
+                        player.DotLineSeconds = player.DotLineSeconds > 0 ? player.DotLineSeconds : 5;
+                    else if (int.TryParse(opt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var secs) && secs >= 1 && secs <= 10)
+                        player.DotLineSeconds = secs;
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"Unknown value '{parameters[1]}'. Usage: /ilt dotlines [on | off | 1-10]  (seconds between lines)", ChatMessageType.System));
+                        return;
+                    }
+                }
+                else
+                    player.DotLineSeconds = player.DotLineSeconds > 0 ? 0 : 5;   // toggle, 5 s when turned on
+
+                var dotSecs = player.DotLineSeconds;
+                session.Network.EnqueueSend(new GameMessageSystemChat(dotSecs > 0
+                    ? $"DoT Lines: ON, every {dotSecs} s. Your void DoT damage on monsters shows one line per spell (with ticks and criticals)."
+                    : "DoT Lines: OFF.", ChatMessageType.System));
             }
             else if (sub == "levelskills")
             {
@@ -457,6 +484,7 @@ namespace ACE.Server.Command.Handlers
             {
                 var dmgLabel  = player.DamageNumberFormat switch { 1 => "commas", 2 => "short", _ => "default" };
                 var okLabel   = player.ShowOverkill ? "ON" : "OFF";
+                var dotLabel  = player.DotLineSeconds > 0 ? $"every {player.DotLineSeconds} s" : "OFF";
                 var ringLabel = (player.GetProperty(PropertyBool.ClassicRingAoe) ?? false) ? "Classic" : "New";
                 session.Network.EnqueueSend(new GameMessageSystemChat("=== ILT Custom Commands ===", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt features", ChatMessageType.System));
@@ -465,6 +493,8 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"      Set your damage number display style. (currently: {dmgLabel})", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt showoverkill [on|off]", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"      Toggle the [Overkill] suffix on kill and death messages. (currently: {okLabel})", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt dotlines [on|off|1-10]", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"      Show your void DoT damage as one line per spell, every 1-10 seconds. (currently: {dotLabel})", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt levelskills  |  /ilt xp level  |  /ilt xp", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("      Spend all available XP into trained and specialized skills, in priority order.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt trainskills  |  /ilt train", ChatMessageType.System));
