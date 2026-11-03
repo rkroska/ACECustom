@@ -73,6 +73,17 @@ namespace ACE.Server.WorldObjects
             if (crit) line.Crits++;
         }
 
+        /// <summary>
+        /// A monster that goes without dying - a despawn, a reset, a landblock unload - sends the lines it still holds first
+        /// (CodeRabbit #590: the delayed flush is dropped with its action queue, and only OnDeath forced one). Nothing pending =
+        /// nothing sent (players, pets and a monster already flushed by its death).
+        /// </summary>
+        public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false, bool enqueueDatabaseRemove = true)
+        {
+            DotSpellLineFlushSafe(force: true);
+            base.Destroy(raiseNotifyOfDestructionEvent, fromLandblockUnload, enqueueDatabaseRemove);
+        }
+
         /// <summary>The flush from a damage tick or a death: a chat line must never stop either - a failure is logged, not thrown.</summary>
         public void DotSpellLineFlushSafe(bool force)
         {
