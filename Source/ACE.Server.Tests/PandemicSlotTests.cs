@@ -69,5 +69,22 @@ namespace ACE.Server.Tests
             Assert.IsTrue(Creature.ZcPandemicMaySend(true, 5, 0));
             Assert.IsTrue(Creature.ZcPandemicMaySend(false, 500, int.MaxValue));
         }
+
+        [TestMethod]
+        public void AReceivedCopyIsRefusedAtTheFullCapUnlessItsMonsterHoldsASlot()
+        {
+            Assert.IsFalse(Creature.ZcPandemicMayReceive(2, 2, false), "a new monster at the full cap");
+            Assert.IsFalse(Creature.ZcPandemicMayReceive(2, 3, false), "a new monster over the cap (a race)");
+            Assert.IsTrue(Creature.ZcPandemicMayReceive(2, 2, true), "a monster already on the list at the full cap");
+            Assert.IsTrue(Creature.ZcPandemicMayReceive(2, 1, false), "a new monster with a slot open");
+        }
+
+        [TestMethod]
+        public void AShorterCopyDoesNotShortenTheHeldSlot()
+        {
+            Assert.AreEqual(1000.0, Player.PandemicSlotEndsAt(1000.0, 400.0));
+            Assert.AreEqual(1500.0, Player.PandemicSlotEndsAt(1000.0, 1500.0));
+            Assert.AreEqual(1000.0, Player.PandemicSlotEndsAt(1000.0, 1000.0));
+        }
     }
 }
