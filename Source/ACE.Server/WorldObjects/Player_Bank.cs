@@ -735,7 +735,83 @@ namespace ACE.Server.WorldObjects
             (867530211, 12050),     // ILT Token of Luminance - Event Reward -> Agent of the Arcanum
             (867530194, 12050),     // ILT Token of Luminance -> Agent of the Arcanum
             (64454972, 64454916),   // Researcher's Token of Luminance -> Red Underrly
+            // BOUNTY REWARD TOKENS (owner 2026-11-02): "Bounty Reward Token: 10B" .. "500B", also usable from the pack (UseLumToken)
+            (777708001, 12050),     // 10B
+            (777708002, 12050),     // 20B
+            (777708003, 12050),     // 25B
+            (777708004, 12050),     // 50B
+            (777708005, 12050),     // 75B
+            (777708006, 12050),     // 100B
+            (777708007, 12050),     // 150B
+            (777708008, 12050),     // 200B
+            (777708009, 12050),     // 250B
+            (777708010, 12050),     // 500B
         };
+
+        /// <summary>Every lum token the bank takes (the economy ledger counts the same ones).</summary>
+        public static IEnumerable<uint> LumTokenWcids => LumTokens.Select(t => t.Token);
+
+        /// <summary>
+        /// BOUNTY REWARD TOKENS, used from the pack (owner 2026-11-02: "Useable item, so long as there is no risk of dup or any
+        /// exploitable way"): exactly what /b d does for ONE token - the NPC's value, read from its Give emote (LumTokenValue), goes
+        /// to BankedLuminance. Under the bank lock the token is consumed FIRST and the lum only added when that worked, then the
+        /// player is saved at once - the same order and lock as DepositLuminanceTokens, so a double-click, a token that left the
+        /// pack, or one in an open trade window can never pay twice or pay without being spent. GenericObject.ActOnUse calls it
+        /// for an item on the LumTokens list that is marked usable from the pack (ItemUseable Contained: the bounty tokens).
+        /// </summary>
+        public void UseLumToken(WorldObject item)
+        {
+            void Tell(string text) => Session?.Network.EnqueueSend(new GameMessageSystemChat(text, ChatMessageType.Broadcast));
+
+            var value = LumTokenValue(item.WeenieClassId);
+            if (value <= 0)
+            {
+                Tell($"The {item.Name} can not be used right now. Hand it to an Agent of the Arcanum instead.");
+                return;
+            }
+            if (IsBusy)
+            {
+                Tell("Cannot deposit while teleporting or busy. Complete your movement and try again.");
+                return;
+            }
+            // in this player's own packs, not worn, not offered in a trade
+            if (item.Wielder != null || GetInventoryItem(item.Guid) == null)
+            {
+                Tell($"The {item.Name} must be in your pack to use it.");
+                return;
+            }
+            if (InTradeWindow(item))
+            {
+                Tell($"The {item.Name} is in your trade window.");
+                return;
+            }
+
+            long before, after;
+            lock (balanceLock)
+            {
+                before = Math.Max(0, BankedLuminance ?? 0);   // the same cleanup every other deposit runs first
+                try { _ = checked(before + value); }
+                catch (OverflowException)
+                {
+                    log.Warn($"[Bank] {Name}: using lum token {item.WeenieClassId} at {value} would overflow the bank - not used");
+                    Tell("Your banked luminance is full.");
+                    return;
+                }
+                var ok = TryConsumeFromInventoryWithNetworking(item, 1);
+                LogItemConsumption("UseLumToken", item, ok, $"Lum: {value}");
+                if (!ok)
+                {
+                    Tell($"The {item.Name} could not be used.");
+                    return;
+                }
+                BankedLuminance = before + value;
+                after = BankedLuminance ?? 0;
+                LogBankChange("UseLumToken", "Luminance", value, before, after, item.Name);
+            }
+            log.Info($"[LumToken] {Name} used {item.Name} ({item.Guid}): +{value:N0} banked lum, {before:N0} -> {after:N0}");
+            this.SavePlayerToDatabase();
+            Tell($"{item.Name}: +{ACE.Server.Command.ShortNumber.Amount(value, "Lum")} banked. Banked Lum: {ACE.Server.Command.ShortNumber.Both(after)}");
+        }
 
         /// <summary>The lum one token pays at its NPC: the NPC's own Give emote for that wcid, its IncrementInt64Stat on
         /// BankedLuminance. Read from the cached weenie, so the bank always pays what the NPC pays (0 = not found - never deposited).</summary>
