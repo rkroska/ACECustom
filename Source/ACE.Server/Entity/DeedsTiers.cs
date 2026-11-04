@@ -10,7 +10,7 @@ namespace ACE.Server.Entity
     /// QB Deeds: 15 cumulative tiers, tier N at N x 1,000 QB. THE one table - Player_Deeds applies the buff spells from it, the special-effect
     /// hooks key off its tier numbers, and /deeds list is printed from it, so the three can never disagree.
     ///
-    /// Spell id choices (Legendary Summoning Prowess, no Prodigal Summoning, Master Voidlock's, Sigil of Vigor XV = 5313, no Icy Shield, Sigil of Fury X = 5324,
+    /// Spell id choices (Legendary Summoning Prowess, no Prodigal Summoning, Master Voidlock's, Sigil of Vigor XV = 5313, no Icy Shield, Sigil of Fury X = 5324 + 5218,
     /// Timaru's Shelter = 2429, Rare Damage Reduction V = 5192, 7 Masterwork resistances). Every buff keeps its REAL power
     /// level, so a stronger cantrip on gear still wins its category and Deeds never makes a player weaker.
     /// </summary>
@@ -119,6 +119,7 @@ namespace ACE.Server.Entity
             new Tier { Number = 8, Spells = new uint[]
             {
                 4749, 4737, 5324, 6270,                             // Master Brute's, Master Hero's, Sigil of Fury X (Endurance), Paragon's Endurance V
+                5218,                                               // Sigil of Fury X (Critical Damage)
                 4280, 4733, 4745,                                   // Deck of Hands Favor, Master Duelist's, Master Rover's
                 2347, 2348, 4281, 4741,                             // Concentration, Brilliance, Deck of Eyes Favor, Master Sage's
                 2638, 4753, 4904,                                   // Heart of Oak, Master Adherent's, Society Master's Blessing

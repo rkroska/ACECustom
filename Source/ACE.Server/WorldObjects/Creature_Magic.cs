@@ -118,6 +118,10 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
+            // QB Deeds holds this spell: the gear adds no second copy (the item stays active, Player_Deeds restores it if Deeds stops)
+            if (this is Player deedsPlayer && deedsPlayer.DeedsReplacesGearSpell(item, spell))
+                return true;
+
             // TODO: look into condensing this
             switch (spell.School)
             {
