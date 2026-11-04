@@ -786,6 +786,8 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            using var ledgerScope = PyrealLedger.Begin(PyrealLedger.SrcDeposit, "", "", this);
+
             long before, after;
             lock (balanceLock)
             {
