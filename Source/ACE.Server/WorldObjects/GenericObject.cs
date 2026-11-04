@@ -1,6 +1,8 @@
 using System;
+using System.Linq;
 
 using ACE.Entity;
+using ACE.Entity.Enum;
 using ACE.Entity.Models;
 using ACE.Server.Network.GameMessages.Messages;
 
@@ -43,6 +45,13 @@ namespace ACE.Server.WorldObjects
         {
             if (!(activator is Player player))
                 return;
+
+            // BOUNTY REWARD TOKENS (owner 2026-11-02): a usable lum token goes to the bank, as /b d does for one
+            if (ItemUseable == Usable.Contained && Player.LumTokenWcids.Contains(WeenieClassId))
+            {
+                player.UseLumToken(this);
+                return;
+            }
 
             if (UseSound > 0)
                 player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, UseSound));

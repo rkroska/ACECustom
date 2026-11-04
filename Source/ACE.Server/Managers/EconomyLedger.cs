@@ -138,7 +138,8 @@ namespace ACE.Server.Managers
         // every key the bank accepts (Player_Bank DepositLegendaryKeys / DepositMythicalKeys), with the uses of a full one
         private static readonly Dictionary<uint, long> legendaryKeyUses = new Dictionary<uint, long> { [500010] = 25, [51954] = 10, [52010] = 5, [48748] = 2, [48746] = 1 };
         private static readonly Dictionary<uint, long> mythicalKeyUses = new Dictionary<uint, long> { [90000110] = 25, [90000109] = 10, [90000108] = 5, [90000107] = 2, [90000104] = 1 };
-        private static readonly uint[] lumTokens = { 227190187, 300101211, 867530211, 867530194, 64454972 };
+        // the bank's own list (Player_Bank LumTokens), so a token added there is counted here too (bounty reward tokens 2026-11-02)
+        private static readonly uint[] lumTokens = Player.LumTokenWcids.ToArray();
 
         public static readonly Currency[] Currencies = BuildCurrencies();
 
