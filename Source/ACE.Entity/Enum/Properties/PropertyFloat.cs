@@ -389,5 +389,12 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Tier rewards (owner 2026-10-24), on a CHARACTER: the part of a Prestige Coin earned from T11+ zone kills that
         /// has not yet made a whole coin (0 .. 1). Whole coins go straight to BankedPrestigeCoins. Server-only.</summary>
         PrestigeCoinFraction = 57000,
+
+        /// <summary>Triune earning (owner 2026-11-01), on a CHARACTER: the part of a Triune Weave point earned from own-tier kills
+        /// that has not yet made a whole point (0 .. 1). Whole points go straight onto TriuneWeaveCount. Server-only.</summary>
+        TriuneFraction = 57010,
+
+        /// <summary>Triune earning: own-tier kills counted this week (the week in PropertyInt64.TriuneWeekStart). Server-only.</summary>
+        TriuneWeekKills = 57011,
     }
 }

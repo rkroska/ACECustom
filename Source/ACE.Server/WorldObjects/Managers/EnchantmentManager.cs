@@ -2002,8 +2002,12 @@ namespace ACE.Server.WorldObjects.Managers
                     continue;
                 }
 
+                var tickCrit = false;   // DoT SPELL LINES count the crits
                 if (zcSnap != null)
-                    tickAmount = creature.ZcDotTickAmount(zcSnap, damager, damageType, tickScale, ThreadSafeRandom.Next(0.0f, 1.0f) < zcSnap.EffectiveCritChance);
+                {
+                    tickCrit = ThreadSafeRandom.Next(0.0f, 1.0f) < zcSnap.EffectiveCritChance;
+                    tickAmount = creature.ZcDotTickAmount(zcSnap, damager, damageType, tickScale, tickCrit);
+                }
                 else
                     tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod * netherResistRatingMod;
 
@@ -2034,6 +2038,10 @@ namespace ACE.Server.WorldObjects.Managers
                 creature.DamageHistory.Add(damager, damageType, (uint)Math.Round(tickAmount));
                 if (fractureBatch && tickAmount > 0)
                     fractureContributions[damager] = fractureContributions.GetValueOrDefault(damager) + (uint)Math.Round(tickAmount);
+
+                // DoT SPELL LINES (Creature_DotSpellLines.cs): a player's tick, kept per spell for the line that names it
+                if (damageType == DamageType.Nether && targetPlayer == null && !creature.Invincible && Creature.DotSpellLinesFor(sourcePlayer))
+                    creature.DotSpellLineAdd(sourcePlayer, (uint)enchantment.SpellId, tickAmount, tickCrit);
 
                 tickAmountTotal += tickAmount;
 
@@ -2066,6 +2074,8 @@ namespace ACE.Server.WorldObjects.Managers
                     if (parts[i].Key is Player fractureCaster)
                         NetherFractureManager.Credit(fractureCaster, creature, allocation[i]);
             }
+
+            creature.DotSpellLineFlushSafe(force: isDead || !creature.IsAlive);
 
             // health readings (selected and /nearbyhealth): the tick's damage landed without a health report (the ones from
             // DamageHistory.Add came before it and were held), so one goes out now with the new value - a tick that kills
@@ -2100,7 +2110,8 @@ namespace ACE.Server.WorldObjects.Managers
                     // the faster DoT ticker (tickScale < 1) sends no DoT chat line at all - periodic, nether or Surge (owner
                     // 2026-10-04: at 1 s it was 5x the retail spam); damage and kill credit are unchanged, and the hit sound is
                     // throttled to once per heartbeat in TakeDamageOverTime
-                    if (tickScale >= 1f)
+                    // (a player with /ilt dotlines on gets the per-spell lines for their nether DoT damage instead)
+                    if (tickScale >= 1f && !(damageType == DamageType.Nether && targetPlayer == null && !creature.Invincible && Creature.DotSpellLinesFor(damageSourcePlayer)))
                         creature.TakeDamageOverTime_NotifySource(damageSourcePlayer, damageType, amount, aetheria);
 
                     if (emotesDue && creature.IsAlive)

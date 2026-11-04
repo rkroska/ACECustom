@@ -1293,6 +1293,13 @@ namespace ACE.Server.WorldObjects
                             }
                         }
 
+                        // School gems past the cap (owner 2026-11-01): the player's own earned gem with no room left crumbles here
+                        if (itemFoundOnCorpse && ACE.Server.Managers.ZoneControl.SchoolGems.CrumbleOnPickup(this, item, itemRootOwner))
+                        {
+                            EnqueuePickupDone(pickupMotion);
+                            return;
+                        }
+
                         // Capture item data before it might be destroyed during stackable merges
                         bool isGroundPickup = itemRootOwner == null && containerRootOwner == this;
                         bool isContainerWithdrawal = itemRootOwner is Container && 

@@ -3705,6 +3705,13 @@ namespace ACE.Server.WorldObjects
             set { if (value == 0) RemoveProperty(PropertyInt.DamageNumberFormat); else SetProperty(PropertyInt.DamageNumberFormat, value); }
         }
 
+        /// <summary>DoT spell lines (/ilt dotlines): 0 = off, 1-10 = seconds between lines. Default off.</summary>
+        public int DotLineSeconds
+        {
+            get => Math.Clamp(GetProperty(PropertyInt.DotLineSeconds) ?? 0, 0, 10);
+            set { if (value <= 0) RemoveProperty(PropertyInt.DotLineSeconds); else SetProperty(PropertyInt.DotLineSeconds, Math.Min(value, 10)); }
+        }
+
         public int? ItemExpirationTimestamp
         {
             get => GetProperty(PropertyInt.ItemExpirationTimestamp);

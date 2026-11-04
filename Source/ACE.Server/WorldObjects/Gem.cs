@@ -143,6 +143,10 @@ namespace ACE.Server.WorldObjects
         {
             if (player.IsDead) return;
 
+            // the gem's own Use emote already used it up (a school / Triune gem grants and consumes in PromptAddAugment, which runs
+            // before this) - nothing is missing, so no "Cannot find" line (2026-11-01)
+            if (IsDestroyed) return;
+
             // verify item is still valid
             if (player.FindObject(Guid.Full, Player.SearchLocations.MyInventory) == null)
             {

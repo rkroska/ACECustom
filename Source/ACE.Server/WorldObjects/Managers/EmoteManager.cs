@@ -3613,6 +3613,11 @@ namespace ACE.Server.WorldObjects.Managers
                                     if (!SchoolCharms.TryGetValue(prefix, out var charm))
                                         break;
 
+                                    // School gems past the cap (owner 2026-11-01): an EARNED +1 gem has its own rules (earner only,
+                                    // the gem's tier ceiling, no charm item, free) - SchoolGems.TryUse; an old unstamped gem falls through
+                                    if (augCount == 1 && ACE.Server.Managers.ZoneControl.SchoolGems.TryUse(player, WorldObject))
+                                        break;
+
                                     if (player.GetNumInventoryItemsOfWCID(charm.CharmWcid) == 0)
                                     {
                                         player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must possess a {charm.FullName} to use this gem.", ChatMessageType.Broadcast));
@@ -3624,8 +3629,14 @@ namespace ACE.Server.WorldObjects.Managers
                                                   augCount == 50 ? charm.Mote50 : charm.Mote100;
 
                                     // No confirmation dialog (owner, 2026-08-15) - see the Triune
-                                    // case above. Consume before granting.
-                                    if (!player.TryConsumeFromInventoryWithNetworking(moteId, 1))
+                                    // case above. Consume before granting. The gem being used, not the first of its wcid
+                                    // (2026-11-01): an earned +1 gem shares the wcid and must never be eaten by this path.
+                                    // If something other than the gem ran this emote, take the first UNSTAMPED gem of that wcid - an
+                                    // earned gem only ever pays through SchoolGems.TryUse.
+                                    var usedThis = WorldObject != null && WorldObject.WeenieClassId == moteId;
+                                    var gemToUse = usedThis ? WorldObject
+                                        : player.GetInventoryItemsOfWCID(moteId).FirstOrDefault(g => ACE.Server.Managers.ZoneControl.SchoolGems.Stamp(g) == null);
+                                    if (gemToUse == null || !player.TryConsumeFromInventoryWithNetworking(gemToUse, 1))
                                     {
                                         player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to consume the gem. Please try again.", ChatMessageType.Broadcast));
                                         break;
