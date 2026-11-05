@@ -1013,6 +1013,27 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Blacksmithing: what the tool is for. Hone stone: the ForgeMath.ForgeLine number it hones. Dye: the colour
         /// family (ForgeDyes.Family; 0 = any).</summary>
         ForgeToolArg = 52005,
+
+        /// <summary>Reflection boss (2026-11-04), on a MONSTER weenie: how many times it comes back after dying, each time
+        /// wearing the look of a player who damaged it, as "&lt;Player&gt;'s Reflection". 0 or unset = an ordinary monster.
+        /// See Creature.TrySpawnReflection.</summary>
+        ReflectionLives = 58000,
+
+        /// <summary>Reflection boss: which life this spawn is (1 = the first Reflection). Set at runtime on the respawn, so a
+        /// weenie never carries it; it scales health, damage rating and rewards linearly.</summary>
+        ReflectionLife = 58001,
+
+        /// <summary>Reflection boss: the weenie spawned for each Reflection life (its own lines, combat and rewards). Unset or
+        /// 0 = the same weenie that died. The lives and step settings are always read from the boss that died first.</summary>
+        ReflectionWcid = 58002,
+
+        /// <summary>Reflection boss: damage rating added per life (life 3 with a step of 10 = +30).</summary>
+        ReflectionDamageRatingStep = 58003,
+
+        /// <summary>Reflection boss: who each life copies. 0 or unset = the top damager not yet copied; 1 = a random player
+        /// who damaged it and isn't copied yet; 2 = a random player in sight not yet copied, damage or not. Every rule falls
+        /// back to a random player in sight not yet copied, then to any player in sight.</summary>
+        ReflectionPick = 58004,
     }
 
     public static class PropertyIntExtensions

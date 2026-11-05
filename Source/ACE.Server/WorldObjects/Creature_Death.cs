@@ -226,6 +226,7 @@ namespace ACE.Server.WorldObjects
             dieChain.AddAction(this, ActionType.CreatureDeath_MakeCorpse, () =>
             {
                 CreateCorpse(topDamager);
+                TrySpawnReflection();
                 Destroy();
             });
 
