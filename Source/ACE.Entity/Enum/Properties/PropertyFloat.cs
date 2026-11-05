@@ -396,5 +396,13 @@ namespace ACE.Entity.Enum.Properties
 
         /// <summary>Triune earning: own-tier kills counted this week (the week in PropertyInt64.TriuneWeekStart). Server-only.</summary>
         TriuneWeekKills = 57011,
+
+        /// <summary>Reflection boss (2026-11-04): extra health per life, as a fraction of the weenie's own health. 0.5 makes
+        /// life 1 x1.5, life 2 x2, life 3 x2.5. Unset = 0, no change.</summary>
+        ReflectionHealthStep = 58000,
+
+        /// <summary>Reflection boss: extra XP and luminance per life, as a fraction of the weenie's own reward, the same
+        /// linear way as ReflectionHealthStep. Unset = 0, no change.</summary>
+        ReflectionRewardStep = 58001,
     }
 }

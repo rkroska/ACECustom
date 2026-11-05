@@ -177,5 +177,13 @@ namespace ACE.Entity.Enum.Properties
         /// rename. Set once and never overwritten, so a second rename still remembers the true original. Its presence also
         /// marks the name as player-chosen, so nothing rewrites it (an element change keeps it). Shown in the appraisal.</summary>
         OriginalItemName = 60000,
+
+        /// <summary>Reflection boss (2026-11-04): the player GUIDs already copied by this chain of lives, comma-separated
+        /// hex. Set at runtime and carried from life to life, so no player is copied twice.</summary>
+        ReflectionCopied = 58000,
+
+        /// <summary>Reflection boss, on a MONSTER weenie: the respawn's name, with %s for the player's name. Unset =
+        /// "%s's Reflection".</summary>
+        ReflectionNameFormat = 58001,
     }
 }

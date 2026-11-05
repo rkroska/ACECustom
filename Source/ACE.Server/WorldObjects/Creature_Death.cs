@@ -226,6 +226,7 @@ namespace ACE.Server.WorldObjects
             dieChain.AddAction(this, ActionType.CreatureDeath_MakeCorpse, () =>
             {
                 CreateCorpse(topDamager);
+                TrySpawnReflection();
                 Destroy();
             });
 
@@ -313,6 +314,15 @@ namespace ACE.Server.WorldObjects
                     var zoneLum = (long)Math.Round(killProfile.Get(ACE.Server.Managers.ZoneScaling.ZoneStat.LumAward));
                     luminanceAward = zoneLum > 0 ? zoneLum : null;   // zone-provided 0 = grant nothing
                 }
+            }
+
+            // Reflection boss: each life pays linearly more, on whatever reward won above (weenie or zone).
+            var reflectionMult = ReflectionRewardMultiplier;
+            if (reflectionMult != 1.0)
+            {
+                baseXp = (long)Math.Min(Math.Round(baseXp * reflectionMult), MaxWeenieKillXp);
+                if (luminanceAward.HasValue)
+                    luminanceAward = (long)Math.Round(luminanceAward.Value * reflectionMult);
             }
 
             // A clone zone pays a share of the original's kill luminance. Scaled here, before the split, so every damager
