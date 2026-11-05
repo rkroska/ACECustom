@@ -49,6 +49,7 @@ namespace ACE.Server.Tests
 
         // -- shipped defaults and registration --
 
+        /// <summary>The shipped settings: 375 kills an hour, half pay past it, a 30-kill reserve.</summary>
         [TestMethod]
         public void Defaults_Falloff()
         {
@@ -57,6 +58,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(30.0, ServerConfig.zc_pcoin_falloff_reserve.Default, 1e-9);
         }
 
+        /// <summary>Both Zone Control stats are registered once, at the end of ZoneStat.All (after SlayerPoolShare), and are not weapon cards.</summary>
         [TestMethod]
         public void Stats_AreRegisteredOnceAndAppended()
         {
@@ -76,6 +78,7 @@ namespace ACE.Server.Tests
 
         // -- a steady pace --
 
+        /// <summary>A steady pace at or under 375 an hour pays every kill in full.</summary>
         [TestMethod]
         public void UnderThePace_PaysInFull()
         {
@@ -83,6 +86,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(1875.0, Simulate(375, 0, 1875), 1e-9, "exactly 375 an hour for 5 hours");
         }
 
+        /// <summary>Past the pace, every extra kill pays half: 500, 750 and 1000 an hour pay 437.5, 562.5 and 687.5.</summary>
         [TestMethod]
         public void PastThePace_EveryExtraKillPaysHalf()
         {
@@ -91,6 +95,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(687.5, ThirdHour(1000), 1e-6, "375 + 625 x 0.5");
         }
 
+        /// <summary>A below-tier kill uses only its tier-dip credit of the pace, and is paid on that credit.</summary>
         [TestMethod]
         public void BelowTierKills_CountAsTheirCredit()
         {
@@ -102,6 +107,7 @@ namespace ACE.Server.Tests
 
         // -- bursts, splits and refills --
 
+        /// <summary>A burst with no time between kills pays the first 30 in full and cuts from the 31st.</summary>
         [TestMethod]
         public void Burst_TheReserveTakesThirtyAtOnce()
         {
@@ -117,6 +123,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(30.0, recent, 1e-9, "the count never goes past the reserve");
         }
 
+        /// <summary>A kill that only partly fits under the reserve pays the fitting part in full and the rest at half.</summary>
         [TestMethod]
         public void SplitKill_PartFullPartHalf()
         {
@@ -126,6 +133,7 @@ namespace ACE.Server.Tests
             Assert.IsTrue(reduced);
         }
 
+        /// <summary>The count drains at the pace: 9.6 seconds frees one kill, 288 seconds or a day frees them all.</summary>
         [TestMethod]
         public void Refill_DrainsAtThePace()
         {
@@ -146,6 +154,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(1.0, count, 1e-9);
         }
 
+        /// <summary>A kill worth no credit pays nothing and only drains the count to now.</summary>
         [TestMethod]
         public void ZeroCreditKill_OnlyDrains()
         {
@@ -158,6 +167,7 @@ namespace ACE.Server.Tests
 
         // -- the share --
 
+        /// <summary>A share of 1 never cuts, 0 pays nothing past the pace, and out-of-range or NaN shares are held to 0..1.</summary>
         [TestMethod]
         public void Mult_OneIsNoFalloff_ZeroPaysNothing()
         {
@@ -177,6 +187,7 @@ namespace ACE.Server.Tests
 
         // -- off and bad input --
 
+        /// <summary>A pace of 0, negative, NaN or infinite turns the falloff off: full pay and nothing counted.</summary>
         [TestMethod]
         public void Off_PaysInFullAndKeepsNothing()
         {
@@ -189,6 +200,7 @@ namespace ACE.Server.Tests
             }
         }
 
+        /// <summary>Bad inputs (a clock that went back, NaN, a count above the reserve, a bad credit or reserve) never pay more than they should.</summary>
         [TestMethod]
         public void BadInputs_NeverMintCoins()
         {
@@ -208,6 +220,7 @@ namespace ACE.Server.Tests
 
         // -- dial cleaning and the Zone Control override --
 
+        /// <summary>Each dial is held to its range, and a NaN takes the declared default.</summary>
         [TestMethod]
         public void CleanFalloff_HoldsEachDialToItsRange()
         {
@@ -227,10 +240,12 @@ namespace ACE.Server.Tests
             Assert.AreEqual(30.0, nan.Reserve);
         }
 
+        /// <summary>A zone Default row authoring exactly <paramref name="values"/> (case-insensitive stat names).</summary>
         private static EvaluatedProfile Zone(Dictionary<string, double> values)
             => new EvaluatedProfile("test zone", 15, ZoneVariant.Minion,
                 new Dictionary<string, double>(values, StringComparer.OrdinalIgnoreCase));
 
+        /// <summary>A zone Default row overrides the server per stat, and a zone pace scales the reserve so it holds the same time.</summary>
         [TestMethod]
         public void FalloffFor_ZoneStatsOverrideTheServerPerStat()
         {
@@ -260,6 +275,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(0.0, off.WindowSeconds);
         }
 
+        /// <summary>An authored NaN keeps the server value, and an out-of-range share is held to 0..1.</summary>
         [TestMethod]
         public void FalloffFor_BadZoneValues()
         {
@@ -273,6 +289,30 @@ namespace ACE.Server.Tests
 
             var wild = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffMult] = 3 }));
             Assert.AreEqual(1.0, wild.Mult, "held to 0..1");
+        }
+
+        /// <summary>With the server pace off and a zone turning the falloff on, the zone's reserve is counted at the declared
+        /// default pace, so it still holds 288 seconds (CodeRabbit #595).</summary>
+        [TestMethod]
+        public void FalloffFor_ServerPaceOff_ZoneReserveUsesTheDefaultPace()
+        {
+            var serverOff = TierRewardScale.CleanFalloff(0, Half, Reserve);
+
+            var at500 = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 500 }), serverOff);
+            Assert.AreEqual(500.0, at500.KillsPerHour);
+            Assert.AreEqual(40.0, at500.Reserve, 1e-9);
+            Assert.AreEqual(288.0, at500.WindowSeconds, 1e-9);
+
+            var at3750 = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 3750 }), serverOff);
+            Assert.AreEqual(300.0, at3750.Reserve, 1e-9);
+            Assert.AreEqual(288.0, at3750.WindowSeconds, 1e-9, "not 28.8 s");
+
+            var at375 = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 375 }), serverOff);
+            Assert.AreEqual(30.0, at375.Reserve, 1e-9);
+
+            var still = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double>()), serverOff);
+            Assert.AreEqual(0.0, still.KillsPerHour, "a zone that does not turn it on stays off");
+            Assert.AreEqual(serverOff, TierRewardScale.FalloffFor(null, serverOff));
         }
 
         // -- the saved count, in seconds (FalloffOnDebt) --
@@ -294,6 +334,7 @@ namespace ACE.Server.Tests
             return total;
         }
 
+        /// <summary>The saved-seconds form pays exactly as the kill-count rule at one pace, in a server-pace or a zone-pace zone.</summary>
         [TestMethod]
         public void Debt_AtOnePace_IsTheSameRule()
         {
@@ -310,6 +351,7 @@ namespace ACE.Server.Tests
             Assert.IsTrue(reduced);
         }
 
+        /// <summary>A kill where the falloff is off pays in full and leaves the saved count as it was.</summary>
         [TestMethod]
         public void Debt_NoFalloffZone_LeavesTheCountAlone()
         {
@@ -323,6 +365,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(0.0, TierRewardScale.FalloffOnDebt(double.NaN, 5, 1, off).Debt, "a bad count reads as 0");
         }
 
+        /// <summary>A kill in a zone authored at a very high pace cannot empty a count built up at a slower pace.</summary>
         [TestMethod]
         public void Debt_HighPaceZone_CannotEmptyACountBuiltElsewhere()
         {

@@ -1247,10 +1247,12 @@ namespace ACE.Server.Managers.ZoneControl
             => GoverningZoneRef(player)?.Default;
 
         /// <summary>
-        /// The Default row of the zone that governs this creature - the same zone <see cref="ResolveForCreature"/> picks (exempt
-        /// wcids and generators included), but the zone-level row only: no rank row and no per-WCID bucket. For knobs that are
-        /// about the KILLER rather than the monster, so a Boss row or a wcid bucket can never re-tune them by accident (the
-        /// Prestige Coin falloff, 2026-11-01). Null when the creature is not governed. Lock-free snapshot read.
+        /// The Default row of the zone that governs this creature - the same zone <see cref="ResolveForCreature"/> picks, but the
+        /// zone-level row only: no rank row and no per-WCID bucket. For knobs that are about the KILLER rather than the monster,
+        /// so a Boss row or a wcid bucket can never re-tune them by accident (the Prestige Coin falloff, 2026-11-01). Null when
+        /// the creature is not governed - including a player, a pet or an ExemptFromZoneScaling creature, exactly as
+        /// ResolveForCreature. That is safe for the falloff: TierRewardScale.KillTier is 0 for those same creatures, so their
+        /// kills pay no Prestige Coins and never reach it (CodeRabbit #595). Lock-free snapshot read.
         /// </summary>
         public static EvaluatedProfile ResolveZoneDefaultRowForCreature(Creature creature)
         {

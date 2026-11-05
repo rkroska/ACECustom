@@ -160,6 +160,7 @@ namespace ACE.Server.Managers.ZoneControl
             Clean(mult, 0.0, 1.0, ServerConfig.zc_pcoin_falloff_mult.Default),
             Clean(reserve, 1.0, 100_000.0, ServerConfig.zc_pcoin_falloff_reserve.Default));
 
+        /// <summary>One dial held to [<paramref name="min"/>, <paramref name="max"/>]; NaN or infinity takes <paramref name="fallback"/>.</summary>
         private static double Clean(double value, double min, double max, double fallback)
             => double.IsFinite(value) ? Math.Clamp(value, min, max) : fallback;
 
@@ -177,11 +178,14 @@ namespace ACE.Server.Managers.ZoneControl
         ///
         /// The reserve is a server setting only, and a zone with its own pace gets the same reserve in TIME, not in kills: 30 kills
         /// at the server's 375 an hour is 288 seconds, so a zone authored at 500 an hour holds 40 kills. That keeps the saved
-        /// count (in seconds - FalloffOnDebt) meaning the same thing in every zone.
+        /// count (in seconds - FalloffOnDebt) meaning the same thing in every zone. With the server pace at 0 (falloff off
+        /// except where a zone turns it on) the reserve is read at the setting's declared default pace instead (CodeRabbit #595).
         /// </summary>
-        public static FalloffDials FalloffFor(EvaluatedProfile zoneDefault)
+        public static FalloffDials FalloffFor(EvaluatedProfile zoneDefault) => FalloffFor(zoneDefault, ServerFalloff());
+
+        /// <summary>The same as FalloffFor(zoneDefault), against given server dials (already cleaned) - for tests.</summary>
+        internal static FalloffDials FalloffFor(EvaluatedProfile zoneDefault, FalloffDials server)
         {
-            var server = ServerFalloff();
             if (zoneDefault == null)
                 return server;
 
@@ -190,9 +194,12 @@ namespace ACE.Server.Managers.ZoneControl
                 Pick(zoneDefault, ZoneStat.PcoinFalloffMult, server.Mult),
                 server.Reserve);
 
-            if (zone.KillsPerHour > 0 && server.KillsPerHour > 0 && zone.KillsPerHour != server.KillsPerHour)
+            // the pace the reserve setting is counted at: the server's, or the declared default while the server's is off
+            var basePace = server.KillsPerHour > 0 ? server.KillsPerHour : ServerConfig.zc_pcoin_falloff_kills_per_hour.Default;
+
+            if (zone.KillsPerHour > 0 && basePace > 0 && zone.KillsPerHour != basePace)
             {
-                var scaled = server.Reserve * zone.KillsPerHour / server.KillsPerHour;
+                var scaled = server.Reserve * zone.KillsPerHour / basePace;
                 if (double.IsFinite(scaled))
                     zone = zone with { Reserve = Math.Max(1.0, scaled) };
             }
@@ -200,6 +207,8 @@ namespace ACE.Server.Managers.ZoneControl
             return zone;
         }
 
+        /// <summary>A zone's authored value for <paramref name="stat"/>, or <paramref name="server"/> when the row does not author
+        /// it or authors something that is not a finite number.</summary>
         private static double Pick(EvaluatedProfile profile, string stat, double server)
         {
             if (!profile.Has(stat))

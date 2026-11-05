@@ -17,6 +17,8 @@ namespace ACE.Server.Command.Handlers
     /// </summary>
     public static class TierDipCommands
     {
+        /// <summary>/tierdip: the player's own tier, the zone's tier, the credit a kill here gives them, and the Prestige Coin
+        /// falloff in force here.</summary>
         [CommandHandler("tierdip", AccessLevel.Player, CommandHandlerFlag.RequiresWorld,
             "Shows your own tier, the tier of the zone you stand in, how much credit a kill here gives you, and your Prestige Coin falloff.",
             "/tierdip")]
@@ -128,6 +130,7 @@ namespace ACE.Server.Command.Handlers
                 Msg($"You can get {room.ToString("0.#", CultureInfo.InvariantCulture)} kills ahead of that pace before the falloff starts (the most is {dials.Reserve.ToString("0.#", CultureInfo.InvariantCulture)}).");
         }
 
+        /// <summary>"T15", or "below T11" for a tier under the endgame.</summary>
         private static string TierText(int tier) => tier >= TierRewardScale.MinTier ? "T" + tier : "below T11";
     }
 }
