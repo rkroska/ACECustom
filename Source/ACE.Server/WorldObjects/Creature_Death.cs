@@ -316,6 +316,15 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            // Reflection boss: each life pays linearly more, on whatever reward won above (weenie or zone).
+            var reflectionMult = ReflectionRewardMultiplier;
+            if (reflectionMult != 1.0)
+            {
+                baseXp = (long)Math.Min(Math.Round(baseXp * reflectionMult), MaxWeenieKillXp);
+                if (luminanceAward.HasValue)
+                    luminanceAward = (long)Math.Round(luminanceAward.Value * reflectionMult);
+            }
+
             // A clone zone pays a share of the original's kill luminance. Scaled here, before the split, so every damager
             // and every fellowship share comes out of the reduced award.
             if (luminanceAward.HasValue)

@@ -186,30 +186,40 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Linear scaling for a Reflection life: health x(1 + HealthStep x life), XP and luminance x(1 + RewardStep x life),
-        /// damage rating + DamageRatingStep x life, all from this weenie's own values. Starts at full health.
+        /// Reflection boss: what this life's kill XP and luminance are multiplied by, 1 + RewardStep x life (1 for an
+        /// ordinary monster or a non-positive result). Applied by OnDeath_GrantXP after any Zone Control reward override,
+        /// so zone and weenie rewards both scale.
+        /// </summary>
+        internal double ReflectionRewardMultiplier
+        {
+            get
+            {
+                var life = GetProperty(PropertyInt.ReflectionLife) ?? 0;
+                if (life <= 0)
+                    return 1.0;
+                var mult = 1.0 + (GetProperty(PropertyFloat.ReflectionRewardStep) ?? 0.0) * life;
+                return mult > 0 ? mult : 1.0;
+            }
+        }
+
+        /// <summary>
+        /// Stat scaling for a Reflection life: max health (endurance included) x(1 + HealthStep x life) and damage rating
+        /// + DamageRatingStep x life, from this weenie's own values. Starts at full health. Rewards scale at kill time
+        /// (ReflectionRewardMultiplier).
         /// </summary>
         private void ScaleForReflectionLife(int life)
         {
             var healthMult = 1.0 + (GetProperty(PropertyFloat.ReflectionHealthStep) ?? 0.0) * life;
             if (healthMult > 0 && healthMult != 1.0)
-                Health.StartingValue = (uint)Math.Clamp(Math.Round(Health.StartingValue * healthMult), 1, uint.MaxValue);
-            Health.Current = Health.MaxValue;
-
-            var rewardMult = 1.0 + (GetProperty(PropertyFloat.ReflectionRewardStep) ?? 0.0) * life;
-            if (rewardMult > 0 && rewardMult != 1.0)
             {
-                var xp = WeenieKillXp;
-                if (xp > 0)
-                {
-                    SetProperty(PropertyInt64.XpOverride64, (long)Math.Min(Math.Round(xp * rewardMult), MaxWeenieKillXp));
-                    RemoveProperty(PropertyInt.XpOverride);
-                }
-
-                var lum = LuminanceAward ?? 0;
-                if (lum > 0)
-                    LuminanceAward = (int)Math.Min(Math.Round(lum * rewardMult), int.MaxValue);
+                // Scale the full max health, endurance and ranks included (as ZoneSpawnScaler does): MaxValue moves
+                // one for one with StartingValue, so subtract the rest to land MaxValue on the target.
+                var maxBefore = (long)Health.MaxValue;
+                var target = (long)Math.Round(maxBefore * healthMult);
+                var nonStarting = maxBefore - Health.StartingValue;
+                Health.StartingValue = (uint)Math.Clamp(target - nonStarting, 1L, uint.MaxValue);
             }
+            Health.Current = Health.MaxValue;
 
             var ratingStep = GetProperty(PropertyInt.ReflectionDamageRatingStep) ?? 0;
             if (ratingStep != 0)
