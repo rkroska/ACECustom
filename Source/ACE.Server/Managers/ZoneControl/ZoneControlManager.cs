@@ -1247,6 +1247,20 @@ namespace ACE.Server.Managers.ZoneControl
             => GoverningZoneRef(player)?.Default;
 
         /// <summary>
+        /// The Default row of the zone that governs this creature - the same zone <see cref="ResolveForCreature"/> picks (exempt
+        /// wcids and generators included), but the zone-level row only: no rank row and no per-WCID bucket. For knobs that are
+        /// about the KILLER rather than the monster, so a Boss row or a wcid bucket can never re-tune them by accident (the
+        /// Prestige Coin falloff, 2026-11-01). Null when the creature is not governed. Lock-free snapshot read.
+        /// </summary>
+        public static EvaluatedProfile ResolveZoneDefaultRowForCreature(Creature creature)
+        {
+            if (IsZoneScalingExempt(creature))
+                return null;
+
+            return FindZoneRef(creature)?.Default;
+        }
+
+        /// <summary>
         /// The enabled zone that governs where this object stands, at its effective variation: most-specific wins (the zone
         /// with the fewest landblocks), as everywhere else. Null when no enabled zone covers the spot. Lock-free snapshot read.
         /// The one copy of the "governing zone" walk - the player gear caps, Zone Share and Bounty all go through it.

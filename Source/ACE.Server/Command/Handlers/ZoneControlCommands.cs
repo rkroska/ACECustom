@@ -3257,6 +3257,19 @@ namespace ACE.Server.Command.Handlers
               .Append(d.GraceSeconds.ToString(CultureInfo.InvariantCulture));
         }
 
+        /// <summary>"|pcoindefs=killsperhour,mult" - the Prestige Coin falloff SERVER settings (zc_pcoin_falloff_kills_per_hour /
+        /// zc_pcoin_falloff_mult, cleaned as the kill path cleans them), so the plugin can show what pcoin_falloff_kills_per_hour /
+        /// pcoin_falloff_mult fall back to when a zone or tier Default leaves them unset (2026-11-01). Fixed order = the pcoin_falloff_*
+        /// tail of ZoneStat.All. Sent LAST on both [[ZC]] and [[ZCSESS]]; an older plugin ignores the unknown key. APPEND-ONLY: the
+        /// plugin indexes this list positionally.</summary>
+        private static void AppendPcoinDefs(StringBuilder sb)
+        {
+            var d = TierRewardScale.ServerFalloff();
+            sb.Append("|pcoindefs=")
+              .Append(d.KillsPerHour.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(d.Mult.ToString(CultureInfo.InvariantCulture));
+        }
+
         /// <summary>REGION BOUNTIES (2026-10-07): "|regionbounty_vod=0|regionbountylist_vod=..." per region (same list format as
         /// zonebountylist). Sent LAST on both [[ZC]] and [[ZCSESS]]; an older plugin ignores the unknown keys. APPEND-ONLY.</summary>
         private static void AppendRegionBounty(StringBuilder sb)
@@ -3314,6 +3327,7 @@ namespace ACE.Server.Command.Handlers
             AppendProcAllow(sb);      // APPEND-ONLY (2026-10-06): the allowed proc spells, after the zone-wide bounty
             AppendRegionBounty(sb);   // APPEND-ONLY (2026-10-07): Valley of Death / Thaelaryn Island bounties, after the procs
             AppendCloakDefs(sb);      // APPEND-ONLY (2026-10-29): the T11+ cloak proc server defaults, after the region bounties
+            AppendPcoinDefs(sb);      // APPEND-ONLY (2026-11-01): the Prestige Coin falloff server defaults, after the cloak dials
             return sb.ToString();
         }
 
@@ -4066,6 +4080,7 @@ namespace ACE.Server.Command.Handlers
             AppendProcAllow(sb);
             AppendRegionBounty(sb);
             AppendCloakDefs(sb);
+            AppendPcoinDefs(sb);
             return sb.ToString();
         }
 

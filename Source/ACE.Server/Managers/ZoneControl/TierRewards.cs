@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Runtime.CompilerServices;
 
 using log4net;
 
+using ACE.Common;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
@@ -20,9 +23,13 @@ namespace ACE.Server.Managers.ZoneControl
     /// kill are untouched: a kill only pays when Zone Control governs the creature at T11 or higher. Bounties are separate
     /// and pay no coins from here.
     ///
-    /// The victim's thread only reads the kill (tier, top damager). Everything about the player - their own tier, the
-    /// fraction, the bank - is read and written on the player's own thread (LandblockManager.RunOnThreadFor), exactly as
-    /// BountyManager hands off its credit. No save is forced: the regular character save stores both properties.
+    /// The victim's thread only reads the kill (tier, top damager, the falloff numbers of the zone it died in). Everything about
+    /// the player - their own tier, the falloff count, the fraction, the bank - is read and written on the player's own thread
+    /// (LandblockManager.RunOnThreadFor), exactly as BountyManager hands off its credit. No save is forced: the regular character
+    /// save stores the properties.
+    ///
+    /// FALLOFF (2026-11-01): coins stay as they are up to a pace of zc_pcoin_falloff_kills_per_hour (375) full-value kills an
+    /// hour; every kill past that pace pays zc_pcoin_falloff_mult (0.5) of its coins. See TierRewardScale.Falloff.
     /// </summary>
     public static class TierRewards
     {
@@ -49,6 +56,9 @@ namespace ACE.Server.Managers.ZoneControl
                 if (!(zoneValue > 0))
                     return;
 
+                // the falloff numbers of the zone the kill happened in (its Default row, never a rank row or wcid bucket)
+                var falloff = TierRewardScale.FalloffFor(ZoneControlManager.ResolveZoneDefaultRowForCreature(victim));
+
                 // The ONLINE player, never the object the damage history remembers (a weak reference that can outlive a logout).
                 // Mules and Olthoi earn nothing here, as with bounties: they get no kill XP and Zone Share leaves them out too.
                 var attacker = victim.DamageHistory.TopDamager?.TryGetPetOwnerOrAttacker() as Player;
@@ -56,7 +66,7 @@ namespace ACE.Server.Managers.ZoneControl
                 if (player == null || !ReferenceEquals(player, attacker) || player.IsLoggingOut || player.IsMule || player.IsOlthoiPlayer)
                     return;
 
-                LandblockManager.RunOnThreadFor(player, ActionType.TierRewards_PrestigeCoins, () => CreditCoins(player, victim, killTier, zoneValue));
+                LandblockManager.RunOnThreadFor(player, ActionType.TierRewards_PrestigeCoins, () => CreditCoins(player, victim, killTier, zoneValue, falloff));
             }
             catch (Exception ex)
             {
@@ -64,8 +74,8 @@ namespace ACE.Server.Managers.ZoneControl
             }
         }
 
-        /// <summary>The player-thread half: apply the dip, carry the fraction, bank the whole coins.</summary>
-        private static void CreditCoins(Player player, Creature victim, int killTier, double zoneValue)
+        /// <summary>The player-thread half: apply the dip, run the falloff, carry the fraction, bank the whole coins.</summary>
+        private static void CreditCoins(Player player, Creature victim, int killTier, double zoneValue, TierRewardScale.FalloffDials falloff)
         {
             try
             {
@@ -75,7 +85,12 @@ namespace ACE.Server.Managers.ZoneControl
                     return;
 
                 var credit = TierRewardScale.CreditFor(player, killTier);
-                var earned = zoneValue * credit;
+                if (!(zoneValue * credit > 0))
+                    return;
+
+                // past the hourly pace a kill pays a share of its coins (a kill that pays nothing never reaches the count)
+                var paid = ApplyFalloff(player, credit, falloff);
+                var earned = zoneValue * paid;
                 if (!(earned > 0))
                     return;
 
@@ -99,6 +114,91 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 log.Error($"[TierRewards] CreditCoins for {player?.Name}: {ex}");
             }
+        }
+
+        // ---- Prestige Coin falloff (2026-11-01) -----------------------------------------------------------------------------
+
+        /// <summary>Least time between two "past the pace" messages to one character, in seconds, so a player who hovers around
+        /// the pace is not told on every pull.</summary>
+        private const double FalloffNoticeQuietSeconds = 600;
+
+        /// <summary>Least time with no cut kill before a player who was told about the falloff is told they pay in full again, in
+        /// seconds. The real wait is the longer of this and the falloff window (288 s at the defaults), so a player pulling in
+        /// packs above the pace is not told "full again" between every pull.</summary>
+        private const double FalloffFullAgainMinSeconds = 60;
+
+        /// <summary>Per online character, never saved: whether their coin kills are being cut, when the last cut was, and
+        /// whether they were told.</summary>
+        private sealed class FalloffNotice
+        {
+            public bool Cut;
+            public double LastCut;
+            public bool Told;
+            public double QuietUntil;
+        }
+
+        /// <summary>Keyed weakly on the Player object, so a logged-out character's entry goes with it.</summary>
+        private static readonly ConditionalWeakTable<Player, FalloffNotice> falloffNotices = new();
+
+        /// <summary>
+        /// This kill through the falloff, on the player's own thread. Reads and saves how far ahead of the pace they are
+        /// (PropertyFloat.PrestigeCoinPaceDebt / PrestigeCoinPaceDebtTime, in seconds - saved, so relogging never empties it,
+        /// and time offline drains it; see TierRewardScale.FalloffOnDebt). Tells them when their kills start paying less and
+        /// when they pay in full again. Returns the credit to pay coins on (= <paramref name="credit"/> while under the pace).
+        /// </summary>
+        private static double ApplyFalloff(Player player, double credit, TierRewardScale.FalloffDials dials)
+        {
+            // No falloff where this kill happened: full pay, and the saved count is left exactly as it was. Emptying it here
+            // would let one kill in a no-falloff zone hand back the whole reserve.
+            if (!(dials.KillsPerHour > 0))
+                return credit;
+
+            var now = Time.GetUnixTime();
+            var debt = player.GetProperty(PropertyFloat.PrestigeCoinPaceDebt) ?? 0;
+            var last = player.GetProperty(PropertyFloat.PrestigeCoinPaceDebtTime);
+            var elapsed = last.HasValue ? now - last.Value : 0.0;
+
+            var (paid, newDebt, reduced) = TierRewardScale.FalloffOnDebt(debt, elapsed, credit, dials);
+
+            if (newDebt > 0)
+            {
+                player.SetProperty(PropertyFloat.PrestigeCoinPaceDebt, newDebt);
+                player.SetProperty(PropertyFloat.PrestigeCoinPaceDebtTime, now);
+            }
+            else
+            {
+                player.RemoveProperty(PropertyFloat.PrestigeCoinPaceDebt);
+                player.RemoveProperty(PropertyFloat.PrestigeCoinPaceDebtTime);
+            }
+
+            var notice = falloffNotices.GetValue(player, _ => new FalloffNotice());
+            var pace = dials.KillsPerHour.ToString("0.#", CultureInfo.InvariantCulture);
+
+            if (reduced)
+            {
+                notice.Cut = true;
+                notice.LastCut = now;
+
+                // checked on every cut kill, so a message held back by the quiet time still goes out if the cut outlasts it
+                if (!notice.Told && now >= notice.QuietUntil)
+                {
+                    notice.Told = true;
+                    notice.QuietUntil = now + FalloffNoticeQuietSeconds;
+                    var pct = (dials.Mult * 100).ToString("0.#", CultureInfo.InvariantCulture);
+                    player.SendMessage($"You are past {pace} kills an hour: kills past that pace pay {pct} pct of their Prestige Coins until you slow back down.", ChatMessageType.Broadcast);
+                }
+            }
+            else if (notice.Cut && now - notice.LastCut >= Math.Max(FalloffFullAgainMinSeconds, dials.WindowSeconds))
+            {
+                notice.Cut = false;
+                if (notice.Told)
+                {
+                    notice.Told = false;
+                    player.SendMessage($"Your kill pace is back under {pace} an hour: Prestige Coins from your kills pay in full again.", ChatMessageType.Broadcast);
+                }
+            }
+
+            return paid;
         }
 
         // ---- kill-task credit (T11+ Zone Control kills only) ---------------------------------------------------------------
