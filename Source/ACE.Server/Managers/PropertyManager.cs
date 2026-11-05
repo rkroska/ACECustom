@@ -1083,6 +1083,16 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> zc_pcoin_kill_base { get; private set; } = new(0.05, "PRESTIGE COINS PER KILL: coins a T11 Zone Control kill banks for the top damager (or a pet's owner) before the tier dip - 0.05 = one coin per 20 kills. Fractions carry over on the character. 0 = off.");
         public static ConfigProperty<double> zc_pcoin_kill_tier_step { get; private set; } = new(1.20, "PRESTIGE COINS PER KILL: each zone tier above T11 is worth this much more per kill than the tier below it (1.20 = +20 pct per tier: T12 0.060, T13 0.072 at a 0.05 base).");
 
+        // PRESTIGE COIN FALLOFF (2026-11-01): coins per kill stay as they are up to a pace of N kills an hour; every kill past that
+        // pace pays a share of its coins. Counted per character in full-value kills (a below-tier kill counts as its tier-dip credit),
+        // one count across every zone and tier: each kill adds to a small reserve that drains at N an hour, and a kill that finds the
+        // reserve full pays zc_pcoin_falloff_mult of its coins. The Zone Control stats pcoin_falloff_kills_per_hour /
+        // pcoin_falloff_mult re-tune the first two per zone or tier Default, read where the kill happens. Read live. See
+        // TierRewardScale.Falloff / TierRewards.
+        public static ConfigProperty<double> zc_pcoin_falloff_kills_per_hour { get; private set; } = new(375.0, "PRESTIGE COIN FALLOFF: kills an hour a character can make at the full Prestige Coin rate (a kill below their own tier counts as its tier-dip credit); every kill past that pace pays zc_pcoin_falloff_mult of its coins. 0 = no falloff. A zone or tier Default can re-tune it with the Zone Control stat pcoin_falloff_kills_per_hour.");
+        public static ConfigProperty<double> zc_pcoin_falloff_mult { get; private set; } = new(0.5, "PRESTIGE COIN FALLOFF: share of its normal Prestige Coins a kill pays once the character is past zc_pcoin_falloff_kills_per_hour (0.5 = 50 pct, 1 = no falloff, 0 = nothing). A zone or tier Default can re-tune it with the Zone Control stat pcoin_falloff_mult.");
+        public static ConfigProperty<double> zc_pcoin_falloff_reserve { get; private set; } = new(30.0, "PRESTIGE COIN FALLOFF: how many kills ahead of the hourly pace a character can get before the falloff starts (30 = about 5 minutes at 375 an hour). The pace is judged over that window: a pull of more kills than this pays the falloff on the extra kills even when the hour's average is under the pace. Set it to the pace itself (375) to judge over a whole hour. A zone with its own pace gets the same number of minutes. Never below 1.");
+
         // KILL-TASK CREDIT ON T11+ ZONE KILLS (owner 2026-10-24, locked): only for monsters Zone Control governs at T11+ - every other kill keeps
         // the stock kill-task code. Taggers get a full kill, non-damaging fellowship / Zone Share sharers the fellowship share, everyone x their
         // own tier-dip credit; progress is decimal and saved on the character (PropertyString.KillTaskFractions). See TierRewards.
