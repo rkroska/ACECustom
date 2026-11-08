@@ -35,6 +35,7 @@ namespace ACE.Server.WorldObjects
         public readonly object LeechLock = new object();
         public readonly long[] LeechBucketSlot = new long[ZoneFellowshipManager.Buckets];
         public readonly double[] LeechBucketDamage = new double[ZoneFellowshipManager.Buckets];
+        public string LeechBucketKey;   // the area the buckets count for (CodeRabbit #596): damage in another area starts them over
         public double LeechWarnedAt;
         public string ZoneFellowBarredKey;
         public string ZoneFellowFullKey;   // the area fellowship this player was last told is full (fellowship_max_size)

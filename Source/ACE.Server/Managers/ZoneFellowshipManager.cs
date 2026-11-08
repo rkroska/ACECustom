@@ -120,6 +120,7 @@ namespace ACE.Server.Managers
 
         private static Dictionary<string, Area> _areas;                 // lower-case name -> area; guarded by _lock
         private static volatile Dictionary<ushort, Area[]> _byLandblock = new();   // published copies, read lock-free
+        private static volatile Dictionary<string, Area> _byKey = new();           // the same copies by key, read lock-free
 
         // review 2026-11-06: a failed first read used to be cached as "no areas", and the next panel list (EnsureDungeonAreas) saved
         // that over every stored area. Now it is read again at most every 30 s, and nothing is saved until a read works
@@ -160,17 +161,24 @@ namespace ACE.Server.Managers
             return _areas;
         }
 
-        /// <summary>Rebuild the landblock index from the areas (call under _lock).</summary>
+        /// <summary>Rebuild the landblock and key indexes from the areas (call under _lock). Both hold the same published copies, which
+        /// are never changed after this - an edit publishes new ones.</summary>
         private static void Publish()
         {
             var index = new Dictionary<ushort, List<Area>>();
+            var byKey = new Dictionary<string, Area>();
             foreach (var a in _areas.Values)
-                foreach (var lb in a.Landblocks.Distinct())
+            {
+                var copy = a.Clone();
+                byKey[copy.Key] = copy;
+                foreach (var lb in copy.Landblocks.Distinct())
                 {
                     if (!index.TryGetValue(lb, out var l)) index[lb] = l = new List<Area>();
-                    l.Add(a.Clone());
+                    l.Add(copy);
                 }
+            }
             _byLandblock = index.ToDictionary(kv => kv.Key, kv => kv.Value.OrderBy(a => a.Landblocks.Count).ToArray());
+            _byKey = byKey;
         }
 
         private static readonly object _saveLock = new object();
@@ -209,11 +217,13 @@ namespace ACE.Server.Managers
                 return Areas().Values.OrderBy(a => a.Name).Select(a => a.Clone()).ToList();
         }
 
-        /// <summary>A copy of the area with this key ("af:<name>"), or null.</summary>
+        /// <summary>The published copy of the area with this key ("af:<name>"), or null. READ ONLY - it is shared. Lock-free (CodeRabbit
+        /// #596, 2026-11-07): every area kill (DropLeeches) and every member's 2 s tick (IsBarred) used to queue on _lock and clone.</summary>
         public static Area AreaByKey(string key)
         {
-            lock (_lock)
-                return Areas().Values.FirstOrDefault(a => a.Key == key)?.Clone();
+            if (key == null) return null;
+            if (_areas == null || (_loadFailed && DateTime.UtcNow >= _retryLoadAt)) lock (_lock) Areas();
+            return _byKey.TryGetValue(key, out var a) ? a : null;
         }
 
         /// <summary>The enabled area covering a spot (landblock + layer), most specific first; null when none.</summary>
@@ -252,11 +262,7 @@ namespace ACE.Server.Managers
             return (area.Key, area.ShownName);
         }
 
-        public static bool IsBarred(string key, uint guid)
-        {
-            lock (_lock)
-                return Areas().Values.FirstOrDefault(a => a.Key == key)?.Barred.ContainsKey(guid) ?? false;
-        }
+        public static bool IsBarred(string key, uint guid) => AreaByKey(key)?.Barred.ContainsKey(guid) ?? false;
 
         // ------------------------------------------------------------------------------------------------------------------
         // The tick: join / leave / rename
@@ -479,33 +485,48 @@ namespace ACE.Server.Managers
         private static readonly Dictionary<string, Dictionary<uint, (string Name, int Cuts, double Last)>> _cuts = new();
 
         /// <summary>
-        /// Damage a player (or their pet) did to a monster: counted toward their share of their area fellowship's damage. Only
-        /// while they are in one - nothing else reads it. Called from DamageHistory.Add (melee, missile, spells, DoT ticks).
+        /// Damage a player (or their pet) did to a monster: counted toward their share of their area fellowship's damage. Only damage
+        /// done INSIDE that fellowship's own area counts (CodeRabbit #596, owner 2026-11-07 "Fix both"): not damage elsewhere, not in
+        /// the 2-minute leave grace, not in another area. The buckets count for one area at a time - damage in a different area
+        /// starts them over, so damage done in area A never counts in area B. Called from DamageHistory.Add (melee, missile,
+        /// spells, DoT ticks).
         /// </summary>
         public static void RecordDamage(WorldObject attacker, uint amount)
         {
             var player = attacker as Player ?? (attacker as CombatPet)?.P_PetOwner;
-            if (player?.Fellowship?.ZoneKey == null || amount == 0)
+            var key = player?.Fellowship?.ZoneKey;
+            if (key == null || amount == 0 || player.AutoFellowAreaKey != key)   // the area key = the area they stand in (2 s tick)
                 return;
             var slot = (long)(Time.GetUnixTime() / BucketSeconds);
             lock (player.LeechLock)
             {
+                if (player.LeechBucketKey != key)
+                {
+                    Array.Clear(player.LeechBucketSlot);
+                    Array.Clear(player.LeechBucketDamage);
+                    player.LeechBucketKey = key;
+                }
                 var i = (int)(slot % Buckets);
                 if (player.LeechBucketSlot[i] != slot) { player.LeechBucketSlot[i] = slot; player.LeechBucketDamage[i] = 0; }
                 player.LeechBucketDamage[i] += amount;
             }
         }
 
-        /// <summary>A player's damage over the last <paramref name="minutes"/> (rolling, 20 s steps).</summary>
-        public static double RollingDamage(Player player, int minutes)
+        /// <summary>A player's damage over the last <paramref name="minutes"/> (rolling, 20 s steps) inside the area <paramref name="key"/>
+        /// (null = the area the buckets count for now); 0 when the buckets count for another area.</summary>
+        public static double RollingDamage(Player player, int minutes, string key = null)
         {
             var now = (long)(Time.GetUnixTime() / BucketSeconds);
             var oldest = now - Math.Clamp(minutes, 1, MaxWindowMinutes) * 60 / BucketSeconds + 1;
             double sum = 0;
             lock (player.LeechLock)
+            {
+                if (key != null && player.LeechBucketKey != key)
+                    return 0;
                 for (var i = 0; i < Buckets; i++)
                     if (player.LeechBucketSlot[i] >= oldest && player.LeechBucketSlot[i] <= now)
                         sum += player.LeechBucketDamage[i];
+            }
             return sum;
         }
 
@@ -526,7 +547,7 @@ namespace ACE.Server.Managers
             double total = 0;
             foreach (var m in fellowship.GetFellowshipMembers().Values)
             {
-                var d = RollingDamage(m, area.LeechWindowMinutes);
+                var d = RollingDamage(m, area.LeechWindowMinutes, fellowship.ZoneKey);
                 damage[m.Guid.Full] = d;
                 total += d;
             }
@@ -899,7 +920,12 @@ namespace ACE.Server.Managers
                         var who = string.Join(" ", rest).Trim();
                         if (who.Length == 0) { lines.Add($"Usage: afarea {a.Name} {op} <character name>"); return lines; }
                         uint guid = 0; string shown = who;
-                        if (uint.TryParse(who, out var g)) { guid = g; shown = a.Barred.TryGetValue(g, out var n) ? n : who; }
+                        if (uint.TryParse(who, out var g))
+                        {
+                            // by id (the panel's Leechers list sends one): the character's name, never the digits (panel review 2026-11-07)
+                            var byId = a.Barred.TryGetValue(g, out var n) ? n : PlayerManager.FindByGuid(g)?.Name;
+                            if (byId != null) { guid = g; shown = byId; }
+                        }
                         else
                         {
                             var found = PlayerManager.FindByName(who);
