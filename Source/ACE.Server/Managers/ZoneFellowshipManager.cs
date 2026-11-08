@@ -268,6 +268,9 @@ namespace ACE.Server.Managers
                 return;
             player.ZoneFellowNextTick = now + TickSeconds;
 
+            if (!_builtInsMade && DateTime.UtcNow >= _builtInsNextTry)
+                EnsureBuiltIns();
+
             // a portal or a death keeps the fellowship as it is - the next look decides. In portal space they are in no area for the
             // share rule (review 2026-11-06: a member who recalled out kept full shares while the old key stood)
             if (player.Teleporting)
@@ -638,22 +641,54 @@ namespace ACE.Server.Managers
                     areas[name.ToLowerInvariant()] = new Area { EvenSplit = true, Name = name, Landblocks = new List<ushort> { d.Landblock }, Layers = new List<int> { d.Variation }, Dungeon = true };
                     added++;
                 }
-                // owner 2026-11-05 ("Just add them to the list uptop. Dont allow these 3 areas to be deleted"): Tou Tou, T10 and
-                // VoD are made here too (off) and can never be deleted
-                foreach (var (name, layers, src) in BuiltIns())
-                {
-                    if (areas.ContainsKey(name.ToLowerInvariant()) || src == null) continue;
-                    var lbs = src.Distinct().ToList();
-                    if (lbs.Count == 0) continue;
-                    areas[name.ToLowerInvariant()] = new Area { EvenSplit = true, Name = name, Landblocks = lbs, Layers = layers };
-                    added++;
-                }
+                added += AddMissingBuiltIns(areas);
                 if (added > 0)
                 {
                     Save();
-                    log.Info($"[AutoFellow] {added} Vaulted Dungeon / built-in area(s) made (off).");
+                    log.Info($"[AutoFellow] {added} Vaulted Dungeon / built-in area(s) made.");
                 }
             }
+        }
+
+        // the built-ins are made by the tick too, not only on a panel list (2026-11-07: a fresh shard had no Tou Tou area, so it
+        // could not start on). Tried at most every 30 s until all three exist - Tou Tou waits for its Zone Control zone to load
+        private static volatile bool _builtInsMade;
+        private static DateTime _builtInsNextTry;
+
+        private static void EnsureBuiltIns()
+        {
+            lock (_lock)
+            {
+                if (_builtInsMade || DateTime.UtcNow < _builtInsNextTry) return;
+                _builtInsNextTry = DateTime.UtcNow.AddSeconds(30);
+                var areas = Areas();
+                if (_loadFailed) return;   // never save over areas that could not be read
+                var added = AddMissingBuiltIns(areas);
+                if (added > 0)
+                {
+                    Save();
+                    log.Info($"[AutoFellow] {added} built-in area(s) made.");
+                }
+                _builtInsMade = BuiltInNames.All(n => areas.ContainsKey(n.ToLowerInvariant()));
+            }
+        }
+
+        /// <summary>Make any built-in area that does not exist yet (call under _lock; the caller saves). Owner 2026-11-05 ("Just add
+        /// them to the list uptop. Dont allow these 3 areas to be deleted"): Tou Tou, T10 and VoD always exist. Owner 2026-11-07
+        /// ("The T11-T15 start on by default"): Tou Tou T11-T15 is made ON; T10 and VoD are made off. Only when an area is first
+        /// made - one an admin switched off stays off.</summary>
+        private static int AddMissingBuiltIns(Dictionary<string, Area> areas)
+        {
+            var added = 0;
+            foreach (var (name, layers, src) in BuiltIns())
+            {
+                if (areas.ContainsKey(name.ToLowerInvariant()) || src == null) continue;
+                var lbs = src.Distinct().ToList();
+                if (lbs.Count == 0) continue;
+                areas[name.ToLowerInvariant()] = new Area { EvenSplit = true, Name = name, Landblocks = lbs, Layers = layers, Enabled = name == BuiltInNames[0] };
+                added++;
+            }
+            return added;
         }
 
         /// <summary>The areas that always exist and cannot be deleted (owner 2026-11-05): Tou Tou (its Zone Control zone, variants
