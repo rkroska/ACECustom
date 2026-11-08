@@ -461,6 +461,10 @@ namespace ACE.Entity.Enum.Properties
         /// Server-only - not an assessment property. Numbered beside the other Room Assign properties (50500-50502).</summary>
         RoomAssignZoneShare = 50503,
 
+        /// <summary>Auto fellowship (owner 2026-11-05): on a PLAYER, /autofellow off - they do not join the fellowship of an
+        /// Auto Fellow area they walk into (ZoneFellowshipManager). Absent / false = on, the default. Server-only.</summary>
+        AutoFellowOff = 50504,
+
         /// <summary>Salvage Bags (2026-10-02, code name Gear Essences): a Bag of Madness was used on this item; no bag works
         /// on it again. Server-only - not an assessment property.</summary>
         GearEssenceTainted = 51000,

@@ -140,7 +140,7 @@ namespace ACE.Server.Command.Handlers
             + "appearance <name> <palette|shade|scale|translucency|shiny|setup|clothing|palettebase|motion|sound|icon> <value> [--wcid <id>] | clearappearance <name> [field] [--wcid <id>] | copylook <name> <donorWcid> [--wcid <id>] | draftslot <name> [release] | copydraft <name> <destWcid> | becomemob <donorWcid> --wcid <id> | seticon <wcid> <iconDid|clear> [layer] | "
             + "modifier <name> <add|remove|list|catalog|band|slots|special|chance> [args] [--wcid <id>] | "
             + "currency <name> <add|remove|list> [itemWcid] [amount] [chance] [direct|corpse] [--wcid <id>] | "
-            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | bounty <name> <show|on|off|add|set|remove> | zonebounty <show|on|off|add|set|remove> | regionbounty <vod|t10> <show|on|off|add|set|remove> | procallow [list|add|remove] <spell id> | gearlock [list|here|add|remove] | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
+            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | afarea <list|create|delete|<area> ...> (Auto Fellow areas) | bounty <name> <show|on|off|add|set|remove> | zonebounty <show|on|off|add|set|remove> | regionbounty <vod|t10> <show|on|off|add|set|remove> | procallow [list|add|remove] <spell id> | gearlock [list|here|add|remove] | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
             + "mobinfo <wcid> | geninfo <wcid> | genlist [zone] | genedit <wcid> delay|radius|stagger|init|max <value> | "
             + "craft <material> <itemtype> auto|allow|deny | craft list|get|test|enabled|mintier|components | "
             + "effect <name> [dot on|off | dmg <amount> | type <name|percent> | interval <secs>] | reload")]
@@ -276,6 +276,18 @@ namespace ACE.Server.Command.Handlers
                         Msg("Zone Control store reloaded from shard.");
                         return;
 
+                    case "afarea":
+                    {
+                        // Auto Fellow areas (owner 2026-11-05): any group of landblocks or a dungeon, on chosen layers - its own data
+                        // (ZoneFellowshipManager), apart from zones and Zone Share. Every verb answers in chat; list also sends the
+                        // panel's [[ZCAF]] line.
+                        foreach (var line in ZoneFellowshipManager.Command(session?.Player, session?.AccessLevel ?? AccessLevel.Admin, args.Skip(1).ToList()))
+                            Msg(line);
+                        if (session != null && !ZoneFellowshipManager.LoadFailed)   // unread: no empty list that looks like "no areas"
+                            SendChunked(session, ZoneFellowshipManager.AreasWire());
+                        return;
+                    }
+
                     case "arealist":
                     {
                         // Machine-parseable zone list for the plugin dropdown: name,enabled,variation,lbCount,bounded,zoneshare,zsharen
@@ -302,6 +314,10 @@ namespace ACE.Server.Command.Handlers
                         // Chunked (review 2026-09-24): with every zone's rewards on it the line can pass the chat-line size
                         // that stalls the client; the plugin reassembles [[ZC+]] pieces into the one [[ZCA]] line.
                         SendChunked(session, sb.ToString());
+                        if (!ZoneFellowshipManager.LoadFailed)   // unread (review 2026-11-06): no empty list that looks like "no areas"
+                            SendChunked(session, ZoneFellowshipManager.AreasWire());   // the Auto Fellow page (2026-11-05)
+                        else
+                            Msg("The Auto Fellow areas could not be read from the database - none are active (see the server log).");
                         return;
                     }
 

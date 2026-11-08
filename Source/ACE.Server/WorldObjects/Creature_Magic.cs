@@ -40,7 +40,8 @@ namespace ACE.Server.WorldObjects
             {
                 var numFellows = 1;
                 if (this is Player player && player.Fellowship != null)
-                    numFellows = player.Fellowship.FellowshipMembers.Count;
+                    numFellows = player.Fellowship.ZoneKey != null ? player.Fellowship.SpellTargets(player).Count   // only those it lands on
+                        : player.Fellowship.FellowshipMembers.Count;
 
                 baseCost += spell.ManaMod * (uint)numFellows;
             }

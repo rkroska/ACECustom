@@ -1444,7 +1444,7 @@ namespace ACE.Server.WorldObjects
         public List<Player> GetFellowshipTargets()
         {
             if (Fellowship != null)
-                return Fellowship.GetFellowshipMembers().Values.ToList();
+                return Fellowship.SpellTargets(this);   // an area fellowship: this landblock and layer only (owner 2026-11-06)
             else
                 return new List<Player>() { this };
         }

@@ -27,7 +27,7 @@ namespace ACE.Server.Command.Handlers
 
         private static readonly ConcurrentDictionary<uint, DateTime> lastFshipListUsage = [];
 
-        public static readonly int MaxFellows = 29;
+        public static int MaxFellows => Fellowship.MaxFellows;   // the live fellowship_max_size (owner 2026-11-05), for "fship list"
 
         static PlayerCommands()
         {
@@ -136,6 +136,44 @@ namespace ACE.Server.Command.Handlers
             return list;
         }
 
+        /// <summary>Auto fellowship (owner 2026-11-05): on by default - in an area with an auto fellowship you are put in it.</summary>
+        [CommandHandler("autofellow", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Join an area's auto fellowship automatically (on by default)", "[on | off]")]
+        public static void HandleAutoFellow(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+            var arg = parameters != null && parameters.Length > 0 ? parameters[0].ToLowerInvariant() : "";
+
+            if (arg == "on" || arg == "off")
+            {
+                // "on" once every 10 s (review 2026-11-06: an off / on macro was a leave + join that every member is told about);
+                // "off" always works - the way out
+                var wait = 10 - (DateTime.UtcNow - player.ZoneFellowToggledAt).TotalSeconds;
+                if (arg == "on" && wait > 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Wait {Math.Ceiling(wait):0} s before switching auto fellowship again.", ChatMessageType.Broadcast));
+                    return;
+                }
+                player.ZoneFellowToggledAt = DateTime.UtcNow;
+                var off = arg == "off";
+                player.SetProperty(PropertyBool.AutoFellowOff, off);
+                player.ZoneFellowSkipKey = null;
+                if (off)
+                    ZoneFellowshipManager.Leave(player);
+                else
+                    player.ZoneFellowNextTick = 0;   // look now
+                session.Network.EnqueueSend(new GameMessageSystemChat(off
+                    ? "Auto fellowship is OFF: you stay out of area fellowships and keep your own."
+                    : "Auto fellowship is ON: in an area with an auto fellowship you join it (leaving your own).", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var inZone = player.Fellowship?.ZoneKey != null;
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                $"Auto fellowship is {(ZoneFellowshipManager.IsOn(player) ? "ON" : "OFF")}"
+                + (inZone ? $" - you are in the {player.Fellowship.FellowshipName} fellowship ({player.Fellowship.FellowshipMembers.Count} members)." : ".")
+                + " Use /autofellow on or /autofellow off.", ChatMessageType.Broadcast));
+        }
+
         [CommandHandler("fship", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Commands to handle fellowships aside from the UI", "")]
         public static void HandleFellowCommand(Session session, params string[] parameters)
         {
@@ -204,12 +242,12 @@ namespace ACE.Server.Command.Handlers
 
                 if (parameters[0] == "leave")
                 {
-                    session.Player.Fellowship.QuitFellowship(session.Player, false);
+                    session.Player.FellowshipQuit(false);   // the zone fellowship's "left by hand" rule (2026-11-05)
                     return;
                 }
                 if (parameters[0] == "disband")
                 {
-                    session.Player.Fellowship.QuitFellowship(session.Player, true);
+                    session.Player.FellowshipQuit(true);
                     return;
                 }
                 if (parameters[0] == "add")
