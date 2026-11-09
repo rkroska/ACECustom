@@ -660,7 +660,8 @@ namespace ACE.Server.WorldObjects
                        + (b.CountAt("maxtargets", lv) > 0 ? $" (at most {b.CountAt("maxtargets", lv)} in all)" : "")
                        + $", within {M(b.At("range", lv))}, "
                        + (b.At("angle", lv) >= 359.5 ? "all around you." : $"in a {b.At("angle", lv):0} degree arc in front of you.")
-                       + (b.At("bonus", lv) > 0 ? $" Your {(b.On("twohandedonly") ? "two-handed" : "melee")} hits on monsters deal {Pct(b.At("bonus", lv))} more damage." : ""),
+                       + (b.At("bonus", lv) > 0 ? $" Your {(b.On("twohandedonly") ? "two-handed" : "melee")} hits on monsters deal {Pct(b.At("bonus", lv))} more damage." : "")
+                       + (b.At("cleavebonus", lv) > 0 ? $" Monsters you cleave take {Pct(b.At("cleavebonus", lv))} more damage on top." : ""),
             // owner 2026-10-21 (Schneebly): the two-hander is the pack clearer - added targets, a wider arc, full damage,
             // and melee reach (2 m -> 5 m), not the 10-15 m that made cleave hit half the room
             CharmSettingDef.Count("targets", 0, 10, 1, 5, "Extra monsters a swing cleaves ON TOP of the weapon's own cleave.").Sched(steps: "25:1,50:1,75:1,100:1"),
@@ -673,6 +674,9 @@ namespace ACE.Server.WorldObjects
             // owner 2026-10-25: the two-hander's own damage bonus, like Shield Arc's - on EVERY hit (the main target too), so 2H can
             // be tuned without moving every melee style's zone dial. Off (0) until set.
             CharmSettingDef.Number("bonus", 0, 5, 0, 0, "Extra damage of every melee hit on a monster while the charm is on, main target and cleaved ones alike, as a fraction (0.3 = +30 pct). Two-handed hits only while twohandedonly is on, every eligible melee hit when it is off. 0 = none."),
+            // owner 2026-11-09 (Schneebly): one-handers cleave too, so the two-hander needs a clear edge on the hits it spreads -
+            // a bonus on every cleaved hit (the weapon's own and the charm's), added to 'bonus'. Off (0) until set.
+            CharmSettingDef.Number("cleavebonus", 0, 5, 0, 0, "Extra damage of every CLEAVED hit on a monster (the weapon's own cleave and the charm's), as a fraction added to 'bonus' (0.4 = +40 pct). The main target never gets it. 0 = none."),
             CharmSettingDef.Switch("twohandedonly", true, "Only two-handed weapons get the charm. Off = every T11+ melee weapon (dual wield and sword and shield too)."),
             CharmSettingDef.Switch("los", true, "A cleaved monster must be in sight (no cleaving through walls)."),
             CharmSettingDef.Switch("t11only", true, T11OnlyHelp),
@@ -698,11 +702,15 @@ namespace ACE.Server.WorldObjects
             "Your shield guards a wider arc against monster melee and missile attacks: from the front half (180 degrees, everybody's shield) up to all around you. Your melee hits on monsters also deal more damage while a shield is in hand.",
             (b, lv) => $"Your {Gear(b, "shield")} guards you against monster attacks "
                        + (b.At("angle", lv) >= 359.5 ? "from every direction" : $"in a {b.At("angle", lv):0} degree arc in front of you")
-                       + (b.At("damage", lv) > 0 ? $", and your melee hits on monsters deal {Pct(b.At("damage", lv))} more damage." : "."),
+                       + (b.At("damage", lv) > 0 ? $", and your melee hits on monsters deal {Pct(b.At("damage", lv))} more damage" : "")
+                       + (b.At("damage", lv) > 0 && b.At("cleaveshare", lv) < 1 ? (b.At("cleaveshare", lv) <= 0 ? " (not on monsters you cleave)." : $" ({Pct(b.At("damage", lv) * b.At("cleaveshare", lv))} on monsters you cleave).") : "."),
             CharmSettingDef.Number("angle", 0, 360, 200, 360, "Arc in degrees, centred on where you face, in which the shield works against a monster's melee or missile hit (180 = everybody's shield; 360 = all around)."),
             // owner 2026-10-22: one-hander and shield cleared a T15 pack in ~135 s against ~33 s for a two-hander - the
             // shield style's own damage bonus, so it can be tuned without moving every melee style's zone dial
             CharmSettingDef.Number("damage", 0, 5, 0.35, 1.35, "Extra damage of a melee hit on a monster while a shield is in hand, as a fraction (0.5 = +50 pct). 0 = none."),
+            // owner 2026-11-09 (Schneebly): a one-hander with a Cleave card cleaves too - the shield's bonus is for the main
+            // target (single target + survival), the two-hander owns damage spread over a pack. 1 = today, 0 = main target only.
+            CharmSettingDef.Number("cleaveshare", 0, 1, 1, 1, "Share of 'damage' that a CLEAVED hit gets (1 = the full bonus, 0.5 = half, 0 = none: the main target only). Cleaved hits never drop below a normal hit."),
             CharmSettingDef.Switch("t11only", true, "Needs a T11+ shield in hand. Off = any shield."),
             CoinBase(), CoinGrowth());
 

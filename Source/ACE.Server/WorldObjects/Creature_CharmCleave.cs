@@ -35,7 +35,8 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// The Improved Cleave charm's damage bonus (owner 2026-10-25, mirrors ShieldArcDamageMod): a player's two-handed melee hit
-        /// on a monster - the main target and every cleaved one - deals 1 + bonus times as much. 1 when the charm does not apply:
+        /// on a monster - the main target and every cleaved one - deals 1 + bonus times as much, and a cleaved hit 'cleavebonus'
+        /// more on top (owner 2026-11-09: the two-hander's edge over a cleaving one-hander). 1 when the charm does not apply:
         /// PvP, not melee, no charm, switched off, not two-handed (twohandedonly), below T11 (t11only), or a bonus of 0.
         /// </summary>
         public float ImprovedCleaveDamageMod(WorldObject weapon, Creature defender)
@@ -57,8 +58,17 @@ namespace ACE.Server.WorldObjects
             if (level < 1)
                 return 1f;
 
-            var bonus = cs.NumberAt("bonus", level);
-            return float.IsFinite(bonus) ? 1f + Math.Clamp(bonus, 0f, 5f) : 1f;
+            return ImprovedCleaveHitMod(cs.NumberAt("bonus", level), cs.NumberAt("cleavebonus", level), DealingCleavedHit);
+        }
+
+        /// <summary>The Improved Cleave multiplier for one hit (owner 2026-11-09): 1 + bonus on every hit, + cleavebonus on a cleaved
+        /// one. Each part held to 0..5; a part that is not a number counts as 0.</summary>
+        public static float ImprovedCleaveHitMod(float bonus, float cleaveBonus, bool cleavedHit)
+        {
+            var mod = 1f + (float.IsFinite(bonus) ? Math.Clamp(bonus, 0f, 5f) : 0f);
+            if (cleavedHit && float.IsFinite(cleaveBonus))
+                mod += Math.Clamp(cleaveBonus, 0f, 5f);
+            return mod;
         }
 
         /// <summary>
@@ -100,5 +110,9 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>Set by the melee path only while it deals one cleaved hit; DamageEvent scales that hit by it.</summary>
         internal float? PendingCleaveDamageScale;
+
+        /// <summary>True while the melee path deals one cleaved hit (any cleave: the weapon's own or the charm's). The charm
+        /// damage mods read it: Shield Arc's cleaveshare and Improved Cleave's cleavebonus.</summary>
+        internal bool DealingCleavedHit;
     }
 }
