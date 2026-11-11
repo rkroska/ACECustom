@@ -415,7 +415,8 @@ namespace ACE.Server.Entity
 
         private static readonly Regex CamelSplit = new Regex("(?<=[a-z])(?=[A-Z])", RegexOptions.Compiled);
 
-        private static string SpeciesName(CreatureType species) => CamelSplit.Replace(species.ToString(), " ");
+        /// <summary>A species as players read it: "GearKnight" -> "Gear Knight" (also the item bounties' fallback target name).</summary>
+        internal static string SpeciesName(CreatureType species) => CamelSplit.Replace(species.ToString(), " ");
 
         // -- entry point -------------------------------------------------------------------------
 

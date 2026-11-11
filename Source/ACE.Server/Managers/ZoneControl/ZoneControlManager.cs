@@ -217,6 +217,17 @@ namespace ACE.Server.Managers.ZoneControl
             /// Thaelaryn Island (T10) - keyed by BountyRegions' key. Absent = off.</summary>
             public Dictionary<string, BountyConfig> RegionBounties { get; set; } = new();
 
+            /// <summary>ITEM BOUNTY REWARD TABLES (owner 2026-11-10): named, weighted tables MYSTERY bounties roll from when they
+            /// are done (/zonecontrol bountytable). Absent / empty = none (a mystery bounty can't be applied until its table
+            /// exists).</summary>
+            public Dictionary<string, BountyRewardTable> BountyRewardTables { get; set; } = new();
+
+            /// <summary>ITEM BOUNTY DROP WEIGHTS PER PLACE (owner 2026-11-10): per bounty weenie (WCID), its live weight in each
+            /// place's pool and its off switch (/zonecontrol bountyweight) - see <see cref="BountyPlaceWeights"/>. Absent = the
+            /// weenie's own ItemBountyDropWeight in its own places. (An earlier draft's global "BountyDropWeights" key is
+            /// ignored: it was never live.)</summary>
+            public Dictionary<uint, BountyPlaceWeights> BountyPlaceWeights { get; set; } = new();
+
             /// <summary>ALLOWED PROCS (owner 2026-10-06): proc spell ids that T11+ monsters do NOT force-resist even from gear below
             /// T11 (TierHitGate.IsLowTierCast). Edited with /zonecontrol procallow and the plugin. Absent / empty = none allowed.</summary>
             public List<uint> AllowedProcSpells { get; set; } = new();
@@ -276,6 +287,15 @@ namespace ACE.Server.Managers.ZoneControl
         // the region bounties by key. Guarded by _lock; read through the volatile copy (every kill in one of the regions).
         private static readonly Dictionary<string, BountyConfig> _regionBounties = new(StringComparer.OrdinalIgnoreCase);
         private static volatile Dictionary<string, BountyConfig> _regionBountySnapshot = new(StringComparer.OrdinalIgnoreCase);
+
+        // item bounty reward tables by name. Guarded by _lock; read through the volatile copy (a mystery bounty applied or done).
+        private static readonly Dictionary<string, BountyRewardTable> _bountyRewardTables = new(StringComparer.OrdinalIgnoreCase);
+        private static volatile Dictionary<string, BountyRewardTable> _bountyRewardTableSnapshot = new(StringComparer.OrdinalIgnoreCase);
+
+        // item bounty drop weights per place, by bounty WCID. Guarded by _lock; read through the volatile copy of deep copies
+        // (a bounty drop roll), which is never changed once published.
+        private static readonly Dictionary<uint, BountyPlaceWeights> _bountyPlaceWeights = new();
+        private static volatile IReadOnlyDictionary<uint, BountyPlaceWeights> _bountyPlaceWeightSnapshot = new Dictionary<uint, BountyPlaceWeights>();
 
         // allowed proc spell ids. Guarded by _lock; read through the volatile copy (every proc on a T11+ monster from old gear).
         private static readonly HashSet<uint> _procAllow = new();
@@ -423,6 +443,26 @@ namespace ACE.Server.Managers.ZoneControl
                 foreach (var kv in store.RegionBounties)
                     if (kv.Value != null && FindBountyRegion(kv.Key) != null)
                         regionBounties[kv.Key.ToLowerInvariant()] = kv.Value.Clone();
+            var rewardTables = new Dictionary<string, BountyRewardTable>(StringComparer.OrdinalIgnoreCase);
+            if (store.BountyRewardTables != null)
+                foreach (var kv in store.BountyRewardTables)
+                {
+                    // lower-cased BEFORE the check (names are stored lower case; a hand edit with "Mystery" is kept, as "mystery")
+                    var key = (kv.Key ?? "").Trim().ToLowerInvariant();
+                    if (kv.Value != null && IsValidRewardTableName(key))
+                        rewardTables[key] = kv.Value.Clone();
+                    else
+                        log.Warn($"[ZoneControl] bounty reward table '{kv.Key}' has an invalid name or no data - dropped (the next save removes it)");
+                }
+            var placeWeights = new Dictionary<uint, BountyPlaceWeights>();
+            if (store.BountyPlaceWeights != null)
+                foreach (var kv in store.BountyPlaceWeights)
+                {
+                    if (kv.Key == 0 || kv.Value == null) continue;
+                    var entry = kv.Value.Clone();
+                    entry.Sanitize(IsBountyPlaceKey);   // an unknown place (a hand edit) is dropped, weights held to the cap
+                    if (!entry.IsEmpty) placeWeights[kv.Key] = entry;
+                }
             var procAllow = new HashSet<uint>((store.AllowedProcSpells ?? new List<uint>()).Where(id => id != 0));
 
             // ── commit: from here on nothing can throw ──
@@ -445,6 +485,12 @@ namespace ACE.Server.Managers.ZoneControl
             _regionBounties.Clear();
             foreach (var kv in regionBounties) _regionBounties[kv.Key] = kv.Value;
             _regionBountySnapshot = CloneRegionBounties();
+            _bountyRewardTables.Clear();
+            foreach (var kv in rewardTables) _bountyRewardTables[kv.Key] = kv.Value;
+            _bountyRewardTableSnapshot = CloneBountyRewardTables();
+            _bountyPlaceWeights.Clear();
+            foreach (var kv in placeWeights) _bountyPlaceWeights[kv.Key] = kv.Value;
+            _bountyPlaceWeightSnapshot = CloneBountyPlaceWeights();
             _procAllow.Clear();
             foreach (var id in procAllow) _procAllow.Add(id);
             _procAllowSnapshot = new HashSet<uint>(_procAllow);
@@ -613,6 +659,8 @@ namespace ACE.Server.Managers.ZoneControl
             GearLockSpots = _gearLock.OrderBy(k => k).Select(k => new GearLockSpot { Landblock = (int)(k & 0xFFFF), Variation = (int)(k >> 16) - 1 }).ToList(),
             ZoneWideBounty = _zoneWideBounty,
             RegionBounties = new Dictionary<string, BountyConfig>(_regionBounties),
+            BountyRewardTables = new Dictionary<string, BountyRewardTable>(_bountyRewardTables),
+            BountyPlaceWeights = _bountyPlaceWeights.ToDictionary(kv => kv.Key, kv => kv.Value.Clone()),
             AllowedProcSpells = _procAllow.OrderBy(x => x).ToList(),
         };
 
@@ -2636,6 +2684,191 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
+        /// ITEM BOUNTIES (owner 2026-11-10): the BountyRegions key ("vod", "t10") of the region this object stands in, below
+        /// T11 only - the same area ResolveRegionBounty uses - whether or not that region's own bounty is on. Null elsewhere,
+        /// and everywhere while Zone Control is off (zonecontrol_enabled, as ResolveRegionBounty): region item bounties then
+        /// neither drop nor count, and applied ones wait. The cheap landblock test runs first: most deaths are nowhere near.
+        /// </summary>
+        public static string BountyRegionAt(WorldObject wo)
+        {
+            if (wo?.Location == null || !ServerConfig.zonecontrol_enabled.Value)
+                return null;
+            var landblock = (ushort)wo.Location.Landblock;
+            foreach (var r in BountyRegions)
+                if (r.Landblocks.Contains(landblock))
+                    return GetEffectiveVariation(wo) >= VariationManager.EndgameMinVariation ? null : r.Key;
+            return null;
+        }
+
+        /// <summary>ITEM BOUNTIES: a region's item bounty drop odds (1 in N kills; 0 = none drop), from the snapshot.</summary>
+        public static int RegionItemBountyOdds(string key)
+            => key != null && _regionBountySnapshot.TryGetValue(key, out var cfg) ? cfg.ItemBountyOdds : 0;
+
+        // ── Item bounty reward tables (owner 2026-11-10: mystery rewards live in Zone Control, not in the weenie) ──
+
+        // \z, not $: "$" would also accept a name ending in a newline
+        private static readonly System.Text.RegularExpressions.Regex RewardTableNameRegex =
+            new(@"^[a-z0-9_-]{1,32}(\.[a-z0-9_-]{1,8})?\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// A reward table name: 1-32 of a-z, 0-9, '_' and '-' (lower case), optionally followed by ".place" - a tier t11-t25
+        /// ("t15") or a bounty region key ("vod") - for the table that overrides the base one at that place. Any other
+        /// suffix is refused: a typo ("mystery.t51") would make a table no bounty ever reads.
+        /// </summary>
+        public static bool IsValidRewardTableName(string name)
+        {
+            if (string.IsNullOrEmpty(name) || !RewardTableNameRegex.IsMatch(name))
+                return false;
+            var dot = name.IndexOf('.');
+            return dot < 0 || IsBountyPlaceKey(name[(dot + 1)..]);
+        }
+
+        /// <summary>A place an item bounty counts in: "t11".."t25" or a BountyRegions key ("vod", "t10").</summary>
+        internal static bool IsBountyPlaceKey(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return false;
+            if (FindBountyRegion(key) != null) return true;
+            return key.Length == 3 && key[0] == 't' && int.TryParse(key.AsSpan(1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var tier)
+                && tier >= 11 && tier <= 25;
+        }
+
+        /// <summary>
+        /// The table a bounty naming <paramref name="name"/> rolls from at <paramref name="placeKey"/> ("t15", "vod"):
+        /// "name.place" when it has an entry that can be chosen, else "name" when it has one, else null. With
+        /// <paramref name="payable"/>, an entry counts only if it passes (an item that can be made), so a place table with
+        /// nothing payable never hides a good base table. Pure, for tests.
+        /// </summary>
+        internal static (string Name, BountyRewardTable Table)? ResolveRewardTable(IReadOnlyDictionary<string, BountyRewardTable> tables, string name, string placeKey,
+            Func<BountyRewardEntry, bool> payable = null)
+        {
+            if (tables == null || string.IsNullOrEmpty(name))
+                return null;
+            bool Usable(BountyRewardTable t) => t != null && t.Valid.Any(e => payable == null || payable(e));
+            if (!string.IsNullOrEmpty(placeKey) && tables.TryGetValue(name + "." + placeKey, out var placed) && Usable(placed))
+                return (name + "." + placeKey, placed);
+            return tables.TryGetValue(name, out var table) && Usable(table) ? (name, table) : null;
+        }
+
+        /// <summary>
+        /// ITEM BOUNTIES: the live reward table (a copy) a mystery bounty naming <paramref name="name"/> rolls from at
+        /// <paramref name="placeKey"/>, or null when there is none with an entry that can be chosen (and passes
+        /// <paramref name="payable"/>, when given). Lock-free snapshot read.
+        /// </summary>
+        public static (string Name, BountyRewardTable Table)? ResolveBountyRewardTable(string name, string placeKey, Func<BountyRewardEntry, bool> payable = null)
+        {
+            var found = ResolveRewardTable(_bountyRewardTableSnapshot, (name ?? "").Trim().ToLowerInvariant(), (placeKey ?? "").Trim().ToLowerInvariant(), payable);
+            return found.HasValue ? (found.Value.Name, found.Value.Table.Clone()) : null;
+        }
+
+        /// <summary>Every reward table's name and a copy, ordered by name (for /zonecontrol bountytable list).</summary>
+        public static List<(string Name, BountyRewardTable Table)> ListBountyRewardTables()
+        {
+            EnsureInitialized();
+            return _bountyRewardTableSnapshot.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => (kv.Key, kv.Value.Clone())).ToList();
+        }
+
+        /// <summary>A copy of one reward table, or null when there is none by that name.</summary>
+        public static BountyRewardTable GetBountyRewardTable(string name)
+        {
+            EnsureInitialized();
+            return _bountyRewardTableSnapshot.TryGetValue((name ?? "").Trim(), out var table) ? table.Clone() : null;
+        }
+
+        /// <summary>
+        /// One locked read-change-write of a reward table, made when it doesn't exist yet (the same shape as
+        /// EditRegionBounty): <paramref name="edit"/> returns null to keep its change, or the refusal shown to the admin.
+        /// Saves the store. Returns a copy of the table as it is now (null when refused before it existed).
+        /// </summary>
+        public static BountyRewardTable EditBountyRewardTable(string name, Func<BountyRewardTable, string> edit, out string refused)
+        {
+            refused = null;
+            EnsureInitialized();
+            name = (name ?? "").Trim().ToLowerInvariant();
+            if (!IsValidRewardTableName(name))
+            {
+                refused = $"'{name}' isn't a table name: a-z, 0-9, _ and - (up to 32), optionally .t15 or .vod for one place.";
+                return null;
+            }
+            lock (_lock)
+            {
+                var table = _bountyRewardTables.TryGetValue(name, out var current) ? current.Clone() : new BountyRewardTable();
+                refused = edit(table);
+                if (refused != null)
+                    return current?.Clone();
+                table.Sanitize();
+                _bountyRewardTables[name] = table;
+                _bountyRewardTableSnapshot = CloneBountyRewardTables();
+                Save();
+                return table.Clone();
+            }
+        }
+
+        /// <summary>Deletes a whole reward table; false when there was none by that name. Saves the store.</summary>
+        public static bool DeleteBountyRewardTable(string name)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                if (!_bountyRewardTables.Remove((name ?? "").Trim().ToLowerInvariant()))
+                    return false;
+                _bountyRewardTableSnapshot = CloneBountyRewardTables();
+                Save();
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// ITEM BOUNTIES: every bounty's per-place drop weights and off switch, as last saved - a snapshot of deep copies that
+        /// is never changed once published (treat it as read-only). Lock-free (a bounty drop roll reads it).
+        /// </summary>
+        public static IReadOnlyDictionary<uint, BountyPlaceWeights> BountyPlaceWeightSnapshot()
+        {
+            EnsureInitialized();
+            return _bountyPlaceWeightSnapshot;
+        }
+
+        /// <summary>
+        /// One locked read-change-write of a bounty's per-place weights (the same shape as EditBountyRewardTable):
+        /// <paramref name="edit"/> changes a copy and returns null to keep it, or the refusal shown to the admin.
+        /// <paramref name="before"/> is a copy of the weights before the edit. An entry left with nothing set is removed.
+        /// Saves the store. Returns a copy of the weights as they are now (empty when nothing is set).
+        /// </summary>
+        public static BountyPlaceWeights EditBountyPlaceWeights(uint wcid, Func<BountyPlaceWeights, string> edit, out BountyPlaceWeights before, out string refused)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var current = _bountyPlaceWeights.TryGetValue(wcid, out var have) ? have.Clone() : new BountyPlaceWeights();
+                before = current.Clone();
+                refused = edit(current);
+                if (refused != null)
+                    return before;
+
+                current.Sanitize(IsBountyPlaceKey);
+                if (current.IsEmpty)
+                    _bountyPlaceWeights.Remove(wcid);
+                else
+                    _bountyPlaceWeights[wcid] = current;
+                _bountyPlaceWeightSnapshot = CloneBountyPlaceWeights();
+                Save();
+                return current.Clone();
+            }
+        }
+
+        /// <summary>A deep copy of the per-place weights for the volatile snapshot. Call under _lock (or while loading).</summary>
+        private static IReadOnlyDictionary<uint, BountyPlaceWeights> CloneBountyPlaceWeights()
+            => _bountyPlaceWeights.ToDictionary(kv => kv.Key, kv => kv.Value.Clone());
+
+        /// <summary>A deep copy of the reward tables for the volatile snapshot. Call under _lock (or while loading).</summary>
+        private static Dictionary<string, BountyRewardTable> CloneBountyRewardTables()
+        {
+            var copy = new Dictionary<string, BountyRewardTable>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _bountyRewardTables)
+                copy[kv.Key] = kv.Value.Clone();
+            return copy;
+        }
+
+        /// <summary>
         /// REGION BOUNTY (owner 2026-10-07): the active region bounty where this object stands - Valley of Death or Thaelaryn
         /// Island - or null. Below T11 only (a v11+ copy of those landblocks belongs to the Zone Control zones and their bounties),
         /// and nothing while the Zone Control master switch is off, like every other Bounty. Lock-free snapshot read.
@@ -2854,9 +3087,9 @@ namespace ACE.Server.Managers.ZoneControl
             return flags;
         }
 
-        /// <summary>Force a reload from the shard store (e.g. after out-of-band edits).</summary>
-        /// <summary>Re-reads the store from the shard. Load is build-then-commit, so on a failure the previous zones keep
-        /// running - and the error is thrown, so the caller never reports a reload that did not happen.</summary>
+        /// <summary>Re-reads the store from the shard (e.g. after out-of-band edits). Load is build-then-commit, so on a failure
+        /// the previous zones keep running - and the error is thrown, so the caller never reports a reload that did not happen.
+        /// Also makes the item bounty drop table re-read on its next roll.</summary>
         public static void Reload()
         {
             lock (_lock)
@@ -2865,6 +3098,9 @@ namespace ACE.Server.Managers.ZoneControl
                 Load();
                 _initialized = true;
             }
+            // /zonecontrol reload and /settings import come through here: a bounty the newly loaded per-place weights give a
+            // weight joins the item bounty drop table on the next roll, not at the 5-minute refresh
+            ItemBounties.InvalidateDropTable();
         }
 
         // ── Quest registry (plugin "Quests" tab) ──

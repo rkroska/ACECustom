@@ -434,6 +434,10 @@ namespace ACE.Server
             log.Info("Initializing RoomAssignManager...");
             RoomAssignManager.Initialize();
 
+            // Before sockets open: the droppable item bounties are read in the background, so the first bounty roll that
+            // hits after a restart already has them.
+            ItemBounties.WarmDropTable();
+
             log.Info("Initializing SocketManager...");
             SocketManager.Initialize();
 

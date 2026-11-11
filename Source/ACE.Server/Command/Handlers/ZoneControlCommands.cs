@@ -129,6 +129,15 @@ namespace ACE.Server.Command.Handlers
             ZoneControlManager.MutateArea(zoneKey, a => a.AppearanceByWcid?.Remove(slot));
         }
 
+        /// <summary>
+        /// /zonecontrol (Developer; most changes need Admin): every Zone Control authoring verb - zones and landblocks, stats
+        /// and rank rows, props, body parts, looks, spells and effects, loot, generators, territory, the bounties (a zone's,
+        /// the zone-wide one, the regions' and their item bounty odds, item bounty drop weights and reward tables), dungeons
+        /// and Triune - plus the plugin's sync and data lines. Bare /zonecontrol prints the command list; help prints the
+        /// registry (ZoneControlCommandHelp), which lists each verb and the access it needs.
+        /// </summary>
+        /// <param name="session">The caller's session; null for the server console, which counts as Admin.</param>
+        /// <param name="parameters">The words after /zonecontrol; re-tokenized here so quoted zone names may contain spaces.</param>
         [CommandHandler("zonecontrol", AccessLevel.Developer, CommandHandlerFlag.None, 0,
             "Author/toggle Zone Control zones (any world area).",
             "help | list | here | create <name> <variation> [here|hex] | rename <old> <new> | delete <name> | "
@@ -140,7 +149,7 @@ namespace ACE.Server.Command.Handlers
             + "appearance <name> <palette|shade|scale|translucency|shiny|setup|clothing|palettebase|motion|sound|icon> <value> [--wcid <id>] | clearappearance <name> [field] [--wcid <id>] | copylook <name> <donorWcid> [--wcid <id>] | draftslot <name> [release] | copydraft <name> <destWcid> | becomemob <donorWcid> --wcid <id> | seticon <wcid> <iconDid|clear> [layer] | "
             + "modifier <name> <add|remove|list|catalog|band|slots|special|chance> [args] [--wcid <id>] | "
             + "currency <name> <add|remove|list> [itemWcid] [amount] [chance] [direct|corpse] [--wcid <id>] | "
-            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | bounty <name> <show|on|off|add|set|remove> | zonebounty <show|on|off|add|set|remove> | regionbounty <vod|t10> <show|on|off|add|set|remove> | procallow [list|add|remove] <spell id> | gearlock [list|here|add|remove] | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
+            + "boundary <name> <on|off|show> | zoneshare <name> <on|off|show> | bounty <name> <show|on|off|add|set|remove> | zonebounty <show|on|off|add|set|remove> | regionbounty <vod|t10> <show|on|off|add|set|remove|itemodds> | bountyweight list|<wcid> [<weight|clear> <places>|off|on|reset] | bountypool <place> | bountytable list|<name> <show|add|set|remove|delete> | procallow [list|add|remove] <spell id> | gearlock [list|here|add|remove] | dungeon <verb> (one-player room dungeons; /zonecontrol dungeon lists them) | survey <name> [lbHex] | quests <name> | terrain <name> <hex> <type|clear> | "
             + "mobinfo <wcid> | geninfo <wcid> | genlist [zone] | genedit <wcid> delay|radius|stagger|init|max <value> | "
             + "craft <material> <itemtype> auto|allow|deny | craft list|get|test|enabled|mintier|components | "
             + "effect <name> [dot on|off | dmg <amount> | type <name|percent> | interval <secs>] | reload")]
@@ -193,7 +202,10 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /zonecontrol gearlock [list] | here [any] | add|remove <landblock hex> [variation|any]   (T11+ gear is suppressed on these landblocks)");
                 Msg("  /zonecontrol procallow [list] | add <spell id> | remove <spell id>   (proc spells T11+ monsters never resist for being on gear below T11)");
                 Msg("  /zonecontrol zonebounty show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>   (ONE bounty, one count and one cooldown across every T11-T25 zone; replaces the zone bounties while on)");
-                Msg("  /zonecontrol regionbounty <vod|t10> show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>   (Bounty for Valley of Death / Thaelaryn Island (T10), below T11 only)");
+                Msg("  /zonecontrol regionbounty <vod|t10> show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id> | itemodds <N>   (Bounty for Valley of Death / Thaelaryn Island (T10), below T11 only; itemodds N = 1 in N kills there drops an item bounty, 0 = none)");
+                Msg($"  /zonecontrol bountyweight list | <wcid> | <wcid> <weight 0-{BountyRewardTable.MaxWeight.ToString(CultureInfo.InvariantCulture)}|clear> <places> | <wcid> off|on|reset   (item bounty drop weight per place, live: places t15, t11-t15, t11,t13,vod, tiers, regions, all; 0 = out of that pool, clear = its own weight there; changes need Admin)");
+                Msg("  /zonecontrol bountypool <place>   (one place's item bounty pool: each bounty's weight, share and where it comes from)");
+                Msg("  /zonecontrol bountytable list | <name> show | <name> add <wcid> <amount> <weight> | <name> set <id> <wcid> <amount> <weight> | <name> remove <id> | <name> delete   (the reward tables MYSTERY item bounties roll from when done; <name>.t15 / <name>.vod override <name> there; changes need Admin)");
                 Msg("  /zonecontrol bounty <name> show | on | off | add <wcid> <amount> <kills> <minutes> [qb=N] | set <id> <wcid> <amount> <kills> <minutes> [qb=N] | remove <id>   (Bounty: items every N kills per player, at most once per cooldown; qb=N = only players with at least N QB count; v11+ only)");
                 Msg("  /zonecontrol survey <name> [lbHex]   (per-landblock content: generator + creature summary; lbHex = full detail for one landblock)");
                 Msg("  /zonecontrol quests <name>   (quest registry for the plugin Quests tab; throttled to one pull per 60s)");
@@ -236,7 +248,7 @@ namespace ACE.Server.Command.Handlers
             // instead (the zone doesn't exist yet); sync's name sits at args[2].
             if (sub == "sync")
                 CollapseZoneNameTokens(args, 2);
-            else if (sub != "create" && sub != "default" && sub != "ladder" && sub != "craft" && sub != "dungeon" && sub != "triune")
+            else if (sub != "create" && sub != "default" && sub != "ladder" && sub != "craft" && sub != "dungeon" && sub != "triune" && sub != "bountytable" && sub != "bountyweight" && sub != "bountypool")
                 // 'default' takes a VARIATION at args[1], not a zone name â€” collapsing would mangle it.
                 // 'ladder' takes a verb / tier / player name, never a zone.
                 // 'craft' takes a MATERIAL NAME at args[1] (possibly two words, "Black Opal") â€” never a zone.
@@ -2543,22 +2555,235 @@ namespace ACE.Server.Command.Handlers
                         // REGION BOUNTY (owner 2026-10-07): Valley of Death and Thaelaryn Island (T10) - each its own bounty, below
                         // T11 only. Same verbs as a zone's bounty (BountyManager.Edit).
                         var keys = string.Join("|", ZoneControlManager.BountyRegions.Select(r => r.Key));
-                        if (args.Count < 3) { Msg($"Usage: regionbounty <{keys}> show | " + BountyManager.EditUsage); return; }
+                        if (args.Count < 3) { Msg($"Usage: regionbounty <{keys}> show | itemodds <N> | " + BountyManager.EditUsage); return; }
                         var region = ZoneControlManager.FindBountyRegion(args[1]);
                         if (region == null) { Msg($"Unknown region '{args[1]}' - one of: {keys}."); return; }
                         var op = args[2].ToLowerInvariant();
                         var edited = ZoneControlManager.GetRegionBounty(region.Value.Key);
+                        // ITEM BOUNTIES (owner 2026-11-10): itemodds N = 1 in N kills in the region drops an item bounty
+                        // (ItemBounties.TryRollRegionDrop); 0 = none. Separate from the region's own bounty rewards, so only
+                        // itemodds (and show, once item bounties drop there) mentions it: the other verbs' replies and audit
+                        // lines stay exactly as they were.
+                        var isItemOdds = op == "itemodds";
+                        var oddsBefore = edited.ItemBountyOdds;
                         if (op != "show")
                         {
                             // the server console has no session and counts as admin
                             if (session != null && session.AccessLevel < AccessLevel.Admin) { Msg("Changing a Bounty needs Admin access (the same as a dungeon's)."); return; }
-                            edited = ZoneControlManager.EditRegionBounty(region.Value.Key, c => BountyManager.Edit(c, op, args, 3), out var err);
+
+                            Func<BountyConfig, string> change;
+                            if (isItemOdds)
+                            {
+                                if (args.Count < 4 || !int.TryParse(args[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var odds) || odds < 0 || odds > BountyConfig.MaxItemBountyOdds)
+                                {
+                                    Msg($"Usage: regionbounty <{keys}> itemodds <N>  - 1 in N kills there drops an item bounty; 0 = none drop.");
+                                    return;
+                                }
+                                change = c => { c.ItemBountyOdds = odds; return null; };
+                            }
+                            else
+                                change = c => BountyManager.Edit(c, op, args, 3);
+
+                            edited = ZoneControlManager.EditRegionBounty(region.Value.Key, change, out var err);
                             if (err != null) { Msg($"{region.Value.Name} bounty: {err}"); return; }
+                            if (isItemOdds)
+                            {
+                                PlayerManager.BroadcastToAuditChannel(session?.Player, $"regionbounty {region.Value.Key} itemodds: {ItemBountyOddsText(oddsBefore)} -> {ItemBountyOddsText(edited.ItemBountyOdds)}");
+                                Msg($"{region.Value.Name} item bounty drops: {ItemBountyOddsText(edited.ItemBountyOdds)} (was {ItemBountyOddsText(oddsBefore)}). /bounty droptable shows which bounties drop there.");
+                                return;
+                            }
                             PlayerManager.BroadcastToAuditChannel(session?.Player, $"regionbounty {string.Join(" ", args.Skip(1))} -> {BountyManager.Describe(edited)}");
                         }
                         Msg($"{region.Value.Name} Bounty (below T11) {BountyManager.Describe(edited)}"
-                            + (edited.Active && !ServerConfig.zonecontrol_enabled.Value ? " - inactive while Zone Control is off." : "."));
+                            + (edited.Active && !ServerConfig.zonecontrol_enabled.Value ? " - inactive while Zone Control is off." : ".")
+                            + (op == "show" && edited.ItemBountyOdds > 0 ? $" Item bounty drops: {ItemBountyOddsText(edited.ItemBountyOdds)}." : ""));
                         return;
+                    }
+
+                    case "bountyweight":
+                    {
+                        // ITEM BOUNTY DROP WEIGHTS PER PLACE (owner 2026-11-10: "turn the knob... without editing weenies"; "heavily
+                        // weighted in tier 16 ... really rare" in 15): a bounty's weight in each place's pool (t11-t25, vod, t10),
+                        // live. 0 = out of that pool; clear = its own weight there; off = it drops nowhere. HOW OFTEN any bounty
+                        // drops is bounty_odds (T11+) and regionbounty <key> itemodds (regions). The logic is ItemBounties.EditWeights.
+                        var weightUsage = $"Usage: bountyweight list | <wcid> | <wcid> <weight 0-{BountyRewardTable.MaxWeight.ToString(CultureInfo.InvariantCulture)}|clear> <places> | <wcid> off|on|reset   - places: t15, t11-t15, t11,t13,vod, tiers, regions or all";
+                        if (args.Count < 2) { Msg(weightUsage); return; }
+
+                        if (args[1].Equals("list", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // one bw line per bounty: the Bounty Editor's Drop pools tab loads these as the live state
+                            var bwLines = ItemBounties.WeightListLines();
+                            if (bwLines.Count == 0) { Msg("No bounty drops from monsters and Zone Control sets no weights."); return; }
+                            Msg($"Item bounty drop weights ({bwLines.Count}): own = its weenie's weight in its own places; place=N = set by Zone Control. Paste these lines into the Bounty Editor's Drop pools tab (Load live state).");
+                            foreach (var line in bwLines) Msg(line);
+                            return;
+                        }
+
+                        if (!uint.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var weightWcid) || weightWcid == 0) { Msg(weightUsage); return; }
+                        if (args.Count == 2)
+                        {
+                            var view = ItemBounties.WeightViewLines(weightWcid);
+                            if (view == null) { Msg($"{RoomAssignManager.ItemName(weightWcid)} ({weightWcid}) isn't a bounty that could drop (no weenie, or incomplete bounty terms)."); return; }
+                            foreach (var line in view) Msg(line);
+                            return;
+                        }
+
+                        // the server console has no session and counts as admin
+                        if (session != null && session.AccessLevel < AccessLevel.Admin) { Msg("Changing a bounty drop weight needs Admin access."); return; }
+                        var edit = ItemBounties.EditWeights(weightWcid, args[2], args.Skip(3).ToList());
+                        if (edit.Error != null) { Msg(edit.Error); return; }
+                        foreach (var line in edit.Lines) Msg(line);
+                        if (edit.Audit != null)
+                            PlayerManager.BroadcastToAuditChannel(session?.Player, edit.Audit);
+                        return;
+                    }
+
+                    case "bountypool":
+                    {
+                        // one place's item bounty pool: every bounty that can drop there, its weight, share and where the weight
+                        // comes from (read-only)
+                        if (args.Count < 2) { Msg("Usage: bountypool <place>   - t11-t25, vod or t10"); return; }
+                        var poolLines = ItemBounties.PoolLines(args[1], out var poolError);
+                        if (poolLines == null) { Msg(poolError); return; }
+                        foreach (var line in poolLines) Msg(line);
+                        return;
+                    }
+
+                    case "bountytable":
+                    {
+                        // ITEM BOUNTY REWARD TABLES (owner 2026-11-10): the weighted tables MYSTERY bounties roll from when they
+                        // are DONE. Live: a re-weighted or pulled reward reaches every mystery bounty already out there.
+                        // "name.t15" / "name.vod" override "name" for the bounties of that place.
+                        const string tableUsage = "Usage: bountytable list | <name> show | <name> add <wcid> <amount> <weight> | <name> set <id> <wcid> <amount> <weight> | <name> remove <id> | <name> delete";
+                        if (args.Count < 2) { Msg(tableUsage); return; }
+
+                        if (args[1].Equals("list", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var tables = ZoneControlManager.ListBountyRewardTables();
+                            if (tables.Count == 0) { Msg("No bounty reward tables yet. Make one: bountytable mystery add <wcid> <amount> <weight>"); return; }
+                            foreach (var (listedName, listed) in tables)
+                                Msg($"  {listedName}: {listed.Valid.Count()} reward(s), total weight {listed.Valid.Sum(e => (long)e.Weight):N0}");
+                            return;
+                        }
+
+                        var tableName = args[1].ToLowerInvariant();
+                        var tableOp = args.Count > 2 ? args[2].ToLowerInvariant() : "show";
+                        if (tableOp == "show") { ShowBountyRewardTable(tableName); return; }
+
+                        // the server console has no session and counts as admin
+                        if (session != null && session.AccessLevel < AccessLevel.Admin) { Msg("Changing a bounty reward table needs Admin access."); return; }
+
+                        if (tableOp == "delete")
+                        {
+                            // what the table paid, for the audit line (the full list also goes to the server log)
+                            var deleted = ZoneControlManager.GetBountyRewardTable(tableName);
+                            if (!ZoneControlManager.DeleteBountyRewardTable(tableName)) { Msg($"No bounty reward table '{tableName}'."); return; }
+                            var deletedRows = (deleted?.Entries ?? new List<BountyRewardEntry>()).Select(e => $"#{e.Id} {RewardRowText(e)}").ToList();
+                            PlayerManager.BroadcastToAuditChannel(session?.Player, $"bountytable {tableName} delete - it had {deletedRows.Count} reward(s)"
+                                + (deletedRows.Count == 0 ? "" : ": " + string.Join("; ", deletedRows.Take(MaxAuditRewardRows))
+                                    + (deletedRows.Count > MaxAuditRewardRows ? $"; and {deletedRows.Count - MaxAuditRewardRows} more (server log)" : "")));
+                            log.Info($"[ZC] bountytable {tableName} deleted by {session?.Player?.Name ?? "console"}: {(deletedRows.Count == 0 ? "no rewards" : string.Join("; ", deletedRows))}");
+                            Msg($"Bounty reward table '{tableName}' deleted. A done mystery bounty naming it waits, unpaid, until a table by that name has a reward again.");
+                            return;
+                        }
+
+                        /// <summary>
+                        /// Reads "&lt;wcid&gt; &lt;amount&gt; &lt;weight&gt;" from args[start..start+2] for add / set: a carryable item,
+                        /// 1..MaxAmount, 1..MaxWeight. Returns null when all three are good, else what is wrong (the usage line for
+                        /// missing or unreadable numbers).
+                        /// </summary>
+                        string ReadEntry(int start, out uint entryWcid, out int entryAmount, out int entryWeight)
+                        {
+                            entryWcid = 0; entryAmount = 0; entryWeight = 0;
+                            if (args.Count < start + 3
+                                || !uint.TryParse(args[start], NumberStyles.Integer, CultureInfo.InvariantCulture, out entryWcid) || entryWcid == 0
+                                || !int.TryParse(args[start + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out entryAmount)
+                                || !int.TryParse(args[start + 2], NumberStyles.Integer, CultureInfo.InvariantCulture, out entryWeight))
+                                return tableUsage;
+                            if (entryAmount < 1 || entryAmount > BountyManager.MaxAmount) return $"the amount must be 1-{BountyManager.MaxAmount:N0}.";
+                            if (entryWeight < 1 || entryWeight > BountyRewardTable.MaxWeight) return $"the weight must be 1-{BountyRewardTable.MaxWeight:N0}.";
+                            if (!BountyManager.IsGivableItem(entryWcid)) return $"{entryWcid} isn't an item a player can carry.";
+                            return null;
+                        }
+
+                        Func<BountyRewardTable, string> tableChange;
+                        string parseError = null;
+                        // for the audit line: the row's ID and, for set / remove, the row as it was (read inside the locked edit)
+                        var changedId = 0;
+                        BountyRewardEntry rowBefore = null;
+                        switch (tableOp)
+                        {
+                            case "add":
+                            {
+                                parseError = ReadEntry(3, out var addWcid, out var addAmount, out var addWeight);
+                                tableChange = t =>
+                                {
+                                    if (t.Entries.Count >= BountyRewardTable.MaxEntries) return $"a table holds at most {BountyRewardTable.MaxEntries} rewards.";
+                                    changedId = t.NextId++;
+                                    t.Entries.Add(new BountyRewardEntry { Id = changedId, Wcid = addWcid, Amount = addAmount, Weight = addWeight });
+                                    return null;
+                                };
+                                break;
+                            }
+                            case "set":
+                            {
+                                if (args.Count < 4 || !int.TryParse(args[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var setId)) { Msg(tableUsage); return; }
+                                parseError = ReadEntry(4, out var setWcid, out var setAmount, out var setWeight);
+                                changedId = setId;
+                                tableChange = t =>
+                                {
+                                    var row = t.Entries.Find(e => e.Id == setId);
+                                    if (row == null) return $"no reward #{setId} (bountytable {tableName} show lists the IDs).";
+                                    rowBefore = row.Clone();
+                                    row.Wcid = setWcid; row.Amount = setAmount; row.Weight = setWeight;
+                                    return null;
+                                };
+                                break;
+                            }
+                            case "remove":
+                            {
+                                if (args.Count < 4 || !int.TryParse(args[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var removeId)) { Msg(tableUsage); return; }
+                                changedId = removeId;
+                                tableChange = t =>
+                                {
+                                    rowBefore = t.Entries.Find(e => e.Id == removeId)?.Clone();
+                                    return t.Entries.RemoveAll(e => e.Id == removeId) > 0 ? null : $"no reward #{removeId} (bountytable {tableName} show lists the IDs).";
+                                };
+                                break;
+                            }
+                            default:
+                                Msg(tableUsage);
+                                return;
+                        }
+                        if (parseError != null) { Msg($"Bounty reward table '{tableName}': {parseError}"); return; }
+
+                        var tableAfter = ZoneControlManager.EditBountyRewardTable(tableName, tableChange, out var tableErr);
+                        if (tableErr != null) { Msg($"Bounty reward table '{tableName}': {tableErr}"); return; }
+                        var rowAfter = tableAfter?.Entries.Find(e => e.Id == changedId);
+                        PlayerManager.BroadcastToAuditChannel(session?.Player, tableOp switch
+                        {
+                            "add" => $"bountytable {tableName} add #{changedId}: {RewardRowText(rowAfter)}",
+                            "set" => $"bountytable {tableName} set #{changedId}: {RewardRowText(rowBefore)} -> {RewardRowText(rowAfter)}",
+                            _ => $"bountytable {tableName} remove #{changedId}: {RewardRowText(rowBefore)}",
+                        });
+                        ShowBountyRewardTable(tableName);
+                        return;
+
+                        /// <summary>
+                        /// Prints one reward table: every row with its ID, amount, item, weight and chance (a row with no
+                        /// weight or no item says it is never chosen), or how to make the table when there is none.
+                        /// </summary>
+                        void ShowBountyRewardTable(string name)
+                        {
+                            var table = ZoneControlManager.GetBountyRewardTable(name);
+                            if (table == null) { Msg($"No bounty reward table '{name}'. Make it: bountytable {name} add <wcid> <amount> <weight>"); return; }
+                            var valid = table.Valid.ToList();
+                            var total = valid.Sum(e => (long)e.Weight);
+                            Msg($"Bounty reward table '{name}' ({valid.Count} reward(s); mystery bounties naming it roll from it when done):");
+                            foreach (var e in table.Entries)
+                                Msg($"  #{e.Id}  {e.Amount:N0} x {RoomAssignManager.ItemName(e.Wcid)} ({e.Wcid})  weight {e.Weight:N0}"
+                                    + (total > 0 && e.Weight > 0 ? $"  {100.0 * e.Weight / total:0.#}%" : "  (never chosen)"));
+                        }
                     }
 
                     case "zoneshare":
@@ -4301,6 +4526,16 @@ namespace ACE.Server.Command.Handlers
         }
 
         private static string RankTag(ZcRank rank) => rank == ZcRank.None ? "" : " [" + ZoneRank.Label(rank) + " row]";
+
+        /// <summary>A region's item bounty drop odds for regionbounty's reply and audit line: "1 in 600 kills", or "none" for 0.</summary>
+        private static string ItemBountyOddsText(int odds) => odds > 0 ? $"1 in {odds:N0} kills" : "none";
+
+        /// <summary>The most reward rows a bountytable delete's audit line lists; the rest go to the server log only.</summary>
+        private const int MaxAuditRewardRows = 10;
+
+        /// <summary>One reward table row for bountytable's audit lines: "5 x Bag of Rebirth (78780315), weight 10", or "(none)".</summary>
+        private static string RewardRowText(BountyRewardEntry e)
+            => e == null ? "(none)" : $"{e.Amount:N0} x {RoomAssignManager.ItemName(e.Wcid)} ({e.Wcid}), weight {e.Weight:N0}";
 
         private static bool TryHex(string s, out int value)
         {

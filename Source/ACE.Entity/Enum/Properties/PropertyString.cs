@@ -185,5 +185,31 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Reflection boss, on a MONSTER weenie: the respawn's name, with %s for the player's name. Unset =
         /// "%s's Reflection".</summary>
         ReflectionNameFormat = 58001,
+
+        /// <summary>Item bounties (2026-11-10), on the CHARACTER: the active bounty slots R1, R2 (rings) and B1, B2
+        /// (bracelets), one entry per filled slot (ItemBounties.cs owns the format). 57700, free in EVERY Property enum.</summary>
+        ItemBountySlots = 57700,
+
+        /// <summary>Item bounties, on a bounty ITEM (Species): the target's display name in the plural, e.g. "Banderlings".
+        /// Unset = the CreatureType's name plus "s". 57701, free in EVERY Property enum.</summary>
+        ItemBountyTargetName = 57701,
+
+        /// <summary>Item bounties, on the CHARACTER: what the Bounty Tracker UB script draws - every slot with its progress,
+        /// reward name and icon ids (ItemBounties.BuildDisplay owns the format). Sent to the owner's client whenever it
+        /// changes and at login, so the window updates without a single chat line; /bounty stays the text view. 57702.</summary>
+        [SendOnLogin]
+        ItemBountyDisplay = 57702,
+
+        /// <summary>Item bounties, on a bounty ITEM (owner 2026-11-10): a REGION below T11 instead of a tier - "vod" (Valley of
+        /// Death) or "t10" (Thaelaryn Island), the keys of ZoneControlManager.BountyRegions. Only kills there count (any layer
+        /// below T11, every kill in full), it drops only there, and ItemBountyTier is ignored. Unset = a T11+ tier bounty. 57703.</summary>
+        [AssessmentProperty]
+        ItemBountyRegion = 57703,
+
+        /// <summary>Item bounties, on a MYSTERY bounty weenie (ItemBountyMystery flag 2; owner 2026-11-10): the NAME of the Zone
+        /// Control reward table its reward is rolled from when the bounty is done, e.g. "mystery" ("mystery.t15" / "mystery.vod"
+        /// override it at that place). The rewards and weights live in Zone Control (/zonecontrol bountytable), never on the
+        /// weenie, so the admins can change them live for every mystery bounty already out there. 57704.</summary>
+        ItemBountyRewardTable = 57704,
     }
 }

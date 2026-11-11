@@ -395,6 +395,8 @@ namespace ACE.Server.Factories
 
             if (worldObject == null)
                 GuidManager.RecycleDynamicGuid(guid);
+            else
+                ItemBounties.OnNewItem(worldObject, weenie);   // item bounties: a new bounty rolls its kill count once (owner 2026-11-10)
 
             return worldObject;
         }

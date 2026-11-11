@@ -494,6 +494,9 @@ namespace ACE.Server.Entity.Actions
         Player_ZcCloakProcExpired,          // T11+ cloak procs: Asheron's Grace / Artful Dodger window closed notice
         ItemRename_Refund,                  // item rename: a denied / failed request's fee credited back to the bank on the world queue
         TriuneEarning_Credit,               // Triune earning: an own-tier T15+ kill's Triune share handed to the top damager's own thread
+        ItemBounty_Credit,                  // item bounties: a kill's credit toward the top damager's active bounty slots, on their own thread
+        ItemBounty_ConfirmExpired,          // item bounties: a console confirmation (/bounty confirm <code>) ran out; tell the player
+        ItemBounty_Command,                 // item bounties: /bounty reading or changing a character's slots, on that character's thread
     }
     public static class ActionTypeConverter
     {

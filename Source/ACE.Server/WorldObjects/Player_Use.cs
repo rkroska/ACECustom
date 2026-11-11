@@ -152,6 +152,15 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            // Item bounties (owner 2026-11-10): a bounty item used on a ring or bracelet fills the character's next free bounty
+            // slot of that kind. Before the generic type check, so a wrong target gets the bounty's own explanation.
+            if (ItemBounties.IsBountyItem(sourceItem))
+            {
+                ItemBounties.HandleApply(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
             // re-verify client checks
             // Potency tools have non-standard source/target ItemType combinations, so we skip the
             // generic type check only for confirmed valid pairings -- not for any potency tool on any target.

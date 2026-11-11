@@ -767,6 +767,9 @@ namespace ACE.Server.WorldObjects
             // anything that slipped in before IsLoggingOut was set) - review 2026-10-20
             NearbyHealth.Remove(this);
 
+            // item bounties: a waiting /bounty confirm (theirs, or an admin's aimed at them) goes with the session
+            ItemBounties.OnLogout(this);
+
             CurrentLandblock?.RemoveWorldObject(Guid, false);
             SetPropertiesAtLogOut();
             SavePlayerToDatabase(true);

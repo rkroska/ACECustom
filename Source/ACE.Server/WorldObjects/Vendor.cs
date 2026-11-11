@@ -380,6 +380,10 @@ namespace ACE.Server.WorldObjects
             {
                 var wo = WorldObjectFactory.CreateNewWorldObject(itemProfile.WeenieClassId);
 
+                // item bounties: the bounty bought asks the kill count the one on display shows (each copy rolls its own)
+                if (DefaultItemsForSale.TryGetValue(new ObjectGuid(itemProfile.ObjectGuid), out var shown))
+                    ItemBounties.CopyRolledTerms(shown, wo);
+
                 if (itemProfile.Palette != null)
                     wo.PaletteTemplate = itemProfile.Palette;
 

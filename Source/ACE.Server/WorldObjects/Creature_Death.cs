@@ -103,6 +103,10 @@ namespace ACE.Server.WorldObjects
             // damager, the player the corpse and its loot belong to.
             BountyManager.OnCreatureKilled(this);
 
+            // Item bounties (owner 2026-11-10): the top damager's active bounty slots (R1, R2, B1, B2) count a T11+ kill in
+            // exactly their tier, or a kill in their bounty region below T11 (Valley of Death / Thaelaryn Island) - see ItemBounties.
+            ItemBounties.OnCreatureKilled(this);
+
             // Tier rewards (owner 2026-10-24): Prestige Coins for the top damager of a T11+ Zone Control kill. Bounties pay none.
             ACE.Server.Managers.ZoneControl.TierRewards.OnCreatureKilled(this);
 
@@ -1438,6 +1442,22 @@ namespace ACE.Server.WorldObjects
                             essence.Destroy();
                         }
                     }
+
+                    // Item bounties (owner 2026-11-10): ONE roll per KILL against the zone's bounty_odds (per rank), then the
+                    // bounty weenies' drop weights pick which - ItemBounties.TryRollDrop. Never aborts the corpse either.
+                    WorldObject bounty = null;
+                    try { bounty = ItemBounties.TryRollDrop(zoneLoot, this, killer?.Name); }
+                    catch (Exception ex) { log.Error($"[ItemBounty] drop roll failed for {Name} ({WeenieClassId}): {ex}"); }
+                    if (bounty != null)
+                    {
+                        if (corpse == null)
+                            droppedItems.Add(bounty);
+                        else if (!corpse.TryAddToInventory(bounty))
+                        {
+                            log.Warn($"[ItemBounty] drop: {bounty.Name} from {Name} ({WeenieClassId}) did not fit on the corpse and was lost");
+                            bounty.Destroy();
+                        }
+                    }
                 }
 
                 // T11+ zone-kill extras (owner 2026-10-24): T10-style mundane item, summoning essence and aetheria, same gate
@@ -1448,6 +1468,23 @@ namespace ACE.Server.WorldObjects
                 if (zoneLoot != null && ServerConfig.zonecontrol_enabled.Value
                     && ACE.Server.Managers.ZoneControl.ZoneControlManager.GetEffectiveVariation(this) >= ACE.Server.Managers.ZoneControl.ZoneControlManager.MinBoundedVariation)
                     AddZoneKillExtras(effectiveTreasure, corpse, droppedItems);
+            }
+
+            // Item bounties in the REGIONS below T11 (owner 2026-11-10): Valley of Death and Thaelaryn Island have no Zone
+            // Control loot profile, so their roll sits here, for every corpse, with or without a death treasure. Returns at
+            // once outside the regions; the region's itemodds decide whether one drops. Never aborts the corpse.
+            WorldObject regionBounty = null;
+            try { regionBounty = ItemBounties.TryRollRegionDrop(this, killer?.Name); }
+            catch (Exception ex) { log.Error($"[ItemBounty] region drop roll failed for {Name} ({WeenieClassId}): {ex}"); }
+            if (regionBounty != null)
+            {
+                if (corpse == null)
+                    droppedItems.Add(regionBounty);
+                else if (!corpse.TryAddToInventory(regionBounty))
+                {
+                    log.Warn($"[ItemBounty] drop: {regionBounty.Name} from {Name} ({WeenieClassId}) did not fit on the corpse and was lost");
+                    regionBounty.Destroy();
+                }
             }
 
             // move wielded treasure over, which also should include Wielded objects not marked for destroy on death.
