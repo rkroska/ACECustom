@@ -2581,7 +2581,7 @@ namespace ACE.Server.Command.Handlers
                         // itemodds (and show, once item bounties drop there) mentions it: the other verbs' replies and audit
                         // lines stay exactly as they were.
                         var isItemOdds = op == "itemodds";
-                        var oddsBefore = edited.ItemBountyOdds;
+                        var oddsBefore = 0;   // read inside the locked edit below, so the audit's "was" is the value actually replaced
                         if (op != "show")
                         {
                             // the server console has no session and counts as admin
@@ -2595,7 +2595,7 @@ namespace ACE.Server.Command.Handlers
                                     Msg($"Usage: regionbounty <{keys}> itemodds <N>  - 1 in N kills there drops an item bounty; 0 = none drop.");
                                     return;
                                 }
-                                change = c => { c.ItemBountyOdds = odds; return null; };
+                                change = c => { oddsBefore = c.ItemBountyOdds; c.ItemBountyOdds = odds; return null; };
                             }
                             else
                                 change = c => BountyManager.Edit(c, op, args, 3);
