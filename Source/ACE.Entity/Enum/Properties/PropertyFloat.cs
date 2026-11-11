@@ -390,6 +390,15 @@ namespace ACE.Entity.Enum.Properties
         /// has not yet made a whole coin (0 .. 1). Whole coins go straight to BankedPrestigeCoins. Server-only.</summary>
         PrestigeCoinFraction = 57000,
 
+        /// <summary>Prestige Coin falloff (2026-11-01), on a CHARACTER: how far ahead of the full-rate kill pace they are, in
+        /// SECONDS of kills at that pace, as of <see cref="PrestigeCoinPaceDebtTime"/> (0 .. the falloff window, 288 at the
+        /// defaults; it drains one second a second). Unset = 0, a full reserve. Server-only. See TierRewardScale.FalloffOnDebt.</summary>
+        PrestigeCoinPaceDebt = 57001,
+
+        /// <summary>Prestige Coin falloff (2026-11-01), on a CHARACTER: when <see cref="PrestigeCoinPaceDebt"/> was last
+        /// written (Unix epoch seconds), so time offline drains it too. Server-only.</summary>
+        PrestigeCoinPaceDebtTime = 57002,
+
         /// <summary>Triune earning (owner 2026-11-01), on a CHARACTER: the part of a Triune Weave point earned from own-tier kills
         /// that has not yet made a whole point (0 .. 1). Whole points go straight onto TriuneWeaveCount. Server-only.</summary>
         TriuneFraction = 57010,

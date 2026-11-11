@@ -603,6 +603,13 @@ namespace ACE.Server.Managers.ZoneScaling
         // use it. Deliberately not weapon_*_chance: that shape makes a stat a weapon card (BuildWeaponCardChances).
         public const string SlayerPoolShare = "slayer_pool_share";
 
+        // PRESTIGE COIN FALLOFF (2026-11-01): per zone / tier re-tunes of zc_pcoin_falloff_kills_per_hour and zc_pcoin_falloff_mult.
+        // Read where the KILL happens: the governing zone's Default row (its own stats over the tier Default), per stat; unset = the
+        // server setting. The pace itself is one count per character across every zone (TierRewardScale.Falloff), so these set how
+        // fast it drains and what a kill past it pays for kills made here. pcoin_falloff_kills_per_hour 0 = no falloff here.
+        public const string PcoinFalloffKillsPerHour = "pcoin_falloff_kills_per_hour";   // full-rate kills an hour (server 375)
+        public const string PcoinFalloffMult = "pcoin_falloff_mult";                       // share of the coins paid past the pace, 0..1 (server 0.5)
+
         // C5. ARMOR BASE VALUES (owner 2026-08-24, Armor_Base_Values_Plan_2026-08-24.md sections 2.1-2.3).
         // The three numbers a T11+ armour piece was built on that had no authoring surface at all.
         //
@@ -801,6 +808,8 @@ namespace ACE.Server.Managers.ZoneScaling
             LootWeightMelee1H, LootWeightMelee2H, LootWeightMissile, LootWeightWar, LootWeightVoid,
             // zone Slayer pool (2026-10-30) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
             SlayerPoolShare,
+            // Prestige Coin falloff (2026-11-01) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            PcoinFalloffKillsPerHour, PcoinFalloffMult,
         };
 
         /// <summary>

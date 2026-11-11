@@ -1,5 +1,6 @@
 using System;
 
+using ACE.Server.Managers.ZoneScaling;
 using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Managers.ZoneControl
@@ -133,6 +134,144 @@ namespace ACE.Server.Managers.ZoneControl
                 frac = 0.0;
             }
             return ((long)whole, frac);
+        }
+
+        // ---- Prestige Coin falloff (2026-11-01) --------------------------------------------------------------------------
+
+        /// <summary>
+        /// The falloff numbers in force for one kill, already held to their ranges: <see cref="KillsPerHour"/> the full-rate pace
+        /// (0 = no falloff), <see cref="Mult"/> the share of its coins a kill past the pace pays (0..1), <see cref="Reserve"/> how many
+        /// kills ahead of the pace a character can get before the falloff starts (at least 1), counted at this pace.
+        /// </summary>
+        public readonly record struct FalloffDials(double KillsPerHour, double Mult, double Reserve)
+        {
+            /// <summary>The reserve as time: how many seconds of kills at this pace it holds (0 when the falloff is off).
+            /// 30 kills at 375 an hour = 288 seconds. FalloffFor keeps this the same in every zone.</summary>
+            public double WindowSeconds => KillsPerHour > 0 ? Reserve * 3600.0 / KillsPerHour : 0.0;
+        }
+
+        /// <summary>
+        /// Holds the falloff numbers to their ranges - a server setting and a zone stat alike, since neither is checked when it is
+        /// set: pace 0..1,000,000 kills an hour, share 0..1, reserve 1..100,000. A value that is not a number takes the setting's
+        /// declared default (PropertyManager).
+        /// </summary>
+        public static FalloffDials CleanFalloff(double killsPerHour, double mult, double reserve) => new(
+            Clean(killsPerHour, 0.0, 1_000_000.0, ServerConfig.zc_pcoin_falloff_kills_per_hour.Default),
+            Clean(mult, 0.0, 1.0, ServerConfig.zc_pcoin_falloff_mult.Default),
+            Clean(reserve, 1.0, 100_000.0, ServerConfig.zc_pcoin_falloff_reserve.Default));
+
+        /// <summary>One dial held to [<paramref name="min"/>, <paramref name="max"/>]; NaN or infinity takes <paramref name="fallback"/>.</summary>
+        private static double Clean(double value, double min, double max, double fallback)
+            => double.IsFinite(value) ? Math.Clamp(value, min, max) : fallback;
+
+        /// <summary>The server settings alone (zc_pcoin_falloff_*), cleaned - what every kill uses until a zone authors a stat.</summary>
+        public static FalloffDials ServerFalloff() => CleanFalloff(
+            ServerConfig.zc_pcoin_falloff_kills_per_hour.Value,
+            ServerConfig.zc_pcoin_falloff_mult.Value,
+            ServerConfig.zc_pcoin_falloff_reserve.Value);
+
+        /// <summary>
+        /// The falloff for a kill governed by <paramref name="zoneDefault"/> (the zone's Default row - its own stats over the tier
+        /// Default; ZoneControlManager.ResolveZoneDefaultRowForCreature). Per stat: pcoin_falloff_kills_per_hour /
+        /// pcoin_falloff_mult when the row has it, else the server setting; an authored value that is not a number keeps the
+        /// server value. Null row = the server settings.
+        ///
+        /// The reserve is a server setting only, and a zone with its own pace gets the same reserve in TIME, not in kills: 30 kills
+        /// at the server's 375 an hour is 288 seconds, so a zone authored at 500 an hour holds 40 kills. That keeps the saved
+        /// count (in seconds - FalloffOnDebt) meaning the same thing in every zone. With the server pace at 0 (falloff off
+        /// except where a zone turns it on) the reserve is read at the setting's declared default pace instead (CodeRabbit #595).
+        /// </summary>
+        public static FalloffDials FalloffFor(EvaluatedProfile zoneDefault) => FalloffFor(zoneDefault, ServerFalloff());
+
+        /// <summary>The same as FalloffFor(zoneDefault), against given server dials (already cleaned) - for tests.</summary>
+        internal static FalloffDials FalloffFor(EvaluatedProfile zoneDefault, FalloffDials server)
+        {
+            if (zoneDefault == null)
+                return server;
+
+            var zone = CleanFalloff(
+                Pick(zoneDefault, ZoneStat.PcoinFalloffKillsPerHour, server.KillsPerHour),
+                Pick(zoneDefault, ZoneStat.PcoinFalloffMult, server.Mult),
+                server.Reserve);
+
+            // the pace the reserve setting is counted at: the server's, or the declared default while the server's is off
+            var basePace = server.KillsPerHour > 0 ? server.KillsPerHour : ServerConfig.zc_pcoin_falloff_kills_per_hour.Default;
+
+            if (zone.KillsPerHour > 0 && basePace > 0 && zone.KillsPerHour != basePace)
+            {
+                var scaled = server.Reserve * zone.KillsPerHour / basePace;
+                if (double.IsFinite(scaled))
+                    zone = zone with { Reserve = Math.Max(1.0, scaled) };
+            }
+
+            return zone;
+        }
+
+        /// <summary>A zone's authored value for <paramref name="stat"/>, or <paramref name="server"/> when the row does not author
+        /// it or authors something that is not a finite number.</summary>
+        private static double Pick(EvaluatedProfile profile, string stat, double server)
+        {
+            if (!profile.Has(stat))
+                return server;
+
+            var value = profile.Get(stat, server);
+            return double.IsFinite(value) ? value : server;
+        }
+
+        /// <summary>
+        /// One kill through the Prestige Coin falloff (pure). <paramref name="recent"/> is the character's count of recent
+        /// full-value kills as saved after their last coin kill, <paramref name="elapsedSeconds"/> the time since then. The count
+        /// first drains at <paramref name="killsPerHour"/>; the part of this kill (worth <paramref name="credit"/> kills - its
+        /// tier-dip credit) that still fits under <paramref name="reserve"/> pays in full, the rest pays <paramref name="mult"/>.
+        /// So a steady pace at or under killsPerHour always pays in full, and past it every extra kill pays mult: 500 an hour
+        /// against 375 pays 375 + 125 x 0.5 = 437.5 kills' worth.
+        ///
+        /// Returns the credit to pay coins on, the count to save (0 .. reserve) and whether this kill was cut. A pace of 0 or less
+        /// (or not a number) is OFF: full pay and a count of 0, so nothing is kept. A negative or unknown elapsed time (a clock that
+        /// went back) drains nothing; a saved count above a lowered reserve is held to it.
+        /// </summary>
+        public static (double Paid, double Recent, bool Reduced) Falloff(double recent, double elapsedSeconds, double credit,
+            double killsPerHour, double mult, double reserve)
+        {
+            var c = double.IsFinite(credit) && credit > 0 ? credit : 0.0;
+            if (!(killsPerHour > 0) || !double.IsFinite(killsPerHour))
+                return (c, 0.0, false);
+
+            var m = double.IsNaN(mult) ? 1.0 : Math.Clamp(mult, 0.0, 1.0);
+            var cap = double.IsFinite(reserve) ? Math.Max(1.0, reserve) : 1.0;
+            var r = double.IsFinite(recent) && recent > 0 ? Math.Min(recent, cap) : 0.0;
+            var dt = double.IsFinite(elapsedSeconds) && elapsedSeconds > 0 ? elapsedSeconds : 0.0;
+
+            r = Math.Max(0.0, r - dt * killsPerHour / 3600.0);
+
+            var full = Math.Min(c, cap - r);
+            var paid = full + (c - full) * m;
+            var reduced = m < 1.0 && full < c - Epsilon;
+            return (paid, Math.Min(cap, r + c), reduced);
+        }
+
+        /// <summary>
+        /// One kill through the falloff on the count as it is SAVED on the character: <paramref name="debtSeconds"/> is how far
+        /// ahead of the pace they are, in seconds, not kills. A kill at a pace of P adds 3600 / P seconds (x its credit), the count
+        /// drains one second a second, and it holds at most <see cref="FalloffDials.WindowSeconds"/> (288 at the defaults, the same
+        /// in every zone). At one pace this is exactly <see cref="Falloff"/>. Across zones it means a kill in a zone authored at a
+        /// high pace adds little but never drains a count built up elsewhere faster than the clock.
+        ///
+        /// A kill where the falloff is OFF pays in full and returns the count unchanged (not drained, not emptied) - the caller
+        /// leaves the saved values alone, so a kill in a no-falloff zone cannot reset the reserve.
+        /// Returns the credit to pay coins on, the seconds to save and whether this kill was cut.
+        /// </summary>
+        public static (double Paid, double Debt, bool Reduced) FalloffOnDebt(double debtSeconds, double elapsedSeconds, double credit,
+            FalloffDials dials)
+        {
+            var pace = dials.KillsPerHour;
+            var debt = double.IsFinite(debtSeconds) && debtSeconds > 0 ? debtSeconds : 0.0;
+
+            if (!(pace > 0) || !double.IsFinite(pace))
+                return (double.IsFinite(credit) && credit > 0 ? credit : 0.0, debt, false);
+
+            var (paid, recent, reduced) = Falloff(debt * pace / 3600.0, elapsedSeconds, credit, pace, dials.Mult, dials.Reserve);
+            return (paid, recent * 3600.0 / pace, reduced);
         }
 
         // ---- kill-task credit (T11+ Zone Control kills only) ------------------------------------------------------------
