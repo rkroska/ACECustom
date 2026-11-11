@@ -2473,7 +2473,7 @@ namespace ACE.Server.WorldObjects
 
                         finalDamage *= damageRatingMod * damageResistRatingMod * critDamageOnTop;
 
-                        // QB Deeds (13k QB): a separate x1.10 on war / void rings against monsters, as on the projectile path
+                        // QB Deeds (3k-15k QB): the separate damage step (x1.02-x1.10) on war / void rings against monsters, as on the projectile path
                         if (spell.School == MagicSchool.WarMagic || spell.School == MagicSchool.VoidMagic)
                             finalDamage *= GetDeedsDamageMod(this, creature);
 

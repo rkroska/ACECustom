@@ -2806,7 +2806,7 @@ namespace ACE.Server.WorldObjects
 
             enchantment_statModVal *= skillMod * elementalDamageMod * damageRatingMod;
 
-            // QB Deeds (13k QB): a separate x1.10 on the player's void DoTs on monsters, as on void projectiles
+            // QB Deeds (3k-15k QB): the separate damage step (x1.02-x1.10) on the player's void DoTs on monsters, as on void projectiles
             enchantment_statModVal *= Player.GetDeedsDamageMod(player, creatureTarget);
 
             return enchantment_statModVal;
