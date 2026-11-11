@@ -113,6 +113,9 @@ namespace ACE.Server.WorldObjects
             // Triune earning (owner 2026-11-01): Triune Weave per own-tier T15+ kill, weekly floor / ceiling bands per tier.
             ACE.Server.Managers.ZoneControl.TriuneEarning.OnCreatureKilled(this);
 
+            // Tiered dungeons (owner 2026-11-11): who fought in a tier copy room, for room credit. Nothing outside a copy.
+            ACE.Server.Managers.TieredDungeons.TieredDungeonRuns.OnMonsterDied(this);
+
             return GetDeathMessage(lastDamager, damageType, criticalHit);
         }
 

@@ -488,5 +488,103 @@ namespace ACE.Server.Tests
             Assert.AreEqual(1, output.Count);
             Assert.AreNotEqual(TieredDungeonRegistry.TierExitPortalWcid, output[0].WeenieClassId);
         }
+
+        // ------------------------------------------------------------------ ScaleForTier (pay tier step)
+
+        private const string T11Table = "13:6,14:9,15:13,16:17,17:23,18:30";
+
+        [TestMethod]
+        public void ScaleForTier_T11IsTheTable()
+        {
+            Assert.AreEqual(30, TieredDungeonRegistry.ScaleForTier(30, 11, 1.2));
+            Assert.AreEqual(6, TieredDungeonRegistry.ScaleForTier(6, 11, 1.2));
+        }
+
+        [TestMethod]
+        public void ScaleForTier_FullClearPerTier_AtTheDefaultStep()
+        {
+            var full = TieredDungeonRegistry.CoinsForRoom(T11Table, 18);
+            var expected = new[] { 30, 36, 43, 52, 62 };   // 30 x 1.2^(tier-11), halves up
+            for (int i = 0; i < expected.Length; i++)
+                Assert.AreEqual(expected[i], TieredDungeonRegistry.ScaleForTier(full, 11 + i, 1.2), "tier " + (11 + i));
+        }
+
+        [TestMethod]
+        public void ScaleForTier_RoundsHalvesUp()
+        {
+            Assert.AreEqual(9, TieredDungeonRegistry.ScaleForTier(6, 13, 1.2));   // 8.64
+            Assert.AreEqual(3, TieredDungeonRegistry.ScaleForTier(2, 13, 1.25));  // 3.125
+            Assert.AreEqual(2, TieredDungeonRegistry.ScaleForTier(1, 15, 1.2));   // 2.07
+        }
+
+        [TestMethod]
+        public void ScaleForTier_BadStepReadsAsOne_AndZeroStaysZero()
+        {
+            Assert.AreEqual(30, TieredDungeonRegistry.ScaleForTier(30, 15, 0));
+            Assert.AreEqual(30, TieredDungeonRegistry.ScaleForTier(30, 15, -2));
+            Assert.AreEqual(30, TieredDungeonRegistry.ScaleForTier(30, 15, double.NaN));
+            Assert.AreEqual(0, TieredDungeonRegistry.ScaleForTier(0, 15, 1.2));
+            Assert.AreEqual(0, TieredDungeonRegistry.ScaleForTier(-5, 15, 1.2));
+        }
+
+        // ------------------------------------------------------------------ RoomRampMult
+
+        [TestMethod]
+        public void RoomRampMult_FirstRoomIsOne_LastRoomIsTheSetting()
+        {
+            Assert.AreEqual(1.0, TieredDungeonRegistry.RoomRampMult(Colo, 6, 1.8), 1e-9);
+            Assert.AreEqual(1.8, TieredDungeonRegistry.RoomRampMult(Colo, 18, 1.8), 1e-9);
+        }
+
+        [TestMethod]
+        public void RoomRampMult_StraightLine()
+        {
+            Assert.AreEqual(1.4, TieredDungeonRegistry.RoomRampMult(Colo, 12, 1.8), 1e-9);   // half way
+            Assert.AreEqual(1.0 + 0.8 * 3 / 12.0, TieredDungeonRegistry.RoomRampMult(Colo, 9, 1.8), 1e-9);
+            Assert.AreEqual(0.75, TieredDungeonRegistry.RoomRampMult(Colo, 12, 0.5), 1e-9);   // a ramp down is allowed
+        }
+
+        [TestMethod]
+        public void RoomRampMult_RoomsBeforeTheRun_AndBadValues_AreOne()
+        {
+            Assert.AreEqual(1.0, TieredDungeonRegistry.RoomRampMult(Colo, 1, 1.8), 1e-9);
+            Assert.AreEqual(1.0, TieredDungeonRegistry.RoomRampMult(Colo, 5, 1.8), 1e-9);
+            Assert.AreEqual(1.0, TieredDungeonRegistry.RoomRampMult(Colo, 0, 1.8), 1e-9);
+            Assert.AreEqual(1.0, TieredDungeonRegistry.RoomRampMult(Colo, 18, 0.05), 1e-9);
+            Assert.AreEqual(1.0, TieredDungeonRegistry.RoomRampMult(Colo, 18, 11), 1e-9);
+            Assert.AreEqual(1.0, TieredDungeonRegistry.RoomRampMult(Colo, 18, double.NaN), 1e-9);
+            Assert.AreEqual(1.0, TieredDungeonRegistry.RoomRampMult(null, 18, 1.8), 1e-9);
+        }
+
+        [TestMethod]
+        public void RoomRampMult_PastTheLastRoom_StaysAtTheLastRoom()
+        {
+            Assert.AreEqual(1.8, TieredDungeonRegistry.RoomRampMult(Colo, 25, 1.8), 1e-9);
+        }
+
+        // ------------------------------------------------------------------ RequiredTags (room participation)
+
+        [TestMethod]
+        public void RequiredTags_QuarterOfTheRoom_RoundedUp()
+        {
+            Assert.AreEqual(10, TieredDungeonRegistry.RequiredTags(40, 0.25));
+            Assert.AreEqual(2, TieredDungeonRegistry.RequiredTags(6, 0.25));   // room 18: 1.5 -> 2
+            Assert.AreEqual(1, TieredDungeonRegistry.RequiredTags(1, 0.25));
+        }
+
+        [TestMethod]
+        public void RequiredTags_OffOrNoKills_IsZero()
+        {
+            Assert.AreEqual(0, TieredDungeonRegistry.RequiredTags(40, 0));
+            Assert.AreEqual(0, TieredDungeonRegistry.RequiredTags(40, -1));
+            Assert.AreEqual(0, TieredDungeonRegistry.RequiredTags(40, double.NaN));
+            Assert.AreEqual(0, TieredDungeonRegistry.RequiredTags(0, 0.25));
+        }
+
+        [TestMethod]
+        public void RequiredTags_ShareAboveOne_MeansEveryMonster()
+        {
+            Assert.AreEqual(40, TieredDungeonRegistry.RequiredTags(40, 3));
+        }
     }
 }

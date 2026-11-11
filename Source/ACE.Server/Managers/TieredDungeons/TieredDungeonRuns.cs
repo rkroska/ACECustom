@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 using ACE.Common;
@@ -56,6 +57,76 @@ namespace ACE.Server.Managers.TieredDungeons
         /// <summary>Players this far from the coordinator along the arena's long axis are in its room (rooms are 90 apart).</summary>
         private const float RoomHalfDepth = 45f;
 
+        // ------------------------------------------------------------------ who fought in a room (owner 2026-11-11)
+        //
+        // Standing in a room when it clears is not enough: an idle character in the corner would be paid in full. Every
+        // kill in a tier copy room records which players (or their pets) damaged it; when the room clears, only players who
+        // damaged at least tiered_dungeon_min_room_tag_share of its monsters are credited. Counting monsters rather than
+        // damage keeps a weak player who fights in a strong group eligible (same-tier damage spreads about 37:1).
+
+        private sealed class RoomTally
+        {
+            public double Started;
+            public int Kills;
+            public readonly Dictionary<uint, int> Tags = new();
+        }
+
+        private static readonly object tallyLock = new();
+        private static readonly Dictionary<(ushort Landblock, int Variation, int Room), RoomTally> tallies = new();
+
+        /// <summary>Called for every creature death. Does nothing unless the creature belongs to a tier copy room.</summary>
+        public static void OnMonsterDied(Creature victim)
+        {
+            try
+            {
+                if (victim == null || victim is Player || victim is Pet)
+                    return;
+                var room = TieredDungeonRegistry.RoomOf(victim);
+                var pos = victim.Location;
+                if (room <= 0 || pos?.Variation == null)
+                    return;
+
+                var fought = new HashSet<uint>();
+                foreach (var d in victim.DamageHistory.Damagers)
+                {
+                    if (d == null || d.TotalDamage <= 0)
+                        continue;
+                    var player = d.TryGetPetOwnerOrAttacker() as Player;
+                    if (player != null)
+                        fought.Add(player.Guid.Full);
+                }
+
+                var now = Time.GetUnixTime();
+                var key = (pos.LandblockId.Landblock, pos.Variation.Value, room);
+                lock (tallyLock)
+                {
+                    if (!tallies.TryGetValue(key, out var tally) || now - tally.Started > RunWindowSeconds)
+                        tallies[key] = tally = new RoomTally { Started = now };
+                    tally.Kills++;
+                    foreach (var guid in fought)
+                        tally.Tags[guid] = tally.Tags.GetValueOrDefault(guid) + 1;
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[TIERED] OnMonsterDied: {ex}");
+            }
+        }
+
+        /// <summary>Takes the tally of a room that just cleared. Clearing the first room starts a run, so any tally left in
+        /// that arena by an earlier, abandoned run is dropped too.</summary>
+        private static RoomTally TakeTally(ushort landblock, int variation, int room, int firstRoom)
+        {
+            lock (tallyLock)
+            {
+                tallies.Remove((landblock, variation, room), out var tally);
+                if (room == firstRoom)
+                    foreach (var k in tallies.Keys.Where(k => k.Landblock == landblock && k.Variation == variation).ToList())
+                        tallies.Remove(k);
+                return tally;
+            }
+        }
+
         /// <summary>
         /// Called for every LocalSignal an object sends. Does nothing unless the sender is inside a tier copy and the
         /// signal is that dungeon's room-cleared signal.
@@ -77,6 +148,25 @@ namespace ACE.Server.Managers.TieredDungeons
             var present = landblock.players
                 .Where(p => p?.Location != null && Math.Abs(p.Location.PositionY - source.Location.PositionY) <= RoomHalfDepth)
                 .ToList();
+
+            // only players who fought in the room (see RoomTally)
+            var tally = TakeTally(source.Location.LandblockId.Landblock, source.Location.Variation.Value, room, dungeon.FirstRoom);
+            var share = ServerConfig.tiered_dungeon_min_room_tag_share.Value;
+            if (tally == null || tally.Kills == 0)
+            {
+                if (share > 0 && present.Count > 0)
+                    log.Warn($"[TIERED] {dungeon.Name} T{TieredDungeonRegistry.ScopeTier} room {room} cleared with no kills recorded - credited by presence");
+            }
+            else
+            {
+                var need = TieredDungeonRegistry.RequiredTags(tally.Kills, share);
+                var idle = present.Where(p => tally.Tags.GetValueOrDefault(p.Guid.Full) < need).ToList();
+                if (idle.Count > 0)
+                {
+                    log.Info($"[TIERED] {dungeon.Name} T{TieredDungeonRegistry.ScopeTier} room {room}: not credited (damaged under {need} of {tally.Kills}): {string.Join(", ", idle.Select(p => $"{p.Name} {tally.Tags.GetValueOrDefault(p.Guid.Full)}"))}");
+                    present = present.Except(idle).ToList();
+                }
+            }
             if (present.Count == 0)
                 return;
 
@@ -143,7 +233,9 @@ namespace ACE.Server.Managers.TieredDungeons
             // the pay timer may hold a claim back for hours, so they must not expire at the Arbitrator.
             var bits = quests.GetCurrentSolves(TieredDungeonRegistry.RoomCreditQuest);
             var furthest = TieredDungeonRegistry.FurthestRoom(bits, dungeon.FirstRoom, dungeon.RoomCount);
-            var fullCoins = TieredDungeonRegistry.CoinsForRoom(ServerConfig.tiered_dungeon_pay_table.Value, furthest);
+            // the table is in T11 coins; each tier above pays the per-kill tier step more (owner 2026-11-11)
+            var fullCoins = TieredDungeonRegistry.ScaleForTier(
+                TieredDungeonRegistry.CoinsForRoom(ServerConfig.tiered_dungeon_pay_table.Value, furthest), tier, ServerConfig.zc_pcoin_kill_tier_step.Value);
 
             if (fullCoins <= 0)
             {

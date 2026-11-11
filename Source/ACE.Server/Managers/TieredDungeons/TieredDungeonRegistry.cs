@@ -508,6 +508,90 @@ namespace ACE.Server.Managers.TieredDungeons
         /// <summary>Coins after the percent, rounded down.</summary>
         public static int ScaleCoins(int coins, int percent) => (int)((long)coins * percent / 100);
 
+        /// <summary>
+        /// The pay table is written in T11 coins; each tier above pays <paramref name="tierStep"/> times the tier below
+        /// (owner 2026-11-11: the same step as Prestige Coins per kill, zc_pcoin_kill_tier_step). Rounded to the nearest
+        /// coin, halves up. A step that is not a positive number reads as 1 (every tier pays the table).
+        /// </summary>
+        public static int ScaleForTier(int coins, int tier, double tierStep)
+        {
+            if (coins <= 0)
+                return 0;
+            if (!double.IsFinite(tierStep) || tierStep <= 0)
+                tierStep = 1.0;
+            var value = coins * Math.Pow(tierStep, Math.Max(0, tier - MinTier));
+            return (int)Math.Clamp(Math.Round(value, MidpointRounding.AwayFromZero), 0, 100_000);
+        }
+
+        // ------------------------------------------------------------------ room ramp (owner 2026-11-11)
+
+        /// <summary>
+        /// Rooms get harder as a run goes on: x1 in the first room of a run, rising in a straight line to
+        /// <paramref name="lastRoomMult"/> in the last room. The multipliers sit ON TOP of the copy's own tier stats - never a
+        /// blend with the next tier, whose stats are tuned for that tier's gear and do not step evenly (review 2026-11-11:
+        /// T15 -> T16 would make room 18 easier for melee and 3.5x harder for void). Rooms before the first room of a run
+        /// stay x1. A value outside 0.1-10 reads as x1.
+        /// </summary>
+        public static double RoomRampMult(TieredDungeon dungeon, int room, double lastRoomMult)
+        {
+            if (dungeon == null || room <= dungeon.FirstRoom || !double.IsFinite(lastRoomMult) || lastRoomMult < 0.1 || lastRoomMult > 10)
+                return 1.0;
+            var span = dungeon.RoomCount - dungeon.FirstRoom;
+            if (span <= 0)
+                return 1.0;
+            var t = Math.Min(1.0, (double)(room - dungeon.FirstRoom) / span);
+            return 1.0 + (lastRoomMult - 1.0) * t;
+        }
+
+        /// <summary>
+        /// The arena room of a tier copy a monster belongs to (0 when none). Fixed the first time it is asked - at spawn,
+        /// from the spawn position - and kept on the creature, so a monster that follows a player into the next room keeps
+        /// its own room's numbers and its health and damage always agree. Only arena landblocks have rooms; the lobby has none.
+        /// </summary>
+        public static int RoomOf(Creature creature)
+        {
+            if (creature == null || creature is Player)
+                return 0;
+            if (creature.TieredDungeonRoom != 0)
+                return Math.Max(0, creature.TieredDungeonRoom);
+
+            var pos = creature.Location;
+            if (pos == null)
+                return 0;   // not placed yet: ask again later
+            var dungeon = FindCopyAt(pos.LandblockId.Landblock, pos.Variation);
+            var room = dungeon != null && dungeon.Arenas.Contains(pos.LandblockId.Landblock) ? RoomAt(dungeon, pos.PositionY) : 0;
+            creature.TieredDungeonRoom = room > 0 ? room : -1;
+            return room;
+        }
+
+        /// <summary>The health multiplier for this monster's room (tiered_dungeon_room_health_ramp), x1 outside a tier copy.</summary>
+        public static double RoomHealthMult(Creature creature) => RoomMult(creature, ServerConfig.tiered_dungeon_room_health_ramp.Value);
+
+        /// <summary>The damage multiplier for this monster's room (tiered_dungeon_room_damage_ramp), x1 outside a tier copy.
+        /// Read per hit: a cached room and one dictionary lookup.</summary>
+        public static double RoomDamageMult(Creature creature) => RoomMult(creature, ServerConfig.tiered_dungeon_room_damage_ramp.Value);
+
+        private static double RoomMult(Creature creature, double lastRoomMult)
+        {
+            var room = RoomOf(creature);
+            if (room <= 0)
+                return 1.0;
+            var pos = creature.Location;
+            var dungeon = pos == null ? null : FindCopyAt(pos.LandblockId.Landblock, pos.Variation);
+            return RoomRampMult(dungeon, room, lastRoomMult);
+        }
+
+        // ------------------------------------------------------------------ room participation (owner 2026-11-11)
+
+        /// <summary>How many of a room's <paramref name="kills"/> a player must have damaged to be credited with it
+        /// (tiered_dungeon_min_room_tag_share, 0.25 = a quarter of the room's monsters). 0 when the share is off.</summary>
+        public static int RequiredTags(int kills, double share)
+        {
+            if (kills <= 0 || !double.IsFinite(share) || share <= 0)
+                return 0;
+            return (int)Math.Ceiling(kills * Math.Min(1.0, share));
+        }
+
         public static IEnumerable<TieredDungeon> All => byLandblock.Values.Distinct();
     }
 }

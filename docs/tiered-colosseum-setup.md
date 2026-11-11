@@ -39,13 +39,18 @@ tier 11, variation 12 for tier 12, and so on. The zone must be at that same vari
 ## Step 2 - Stats: monster health, and a loot budget of zero
 
 ```
-/zonecontrol set "Colosseum 11" max_health 4000000
+/zonecontrol set "Colosseum 11" max_health 1000000
 /zonecontrol set "Colosseum 11" loot_drops_min 0
 /zonecontrol set "Colosseum 11" loot_drops_max 0
 ```
 
+- `max_health` is the ROOM 6 health. Later rooms get more: the server multiplies it by the room ramp
+  (`tiered_dungeon_room_health_ramp`, default 1.8 = x1.8 in room 18, a straight line from x1 in room 6).
+  Per-tier values are in the table under "Tiers 12-15".
 - `max_health` applies to monsters when they spawn. Monsters already standing in an arena keep their
   old health until they respawn.
+- The 4,000,000 in earlier versions of this doc came from an October sim run BEFORE the 2026-10-13
+  tier ladder re-apply; at 4M a median 4-player T13 group needs about 88 minutes even without the room ramp (0 pct finish). Do not use it.
 - Defining `loot_drops_min` switches the zone to "budget mode". With a budget of 0 the generator
   returns an empty set, so no gear, weapons, jewelry, cloaks or clothing drop from the zone's loot set.
   The tier 11 default (7 to 12 items per kill on the local data) is overridden, because a zone's own
@@ -228,24 +233,34 @@ those monsters to obey the player's protections too):
 /zonecontrol prop "Colosseum 11" float 151 0 --wcid 35151
 ```
 
-## Step 6 - Weapon-side flags (interim fix: lower their damage)
+## Step 6 - The two damage spikes: Tukora (room 13) and Mukkir (room 12)
 
 Verified: wcid 35305 Tukora Commander and 35306 Tukora Lieutenant each wield weapons 31033, 31250 and
 31251, and all three weapons carry bool 65 (IgnoreMagicResist) and bool 66 (IgnoreMagicArmor) on the
 WEAPON (31033 also carries IgnoreShield 0.6). A zone prop stamp goes on the creature only, so it cannot
-reach the weapon. No command found that changes a weapon's flags for a zone. Interim fix: lower these
-two monsters' damage with a per-monster attack_damage.
+reach the weapon. No command found that changes a weapon's flags for a zone.
 
-Formula: per-monster attack_damage = (tier Regular attack_damage) / DIVISOR, rounded up, with
-DIVISOR = 2. The divisor 2 is a TUNING VALUE - re-measure after testing and change the numbers below
-(and in the table at the bottom) if it is wrong.
+The four Mukkir types of room 12 (35142 Mukkir Draktehn, 35143 Mukkir Kartak, 35144 Mukkir Laktar, 35145
+Umbral Mukkir) have no ignore flags but hit about 3x harder than the Colosseum median in the 2026-11-11 sim.
+
+Fix: a per-monster damage multiplier. It is RELATIVE, so it stays right when the tier ladder is re-tuned
+(the older fixed `attack_damage` per tier went stale at every re-apply), and one command covers every tier.
+It applies only where a Zone Control zone governs the monster (never retail), and these six types spawn
+nowhere but the Colosseum rooms (checked: no placed instance, no other generator).
 
 ```
-/zonecontrol set "Colosseum 11" attack_damage 949 --wcid 35305
-/zonecontrol set "Colosseum 11" attack_damage 949 --wcid 35306
+/zonecontrol damagemult 35305 0.25
+/zonecontrol damagemult 35306 0.25
+/zonecontrol damagemult 35142 0.5
+/zonecontrol damagemult 35143 0.5
+/zonecontrol damagemult 35144 0.5
+/zonecontrol damagemult 35145 0.5
 ```
 
-(1898 / 2 = 949 at tier 11. The other tiers are in the table at the bottom.)
+These are run ONCE, not per tier. Starting values from the sim (see "Measured 2026-11-11" at the bottom);
+re-tune after a logged test run. If a zone from an older version of this doc still has an `attack_damage`
+override on 35305 / 35306, clear it (`/zonecontrol clearstat "Colosseum N" attack_damage --wcid 35305`, and the
+same for 35306) so the two fixes do not stack.
 
 NOT NEEDED for 34615 Elite Guardian: on the local database it wields weapon 32665 (Guardian's
 Smoldering Atlan Sword), which has no IgnoreMagicResist, IgnoreMagicArmor or IgnoreShield, and the
@@ -303,6 +318,20 @@ for hand edits to the database.
 /nolog add 00B0,00B1,00B2,00B3,00B4 all
 ```
 
+Run tuning (live settings, defaults shown - nothing to type unless you change them):
+
+| Setting | Default | What it does |
+|---|---|---|
+| `tiered_dungeon_room_health_ramp` | 1.8 | Monster health in room 18 vs room 6 (straight line between). Stamped at spawn. |
+| `tiered_dungeon_room_damage_ramp` | 1.0 | Everything monsters deal, room 18 vs room 6. Off at launch; raise (e.g. 1.4) after deaths per room are logged. Read live. |
+| `tiered_dungeon_min_room_tag_share` | 0.25 | A player must have damaged this share of a room's monsters (pets count) to be credited with the room. 0 = standing there is enough. |
+| `tiered_dungeon_pay_table` | `13:6,14:9,15:13,16:17,17:23,18:30` | Coins in T11 terms by furthest room. |
+| `zc_pcoin_kill_tier_step` | 1.2 | Shared with per-kill coins: each tier pays this much more (full clear 30 / 36 / 43 / 52 / 62 at T11-T15). |
+| `tiered_dungeon_pay_percents` | `100,50,0` | Pay at your tier / one tier above the copy / two or more. |
+
+The ramps multiply the copy's OWN tier stats. They never borrow the next tier's stats: those are tuned for
+the next tier's gear and do not step evenly (stored T16 monsters hit about 17 pct softer than T15).
+
 ## Step 11 - Verify in game
 
 ```
@@ -312,8 +341,9 @@ for hand edits to the database.
 ```
 
 - `show ... --wcid 35160` prints the monster's final values and which layer each came from. For a ranked
-  Regular monster at tier 11 you should see: the header `rank Regular (from zone)`, `max_health = 4000000`
-  (from the zone), `damage_resist_rating = 0` (from the tier) and `attack_damage = 1898`.
+  Regular monster at tier 11 you should see: the header `rank Regular (from zone)`, `max_health = 1000000`
+  (from the zone; the room ramp is added on top at spawn, so an appraised monster in room 12 shows about
+  1.4M), `damage_resist_rating = 0` (from the tier) and `attack_damage = 1898`.
 - `mobcheck "Colosseum 11" 35160` should print `ok    rank: Regular (from zone) ...` and `ok    zone enabled at
   variation 11`. With no zone name it uses the zone you stand in; with no wcid it uses the creature you
   have selected.
@@ -324,27 +354,49 @@ for hand edits to the database.
 
 ## Tiers 12-15 - repeat Steps 1-7 and 9 with these values
 
-In a text editor, take the Step 1-7 and Step 9 lines, replace `Colosseum 11` with the new zone name, the
-variation `11` in the `create` line with the new variation, and change the two numbers that differ per
-tier. Step 3, Step 4 (the 103 lines), Step 5 and Step 7 are identical apart from the zone name.
+In a text editor, take the Step 1-5, 7 and Step 9 lines, replace `Colosseum 11` with the new zone name,
+the variation `11` in the `create` line with the new variation, and change `max_health` to the tier's value
+below. Step 3, Step 4 (the 103 lines), Step 5 and Step 7 are identical apart from the zone name. Step 6
+(damagemult) is NOT repeated: it already covers every tier.
 
-| Tier | Zone name | Variation | max_health | Regular attack_damage | attack_damage for 35305 and 35306 (Regular / 2, rounded up) |
-|---|---|---|---|---|---|
-| 11 | Colosseum 11 | 11 | 4000000 | 1898 | 949 |
-| 12 | Colosseum 12 | 12 | 4000000 | 2523 | 1262 |
-| 13 | Colosseum 13 | 13 | 4000000 | 3102 | 1551 |
-| 14 | Colosseum 14 | 14 | 4600000 | 3731 | 1866 |
-| 15 | Colosseum 15 | 15 | 4600000 | 4723 | 2362 |
+| Tier | Zone name | Variation | max_health (room 6) | Room 18 at ramp 1.8 |
+|---|---|---|---|---|
+| 11 | Colosseum 11 | 11 | 1000000 | 1.80M |
+| 12 | Colosseum 12 | 12 | 900000 | 1.62M |
+| 13 | Colosseum 13 | 13 | 1250000 | 2.25M |
+| 14 | Colosseum 14 | 14 | 1300000 | 2.34M |
+| 15 | Colosseum 15 | 15 | 1500000 | 2.70M |
 
 For example, tier 14 begins:
 
 ```
 /zonecontrol create "Colosseum 14" 14 00AF
 /zonecontrol addlb "Colosseum 14" 00B0,00B1,00B2,00B3,00B4
-/zonecontrol set "Colosseum 14" max_health 4600000
+/zonecontrol set "Colosseum 14" max_health 1300000
 ```
 
-and its Step 6 lines are `/zonecontrol set "Colosseum 14" attack_damage 1866 --wcid 35305` and the same with 35306.
+### Measured 2026-11-11
+
+Each max_health above was solved so the MEDIAN random 4-player fellowship of that tier's active characters
+clears rooms 6-18 in about 50 minutes, with the room ramp on and the damage ramp off. Player damage is the
+server's own damage code on each character as saved (prod copy 2026-11-09, admin characters left out);
+wave timing from the arena generators (53 waves, 544 monsters, ~90 s a room floor), fights 70 pct efficient.
+
+| Tier | Characters | 3 players | 4 players | 5 players |
+|---|---|---|---|---|
+| 11 | 16 of 80 | 57 min, 58% finish | 49 min, 77% | 44 min, 95% |
+| 12 | 10 | 59 min, 55% | 50 min, 89% | 46 min, 100% |
+| 13 | 10 | 57 min, 57% | 48 min, 88% | 44 min, 97% |
+| 14 | 6 | 60 min, 54% | 50 min, 100% | 44 min, 100% |
+| 15 | 5 | 59 min, 60% | 50 min, 100% | 45 min, 100% |
+
+- T12 needs less health than T11: its active characters do less damage against their own tier (median
+  62k single-target vs 82k at T11). That is the data, not a typo.
+- T14 and T15 rest on 6 and 5 characters; treat them as a starting point.
+- Within one tier, single-target damage spreads 30:1 or more (two void casters carry T13), so WHO is in the
+  group matters more than how many. The model has no deaths, regroups, monster spells or healing: real runs
+  will be slower. Re-tune from logged room times after the first test (each 10 pct of health moves a 4-player
+  clear by about 3 minutes).
 
 - The Regular attack_damage values match the stored tier defaults on the local data (1898, 2523, 3102,
   3731, 4723). The tier Regular damage_resist_rating on the local data is 0, 104, 230, 410, 791 for
@@ -368,7 +420,7 @@ and its Step 6 lines are `/zonecontrol set "Colosseum 14" attack_damage 1866 --w
 | Gear essences off | command found (bag_odds 0) |
 | Rares off for the zone | Nothing to do; the server skips the rare roll inside a tier copy |
 | Annihilator / Stomper flags | command found (prop bool / float) |
-| Flags on the Tukora weapons | NO command for the weapon; interim attack_damage per wcid |
+| Flags on the Tukora weapons | NO command for the weapon; per-monster damagemult 0.25 (Mukkir 0.5), once for all tiers |
 | Elite Guardian | not needed (its weapon has no such flags) |
 | Server settings | command found (modifybool, modifystring, or /nolog add) |
 | Verification | command found (show, mobcheck, here) |
@@ -437,7 +489,7 @@ Server setting facts:
 
 1. Nothing here has been run on a live server. It is from reading the code and the local database copy. Check Step 11 on a real arena run, at tier 11 first.
 2. Rares: handled in code (no rare roll inside a tier copy). Confirm on the test run that no rare drops.
-3. Tukora weapons: the real fix is to remove bool 65 and 66 from weapons 31033, 31250 and 31251 in the world database (those weapons are shared with other monsters outside the Colosseum list). Not done here. The divisor 2 in Step 6 is a placeholder to be re-measured.
+3. Tukora weapons: the real fix is to remove bool 65 and 66 from weapons 31033, 31250 and 31251 in the world database (those weapons are shared with other monsters outside the Colosseum list). Not done here. The damagemult values in Step 6 (0.25 Tukora, 0.5 Mukkir) are starting values to be re-measured.
 4. Zone-wide bounty (`/zonecontrol zonebounty`): if it is on, kills in any enabled T11+ zone, these included, count toward it. Not checked on the local data. No per-zone exclusion was found.
 5. Bonus currency and Zone Share: the v11 tier default has no bonus-currency drops and Zone Share is off by default on the local data. If either changes, check the Colosseum zones.
 6. Everything in `zonecontrol_data` could also be edited at the store level (the shard `config_properties_string` row), but no procedure is given.
