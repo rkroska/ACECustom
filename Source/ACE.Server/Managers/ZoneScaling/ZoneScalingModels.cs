@@ -403,6 +403,10 @@ namespace ACE.Server.Managers.ZoneScaling
         // special_odds and per rank through the Ranks rows. Unset = bags never drop. On a hit the weights pick which bag (the four
         // core weights default to 1, so they are equally likely until tuned). Read by Creature_Death -> GearEssences.TryRollDrop.
         public const string BagOdds = "bag_odds";
+        // Item bounties (owner 2026-11-10): ONE roll per KILL inside a zone, 1-in-odds per rank through the Ranks rows, like bag_odds.
+        // Unset = bounties never drop. On a hit the kill tier's pool picks which bounty (ItemBounties.TryRollDrop -> PoolAt: each
+        // weenie's own ItemBountyDropWeight in its own tiers, replaced, extended or switched off per place by /zonecontrol bountyweight).
+        public const string BountyOdds = "bounty_odds";
         public const string BagWeightForgetfulness = "bag_weight_forgetfulness";
         public const string BagWeightMemory = "bag_weight_memory";
         public const string BagWeightSecondThoughts = "bag_weight_second_thoughts";
@@ -810,6 +814,8 @@ namespace ACE.Server.Managers.ZoneScaling
             SlayerPoolShare,
             // Prestige Coin falloff (2026-11-01) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
             PcoinFalloffKillsPerHour, PcoinFalloffMult,
+            // item bounty drops (2026-11-10) - APPEND-ONLY
+            BountyOdds,
         };
 
         /// <summary>
