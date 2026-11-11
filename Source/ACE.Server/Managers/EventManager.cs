@@ -111,10 +111,14 @@ namespace ACE.Server.Managers
                 if (evnt != null)
                 {
                     Events[evnt.Name] = evnt;
+                    // tiered dungeons: tier copies created from now on start from the reloaded database state
+                    // (ReloadAllEvents does the same), not the state the event had at startup
+                    _initialStates[evnt.Name] = evnt.State;
                     log.Debug($"[EventManager] Reloaded event '{evnt.Name}' from database (State: {(GameEventState)evnt.State})");
                     return true;
                 }
 
+                _initialStates.Remove(normalizedName);
                 if (Events.Remove(normalizedName))
                     log.Debug($"[EventManager] Removed event '{normalizedName}' (not found in database)");
                 return false;

@@ -586,5 +586,30 @@ namespace ACE.Server.Tests
         {
             Assert.AreEqual(40, TieredDungeonRegistry.RequiredTags(40, 3));
         }
+
+        // ------------------------------------------------------------------ IsStaleTally (abandoned runs)
+
+        [TestMethod]
+        public void IsStaleTally_ActiveRoom_IsKept()
+        {
+            // kills seconds apart, room a few minutes old
+            Assert.IsFalse(TieredDungeonRuns.IsStaleTally(1000, 1250, 1260));
+            Assert.IsFalse(TieredDungeonRuns.IsStaleTally(1000, 1000, 1000 + TieredDungeonRuns.RoomIdleResetSeconds));
+        }
+
+        [TestMethod]
+        public void IsStaleTally_AbandonedRun_StartsFresh()
+        {
+            // an abandoned room-6 run, the next group starting after the one-hour arena lock: still inside the
+            // 65-minute run window, but the room sat idle far longer than any real gap between kills
+            Assert.IsTrue(TieredDungeonRuns.IsStaleTally(1000, 1200, 1000 + 3640));
+            Assert.IsTrue(TieredDungeonRuns.IsStaleTally(1000, 1000, 1000 + TieredDungeonRuns.RoomIdleResetSeconds + 1));
+        }
+
+        [TestMethod]
+        public void IsStaleTally_PastTheRunWindow_StartsFresh()
+        {
+            Assert.IsTrue(TieredDungeonRuns.IsStaleTally(1000, 1000 + TieredDungeonRuns.RunWindowSeconds, 1001 + TieredDungeonRuns.RunWindowSeconds));
+        }
     }
 }

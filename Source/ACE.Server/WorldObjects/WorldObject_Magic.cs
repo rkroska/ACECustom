@@ -778,6 +778,10 @@ namespace ACE.Server.WorldObjects
                     else
                         targetCreature.DamageHistory.Add(this, DamageType.Health, (uint)-boost);
 
+                    // tiered dungeons: healing another player in a tier copy room counts as taking part in it
+                    if (boost > 0 && player != null)
+                        ACE.Server.Managers.TieredDungeons.TieredDungeonRuns.OnPlayerHealed(player, targetCreature, boost);
+
                     //if (targetPlayer != null && targetPlayer.Fellowship != null)
                     //targetPlayer.Fellowship.OnVitalUpdate(targetPlayer);
 

@@ -63,16 +63,41 @@ namespace ACE.Server.Managers.TieredDungeons
         // kill in a tier copy room records which players (or their pets) damaged it; when the room clears, only players who
         // damaged at least tiered_dungeon_min_room_tag_share of its monsters are credited. Counting monsters rather than
         // damage keeps a weak player who fights in a strong group eligible (same-tier damage spreads about 37:1).
+        // Healing counts the same way (review 2026-11-11): each heal that restores health to ANOTHER player standing in
+        // the room is one tag, so a pure healer can qualify while an idle character still cannot.
+        //
+        // The tally also keeps the highest tier among everyone who contributed - damaged a monster or healed - so the
+        // carry rule sees a higher-tier helper even when that helper is not credited (stays under the share, or leaves
+        // before the room clears).
 
         private sealed class RoomTally
         {
             public double Started;
+            public double LastActivity;
             public int Kills;
+            public int TopTier;
             public readonly Dictionary<uint, int> Tags = new();
         }
 
+        /// <summary>A room with no kill or heal for this long belongs to a finished or abandoned run: the next activity
+        /// starts a fresh tally. Inside a run the gap between kills in one room is seconds to a couple of minutes.</summary>
+        public const int RoomIdleResetSeconds = 600;
+
         private static readonly object tallyLock = new();
         private static readonly Dictionary<(ushort Landblock, int Variation, int Room), RoomTally> tallies = new();
+
+        /// <summary>True when an existing tally is stale and the next activity must start a new one.</summary>
+        public static bool IsStaleTally(double started, double lastActivity, double now)
+            => now - lastActivity > RoomIdleResetSeconds || now - started > RunWindowSeconds;
+
+        /// <summary>The live tally for a room, a fresh one when there is none or it is stale. Call under tallyLock.</summary>
+        private static RoomTally TallyFor((ushort, int, int) key, double now)
+        {
+            if (!tallies.TryGetValue(key, out var tally) || IsStaleTally(tally.Started, tally.LastActivity, now))
+                tallies[key] = tally = new RoomTally { Started = now };
+            tally.LastActivity = now;
+            return tally;
+        }
 
         /// <summary>Called for every creature death. Does nothing unless the creature belongs to a tier copy room.</summary>
         public static void OnMonsterDied(Creature victim)
@@ -86,30 +111,62 @@ namespace ACE.Server.Managers.TieredDungeons
                 if (room <= 0 || pos?.Variation == null)
                     return;
 
-                var fought = new HashSet<uint>();
+                var fought = new Dictionary<uint, int>();   // player guid -> player tier
                 foreach (var d in victim.DamageHistory.Damagers)
                 {
                     if (d == null || d.TotalDamage <= 0)
                         continue;
-                    var player = d.TryGetPetOwnerOrAttacker() as Player;
-                    if (player != null)
-                        fought.Add(player.Guid.Full);
+                    if (d.TryGetPetOwnerOrAttacker() is Player player && !fought.ContainsKey(player.Guid.Full))
+                        fought[player.Guid.Full] = TieredDungeonRegistry.PlayerTier(player);
                 }
 
-                var now = Time.GetUnixTime();
                 var key = (pos.LandblockId.Landblock, pos.Variation.Value, room);
                 lock (tallyLock)
                 {
-                    if (!tallies.TryGetValue(key, out var tally) || now - tally.Started > RunWindowSeconds)
-                        tallies[key] = tally = new RoomTally { Started = now };
+                    var tally = TallyFor(key, Time.GetUnixTime());
                     tally.Kills++;
-                    foreach (var guid in fought)
-                        tally.Tags[guid] = tally.Tags.GetValueOrDefault(guid) + 1;
+                    foreach (var kv in fought)
+                    {
+                        tally.Tags[kv.Key] = tally.Tags.GetValueOrDefault(kv.Key) + 1;
+                        tally.TopTier = Math.Max(tally.TopTier, kv.Value);
+                    }
                 }
             }
             catch (Exception ex)
             {
                 log.Error($"[TIERED] OnMonsterDied: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Called when a player's heal spell or healing kit restores health to a creature. Counts as one tag for the healer
+        /// when the target is ANOTHER player and the healer stands in a tier copy room; nothing anywhere else.
+        /// </summary>
+        public static void OnPlayerHealed(Player healer, Creature target, long amount)
+        {
+            try
+            {
+                if (healer == null || amount <= 0 || target is not Player || ReferenceEquals(healer, target))
+                    return;
+                var pos = healer.Location;
+                var dungeon = pos == null ? null : TieredDungeonRegistry.FindCopyAt(pos.LandblockId.Landblock, pos.Variation);
+                if (dungeon == null || !dungeon.Arenas.Contains(pos.LandblockId.Landblock))
+                    return;
+                var room = TieredDungeonRegistry.RoomAt(dungeon, pos.PositionY);
+                if (room <= 0)
+                    return;
+
+                var tier = TieredDungeonRegistry.PlayerTier(healer);
+                lock (tallyLock)
+                {
+                    var tally = TallyFor((pos.LandblockId.Landblock, pos.Variation.Value, room), Time.GetUnixTime());
+                    tally.Tags[healer.Guid.Full] = tally.Tags.GetValueOrDefault(healer.Guid.Full) + 1;
+                    tally.TopTier = Math.Max(tally.TopTier, tier);
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[TIERED] OnPlayerHealed: {ex}");
             }
         }
 
@@ -152,12 +209,15 @@ namespace ACE.Server.Managers.TieredDungeons
             // only players who fought in the room (see RoomTally)
             var tally = TakeTally(source.Location.LandblockId.Landblock, source.Location.Variation.Value, room, dungeon.FirstRoom);
             var share = ServerConfig.tiered_dungeon_min_room_tag_share.Value;
-            if (tally == null || tally.Kills == 0)
+            if (share > 0 && (tally == null || tally.Kills == 0))
             {
-                if (share > 0 && present.Count > 0)
-                    log.Warn($"[TIERED] {dungeon.Name} T{TieredDungeonRegistry.ScopeTier} room {room} cleared with no kills recorded - credited by presence");
+                // Fail CLOSED: with no record of who fought, nobody is credited. Crediting by presence here would hand an
+                // idle character full pay whenever the tally goes missing, and the guard would switch itself off quietly.
+                if (present.Count > 0)
+                    log.Error($"[TIERED] {dungeon.Name} T{TieredDungeonRegistry.ScopeTier} room {room} in 0x{source.Location.LandblockId.Landblock:X4} cleared with no kills recorded - nobody credited: {string.Join(", ", present.Select(p => p.Name))}");
+                return;
             }
-            else
+            if (share > 0)
             {
                 var need = TieredDungeonRegistry.RequiredTags(tally.Kills, share);
                 var idle = present.Where(p => tally.Tags.GetValueOrDefault(p.Guid.Full) < need).ToList();
@@ -173,8 +233,9 @@ namespace ACE.Server.Managers.TieredDungeons
             var now = (uint)Time.GetUnixTime();
             var runName = QuestManager.GetQuestName(RunQuest);   // tier-tagged by the scope
 
-            // the highest tier among everyone credited in this room, and whatever each of them already carries
-            var top = 0;
+            // the highest tier among everyone who CONTRIBUTED to this room (credited or not - a carry who stays under the
+            // share or leaves before the clear still counts), the players credited now, and whatever each already carries
+            var top = tally?.TopTier ?? 0;
             foreach (var p in present)
             {
                 var run = p.QuestManager.GetQuest(runName);

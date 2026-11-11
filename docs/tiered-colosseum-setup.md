@@ -324,7 +324,7 @@ Run tuning (live settings, defaults shown - nothing to type unless you change th
 |---|---|---|
 | `tiered_dungeon_room_health_ramp` | 1.8 | Monster health in room 18 vs room 6 (straight line between). Stamped at spawn. |
 | `tiered_dungeon_room_damage_ramp` | 1.0 | Everything monsters deal, room 18 vs room 6. Off at launch; raise (e.g. 1.4) after deaths per room are logged. Read live. |
-| `tiered_dungeon_min_room_tag_share` | 0.25 | A player must have damaged this share of a room's monsters (pets count) to be credited with the room. 0 = standing there is enough. |
+| `tiered_dungeon_min_room_tag_share` | 0.25 | A player needs this many tags, as a share of the room's kills, to be credited with the room. A tag = a monster they or their pet damaged, or a heal that restored health to another player in the room (so pure healers qualify). A room with no kills recorded credits nobody (logged as an error). 0 = standing there is enough. |
 | `tiered_dungeon_pay_table` | `13:6,14:9,15:13,16:17,17:23,18:30` | Coins in T11 terms by furthest room. |
 | `zc_pcoin_kill_tier_step` | 1.2 | Shared with per-kill coins: each tier pays this much more (full clear 30 / 36 / 43 / 52 / 62 at T11-T15). |
 | `tiered_dungeon_pay_percents` | `100,50,0` | Pay at your tier / one tier above the copy / two or more. |
@@ -395,8 +395,8 @@ wave timing from the arena generators (53 waves, 544 monsters, ~90 s a room floo
 - T14 and T15 rest on 6 and 5 characters; treat them as a starting point.
 - Within one tier, single-target damage spreads 30:1 or more (two void casters carry T13), so WHO is in the
   group matters more than how many. The model has no deaths, regroups, monster spells or healing: real runs
-  will be slower. Re-tune from logged room times after the first test (each 10 pct of health moves a 4-player
-  clear by about 3 minutes).
+  will be slower. Re-tune from logged room times after the first test (estimate, not simulated: each 10 pct of health moves a
+  4-player clear by about 3 minutes).
 
 - The Regular attack_damage values match the stored tier defaults on the local data (1898, 2523, 3102,
   3731, 4723). The tier Regular damage_resist_rating on the local data is 0, 104, 230, 410, 791 for
