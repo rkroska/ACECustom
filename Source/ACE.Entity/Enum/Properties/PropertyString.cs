@@ -178,13 +178,17 @@ namespace ACE.Entity.Enum.Properties
         /// marks the name as player-chosen, so nothing rewrites it (an element change keeps it). Shown in the appraisal.</summary>
         OriginalItemName = 60000,
 
+        // REFLECTION BOSS ids: 59200+ (moved 2026-11-10 from 58000-58001 here and 58000-58004 in PropertyInt, which sit in
+        // the Zone loot property block 58000-58999, ZoneLootProps). Weenies set ReflectionLives / Wcid / DamageRatingStep /
+        // Pick (int), HealthStep / RewardStep (float) and NameFormat (string) under these ids; the old 580xx rows do nothing now.
+
         /// <summary>Reflection boss (2026-11-04): the player GUIDs already copied by this chain of lives, comma-separated
         /// hex. Set at runtime and carried from life to life, so no player is copied twice.</summary>
-        ReflectionCopied = 58000,
+        ReflectionCopied = 59200,
 
         /// <summary>Reflection boss, on a MONSTER weenie: the respawn's name, with %s for the player's name. Unset =
         /// "%s's Reflection".</summary>
-        ReflectionNameFormat = 58001,
+        ReflectionNameFormat = 59201,
 
         /// <summary>Item bounties (2026-11-10), on the CHARACTER: the active bounty slots R1, R2 (rings) and B1, B2
         /// (bracelets), one entry per filled slot (ItemBounties.cs owns the format). 57700, free in EVERY Property enum.</summary>
