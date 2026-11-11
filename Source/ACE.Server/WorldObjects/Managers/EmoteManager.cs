@@ -19,6 +19,7 @@ using ACE.Server.Entity.Actions;
 using ACE.Server.Factories;
 using ACE.Server.Factories.Enum;
 using ACE.Server.Managers;
+using ACE.Server.Managers.TieredDungeons;
 using ACE.Server.Network;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
@@ -344,6 +345,11 @@ namespace ACE.Server.WorldObjects.Managers
         {
             // pyreal ledger: items given or taken and bank stats changed by this emote are labeled with the emoter
             using var ledgerScope = PyrealLedger.BeginFor(PyrealLedger.SrcEmote, WorldObject);
+
+            // Tiered dungeons: an object acting inside a tier copy reads and writes that tier's own quest flags and
+            // events ("Name~v11"). Derived from THIS object's location on every action (delayed actions re-enter
+            // here), and cleared again for an object outside a tier copy. No effect on retail objects.
+            using var tierScope = TieredDungeonRegistry.EnterScope(WorldObject);
 
             var player = targetObject as Player;
             var creature = WorldObject as Creature;
@@ -1485,7 +1491,17 @@ namespace ACE.Server.WorldObjects.Managers
                     {
                         if (WorldObject.CurrentLandblock != null)
                             WorldObject.CurrentLandblock.EmitSignal(WorldObject, emote.Message);
+
+                        // tiered dungeons: a tier copy's room coordinator announcing its last wave credits the room
+                        TieredDungeonRuns.OnLocalSignal(WorldObject, emote.Message);
                     }
+                    break;
+
+                case EmoteType.AwardTieredDungeonPay:
+
+                    // tiered dungeons: the tier Arbitrator's reward. Does nothing outside a tier copy.
+                    if (player != null)
+                        TieredDungeonRuns.Pay(WorldObject, player);
                     break;
 
                 case EmoteType.LockFellow:
@@ -2487,6 +2503,9 @@ namespace ACE.Server.WorldObjects.Managers
                             {
                                 var variation = emote.Stat;
                                 var destination = new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value, false, variation);
+
+                                // tiered dungeons: a teleport inside a tier copy stays in that tier
+                                TieredDungeonRegistry.KeepTier(player.Location, destination);
 
                                 WorldObject.AdjustDungeon(destination);
                                 WorldManager.ThreadSafeTeleport(player, destination);
@@ -4830,6 +4849,9 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public void OnQuest(Creature initiator)
         {
+            // tiered dungeons: a portal inside a tier copy stamps the tier's own flag (see ExecuteEmote)
+            using var tierScope = TieredDungeonRegistry.EnterScope(WorldObject);
+
             var questName = WorldObject.Quest;
 
             var hasQuest = initiator.QuestManager.HasQuest(questName);

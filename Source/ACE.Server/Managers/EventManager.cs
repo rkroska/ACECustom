@@ -30,6 +30,43 @@ namespace ACE.Server.Managers
             Events = new Dictionary<string, Event>(StringComparer.OrdinalIgnoreCase);
         }
 
+        // The state each event had in the world database at startup - what a tier copy's event starts from.
+        private static readonly Dictionary<string, int> _initialStates = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Looks an event up by its (already normalised) name. Call under _eventsLock.
+        ///
+        /// Tiered dungeons: a tier-tagged name ("ColoArenaOneInUse~v11") that does not exist yet is created here, in
+        /// memory only, as a copy of its retail event at the retail event's DATABASE state - never its live state, so a
+        /// retail arena in use does not start a tier arena as in use. It is created on the first lookup because a
+        /// generator ignores an event that does not exist (WorldObject_Generators.CheckEventStatus). An untagged name
+        /// never reaches the create branch, so retail lookups are exactly Events.TryGetValue.
+        /// </summary>
+        private static bool TryGetEvent(string eventName, out Event evnt)
+        {
+            if (Events.TryGetValue(eventName, out evnt))
+                return true;
+
+            if (!TieredDungeons.TieredDungeonRegistry.IsTagged(eventName))
+                return false;
+
+            var baseName = TieredDungeons.TieredDungeonRegistry.StripTag(eventName);
+            if (!Events.TryGetValue(baseName, out var baseEvent))
+                return false;
+
+            evnt = new Event
+            {
+                Name = eventName,
+                StartTime = baseEvent.StartTime,
+                EndTime = baseEvent.EndTime,
+                State = _initialStates.TryGetValue(baseName, out var state) ? state : baseEvent.State,
+                LastModified = baseEvent.LastModified,
+            };
+            Events[eventName] = evnt;
+            log.Debug($"[EVENT] created tier event {eventName} from {baseName} (state {(GameEventState)evnt.State})");
+            return true;
+        }
+
         public static void Initialize()
         {
             var events = Database.DatabaseManager.World.GetAllEvents();
@@ -37,6 +74,7 @@ namespace ACE.Server.Managers
             foreach(var evnt in events)
             {
                 Events.Add(evnt.Name, evnt);
+                _initialStates[evnt.Name] = evnt.State;
 
                 if (evnt.State == (int)GameEventState.On)
                     StartEvent(evnt.Name, null, null);
@@ -98,7 +136,18 @@ namespace ACE.Server.Managers
                 reloaded[evnt.Name] = evnt;
 
             lock (_eventsLock)
+            {
+                // tiered dungeons: tier events exist only in memory - carry them over with their live state, or a
+                // reload during a run would hand every tier arena back its starting state
+                foreach (var kvp in Events)
+                    if (TieredDungeons.TieredDungeonRegistry.IsTagged(kvp.Key))
+                        reloaded[kvp.Key] = kvp.Value;
+
+                foreach (var evnt in events)
+                    _initialStates[evnt.Name] = evnt.State;
+
                 Events = reloaded;
+            }
 
             log.Debug($"[EventManager] Reloaded {reloaded.Count} events from database");
         }
@@ -112,7 +161,7 @@ namespace ACE.Server.Managers
 
             lock (_eventsLock)
             {
-                if (!Events.TryGetValue(eventName, out Event evnt))
+                if (!TryGetEvent(eventName, out Event evnt))
                     return false;
 
                 var state = (GameEventState)evnt.State;
@@ -143,7 +192,7 @@ namespace ACE.Server.Managers
 
             lock (_eventsLock)
             {
-                if (!Events.TryGetValue(eventName, out Event evnt))
+                if (!TryGetEvent(eventName, out Event evnt))
                     return false;
 
                 var state = (GameEventState)evnt.State;
@@ -178,7 +227,7 @@ namespace ACE.Server.Managers
 
             lock (_eventsLock)
             {
-                if (!Events.TryGetValue(eventName, out Event evnt))
+                if (!TryGetEvent(eventName, out Event evnt))
                     return false;
 
                 if (evnt.State != (int)GameEventState.Disabled && (evnt.StartTime != -1 || evnt.EndTime != -1))
@@ -206,7 +255,7 @@ namespace ACE.Server.Managers
 
             lock (_eventsLock)
             {
-                if (!Events.TryGetValue(eventName, out Event evnt))
+                if (!TryGetEvent(eventName, out Event evnt))
                     return false;
 
                 return evnt.State != (int)GameEventState.Disabled;
@@ -219,7 +268,7 @@ namespace ACE.Server.Managers
 
             lock (_eventsLock)
             {
-                return Events.ContainsKey(eventName);
+                return TryGetEvent(eventName, out _);
             }
         }
 
@@ -237,7 +286,7 @@ namespace ACE.Server.Managers
 
             lock (_eventsLock)
             {
-                if (!Events.TryGetValue(eventName, out Event evnt))
+                if (!TryGetEvent(eventName, out Event evnt))
                     return GameEventState.Undef;
 
                 return (GameEventState)evnt.State;
@@ -260,11 +309,12 @@ namespace ACE.Server.Managers
         public static string GetEventName(string eventFormat)
         {
             var idx = eventFormat.IndexOf('@');     // strip comment
+            // tiered dungeons: inside a tier copy's scope the event is the tier's own ("Name~v11"); unchanged outside one
             if (idx == -1)
-                return eventFormat;
+                return TieredDungeons.TieredDungeonRegistry.ApplyScope(eventFormat);
 
             var eventName = eventFormat.Substring(0, idx);
-            return eventName;
+            return TieredDungeons.TieredDungeonRegistry.ApplyScope(eventName);
         }
 
         private static void OnScheduleTimer(object state)

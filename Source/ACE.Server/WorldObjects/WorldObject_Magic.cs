@@ -1912,6 +1912,9 @@ namespace ACE.Server.WorldObjects
                 portalSendingChain.AddAction(targetPlayer, ActionType.WorldObjectMagic_AdjustDungeonAndTeleportPlayer, () =>
                 {
                     var teleportDest = new Position(spell.Position);
+                    // tiered dungeons: the arena teleporter and the hourly boot are spells, and a spell's destination
+                    // has no variation - keep a player who is inside a tier copy in that tier
+                    ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.KeepTier(targetPlayer.Location, teleportDest);
                     AdjustDungeon(teleportDest);
 
                     targetPlayer.Teleport(teleportDest);
@@ -1925,6 +1928,7 @@ namespace ACE.Server.WorldObjects
                 // monsters can cast some portal spells on themselves too, possibly?
                 // under certain circumstances, such as ensuring the destination is the same landblock
                 var teleportDest = new Position(spell.Position);
+                ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.KeepTier(targetCreature.Location, teleportDest);
                 targetCreature.DoTeleport(teleportDest);
             }
         }
@@ -1963,6 +1967,8 @@ namespace ACE.Server.WorldObjects
             portalSendingChain.AddAction(targetPlayer, ActionType.WorldObjectMagic_AdjustDungeonAndTeleportPlayer, () =>
             {
                 var teleportDest = new Position(spell.Position);
+                // tiered dungeons: see HandleCastSpell_PortalSending
+                ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.KeepTier(targetPlayer.Location, teleportDest);
                 AdjustDungeon(teleportDest);
 
                 targetPlayer.Teleport(teleportDest);

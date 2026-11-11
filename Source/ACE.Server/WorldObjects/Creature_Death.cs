@@ -1032,7 +1032,9 @@ namespace ACE.Server.WorldObjects
 
             corpse.RemoveProperty(PropertyInt.Value);
 
-            if (CanGenerateRare && killer != null)
+            // tiered dungeons: a tier copy pays Prestige Coins only. Its monsters carry the zone's level (1100), which would
+            // otherwise make every one of a run's ~540 kills eligible for the retail rare roll.
+            if (CanGenerateRare && killer != null && ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.TierAt(Location) == 0)
                 corpse.TryGenerateRare(killer);
 
             corpse.InitPhysicsObj(Location.Variation);

@@ -375,7 +375,10 @@ namespace ACE.Server.Managers
         /// </summary>
         public bool IsMaxSolves(string questName)
         {
-            var quest = DatabaseManager.World.GetCachedQuest(questName);
+            // callers pass this name as they have it (HandleSolveError passes the raw one), so tag it here too
+            questName = TieredDungeons.TieredDungeonRegistry.ApplyScope(questName);
+
+            var quest = GetQuestRow(questName);
             if (quest == null) return false;
 
             var playerQuest = GetQuest(questName);
@@ -392,7 +395,7 @@ namespace ACE.Server.Managers
         {
             var questName = GetQuestName(questFormat);
 
-            var quest = DatabaseManager.World.GetCachedQuest(questName);
+            var quest = GetQuestRow(questName);
             if (quest == null) return 0;
 
             return quest.MaxSolves;
@@ -420,6 +423,10 @@ namespace ACE.Server.Managers
             if (quest.Name.StartsWith("ColoArena"))
                 return false;
 
+            // tiered dungeons: the pay timer is a fixed 20 hours whatever quest_mindelta_rate is
+            if (quest.Name.Equals(TieredDungeons.TieredDungeonRegistry.PayTimerQuest, StringComparison.OrdinalIgnoreCase))
+                return false;
+
             return true;
         }
 
@@ -430,7 +437,7 @@ namespace ACE.Server.Managers
         {
             var questName = GetQuestName(questFormat);
 
-            var quest = DatabaseManager.World.GetCachedQuest(questName);
+            var quest = GetQuestRow(questName);
             if (quest == null)
                 return TimeSpan.MaxValue;   // world quest not found - cannot solve it
 
@@ -608,12 +615,19 @@ namespace ACE.Server.Managers
         public static string GetQuestName(string questFormat)
         {
             var idx = questFormat.IndexOf('@');     // strip comment
+            // Tiered dungeons: inside a tier copy's scope the name carries the tier ("Name~v11"), so a tier run and
+            // a retail run never share a flag or timer. ApplyScope returns the name unchanged outside a scope.
             if (idx == -1)
-                return questFormat;
+                return TieredDungeons.TieredDungeonRegistry.ApplyScope(questFormat);
 
             var questName = questFormat.Substring(0, idx);
-            return questName;
+            return TieredDungeons.TieredDungeonRegistry.ApplyScope(questName);
         }
+
+        /// <summary>The world quest row behind a name. A tier-tagged name ("Name~v11") reads the retail row ("Name"):
+        /// a tier copy keeps retail's timers and solve limits, and a name with no row can never be solved.</summary>
+        private static Database.Models.World.Quest GetQuestRow(string questName)
+            => DatabaseManager.World.GetCachedQuest(TieredDungeons.TieredDungeonRegistry.StripTag(questName));
 
         /// <summary>
         /// Returns TRUE if player has solved this quest between min-max times
@@ -708,7 +722,7 @@ namespace ACE.Server.Managers
             }
 
             var questName = GetQuestName(killQuestName);
-            var quest = DatabaseManager.World.GetCachedQuest(questName);
+            var quest = GetQuestRow(questName);
 
             if (quest == null)
             {
@@ -1734,6 +1748,12 @@ namespace ACE.Server.Managers
                 return;
             }
 
+            // Tiered dungeons: nothing stamped inside a tier copy counts toward account quest bonus. The scope check
+            // matters as much as the tag check - Update / SetQuestCompletions hand this method the RAW name, so a flag
+            // stamped by a tier exit portal arrives here untagged and would otherwise write a retail-named bonus row.
+            if (TieredDungeons.TieredDungeonRegistry.ScopeTier > 0 || TieredDungeons.TieredDungeonRegistry.IsTagged(questName))
+                return;
+
             var acctId = player.Account.AccountId;
 
             if (player.Account.HasQuestBonusAndCompletion(questName))
@@ -1798,6 +1818,10 @@ namespace ACE.Server.Managers
             failed = false;
 
             if (player == null || player.IsMule || player.Account == null || string.IsNullOrWhiteSpace(questName))
+                return false;
+
+            // tiered dungeons: never a quest bonus row for a tier copy's flag (see UpdatePlayerQuestCompletions)
+            if (TieredDungeons.TieredDungeonRegistry.ScopeTier > 0 || TieredDungeons.TieredDungeonRegistry.IsTagged(questName))
                 return false;
 
             // Key the row the same way Stamp() did. Stamp(questFormat) calls Update(GetQuestName(...)),
