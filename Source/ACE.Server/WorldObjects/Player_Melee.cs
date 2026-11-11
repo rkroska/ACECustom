@@ -423,9 +423,10 @@ namespace ACE.Server.WorldObjects
 
                             // Apply cast on strike effects to cleaved targets
                             PendingCleaveDamageScale = cleaveScale != 1f ? cleaveScale : null;
+                            DealingCleavedHit = true;
                             DamageEvent cleaveDamageEvent;
                             try { cleaveDamageEvent = DamageTarget(cleaveHit, weapon); }
-                            finally { PendingCleaveDamageScale = null; }
+                            finally { PendingCleaveDamageScale = null; DealingCleavedHit = false; }
                             
                             // Handle weapon-only procs for cleaved targets: uses strike-decayed chance then applies cleave decay
                             // Only proc if primary hit was successful and dealt damage
