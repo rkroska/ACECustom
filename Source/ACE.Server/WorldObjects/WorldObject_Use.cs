@@ -73,6 +73,21 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         protected virtual bool ShouldApplyActivationCooldown(Player player) => true;
 
+        /// <summary>
+        /// Whether a use runs this object's Use emote before ActOnUse. True for everything except an object whose ActOnUse does
+        /// the emote's job itself (GenericObject overrides it for the event lum tokens).
+        /// </summary>
+        /// <param name="activator">Who used the object.</param>
+        /// <returns>True to run the Use emote.</returns>
+        protected virtual bool RunsUseEmote(WorldObject activator) => true;
+
+        /// <summary>
+        /// Activates this object for <paramref name="activator"/>: checks the use requirements (and stops there, with their
+        /// message, if they fail), starts the cooldown, then runs each ActivationResponse in turn - animation, activation
+        /// emote, spell, generator, the Use emote (unless RunsUseEmote says not to) plus ActOnUse, talk - and finally passes the
+        /// activation on to its ActivationTarget.
+        /// </summary>
+        /// <param name="activator">Who or what activated this object.</param>
         public virtual void OnActivate(WorldObject activator)
         {
             if (activator is Player trialPlayer)
@@ -134,7 +149,9 @@ namespace ACE.Server.WorldObjects
             // default use action
             if (ActivationResponse.HasFlag(ActivationResponse.Use))
             {
-                if (activator is Creature creature)
+                // RunsUseEmote: false only where ActOnUse does the emote's job itself (GenericObject: an event lum token that
+                // pays through Player.UseLumToken), so one click never pays twice
+                if (activator is Creature creature && RunsUseEmote(activator))
                 {
                     //target.EmoteManager.OnActivation(creature); // found a few things with Activation on them but not ActivationResponse.Emote...
                     EmoteManager.OnUse(creature);
