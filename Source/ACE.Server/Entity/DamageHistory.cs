@@ -97,6 +97,11 @@ namespace ACE.Server.Entity
 
             AddInternal(attacker, amount);
 
+            // Auto fellowship anti-leech (2026-11-05): damage a player (or their pet) does to a monster counts toward their share
+            // of their area fellowship's damage
+            if (!(Creature is Player))
+                ACE.Server.Managers.ZoneFellowshipManager.RecordDamage(attacker, amount);
+
             Creature.OnHealthUpdate();
         }
 

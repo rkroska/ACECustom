@@ -74,6 +74,9 @@ namespace ACE.Server.WorldObjects
             // regardless of the 5s heartbeat.
             ACE.Server.Managers.ZoneControl.ZoneEffectManager.Tick(this, currentUnixTime);
 
+            // Auto fellowship (2026-11-05): join / leave the zone fellowship of the Zone Share area we stand in (self-timed, 2 s)
+            ZoneFellowshipManager.Tick(this, currentUnixTime);
+
             var recoverySecs = ServerConfig.PortalStuckRecoverySecondsEffective;
             if (Teleporting && PortalSpaceEnteredUtc.HasValue && recoverySecs > 0)
             {
@@ -105,8 +108,8 @@ namespace ACE.Server.WorldObjects
 
             if (FellowVitalUpdate && Fellowship != null)
             {
-                Fellowship.OnVitalUpdate(this);
-                FellowVitalUpdate = false;
+                if (Fellowship.OnVitalUpdate(this))   // held back by an area fellowship's once-a-second limit: stays pending
+                    FellowVitalUpdate = false;
             }
 
             if (House != null && ServerConfig.house_rent_enabled.Value)
@@ -203,6 +206,16 @@ namespace ACE.Server.WorldObjects
             SyncZcGearDisplay();
 
             ManaConsumersTick();
+
+            // QB Deeds: a live server cap change (deeds_max_tier) or a QB move moves the player's tier + buffs (every 5 s)
+            try
+            {
+                DeedsHeartbeatTick(currentUnixTime);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[Deeds] {Name} (0x{Guid}): heartbeat tier check failed", ex);
+            }
 
             HandleTargetVitals();
 
