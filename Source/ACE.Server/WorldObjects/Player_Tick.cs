@@ -204,6 +204,16 @@ namespace ACE.Server.WorldObjects
 
             ManaConsumersTick();
 
+            // QB Deeds: a live server cap change (deeds_max_tier) or a QB move moves the player's tier + buffs (every 5 s)
+            try
+            {
+                DeedsHeartbeatTick(currentUnixTime);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[Deeds] {Name} (0x{Guid}): heartbeat tier check failed", ex);
+            }
+
             HandleTargetVitals();
 
             LifestoneProtectionTick();

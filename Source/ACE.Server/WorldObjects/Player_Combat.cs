@@ -150,15 +150,18 @@ namespace ACE.Server.WorldObjects
             if (IsDead || Health.Current <= 0 || amount < Health.Current)
                 return amount;
 
-            if (GetZoneModifierMax(ZcCheatDeathProp) <= 0)
+            // the boots flag (Zone Control areas), or QB Deeds T13 against a monster (every area) - one window, one cooldown
+            var fromBoots = GetZoneModifierMax(ZcCheatDeathProp) > 0;
+            if (!fromBoots && !HasDeedsCheatDeath(source))
                 return amount;
 
             var now = Time.GetUnixTime();
             if (now < ZcCheatDeathReadyAt)
                 return amount;
 
-            var immunity = ZcSpecialKnob(source, "cheatdeath_immunity", 5.0);
-            var cooldown = ZcSpecialKnob(source, "cheatdeath_cooldown", 600.0);
+            // the boots: the zone's knobs; QB Deeds: its own live settings (deeds_cheatdeath_immunity / _cooldown, /modifydouble)
+            var immunity = fromBoots ? ZcSpecialKnob(source, "cheatdeath_immunity", 5.0) : DeedsTiers.CheatDeathImmunity;
+            var cooldown = fromBoots ? ZcSpecialKnob(source, "cheatdeath_cooldown", 600.0) : DeedsTiers.CheatDeathCooldown;
 
             ZcCheatDeathImmuneUntil = now + immunity;
             ZcCheatDeathReadyAt = now + cooldown;
@@ -167,9 +170,9 @@ namespace ACE.Server.WorldObjects
             var announce = new ACE.Server.Entity.Actions.ActionChain();
             announce.AddDelayForOneTick();
             announce.AddAction(this, ACE.Server.Entity.Actions.ActionType.Player_ZcCheatDeathExpired, () =>
-                SendMessage($"Cheat Death! You are immune to all damage for {immunity:0} seconds.", ChatMessageType.Broadcast));
+                SendMessage($"Cheat Death! You are immune to all damage for {immunity:0.#} seconds.", ChatMessageType.Broadcast));
             announce.EnqueueChain();
-            log.Info($"[ZCSPECIAL] Cheat Death: {Name} hit for {amount:N0} at {Health.Current:N0} HP by {source?.Name ?? "?"} -> 1 HP, immune {immunity:0}s, cooldown {cooldown:0}s");
+            log.Info($"[ZCSPECIAL] Cheat Death ({(fromBoots ? "boots" : "Deeds")}): {Name} hit for {amount:N0} at {Health.Current:N0} HP by {source?.Name ?? "?"} -> 1 HP, immune {immunity:0}s, cooldown {cooldown:0}s");
 
             // expiry notice (owner 2026-08-23): fires when the window closes, names the remaining cooldown
             var expiry = new ACE.Server.Entity.Actions.ActionChain();

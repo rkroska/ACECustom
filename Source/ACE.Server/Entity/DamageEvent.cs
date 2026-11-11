@@ -567,7 +567,7 @@ namespace ACE.Server.Entity
                 }
             }
 
-            // QB Deeds (13k QB): a separate x1.10 on the player's melee / missile damage against monsters, normal hits and crits alike
+            // QB Deeds (3k-15k QB): the separate damage step (x1.02-x1.10) on the player's melee / missile damage against monsters, normal hits and crits alike
             DamageBeforeMitigation *= Player.GetDeedsDamageMod(attacker, defender);
 
             // armor rending and cleaving
