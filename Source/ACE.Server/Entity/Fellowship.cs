@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -22,9 +23,12 @@ namespace ACE.Server.Entity
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
-        /// The maximum # of fellowship members
+        /// The maximum # of fellowship members: the live server setting fellowship_max_size, 0 = no limit (owner 2026-11-05: "No cap
+        /// everywhere", then "Add a way for us to change fellowship max size live"). It was a constant 29 (upstream's 2023-07-06
+        /// release, retail 9). The retail client was shown a 100-member fellowship on TEST and listed it fine; shares past 28
+        /// members stay at the table's 12.5% each (GetMemberSharePercent), "Treat 29 to 100 the same as 29".
         /// </summary>
-        private const int MaxFellows = 29;   // a REAL fellowship's cap - the client's fellowship window. Zone Share has no cap (owner 2026-09-25)
+        public static int MaxFellows => ServerConfig.fellowship_max_size.Value <= 0 ? int.MaxValue : (int)Math.Min(int.MaxValue, ServerConfig.fellowship_max_size.Value);
 
         public string FellowshipName;
         public uint FellowshipLeaderGuid;
@@ -35,7 +39,13 @@ namespace ACE.Server.Entity
         public bool Open;      // indicates if non-leaders can invite new fellowship members
         public bool IsLocked;  // only set through emotes. if a fellowship is locked, new fellowship members cannot be added
 
-        public Dictionary<uint, WeakReference<Player>> FellowshipMembers;
+        /// <summary>Concurrent since 2026-11-05: a zone fellowship (ZoneFellowshipManager) gains and loses members from every
+        /// landblock thread its zone spans while kills on other threads read it - a plain Dictionary throws on that.</summary>
+        public ConcurrentDictionary<uint, WeakReference<Player>> FellowshipMembers;
+
+        /// <summary>Not null: a zone fellowship the server holds for an area (ZoneFellowshipManager, owner 2026-11-05). Members
+        /// join and leave by walking in and out (/autofellow); nobody can disband, dismiss, lock, open or recruit into it.</summary>
+        public string ZoneKey;
 
         public Dictionary<uint, int> DepartedMembers;
 
@@ -56,7 +66,8 @@ namespace ACE.Server.Entity
             FellowshipLeaderGuid = leader.Guid.Full;
             FellowshipName = fellowshipName;
 
-            FellowshipMembers = new Dictionary<uint, WeakReference<Player>>() { { leader.Guid.Full, new WeakReference<Player>(leader) } };
+            FellowshipMembers = new ConcurrentDictionary<uint, WeakReference<Player>>();
+            FellowshipMembers[leader.Guid.Full] = new WeakReference<Player>(leader);
 
             Open = false;
 
@@ -95,7 +106,7 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (FellowshipMembers.Count == MaxFellows)
+            if (FellowshipMembers.Count >= MaxFellows)
             {
                 inviter.Session.Network.EnqueueSend(new GameEventWeenieError(inviter.Session, WeenieError.YourFellowshipIsFull));
                 return;
@@ -155,11 +166,29 @@ namespace ACE.Server.Entity
                 return;
             }
 
-            if (FellowshipMembers.Count == MaxFellows)
+            if (FellowshipMembers.Count >= MaxFellows)
             {
                 inviter.Session.Network.EnqueueSend(new GameEventWeenieError(inviter.Session, WeenieError.YourFellowshipIsFull));
                 return;
             }
+
+            // Auto Fellow test suite 2026-11-05 (X1): a yes lands in the inviter's fellowship OF NOW - an invite sent before the
+            // inviter walked into an Auto Fellow area put the invited player (outside the area, even blacklisted from it) into
+            // the area's fellowship. An area fellowship never takes anyone by invitation.
+            if (ZoneKey != null)
+            {
+                player.Session?.Network.EnqueueSend(new GameMessageSystemChat($"That offer of fellowship is no longer good: {inviter.Name} is in an area fellowship now.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // (X2) a yes to an old invite while already in a fellowship made the player a member of two at once
+            if (player.Fellowship != null && player.Fellowship != this)
+            {
+                player.Session?.Network.EnqueueSend(new GameMessageSystemChat("You are already in a fellowship - leave it first.", ChatMessageType.Broadcast));
+                return;
+            }
+            if (FellowshipMembers.ContainsKey(player.Guid.Full))
+                return;
 
             FellowshipMembers.TryAdd(player.Guid.Full, new WeakReference<Player>(player));
             player.Fellowship = inviter.Fellowship;
@@ -197,6 +226,30 @@ namespace ACE.Server.Entity
                 inviter.SendMotionAsCommands(MotionCommand.BowDeep, MotionStance.NonCombat);
         }
 
+        /// <summary>
+        /// A zone fellowship takes a player in (ZoneFellowshipManager, owner 2026-11-05): no invite, no popup, no bow. The others
+        /// get the one new row (FellowshipUpdateFellow), the newcomer the whole list - never the whole list to everyone, which
+        /// with a hundred members is a hundred lists of a hundred on every arrival.
+        /// </summary>
+        public void AddZoneMember(Player player)
+        {
+            if (player == null || player.Session == null || player.IsLoggingOut) return;
+
+            // the fellowship first, then the member list: GetFellowshipMembers drops an entry whose player has no fellowship, and a
+            // kill split on another landblock thread between the two lines lost the joiner for good (review 2026-11-06)
+            player.Fellowship = this;
+            FellowshipMembers[player.Guid.Full] = new WeakReference<Player>(player);
+
+            foreach (var member in GetFellowshipMembers().Values)
+            {
+                if (member.Guid == player.Guid) continue;
+                member.Session.Network.EnqueueSend(new GameEventFellowshipUpdateFellow(member.Session, player, ShareXP));
+            }
+
+            player.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(player.Session));
+            player.Session.Network.EnqueueSend(new GameEventFellowshipFellowUpdateDone(player.Session));
+        }
+
         public void RemoveFellowshipMember(Player player, Player leader)
         {
             if (player == null) return;
@@ -229,7 +282,7 @@ namespace ACE.Server.Entity
                 member.Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} dismissed from fellowship", ChatMessageType.Fellowship));
             }
 
-            FellowshipMembers.Remove(player.Guid.Full);
+            FellowshipMembers.TryRemove(player.Guid.Full, out _);
             player.Fellowship = null;
 
             if (player.Session.AccessLevel >= AccessLevel.Admin)
@@ -243,7 +296,7 @@ namespace ACE.Server.Entity
             var fellowshipMembers = GetFellowshipMembers();
 
             foreach (var member in fellowshipMembers.Values)
-                member.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(member.Session));
+                if (member.Fellowship == this) member.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(member.Session));   // not one who just left
         }
 
         private void SendBroadcastAndUpdate(string message)
@@ -254,7 +307,7 @@ namespace ACE.Server.Entity
             {
                 member.Session.Network.EnqueueSend(new GameEventChannelBroadcast(member.Session, Channel.FellowBroadcast, "", message));
 
-                member.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(member.Session));
+                if (member.Fellowship == this) member.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(member.Session));   // not one who just left
             }
         }
 
@@ -282,13 +335,16 @@ namespace ACE.Server.Entity
             {
                 member.Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(member.Session, error, message));
 
-                member.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(member.Session));
+                if (member.Fellowship == this) member.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(member.Session));   // not one who just left
             }
         }
 
         public void QuitFellowship(Player player, bool disband)
         {
             if (player == null) return;
+
+            // a zone fellowship is never disbanded by a member, its leader included: "Disband" leaves it like "Quit" (2026-11-05)
+            if (ZoneKey != null) disband = false;
 
             if (player.Session.AccessLevel >= AccessLevel.Admin)
                 PlayerManager.BroadcastToAuditChannel(player, $"Admin {player.Name} left fellowship {FellowshipName} (Disbanded: {disband}).");
@@ -317,7 +373,7 @@ namespace ACE.Server.Entity
                 }
                 else
                 {
-                    FellowshipMembers.Remove(player.Guid.Full);
+                    FellowshipMembers.TryRemove(player.Guid.Full, out _);
 
                     if (IsLocked)
                     {
@@ -348,7 +404,7 @@ namespace ACE.Server.Entity
             }
             else if (!disband)
             {
-                FellowshipMembers.Remove(player.Guid.Full);
+                FellowshipMembers.TryRemove(player.Guid.Full, out _);
 
                 if (IsLocked)
                 {
@@ -474,6 +530,14 @@ namespace ACE.Server.Entity
 
             shareType &= ~ShareType.Fellowship;
 
+            // an area fellowship (Auto Fellow) never shares quest XP (owner 2026-11-06, "Quester keeps it all"): with no size cap an even
+            // split left the one who turned in 1% of their own reward. Kill XP and luminance share as usual (GetDistanceScalar)
+            if (ZoneKey != null && xpType == XpType.Quest)
+            {
+                GrantOnMemberThread(player, () => player.GrantXP((long)amount, XpType.Quest, shareType));
+                return;
+            }
+
             // quest turn-ins: flat share (retail default), only among fellows on the same prestige/visibility layer
             if (xpType == XpType.Quest && !ServerConfig.fellow_quest_bonus.Value)
             {
@@ -523,6 +587,7 @@ namespace ACE.Server.Entity
                         eligibleMembers.Add((member, scalar));
                 }
 
+                ZoneFellowshipManager.DropLeeches(this, player, eligibleMembers);   // anti-leech (2026-11-05): an area fellowship's rule
                 ShareXpAmong(eligibleMembers, amount, xpType, shareType, player, monsterTier, killTier);
             }
         }
@@ -599,6 +664,7 @@ namespace ACE.Server.Entity
                         eligibleMembers.Add((member, scalar));
                 }
 
+                ZoneFellowshipManager.DropLeeches(this, player, eligibleMembers);   // anti-leech (2026-11-05): an area fellowship's rule
                 ShareLuminanceAmong(eligibleMembers, amount, xpType, shareType, player, monsterTier, killTier);
             }
         }
@@ -759,6 +825,21 @@ namespace ACE.Server.Entity
             if (earner == null || fellow == null)
                 return 0.0f;
 
+            // An area fellowship shares ONLY between two members who both stand in its area (owner 2026-11-05: "in that 2 minute
+            // window, they should not be earning lum / xp"): a member in the 2-minute grace outside it gets nothing from the
+            // others, and a kill made outside it feeds nobody else - however close (the ordinary 600 m rule) and for quest XP too.
+            // The earner's own share is untouched.
+            var zoneKey = earner.Fellowship?.ZoneKey;
+            if (zoneKey != null && fellow != earner && (earner.AutoFellowAreaKey != zoneKey || fellow.AutoFellowAreaKey != zoneKey))
+                return 0.0f;
+
+            // Auto fellowship areas (owner 2026-11-05: "landblock sharing + tier sharing together", like T10 and VoD): two fellows
+            // in the same area share in full - any tier (layer), any landblock, indoors or out. ZoneFellowshipManager keeps the key.
+            // Only inside the area's own fellowship (review 2026-11-06: two players in a fellowship of their own - /autofellow off -
+            // got the full cross-layer share in an area too)
+            if (zoneKey != null && earner.AutoFellowAreaKey == zoneKey && fellow.AutoFellowAreaKey == zoneKey)
+                return 1.0f;
+
             if (!VariationManager.SameVariationForVisibility(
                     VariationManager.GetEffectiveVariationForVisibility(earner),
                     VariationManager.GetEffectiveVariationForVisibility(fellow)))
@@ -849,6 +930,11 @@ namespace ACE.Server.Entity
                 if (player == fellow && !includeSelf)
                     continue;
 
+                // an area fellowship (owner 2026-11-06, "Inside the area only"): kill-task / tier credit passes only between two members
+                // both inside its area - as XP and luminance (GetDistanceScalar)
+                if (ZoneKey != null && player != fellow && (player.AutoFellowAreaKey != ZoneKey || fellow.AutoFellowAreaKey != ZoneKey))
+                    continue;
+
                 var shareable = player == fellow || landblockRange ?
                     player.CurrentLandblock == fellow.CurrentLandblock || player.Location.DistanceTo(fellow.Location) <= 192.0f :
                     player.Location.Distance2D(fellow.Location) <= player.CurrentRadarRange && player.ObjMaint.VisibleObjectsContainsKey(fellow.Guid.Full);      // 2d visible distance / radar range?
@@ -875,9 +961,20 @@ namespace ACE.Server.Entity
             }
         }
 
-        public void OnVitalUpdate(Player player)
+        /// <summary>Sends this member's vitals to the fellows; false when an area fellowship's once-a-second limit held it back (the
+        /// caller keeps the update pending, so the last change is never lost - review 2026-11-06).</summary>
+        public bool OnVitalUpdate(Player player)
         {
             // cap max update interval?
+            // an area fellowship (Auto Fellow, any size): one vitals update a second per member (review 2026-11-06: every vital change
+            // of every member went to every member - 100 x 99 packets a round of combat)
+            if (ZoneKey != null)
+            {
+                var now = Time.GetUnixTime();
+                if (now - player.ZoneFellowVitalsAt < 1.0)
+                    return false;
+                player.ZoneFellowVitalsAt = now;
+            }
 
             var fellowshipMembers = GetFellowshipMembers();
 
@@ -886,6 +983,24 @@ namespace ACE.Server.Entity
                 if (fellow.FellowshipPanelOpen)
                     fellow.Session.Network.EnqueueSend(new GameEventFellowshipUpdateFellow(fellow.Session, player, ShareLoot, FellowUpdateType.Vitals));
             }
+            return true;
+        }
+
+        /// <summary>
+        /// Who a fellowship spell lands on (owner 2026-11-06, "Caster's landblock + layer"): in an area fellowship only the members inside
+        /// its area on the anchor's landblock and layer (the anchor = the caster, or the player an NPC / item cast on), and the anchor
+        /// itself - an NPC's fellow portal sending moved every stranger in the area. Any other fellowship: every member, as retail.
+        /// </summary>
+        public List<Player> SpellTargets(Player anchor)
+        {
+            var members = GetFellowshipMembers().Values;
+            var at = anchor?.Location;
+            if (ZoneKey == null || at == null)
+                return members.ToList();
+            var lb = at.Landblock;
+            var layer = at.Variation ?? 0;
+            return members.Where(m => m == anchor
+                || (m.AutoFellowAreaKey == ZoneKey && m.Location != null && m.Location.Landblock == lb && (m.Location.Variation ?? 0) == layer)).ToList();
         }
 
         public void OnDeath(Player player)
@@ -924,7 +1039,7 @@ namespace ACE.Server.Entity
             return results;
         }
 
-        public void ProcessDropList(Dictionary<uint, WeakReference<Player>> fellowshipMembers, HashSet<uint> fellowGuids)
+        public void ProcessDropList(ConcurrentDictionary<uint, WeakReference<Player>> fellowshipMembers, HashSet<uint> fellowGuids)
         {
             foreach (var fellowGuid in fellowGuids)
             {
@@ -932,7 +1047,7 @@ namespace ACE.Server.Entity
                 var offlineName = offlinePlayer != null ? offlinePlayer.Name : "NULL";
 
                 log.Warn($"Dropped fellow: {offlineName}");
-                fellowshipMembers.Remove(fellowGuid);
+                fellowshipMembers.TryRemove(fellowGuid, out _);
             }
             if (fellowGuids.Contains(FellowshipLeaderGuid))
                 AssignNewLeader(null, null);

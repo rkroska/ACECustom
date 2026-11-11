@@ -15,6 +15,20 @@ namespace ACE.Server.Network.GameEvent.Events
         {
             var fellowship = session.Player.Fellowship;
 
+            // left (logout, quit, an Auto Fellow area's Leave on another landblock thread) between the caller's member snapshot and here:
+            // an empty update instead of a NullReferenceException on the landblock tick, which nothing catches (review 2026-11-06 -
+            // area fellowships of 100 members spread over many threads make this routine)
+            if (fellowship == null)
+            {
+                PackableHashTable.WriteHeader(Writer, 0, FellowComparer.NumBuckets);
+                Writer.WriteString16L("");
+                Writer.Write(0u);
+                Writer.Write(0u); Writer.Write(1u); Writer.Write(0u); Writer.Write(0u);
+                Writer.Write(new Dictionary<uint, int>());
+                Writer.Write(new Dictionary<string, FellowshipLockData>());
+                return;
+            }
+
             var fellows = fellowship.GetFellowshipMembers();
 
             PackableHashTable.WriteHeader(Writer, fellows.Count, FellowComparer.NumBuckets);
