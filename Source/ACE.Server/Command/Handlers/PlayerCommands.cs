@@ -503,6 +503,12 @@ namespace ACE.Server.Command.Handlers
         }
 
         //custom commands
+        /// <summary>
+        /// The /bank (and /b) command: deposit, withdraw, transfer and check pyreals, luminance, keys and the other banked
+        /// currencies, bank lum tokens (/b lum), and show the help.
+        /// </summary>
+        /// <param name="session">The player's session.</param>
+        /// <param name="parameters">The sub-command and its arguments; none shows your balances.</param>
         [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
         public static void HandleBank(Session session, params string[] parameters)
         {
@@ -556,7 +562,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit prestigecoins (or /b d pc) - Deposit all prestige coins", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit enlightenmenttokens (or /b d et) - Deposit all enlightenment tokens", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit notes (or /b d n) - Deposit all trade notes", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/b lum - Bank your luminance tokens (Thaelaryn, ILT, Researcher's) as luminance - deposit all does this too", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b lum - Bank your luminance tokens (Thaelaryn, ILT, Researcher's, Bounty Reward, Event Lum) as luminance - deposit all does this too", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"WITHDRAWAL COMMANDS:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw pyreals <amount> (or /b w p <amount>) - Withdraw pyreals as coins", ChatMessageType.System));
@@ -594,7 +600,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            // `/b lum` (owner 2026-10-05): bank the ILT luminance tokens in your packs - each pays what its NPC pays
+            // `/b lum` (owner 2026-10-05): bank the ILT luminance tokens in your packs - each pays its LumTokenValue (its NPC's turn-in, or an event token's own Use emote)
             if (parameters[0].Equals("lum", StringComparison.OrdinalIgnoreCase))
             {
                 if (session.Player.IsBusy)
