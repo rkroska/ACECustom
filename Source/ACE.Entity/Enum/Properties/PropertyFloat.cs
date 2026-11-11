@@ -406,12 +406,16 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Triune earning: own-tier kills counted this week (the week in PropertyInt64.TriuneWeekStart). Server-only.</summary>
         TriuneWeekKills = 57011,
 
+        // REFLECTION BOSS ids: 59200+ (moved 2026-11-10 from 58000-58001 here and 58000-58004 in PropertyInt, which sit in
+        // the Zone loot property block 58000-58999, ZoneLootProps). Weenies set ReflectionLives / Wcid / DamageRatingStep /
+        // Pick (int), HealthStep / RewardStep (float) and NameFormat (string) under these ids; the old 580xx rows do nothing now.
+
         /// <summary>Reflection boss (2026-11-04): extra health per life, as a fraction of the weenie's own health. 0.5 makes
         /// life 1 x1.5, life 2 x2, life 3 x2.5. Unset = 0, no change.</summary>
-        ReflectionHealthStep = 58000,
+        ReflectionHealthStep = 59200,
 
         /// <summary>Reflection boss: extra XP and luminance per life, as a fraction of the weenie's own reward, the same
         /// linear way as ReflectionHealthStep. Unset = 0, no change.</summary>
-        ReflectionRewardStep = 58001,
+        ReflectionRewardStep = 59201,
     }
 }
