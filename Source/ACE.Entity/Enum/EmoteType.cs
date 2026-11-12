@@ -157,6 +157,7 @@ namespace ACE.Entity.Enum
         InqPetRegistryCreatureType    = 152, //Custom - Check if account has any pet of creature type (uses stat field)
         JailPlayer                    = 153, //Custom - Jails (amount=1), jails without counting it on the player's record (amount=2, for quests), or releases (amount=0) a player
         SingleLocalBroadcast          = 154, //Custom - LocalBroadcast that emits once per awake cycle
+        AwardTieredDungeonPay         = 160, //Custom - Tiered dungeons: pay Prestige Coins for the rooms credited in a tier copy
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001
