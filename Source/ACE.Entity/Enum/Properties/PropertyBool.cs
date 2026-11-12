@@ -409,6 +409,10 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         GeneratorNoCorpse = 50060,
 
+        /// <summary>Player has the Universal Quiver charm active (WCID 78780032): with the ammo slot empty, a bow, crossbow or
+        /// atlatl fires the matching Infinite Deadly Prismatic ammo. See Player_UniversalQuiver.cs.</summary>
+        HasUniversalQuiverCharm = 50061,
+
         /// <summary>Zone Control (owner 2026-10-13): a player's Destructive Curse does NOT cut the damage this creature deals
         /// (it still takes the Curse's own damage). The zone stat immune_curse_cut does the same per zone / tier / rank /
         /// wcid. Server-only. Numbered in this lane's own 512xx block, away from the ids other branches add.</summary>

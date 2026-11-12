@@ -377,6 +377,13 @@ namespace ACE.Entity.Enum.Properties
         ItemSizeLevel = 54000,
 
         /// <summary>
+        /// Arrow Enlarging / Shrinking Stones (2026-11-11): on the Universal Quiver Charm or a bow / crossbow / atlatl, how
+        /// big its Quiver-look arrows are drawn (0.5 .. 2.0 in tenths). The launcher itself is not resized. Unset = 1.0.
+        /// See ACE.Server/Entity/QuiverLook.cs.
+        /// </summary>
+        QuiverArrowSizeLevel = 54001,
+
+        /// <summary>
         /// Spell Armor Rend, the caster weapon card (2026-10-12): the fraction (0..1) of a monster's Spell Armor LEVEL
         /// that this wand's spells ignore - effective level = level x (1 - value). Read by
         /// Creature.GetZcSpellArmorMod; the float being present IS the card (no imbue bit). Server-only. Unset = no card.

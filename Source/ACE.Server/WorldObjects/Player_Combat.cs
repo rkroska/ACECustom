@@ -1481,6 +1481,13 @@ namespace ACE.Server.WorldObjects
                 HandleActionSetAFKMode(false);
         }
 
+        /// <summary>
+        /// Changes combat mode after the checks a stance needs: missile mode needs a launcher with matching ammo, or
+        /// (Universal Quiver charm) an empty slot the charm can fire from.
+        /// </summary>
+        /// <param name="newCombatMode">The requested mode.</param>
+        /// <param name="forceHandCombat">Enter melee with bare hands even when a weapon is wielded.</param>
+        /// <param name="callback">Run once the mode change finishes.</param>
         public void HandleActionChangeCombatMode_Inner(CombatMode newCombatMode, bool forceHandCombat = false, Action callback = null)
         {
             //log.Info($"{Name}.HandleActionChangeCombatMode_Inner({newCombatMode})");
@@ -1547,6 +1554,11 @@ namespace ACE.Server.WorldObjects
                             case MotionStance.AtlatlCombat:
                                 {
                                     var equippedAmmo = GetEquippedAmmo();
+
+                                    // Universal Quiver charm: an empty slot fires virtual ammo (Player_UniversalQuiver.cs)
+                                    if (equippedAmmo == null && GetQuiverVirtualAmmo(missileWeapon) != null)
+                                        break;
+
                                     if (equippedAmmo == null)
                                     {
                                         animTime = SetCombatMode(newCombatMode, out queueTime);

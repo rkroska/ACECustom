@@ -1602,8 +1602,16 @@ namespace ACE.Server.WorldObjects
 
         private void ApplyCapturedObjDesc(Creature pet)
         {
+            ApplyCapturedObjDescStrings(pet, CapturedObjDescAnimParts, CapturedObjDescPalettes, CapturedObjDescTextures);
+        }
+
+        /// <summary>
+        /// Writes a captured ObjDesc recipe (the CapturedObjDesc* strings) into any object's biota. Used for summoned
+        /// pets and for Quiver looks on projectiles (QuiverLook).
+        /// </summary>
+        public static void ApplyCapturedObjDescStrings(WorldObject pet, string animPartsStr, string palettesStr, string texturesStr)
+        {
             // Parse and apply AnimPartChanges: Index:AnimationId,Index:AnimationId,...
-            var animPartsStr = CapturedObjDescAnimParts;
             if (!string.IsNullOrEmpty(animPartsStr))
             {
                 var animParts = new System.Collections.Generic.List<ACE.Entity.Models.PropertiesAnimPart>();
@@ -1624,7 +1632,6 @@ namespace ACE.Server.WorldObjects
             }
 
             // Parse and apply SubPalettes: SubPaletteId:Offset:Length,SubPaletteId:Offset:Length,...
-            var palettesStr = CapturedObjDescPalettes;
             if (!string.IsNullOrEmpty(palettesStr))
             {
                 var palettes = new System.Collections.Generic.List<ACE.Entity.Models.PropertiesPalette>();
@@ -1646,7 +1653,6 @@ namespace ACE.Server.WorldObjects
             }
 
             // Parse and apply TextureChanges: PartIndex:OldTexture:NewTexture,PartIndex:OldTexture:NewTexture,...
-            var texturesStr = CapturedObjDescTextures;
             if (!string.IsNullOrEmpty(texturesStr))
             {
                 var textures = new System.Collections.Generic.List<ACE.Entity.Models.PropertiesTextureMap>();
