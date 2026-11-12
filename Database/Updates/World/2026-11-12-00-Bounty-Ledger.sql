@@ -8,7 +8,10 @@
  *     nothing can be written into it;
  *   - appraised by the player carrying it, its description lists their bounties going and their progress.
  * Nothing lives on the ledger, so losing it loses nothing: the server hands one to any player with bounties and no
- * ledger (when they use a bounty, and at login). Attuned and bonded: it can't be traded and stays through death.
+ * ledger (when they use a bounty, and at login). Attuned STICKY and bonded, so no player can get rid of it: it can't be
+ * dropped, traded, given (not even to an NPC that takes anything - plain attuned items can be), sold, or put in a
+ * container outside the pack (garbage barrels included), and it stays through death. It has no material and no mana,
+ * so it can't be salvaged or drained either. Only an admin can delete it, and a new one is then handed out.
  *
  * Model, icon and sounds are copied from the retail Book (364), which must exist first (it does on ILT and in any ACE
  * world database).
@@ -35,7 +38,7 @@ VALUES (98760483,   1, 8192) /* ItemType - Writable */
      , (98760483,  19,    0) /* Value */
      , (98760483,  33,    1) /* Bonded - Bonded */
      , (98760483,  93, 1044) /* PhysicsState - Ethereal, IgnoreCollisions, Gravity */
-     , (98760483, 114,    1) /* Attuned - Attuned */;
+     , (98760483, 114,    2) /* Attuned - Sticky: as Attuned, and no NPC accepts it (AiAcceptEverything) */;
 
 INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`)
 VALUES (98760483, 11, True)  /* IgnoreCollisions */
@@ -47,7 +50,7 @@ VALUES (98760483, 11, True)  /* IgnoreCollisions */
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (98760483,  1, 'Bounty Ledger')
      , (98760483, 14, 'Double-click to read your bounties and their progress. To start a bounty, double-click the bounty and then click this ledger.')
-     , (98760483, 16, 'A record of the bounties you have going: what each one asks, where, how far along you are and what it pays. It writes itself from your own bounties every time you open it, so nothing is lost with it: if you lose it, use any bounty on yourself and a new one is added to your pack.');
+     , (98760483, 16, 'A record of the bounties you have going: what each one asks, where, how far along you are and what it pays. It writes itself from your own bounties every time you open it. It stays with you: it can''t be dropped, traded, given away or sold.');
 
 /* model, icon and sounds from the retail Book (364) */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)

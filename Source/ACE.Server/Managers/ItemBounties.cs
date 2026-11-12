@@ -2274,16 +2274,17 @@ namespace ACE.Server.Managers
 
         // ── The Bounty Ledger (2026-11-12) ──────────────────────────────────
         //
-        // One thing players look at and act on, instead of commands. The ledger is an attuned, bonded BOOK (its weenie is
-        // item_bounty_ledger_wcid; 0 = no ledgers):
+        // One thing players look at and act on, instead of commands. The ledger is a BOOK, attuned STICKY and bonded so no
+        // player can get rid of it - no drop, trade, give (not even to an NPC that takes anything), sale, container outside
+        // the pack, salvage or mana drain, and it stays through death (its weenie is item_bounty_ledger_wcid; 0 = no ledgers):
         //   - a bounty used ON it starts: double-click the bounty, then click the ledger (HandleUse) - at once in its own tier
         //     or region or a town; standing in another tier or region, after a second use on the ledger;
         //   - double-clicked, it opens as a book: a summary page, then one page per bounty with a progress bar - written from
         //     the reader's slots every time it opens, as the Monster-Dex does, never stored on the item (OpenLedger); one chat
         //     line sums it up as well, for a client that draws no book;
         //   - appraised by the player carrying it, its description lists the bounties going and their progress (AppraisalText).
-        // Nothing lives ON the ledger - the slots stay on the character - so a lost or sold ledger loses nothing: a new one is
-        // handed over the next time a bounty is used, and at login while bounties are going (OnLogin).
+        // Nothing lives ON the ledger - the slots stay on the character - so even one an admin deletes loses nothing: a new one
+        // is handed over the next time a bounty is used, and at login while bounties are going (OnLogin).
 
         /// <summary>The Bounty Ledger's weenie (item_bounty_ledger_wcid); 0 = no ledgers.</summary>
         internal static uint LedgerWcid
