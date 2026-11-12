@@ -3639,6 +3639,13 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasUniversalSummoningMastery); else SetProperty(PropertyBool.HasUniversalSummoningMastery, value); }
         }
 
+        /// <summary>Universal Quiver charm: an empty ammo slot fires the matching prismatic ammo for any bow, crossbow or atlatl.</summary>
+        public bool HasUniversalQuiverCharm
+        {
+            get => GetProperty(PropertyBool.HasUniversalQuiverCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasUniversalQuiverCharm); else SetProperty(PropertyBool.HasUniversalQuiverCharm, value); }
+        }
+
         /// <summary>True while the Fork Charm is activated — Streak, Arc, and Bolt projectiles fork to nearby enemies on hit.</summary>
         public bool HasForkCharm
         {

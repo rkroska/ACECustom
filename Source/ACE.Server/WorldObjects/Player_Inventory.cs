@@ -595,7 +595,11 @@ namespace ACE.Server.WorldObjects
 
             if (dequipObjectAction != DequipObjectAction.ToCorpseOnDeath)
             {
-                if (RequiresStanceSwap(wieldedLocation))
+                // Universal Quiver charm: an emptied ammo slot in missile mode keeps firing from the charm, so no swap
+                var quiverCovers = CombatMode == CombatMode.Missile && wieldedLocation == EquipMask.MissileAmmo
+                    && GetQuiverVirtualAmmo(GetEquippedMissileLauncher()) != null;
+
+                if (RequiresStanceSwap(wieldedLocation) && !quiverCovers)
                 {
                     var newCombatMode = CombatMode.Melee;
 

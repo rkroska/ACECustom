@@ -78,13 +78,17 @@ namespace ACE.Server.WorldObjects
                 return;
 
             var weapon = GetEquippedMissileWeapon();
-            var ammo = GetEquippedAmmo();
+            var ammo = GetEquippedOrQuiverAmmo();   // universal quiver: an empty slot may fire virtual ammo (Player_UniversalQuiver.cs)
 
             // sanity check
             accuracyLevel = Math.Clamp(accuracyLevel, 0.0f, 1.0f);
 
             if (weapon == null || weapon.IsAmmoLauncher && ammo == null)
             {
+                // a launcher with nothing to fire in missile mode (e.g. the Universal Quiver charm just went off)
+                if (weapon != null)
+                    QuiverOutOfAmmo();
+
                 OnAttackDone();
                 return;
             }
@@ -154,9 +158,10 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var ammo = weapon.IsAmmoLauncher ? GetEquippedAmmo() : weapon;
+            var ammo = weapon.IsAmmoLauncher ? GetEquippedOrQuiverAmmo() : weapon;
             if (ammo == null)
             {
+                QuiverOutOfAmmo();   // a launcher with nothing to fire (e.g. the Universal Quiver charm just went off)
                 OnAttackDone();
                 return;
             }
@@ -244,11 +249,13 @@ namespace ACE.Server.WorldObjects
                 UpdateVitalDelta(Stamina, -staminaCost);
 
                 var projectile = LaunchProjectile(launcher, ammo, target, origin, orientation, velocity);
+                QuiverLogFirstShot(launcher, ammo);
                 UpdateAmmoAfterLaunch(ammo);
             });
 
-            // ammo remaining?
-            if (!ammo.UnlimitedUse && (ammo.StackSize == null || ammo.StackSize <= 1))
+            // ammo remaining? (virtual ammo never runs out; with the Universal Quiver charm the emptied slot fires on)
+            if (!IsQuiverVirtualAmmo(ammo) && !ammo.UnlimitedUse && (ammo.StackSize == null || ammo.StackSize <= 1)
+                && GetQuiverVirtualAmmo(launcher) == null)
             {
                 actionChain.AddAction(this, ActionType.PlayerMissile_OutOfAmmo, () =>
                 {
@@ -273,7 +280,10 @@ namespace ACE.Server.WorldObjects
 
             actionChain.AddAction(this, ActionType.PlayerMissile_PlaceNewAmmo, () =>
             {
-                if (CombatMode == CombatMode.Missile)
+                // virtual quiver ammo is unknown to clients: nothing to show in the hand
+                // (and not for a launcher's last arrow that was used up while the charm took over: it no longer exists;
+                // a thrown weapon is its own ammo and still in the hand, so it always comes back)
+                if (CombatMode == CombatMode.Missile && !IsQuiverVirtualAmmo(ammo) && (!weapon.IsAmmoLauncher || !HasUniversalQuiverCharm || GetEquippedAmmo() == ammo))
                     EnqueueBroadcast(new GameMessageParentEvent(this, ammo, ACE.Entity.Enum.ParentLocation.RightHand, ACE.Entity.Enum.Placement.RightHandCombat));
             }); 
 
@@ -328,10 +338,19 @@ namespace ACE.Server.WorldObjects
             return 2.0f;
         }
 
+        /// <summary>
+        /// Uses up one piece of the ammo just fired (infinite ammo and Universal Quiver virtual ammo are never used up)
+        /// and tells the client.
+        /// </summary>
+        /// <param name="ammo">The ammo (or thrown weapon) that was fired.</param>
         public override void UpdateAmmoAfterLaunch(WorldObject ammo)
         {
             //if (ammo.UnlimitedUse)
             //    return;
+
+            // virtual quiver ammo was never sent to clients and is never used up
+            if (IsQuiverVirtualAmmo(ammo))
+                return;
 
             // hide previously held ammo
             EnqueueBroadcast(new GameMessagePickupEvent(ammo));

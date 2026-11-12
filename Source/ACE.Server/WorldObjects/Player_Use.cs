@@ -195,6 +195,14 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Arrow Enlarging / Shrinking Stones (78780432 / 78780433): the size of a Quiver look's arrows only.
+            if (ACE.Server.Entity.QuiverLook.IsArrowStone(sourceItem))
+            {
+                ACE.Server.Entity.QuiverLook.HandleArrowStone(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
             // Enlarging (78780265) and Shrinking (78780266) Stones: step how big something held in the hands is drawn.
             if (SizeStones.IsSizeStone(sourceItem))
             {
@@ -257,6 +265,29 @@ namespace ACE.Server.WorldObjects
             if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.FilledTailoringKitWcid)
             {
                 ACE.Server.Entity.PetTailoring.HandleApply(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Quiver looks: kit on an essence -> pattern; pattern on the Universal Quiver Charm or a launcher
+            if (sourceItem.WeenieClassId == ACE.Server.Entity.QuiverLook.KitWcid)
+            {
+                ACE.Server.Entity.QuiverLook.HandleExtract(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
+            if (sourceItem.WeenieClassId == ACE.Server.Entity.QuiverLook.PatternWcid)
+            {
+                ACE.Server.Entity.QuiverLook.HandleApply(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Quiver Unraveling Kit: the look and arrow size off a charm or launcher, back to normal
+            if (ACE.Server.Entity.QuiverLook.IsUnravelKit(sourceItem))
+            {
+                ACE.Server.Entity.QuiverLook.HandleUnravel(this, sourceItem, target);
                 SendUseDoneEvent();
                 return;
             }

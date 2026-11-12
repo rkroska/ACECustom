@@ -286,6 +286,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.RareUsesTimer); else SetProperty(PropertyBool.RareUsesTimer, value); }
         }
 
+        /// <summary>
+        /// A gem used on a target: Charm Infusion Gems, captured essences (on a pet device, or on a Quiver Tailoring
+        /// Kit), tailoring kits, else the recipe manager.
+        /// </summary>
+        /// <param name="player">The player using the gem.</param>
+        /// <param name="target">The object the gem is used on.</param>
         public override void HandleActionUseOnTarget(Player player, WorldObject target)
         {
             // Charm Infusion Gem (owner 2026-10-24): puts its Prestige Coins into the levelled charm it is used on
@@ -299,6 +305,14 @@ namespace ACE.Server.WorldObjects
             if (MonsterCapture.IsCapturedAppearance(this) && target is PetDevice petDevice)
             {
                 MonsterCapture.ApplyAppearanceToCrate(player, petDevice, this);
+                return;
+            }
+
+            // Quiver looks: an essence used on a Quiver Tailoring Kit makes a pattern, the same as the kit on the essence
+            if (MonsterCapture.IsCapturedAppearance(this) && target?.WeenieClassId == ACE.Server.Entity.QuiverLook.KitWcid)
+            {
+                ACE.Server.Entity.QuiverLook.HandleExtract(player, target, this);
+                player.SendUseDoneEvent();
                 return;
             }
 
@@ -353,6 +367,12 @@ namespace ACE.Server.WorldObjects
 
             base.OnActivate(activator);
         }
+        /// <summary>
+        /// Switches this ability charm on or off for <paramref name="player"/>: one active charm per ability, server
+        /// switches (Universal Summoning Mastery, Universal Quiver) refuse activation when off, and side effects for
+        /// Infinite Casting, Asheron's Favor and Auto-Rebuff.
+        /// </summary>
+        /// <param name="player">The charm's owner.</param>
         private void HandleAbilityCharmToggle(Player player)
         {
             var abilityId = CharmGrantsAbility!.Value;
@@ -432,6 +452,15 @@ namespace ACE.Server.WorldObjects
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(
                         "Universal Summoning Mastery is not enabled on this server.",
+                        ChatMessageType.Broadcast));
+                    return;
+                }
+
+                if (abilityId == CharmAbilityRegistry.UniversalQuiverAbilityId
+                    && !ServerConfig.universal_quiver_enabled.Value)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "The Universal Quiver is not enabled on this server.",
                         ChatMessageType.Broadcast));
                     return;
                 }

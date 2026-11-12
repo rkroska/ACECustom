@@ -425,6 +425,16 @@ namespace ACE.Server.Network.Structure
                     PropertiesString[PropertyString.LongDesc] = forgeMsg;
             }
 
+            // Quiver looks: a charm or launcher with an arrow look / arrow size says so (ASCII, explicit \n).
+            var arrowMsg = ACE.Server.Entity.QuiverLook.BuildAppraisalLines(wo);
+            if (!string.IsNullOrEmpty(arrowMsg))
+            {
+                if (PropertiesString.TryGetValue(PropertyString.LongDesc, out var arrowLd) && !string.IsNullOrEmpty(arrowLd))
+                    PropertiesString[PropertyString.LongDesc] = arrowLd + $"\n\n{arrowMsg}";
+                else
+                    PropertiesString[PropertyString.LongDesc] = arrowMsg;
+            }
+
             // Enlarging / Shrinking Stones: an item drawn off its normal size says so (ASCII, explicit \n).
             var sizeMsg = ACE.Server.Entity.SizeStones.BuildAppraisalLine(wo);
             if (!string.IsNullOrEmpty(sizeMsg))
