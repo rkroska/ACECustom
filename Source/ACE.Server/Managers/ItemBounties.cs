@@ -27,8 +27,9 @@ namespace ACE.Server.Managers
     /// ON a ring or bracelet to fill an R1, R2, B1 or B2 slot, but the jewelry was only a stand-in - which ring, whether it
     /// was worn, ring vs bracelet never mattered, yet players took the bounty to live on that ring. Now:
     ///   - the BOUNTY JOURNAL (item_bounty_journal_wcid, its own section below) is the one thing players use: a bounty used on
-    ///     it starts at once; double-clicked, it opens as a book with a page per bounty and its progress; appraised, it lists
-    ///     them. Nothing is stored on it, and one is handed over whenever a player with bounties has none;
+    ///     it starts (at once in its own tier or region, or a town; in another tier or region the first use says where its
+    ///     kills count and a second use confirms); double-clicked, it opens as a book with a page per bounty and its progress;
+    ///     appraised, it lists them. Nothing is stored on it, and one is handed over whenever a player with bounties has none;
     ///   - a bounty used on anything else (the player, a ring) shows its terms and how to start it. With journals off, or for
     ///     a bounty the client still treats as a plain double-click, two uses start it: the first shows its terms, the slot it
     ///     takes and any warning, a second within item_bounty_confirm_seconds starts it;
@@ -46,8 +47,8 @@ namespace ACE.Server.Managers
     ///   - completion pays automatically, into the pack; a full pack holds the reward (BountyManager's held rewards);
     ///   - every confirmation is in the CONSOLE, never a popup: custom clients may not show popups. Abandoning a bounty asks
     ///     for /bounty confirm with a fresh 4-digit code that expires (item_bounty_confirm_seconds), so a macro, a typo or an
-    ///     old command can never forfeit one. Starting one on the journal is deliberate (two clicks); any other start asks for
-    ///     a second use.
+    ///     old command can never forfeit one. Starting one on the journal is deliberate (two clicks); in another tier or
+    ///     region, and for any other start, it takes a second use.
     ///
     /// REGION bounties (owner 2026-11-10): a bounty whose weenie names a region (PropertyString.ItemBountyRegion: "vod"
     /// Valley of Death, "t10" Thaelaryn Island - ZoneControlManager.BountyRegions, below T11) instead of a tier. Only kills
@@ -586,10 +587,13 @@ namespace ACE.Server.Managers
         /// something (HandleActionUseWithTarget). On the player's thread.
         ///
         /// With journals on (item_bounty_journal_wcid, 2026-11-12) a bounty is used ON the Bounty Journal:
-        ///   - on the player's own journal it starts at once - double-clicking the bounty and then clicking the journal is
-        ///     deliberate enough that it needs no confirmation;
+        ///   - on the player's own journal it starts at once where its kills count, or in a town - double-clicking the bounty
+        ///     and then clicking the journal is deliberate enough. Standing in ANOTHER tier or region (probably a mistake, as
+        ///     the ring start judged it) the first use says where its kills count, and a second use on the journal within
+        ///     item_bounty_confirm_seconds starts it: a click where the ring start asked for a typed /bounty confirm code;
         ///   - on anything else (the player, a ring as before the rework, a book) it shows the bounty and how to start it, and
-        ///     hands the player a journal if they have none.
+        ///     hands the player a journal if they have none. In another tier or region that preview carries the warning, so
+        ///     the next use on the journal starts it without asking again.
         /// TWO USES start it everywhere else: with journals off, for a plain double-click (a bounty whose ItemUseable the
         /// client still has from before the journal), and when no journal could be handed over (a full pack, its weenie
         /// missing), so nobody is ever stuck. The first use shows the bounty; a second use of the same item within
@@ -623,18 +627,30 @@ namespace ACE.Server.Managers
 
                 if (JournalsOn && target != null)
                 {
-                    // on the player's own journal: started
+                    // on the player's own journal: started - at once where its kills count, or in a town. Standing in another
+                    // tier or region the first use says so and arms it; a second use on the journal in time starts it.
                     if (IsJournal(target) && player.FindObject(target.Guid.Full, Player.SearchLocations.MyInventory) != null)
                     {
+                        var note = StandingNote(player, terms);
+                        if (note != null && !TakeArmed(player, item))
+                        {
+                            var seconds = Arm(player, item);
+                            Tell(player, $"{note} To start it anyway, use it on your Bounty Journal again within {seconds} seconds.");
+                            return;
+                        }
                         _armed.TryRemove(player.Guid.Full, out _);
                         Commit(player, item, terms, free);
                         return;
                     }
 
-                    // on anything else (themselves, a ring): what it is, and how to start it
+                    // on anything else (themselves, a ring): what it is, and how to start it. In another tier or region the
+                    // preview's note is the warning, so it arms the bounty: the next use on the journal starts it.
                     if (granted || FindJournal(player) != null)
                     {
-                        _armed.TryRemove(player.Guid.Full, out _);
+                        if (StandingNote(player, terms) != null)
+                            Arm(player, item);
+                        else
+                            _armed.TryRemove(player.Guid.Full, out _);
                         Preview(player, item, terms);
                         if (!granted)
                             Tell(player, $"To start it, double-click it and then click your Bounty Journal. It goes in as bounty #{free} ({slots.Count} of {MaxActiveNow} going).");
@@ -657,19 +673,37 @@ namespace ACE.Server.Managers
         /// </summary>
         private static void StartOnSecondUse(Player player, WorldObject item, Slot terms, Dictionary<string, Slot> slots, string free, string again)
         {
-            var now = Time.GetUnixTime();
-            if (_armed.TryGetValue(player.Guid.Full, out var armed) && armed.ItemGuid == item.Guid.Full && armed.ExpiresAt >= now
-                && _armed.TryRemove(new KeyValuePair<uint, ArmedStart>(player.Guid.Full, armed)))
+            if (TakeArmed(player, item))
             {
                 Commit(player, item, terms, free);
                 return;
             }
 
-            var seconds = ConfirmSeconds;
-            _armed[player.Guid.Full] = new ArmedStart(item.Guid.Full, now + seconds);
+            var seconds = Arm(player, item);
             Preview(player, item, terms);
             Tell(player, $"{again} within {seconds} seconds to start it as bounty #{free} ({slots.Count} of {MaxActiveNow} going). "
                 + "Once started it is used up - it can't be traded or put back - and abandoning it forfeits it.");
+        }
+
+        /// <summary>
+        /// Arms <paramref name="item"/> for this player: their next use of the SAME bounty within item_bounty_confirm_seconds
+        /// starts it (<see cref="TakeArmed"/>). Replaces whatever was armed for them before. Returns the seconds it stays armed.
+        /// </summary>
+        private static int Arm(Player player, WorldObject item)
+        {
+            var seconds = ConfirmSeconds;
+            _armed[player.Guid.Full] = new ArmedStart(item.Guid.Full, Time.GetUnixTime() + seconds);
+            return seconds;
+        }
+
+        /// <summary>
+        /// True, once, when <paramref name="item"/> is the bounty armed for this player and its time hasn't run out. The arm
+        /// is taken, so one arm starts at most one bounty.
+        /// </summary>
+        private static bool TakeArmed(Player player, WorldObject item)
+        {
+            return _armed.TryGetValue(player.Guid.Full, out var armed) && armed.ItemGuid == item.Guid.Full && armed.ExpiresAt >= Time.GetUnixTime()
+                && _armed.TryRemove(new KeyValuePair<uint, ArmedStart>(player.Guid.Full, armed));
         }
 
         /// <summary>What a bounty is before it starts: the task and reward, then a note when the player stands where it doesn't count.</summary>
@@ -2214,7 +2248,8 @@ namespace ACE.Server.Managers
         //
         // One thing players look at and act on, instead of commands. The journal is an attuned, bonded BOOK (its weenie is
         // item_bounty_journal_wcid; 0 = no journals):
-        //   - a bounty used ON it starts at once: double-click the bounty, then click the journal (HandleUse);
+        //   - a bounty used ON it starts: double-click the bounty, then click the journal (HandleUse) - at once in its own tier
+        //     or region or a town; standing in another tier or region, after a second use on the journal;
         //   - double-clicked, it opens as a book: a summary page, then one page per bounty with a progress bar - written from
         //     the reader's slots every time it opens, as the Monster-Dex does, never stored on the item (OpenJournal); one chat
         //     line sums it up as well, for a client that draws no book;
