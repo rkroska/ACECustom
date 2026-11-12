@@ -26,6 +26,8 @@ namespace ACE.Server.WorldObjects
         public string ZoneFellowSkipKey;
         /// <summary>The area whose fellowship this player stayed out of because their own is locked (told once per area).</summary>
         public string ZoneFellowLockedKey;
+        /// <summary>The area whose fellowship this player was told cannot be closed (told once per area, then ignored quietly).</summary>
+        public string ZoneFellowOpenToldKey;
         /// <summary>The auto fellowship area this player stands in (ZoneFellowshipManager, refreshed every 2 s whatever their
         /// /autofellow setting), or null. Fellowship.GetDistanceScalar reads it: fellows in one area share in full, across tiers.</summary>
         public string AutoFellowAreaKey;
@@ -76,7 +78,15 @@ namespace ACE.Server.WorldObjects
 
         public void HandleActionFellowshipChangeOpenness(bool openness)
         {
-            if (RefuseZoneFellowship("is always open to everyone in the area")) return;
+            if (Fellowship?.ZoneKey != null)
+            {
+                // Live 2026-11-11: an add-on sent this many times a second and every one printed the refusal. Asking to open it
+                // (it is open) says nothing; asking to close it is answered once per area, then ignored quietly.
+                if (openness || ZoneFellowOpenToldKey == Fellowship.ZoneKey) return;
+                ZoneFellowOpenToldKey = Fellowship.ZoneKey;
+                RefuseZoneFellowship("is always open to everyone in the area");
+                return;
+            }
 
             if (Fellowship != null)
             {

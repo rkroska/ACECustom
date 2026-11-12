@@ -415,7 +415,10 @@ namespace ACE.Server.Managers
                 }
                 else
                 {
-                    fellowship = new Fellowship(player, name, true) { ZoneKey = key, ShareLoot = false, Open = false };
+                    // Open = true (live 2026-11-11): an area fellowship IS open to everyone in the area. Reported as closed, add-ons
+                    // that keep their fellowship open asked to open it again and again and got a refusal line each time (chat spam).
+                    // Invites stay refused on their own (FellowshipRecruit, AddFellowshipMember), whatever Open says.
+                    fellowship = new Fellowship(player, name, true) { ZoneKey = key, ShareLoot = false, Open = true };
                     _fellowships[key] = fellowship;
                     player.Fellowship = fellowship;
                     player.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(player.Session));
