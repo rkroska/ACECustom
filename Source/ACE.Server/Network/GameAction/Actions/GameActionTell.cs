@@ -49,7 +49,8 @@ namespace ACE.Server.Network.GameAction.Actions
                 //return;
             }
 
-            if (message.Equals("xp", System.StringComparison.OrdinalIgnoreCase) && targetPlayer.Fellowship != null && targetPlayer.Fellowship.Open)
+            // an area fellowship (ZoneKey) is Open but takes nobody by invitation: the tell goes through as a plain tell, as before
+            if (message.Equals("xp", System.StringComparison.OrdinalIgnoreCase) && targetPlayer.Fellowship != null && targetPlayer.Fellowship.Open && targetPlayer.Fellowship.ZoneKey == null)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Attempting to add you to {targetPlayer.Name}'s fellowship.", ChatMessageType.Broadcast));
                 targetPlayer.FellowshipRecruit(session.Player);
