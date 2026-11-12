@@ -103,7 +103,7 @@ namespace ACE.Server.WorldObjects
             // damager, the player the corpse and its loot belong to.
             BountyManager.OnCreatureKilled(this);
 
-            // Item bounties (owner 2026-11-10): the top damager's active bounty slots (R1, R2, B1, B2) count a T11+ kill in
+            // Item bounties (owner 2026-11-10): the top damager's bounties going (slots #1-#4) count a T11+ kill in
             // exactly their tier, or a kill in their bounty region below T11 (Valley of Death / Thaelaryn Island) - see ItemBounties.
             ItemBounties.OnCreatureKilled(this);
 
