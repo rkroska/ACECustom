@@ -189,19 +189,26 @@ namespace ACE.Server.Entity
         /// <summary>Copies a stored look (pattern -> charm or launcher). One list, so the steps can't drift apart.</summary>
         private static void CopyLook(WorldObject from, WorldObject to)
         {
-            SetOrRemove(to, PropertyDataId.VisualOverrideSetup, from.GetProperty(PropertyDataId.VisualOverrideSetup));
-            SetOrRemove(to, PropertyDataId.VisualOverrideIcon, from.GetProperty(PropertyDataId.VisualOverrideIcon));
-            SetOrRemove(to, PropertyDataId.VisualOverridePaletteBase, from.GetProperty(PropertyDataId.VisualOverridePaletteBase));
-            SetOrRemove(to, PropertyDataId.VisualOverrideClothingBase, from.GetProperty(PropertyDataId.VisualOverrideClothingBase));
-            SetOrRemove(to, PropertyInt.VisualOverridePaletteTemplate, from.GetProperty(PropertyInt.VisualOverridePaletteTemplate));
-            SetOrRemove(to, PropertyFloat.VisualOverrideShade, from.GetProperty(PropertyFloat.VisualOverrideShade));
-            SetOrRemove(to, PropertyFloat.VisualOverrideScale, from.GetProperty(PropertyFloat.VisualOverrideScale));
-            SetOrRemove(to, PropertyString.CapturedCreatureName, from.GetProperty(PropertyString.CapturedCreatureName));
-            SetOrRemove(to, PropertyInt.CapturedCreatureWCID, from.GetProperty(PropertyInt.CapturedCreatureWCID));
-            SetOrRemove(to, PropertyString.CapturedObjDescAnimParts, from.GetProperty(PropertyString.CapturedObjDescAnimParts));
-            SetOrRemove(to, PropertyString.CapturedObjDescPalettes, from.GetProperty(PropertyString.CapturedObjDescPalettes));
-            SetOrRemove(to, PropertyString.CapturedObjDescTextures, from.GetProperty(PropertyString.CapturedObjDescTextures));
+            foreach (var p in LookDids)
+                SetOrRemove(to, p, from.GetProperty(p));
+            foreach (var p in LookInts)
+                SetOrRemove(to, p, from.GetProperty(p));
+            foreach (var p in LookFloats)
+                SetOrRemove(to, p, from.GetProperty(p));
+            foreach (var p in LookStrings)
+                SetOrRemove(to, p, from.GetProperty(p));
         }
+
+        // The properties a stored Quiver look is made of: one list for copying (pattern -> charm / launcher) and clearing
+        // (Unraveling Kit), so the two can't drift apart. HandleExtract fills the same set from an essence's Captured*.
+        private static readonly PropertyDataId[] LookDids =
+            { PropertyDataId.VisualOverrideSetup, PropertyDataId.VisualOverrideIcon, PropertyDataId.VisualOverridePaletteBase, PropertyDataId.VisualOverrideClothingBase };
+        private static readonly PropertyInt[] LookInts =
+            { PropertyInt.VisualOverridePaletteTemplate, PropertyInt.CapturedCreatureWCID };
+        private static readonly PropertyFloat[] LookFloats =
+            { PropertyFloat.VisualOverrideShade, PropertyFloat.VisualOverrideScale };
+        private static readonly PropertyString[] LookStrings =
+            { PropertyString.CapturedCreatureName, PropertyString.CapturedObjDescAnimParts, PropertyString.CapturedObjDescPalettes, PropertyString.CapturedObjDescTextures };
 
         /// <summary>True when the item is in the player's pack (any side pack) or wielded.</summary>
         private static bool InMyPossession(Player player, WorldObject item)
@@ -360,8 +367,8 @@ namespace ACE.Server.Entity
 
             var creatureName = pattern.GetProperty(PropertyString.CapturedCreatureName) ?? "the creature";
 
-            // The charm wears its look like a pet device does: the creature's portrait (the charm marker overlay stays
-            // on top) and its name. Launchers keep their own name and art; their ID panel shows the arrow look.
+            // The charm wears its look like a pet device does: the creature's portrait (in place of the charm-marker
+            // overlay) and its name. Launchers keep their own name and art; their ID panel shows the arrow look.
             if (onCharm)
                 ShowLookOnCharm(player, target, creatureName);
 
@@ -408,7 +415,7 @@ namespace ACE.Server.Entity
             player.UpdateProperty(charm, PropertyString.Name, charm.Name);
             player.UpdateProperty(charm, PropertyDataId.Icon, charm.IconId);
             player.UpdateProperty(charm, PropertyDataId.IconOverlay, charm.IconOverlayId ?? 0u);
-            player.EnqueueBroadcast(new ACE.Server.Network.GameMessages.Messages.GameMessageUpdateObject(charm));
+            player.Session.Network.EnqueueSend(new ACE.Server.Network.GameMessages.Messages.GameMessageUpdateObject(charm));
             if (player.FindObject(charm.Guid.Full, Player.SearchLocations.MyInventory) != null)
                 player.MoveItemToFirstContainerSlot(charm);
         }
@@ -430,18 +437,14 @@ namespace ACE.Server.Entity
         /// <summary>Removes every Quiver look property (the CopyLook list) and the arrow size level.</summary>
         private static void ClearLook(WorldObject wo)
         {
-            wo.RemoveProperty(PropertyDataId.VisualOverrideSetup);
-            wo.RemoveProperty(PropertyDataId.VisualOverrideIcon);
-            wo.RemoveProperty(PropertyDataId.VisualOverridePaletteBase);
-            wo.RemoveProperty(PropertyDataId.VisualOverrideClothingBase);
-            wo.RemoveProperty(PropertyInt.VisualOverridePaletteTemplate);
-            wo.RemoveProperty(PropertyFloat.VisualOverrideShade);
-            wo.RemoveProperty(PropertyFloat.VisualOverrideScale);
-            wo.RemoveProperty(PropertyString.CapturedCreatureName);
-            wo.RemoveProperty(PropertyInt.CapturedCreatureWCID);
-            wo.RemoveProperty(PropertyString.CapturedObjDescAnimParts);
-            wo.RemoveProperty(PropertyString.CapturedObjDescPalettes);
-            wo.RemoveProperty(PropertyString.CapturedObjDescTextures);
+            foreach (var p in LookDids)
+                wo.RemoveProperty(p);
+            foreach (var p in LookInts)
+                wo.RemoveProperty(p);
+            foreach (var p in LookFloats)
+                wo.RemoveProperty(p);
+            foreach (var p in LookStrings)
+                wo.RemoveProperty(p);
             wo.RemoveProperty(PropertyFloat.QuiverArrowSizeLevel);
         }
 

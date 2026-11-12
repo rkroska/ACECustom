@@ -285,7 +285,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Quiver Unraveling Kit: the look and arrow size off a charm or launcher, back to normal
-            if (sourceItem.WeenieClassId == ACE.Server.Entity.QuiverLook.UnravelKitWcid)
+            if (ACE.Server.Entity.QuiverLook.IsUnravelKit(sourceItem))
             {
                 ACE.Server.Entity.QuiverLook.HandleUnravel(this, sourceItem, target);
                 SendUseDoneEvent();

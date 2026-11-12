@@ -4,8 +4,9 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace ACE.Server.Tests
 {
     /// <summary>
-    /// Quiver looks size every model to about QuiverLook.LookSizeM across, so it flies (and hits) like an arrow.
-    /// The target matches the creature-model infinite arrows the admins sized by hand. Pure: no database, no dat.
+    /// Quiver look sizing: a stored scale is made for QuiverLook.LookSizeM and rescaled at the shot to the live
+    /// universal_quiver_look_size, clamped once there. Only the drawn size changes: the server keeps the arrow's own
+    /// collision shape. Plus the setting parsers and the arrow stones. Pure: no database, no dat.
     /// </summary>
     [TestClass]
     public class QuiverLookTests

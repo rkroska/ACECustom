@@ -1561,6 +1561,8 @@ namespace ACE.Server.WorldObjects
 
                                     if (equippedAmmo == null)
                                     {
+                                        QuiverExplainNoAmmo(missileWeapon);   // Universal Quiver: why the charm can't cover it, if that's the reason
+
                                         animTime = SetCombatMode(newCombatMode, out queueTime);
 
                                         var actionChain = new ActionChain();

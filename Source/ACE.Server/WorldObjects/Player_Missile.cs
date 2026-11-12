@@ -283,7 +283,7 @@ namespace ACE.Server.WorldObjects
                 // virtual quiver ammo is unknown to clients: nothing to show in the hand
                 // (and not for a launcher's last arrow that was used up while the charm took over: it no longer exists;
                 // a thrown weapon is its own ammo and still in the hand, so it always comes back)
-                if (CombatMode == CombatMode.Missile && !IsQuiverVirtualAmmo(ammo) && (!weapon.IsAmmoLauncher || GetEquippedAmmo() == ammo))
+                if (CombatMode == CombatMode.Missile && !IsQuiverVirtualAmmo(ammo) && (!weapon.IsAmmoLauncher || !HasUniversalQuiverCharm || GetEquippedAmmo() == ammo))
                     EnqueueBroadcast(new GameMessageParentEvent(this, ammo, ACE.Entity.Enum.ParentLocation.RightHand, ACE.Entity.Enum.Placement.RightHandCombat));
             }); 
 

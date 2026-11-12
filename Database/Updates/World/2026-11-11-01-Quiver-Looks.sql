@@ -5,7 +5,11 @@
  *   78780431 Quiver Pattern        - holds the look. Use on the Universal Quiver Charm (look of every empty-slot shot)
  *                                    or on a bow / crossbow / atlatl (look of every shot from it; wins over the charm).
  *                                    Consumed. The code names it "Quiver Pattern (<creature>)".
- * Both are copies of the Pet Tailoring Kit (78780259 / 78780260) with their own names, text, targets and price.
+ *   78780432 / 78780433 Arrow Enlarging / Shrinking Stones - 12,500,000; arrow size only (50%-200%) on the charm or a
+ *                                    launcher, never the launcher itself.
+ *   78780434 Quiver Unraveling Kit - 12,500,000; takes the look and arrow size off a charm or launcher.
+ * The kits are copies of the Pet Tailoring Kit (78780259 / 78780260), the stones of the Size Stones (78780265 / 66), each
+ * with its own name, text, targets and price.
  * TargetType: the kit targets Misc (128, the essences); the pattern targets Gem (2048, the charm) + MissileWeapon (256).
  * Plain ASCII only: the client can't draw anything else.
  */
@@ -175,7 +179,7 @@ VALUES (78780434,  1, 0x02001122)
      , (78780434,  7, 0x10000564)
      , (78780434,  8, 0x06006BCB)
      , (78780434, 22, 0x3400002B)
-     , (78780434, 52, 0x060065FB);
+     , (78780434, 52, 0x060065FC);
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (78780434,  1, 'Quiver Unraveling Kit')
