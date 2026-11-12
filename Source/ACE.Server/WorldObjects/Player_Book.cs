@@ -17,10 +17,10 @@ namespace ACE.Server.WorldObjects
             var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory | SearchLocations.LastUsedHook, out var container, out var rootOwner, out var wasEquipped) as Book;
             if (book == null) return;
 
-            // Bounty Journal (2026-11-12): its pages come from the reader's bounties, never the item's (ItemBounties.OpenJournal)
-            if (ACE.Server.Managers.ItemBounties.IsJournal(book))
+            // Bounty Ledger (2026-11-12): its pages come from the reader's bounties, never the item's (ItemBounties.OpenLedger)
+            if (ACE.Server.Managers.ItemBounties.IsLedger(book))
             {
-                ACE.Server.Managers.ItemBounties.OpenJournal(this, book, book.Biota.PropertiesBook.MaxNumCharsPerPage);
+                ACE.Server.Managers.ItemBounties.OpenLedger(this, book, book.Biota.PropertiesBook.MaxNumCharsPerPage);
                 return;
             }
 
@@ -89,8 +89,8 @@ namespace ACE.Server.WorldObjects
             var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory | SearchLocations.LastUsedHook, out var container, out var rootOwner, out var wasEquipped) as Book;
             if (book == null) return;
 
-            // a Bounty Journal's pages are written by the server each time it opens: nothing can be written into it
-            if (ACE.Server.Managers.ItemBounties.IsJournal(book)) return;
+            // a Bounty Ledger's pages are written by the server each time it opens: nothing can be written into it
+            if (ACE.Server.Managers.ItemBounties.IsLedger(book)) return;
 
             var page = book.AddPage(Guid.Full, Name, Session.Account, book.IgnoreAuthor ?? false, "", out var index);
 
@@ -104,9 +104,9 @@ namespace ACE.Server.WorldObjects
             var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory | SearchLocations.LastUsedHook, out var container, out var rootOwner, out var wasEquipped) as Book;
             if (book == null) return;
 
-            // a Bounty Journal's pages are written by the server each time it opens: nothing can be written into it, and the
-            // client is told the edit failed, so it never shows text the journal doesn't hold
-            if (ACE.Server.Managers.ItemBounties.IsJournal(book))
+            // a Bounty Ledger's pages are written by the server each time it opens: nothing can be written into it, and the
+            // client is told the edit failed, so it never shows text the ledger doesn't hold
+            if (ACE.Server.Managers.ItemBounties.IsLedger(book))
             {
                 Session.Network.EnqueueSend(new GameEventBookModifyPageResponse(Session, bookGuid, pageId, false));
                 return;
@@ -123,9 +123,9 @@ namespace ACE.Server.WorldObjects
             var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory | SearchLocations.LastUsedHook, out var container, out var rootOwner, out var wasEquipped) as Book;
             if (book == null) return;
 
-            // a Bounty Journal's pages are written by the server each time it opens: none can be deleted, and the client is
+            // a Bounty Ledger's pages are written by the server each time it opens: none can be deleted, and the client is
             // told so
-            if (ACE.Server.Managers.ItemBounties.IsJournal(book))
+            if (ACE.Server.Managers.ItemBounties.IsLedger(book))
             {
                 Session.Network.EnqueueSend(new GameEventBookDeletePageResponse(Session, bookGuid, pageId, false));
                 return;

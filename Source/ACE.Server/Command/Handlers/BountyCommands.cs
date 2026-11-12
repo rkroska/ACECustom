@@ -11,9 +11,9 @@ namespace ACE.Server.Command.Handlers
     /// /bounty (owner 2026-09-23): any player's view of the bounties where they stand. /bounty list (owner 2026-09-27): every
     /// bounty on the server and the player's progress on each, so they can choose where to go. See BountyManager.
     ///
-    /// Item bounties (owner 2026-11-10, ItemBounties; Bounty Journal rework 2026-11-12): /bounty also lists the character's
-    /// bounties going, #1 to #4 (item_bounty_max_active). A bounty is started by using it on the Bounty Journal, not here; the
-    /// journal also shows everything /bounty does, so players need no command at all except to abandon one.
+    /// Item bounties (owner 2026-11-10, ItemBounties; Bounty Ledger rework 2026-11-12): /bounty also lists the character's
+    /// bounties going, #1 to #4 (item_bounty_max_active). A bounty is started by using it on the Bounty Ledger, not here; the
+    /// ledger also shows everything /bounty does, so players need no command at all except to abandon one.
     /// /bounty abandon (remove, drop) asks for a console confirmation (/bounty confirm code, or /bounty cancel to drop the
     /// request). /bounty data and /bounty sync feed the Bounty Tracker window. Admins can view and abandon for another online
     /// player: /bounty Name, /bounty abandon 2 Name. Developers: /bounty make wcid [tier], /bounty droptable.
@@ -28,7 +28,7 @@ namespace ACE.Server.Command.Handlers
         /// <param name="session">The calling player's session.</param>
         /// <param name="parameters">The words after /bounty.</param>
         [CommandHandler("bounty", AccessLevel.Player, CommandHandlerFlag.RequiresWorld,
-            "Shows the bounties where you stand and the bounties you have going (your Bounty Journal shows them too; to start a bounty, use it on the journal). abandon <#> asks for /bounty confirm <code> (cancel drops the request); data / sync feed the Bounty Tracker.",
+            "Shows the bounties where you stand and the bounties you have going (your Bounty Ledger shows them too; to start a bounty, use it on the ledger). abandon <#> asks for /bounty confirm <code> (cancel drops the request); data / sync feed the Bounty Tracker.",
             Usage)]
         public static void HandleBounty(Session session, params string[] parameters)
         {
@@ -159,7 +159,7 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>Every player's /bounty forms (the [CommandHandler] usage, and the reply to a typo).</summary>
-        private const string Usage = "/bounty [list|all]  |  /bounty abandon <#>  |  /bounty confirm <code>  |  /bounty cancel  |  /bounty data  |  /bounty sync  (start a bounty by using it on your Bounty Journal)";
+        private const string Usage = "/bounty [list|all]  |  /bounty abandon <#>  |  /bounty confirm <code>  |  /bounty cancel  |  /bounty data  |  /bounty sync  (start a bounty by using it on your Bounty Ledger)";
 
         /// <summary>The forms an Admin adds, appended to an Admin's usage reply.</summary>
         private const string AdminUsage = "  |  Admin: /bounty <online player>  |  /bounty abandon <#> <online player>";

@@ -18,7 +18,7 @@ namespace ACE.Server.Managers
 {
     /// <summary>
     /// ITEM BOUNTIES (owner 2026-11-10; design: ilt-dev docs\design\item-bounties.md). A bounty is an ITEM: it names a tier,
-    /// a target, a kill count and a reward (PropertyInt.ItemBounty*). Used ON the player's Bounty Journal (rework 2026-11-12,
+    /// a target, a kill count and a reward (PropertyInt.ItemBounty*). Used ON the player's Bounty Ledger (rework 2026-11-12,
     /// see below), it starts in the character's lowest free bounty slot, #1 to #4 (item_bounty_max_active). The slots live on
     /// the CHARACTER (PropertyString.ItemBountySlots); the cap and the choice are the point: a player holds as many bounty
     /// items as they like and picks which ones are going.
@@ -26,11 +26,11 @@ namespace ACE.Server.Managers
     /// REWORK 2026-11-12 (players found the jewelry confusing, and wanted no commands to remember): a bounty used to be used
     /// ON a ring or bracelet to fill an R1, R2, B1 or B2 slot, but the jewelry was only a stand-in - which ring, whether it
     /// was worn, ring vs bracelet never mattered, yet players took the bounty to live on that ring. Now:
-    ///   - the BOUNTY JOURNAL (item_bounty_journal_wcid, its own section below) is the one thing players use: a bounty used on
+    ///   - the BOUNTY LEDGER (item_bounty_ledger_wcid, its own section below) is the one thing players use: a bounty used on
     ///     it starts (at once in its own tier or region, or a town; in another tier or region the first use says where its
     ///     kills count and a second use confirms); double-clicked, it opens as a book with a page per bounty and its progress;
     ///     appraised, it lists them. Nothing is stored on it, and one is handed over whenever a player with bounties has none;
-    ///   - a bounty used on anything else (the player, a ring) shows its terms and how to start it. With journals off, or for
+    ///   - a bounty used on anything else (the player, a ring) shows its terms and how to start it. With ledgers off, or for
     ///     a bounty the client still treats as a plain double-click, two uses start it: the first shows its terms, the slot it
     ///     takes and any warning, a second within item_bounty_confirm_seconds starts it;
     ///   - new bounties get the ItemUseable / TargetType for this (OnNewItem), the ones in a player's pack at login
@@ -47,7 +47,7 @@ namespace ACE.Server.Managers
     ///   - completion pays automatically, into the pack; a full pack holds the reward (BountyManager's held rewards);
     ///   - every confirmation is in the CONSOLE, never a popup: custom clients may not show popups. Abandoning a bounty asks
     ///     for /bounty confirm with a fresh 4-digit code that expires (item_bounty_confirm_seconds), so a macro, a typo or an
-    ///     old command can never forfeit one. Starting one on the journal is deliberate (two clicks); in another tier or
+    ///     old command can never forfeit one. Starting one on the ledger is deliberate (two clicks); in another tier or
     ///     region, and for any other start, it takes a second use.
     ///
     /// REGION bounties (owner 2026-11-10): a bounty whose weenie names a region (PropertyString.ItemBountyRegion: "vod"
@@ -405,7 +405,7 @@ namespace ACE.Server.Managers
         /// count is rolled now, once, from its RANGE (ItemBountyKillsMin / Max) so the item keeps it when traded (owner
         /// 2026-11-10: bounties are named for their reward, and the task varies) - unless the count is a mystery, rolled when
         /// it starts instead. The item gets the use of the current mode (MakeUsable, rework 2026-11-12: used on the Bounty
-        /// Journal, or a plain double-click with journals off) whatever its weenie says, and the description then states the
+        /// Ledger, or a plain double-click with ledgers off) whatever its weenie says, and the description then states the
         /// terms. Anything that isn't a bounty returns after three lookups in
         /// <paramref name="weenie"/>'s own dictionary (the cached weenie it was made from: no biota lock); a KillsMin / Max of
         /// 0 or less counts as unset, as everywhere else.
@@ -430,7 +430,7 @@ namespace ACE.Server.Managers
                 if ((mystery & MysteryKills) == 0 && hasRange)
                     wo.SetProperty(PropertyInt.ItemBountyKills, RollKills(min > 0 ? min : max, max > 0 ? max : min, NextUnit()));
 
-                // how the client uses it (rework 2026-11-12): on the Bounty Journal, or a plain double-click with journals off -
+                // how the client uses it (rework 2026-11-12): on the Bounty Ledger, or a plain double-click with ledgers off -
                 // whatever the weenie says (a weenie made for the old use-on-a-ring targets jewelry)
                 MakeUsable(wo);
 
@@ -446,7 +446,7 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// A bounty item's description, from its terms: what to kill, where, the reward, and how to start it - on the Bounty
-        /// Journal, or with two double-clicks when journals are off. A mystery kill count or reward says so (and when it is
+        /// Ledger, or with two double-clicks when ledgers are off. A mystery kill count or reward says so (and when it is
         /// revealed); the place is always stated.
         /// </summary>
         internal static string Describe(Slot t)
@@ -459,11 +459,11 @@ namespace ACE.Server.Managers
             var reward = t.IsMysteryReward
                 ? "Reward: a mystery, revealed when the bounty is done and paid to your pack automatically."
                 : $"Reward: {RewardText(t)}, paid to your pack automatically when done.";
-            var start = JournalsOn
-                ? "To start it, double-click it and then click your Bounty Journal (no journal yet? click yourself instead and one is added to your pack)."
+            var start = LedgersOn
+                ? "To start it, double-click it and then click your Bounty Ledger (no ledger yet? click yourself instead and one is added to your pack)."
                 : "Double-click it twice to start it: the first shows its terms, the second starts it.";
             return $"{task} Only your own kills count, and only in {place}. {reward} {start} "
-                + $"You can have up to {MaxActiveNow} bounties going at once{(JournalsOn ? "; your Bounty Journal shows them." : "; /bounty shows them.")}";
+                + $"You can have up to {MaxActiveNow} bounties going at once{(LedgersOn ? "; your Bounty Ledger shows them." : "; /bounty shows them.")}";
         }
 
         /// <summary>
@@ -592,16 +592,16 @@ namespace ACE.Server.Managers
         /// A bounty item used: double-clicked (Player.HandleActionUseItem, <paramref name="target"/> null), or used on
         /// something (HandleActionUseWithTarget). On the player's thread.
         ///
-        /// With journals on (item_bounty_journal_wcid, 2026-11-12) a bounty is used ON the Bounty Journal:
-        ///   - on the player's own journal it starts at once where its kills count, or in a town - double-clicking the bounty
-        ///     and then clicking the journal is deliberate enough. Standing in ANOTHER tier or region (probably a mistake, as
-        ///     the ring start judged it) the first use says where its kills count, and a second use on the journal within
+        /// With ledgers on (item_bounty_ledger_wcid, 2026-11-12) a bounty is used ON the Bounty Ledger:
+        ///   - on the player's own ledger it starts at once where its kills count, or in a town - double-clicking the bounty
+        ///     and then clicking the ledger is deliberate enough. Standing in ANOTHER tier or region (probably a mistake, as
+        ///     the ring start judged it) the first use says where its kills count, and a second use on the ledger within
         ///     item_bounty_confirm_seconds starts it: a click where the ring start asked for a typed /bounty confirm code;
         ///   - on anything else (the player, a ring as before the rework, a book) it shows the bounty and how to start it, and
-        ///     hands the player a journal if they have none. In another tier or region that preview carries the warning, so
-        ///     the next use on the journal starts it without asking again.
-        /// TWO USES start it everywhere else: with journals off, for a plain double-click (a bounty whose ItemUseable the
-        /// client still has from before the journal), and when no journal could be handed over (a full pack, its weenie
+        ///     hands the player a ledger if they have none. In another tier or region that preview carries the warning, so
+        ///     the next use on the ledger starts it without asking again.
+        /// TWO USES start it everywhere else: with ledgers off, for a plain double-click (a bounty whose ItemUseable the
+        /// client still has from before the ledger), and when no ledger could be handed over (a full pack, its weenie
         /// missing), so nobody is ever stuck. The first use shows the bounty; a second use of the same item within
         /// item_bounty_confirm_seconds starts it - starting uses up a tradeable item for good, so one stray click never does.
         /// Every check runs again on every use; anything that stops a start says why and keeps the bounty in the pack.
@@ -619,17 +619,17 @@ namespace ACE.Server.Managers
                     return;
                 }
 
-                // No journal yet: one FIRST, whatever then happens to this bounty - all slots full, a tier they can't fight yet -
+                // No ledger yet: one FIRST, whatever then happens to this bounty - all slots full, a tier they can't fight yet -
                 // since using a bounty (on themselves, as its description says) is how a player gets one.
-                var journal = FindJournal(player);
+                var ledger = FindLedger(player);
                 var granted = false;
-                if (journal == null && JournalsOn)
+                if (ledger == null && LedgersOn)
                 {
-                    journal = GrantJournal(player, atLogin: false);
-                    granted = journal != null;
+                    ledger = GrantLedger(player, atLogin: false);
+                    granted = ledger != null;
                 }
                 if (granted)
-                    Tell(player, "A Bounty Journal was added to your pack: it keeps track of your bounties - double-click it to read them. To start a bounty, double-click the bounty and then click the journal.");
+                    Tell(player, "A Bounty Ledger was added to your pack: it keeps track of your bounties - double-click it to read them. To start a bounty, double-click the bounty and then click the ledger.");
 
                 if (!CanStartOrTell(player, item, out var terms, out var slots, out var free))
                 {
@@ -639,22 +639,22 @@ namespace ACE.Server.Managers
 
                 // a bounty whose use the client has from before (picked up since login from a house chest or a corpse: login
                 // fixes only what the player carries, NormalizeHeldBounties) is fixed now and sent to the client again, so its
-                // cursor takes the journal from the next double-click on - the preview below says to click the journal
+                // cursor takes the ledger from the next double-click on - the preview below says to click the ledger
                 if (MakeUsable(item))
                     player.Session?.Network.EnqueueSend(new GameMessageUpdateObject(item));
 
-                if (JournalsOn && target != null)
+                if (LedgersOn && target != null)
                 {
                     var note = StandingNote(player, terms);
 
-                    // on the player's own journal: started - at once where its kills count, or in a town. Standing in another
-                    // tier or region the first use says so and arms it; a second use on the journal in time starts it.
-                    if (IsJournal(target) && player.FindObject(target.Guid.Full, Player.SearchLocations.MyInventory) != null)
+                    // on the player's own ledger: started - at once where its kills count, or in a town. Standing in another
+                    // tier or region the first use says so and arms it; a second use on the ledger in time starts it.
+                    if (IsLedger(target) && player.FindObject(target.Guid.Full, Player.SearchLocations.MyInventory) != null)
                     {
                         if (note != null && !TakeArmed(player, item))
                         {
                             var seconds = Arm(player, item);
-                            Tell(player, $"{note} To start it anyway, use it on your Bounty Journal again within {seconds} seconds.");
+                            Tell(player, $"{note} To start it anyway, use it on your Bounty Ledger again within {seconds} seconds.");
                             return;
                         }
                         _armed.TryRemove(player.Guid.Full, out _);
@@ -663,8 +663,8 @@ namespace ACE.Server.Managers
                     }
 
                     // on anything else (themselves, a ring): what it is, and how to start it. In another tier or region the
-                    // preview's note is the warning, so it arms the bounty: the next use on the journal starts it.
-                    if (journal != null)
+                    // preview's note is the warning, so it arms the bounty: the next use on the ledger starts it.
+                    if (ledger != null)
                     {
                         if (note != null)
                             Arm(player, item);
@@ -672,10 +672,10 @@ namespace ACE.Server.Managers
                             _armed.TryRemove(player.Guid.Full, out _);
                         Preview(player, item, terms, note);
                         if (!granted)
-                            Tell(player, $"To start it, double-click it and then click your Bounty Journal. It goes in as bounty #{free} ({slots.Count} of {MaxActiveNow} going).");
+                            Tell(player, $"To start it, double-click it and then click your Bounty Ledger. It goes in as bounty #{free} ({slots.Count} of {MaxActiveNow} going).");
                         return;
                     }
-                    // no journal could be handed over (a full pack, its weenie missing): the two uses below still start it
+                    // no ledger could be handed over (a full pack, its weenie missing): the two uses below still start it
                 }
 
                 StartOnSecondUse(player, item, terms, slots, free, target == null ? "Double-click it again" : "Use it again");
@@ -893,7 +893,7 @@ namespace ACE.Server.Managers
             player.SavePlayerToDatabase();
 
             Tell(player, $"Bounty #{key} started: {(revealed ? "the mystery count is " : "")}{terms.Kills:N0} {(terms.Kind == KindSpecies ? terms.TargetName : "kills")} in {PlaceName(terms)} -> {RewardText(terms)}. "
-                + $"{slots.Count} of {MaxActiveNow} bounties going; {(JournalsOn ? "double-click your Bounty Journal to see your progress." : "/bounty shows your progress.")}");
+                + $"{slots.Count} of {MaxActiveNow} bounties going; {(LedgersOn ? "double-click your Bounty Ledger to see your progress." : "/bounty shows your progress.")}");
             var note = StandingNote(player, terms);
             if (note != null)
                 Tell(player, note);
@@ -1144,7 +1144,7 @@ namespace ACE.Server.Managers
                     {
                         Tell(viewer, own
                             ? $"Your bounties: none going (you can have up to {max}). "
-                                + (JournalsOn ? "To start one, double-click the bounty and then click your Bounty Journal." : "Double-click a bounty in your pack to start one.")
+                                + (LedgersOn ? "To start one, double-click the bounty and then click your Bounty Ledger." : "Double-click a bounty in your pack to start one.")
                             : $"{whose} bounties: none going.");
                         return;
                     }
@@ -1158,8 +1158,8 @@ namespace ACE.Server.Managers
                         Tell(viewer, SlotLine(key, s));
                     }
                     if (own)
-                        Tell(viewer, (JournalsOn
-                                ? "Your Bounty Journal shows all of this: double-click it. To start a bounty, double-click it and then click the journal."
+                        Tell(viewer, (LedgersOn
+                                ? "Your Bounty Ledger shows all of this: double-click it. To start a bounty, double-click it and then click the ledger."
                                 : "To start a bounty, double-click it in your pack.")
                             + " To abandon one (forfeits it): /bounty abandon <#>, e.g. /bounty abandon 2.");
                 }
@@ -1173,7 +1173,7 @@ namespace ACE.Server.Managers
         /// <summary>The /bounty data and ItemBountyDisplay format version; bump it when a field is added or moved, or a field's
         /// values change meaning.
         /// v2 (2026-11-10): placeShort and placeName added at the end (region bounties: tier 0, place "VoD").
-        /// v3 (2026-11-12, the Bounty Journal rework): the same 16 fields in the same order; the slot keys are "1".."8" (shown as
+        /// v3 (2026-11-12, the Bounty Ledger rework): the same 16 fields in the same order; the slot keys are "1".."8" (shown as
         /// #1..#8) instead of R1, R2, B1, B2, and the header lists the slots that exist - #1 up to item_bounty_max_active
         /// (default 4), then any slot above it still holding a bounty.</summary>
         public const string DataVersion = "v3";
@@ -1340,7 +1340,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// One abandon waiting for /bounty confirm &lt;code&gt;: who asked, whose bounty it forfeits, and which one. (Before the
         /// 2026-11-12 rework, starting a bounty outside its place asked for a code too; it now asks for a second use on the
-        /// Bounty Journal instead - HandleUse.)
+        /// Bounty Ledger instead - HandleUse.)
         /// </summary>
         private sealed class Pending
         {
@@ -1360,7 +1360,7 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// The confirmation window in seconds (item_bounty_confirm_seconds, held to 10..600): for typing /bounty confirm after
-        /// an abandon, and for the second use that starts a bounty (on the journal in another tier or region, or without one).
+        /// an abandon, and for the second use that starts a bounty (on the ledger in another tier or region, or without one).
         /// </summary>
         private static int ConfirmSeconds => (int)Math.Clamp(ServerConfig.item_bounty_confirm_seconds.Value, 10, 600);
 
@@ -1407,8 +1407,8 @@ namespace ACE.Server.Managers
         {
             if (player == null) return;
             _armed.TryRemove(player.Guid.Full, out _);
-            _journalTried.TryRemove(player.Guid.Full, out _);
-            _journalOpened.TryRemove(player.Guid.Full, out _);
+            _ledgerTried.TryRemove(player.Guid.Full, out _);
+            _ledgerOpened.TryRemove(player.Guid.Full, out _);
             _pending.TryRemove(player.Guid.Full, out _);
             foreach (var kv in _pending)
                 if (ReferenceEquals(kv.Value.Target, player))
@@ -2272,106 +2272,106 @@ namespace ACE.Server.Managers
             });
         }
 
-        // ── The Bounty Journal (2026-11-12) ──────────────────────────────────
+        // ── The Bounty Ledger (2026-11-12) ──────────────────────────────────
         //
-        // One thing players look at and act on, instead of commands. The journal is an attuned, bonded BOOK (its weenie is
-        // item_bounty_journal_wcid; 0 = no journals):
-        //   - a bounty used ON it starts: double-click the bounty, then click the journal (HandleUse) - at once in its own tier
-        //     or region or a town; standing in another tier or region, after a second use on the journal;
+        // One thing players look at and act on, instead of commands. The ledger is an attuned, bonded BOOK (its weenie is
+        // item_bounty_ledger_wcid; 0 = no ledgers):
+        //   - a bounty used ON it starts: double-click the bounty, then click the ledger (HandleUse) - at once in its own tier
+        //     or region or a town; standing in another tier or region, after a second use on the ledger;
         //   - double-clicked, it opens as a book: a summary page, then one page per bounty with a progress bar - written from
-        //     the reader's slots every time it opens, as the Monster-Dex does, never stored on the item (OpenJournal); one chat
+        //     the reader's slots every time it opens, as the Monster-Dex does, never stored on the item (OpenLedger); one chat
         //     line sums it up as well, for a client that draws no book;
         //   - appraised by the player carrying it, its description lists the bounties going and their progress (AppraisalText).
-        // Nothing lives ON the journal - the slots stay on the character - so a lost or sold journal loses nothing: a new one is
+        // Nothing lives ON the ledger - the slots stay on the character - so a lost or sold ledger loses nothing: a new one is
         // handed over the next time a bounty is used, and at login while bounties are going (OnLogin).
 
-        /// <summary>The Bounty Journal's weenie (item_bounty_journal_wcid); 0 = no journals.</summary>
-        internal static uint JournalWcid
+        /// <summary>The Bounty Ledger's weenie (item_bounty_ledger_wcid); 0 = no ledgers.</summary>
+        internal static uint LedgerWcid
         {
             get
             {
-                var v = ServerConfig.item_bounty_journal_wcid.Value;
+                var v = ServerConfig.item_bounty_ledger_wcid.Value;
                 return v > 0 && v <= uint.MaxValue ? (uint)v : 0;
             }
         }
 
-        /// <summary>True while journals are on (item_bounty_journal_wcid names a weenie).</summary>
-        internal static bool JournalsOn => JournalWcid != 0;
+        /// <summary>True while ledgers are on (item_bounty_ledger_wcid names a weenie).</summary>
+        internal static bool LedgersOn => LedgerWcid != 0;
 
-        /// <summary>True for a Bounty Journal: an item made from item_bounty_journal_wcid.</summary>
-        public static bool IsJournal(WorldObject wo) => wo != null && JournalsOn && wo.WeenieClassId == JournalWcid;
+        /// <summary>True for a Bounty Ledger: an item made from item_bounty_ledger_wcid.</summary>
+        public static bool IsLedger(WorldObject wo) => wo != null && LedgersOn && wo.WeenieClassId == LedgerWcid;
 
-        /// <summary>A Bounty Journal in the player's pack (main pack or a side pack), or null.</summary>
-        private static WorldObject FindJournal(Player player)
-            => JournalsOn ? player.GetInventoryItemsOfWCID(JournalWcid).FirstOrDefault() : null;
+        /// <summary>A Bounty Ledger in the player's pack (main pack or a side pack), or null.</summary>
+        private static WorldObject FindLedger(Player player)
+            => LedgersOn ? player.GetInventoryItemsOfWCID(LedgerWcid).FirstOrDefault() : null;
 
-        /// <summary>Player guid -> when a journal was last tried for them outside login (GrantJournal's throttle).</summary>
-        private static readonly ConcurrentDictionary<uint, double> _journalTried = new();
+        /// <summary>Player guid -> when a ledger was last tried for them outside login (GrantLedger's throttle).</summary>
+        private static readonly ConcurrentDictionary<uint, double> _ledgerTried = new();
 
         /// <summary>
-        /// At most one journal attempt per player this often outside login: a forged client repeating bounty uses can't make the
-        /// server build and destroy a journal (or log a warning) per packet. Long enough for that, short enough that a player
+        /// At most one ledger attempt per player this often outside login: a forged client repeating bounty uses can't make the
+        /// server build and destroy a ledger (or log a warning) per packet. Long enough for that, short enough that a player
         /// who just made room in a full pack is not kept waiting.
         /// </summary>
-        private const double JournalRetrySeconds = 3;
+        private const double LedgerRetrySeconds = 3;
 
-        /// <summary>1 once the missing-journal-weenie warning has been logged: once per server run, not once per use.</summary>
-        private static int _journalMissingLogged;
+        /// <summary>1 once the missing-ledger-weenie warning has been logged: once per server run, not once per use.</summary>
+        private static int _ledgerMissingLogged;
 
         /// <summary>
-        /// A new Bounty Journal into the player's pack, or null: journals off, a character that can't take bounties, tried for
-        /// them within JournalRetrySeconds, the journal's weenie missing (logged once: import the Bounty Journal SQL, or set
-        /// item_bounty_journal_wcid 0), or no room (the player is told, except at login). At login (<paramref name="atLogin"/>)
+        /// A new Bounty Ledger into the player's pack, or null: ledgers off, a character that can't take bounties, tried for
+        /// them within LedgerRetrySeconds, the ledger's weenie missing (logged once: import the Bounty Ledger SQL, or set
+        /// item_bounty_ledger_wcid 0), or no room (the player is told, except at login). At login (<paramref name="atLogin"/>)
         /// it is added without networking - SendSelf sends the pack right after; otherwise it is created in the pack with
         /// networking.
         /// </summary>
-        private static WorldObject GrantJournal(Player player, bool atLogin)
+        private static WorldObject GrantLedger(Player player, bool atLogin)
         {
-            var wcid = JournalWcid;
+            var wcid = LedgerWcid;
             if (wcid == 0 || player == null || player.IsMule || player.IsOlthoiPlayer)
                 return null;
 
             if (!atLogin)
             {
                 var now = Time.GetUnixTime();
-                if (_journalTried.TryGetValue(player.Guid.Full, out var last) && now - last < JournalRetrySeconds)
+                if (_ledgerTried.TryGetValue(player.Guid.Full, out var last) && now - last < LedgerRetrySeconds)
                     return null;
-                _journalTried[player.Guid.Full] = now;
+                _ledgerTried[player.Guid.Full] = now;
             }
 
-            var journal = Factories.WorldObjectFactory.CreateNewWorldObject(wcid);
-            if (journal == null)
+            var ledger = Factories.WorldObjectFactory.CreateNewWorldObject(wcid);
+            if (ledger == null)
             {
-                if (Interlocked.Exchange(ref _journalMissingLogged, 1) == 0)
-                    log.Warn($"[ItemBounty] journal: weenie {wcid} (item_bounty_journal_wcid) doesn't exist - import the Bounty Journal SQL and @clearcache, or set item_bounty_journal_wcid 0. Until then bounties start with two uses. (Logged once.)");
+                if (Interlocked.Exchange(ref _ledgerMissingLogged, 1) == 0)
+                    log.Warn($"[ItemBounty] ledger: weenie {wcid} (item_bounty_ledger_wcid) doesn't exist - import the Bounty Ledger SQL and @clearcache, or set item_bounty_ledger_wcid 0. Until then bounties start with two uses. (Logged once.)");
                 return null;
             }
-            if (!(atLogin ? player.TryAddToInventory(journal) : player.TryCreateInInventoryWithNetworking(journal)))
+            if (!(atLogin ? player.TryAddToInventory(ledger) : player.TryCreateInInventoryWithNetworking(ledger)))
             {
-                journal.Destroy();
+                ledger.Destroy();
                 if (!atLogin)
-                    Tell(player, "There is no room in your pack for a Bounty Journal, which keeps track of your bounties. Make room to get one.");
+                    Tell(player, "There is no room in your pack for a Bounty Ledger, which keeps track of your bounties. Make room to get one.");
                 return null;
             }
-            log.Info($"[ItemBounty] journal: given to {player.Name}{(atLogin ? " at login" : "")}");
-            return journal;
+            log.Info($"[ItemBounty] ledger: given to {player.Name}{(atLogin ? " at login" : "")}");
+            return ledger;
         }
 
         /// <summary>
-        /// The ItemUseable a bounty carries, which decides what the client does when it is double-clicked: with journals on, a
-        /// cursor to use it ON something (the journal starts it; the player themself or a ring get the how-to); with journals
+        /// The ItemUseable a bounty carries, which decides what the client does when it is double-clicked: with ledgers on, a
+        /// cursor to use it ON something (the ledger starts it; the player themself or a ring get the how-to); with ledgers
         /// off, a plain use (the two-use start).
         /// </summary>
-        internal static Usable BountyUseable => JournalsOn ? Usable.SourceContainedTargetSelfOrContained : Usable.Contained;
+        internal static Usable BountyUseable => LedgersOn ? Usable.SourceContainedTargetSelfOrContained : Usable.Contained;
 
         /// <summary>
-        /// What the client lets a bounty be used on with journals on: the journal (a book: Writable), the player themself (no
-        /// journal yet? one is handed over) and jewelry (the habit from before the rework). The client refuses anything else.
+        /// What the client lets a bounty be used on with ledgers on: the ledger (a book: Writable), the player themself (no
+        /// ledger yet? one is handed over) and jewelry (the habit from before the rework). The client refuses anything else.
         /// </summary>
         internal const ItemType BountyTargets = ItemType.Writable | ItemType.Creature | ItemType.Jewelry;
 
         /// <summary>
-        /// Gives a bounty item the ItemUseable above - and, with journals on, the TargetType - whatever its weenie says; true
+        /// Gives a bounty item the ItemUseable above - and, with ledgers on, the TargetType - whatever its weenie says; true
         /// when anything changed. At creation (OnNewItem), at login for the bounties a player carries (OnLogin), and when a
         /// bounty is used (HandleUse), for one that was elsewhere at login.
         /// </summary>
@@ -2384,7 +2384,7 @@ namespace ACE.Server.Managers
                 wo.ItemUseable = useable;
                 changed = true;
             }
-            if (JournalsOn && wo.TargetType != BountyTargets)
+            if (LedgersOn && wo.TargetType != BountyTargets)
             {
                 wo.TargetType = BountyTargets;
                 changed = true;
@@ -2392,26 +2392,26 @@ namespace ACE.Server.Managers
             return changed;
         }
 
-        /// <summary>One page of the journal: its title (the book draws it as the page's author line) and its text.</summary>
-        internal readonly record struct JournalPage(string Title, string Text);
+        /// <summary>One page of the ledger: its title (the book draws it as the page's author line) and its text.</summary>
+        internal readonly record struct LedgerPage(string Title, string Text);
 
         /// <summary>A dashed line across a book page (the Monster-Dex's width).</summary>
         private const string Rule = "-----------------------------\n";
 
         /// <summary>
-        /// The journal's pages for a character's slots: a summary, then one page per bounty going, in slot order. Pure - the
-        /// tests read it; OpenJournal sends it. <paramref name="on"/>: item_bounty_enabled.
+        /// The ledger's pages for a character's slots: a summary, then one page per bounty going, in slot order. Pure - the
+        /// tests read it; OpenLedger sends it. <paramref name="on"/>: item_bounty_enabled.
         /// </summary>
-        internal static List<JournalPage> BuildJournal(IReadOnlyDictionary<string, Slot> slots, int max, bool on)
+        internal static List<LedgerPage> BuildLedger(IReadOnlyDictionary<string, Slot> slots, int max, bool on)
         {
-            var pages = new List<JournalPage> { new("Bounty Journal", SummaryPage(slots, max, on)) };
+            var pages = new List<LedgerPage> { new("Bounty Ledger", SummaryPage(slots, max, on)) };
             foreach (var key in SlotKeys)
                 if (slots.TryGetValue(key, out var s))
                     pages.Add(new($"Bounty #{key}", BountyPage(key, s)));
             return pages;
         }
 
-        /// <summary>The journal's first page: how many are going, one line per slot ("#2  T15  64%  640/1,000"), and how to add one.</summary>
+        /// <summary>The ledger's first page: how many are going, one line per slot ("#2  T15  64%  640/1,000"), and how to add one.</summary>
         internal static string SummaryPage(IReadOnlyDictionary<string, Slot> slots, int max, bool on)
         {
             var sb = new StringBuilder();
@@ -2426,7 +2426,7 @@ namespace ACE.Server.Managers
             sb.Append(Rule);
             if (slots.Count > 0)
                 sb.Append("Turn the page for each bounty.\n\n");
-            sb.Append("To add a bounty: double-click it, then click this journal.");
+            sb.Append("To add a bounty: double-click it, then click this ledger.");
             return sb.ToString();
         }
 
@@ -2472,22 +2472,22 @@ namespace ACE.Server.Managers
         internal static string ShortProgress(Slot s) => $"{TierRewardScale.FormatProgress(s.Progress)}/{s.Kills:N0}";
 
         /// <summary>
-        /// The chat line opening the journal also prints, for a client that draws no book: "Bounty Journal: 2 of 4 going - #1
+        /// The chat line opening the ledger also prints, for a client that draws no book: "Bounty Ledger: 2 of 4 going - #1
         /// T16 4%, #2 T15 64%." or, with none going, how to add one.
         /// </summary>
-        internal static string JournalChatLine(IReadOnlyDictionary<string, Slot> slots, int max)
+        internal static string LedgerChatLine(IReadOnlyDictionary<string, Slot> slots, int max)
         {
             if (slots.Count == 0)
-                return $"Bounty Journal: none going (you can have up to {max}). To add one, double-click the bounty, then click the journal.";
+                return $"Bounty Ledger: none going (you can have up to {max}). To add one, double-click the bounty, then click the ledger.";
             var parts = SlotKeys.Where(slots.ContainsKey).Select(k => $"#{k} {PlaceShort(slots[k])} {Percent(slots[k])}%");
-            return $"Bounty Journal: {slots.Count} of {max} going - {string.Join(", ", parts)}.";
+            return $"Bounty Ledger: {slots.Count} of {max} going - {string.Join(", ", parts)}.";
         }
 
         /// <summary>
-        /// The journal's description for the player carrying it: one line per slot with the progress and the reward, then how
+        /// The ledger's description for the player carrying it: one line per slot with the progress and the reward, then how
         /// to use it. <paramref name="on"/>: item_bounty_enabled.
         /// </summary>
-        internal static string JournalDescription(IReadOnlyDictionary<string, Slot> slots, int max, bool on)
+        internal static string LedgerDescription(IReadOnlyDictionary<string, Slot> slots, int max, bool on)
         {
             var sb = new StringBuilder();
             sb.Append($"Your bounties: {slots.Count} of {max} going.\n");
@@ -2498,24 +2498,24 @@ namespace ACE.Server.Managers
                 slots.TryGetValue(key, out var s);
                 sb.Append(s == null ? $"#{key} empty\n" : $"#{key} {PlaceShort(s)}: {ProgressText(s)} ({Percent(s)}%) -> {RewardText(s)}\n");
             }
-            sb.Append("\nTo add a bounty, double-click it and then click this journal. Double-click the journal to read a page for each bounty.");
+            sb.Append("\nTo add a bounty, double-click it and then click this ledger. Double-click the ledger to read a page for each bounty.");
             return sb.ToString();
         }
 
         /// <summary>
         /// Appraisal (AppraiseInfo): the description to show instead of the stored one - a bounty's own terms (DescribeItem), or
-        /// a journal's summary of the examiner's bounties when the examiner carries it - or null to keep the stored text.
+        /// a ledger's summary of the examiner's bounties when the examiner carries it - or null to keep the stored text.
         /// Display only: nothing is written. On the examiner's thread.
         /// </summary>
         public static string AppraisalText(WorldObject wo, Player examiner)
         {
-            if (!IsJournal(wo))
+            if (!IsLedger(wo))
                 return DescribeItem(wo);
             try
             {
                 if (examiner == null || examiner.FindObject(wo.Guid.Full, Player.SearchLocations.MyInventory) == null)
                     return null;
-                return JournalDescription(LoadSlots(examiner), MaxActiveNow, ServerConfig.item_bounty_enabled.Value);
+                return LedgerDescription(LoadSlots(examiner), MaxActiveNow, ServerConfig.item_bounty_enabled.Value);
             }
             catch (Exception ex)
             {
@@ -2524,31 +2524,31 @@ namespace ACE.Server.Managers
             }
         }
 
-        /// <summary>Player guid -> when their journal was last opened (OpenJournal's throttle).</summary>
-        private static readonly ConcurrentDictionary<uint, double> _journalOpened = new();
+        /// <summary>Player guid -> when their ledger was last opened (OpenLedger's throttle).</summary>
+        private static readonly ConcurrentDictionary<uint, double> _ledgerOpened = new();
 
-        /// <summary>The least time between two journal opens for one player, in seconds.</summary>
-        private const double JournalReopenSeconds = 1;
+        /// <summary>The least time between two ledger opens for one player, in seconds.</summary>
+        private const double LedgerReopenSeconds = 1;
 
         /// <summary>
-        /// A Bounty Journal opened (Book.ActOnUse, Player.ReadBook): its pages written from the reader's bounties and sent as
+        /// A Bounty Ledger opened (Book.ActOnUse, Player.ReadBook): its pages written from the reader's bounties and sent as
         /// the book's contents - nothing stored on the item, as the Monster-Dex does - with as many pages as it has, so the
         /// client offers no blank page to write on. One chat line sums it up too. A done mystery waiting for its reward table
         /// is paid first if it can be now, as /bounty does. On the reader's thread.
         /// </summary>
-        public static void OpenJournal(Player player, WorldObject journal, int maxChars)
+        public static void OpenLedger(Player player, WorldObject ledger, int maxChars)
         {
             try
             {
-                if (player?.Session == null || journal == null) return;
+                if (player?.Session == null || ledger == null) return;
 
                 // once a second at most: the book-data request (0x00AA, Player.ReadBook) has no throttle of its own, and each
                 // open builds the pages, sends them and a chat line, and may pay a waiting mystery. A legit double-click and a
                 // client re-request a moment later lose nothing: the first answer already carried the pages.
                 var now = Time.GetUnixTime();
-                if (_journalOpened.TryGetValue(player.Guid.Full, out var last) && now - last < JournalReopenSeconds)
+                if (_ledgerOpened.TryGetValue(player.Guid.Full, out var last) && now - last < LedgerReopenSeconds)
                     return;
-                _journalOpened[player.Guid.Full] = now;
+                _ledgerOpened[player.Guid.Full] = now;
 
                 if (maxChars < 100) maxChars = 1000;   // as the Monster-Dex: an unset page size reads 0
 
@@ -2558,7 +2558,7 @@ namespace ACE.Server.Managers
 
                 var slots = LoadSlots(player);
                 var max = MaxActiveNow;
-                var pages = BuildJournal(slots, max, on)
+                var pages = BuildLedger(slots, max, on)
                     .Select(p => new ACE.Entity.Models.PropertiesBookPageData
                     {
                         AuthorId = 0xFFFFFFFF,
@@ -2569,12 +2569,12 @@ namespace ACE.Server.Managers
                     })
                     .ToList();
                 player.Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventBookDataResponse(
-                    player.Session, journal.Guid.Full, maxChars, pages.Count, pages, "", 0xFFFFFFFF, "", false));
-                Tell(player, JournalChatLine(slots, max));
+                    player.Session, ledger.Guid.Full, maxChars, pages.Count, pages, "", 0xFFFFFFFF, "", false));
+                Tell(player, LedgerChatLine(slots, max));
             }
             catch (Exception ex)
             {
-                log.Error($"[ItemBounty] OpenJournal: {ex}");
+                log.Error($"[ItemBounty] OpenLedger: {ex}");
             }
         }
 
@@ -2584,37 +2584,37 @@ namespace ACE.Server.Managers
         /// Login (Player.PlayerEnterWorld), BEFORE SendSelf sends the character and its pack to the client: the bounties a
         /// player carries are given the ItemUseable of the current mode (NormalizeHeldBounties), the Bounty Tracker's stored
         /// display is brought to the current format (RefreshStoredDisplay), and a player with bounties - going, or in the pack -
-        /// but no Bounty Journal is given one (GiveJournalAtLogin).
+        /// but no Bounty Ledger is given one (GiveLedgerAtLogin).
         /// </summary>
         public static void OnLogin(Player player)
         {
             var held = NormalizeHeldBounties(player);
             RefreshStoredDisplay(player);
-            GiveJournalAtLogin(player, held);
+            GiveLedgerAtLogin(player, held);
         }
 
         /// <summary>
-        /// At login, before the pack is sent: a Bounty Journal for a player who has bounties going or carries
-        /// <paramref name="heldBounties"/> bounty items and has no journal - the players from before journals existed, and
+        /// At login, before the pack is sent: a Bounty Ledger for a player who has bounties going or carries
+        /// <paramref name="heldBounties"/> bounty items and has no ledger - the players from before ledgers existed, and
         /// anyone who lost theirs. Added without networking (the pack goes out with it); a full pack just waits for the next
         /// bounty use.
         /// </summary>
-        private static void GiveJournalAtLogin(Player player, int heldBounties)
+        private static void GiveLedgerAtLogin(Player player, int heldBounties)
         {
             try
             {
-                if (!JournalsOn || player == null || player.IsMule || player.IsOlthoiPlayer)
+                if (!LedgersOn || player == null || player.IsMule || player.IsOlthoiPlayer)
                     return;
                 if (heldBounties == 0 && string.IsNullOrEmpty(player.GetProperty(PropertyString.ItemBountySlots)))
                     return;
-                if (FindJournal(player) != null)
+                if (FindLedger(player) != null)
                     return;
-                if (GrantJournal(player, atLogin: true) != null)
-                    Tell(player, "A Bounty Journal was added to your pack: double-click it to see your bounties and their progress. To start a bounty, double-click it and then click the journal.");
+                if (GrantLedger(player, atLogin: true) != null)
+                    Tell(player, "A Bounty Ledger was added to your pack: double-click it to see your bounties and their progress. To start a bounty, double-click it and then click the ledger.");
             }
             catch (Exception ex)
             {
-                log.Error($"[ItemBounty] GiveJournalAtLogin: {ex}");
+                log.Error($"[ItemBounty] GiveLedgerAtLogin: {ex}");
             }
         }
 

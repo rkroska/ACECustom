@@ -129,7 +129,7 @@ namespace ACE.Server.Network.Structure
 
             // Item bounties (rework 2026-11-12): a bounty's description is written from its terms as it is appraised, so one
             // made before the rework (whose stored text says to use it on a ring or bracelet) reads the current instructions;
-            // a Bounty Journal shows the examiner's bounties going and their progress when the examiner carries it. Display
+            // a Bounty Ledger shows the examiner's bounties going and their progress when the examiner carries it. Display
             // only - the item is never written.
             if (!(wo is Creature))
             {

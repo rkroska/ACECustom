@@ -69,11 +69,11 @@ namespace ACE.Server.WorldObjects
 
             int maxChars = Biota.PropertiesBook.MaxNumCharsPerPage;
 
-            // Bounty Journal (2026-11-12): its pages are written from the reader's own bounties every time it opens, like the
-            // Monster-Dex below - nothing is stored on the item (ItemBounties.OpenJournal). Before the stored pages are read.
-            if (ACE.Server.Managers.ItemBounties.IsJournal(this))
+            // Bounty Ledger (2026-11-12): its pages are written from the reader's own bounties every time it opens, like the
+            // Monster-Dex below - nothing is stored on the item (ItemBounties.OpenLedger). Before the stored pages are read.
+            if (ACE.Server.Managers.ItemBounties.IsLedger(this))
             {
-                ACE.Server.Managers.ItemBounties.OpenJournal(player, this, maxChars);
+                ACE.Server.Managers.ItemBounties.OpenLedger(player, this, maxChars);
                 return;
             }
 

@@ -17,7 +17,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace ACE.Server.Tests
 {
     /// <summary>
-    /// Item bounties (owner 2026-11-10; Bounty Journal rework 2026-11-12): the pure rules in ItemBounties - slot names (and the
+    /// Item bounties (owner 2026-11-10; Bounty Ledger rework 2026-11-12): the pure rules in ItemBounties - slot names (and the
     /// R1 / R2 / B1 / B2 names from before the rework), which slot a new bounty takes under the cap, the slot string on the
     /// character, which kills count, the tracker's wire format - the terms read off a bounty ITEM (a DB-free GenericObject),
     /// and the shipped defaults of its settings. No DB, no world.
@@ -86,14 +86,14 @@ namespace ACE.Server.Tests
 
         // -- defaults --
 
-        /// <summary>The settings ship on, with four bounties at once, a one-minute confirmation and the Bounty Journal 98760483.</summary>
+        /// <summary>The settings ship on, with four bounties at once, a one-minute confirmation and the Bounty Ledger 98760483.</summary>
         [TestMethod]
         public void Defaults()
         {
             Assert.IsTrue(ServerConfig.item_bounty_enabled.Default);
             Assert.AreEqual(4L, ServerConfig.item_bounty_max_active.Default);
             Assert.AreEqual(60L, ServerConfig.item_bounty_confirm_seconds.Default);
-            Assert.AreEqual(98760483L, ServerConfig.item_bounty_journal_wcid.Default);
+            Assert.AreEqual(98760483L, ServerConfig.item_bounty_ledger_wcid.Default);
         }
 
         // -- slot names --
@@ -121,7 +121,7 @@ namespace ACE.Server.Tests
         }
 
         /// <summary>
-        /// The slot names from before the Bounty Journal rework still work - typed or stored - as #1-#4: R1, R2 (the rings),
+        /// The slot names from before the Bounty Ledger rework still work - typed or stored - as #1-#4: R1, R2 (the rings),
         /// then B1, B2 (the bracelets).
         /// </summary>
         [TestMethod]
@@ -237,7 +237,7 @@ namespace ACE.Server.Tests
         }
 
         /// <summary>
-        /// A character saved before the Bounty Journal rework: R1, R2, B1, B2 read as #1-#4 with everything they held, and the
+        /// A character saved before the Bounty Ledger rework: R1, R2, B1, B2 read as #1-#4 with everything they held, and the
         /// next save writes only the new keys - the same bounties, the same progress.
         /// </summary>
         [TestMethod]
@@ -791,10 +791,10 @@ namespace ACE.Server.Tests
                 StringAssert.Contains(text, "Kill a mystery number of creatures in Tier 15");
                 StringAssert.Contains(text, "only in Tier 15");
                 StringAssert.Contains(text, "Reward: a mystery");
-                StringAssert.Contains(text, "To start it, double-click it and then click your Bounty Journal", "how to start it");
-                StringAssert.Contains(text, "click yourself instead and one is added to your pack", "and how to get a journal");
+                StringAssert.Contains(text, "To start it, double-click it and then click your Bounty Ledger", "how to start it");
+                StringAssert.Contains(text, "click yourself instead and one is added to your pack", "and how to get a ledger");
                 StringAssert.Contains(text, "You can have up to 4 bounties going at once", "the cap");
-                StringAssert.DoesNotMatch(text, new Regex(@"\b(ring|bracelet)s?\b", RegexOptions.IgnoreCase), "no jewelry since the Bounty Journal rework");
+                StringAssert.DoesNotMatch(text, new Regex(@"\b(ring|bracelet)s?\b", RegexOptions.IgnoreCase), "no jewelry since the Bounty Ledger rework");
                 StringAssert.DoesNotMatch(text, new Regex("300|1,?500|secret_box"), "appraisal must not reveal the range or the table");
 
                 var region = ItemBounties.Describe(vod);
@@ -871,7 +871,7 @@ namespace ACE.Server.Tests
         /// <summary>
         /// The fields in one slot entry for each wire version (DataVersion). The tracker parses by position, so a field added
         /// or moved needs a new version - and a new row here; a field added without a bump fails the 16-field check below.
-        /// v3 (the Bounty Journal rework) kept the 16 fields and changed the slot keys: R1, R2, B1, B2 became 1-4.
+        /// v3 (the Bounty Ledger rework) kept the 16 fields and changed the slot keys: R1, R2, B1, B2 became 1-4.
         /// </summary>
         private static readonly Dictionary<string, int> TrackerFieldsByVersion = new() { ["v2"] = 16, ["v3"] = 16 };
 
@@ -1175,13 +1175,13 @@ namespace ACE.Server.Tests
         }
 
         /// <summary>
-        /// Bounty Journal rework: whatever the weenie carries - the old use-on-a-ring targeted jewelry only - a new bounty is
+        /// Bounty Ledger rework: whatever the weenie carries - the old use-on-a-ring targeted jewelry only - a new bounty is
         /// used ON something (the source in the pack; the target the player or an item in the pack), and may target the
-        /// journal (a book), the player (who gets a journal if they have none) and jewelry (the old habit). A mystery count
+        /// ledger (a book), the player (who gets a ledger if they have none) and jewelry (the old habit). A mystery count
         /// still rolls only when it starts.
         /// </summary>
         [TestMethod]
-        public void OnNewItem_MakesItUsableOnTheJournal()
+        public void OnNewItem_MakesItUsableOnTheLedger()
         {
             var w = BountyWeenie(99985111, (PropertyInt.ItemBountyTier, 15), (PropertyInt.ItemBountyKills, 500),
                 (PropertyInt.ItemUseable, (int)Usable.SourceContainedTargetContained), (PropertyInt.TargetType, (int)ItemType.Jewelry),
@@ -1222,7 +1222,7 @@ namespace ACE.Server.Tests
             {
                 var text = ItemBounties.DescribeItem(old);
                 StringAssert.StartsWith(text, "Kill 1,000 creatures in Tier 15.");
-                StringAssert.Contains(text, "double-click it and then click your Bounty Journal");
+                StringAssert.Contains(text, "double-click it and then click your Bounty Ledger");
                 Assert.AreEqual(text, ItemBounties.AppraisalText(old, null), "appraisal shows a bounty's own terms, for anyone");
                 StringAssert.DoesNotMatch(text, new Regex(@"\b(ring|bracelet)s?\b", RegexOptions.IgnoreCase));
             });
@@ -1256,7 +1256,7 @@ namespace ACE.Server.Tests
             }
         }
 
-        // -- the Bounty Journal (2026-11-12) --
+        // -- the Bounty Ledger (2026-11-12) --
 
         /// <summary>A slot whose reward is a mystery, so its text needs no reward name (no DB).</summary>
         private static ItemBounties.Slot NoDb(ItemBounties.Slot s)
@@ -1279,16 +1279,16 @@ namespace ACE.Server.Tests
             };
         }
 
-        /// <summary>A journal is any item made from item_bounty_journal_wcid (98760483 shipped); nothing else is.</summary>
+        /// <summary>A ledger is any item made from item_bounty_ledger_wcid (98760483 shipped); nothing else is.</summary>
         [TestMethod]
-        public void Journal_IsJournalByWcid()
+        public void Ledger_IsLedgerByWcid()
         {
-            Assert.IsTrue(ItemBounties.JournalsOn);
-            Assert.AreEqual(98760483u, ItemBounties.JournalWcid);
-            Assert.IsTrue(ItemBounties.IsJournal(MakeItem(BountyWeenie(98760483))));
-            Assert.IsFalse(ItemBounties.IsJournal(MakeItem(BountyWeenie(98760484))));
-            Assert.IsFalse(ItemBounties.IsJournal(null));
-            Assert.AreEqual(Usable.SourceContainedTargetSelfOrContained, ItemBounties.BountyUseable, "journals on: bounties are used ON something");
+            Assert.IsTrue(ItemBounties.LedgersOn);
+            Assert.AreEqual(98760483u, ItemBounties.LedgerWcid);
+            Assert.IsTrue(ItemBounties.IsLedger(MakeItem(BountyWeenie(98760483))));
+            Assert.IsFalse(ItemBounties.IsLedger(MakeItem(BountyWeenie(98760484))));
+            Assert.IsFalse(ItemBounties.IsLedger(null));
+            Assert.AreEqual(Usable.SourceContainedTargetSelfOrContained, ItemBounties.BountyUseable, "ledgers on: bounties are used ON something");
         }
 
         /// <summary>
@@ -1296,7 +1296,7 @@ namespace ACE.Server.Tests
         /// how to add one; empty slots show as empty.
         /// </summary>
         [TestMethod]
-        public void Journal_SummaryPage()
+        public void Ledger_SummaryPage()
         {
             InEnUs(() =>
             {
@@ -1308,7 +1308,7 @@ namespace ACE.Server.Tests
                 CollectionAssert.Contains(lines, "#3  empty");
                 CollectionAssert.Contains(lines, "#4  empty");
                 StringAssert.Contains(text, "Turn the page for each bounty.");
-                StringAssert.EndsWith(text, "To add a bounty: double-click it, then click this journal.");
+                StringAssert.EndsWith(text, "To add a bounty: double-click it, then click this ledger.");
                 Assert.IsFalse(text.Contains("Paused"), "not paused");
 
                 var none = ItemBounties.SummaryPage(new Dictionary<string, ItemBounties.Slot>(), 4, true);
@@ -1324,7 +1324,7 @@ namespace ACE.Server.Tests
         /// (UTC), the counting rule for a tier or a region, and how to abandon it - with its own slot number.
         /// </summary>
         [TestMethod]
-        public void Journal_BountyPage()
+        public void Ledger_BountyPage()
         {
             InEnUs(() =>
             {
@@ -1360,27 +1360,27 @@ namespace ACE.Server.Tests
             });
         }
 
-        /// <summary>The whole journal: the summary first, then one page per bounty going, in slot order, titled by slot.</summary>
+        /// <summary>The whole ledger: the summary first, then one page per bounty going, in slot order, titled by slot.</summary>
         [TestMethod]
-        public void Journal_BuildJournal_PagesInSlotOrder()
+        public void Ledger_BuildLedger_PagesInSlotOrder()
         {
             InEnUs(() =>
             {
-                var empty = ItemBounties.BuildJournal(new Dictionary<string, ItemBounties.Slot>(), 4, true);
+                var empty = ItemBounties.BuildLedger(new Dictionary<string, ItemBounties.Slot>(), 4, true);
                 Assert.AreEqual(1, empty.Count, "the summary alone: never a blank book");
-                Assert.AreEqual("Bounty Journal", empty[0].Title);
+                Assert.AreEqual("Bounty Ledger", empty[0].Title);
 
                 var slots = TwoGoing();
                 slots["4"] = NoDb(Sweep("4", tier: 17, kills: 200));
-                var pages = ItemBounties.BuildJournal(slots, 4, true);
-                CollectionAssert.AreEqual(new[] { "Bounty Journal", "Bounty #1", "Bounty #2", "Bounty #4" }, pages.Select(p => p.Title).ToArray());
+                var pages = ItemBounties.BuildLedger(slots, 4, true);
+                CollectionAssert.AreEqual(new[] { "Bounty Ledger", "Bounty #1", "Bounty #2", "Bounty #4" }, pages.Select(p => p.Title).ToArray());
                 StringAssert.EndsWith(pages[3].Text, "/bounty abandon 4");
             });
         }
 
         /// <summary>Percent rounds down and reads 100 only when done; the bar has one cell per 5%.</summary>
         [TestMethod]
-        public void Journal_PercentAndBar()
+        public void Ledger_PercentAndBar()
         {
             ItemBounties.Slot At(double progress, int kills = 100) => new() { Key = "1", Kind = ItemBounties.KindSweep, Kills = kills, Progress = progress };
             Assert.AreEqual(0, ItemBounties.Percent(At(0)));
@@ -1397,51 +1397,51 @@ namespace ACE.Server.Tests
             Assert.AreEqual("[####################]", ItemBounties.ProgressBar(At(100)));
         }
 
-        /// <summary>The chat line opening the journal prints: every bounty's place and percent, or how to add one.</summary>
+        /// <summary>The chat line opening the ledger prints: every bounty's place and percent, or how to add one.</summary>
         [TestMethod]
-        public void Journal_ChatLine()
+        public void Ledger_ChatLine()
         {
-            Assert.AreEqual("Bounty Journal: 2 of 4 going - #1 T16 4%, #2 T15 64%.", ItemBounties.JournalChatLine(TwoGoing(), 4));
-            StringAssert.StartsWith(ItemBounties.JournalChatLine(new Dictionary<string, ItemBounties.Slot>(), 4),
-                "Bounty Journal: none going (you can have up to 4).");
+            Assert.AreEqual("Bounty Ledger: 2 of 4 going - #1 T16 4%, #2 T15 64%.", ItemBounties.LedgerChatLine(TwoGoing(), 4));
+            StringAssert.StartsWith(ItemBounties.LedgerChatLine(new Dictionary<string, ItemBounties.Slot>(), 4),
+                "Bounty Ledger: none going (you can have up to 4).");
         }
 
-        /// <summary>The journal's description for its holder: a line per slot with the progress and the reward, then how to use it.</summary>
+        /// <summary>The ledger's description for its holder: a line per slot with the progress and the reward, then how to use it.</summary>
         [TestMethod]
-        public void Journal_Description()
+        public void Ledger_Description()
         {
             InEnUs(() =>
             {
-                var text = ItemBounties.JournalDescription(TwoGoing(), 4, true);
+                var text = ItemBounties.LedgerDescription(TwoGoing(), 4, true);
                 var lines = text.Split('\n');
                 Assert.AreEqual("Your bounties: 2 of 4 going.", lines[0]);
                 CollectionAssert.Contains(lines, "#1 T16: 12 of 300 Banderlings (4%) -> Mystery reward");
                 CollectionAssert.Contains(lines, "#2 T15: 640 of 1,000 kills (64%) -> Mystery reward");
                 CollectionAssert.Contains(lines, "#3 empty");
-                StringAssert.Contains(text, "To add a bounty, double-click it and then click this journal.");
-                StringAssert.Contains(ItemBounties.JournalDescription(TwoGoing(), 4, false), "Paused by the admins");
+                StringAssert.Contains(text, "To add a bounty, double-click it and then click this ledger.");
+                StringAssert.Contains(ItemBounties.LedgerDescription(TwoGoing(), 4, false), "Paused by the admins");
             });
         }
 
-        /// <summary>Appraisal shows a journal's summary only to the player carrying it; with no examiner, the stored text stays.</summary>
+        /// <summary>Appraisal shows a ledger's summary only to the player carrying it; with no examiner, the stored text stays.</summary>
         [TestMethod]
-        public void Journal_AppraisalNeedsItsHolder()
+        public void Ledger_AppraisalNeedsItsHolder()
         {
             Assert.IsNull(ItemBounties.AppraisalText(MakeItem(BountyWeenie(98760483)), null), "no examiner: the stored description");
-            Assert.IsNull(ItemBounties.AppraisalText(MakeItem(BountyWeenie(99985116)), null), "neither a journal nor a bounty");
+            Assert.IsNull(ItemBounties.AppraisalText(MakeItem(BountyWeenie(99985116)), null), "neither a ledger nor a bounty");
         }
 
-        /// <summary>Everything the journal shows reaches the client: plain 7-bit ASCII, "\n" line breaks only (CLAUDE.md).</summary>
+        /// <summary>Everything the ledger shows reaches the client: plain 7-bit ASCII, "\n" line breaks only (CLAUDE.md).</summary>
         [TestMethod]
-        public void Journal_TextIsClientSafe()
+        public void Ledger_TextIsClientSafe()
         {
             InEnUs(() =>
             {
                 var slots = TwoGoing();
                 slots["3"] = VodMystery("3");
-                var texts = ItemBounties.BuildJournal(slots, 4, false).SelectMany(p => new[] { p.Title, p.Text })
-                    .Append(ItemBounties.JournalChatLine(slots, 4))
-                    .Append(ItemBounties.JournalDescription(slots, 4, false))
+                var texts = ItemBounties.BuildLedger(slots, 4, false).SelectMany(p => new[] { p.Title, p.Text })
+                    .Append(ItemBounties.LedgerChatLine(slots, 4))
+                    .Append(ItemBounties.LedgerDescription(slots, 4, false))
                     .ToList();
                 foreach (var t in texts)
                 {
@@ -1452,7 +1452,7 @@ namespace ACE.Server.Tests
         }
 
         /// <summary>
-        /// A second use (the two-use start, and the journal in another tier or region): an arm is for one player and one
+        /// A second use (the two-use start, and the ledger in another tier or region): an arm is for one player and one
         /// bounty, lasts item_bounty_confirm_seconds, starts at most one bounty, and a newer arm replaces an older one.
         /// </summary>
         [TestMethod]
