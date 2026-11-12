@@ -68,6 +68,15 @@ namespace ACE.Server.WorldObjects
             if (player == null) return;
 
             int maxChars = Biota.PropertiesBook.MaxNumCharsPerPage;
+
+            // Bounty Journal (2026-11-12): its pages are written from the reader's own bounties every time it opens, like the
+            // Monster-Dex below - nothing is stored on the item (ItemBounties.OpenJournal). Before the stored pages are read.
+            if (ACE.Server.Managers.ItemBounties.IsJournal(this))
+            {
+                ACE.Server.Managers.ItemBounties.OpenJournal(player, this, maxChars);
+                return;
+            }
+
             int maxPages = Biota.PropertiesBook.MaxNumPages;
 
             string authorName;
@@ -94,14 +103,6 @@ namespace ACE.Server.WorldObjects
                 inscription = Inscription;
             else
                 inscription = "";
-
-            // Bounty Journal (2026-11-12): its pages are written from the reader's own bounties every time it opens, like the
-            // Monster-Dex below - nothing is stored on the item (ItemBounties.OpenJournal)
-            if (ACE.Server.Managers.ItemBounties.IsJournal(this))
-            {
-                ACE.Server.Managers.ItemBounties.OpenJournal(player, this, maxChars);
-                return;
-            }
 
             if (WeenieClassId == 78780005) // Monster-Dex
             {

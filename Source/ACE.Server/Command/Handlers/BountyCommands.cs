@@ -11,7 +11,7 @@ namespace ACE.Server.Command.Handlers
     /// /bounty (owner 2026-09-23): any player's view of the bounties where they stand. /bounty list (owner 2026-09-27): every
     /// bounty on the server and the player's progress on each, so they can choose where to go. See BountyManager.
     ///
-    /// Item bounties (owner 2026-11-10, ItemBounties; double-click rework 2026-11-12): /bounty also lists the character's
+    /// Item bounties (owner 2026-11-10, ItemBounties; Bounty Journal rework 2026-11-12): /bounty also lists the character's
     /// bounties going, #1 to #4 (item_bounty_max_active). A bounty is started by using it on the Bounty Journal, not here; the
     /// journal also shows everything /bounty does, so players need no command at all except to abandon one.
     /// /bounty abandon (remove, drop) asks for a console confirmation (/bounty confirm code, or /bounty cancel to drop the

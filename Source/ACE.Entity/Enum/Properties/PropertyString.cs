@@ -191,7 +191,7 @@ namespace ACE.Entity.Enum.Properties
         ReflectionNameFormat = 59201,
 
         /// <summary>Item bounties (2026-11-10), on the CHARACTER: the bounties going, slots #1-#4 (keys "1".."8"; R1, R2, B1,
-        /// B2 before the 2026-11-12 double-click rework, still read as #1-#4), one entry per filled slot (ItemBounties.cs owns
+        /// B2 before the 2026-11-12 Bounty Journal rework, still read as #1-#4), one entry per filled slot (ItemBounties.cs owns
         /// the format). 57700, free in EVERY Property enum.</summary>
         ItemBountySlots = 57700,
 

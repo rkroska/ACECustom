@@ -78,8 +78,9 @@ namespace ACE.Server.Managers
         /// <summary>The most bounty slots a character can ever have: item_bounty_max_active is held to 1..MaxSlots.</summary>
         public const int MaxSlots = 8;
 
-        /// <summary>Every slot key there can be, in the order /bounty lists them: "1".."8", shown to players as #1..#8.</summary>
-        public static readonly string[] SlotKeys = Enumerable.Range(1, MaxSlots).Select(n => n.ToString(CultureInfo.InvariantCulture)).ToArray();
+        /// <summary>Every slot key there can be, in the order /bounty lists them: "1".."8", shown to players as #1..#8. Read-only.</summary>
+        public static readonly IReadOnlyList<string> SlotKeys
+            = Array.AsReadOnly(Enumerable.Range(1, MaxSlots).Select(n => n.ToString(CultureInfo.InvariantCulture)).ToArray());
 
         /// <summary>
         /// The slot keys from before the 2026-11-12 rework, in the order they now read as #1-#4: R1, R2 (rings), B1, B2
@@ -172,10 +173,13 @@ namespace ACE.Server.Managers
             var at = Array.IndexOf(LegacySlotKeys, legacy.ToUpperInvariant());
             if (at >= 0) return SlotKeys[at];
 
-            foreach (var word in new[] { "slot", "bounty", "#" })
+            foreach (var word in SlotWords)
                 if (t.StartsWith(word)) t = t.Substring(word.Length);
             return SlotKeys.Contains(t) ? t : null;
         }
+
+        /// <summary>The words ParseSlotKey skips before a slot number ("slot 2", "bounty #2"), in the order it skips them.</summary>
+        private static readonly string[] SlotWords = { "slot", "bounty", "#" };
 
         /// <summary>How many bounties a character can have going at once: item_bounty_max_active, held to 1..MaxSlots.</summary>
         internal static int MaxActive(long setting) => (int)Math.Clamp(setting, 1, MaxSlots);
@@ -400,8 +404,9 @@ namespace ACE.Server.Managers
         /// A new item (WorldObjectFactory.CreateNewWorldObject - /ci, loot, an NPC's Give, a vendor). For a bounty, the kill
         /// count is rolled now, once, from its RANGE (ItemBountyKillsMin / Max) so the item keeps it when traded (owner
         /// 2026-11-10: bounties are named for their reward, and the task varies) - unless the count is a mystery, rolled when
-        /// it starts instead. The item is made double-click (ItemUseable Contained, rework 2026-11-12) whatever its weenie
-        /// says, and the description then states the terms. Anything that isn't a bounty returns after three lookups in
+        /// it starts instead. The item gets the use of the current mode (MakeUsable, rework 2026-11-12: used on the Bounty
+        /// Journal, or a plain double-click with journals off) whatever its weenie says, and the description then states the
+        /// terms. Anything that isn't a bounty returns after three lookups in
         /// <paramref name="weenie"/>'s own dictionary (the cached weenie it was made from: no biota lock); a KillsMin / Max of
         /// 0 or less counts as unset, as everywhere else.
         /// </summary>
@@ -456,7 +461,7 @@ namespace ACE.Server.Managers
                 : $"Reward: {RewardText(t)}, paid to your pack automatically when done.";
             var start = JournalsOn
                 ? "To start it, double-click it and then click your Bounty Journal (no journal yet? click yourself instead and one is added to your pack)."
-                : "Double-click it to start it.";
+                : "Double-click it twice to start it: the first shows its terms, the second starts it.";
             return $"{task} Only your own kills count, and only in {place}. {reward} {start} "
                 + $"You can have up to {MaxActiveNow} bounties going at once{(JournalsOn ? "; your Bounty Journal shows them." : "; /bounty shows them.")}";
         }
@@ -577,8 +582,9 @@ namespace ACE.Server.Managers
         private readonly record struct ArmedStart(uint ItemGuid, double ExpiresAt);
 
         /// <summary>
-        /// Player guid -> the bounty whose terms a first use just showed them. Set and taken on that player's thread
-        /// (HandleUse); dropped at logout (OnLogout). Holds no Player object, so nothing outlives a session through it.
+        /// Player guid -> the bounty a first use armed (its terms shown, or the warning that its kills don't count where the
+        /// player stands): their next use of it in time starts it. Set and taken on that player's thread (HandleUse); dropped
+        /// at logout (OnLogout). Holds no Player object, so nothing outlives a session through it.
         /// </summary>
         private static readonly ConcurrentDictionary<uint, ArmedStart> _armed = new();
 
@@ -615,7 +621,13 @@ namespace ACE.Server.Managers
 
                 // No journal yet: one FIRST, whatever then happens to this bounty - all slots full, a tier they can't fight yet -
                 // since using a bounty (on themselves, as its description says) is how a player gets one.
-                var granted = JournalsOn && FindJournal(player) == null && GrantJournal(player, atLogin: false) != null;
+                var journal = FindJournal(player);
+                var granted = false;
+                if (journal == null && JournalsOn)
+                {
+                    journal = GrantJournal(player, atLogin: false);
+                    granted = journal != null;
+                }
                 if (granted)
                     Tell(player, "A Bounty Journal was added to your pack: it keeps track of your bounties - double-click it to read them. To start a bounty, double-click the bounty and then click the journal.");
 
@@ -625,13 +637,20 @@ namespace ACE.Server.Managers
                     return;
                 }
 
+                // a bounty whose use the client has from before (picked up since login from a house chest or a corpse: login
+                // fixes only what the player carries, NormalizeHeldBounties) is fixed now and sent to the client again, so its
+                // cursor takes the journal from the next double-click on - the preview below says to click the journal
+                if (MakeUsable(item))
+                    player.Session?.Network.EnqueueSend(new GameMessageUpdateObject(item));
+
                 if (JournalsOn && target != null)
                 {
+                    var note = StandingNote(player, terms);
+
                     // on the player's own journal: started - at once where its kills count, or in a town. Standing in another
                     // tier or region the first use says so and arms it; a second use on the journal in time starts it.
                     if (IsJournal(target) && player.FindObject(target.Guid.Full, Player.SearchLocations.MyInventory) != null)
                     {
-                        var note = StandingNote(player, terms);
                         if (note != null && !TakeArmed(player, item))
                         {
                             var seconds = Arm(player, item);
@@ -645,13 +664,13 @@ namespace ACE.Server.Managers
 
                     // on anything else (themselves, a ring): what it is, and how to start it. In another tier or region the
                     // preview's note is the warning, so it arms the bounty: the next use on the journal starts it.
-                    if (granted || FindJournal(player) != null)
+                    if (journal != null)
                     {
-                        if (StandingNote(player, terms) != null)
+                        if (note != null)
                             Arm(player, item);
                         else
                             _armed.TryRemove(player.Guid.Full, out _);
-                        Preview(player, item, terms);
+                        Preview(player, item, terms, note);
                         if (!granted)
                             Tell(player, $"To start it, double-click it and then click your Bounty Journal. It goes in as bounty #{free} ({slots.Count} of {MaxActiveNow} going).");
                         return;
@@ -680,37 +699,46 @@ namespace ACE.Server.Managers
             }
 
             var seconds = Arm(player, item);
-            Preview(player, item, terms);
+            Preview(player, item, terms, StandingNote(player, terms));
             Tell(player, $"{again} within {seconds} seconds to start it as bounty #{free} ({slots.Count} of {MaxActiveNow} going). "
                 + "Once started it is used up - it can't be traded or put back - and abandoning it forfeits it.");
         }
 
+        /// <summary>Arms <paramref name="item"/> for this player (<see cref="Arm(uint, uint)"/>).</summary>
+        private static int Arm(Player player, WorldObject item) => Arm(player.Guid.Full, item.Guid.Full);
+
         /// <summary>
-        /// Arms <paramref name="item"/> for this player: their next use of the SAME bounty within item_bounty_confirm_seconds
-        /// starts it (<see cref="TakeArmed"/>). Replaces whatever was armed for them before. Returns the seconds it stays armed.
+        /// Arms a bounty for a player: their next use of the SAME bounty within item_bounty_confirm_seconds starts it
+        /// (<see cref="TakeArmed(uint, uint)"/>). Replaces whatever was armed for them before. Returns the seconds it stays
+        /// armed. By guid, so the tests can drive it without a Player.
         /// </summary>
-        private static int Arm(Player player, WorldObject item)
+        internal static int Arm(uint playerGuid, uint itemGuid)
         {
             var seconds = ConfirmSeconds;
-            _armed[player.Guid.Full] = new ArmedStart(item.Guid.Full, Time.GetUnixTime() + seconds);
+            _armed[playerGuid] = new ArmedStart(itemGuid, Time.GetUnixTime() + seconds);
             return seconds;
         }
 
+        /// <summary>Takes this player's arm when it is for <paramref name="item"/> (<see cref="TakeArmed(uint, uint)"/>).</summary>
+        private static bool TakeArmed(Player player, WorldObject item) => TakeArmed(player.Guid.Full, item.Guid.Full);
+
         /// <summary>
-        /// True, once, when <paramref name="item"/> is the bounty armed for this player and its time hasn't run out. The arm
-        /// is taken, so one arm starts at most one bounty.
+        /// True, once, when <paramref name="itemGuid"/> is the bounty armed for this player and its time hasn't run out. The
+        /// arm is taken, so one arm starts at most one bounty; an arm for another bounty is left alone.
         /// </summary>
-        private static bool TakeArmed(Player player, WorldObject item)
+        internal static bool TakeArmed(uint playerGuid, uint itemGuid)
         {
-            return _armed.TryGetValue(player.Guid.Full, out var armed) && armed.ItemGuid == item.Guid.Full && armed.ExpiresAt >= Time.GetUnixTime()
-                && _armed.TryRemove(new KeyValuePair<uint, ArmedStart>(player.Guid.Full, armed));
+            return _armed.TryGetValue(playerGuid, out var armed) && armed.ItemGuid == itemGuid && armed.ExpiresAt >= Time.GetUnixTime()
+                && _armed.TryRemove(new KeyValuePair<uint, ArmedStart>(playerGuid, armed));
         }
 
-        /// <summary>What a bounty is before it starts: the task and reward, then a note when the player stands where it doesn't count.</summary>
-        private static void Preview(Player player, WorldObject item, Slot terms)
+        /// <summary>
+        /// What a bounty is before it starts: the task and reward, then <paramref name="note"/> (StandingNote: where its kills
+        /// count, when the player stands somewhere they don't), if any.
+        /// </summary>
+        private static void Preview(Player player, WorldObject item, Slot terms, string note)
         {
             Tell(player, $"{item.Name} - {TaskText(terms)} -> {RewardText(terms)}. Only your own kills there count.");
-            var note = StandingNote(player, terms);
             if (note != null)
                 Tell(player, note);
         }
@@ -1145,7 +1173,7 @@ namespace ACE.Server.Managers
         /// <summary>The /bounty data and ItemBountyDisplay format version; bump it when a field is added or moved, or a field's
         /// values change meaning.
         /// v2 (2026-11-10): placeShort and placeName added at the end (region bounties: tier 0, place "VoD").
-        /// v3 (2026-11-12, the double-click rework): the same 16 fields in the same order; the slot keys are "1".."8" (shown as
+        /// v3 (2026-11-12, the Bounty Journal rework): the same 16 fields in the same order; the slot keys are "1".."8" (shown as
         /// #1..#8) instead of R1, R2, B1, B2, and the header lists the slots that exist - #1 up to item_bounty_max_active
         /// (default 4), then any slot above it still holding a bounty.</summary>
         public const string DataVersion = "v3";
@@ -1311,8 +1339,8 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// One abandon waiting for /bounty confirm &lt;code&gt;: who asked, whose bounty it forfeits, and which one. (Before the
-        /// 2026-11-12 rework, starting a bounty outside its place asked for a code too; a start now asks for a second
-        /// double-click instead - HandleUse.)
+        /// 2026-11-12 rework, starting a bounty outside its place asked for a code too; it now asks for a second use on the
+        /// Bounty Journal instead - HandleUse.)
         /// </summary>
         private sealed class Pending
         {
@@ -1332,7 +1360,7 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// The confirmation window in seconds (item_bounty_confirm_seconds, held to 10..600): for typing /bounty confirm after
-        /// an abandon, and for the second double-click that starts a bounty.
+        /// an abandon, and for the second use that starts a bounty (on the journal in another tier or region, or without one).
         /// </summary>
         private static int ConfirmSeconds => (int)Math.Clamp(ServerConfig.item_bounty_confirm_seconds.Value, 10, 600);
 
@@ -1372,7 +1400,7 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// A player leaving (Player.FinalizeLogout): drops their waiting confirmation, any admin request aimed at them, and a
-        /// bounty start waiting for its second double-click, so no Player object outlives its session in <see cref="_pending"/>
+        /// bounty armed for its second use, so no Player object outlives its session in <see cref="_pending"/>
         /// and a start never carries over a relog.
         /// </summary>
         public static void OnLogout(Player player)
@@ -2344,7 +2372,8 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Gives a bounty item the ItemUseable above - and, with journals on, the TargetType - whatever its weenie says; true
-        /// when anything changed. At creation (OnNewItem), and at login for the bounties a player carries (OnLogin).
+        /// when anything changed. At creation (OnNewItem), at login for the bounties a player carries (OnLogin), and when a
+        /// bounty is used (HandleUse), for one that was elsewhere at login.
         /// </summary>
         internal static bool MakeUsable(WorldObject wo)
         {
@@ -2615,8 +2644,8 @@ namespace ACE.Server.Managers
         /// Login (OnLogin, BEFORE the pack is sent to the client - the client keeps an item's ItemUseable from when it was
         /// first told about it): every bounty the player carries gets the ItemUseable and TargetType of the current mode
         /// (MakeUsable), as OnNewItem gives new ones - a bounty from before the 2026-11-12 rework targets jewelry. Only what the
-        /// player carries (GetAllPossessions); a bounty kept elsewhere (a house chest) is fixed at a later login, and works
-        /// meanwhile through the two-use start. Returns how many bounty items the player carries.
+        /// player carries (GetAllPossessions); a bounty kept elsewhere (a house chest, a corpse) is fixed the first time it is
+        /// used (HandleUse), which also sends it to the client again. Returns how many bounty items the player carries.
         /// </summary>
         public static int NormalizeHeldBounties(Player player)
         {

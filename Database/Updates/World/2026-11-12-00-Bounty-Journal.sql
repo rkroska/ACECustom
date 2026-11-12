@@ -1,7 +1,8 @@
 /* Bounty Journal - wcid 98760483 (ServerConfig item_bounty_journal_wcid), a Book.
  *
  * The one item players use for item bounties (ItemBounties.cs, "The Bounty Journal"):
- *   - a bounty used ON it starts (double-click the bounty, then click the journal);
+ *   - a bounty used ON it starts (double-click the bounty, then click the journal; standing in another tier or region,
+ *     a second use on the journal confirms);
  *   - double-clicked, it opens as a book: a summary page, then a page per bounty with its progress. The server writes the
  *     pages from the reader's own bounties every time it opens (like the Monster-Dex 78780005); none are stored here, and
  *     nothing can be written into it;

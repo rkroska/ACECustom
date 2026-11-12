@@ -87,9 +87,10 @@ namespace ACE.Server.WorldObjects
             // never starts on a low balance with XP saved behind it (after an admin repair, or a /ungod that restored one)
             RefillAvailableXpFromOverflow(false);
 
-            // item bounties (double-click rework 2026-11-12): a bounty carried since before the rework is made double-click, and
-            // the Bounty Tracker's stored display brought to the current format, here - before SendSelf tells the client about
-            // the character and its pack (it keeps an item's ItemUseable from that first look)
+            // item bounties (Bounty Journal rework 2026-11-12): the bounties a player carries get the current use (on the Bounty
+            // Journal), the Bounty Tracker's stored display is brought to the current format, and a player with bounties but no
+            // journal is given one - here, before SendSelf tells the client about the character and its pack (it keeps an
+            // item's ItemUseable from that first look)
             ItemBounties.OnLogin(this);
 
             // SendSelf will trigger the entrance into portal space

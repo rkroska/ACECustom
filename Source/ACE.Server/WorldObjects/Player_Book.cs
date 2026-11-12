@@ -104,8 +104,13 @@ namespace ACE.Server.WorldObjects
             var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory | SearchLocations.LastUsedHook, out var container, out var rootOwner, out var wasEquipped) as Book;
             if (book == null) return;
 
-            // a Bounty Journal's pages are written by the server each time it opens: nothing can be written into it
-            if (ACE.Server.Managers.ItemBounties.IsJournal(book)) return;
+            // a Bounty Journal's pages are written by the server each time it opens: nothing can be written into it, and the
+            // client is told the edit failed, so it never shows text the journal doesn't hold
+            if (ACE.Server.Managers.ItemBounties.IsJournal(book))
+            {
+                Session.Network.EnqueueSend(new GameEventBookModifyPageResponse(Session, bookGuid, pageId, false));
+                return;
+            }
 
             var success = book.ModifyPage(pageId, pageText, this);
 
@@ -118,8 +123,13 @@ namespace ACE.Server.WorldObjects
             var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory | SearchLocations.LastUsedHook, out var container, out var rootOwner, out var wasEquipped) as Book;
             if (book == null) return;
 
-            // a Bounty Journal's pages are written by the server each time it opens: nothing can be written into it
-            if (ACE.Server.Managers.ItemBounties.IsJournal(book)) return;
+            // a Bounty Journal's pages are written by the server each time it opens: none can be deleted, and the client is
+            // told so
+            if (ACE.Server.Managers.ItemBounties.IsJournal(book))
+            {
+                Session.Network.EnqueueSend(new GameEventBookDeletePageResponse(Session, bookGuid, pageId, false));
+                return;
+            }
 
             var success = book.DeletePage(pageId, this);
 

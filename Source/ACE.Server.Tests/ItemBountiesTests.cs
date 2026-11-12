@@ -17,7 +17,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace ACE.Server.Tests
 {
     /// <summary>
-    /// Item bounties (owner 2026-11-10; double-click rework 2026-11-12): the pure rules in ItemBounties - slot names (and the
+    /// Item bounties (owner 2026-11-10; Bounty Journal rework 2026-11-12): the pure rules in ItemBounties - slot names (and the
     /// R1 / R2 / B1 / B2 names from before the rework), which slot a new bounty takes under the cap, the slot string on the
     /// character, which kills count, the tracker's wire format - the terms read off a bounty ITEM (a DB-free GenericObject),
     /// and the shipped defaults of its settings. No DB, no world.
@@ -121,7 +121,7 @@ namespace ACE.Server.Tests
         }
 
         /// <summary>
-        /// The slot names from before the double-click rework still work - typed or stored - as #1-#4: R1, R2 (the rings),
+        /// The slot names from before the Bounty Journal rework still work - typed or stored - as #1-#4: R1, R2 (the rings),
         /// then B1, B2 (the bracelets).
         /// </summary>
         [TestMethod]
@@ -195,7 +195,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(1, ItemBounties.MaxActive(-3));
             Assert.AreEqual(ItemBounties.MaxSlots, ItemBounties.MaxActive(100));
             Assert.AreEqual(4, ItemBounties.MaxActiveNow, "the shipped cap");
-            Assert.AreEqual(ItemBounties.MaxSlots, ItemBounties.SlotKeys.Length);
+            Assert.AreEqual(ItemBounties.MaxSlots, ItemBounties.SlotKeys.Count);
         }
 
         /// <summary>The slots shown: #1 up to the cap, then any slot above it still holding a bounty; cap 0 = only the filled ones.</summary>
@@ -237,7 +237,7 @@ namespace ACE.Server.Tests
         }
 
         /// <summary>
-        /// A character saved before the double-click rework: R1, R2, B1, B2 read as #1-#4 with everything they held, and the
+        /// A character saved before the Bounty Journal rework: R1, R2, B1, B2 read as #1-#4 with everything they held, and the
         /// next save writes only the new keys - the same bounties, the same progress.
         /// </summary>
         [TestMethod]
@@ -794,7 +794,7 @@ namespace ACE.Server.Tests
                 StringAssert.Contains(text, "To start it, double-click it and then click your Bounty Journal", "how to start it");
                 StringAssert.Contains(text, "click yourself instead and one is added to your pack", "and how to get a journal");
                 StringAssert.Contains(text, "You can have up to 4 bounties going at once", "the cap");
-                StringAssert.DoesNotMatch(text, new Regex(@"\b(ring|bracelet)s?\b", RegexOptions.IgnoreCase), "no jewelry since the double-click rework");
+                StringAssert.DoesNotMatch(text, new Regex(@"\b(ring|bracelet)s?\b", RegexOptions.IgnoreCase), "no jewelry since the Bounty Journal rework");
                 StringAssert.DoesNotMatch(text, new Regex("300|1,?500|secret_box"), "appraisal must not reveal the range or the table");
 
                 var region = ItemBounties.Describe(vod);
@@ -871,7 +871,7 @@ namespace ACE.Server.Tests
         /// <summary>
         /// The fields in one slot entry for each wire version (DataVersion). The tracker parses by position, so a field added
         /// or moved needs a new version - and a new row here; a field added without a bump fails the 16-field check below.
-        /// v3 (the double-click rework) kept the 16 fields and changed the slot keys: R1, R2, B1, B2 became 1-4.
+        /// v3 (the Bounty Journal rework) kept the 16 fields and changed the slot keys: R1, R2, B1, B2 became 1-4.
         /// </summary>
         private static readonly Dictionary<string, int> TrackerFieldsByVersion = new() { ["v2"] = 16, ["v3"] = 16 };
 
@@ -1449,6 +1449,28 @@ namespace ACE.Server.Tests
                     Assert.IsTrue(t.All(c => c < 128), $"non-ASCII in: {t}");
                 }
             });
+        }
+
+        /// <summary>
+        /// A second use (the two-use start, and the journal in another tier or region): an arm is for one player and one
+        /// bounty, lasts item_bounty_confirm_seconds, starts at most one bounty, and a newer arm replaces an older one.
+        /// </summary>
+        [TestMethod]
+        public void Armed_StartsOnceAndOnlyTheSameBounty()
+        {
+            const uint player = 0xF0057A01, otherPlayer = 0xF0057A02, bounty = 0xF0057B01, otherBounty = 0xF0057B02;
+            Assert.IsFalse(ItemBounties.TakeArmed(player, bounty), "nothing armed yet");
+
+            Assert.AreEqual(60, ItemBounties.Arm(player, bounty), "armed for item_bounty_confirm_seconds (60 shipped)");
+            Assert.IsFalse(ItemBounties.TakeArmed(player, otherBounty), "another bounty doesn't take it");
+            Assert.IsFalse(ItemBounties.TakeArmed(otherPlayer, bounty), "another player doesn't take it");
+            Assert.IsTrue(ItemBounties.TakeArmed(player, bounty), "the same bounty does");
+            Assert.IsFalse(ItemBounties.TakeArmed(player, bounty), "once: an arm starts at most one bounty");
+
+            ItemBounties.Arm(player, bounty);
+            ItemBounties.Arm(player, otherBounty);
+            Assert.IsFalse(ItemBounties.TakeArmed(player, bounty), "a newer arm replaces the older one");
+            Assert.IsTrue(ItemBounties.TakeArmed(player, otherBounty));
         }
     }
 }
