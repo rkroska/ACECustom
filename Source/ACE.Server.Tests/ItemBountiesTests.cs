@@ -1472,5 +1472,17 @@ namespace ACE.Server.Tests
             Assert.IsFalse(ItemBounties.TakeArmed(player, bounty), "a newer arm replaces the older one");
             Assert.IsTrue(ItemBounties.TakeArmed(player, otherBounty));
         }
+
+        /// <summary>An arm lasts item_bounty_confirm_seconds: taken up to the last second, refused after it.</summary>
+        [TestMethod]
+        public void Armed_ExpiresAfterTheConfirmWindow()
+        {
+            const uint player = 0xF0057A03, bounty = 0xF0057B03;
+            const double t0 = 1_800_000_000;
+
+            var seconds = ItemBounties.Arm(player, bounty, t0);
+            Assert.IsFalse(ItemBounties.TakeArmed(player, bounty, t0 + seconds + 1), "lapsed: a late second use starts nothing");
+            Assert.IsTrue(ItemBounties.TakeArmed(player, bounty, t0 + seconds), "still armed on the last second");
+        }
     }
 }

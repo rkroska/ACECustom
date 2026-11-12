@@ -713,10 +713,13 @@ namespace ACE.Server.Managers
         /// (<see cref="TakeArmed(uint, uint)"/>). Replaces whatever was armed for them before. Returns the seconds it stays
         /// armed. By guid, so the tests can drive it without a Player.
         /// </summary>
-        internal static int Arm(uint playerGuid, uint itemGuid)
+        internal static int Arm(uint playerGuid, uint itemGuid) => Arm(playerGuid, itemGuid, Time.GetUnixTime());
+
+        /// <summary><see cref="Arm(uint, uint)"/> at a given time (unix seconds), so the tests can check expiry.</summary>
+        internal static int Arm(uint playerGuid, uint itemGuid, double now)
         {
             var seconds = ConfirmSeconds;
-            _armed[playerGuid] = new ArmedStart(itemGuid, Time.GetUnixTime() + seconds);
+            _armed[playerGuid] = new ArmedStart(itemGuid, now + seconds);
             return seconds;
         }
 
@@ -727,9 +730,12 @@ namespace ACE.Server.Managers
         /// True, once, when <paramref name="itemGuid"/> is the bounty armed for this player and its time hasn't run out. The
         /// arm is taken, so one arm starts at most one bounty; an arm for another bounty is left alone.
         /// </summary>
-        internal static bool TakeArmed(uint playerGuid, uint itemGuid)
+        internal static bool TakeArmed(uint playerGuid, uint itemGuid) => TakeArmed(playerGuid, itemGuid, Time.GetUnixTime());
+
+        /// <summary><see cref="TakeArmed(uint, uint)"/> at a given time (unix seconds), so the tests can check expiry.</summary>
+        internal static bool TakeArmed(uint playerGuid, uint itemGuid, double now)
         {
-            return _armed.TryGetValue(playerGuid, out var armed) && armed.ItemGuid == itemGuid && armed.ExpiresAt >= Time.GetUnixTime()
+            return _armed.TryGetValue(playerGuid, out var armed) && armed.ItemGuid == itemGuid && armed.ExpiresAt >= now
                 && _armed.TryRemove(new KeyValuePair<uint, ArmedStart>(playerGuid, armed));
         }
 
@@ -1316,8 +1322,16 @@ namespace ACE.Server.Managers
             {
                 try
                 {
-                    var slots = LoadSlots(owner);
                     var own = ReferenceEquals(requester, owner);
+                    // logging out: the logout save is running and OnLogout has already cleared pending abandons, so a
+                    // new one could reach DoRemove and start a second save on top of it (as the start path refuses)
+                    if (owner.IsLoggingOut || !ReferenceEquals(PlayerManager.GetOnlinePlayer(owner.Guid), owner))
+                    {
+                        Tell(requester, own ? "You are logging out. Nothing was abandoned." : $"{owner.Name} is logging out. Nothing was abandoned.");
+                        return;
+                    }
+
+                    var slots = LoadSlots(owner);
                     var whose = own ? "" : owner.Name + "'s ";
                     if (!slots.TryGetValue(key, out var s))
                     {
