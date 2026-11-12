@@ -121,6 +121,11 @@ namespace ACE.Server.Managers
                 _initialStates.Remove(normalizedName);
                 if (Events.Remove(normalizedName))
                     log.Debug($"[EventManager] Removed event '{normalizedName}' (not found in database)");
+
+                // tiered dungeons: the in-memory tier copies of a deleted event go with it (as in ReloadAllEvents)
+                foreach (var tagged in Events.Keys.Where(k => TieredDungeons.TieredDungeonRegistry.IsTagged(k)
+                             && TieredDungeons.TieredDungeonRegistry.StripTag(k).Equals(normalizedName, StringComparison.OrdinalIgnoreCase)).ToList())
+                    Events.Remove(tagged);
                 return false;
             }
         }
@@ -142,11 +147,14 @@ namespace ACE.Server.Managers
             lock (_eventsLock)
             {
                 // tiered dungeons: tier events exist only in memory - carry them over with their live state, or a
-                // reload during a run would hand every tier arena back its starting state
+                // reload during a run would hand every tier arena back its starting state. Only while their retail event
+                // still exists: a tier event whose base was removed from the database goes with it.
                 foreach (var kvp in Events)
-                    if (TieredDungeons.TieredDungeonRegistry.IsTagged(kvp.Key))
+                    if (TieredDungeons.TieredDungeonRegistry.IsTagged(kvp.Key)
+                        && reloaded.ContainsKey(TieredDungeons.TieredDungeonRegistry.StripTag(kvp.Key)))
                         reloaded[kvp.Key] = kvp.Value;
 
+                _initialStates.Clear();
                 foreach (var evnt in events)
                     _initialStates[evnt.Name] = evnt.State;
 

@@ -6,7 +6,7 @@
 --                 emote sets (reachable by closure), plus a Use set that runs AwardTieredDungeonPay (EmoteType 160)
 --   78780801  tiered-colosseum-ticket       "Tiered Colosseum Ticket": clone of Colosseum Ticket 34449
 --   78780802  tiered-colosseum-ticket-seller "Tiered Colosseum Ticket Seller": clone of 34442, new emotes (100 x Trade Note 20630 -> 1 ticket)
---   78780803  tiered-colosseum-exit        "Tou Tou": exit portal to cell 0xF559003D (variation filled in by the server from the player's tier)
+--   78780803  tiered-colosseum-exit        "Tou Tou": exit portal to cell 0xF559003D (variation filled in by the server: the tier of the copy the player leaves)
 --   78780811..78780815  tiered-colosseum-entry-t11 .. -t15  "Tiered Colosseum": entry portals, variation = tier,
 --                 gates: creature augs >= 4000..6000, item augs >= 2000..4000 (T11..T15)
 --   quest rows: TieredColoRooms, TieredColoTopTier, TieredColoRun, TieredColoPayTimer

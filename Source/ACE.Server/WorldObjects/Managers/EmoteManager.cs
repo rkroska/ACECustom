@@ -2504,11 +2504,15 @@ namespace ACE.Server.WorldObjects.Managers
                                 var variation = emote.Stat;
                                 var destination = new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value, false, variation);
 
-                                // tiered dungeons: a teleport inside a tier copy stays in that tier
-                                TieredDungeonRegistry.KeepTier(player.Location, destination);
-
-                                WorldObject.AdjustDungeon(destination);
-                                WorldManager.ThreadSafeTeleport(player, destination);
+                                // tiered dungeons: a teleport inside a tier copy stays in that tier; refused when that tier's
+                                // copy has been closed meanwhile (its lobby falls back to the retail lobby, so this is rare)
+                                if (TieredDungeonRegistry.KeepTier(player.Location, destination))
+                                {
+                                    WorldObject.AdjustDungeon(destination);
+                                    WorldManager.ThreadSafeTeleport(player, destination);
+                                }
+                                else
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("This arena is closed at the moment.", ChatMessageType.Broadcast));
                             }
                             else // position is relative to WorldObject's current location
                             {

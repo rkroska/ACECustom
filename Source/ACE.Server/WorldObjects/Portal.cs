@@ -418,6 +418,19 @@ namespace ACE.Server.WorldObjects
             var player = activator as Player;
             if (player == null) return;
 
+            var portalDest = new Position(Destination);
+
+            // tiered dungeons: a retail portal inside a tier copy that leads to another landblock of the same dungeon
+            // keeps the player in that tier (its weenie destination carries no variation). Everything else is unchanged.
+            // Checked BEFORE a use is spent: when the tier's copy has been closed meanwhile, the portal is refused and
+            // costs nothing (KeepTier sends a closed copy's lobby to the retail lobby instead, so there is always a way out).
+            if (!ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.KeepTier(player.Location, portalDest))
+            {
+                RoomAssignManager.CancelPendingReservation(player);
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat("This arena is closed at the moment.", ChatMessageType.Broadcast));
+                return;
+            }
+
             var usedCount = false;
 
             lock (this)
@@ -437,12 +450,7 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            var portalDest = new Position(Destination);
-
-            // tiered dungeons: a retail portal inside a tier copy that leads to another landblock of the same dungeon
-            // keeps the player in that tier (its weenie destination carries no variation). Everything else is unchanged.
-            ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.KeepTier(player.Location, portalDest);
-            // ... and the tier exit portal leaves the dungeon but stays on the player's tier layer (one weenie serves every tier)
+            // tiered dungeons: the tier exit portal leaves the dungeon but stays on the player's tier layer (one weenie serves every tier)
             if (WeenieClassId == ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.TierExitPortalWcid && !portalDest.Variation.HasValue
                 && ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.TierAt(player.Location) > 0)
             {

@@ -1276,6 +1276,11 @@ namespace ACE.Server.WorldObjects
 
                     destination.DamageHistory.OnHeal(destVitalChange);
 
+                    // tiered dungeons: a transfer that heals ANOTHER player in a tier copy room counts as taking part
+                    // (a drain onto the caster itself does not - OnPlayerHealed skips self-heals)
+                    if (destVitalChange > 0 && player != null)
+                        ACE.Server.Managers.TieredDungeons.TieredDungeonRuns.OnPlayerHealed(player, destination, destVitalChange);
+
                     //var destPlayer = destination as Player;
                     //if (destPlayer != null && destPlayer.Fellowship != null)
                     //destPlayer.Fellowship.OnVitalUpdate(destPlayer);
@@ -1917,8 +1922,15 @@ namespace ACE.Server.WorldObjects
                 {
                     var teleportDest = new Position(spell.Position);
                     // tiered dungeons: the arena teleporter and the hourly boot are spells, and a spell's destination
-                    // has no variation - keep a player who is inside a tier copy in that tier
-                    ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.KeepTier(targetPlayer.Location, teleportDest);
+                    // has no variation - keep a player who is inside a tier copy in that tier. Refused when that tier's
+                    // copy has been closed meanwhile (the boot still works: a closed copy's lobby is the retail lobby).
+                    if (!ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.KeepTier(targetPlayer.Location, teleportDest))
+                    {
+                        // the pre-teleport hide already played: show them again where they stand
+                        targetPlayer.PlayParticleEffect(PlayScript.UnHide, targetPlayer.Guid);
+                        targetPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat("This arena is closed at the moment.", ChatMessageType.Broadcast));
+                        return;
+                    }
                     AdjustDungeon(teleportDest);
 
                     targetPlayer.Teleport(teleportDest);
@@ -1932,8 +1944,8 @@ namespace ACE.Server.WorldObjects
                 // monsters can cast some portal spells on themselves too, possibly?
                 // under certain circumstances, such as ensuring the destination is the same landblock
                 var teleportDest = new Position(spell.Position);
-                ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.KeepTier(targetCreature.Location, teleportDest);
-                targetCreature.DoTeleport(teleportDest);
+                if (ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.KeepTier(targetCreature.Location, teleportDest))
+                    targetCreature.DoTeleport(teleportDest);
             }
         }
 
@@ -1972,7 +1984,12 @@ namespace ACE.Server.WorldObjects
             {
                 var teleportDest = new Position(spell.Position);
                 // tiered dungeons: see HandleCastSpell_PortalSending
-                ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.KeepTier(targetPlayer.Location, teleportDest);
+                if (!ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.KeepTier(targetPlayer.Location, teleportDest))
+                {
+                    targetPlayer.PlayParticleEffect(PlayScript.UnHide, targetPlayer.Guid);
+                    targetPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat("This arena is closed at the moment.", ChatMessageType.Broadcast));
+                    return;
+                }
                 AdjustDungeon(teleportDest);
 
                 targetPlayer.Teleport(teleportDest);

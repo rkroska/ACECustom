@@ -8,8 +8,8 @@ appendix at the bottom). Anything that could not be done by a command is said so
 Who can run what:
 
 - `/zonecontrol ...` needs Developer access or higher. The server settings in Step 10 need Admin.
-- None of the commands in Steps 1-10 need you to stand anywhere or select anything. Only the optional
-  checks in Step 11 (`mobcheck` with no zone name, or with no wcid, and `here`) use where you stand or
+- None of the commands in Steps 1-10c need you to stand anywhere or select anything. Step 10d (placing
+  the entry portals) uses where you stand, and so do the optional checks in Step 11 (`mobcheck` with no zone name, or with no wcid, and `here`) use where you stand or
   what you have selected.
 - Zone names that contain a number are put in double quotes everywhere ("Colosseum 11"), because
   `create` would otherwise read the number as the variation.
@@ -295,28 +295,75 @@ Stats read live apply at once; health, attributes and prop stamps apply as monst
 not needed (each command saves immediately). `/zonecontrol reload` only re-reads the stored data and is
 for hand edits to the database.
 
-## Step 10 - Server settings
+## Step 10 - Content, no-log, switch on, entry portals (in this order)
 
-```
-/modifybool tiered_dungeons_enabled true
-/modifystring tiered_dungeon_tiers 11
-/modifystring nolog_landblocks 654C:all,00B0:all,00B1:all,00B2:all,00B3:all,00B4:all
+### 10a - Apply the content SQL first
+
+Run `Database/Updates/World/2026-10-09-00-Tiered-Colosseum.sql` against `ace_world` (it clones the retail
+Arbitrator 34441, ticket 34449, ticket seller 34442 and portal 777705100, so the world DB must still hold
+those). Then check it landed - both counts must match before anything is switched on:
+
+```sql
+SELECT COUNT(*) FROM ace_world.quest
+ WHERE name IN ('TieredColoRooms', 'TieredColoTopTier', 'TieredColoRun', 'TieredColoPayTimer');   -- 4
+SELECT COUNT(*) FROM ace_world.weenie
+ WHERE class_Id IN (78780800, 78780801, 78780802, 78780803,
+                    78780811, 78780812, 78780813, 78780814, 78780815);                          -- 9
 ```
 
-- `tiered_dungeon_tiers` accepts `11`, `11-15`, or `11,13`. Use `11-15` once all five zones exist.
-- No spaces in the nolog value (`modifystring` only takes the first word of the value).
-- `nolog_landblocks`: the stored value on the local copy is `654C:all`. The new value keeps it and adds
-  the five arenas (00B0-00B4) for the base world AND every variation. The retail seed list already
-  contains 00B0-00B4 for the base copy, and `:all` includes base, so retail behaviour does not change
-  (those landblocks were already no-log there); the only new effect is for variations 11 and up. The
-  lobby 00AF is not added (it is not in the seed either).
-- `modifybool` and `modifystring` change the value in memory and queue a database save that runs about
-  every 5 minutes. Wait 5 minutes before restarting the server, or use this instead, which saves
-  immediately and keeps the old value (it writes the same tokens, separated by ", "):
+Without the quest rows the server credits no room and pays nothing (it logs
+`[TIERED] tiered dungeon content is missing`). Restart, or reload the world cache, after applying.
+
+### 10b - No-log for the arenas
 
 ```
 /nolog add 00B0,00B1,00B2,00B3,00B4 all
 ```
+
+- This ADDS to whatever is stored and saves at once, so existing overrides on the shard are kept.
+- It covers the five arenas (00B0-00B4) for the base world AND every variation. The retail seed list
+  already has them for the base copy, so retail behaviour does not change; the only new effect is for
+  variations 11 and up. The lobby 00AF is not added (it is not in the seed either).
+- Do NOT use `/modifystring nolog_landblocks ...` for this: it REPLACES the whole stored value. If you must,
+  first read the current value (`/showprops nolog_landblocks` or `/nolog list`) and include every token of
+  it, with no spaces (`modifystring` only takes the first word).
+
+### 10c - Switch on
+
+```
+/modifybool tiered_dungeons_enabled true
+/modifystring tiered_dungeon_tiers 11
+```
+
+- `tiered_dungeon_tiers` accepts `11`, `11-15`, or `11,13`. List a tier only once its zone (Steps 1-9) exists.
+- `modifybool` and `modifystring` change the value in memory and queue a database save that runs about
+  every 5 minutes. Wait 5 minutes before restarting the server.
+
+### 10d - Place an entry portal for every enabled tier
+
+The SQL creates the entry portals but does NOT place them (no `landblock_instance` rows): where they stand
+is your choice. Each one sends players to its tier's copy and checks that tier's aug gate:
+
+| Tier | Entry portal wcid | Gate (creature augs / item augs) |
+|---|---|---|
+| 11 | 78780811 | 4000 / 2000 |
+| 12 | 78780812 | 4500 / 2500 |
+| 13 | 78780813 | 5000 / 3000 |
+| 14 | 78780814 | 5500 / 3500 |
+| 15 | 78780815 | 6000 / 4000 |
+
+For each enabled tier: go to the spot you chose, on the layer players of that tier use (the plan puts it in
+that tier's Tou Tou, the same place the lobby exit portal returns to: cell 0xF559003D at the tier's
+variation), and run
+
+```
+/createinst 78780813
+```
+
+(with that tier's wcid). `/createinst` saves one permanent `landblock_instance` row at the layer you stand on;
+at variations 11-25 it never mirrors to other layers. An entry portal whose tier is not listed in
+`tiered_dungeon_tiers` refuses players ("This arena is closed at the moment"), so placing all five early is
+safe.
 
 Run tuning (live settings, defaults shown - nothing to type unless you change them):
 

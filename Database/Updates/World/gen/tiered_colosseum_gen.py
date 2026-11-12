@@ -397,7 +397,7 @@ def main():
 --                 emote sets (reachable by closure), plus a Use set that runs AwardTieredDungeonPay (EmoteType 160)
 --   {TICKET}  tiered-colosseum-ticket       "Tiered Colosseum Ticket": clone of Colosseum Ticket {RETAIL_TICKET}
 --   {SELLER}  tiered-colosseum-ticket-seller "Tiered Colosseum Ticket Seller": clone of {RETAIL_SELLER}, new emotes (100 x Trade Note {TRADE_NOTE_250K} -> 1 ticket)
---   {EXIT_PORTAL}  tiered-colosseum-exit        "Tou Tou": exit portal to cell 0xF559003D (variation filled in by the server from the player's tier)
+--   {EXIT_PORTAL}  tiered-colosseum-exit        "Tou Tou": exit portal to cell 0xF559003D (variation filled in by the server: the tier of the copy the player leaves)
 --   {ENTRY_PORTAL[11]}..{ENTRY_PORTAL[15]}  tiered-colosseum-entry-t11 .. -t15  "Tiered Colosseum": entry portals, variation = tier,
 --                 gates: creature augs >= {MIN_WIELD_CREATURE[11]}..{MIN_WIELD_CREATURE[15]}, item augs >= {MIN_WIELD_AUGS[11]}..{MIN_WIELD_AUGS[15]} (T11..T15)
 --   quest rows: {', '.join(n for n, *_ in QUESTS)}

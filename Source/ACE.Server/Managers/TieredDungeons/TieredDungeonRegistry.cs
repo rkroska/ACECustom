@@ -246,17 +246,33 @@ namespace ACE.Server.Managers.TieredDungeons
             return from.Variation;
         }
 
-        /// <summary>Applies <see cref="TeleportVariation"/> to a destination in place. A no-op for every teleport that
-        /// does not start inside a tier copy and end inside the same dungeon.</summary>
-        public static void KeepTier(Position from, Position destination)
+        /// <summary>
+        /// Applies <see cref="TeleportVariation"/> to a destination in place. A no-op (true) for every teleport that does not
+        /// start inside a tier copy and end inside the same dungeon.
+        ///
+        /// When the tier's copy can no longer be built (switch turned off or the tier removed mid-run), the kept tier would
+        /// land the player in an empty landblock with no exit. Then: a destination in the dungeon's LOBBY is left at the
+        /// base world, so the hourly boot or a lobby portal sends the player to the retail lobby and there is always a way
+        /// out (true); any other destination is refused (false) and the caller must not teleport.
+        /// </summary>
+        public static bool KeepTier(Position from, Position destination)
         {
             if (destination == null || destination.Variation.HasValue)
-                return;
+                return true;
             var variation = TeleportVariation(from, destination);
             if (!variation.HasValue)
-                return;
+                return true;
+
+            var landblock = destination.LandblockId.Landblock;
+            if (FindTierCopy(landblock, variation) == null)
+            {
+                var dungeon = FindCopyAt(landblock, variation);
+                return dungeon != null && landblock == dungeon.Lobby;   // destination untouched: the retail lobby
+            }
+
             destination.Variation = variation;
             destination.LandblockId = new LandblockId(destination.LandblockId.Raw, variation);
+            return true;
         }
 
         // ------------------------------------------------------------------ name tags

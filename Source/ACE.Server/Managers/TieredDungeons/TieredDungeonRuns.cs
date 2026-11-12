@@ -156,6 +156,13 @@ namespace ACE.Server.Managers.TieredDungeons
                 if (room <= 0)
                     return;
 
+                // the healed player must be in the same copy (landblock + tier) and the same room: healing someone in the
+                // next room, or a friend parked elsewhere, is not taking part in this room
+                var tpos = target.Location;
+                if (tpos == null || tpos.LandblockId.Landblock != pos.LandblockId.Landblock || tpos.Variation != pos.Variation
+                    || TieredDungeonRegistry.RoomAt(dungeon, tpos.PositionY) != room)
+                    return;
+
                 var tier = TieredDungeonRegistry.PlayerTier(healer);
                 lock (tallyLock)
                 {
@@ -170,16 +177,21 @@ namespace ACE.Server.Managers.TieredDungeons
             }
         }
 
-        /// <summary>Takes the tally of a room that just cleared. Clearing the first room starts a run, so any tally left in
-        /// that arena by an earlier, abandoned run is dropped too.</summary>
+        /// <summary>Takes the tally of a room that just cleared. Clearing the first room starts a run, so stale tallies left in
+        /// that arena by an earlier, abandoned run are dropped too (only stale ones: anything still active is kept).</summary>
         private static RoomTally TakeTally(ushort landblock, int variation, int room, int firstRoom)
         {
             lock (tallyLock)
             {
                 tallies.Remove((landblock, variation, room), out var tally);
                 if (room == firstRoom)
-                    foreach (var k in tallies.Keys.Where(k => k.Landblock == landblock && k.Variation == variation).ToList())
+                {
+                    var now = Time.GetUnixTime();
+                    foreach (var k in tallies.Where(kv => kv.Key.Landblock == landblock && kv.Key.Variation == variation
+                                                          && IsStaleTally(kv.Value.Started, kv.Value.LastActivity, now))
+                                             .Select(kv => kv.Key).ToList())
                         tallies.Remove(k);
+                }
                 return tally;
             }
         }
