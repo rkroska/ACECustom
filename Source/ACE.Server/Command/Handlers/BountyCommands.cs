@@ -14,21 +14,22 @@ namespace ACE.Server.Command.Handlers
     /// Item bounties (owner 2026-11-10, ItemBounties; Bounty Ledger rework 2026-11-12): /bounty also lists the character's
     /// bounties going, #1 to #4 (item_bounty_max_active). A bounty is started by using it on the Bounty Ledger, not here; the
     /// ledger also shows everything /bounty does, so players need no command at all except to abandon one.
-    /// /bounty abandon (remove, drop) asks for a console confirmation (/bounty confirm code, or /bounty cancel to drop the
-    /// request). /bounty data and /bounty sync feed the Bounty Tracker window. Admins can view and abandon for another online
+    /// /bounty abandon (remove, drop) &lt;#&gt; says what it would forfeit; the same command again within item_bounty_confirm_seconds
+    /// does it (no code, nothing else to type; doing nothing cancels). /bounty data and /bounty sync feed the Bounty Tracker
+    /// window. Admins can view and abandon for another online
     /// player: /bounty Name, /bounty abandon 2 Name. Developers: /bounty make wcid [tier], /bounty droptable.
     /// </summary>
     public static class BountyCommands
     {
         /// <summary>
         /// /bounty and its subcommands. Any player: none (the bounties where they stand, then their own bounties going), list
-        /// / all, abandon (remove, drop), confirm, cancel, data, sync. Admin: a player's name (that player's bounties), abandon
+        /// / all, abandon (remove, drop), data, sync. Admin: a player's name (that player's bounties), abandon
         /// # name. Developer: make, droptable. Anything else gets the usage line for the caller's access level.
         /// </summary>
         /// <param name="session">The calling player's session.</param>
         /// <param name="parameters">The words after /bounty.</param>
         [CommandHandler("bounty", AccessLevel.Player, CommandHandlerFlag.RequiresWorld,
-            "Shows the bounties where you stand and the bounties you have going (your Bounty Ledger shows them too; to start a bounty, use it on the ledger). abandon <#> asks for /bounty confirm <code> (cancel drops the request); data / sync feed the Bounty Tracker.",
+            "Shows the bounties where you stand and the bounties you have going (your Bounty Ledger shows them too; to start a bounty, use it on the ledger). abandon <#> says what it would forfeit; type it again to do it. data / sync feed the Bounty Tracker.",
             Usage)]
         public static void HandleBounty(Session session, params string[] parameters)
         {
@@ -58,14 +59,6 @@ namespace ACE.Server.Command.Handlers
                 case "remove":
                 case "drop":
                     HandleRemove(session, parameters.Skip(1).ToArray(), isAdmin);
-                    return;
-
-                case "confirm":
-                    ItemBounties.Confirm(player, parameters.Length > 1 ? parameters[1] : null);
-                    return;
-
-                case "cancel":
-                    ItemBounties.Cancel(player);
                     return;
 
                 case "data":
@@ -115,8 +108,8 @@ namespace ACE.Server.Command.Handlers
 
         /// <summary>
         /// /bounty abandon 2 (also remove / drop; the slot can be typed 2, #2 or "slot 2", and the names from before the
-        /// 2026-11-12 rework still work: r1, ring 1, b2...). An admin may add an online player's name after the slot. Nothing
-        /// is abandoned here: ItemBounties asks for /bounty confirm with a code.
+        /// 2026-11-12 rework still work: r1, ring 1, b2...). An admin may add an online player's name after the slot. The first
+        /// time ItemBounties says what it would forfeit; the same command again in time abandons it (RequestRemove).
         /// </summary>
         /// <param name="session">The caller's session.</param>
         /// <param name="args">The words after "abandon": the slot, then (Admin only) a player's name.</param>
@@ -159,7 +152,7 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>Every player's /bounty forms (the [CommandHandler] usage, and the reply to a typo).</summary>
-        private const string Usage = "/bounty [list|all]  |  /bounty abandon <#>  |  /bounty confirm <code>  |  /bounty cancel  |  /bounty data  |  /bounty sync  (start a bounty by using it on your Bounty Ledger)";
+        private const string Usage = "/bounty [list|all]  |  /bounty abandon <#> (twice: the second time does it)  |  /bounty data  |  /bounty sync  (start a bounty by using it on your Bounty Ledger)";
 
         /// <summary>The forms an Admin adds, appended to an Admin's usage reply.</summary>
         private const string AdminUsage = "  |  Admin: /bounty <online player>  |  /bounty abandon <#> <online player>";

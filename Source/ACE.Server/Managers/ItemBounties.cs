@@ -45,10 +45,11 @@ namespace ACE.Server.Managers
     ///   - only the character's OWN kills count (the kill's top damager, a pet's kill for its owner - the bounty rule), and
     ///     only kills in EXACTLY the bounty's tier; a Species bounty only its creature type. The tier dip applies;
     ///   - completion pays automatically, into the pack; a full pack holds the reward (BountyManager's held rewards);
-    ///   - every confirmation is in the CONSOLE, never a popup: custom clients may not show popups. Abandoning a bounty asks
-    ///     for /bounty confirm with a fresh 4-digit code that expires (item_bounty_confirm_seconds), so a macro, a typo or an
-    ///     old command can never forfeit one. Starting one on the ledger is deliberate (two clicks); in another tier or
-    ///     region, and for any other start, it takes a second use.
+    ///   - every confirmation is the same thing done again within item_bounty_confirm_seconds - never a popup (custom
+    ///     clients may not show popups) and never a code to type. Abandoning: /bounty abandon &lt;#&gt; says what it would forfeit,
+    ///     and the same command again does it, only while the same bounty is in the slot, so a typo or an old command alone
+    ///     never forfeits one. Starting one on the ledger is deliberate (two clicks); in another tier or region, and for any
+    ///     other start, it takes a second use.
     ///
     /// REGION bounties (owner 2026-11-10): a bounty whose weenie names a region (PropertyString.ItemBountyRegion: "vod"
     /// Valley of Death, "t10" Thaelaryn Island - ZoneControlManager.BountyRegions, below T11) instead of a tier. Only kills
@@ -1302,8 +1303,11 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// /bounty abandon (or remove, drop): asks the requester to confirm in the console. Nothing is abandoned until /bounty
-        /// confirm with the code. <paramref name="owner"/> is the requester (a player) or another player (an admin's request).
+        /// /bounty abandon (or remove, drop) <paramref name="key"/>. The first time it says what would be forfeited and to type
+        /// the same command again; the same command again within item_bounty_confirm_seconds abandons it - only while the SAME
+        /// bounty is in the slot, so a typo, an old command or a bounty that completed meanwhile never forfeits one. No code,
+        /// no second command to learn, and doing nothing cancels. <paramref name="owner"/> is the requester (a player) or
+        /// another player (an admin's request). On the owner's thread.
         /// </summary>
         public static void RequestRemove(Player requester, Player owner, string key)
         {
@@ -1313,20 +1317,36 @@ namespace ACE.Server.Managers
                 try
                 {
                     var slots = LoadSlots(owner);
-                    var whose = ReferenceEquals(requester, owner) ? "" : owner.Name + "'s ";
+                    var own = ReferenceEquals(requester, owner);
+                    var whose = own ? "" : owner.Name + "'s ";
                     if (!slots.TryGetValue(key, out var s))
                     {
-                        Tell(requester, $"{(whose.Length > 0 ? whose + "bounty" : "Bounty")} #{key} is empty. Nothing to abandon.");
+                        Tell(requester, $"{(own ? "Bounty" : whose + "bounty")} #{key} is empty. Nothing to abandon.");
                         return;
                     }
 
-                    Ask(requester, new Pending
+                    // the same abandon typed again in time, for the same bounty: done
+                    var now = Time.GetUnixTime();
+                    if (_pending.TryGetValue(requester.Guid.Full, out var p) && ReferenceEquals(p.Requester, requester)
+                        && ReferenceEquals(p.Target, owner) && p.SlotKey == key && p.Identity == s.Identity && p.ExpiresAt >= now
+                        && _pending.TryRemove(new KeyValuePair<uint, Pending>(requester.Guid.Full, p)))
                     {
-                        Target = owner, SlotKey = key, Identity = s.Identity,
-                        What = $"abandon {whose}bounty #{key}",
-                    },
-                    $"You are about to abandon {whose}bounty #{key}: {s.Name} -> {RewardText(s)} ({ProgressText(s)} in {PlaceShort(s)}). "
-                    + "The bounty and its reward will be FORFEITED and cannot be recovered.");
+                        DoRemove(p);
+                        return;
+                    }
+
+                    // the first time: what it would forfeit, and how to confirm - the same command again
+                    foreach (var kv in _pending)
+                        if (kv.Value.ExpiresAt < now)
+                            _pending.TryRemove(kv);
+                    var seconds = ConfirmSeconds;
+                    _pending[requester.Guid.Full] = new Pending
+                    {
+                        Requester = requester, Target = owner, SlotKey = key, Identity = s.Identity, ExpiresAt = now + seconds,
+                    };
+                    var again = own ? $"/bounty abandon {key}" : $"/bounty abandon {key} {owner.Name}";
+                    Tell(requester, $"Abandoning {whose}bounty #{key} forfeits it and its reward: {s.Name} -> {RewardText(s)} ({ProgressText(s)} in {PlaceShort(s)}). "
+                        + $"To abandon it, type {again} again within {seconds} seconds. To keep it, do nothing.");
                 }
                 catch (Exception ex)
                 {
@@ -1335,68 +1355,30 @@ namespace ACE.Server.Managers
             });
         }
 
-        // ── Console confirmation (abandoning a bounty) ───────────────────────
+        // ── Confirming an abandon: the same command again ──────────────────
 
         /// <summary>
-        /// One abandon waiting for /bounty confirm &lt;code&gt;: who asked, whose bounty it forfeits, and which one. (Before the
-        /// 2026-11-12 rework, starting a bounty outside its place asked for a code too; it now asks for a second use on the
-        /// Bounty Ledger instead - HandleUse.)
+        /// One abandon waiting to be typed again (RequestRemove): who typed it, whose bounty it forfeits, which one, and until
+        /// when. (#599 asked for /bounty confirm with a 4-digit code here, and before a start outside the bounty's place; an
+        /// abandon now asks for the same command again, and a start for a second use on the Bounty Ledger - HandleUse.)
         /// </summary>
         private sealed class Pending
         {
-            public Player Requester;      // who must confirm (a relog makes a new Player object: an old request no longer matches)
-            public Player Target;         // whose slots it changes
-            public string Code;
-            public int Token;
+            public Player Requester;      // who typed it (a relog makes a new Player object: an old request no longer matches)
+            public Player Target;         // whose bounty it forfeits
             public double ExpiresAt;
-            public string What;           // "abandon bounty #2" - for the expiry line
             public string SlotKey;
             public string Identity;       // the bounty asked about: a different one in the slot by then is never abandoned
         }
 
-        /// <summary>Requester guid -> their one waiting request.</summary>
+        /// <summary>Requester guid -> their one waiting abandon.</summary>
         private static readonly ConcurrentDictionary<uint, Pending> _pending = new();
-        private static int _tokenSeq;
 
         /// <summary>
-        /// The confirmation window in seconds (item_bounty_confirm_seconds, held to 10..600): for typing /bounty confirm after
-        /// an abandon, and for the second use that starts a bounty (on the ledger in another tier or region, or without one).
+        /// The confirmation window in seconds (item_bounty_confirm_seconds, held to 10..600): for typing /bounty abandon again,
+        /// and for the second use that starts a bounty (on the ledger in another tier or region, or without one).
         /// </summary>
         private static int ConfirmSeconds => (int)Math.Clamp(ServerConfig.item_bounty_confirm_seconds.Value, 10, 600);
-
-        /// <summary>Stores the request (replacing any older one), prints the question and the code, and schedules the expiry line.</summary>
-        private static void Ask(Player requester, Pending p, string question)
-        {
-            var now = Time.GetUnixTime();
-            foreach (var kv in _pending)
-                if (kv.Value.ExpiresAt < now)
-                    _pending.TryRemove(kv);
-
-            var seconds = ConfirmSeconds;
-            p.Requester = requester;
-            p.Code = ThreadSafeRandom.Next(1000, 9999).ToString(CultureInfo.InvariantCulture);
-            p.Token = Interlocked.Increment(ref _tokenSeq);
-            p.ExpiresAt = now + seconds;
-
-            var replaced = _pending.TryGetValue(requester.Guid.Full, out var old) && old.ExpiresAt >= now;
-            _pending[requester.Guid.Full] = p;
-
-            if (replaced)
-                Tell(requester, $"(Your earlier request to {old.What} was cancelled; this one replaces it.)");
-            Tell(requester, $"{question} To confirm, type /bounty confirm {p.Code} within {seconds} seconds. To cancel, do nothing or type /bounty cancel.");
-
-            // the expiry line runs on the WORLD queue, not the requester's (a player's queue stops when they log out, which
-            // would leave the entry - and its Player objects - in _pending); OnLogout drops a leaver's entries at once
-            var token = p.Token;
-            var chain = new ActionChain();
-            chain.AddDelaySeconds(seconds + 0.5);
-            chain.AddAction(WorldManager.ActionQueue, ActionType.ItemBounty_ConfirmExpired, () =>
-            {
-                if (_pending.TryGetValue(requester.Guid.Full, out var cur) && cur.Token == token && _pending.TryRemove(new KeyValuePair<uint, Pending>(requester.Guid.Full, cur)))
-                    Tell(requester, $"Your request to {cur.What} expired. Nothing was changed.");
-            });
-            chain.EnqueueChain();
-        }
 
         /// <summary>
         /// A player leaving (Player.FinalizeLogout): drops their waiting confirmation, any admin request aimed at them, and a
@@ -1413,58 +1395,6 @@ namespace ACE.Server.Managers
             foreach (var kv in _pending)
                 if (ReferenceEquals(kv.Value.Target, player))
                     _pending.TryRemove(kv);
-        }
-
-        /// <summary>/bounty confirm code: runs the requester's waiting request if the code matches and it hasn't expired.</summary>
-        public static void Confirm(Player requester, string code)
-        {
-            if (requester == null) return;
-
-            var now = Time.GetUnixTime();
-            if (!_pending.TryGetValue(requester.Guid.Full, out var p) || !ReferenceEquals(p.Requester, requester) || p.ExpiresAt < now)
-            {
-                Tell(requester, "No request is waiting for confirmation. Nothing was changed.");
-                return;
-            }
-            if (!string.Equals((code ?? "").Trim(), p.Code, StringComparison.Ordinal))
-            {
-                Tell(requester, $"That code doesn't match your request to {p.What}. Nothing was changed. The code is in the line that asked you to confirm.");
-                return;
-            }
-            if (!_pending.TryRemove(new KeyValuePair<uint, Pending>(requester.Guid.Full, p)))
-            {
-                Tell(requester, "No request is waiting for confirmation. Nothing was changed.");
-                return;
-            }
-
-            var target = p.Target;
-            if (target == null || target.IsLoggingOut || !ReferenceEquals(PlayerManager.GetOnlinePlayer(target.Guid), target))
-            {
-                Tell(requester, "That character is no longer online. Nothing was changed.");
-                return;
-            }
-
-            LandblockManager.RunOnThreadFor(target, ActionType.ItemBounty_Command, () =>
-            {
-                try
-                {
-                    DoRemove(p);
-                }
-                catch (Exception ex)
-                {
-                    log.Error($"[ItemBounty] Confirm: {ex}");
-                }
-            });
-        }
-
-        /// <summary>/bounty cancel: drops the requester's waiting request, if any.</summary>
-        public static void Cancel(Player requester)
-        {
-            if (requester == null) return;
-            if (_pending.TryRemove(requester.Guid.Full, out var p) && p.ExpiresAt >= Time.GetUnixTime())
-                Tell(requester, $"Cancelled: your request to {p.What}. Nothing was changed.");
-            else
-                Tell(requester, "No request was waiting. Nothing was changed.");
         }
 
         /// <summary>A confirmed abandon, on the owner's thread: only if the SAME bounty is still in the slot.</summary>
