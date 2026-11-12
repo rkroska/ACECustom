@@ -17,6 +17,13 @@ namespace ACE.Server.WorldObjects
             var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory | SearchLocations.LastUsedHook, out var container, out var rootOwner, out var wasEquipped) as Book;
             if (book == null) return;
 
+            // Bounty Journal (2026-11-12): its pages come from the reader's bounties, never the item's (ItemBounties.OpenJournal)
+            if (ACE.Server.Managers.ItemBounties.IsJournal(book))
+            {
+                ACE.Server.Managers.ItemBounties.OpenJournal(this, book, book.Biota.PropertiesBook.MaxNumCharsPerPage);
+                return;
+            }
+
             // found book
             if (book != null)
             {
@@ -82,6 +89,9 @@ namespace ACE.Server.WorldObjects
             var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory | SearchLocations.LastUsedHook, out var container, out var rootOwner, out var wasEquipped) as Book;
             if (book == null) return;
 
+            // a Bounty Journal's pages are written by the server each time it opens: nothing can be written into it
+            if (ACE.Server.Managers.ItemBounties.IsJournal(book)) return;
+
             var page = book.AddPage(Guid.Full, Name, Session.Account, book.IgnoreAuthor ?? false, "", out var index);
 
             if (page != null)
@@ -94,6 +104,9 @@ namespace ACE.Server.WorldObjects
             var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory | SearchLocations.LastUsedHook, out var container, out var rootOwner, out var wasEquipped) as Book;
             if (book == null) return;
 
+            // a Bounty Journal's pages are written by the server each time it opens: nothing can be written into it
+            if (ACE.Server.Managers.ItemBounties.IsJournal(book)) return;
+
             var success = book.ModifyPage(pageId, pageText, this);
 
             Session.Network.EnqueueSend(new GameEventBookModifyPageResponse(Session, bookGuid, pageId, true));
@@ -104,6 +117,9 @@ namespace ACE.Server.WorldObjects
             // find inventory book
             var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory | SearchLocations.LastUsedHook, out var container, out var rootOwner, out var wasEquipped) as Book;
             if (book == null) return;
+
+            // a Bounty Journal's pages are written by the server each time it opens: nothing can be written into it
+            if (ACE.Server.Managers.ItemBounties.IsJournal(book)) return;
 
             var success = book.DeletePage(pageId, this);
 

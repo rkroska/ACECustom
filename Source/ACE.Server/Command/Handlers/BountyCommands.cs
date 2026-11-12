@@ -11,23 +11,24 @@ namespace ACE.Server.Command.Handlers
     /// /bounty (owner 2026-09-23): any player's view of the bounties where they stand. /bounty list (owner 2026-09-27): every
     /// bounty on the server and the player's progress on each, so they can choose where to go. See BountyManager.
     ///
-    /// Item bounties (owner 2026-11-10, ItemBounties): /bounty also lists the character's bounty slots (R1, R2, B1, B2);
-    /// /bounty remove asks for a console confirmation (/bounty confirm code, or /bounty cancel to drop the request), and
-    /// /bounty confirm also confirms applying a bounty outside the place it counts in. /bounty data and /bounty sync feed
-    /// the Bounty Tracker window. Admins can view and remove for another online player: /bounty Name, /bounty remove r1
-    /// Name. Developers: /bounty make wcid [tier], /bounty droptable.
+    /// Item bounties (owner 2026-11-10, ItemBounties; double-click rework 2026-11-12): /bounty also lists the character's
+    /// bounties going, #1 to #4 (item_bounty_max_active). A bounty is started by using it on the Bounty Journal, not here; the
+    /// journal also shows everything /bounty does, so players need no command at all except to abandon one.
+    /// /bounty abandon (remove, drop) asks for a console confirmation (/bounty confirm code, or /bounty cancel to drop the
+    /// request). /bounty data and /bounty sync feed the Bounty Tracker window. Admins can view and abandon for another online
+    /// player: /bounty Name, /bounty abandon 2 Name. Developers: /bounty make wcid [tier], /bounty droptable.
     /// </summary>
     public static class BountyCommands
     {
         /// <summary>
-        /// /bounty and its subcommands. Any player: none (the bounties where they stand, then their item bounty slots),
-        /// list / all, remove, confirm, cancel, data, sync. Admin: a player's name (that player's slots), remove slot name.
-        /// Developer: make, droptable. Anything else gets the usage line for the caller's access level.
+        /// /bounty and its subcommands. Any player: none (the bounties where they stand, then their own bounties going), list
+        /// / all, abandon (remove, drop), confirm, cancel, data, sync. Admin: a player's name (that player's bounties), abandon
+        /// # name. Developer: make, droptable. Anything else gets the usage line for the caller's access level.
         /// </summary>
         /// <param name="session">The calling player's session.</param>
         /// <param name="parameters">The words after /bounty.</param>
         [CommandHandler("bounty", AccessLevel.Player, CommandHandlerFlag.RequiresWorld,
-            "Shows the bounties where you stand and your item bounty slots. remove <slot> asks for /bounty confirm <code> (cancel drops the request); data / sync feed the Bounty Tracker.",
+            "Shows the bounties where you stand and the bounties you have going (your Bounty Journal shows them too; to start a bounty, use it on the journal). abandon <#> asks for /bounty confirm <code> (cancel drops the request); data / sync feed the Bounty Tracker.",
             Usage)]
         public static void HandleBounty(Session session, params string[] parameters)
         {
@@ -53,7 +54,9 @@ namespace ACE.Server.Command.Handlers
                     BountyManager.ShowAllBounties(player);
                     return;
 
+                case "abandon":
                 case "remove":
+                case "drop":
                     HandleRemove(session, parameters.Skip(1).ToArray(), isAdmin);
                     return;
 
@@ -83,7 +86,7 @@ namespace ACE.Server.Command.Handlers
 
                 case "make":
                     // developer: /bounty make <wcid> [tier] - a bounty into your pack, its kill count rolled (a mystery's when
-                    // applied) and, for a bounty with no tier of its own, its tier set
+                    // started) and, for a bounty with no tier of its own, its tier set
                     if (!isDev) break;
                     if (parameters.Length < 2 || !uint.TryParse(parameters[1], out var makeWcid))
                     {
@@ -95,7 +98,7 @@ namespace ACE.Server.Command.Handlers
                     return;
             }
 
-            // Admin: /bounty <player name> shows that player's slots.
+            // Admin: /bounty <player name> shows that player's bounties.
             if (isAdmin)
             {
                 var other = PlayerManager.GetOnlinePlayer(string.Join(" ", parameters));
@@ -111,17 +114,18 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
-        /// /bounty remove r1 (the slot can also be typed "ring 1", "ring1", "bracelet 2"...). An admin may add an online
-        /// player's name after the slot. Nothing is removed here: ItemBounties asks for /bounty confirm with a code.
+        /// /bounty abandon 2 (also remove / drop; the slot can be typed 2, #2 or "slot 2", and the names from before the
+        /// 2026-11-12 rework still work: r1, ring 1, b2...). An admin may add an online player's name after the slot. Nothing
+        /// is abandoned here: ItemBounties asks for /bounty confirm with a code.
         /// </summary>
         /// <param name="session">The caller's session.</param>
-        /// <param name="args">The words after "remove": the slot, then (Admin only) a player's name.</param>
-        /// <param name="isAdmin">True when the caller may act on another player's slots.</param>
+        /// <param name="args">The words after "abandon": the slot, then (Admin only) a player's name.</param>
+        /// <param name="isAdmin">True when the caller may act on another player's bounties.</param>
         private static void HandleRemove(Session session, string[] args, bool isAdmin)
         {
             var player = session.Player;
 
-            // The slot is one word (r1, ring1) or two (ring 1); whatever follows is a player's name.
+            // The slot is one word (2, #2, r1) or two (slot 2, ring 1); whatever follows is a player's name.
             string key = null;
             var used = 0;
             if (args.Length >= 1 && (key = ItemBounties.ParseSlotKey(args[0])) != null) used = 1;
@@ -129,7 +133,7 @@ namespace ACE.Server.Command.Handlers
 
             if (key == null)
             {
-                CommandHandlerHelper.WriteOutputInfo(session, "Which slot? /bounty remove r1 (or r2, b1, b2). Your slots:");
+                CommandHandlerHelper.WriteOutputInfo(session, "Which bounty? /bounty abandon <#>, e.g. /bounty abandon 2. Your bounties:");
                 ItemBounties.ShowSlots(player, player);
                 return;
             }
@@ -139,7 +143,7 @@ namespace ACE.Server.Command.Handlers
             {
                 if (!isAdmin)
                 {
-                    CommandHandlerHelper.WriteOutputInfo(session, "Usage: /bounty remove r1 (or r2, b1, b2) - only your own slots.");
+                    CommandHandlerHelper.WriteOutputInfo(session, "Usage: /bounty abandon <#>, e.g. /bounty abandon 2 - only your own bounties.");
                     return;
                 }
                 var name = string.Join(" ", args.Skip(used));
@@ -155,10 +159,10 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>Every player's /bounty forms (the [CommandHandler] usage, and the reply to a typo).</summary>
-        private const string Usage = "/bounty [list|all]  |  /bounty remove r1 (r2, b1, b2)  |  /bounty confirm <code>  |  /bounty cancel  |  /bounty data  |  /bounty sync";
+        private const string Usage = "/bounty [list|all]  |  /bounty abandon <#>  |  /bounty confirm <code>  |  /bounty cancel  |  /bounty data  |  /bounty sync  (start a bounty by using it on your Bounty Journal)";
 
         /// <summary>The forms an Admin adds, appended to an Admin's usage reply.</summary>
-        private const string AdminUsage = "  |  Admin: /bounty <online player>  |  /bounty remove r1 <online player>";
+        private const string AdminUsage = "  |  Admin: /bounty <online player>  |  /bounty abandon <#> <online player>";
 
         /// <summary>The forms a Developer adds, appended to a Developer's usage reply.</summary>
         private const string DeveloperUsage = "  |  Developer: /bounty make <wcid> [tier 11-25]  |  /bounty droptable";

@@ -95,6 +95,14 @@ namespace ACE.Server.WorldObjects
             else
                 inscription = "";
 
+            // Bounty Journal (2026-11-12): its pages are written from the reader's own bounties every time it opens, like the
+            // Monster-Dex below - nothing is stored on the item (ItemBounties.OpenJournal)
+            if (ACE.Server.Managers.ItemBounties.IsJournal(this))
+            {
+                ACE.Server.Managers.ItemBounties.OpenJournal(player, this, maxChars);
+                return;
+            }
+
             if (WeenieClassId == 78780005) // Monster-Dex
             {
                 // Dynamic Monster-dex content

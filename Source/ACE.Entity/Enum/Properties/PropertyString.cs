@@ -190,8 +190,9 @@ namespace ACE.Entity.Enum.Properties
         /// "%s's Reflection".</summary>
         ReflectionNameFormat = 59201,
 
-        /// <summary>Item bounties (2026-11-10), on the CHARACTER: the active bounty slots R1, R2 (rings) and B1, B2
-        /// (bracelets), one entry per filled slot (ItemBounties.cs owns the format). 57700, free in EVERY Property enum.</summary>
+        /// <summary>Item bounties (2026-11-10), on the CHARACTER: the bounties going, slots #1-#4 (keys "1".."8"; R1, R2, B1,
+        /// B2 before the 2026-11-12 double-click rework, still read as #1-#4), one entry per filled slot (ItemBounties.cs owns
+        /// the format). 57700, free in EVERY Property enum.</summary>
         ItemBountySlots = 57700,
 
         /// <summary>Item bounties, on a bounty ITEM (Species): the target's display name in the plural, e.g. "Banderlings".
