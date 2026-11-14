@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 
 using ACE.Common;
 using ACE.Entity;
@@ -32,7 +34,8 @@ namespace ACE.Server.WorldObjects
     ///   a '-' token in personal_lifestone_excluded_landblocks for this landblock/variation ALLOWS the spot past
     ///             everything below this line.
     ///   a '+' token (or bare) blocks; the built-in list blocks (jail 00C0, PK arena 0066, Marketplace, apartments - every
-    ///   variation); a no-log area blocks when personal_lifestone_block_nolog_areas; any indoor cell blocks when
+    ///   variation); Thaelaryn Island (T10) + the Valley of Death, every variation, when personal_lifestone_block_t10_vod;
+    ///   a no-log area blocks when personal_lifestone_block_nolog_areas; any indoor cell blocks when
     ///   personal_lifestone_block_dungeons.
     /// </summary>
     public partial class Player
@@ -160,6 +163,13 @@ namespace ACE.Server.WorldObjects
                 return "the excluded list";
             if (PersonalLifestoneBuiltInBlocks.TryGetValue(landblock, out var builtIn))
                 return builtIn + " (built-in list)";
+            if (ServerConfig.personal_lifestone_block_t10_vod.Value)
+            {
+                if (LandblockCollections.ThaelarynIslandLandblocks.Contains(landblock))
+                    return "Thaelaryn Island (T10 switch)";
+                if (LandblockCollections.ValleyOfDeathLandblocks.Contains(landblock))
+                    return "the Valley of Death (T10 switch)";
+            }
             if (ServerConfig.personal_lifestone_block_nolog_areas.Value && IsNoLogArea(landblock, pos.Variation))
                 return "a no-log area";
             if (ServerConfig.personal_lifestone_block_dungeons.Value && pos.Indoors)
@@ -392,12 +402,16 @@ namespace ACE.Server.WorldObjects
             {
                 if (sanctuary != null) online.Sanctuary = new Position(sanctuary); else online.RemovePosition(PositionType.Sanctuary);
                 online.RemovePosition(PositionType.LinkedLifestone);
+                online.RemoveProperty(PropertyString.PersonalLifestoneAttuneSpot);
+                online.RemoveProperty(PropertyString.PersonalLifestoneTieSpot);
             }
             else if (target is OfflinePlayer offline)
             {
                 if (sanctuary != null) offline.Biota.SetPosition(PositionType.Sanctuary, sanctuary, offline.BiotaDatabaseLock);
                 else offline.Biota.TryRemoveProperty(PositionType.Sanctuary, offline.BiotaDatabaseLock);
                 offline.Biota.TryRemoveProperty(PositionType.LinkedLifestone, offline.BiotaDatabaseLock);
+                offline.Biota.TryRemoveProperty(PropertyString.PersonalLifestoneAttuneSpot, offline.BiotaDatabaseLock);
+                offline.Biota.TryRemoveProperty(PropertyString.PersonalLifestoneTieSpot, offline.BiotaDatabaseLock);
                 offline.ChangesDetected = true;
                 offline.SaveBiotaToDatabase();
             }
@@ -405,6 +419,114 @@ namespace ACE.Server.WorldObjects
                 return "not a player";
 
             return deathText + "; Lifestone Tie cleared";
+        }
+        // ---- where a personal stone put a character's death point / tie, and the audit (owner 2026-11-14) ----------------
+        //
+        // On a personal stone attune / tie the exact spot is written to PropertyString.PersonalLifestoneAttuneSpot / TieSpot.
+        // A death point or tie counts as "from a personal stone" only while it still MATCHES that record, so a later normal
+        // lifestone, @save, a quest emote or anything else that moves it falls out by itself - no other code path is touched.
+
+        private static string SpotText(Position p)
+            => string.Format(CultureInfo.InvariantCulture, "{0:X8} {1:0.000} {2:0.000} {3:0.000} {4}",
+                p.Cell, p.PositionX, p.PositionY, p.PositionZ, p.Variation.HasValue ? p.Variation.Value.ToString(CultureInfo.InvariantCulture) : "-");
+
+        /// <summary>Lifestone.ActOnUse (attune) and HandleCastSpell_PortalLink (tie), personal stones only.</summary>
+        public void RecordPersonalLifestoneSpot(PositionType type, Position pos)
+        {
+            if (pos == null)
+                return;
+            SetProperty(type == PositionType.Sanctuary ? PropertyString.PersonalLifestoneAttuneSpot : PropertyString.PersonalLifestoneTieSpot, SpotText(pos));
+        }
+
+        /// <summary>True when <paramref name="current"/> is still the spot a personal stone recorded.</summary>
+        private static bool SpotMatches(string recorded, Position current)
+        {
+            if (string.IsNullOrWhiteSpace(recorded) || current == null)
+                return false;
+            var parts = recorded.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 5
+                || !uint.TryParse(parts[0], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var cell)
+                || !float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var x)
+                || !float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var y)
+                || !float.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var z))
+                return false;
+            int? v = parts[4] == "-" ? null : int.TryParse(parts[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var vv) ? vv : null;
+            if (cell != current.Cell || VariationManager.NormalizeBase(v) != VariationManager.NormalizeBase(current.Variation))
+                return false;
+            var dx = x - current.PositionX; var dy = y - current.PositionY; var dz = z - current.PositionZ;
+            return dx * dx + dy * dy + dz * dz <= 0.25f;   // within 0.5 m
+        }
+
+        /// <summary>One character's death point and tie: where they are, whether a personal stone set them, and what (if
+        /// anything) blocks a personal stone there now.</summary>
+        public sealed class PersonalLifestoneSpots
+        {
+            public string Name; public uint Guid; public bool Online;
+            public Position Death; public bool DeathPersonal; public string DeathBlock;
+            public Position Tie; public bool TiePersonal; public string TieBlock;
+
+            /// <summary>A personal-stone death point or tie that sits in a spot that is blocked NOW.</summary>
+            public bool Flagged => (DeathPersonal && DeathBlock != null) || (TiePersonal && TieBlock != null);
+        }
+
+        private static Position OfflinePosition(OfflinePlayer o, PositionType type)
+        {
+            if (o.Biota.PropertiesPosition == null || !o.Biota.PropertiesPosition.TryGetValue(type, out var pp))
+                return null;
+            return new Position(pp.ObjCellId, pp.PositionX, pp.PositionY, pp.PositionZ, pp.RotationX, pp.RotationY, pp.RotationZ, pp.RotationW, false, pp.VariationId);
+        }
+
+        public static PersonalLifestoneSpots GetPersonalLifestoneSpots(IPlayer p)
+        {
+            var info = new PersonalLifestoneSpots { Name = p.Name, Guid = p.Guid.Full, Online = p is Player };
+            if (p is Player online)
+            {
+                info.Death = online.Sanctuary;
+                info.Tie = online.LinkedLifestone;
+            }
+            else if (p is OfflinePlayer offline)
+            {
+                info.Death = OfflinePosition(offline, PositionType.Sanctuary);
+                info.Tie = OfflinePosition(offline, PositionType.LinkedLifestone);
+            }
+            info.DeathPersonal = SpotMatches(p.GetProperty(PropertyString.PersonalLifestoneAttuneSpot), info.Death);
+            info.TiePersonal = SpotMatches(p.GetProperty(PropertyString.PersonalLifestoneTieSpot), info.Tie);
+            info.DeathBlock = info.Death != null ? PersonalLifestoneBlockReason(info.Death) : null;
+            info.TieBlock = info.Tie != null ? PersonalLifestoneBlockReason(info.Tie) : null;
+            return info;
+        }
+
+        /// <summary>/plstone audit: every character (online and offline) whose personal-stone death point or tie sits in a
+        /// spot that is blocked now. Only characters that ever used a personal stone are looked at.</summary>
+        public static List<PersonalLifestoneSpots> PersonalLifestoneAudit()
+        {
+            var list = new List<PersonalLifestoneSpots>();
+            foreach (var p in PlayerManager.GetAllPlayers())
+            {
+                if (p.GetProperty(PropertyString.PersonalLifestoneAttuneSpot) == null && p.GetProperty(PropertyString.PersonalLifestoneTieSpot) == null)
+                    continue;
+                var info = GetPersonalLifestoneSpots(p);
+                if (info.Flagged)
+                    list.Add(info);
+            }
+            list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            return list;
+        }
+
+        /// <summary>A character by name, or by GUID: 0x5000856D or decimal 1342211437. Null when there is none.</summary>
+        public static IPlayer FindPlayerByNameOrGuid(string text, out bool isOnline)
+        {
+            isOnline = false;
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+            text = text.Trim();
+            uint guid;
+            if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                && uint.TryParse(text.Substring(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out guid))
+                return PlayerManager.FindByGuid(new ObjectGuid(guid), out isOnline);
+            if (text.Length >= 6 && text.All(char.IsDigit) && uint.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out guid))
+                return PlayerManager.FindByGuid(new ObjectGuid(guid), out isOnline);
+            return PlayerManager.FindByName(text, out isOnline);
         }
     }
 }

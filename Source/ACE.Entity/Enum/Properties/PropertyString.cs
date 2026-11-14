@@ -185,5 +185,11 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Reflection boss, on a MONSTER weenie: the respawn's name, with %s for the player's name. Unset =
         /// "%s's Reflection".</summary>
         ReflectionNameFormat = 58001,
+
+        /// <summary>Personal Lifestone (2026-11-14), server-only: the exact spot a personal stone set this character's death
+        /// point to ("CELL x y z variation"). The death point counts as personal only while it still matches.</summary>
+        PersonalLifestoneAttuneSpot = 59100,
+        /// <summary>Personal Lifestone (2026-11-14), server-only: the spot a personal stone set this character's Lifestone Tie to.</summary>
+        PersonalLifestoneTieSpot = 59101,
     }
 }

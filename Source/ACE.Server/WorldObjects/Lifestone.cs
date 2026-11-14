@@ -116,6 +116,8 @@ namespace ACE.Server.WorldObjects
                 else if (player.IsWithinUseRadiusOf(this))
                 {
                     player.Sanctuary = new Position(player.Location);
+                    if (IsPersonalLifestone)
+                        player.RecordPersonalLifestoneSpot(PositionType.Sanctuary, player.Sanctuary);   // for /plstone audit
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(GetProperty(PropertyString.UseMessage), ChatMessageType.Magic));
                     var newStamina = (uint)Math.Round(player.Stamina.Current / 2f);
                     player.UpdateVital(player.Stamina, newStamina);

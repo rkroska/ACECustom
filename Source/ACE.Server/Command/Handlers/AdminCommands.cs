@@ -7817,7 +7817,7 @@ namespace ACE.Server.Command.Handlers
         /// </summary>
         [CommandHandler("plstone", AccessLevel.Developer, CommandHandlerFlag.None, 0,
             "Personal Lifestone: blocked areas, spot check, cooldown status and reset.",
-            "plstone list | add <where> [scope] | remove <where> [scope] | check | status <player> | reset <player> | resetls <player> [town] | help")]
+            "plstone list | add <where> [scope] | remove <where> [scope] | check | status <player|guid> | reset <player|guid> | resetls <player|guid> [town] | audit | t10vod on|off | help")]
         public static void HandlePersonalLifestone(Session session, params string[] parameters)
         {
             void Msg(string s) => CommandHandlerHelper.WriteOutputInfo(session, s);
@@ -7832,8 +7832,13 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /plstone add <where>     - block an area");
                 Msg("  /plstone remove <where>  - allow an area");
                 Msg("  /plstone check           - may I raise one where I stand?");
-                Msg("  /plstone status <player> - cooldown left, stone up?");
+                Msg("  /plstone status <player> - where they are attuned and");
+                Msg("      tied (any lifestone), cooldown, stone up?");
                 Msg("  /plstone reset <player>  - clear a cooldown");
+                Msg("  /plstone audit           - everyone whose personal-");
+                Msg("      stone point or tie is in a blocked spot now");
+                Msg("  <player> = a name, or a GUID: 0x5000856D / decimal");
+                Msg("  /plstone t10vod on|off   - block T10 + Valley of Death");
                 Msg("  /plstone resetls <player> [town]");
                 Msg("      - clear their lifestone point + tie; death");
                 Msg("        goes to their starter town, or to [town]:");
@@ -7849,6 +7854,7 @@ namespace ACE.Server.Command.Handlers
             {
                 Msg($"Personal Lifestone: {(ServerConfig.personal_lifestone_enabled.Value ? "ON" : "OFF")}, cooldown {Player.FormatPersonalLifestoneTime(ServerConfig.personal_lifestone_cooldown_seconds.Value)}, stone lasts {Player.FormatPersonalLifestoneTime(ServerConfig.personal_lifestone_lifetime_seconds.Value)}.");
                 Msg($"  no-log areas block: {(ServerConfig.personal_lifestone_block_nolog_areas.Value ? "yes" : "no")}   outdoors only: {(ServerConfig.personal_lifestone_block_dungeons.Value ? "yes" : "no")}");
+                Msg($"  T10 (Thaelaryn Island, {LandblockCollections.ThaelarynIslandLandblocks.Count} lb) + Valley of Death ({LandblockCollections.ValleyOfDeathLandblocks.Count} lb), every variation: {(ServerConfig.personal_lifestone_block_t10_vod.Value ? "BLOCKED" : "allowed")}   (/plstone t10vod on|off)");
                 Msg("  Always blocked: house interiors, Vaulted Dungeons.");
                 Msg("  Built-in (every variation):");
                 foreach (var kv in Player.PersonalLifestoneBuiltIns.OrderBy(k => k.Key))
@@ -7869,6 +7875,22 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
+            if (sub == "t10vod")
+            {
+                var arg = parameters.Length > 1 ? parameters[1].ToLowerInvariant() : "";
+                if (arg != "on" && arg != "off")
+                {
+                    Msg($"T10 + Valley of Death are {(ServerConfig.personal_lifestone_block_t10_vod.Value ? "BLOCKED" : "allowed")} for the Personal Lifestone. Usage: /plstone t10vod on|off (on = blocked)");
+                    return;
+                }
+                var block = arg == "on";
+                if (!ServerConfig.SetValue("personal_lifestone_block_t10_vod", block)) { Msg("Could not write personal_lifestone_block_t10_vod."); return; }
+                ServerConfig.WriteUpdatesToDb();
+                Msg($"T10 (Thaelaryn Island) + Valley of Death are now {(block ? "BLOCKED" : "allowed")} for the Personal Lifestone, every variation.");
+                PlayerManager.BroadcastToAuditChannel(session?.Player, $"Personal Lifestone: T10 + Valley of Death {(block ? "blocked" : "allowed")}");
+                return;
+            }
+
             if (sub == "resetls")
             {
                 if (parameters.Length < 2) { Msg("Usage: /plstone resetls <player name> [holtburg|shoushi|yaraq|sanamar]"); return; }
@@ -7883,7 +7905,7 @@ namespace ACE.Server.Command.Handlers
                     if (townPos == null) { Msg($"No spot found for {townName} (its Free Ride spell is missing). Nothing changed."); return; }
                 }
                 var lsName = string.Join(" ", words);
-                var lsTarget = PlayerManager.FindByName(lsName, out _);
+                var lsTarget = Player.FindPlayerByNameOrGuid(lsName, out _);
                 if (lsTarget == null) { Msg($"No character named '{lsName}'."); return; }
                 var done = Player.ResetLifestonePoints(lsTarget, townPos);
                 Msg($"{lsTarget.Name}: {done}.");
@@ -7891,11 +7913,30 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
+            if (sub == "audit")
+            {
+                var flagged = Player.PersonalLifestoneAudit();
+                Msg(flagged.Count == 0
+                    ? "Audit: no character has a personal-stone death point or tie in a blocked spot."
+                    : $"Audit: {flagged.Count} character(s) with a personal-stone point in a blocked spot (fix with /plstone resetls <guid>):");
+                string Where(Position p) => p == null ? "-" : $"{p.Cell:X8} v{p.Variation?.ToString() ?? "0"}";
+                foreach (var f in flagged.Take(50))
+                {
+                    var parts = new List<string>();
+                    if (f.DeathPersonal && f.DeathBlock != null) parts.Add($"death {Where(f.Death)} ({f.DeathBlock})");
+                    if (f.TiePersonal && f.TieBlock != null) parts.Add($"tie {Where(f.Tie)} ({f.TieBlock})");
+                    Msg($"  {f.Name} 0x{f.Guid:X8}{(f.Online ? " [online]" : "")}: {string.Join("; ", parts)}");
+                }
+                if (flagged.Count > 50)
+                    Msg($"  ...and {flagged.Count - 50} more.");
+                return;
+            }
+
             if (sub == "status" || sub == "reset")
             {
-                if (parameters.Length < 2) { Msg($"Usage: /plstone {sub} <player name>"); return; }
+                if (parameters.Length < 2) { Msg($"Usage: /plstone {sub} <player name or guid>"); return; }
                 var name = string.Join(" ", parameters.Skip(1));
-                var target = PlayerManager.FindByName(name, out var online);
+                var target = Player.FindPlayerByNameOrGuid(name, out var online);
                 if (target == null) { Msg($"No character named '{name}'."); return; }
 
                 if (sub == "reset")
@@ -7914,7 +7955,13 @@ namespace ACE.Server.Command.Handlers
 
                 var next = target.GetProperty(PropertyInt64.PersonalLifestoneNextUse) ?? 0;
                 var left = next - Time.GetUnixTime();
-                Msg($"{target.Name}: {(left > 0 ? "on cooldown, " + Player.FormatPersonalLifestoneTime(left) + " left" : "ready")}.");
+                Msg($"{target.Name} 0x{target.Guid.Full:X8}{(online ? " [online]" : "")}: {(left > 0 ? "on cooldown, " + Player.FormatPersonalLifestoneTime(left) + " left" : "ready")}.");
+                var spots = Player.GetPersonalLifestoneSpots(target);
+                string Spot(Position p, bool personal, string block) => p == null ? "none"
+                    : $"{p.Cell:X8} [{p.PositionX:0.0} {p.PositionY:0.0} {p.PositionZ:0.0}] v{p.Variation?.ToString() ?? "0"}"
+                      + (personal ? " - set by a personal stone" + (block != null ? $", now BLOCKED ({block})" : "") : "");
+                Msg($"  attuned (death point):     {Spot(spots.Death, spots.DeathPersonal, spots.DeathBlock)}");
+                Msg($"  tied (Lifestone Recall):   {Spot(spots.Tie, spots.TiePersonal, spots.TieBlock)}");
                 if (online && target is Player op)
                 {
                     var stone = op.GetActivePersonalLifestone();
