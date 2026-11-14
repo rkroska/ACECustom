@@ -1516,6 +1516,13 @@ namespace ACE.Server.WorldObjects
 
                     if (target.WeenieType == WeenieType.LifeStone)
                     {
+                        // Personal Lifestone (2026-11-14): only its owner may tie to it, and only while it stands
+                        if (target is Lifestone lifestone && !lifestone.CheckPersonalLifestoneAccess(player))
+                        {
+                            player.SendChatMessage(this, "You cannot link that.", ChatMessageType.Magic);
+                            break;
+                        }
+
                         player.SendChatMessage(this, "You have successfully linked with the life stone.", ChatMessageType.Magic);
                         player.LinkedLifestone = target.Location;
                     }

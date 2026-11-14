@@ -7809,6 +7809,158 @@ namespace ACE.Server.Command.Handlers
             return true;
         }
 
+        /// <summary>
+        /// /plstone - Personal Lifestone admin (owner 2026-11-14). Edits personal_lifestone_excluded_landblocks with the same
+        /// token grammar and target parsing as /nolog, checks a spot, and shows or resets a character's cooldown.
+        /// 'remove' means "allow here": it drops our token for the pair and, when a built-in entry or a no-log area would
+        /// still block it, writes a '-' token. House interiors and Vaulted Dungeons are always blocked (code, not the list).
+        /// </summary>
+        [CommandHandler("plstone", AccessLevel.Developer, CommandHandlerFlag.None, 0,
+            "Personal Lifestone: blocked areas, spot check, cooldown status and reset.",
+            "plstone list | add <where> [scope] | remove <where> [scope] | check | status <player> | reset <player> | help")]
+        public static void HandlePersonalLifestone(Session session, params string[] parameters)
+        {
+            void Msg(string s) => CommandHandlerHelper.WriteOutputInfo(session, s);
+
+            var sub = parameters.Length > 0 ? parameters[0].ToLowerInvariant() : "list";
+
+            if (sub == "help")
+            {
+                Msg("Personal Lifestone - owner-only lifestone raised by an item.");
+                Msg("");
+                Msg("  /plstone list            - settings, built-ins, overrides");
+                Msg("  /plstone add <where>     - block an area");
+                Msg("  /plstone remove <where>  - allow an area");
+                Msg("  /plstone check           - may I raise one where I stand?");
+                Msg("  /plstone status <player> - cooldown left, stone up?");
+                Msg("  /plstone reset <player>  - clear a cooldown");
+                Msg("");
+                Msg("  <where>: here | 016C | 016C,016D (one write)");
+                Msg("  scope:   base | 11 | all  ('here' alone = your layer)");
+                Msg("  Always blocked: house interiors, Vaulted Dungeons.");
+                return;
+            }
+
+            if (sub == "list")
+            {
+                Msg($"Personal Lifestone: {(ServerConfig.personal_lifestone_enabled.Value ? "ON" : "OFF")}, cooldown {Player.FormatPersonalLifestoneTime(ServerConfig.personal_lifestone_cooldown_seconds.Value)}, stone lasts {Player.FormatPersonalLifestoneTime(ServerConfig.personal_lifestone_lifetime_seconds.Value)}.");
+                Msg($"  no-log areas block: {(ServerConfig.personal_lifestone_block_nolog_areas.Value ? "yes" : "no")}   outdoors only: {(ServerConfig.personal_lifestone_block_dungeons.Value ? "yes" : "no")}");
+                Msg("  Always blocked: house interiors, Vaulted Dungeons.");
+                Msg("  Built-in (every variation):");
+                foreach (var kv in Player.PersonalLifestoneBuiltIns.OrderBy(k => k.Key))
+                    Msg($"    {kv.Key:X4}  {kv.Value}");
+                var raw = ServerConfig.personal_lifestone_excluded_landblocks?.Value ?? "";
+                Msg(string.IsNullOrWhiteSpace(raw) ? "  Overrides: none." : "  Overrides: " + raw + "   ('-' = allowed)");
+                return;
+            }
+
+            if (sub == "check")
+            {
+                var player = session?.Player;
+                if (player?.Location == null) { Msg("Stand somewhere first - check uses your own spot."); return; }
+                var loc = player.Location;
+                var reason = Player.PersonalLifestoneBlockReason(loc);
+                Msg($"{loc.Landblock:X4} cell {loc.Cell:X8} at {Player.NoLogScopeName(Player.NoLogVariationKey(loc.Variation))}: "
+                    + (reason == null ? "ALLOWED - a Personal Lifestone works here." : $"BLOCKED by {reason}."));
+                return;
+            }
+
+            if (sub == "status" || sub == "reset")
+            {
+                if (parameters.Length < 2) { Msg($"Usage: /plstone {sub} <player name>"); return; }
+                var name = string.Join(" ", parameters.Skip(1));
+                var target = PlayerManager.FindByName(name, out var online);
+                if (target == null) { Msg($"No character named '{name}'."); return; }
+
+                if (sub == "reset")
+                {
+                    if (online && target is Player p)
+                        p.ResetPersonalLifestoneCooldown();
+                    else
+                    {
+                        target.RemoveProperty(PropertyInt64.PersonalLifestoneNextUse);
+                        target.SaveBiotaToDatabase();
+                    }
+                    Msg($"{target.Name}: Personal Lifestone cooldown cleared.");
+                    PlayerManager.BroadcastToAuditChannel(session?.Player, $"Cleared the Personal Lifestone cooldown of {target.Name}");
+                    return;
+                }
+
+                var next = target.GetProperty(PropertyInt64.PersonalLifestoneNextUse) ?? 0;
+                var left = next - Time.GetUnixTime();
+                Msg($"{target.Name}: {(left > 0 ? "on cooldown, " + Player.FormatPersonalLifestoneTime(left) + " left" : "ready")}.");
+                if (online && target is Player op)
+                {
+                    var stone = op.GetActivePersonalLifestone();
+                    Msg(stone == null ? "  No stone standing." : $"  Stone 0x{stone.Guid.Full:X8} standing at {stone.Location}.");
+                }
+                return;
+            }
+
+            if (sub != "add" && sub != "remove")
+            {
+                Msg($"Unknown subcommand '{sub}'. Try /plstone help.");
+                return;
+            }
+
+            if (!TryNoLogTargets(session, parameters, 1, out var landblocks, out var rawVariation, out var error)) { Msg(error); return; }
+
+            var variationKey = Player.NoLogVariationKey(rawVariation);
+            var scopeArg = parameters.Length > 2 ? parameters[2] : null;
+            if (!string.IsNullOrWhiteSpace(scopeArg))
+            {
+                if (!Player.TryParseNoLogToken("0000:" + scopeArg.Trim(), out _, out variationKey, out _))
+                {
+                    Msg($"Bad scope '{scopeArg}'. Use base, all, or a variation number.");
+                    return;
+                }
+            }
+
+            var adding = sub == "add";
+            var original = ServerConfig.personal_lifestone_excluded_landblocks?.Value ?? "";
+            var tokens = SplitNoLogTokens(original);
+
+            foreach (var landblock in landblocks)
+            {
+                var lb = landblock;
+                tokens.RemoveAll(t => Player.TryParseNoLogToken(t, out var tlb, out var tkey, out _) && tlb == lb && tkey == variationKey);
+
+                var builtIn = Player.PersonalLifestoneBuiltIns.ContainsKey(lb);
+                if (adding)
+                {
+                    if (!builtIn)
+                        tokens.Add(Player.NoLogTokenFor(lb, variationKey, false));
+                }
+                else
+                {
+                    // still blocked by something a token can lift? then allow it explicitly
+                    int? probeVariation = variationKey >= 0 ? variationKey : null;
+                    var nolog = ServerConfig.personal_lifestone_block_nolog_areas.Value && Player.IsNoLogArea(lb, probeVariation);
+                    if (builtIn || nolog)
+                        tokens.Add(Player.NoLogTokenFor(lb, variationKey, true));
+                }
+            }
+
+            var updated = string.Join(", ", tokens);
+            if (updated == original)
+            {
+                Msg($"{DescribeNoLogTargets(landblocks)} at {Player.NoLogScopeName(variationKey)}: already {(adding ? "blocked" : "allowed")} - nothing changed.");
+                return;
+            }
+
+            if (!ServerConfig.SetValue("personal_lifestone_excluded_landblocks", updated))
+            {
+                Msg("Could not write the personal_lifestone_excluded_landblocks property.");
+                return;
+            }
+            ServerConfig.WriteUpdatesToDb();   // flush now - the property worker runs every 5 minutes and is not flushed on shutdown
+
+            Msg($"{DescribeNoLogTargets(landblocks)} at {Player.NoLogScopeName(variationKey)}: now {(adding ? "BLOCKED" : "allowed")} for the Personal Lifestone.");
+            Msg(string.IsNullOrWhiteSpace(updated) ? "Overrides: none." : "Overrides: " + updated);
+            PlayerManager.BroadcastToAuditChannel(session?.Player,
+                $"Personal Lifestone: {(adding ? "blocked" : "allowed")} {DescribeNoLogTargets(landblocks)} ({Player.NoLogScopeName(variationKey)})");
+        }
+
         [CommandHandler("modifystring", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a string", "modifystring (string) (string)")]
         public static void HandleModifyServerStringProperty(Session session, params string[] parameters)
         {

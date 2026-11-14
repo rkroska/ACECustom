@@ -983,6 +983,9 @@ namespace ACE.Server.WorldObjects
         /// <summary>The base-bucket scope key, for callers that need to test scope without a magic number.</summary>
         public static int NoLogBaseScopeKey => NoLogBaseKey;
 
+        /// <summary>The base-and-every-variation scope key (Personal Lifestone reuses the token grammar).</summary>
+        public static int NoLogAllScopeKey => NoLogAllKey;
+
         /// <summary>True when this exact entry comes from the built-in retail list rather than an override.</summary>
         public static bool IsNoLogSeed(ushort landblock, int variationKey)
             => variationKey == NoLogBaseKey && NoLog_Landblocks.ContainsKey(landblock);

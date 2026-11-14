@@ -191,6 +191,9 @@ namespace ACE.Server.WorldObjects
             // QB Deeds: save the QB, then put the Deeds buffs back to exactly the reached tiers (after AuditItemSpells above)
             RefreshDeeds(login: true);
 
+            // Personal Lifestone: the icon ring only ticks while online - set it back to the real time left
+            RefreshPersonalLifestoneCooldownRings();
+
             log.Debug($"[LOGIN] Account {Account.AccountName} entered the world with character {Name} (0x{Guid}) at {DateTime.Now}.");
         }
 

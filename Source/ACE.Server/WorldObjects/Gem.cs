@@ -39,6 +39,13 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Personal Lifestone: the stock activation path would start a SharedCooldown on every click (even a refused one).
+        /// Its cooldown is real time and kept on the character; the icon ring is set by Player_PersonalLifestone only.
+        /// </summary>
+        protected override bool ShouldApplyActivationCooldown(Player player)
+            => WeenieClassId != Player.PersonalLifestoneItemWcid && base.ShouldApplyActivationCooldown(player);
+
+        /// <summary>
         /// This is raised by Player.HandleActionUseItem.<para />
         /// The item should be in the players possession.
         /// 
@@ -88,6 +95,13 @@ namespace ACE.Server.WorldObjects
             if (WeenieClassId == DeedsTiers.DeedkeepersWritWcid)
             {
                 player.HandleDeedsRebuff();
+                return;
+            }
+
+            // Personal Lifestone (2026-11-14): raise an owner-only lifestone - its checks, cooldown and messages (never consumed)
+            if (WeenieClassId == Player.PersonalLifestoneItemWcid)
+            {
+                player.TryUsePersonalLifestone(this);
                 return;
             }
 

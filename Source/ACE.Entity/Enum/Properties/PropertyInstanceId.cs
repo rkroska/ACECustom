@@ -73,6 +73,11 @@ namespace ACE.Entity.Enum.Properties
         LastSplitArrowProjectile         = 46,
         LastSplitArrowShooter            = 47,
 
+        /// <summary>Personal Lifestone: the only player who may attune to or tie this summoned lifestone.
+        /// Ephemeral - the stone itself is never saved (2026-11-14).</summary>
+        [Ephemeral]
+        PersonalLifestoneOwner           = 59100,
+
         PCAPRecordedObjectIID            = 8000,
         PCAPRecordedParentIID            = 8008
     }
