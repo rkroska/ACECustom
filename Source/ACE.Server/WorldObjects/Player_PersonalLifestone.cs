@@ -6,6 +6,7 @@ using ACE.Common;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Entity.Models;
 using ACE.Server.Entity;
 using ACE.Server.Factories;
 using ACE.Server.Managers;
@@ -331,6 +332,79 @@ namespace ACE.Server.WorldObjects
                 return spot;
             }
             return null;
+        }
+        // ---- /plstone resetls (owner 2026-11-14): clear a player's lifestone point AND tie -------------------------------
+
+        /// <summary>Starter towns by name -> their Free Ride spell, whose destination is the town spot a new character falls
+        /// back to (the same spells PlayerFactory uses for Instantiation).</summary>
+        public static readonly IReadOnlyDictionary<string, uint> StarterTownFreeRideSpells = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Holtburg", 3815 },
+            { "Shoushi",  3813 },
+            { "Yaraq",    3814 },
+            { "Sanamar",  3535 },
+        };
+
+        /// <summary>The town spot for a starter town name, or null when the name or its spell is unknown.</summary>
+        public static Position StarterTownPosition(string town)
+        {
+            if (town == null || !StarterTownFreeRideSpells.TryGetValue(town, out var spellId))
+                return null;
+            var s = ACE.Database.DatabaseManager.World.GetCachedSpell(spellId);
+            if (s?.PositionObjCellId == null || s.PositionOriginX == null)
+                return null;
+            return new Position(s.PositionObjCellId.Value, s.PositionOriginX.Value, s.PositionOriginY ?? 0, s.PositionOriginZ ?? 0,
+                s.PositionAnglesX ?? 0, s.PositionAnglesY ?? 0, s.PositionAnglesZ ?? 0, s.PositionAnglesW ?? 1, false, null);
+        }
+
+        /// <summary>
+        /// Clear a character's Lifestone Tie, and either clear its lifestone point (death then falls back to the character's
+        /// own starter town, Instantiation - Player_Death: Sanctuary ?? Instantiation ?? Location) or set the point to
+        /// <paramref name="town"/>. A character with no Instantiation gets Holtburg's spot, so death never falls through to
+        /// "where you died". Works online and offline (offline: the biota is changed and saved). Returns what was done.
+        /// </summary>
+        public static string ResetLifestonePoints(IPlayer target, Position town)
+        {
+            Position instantiation;
+            if (target is Player p)
+                instantiation = p.Instantiation;
+            else if (target is OfflinePlayer o && o.Biota.PropertiesPosition != null
+                     && o.Biota.PropertiesPosition.TryGetValue(PositionType.Instantiation, out var pp))
+                instantiation = new Position(pp.ObjCellId, pp.PositionX, pp.PositionY, pp.PositionZ, pp.RotationX, pp.RotationY, pp.RotationZ, pp.RotationW, false, pp.VariationId);
+            else
+                instantiation = null;
+
+            var sanctuary = town;
+            string deathText;
+            if (town != null)
+                deathText = $"death point set to {town.Cell:X8}";
+            else if (instantiation != null)
+                deathText = $"death point cleared - they come back at their starter town ({instantiation.Cell:X8})";
+            else
+            {
+                sanctuary = StarterTownPosition("Holtburg");
+                deathText = sanctuary != null
+                    ? $"no starter town on record - death point set to Holtburg ({sanctuary.Cell:X8})"
+                    : "death point cleared (no starter town on record and no Holtburg spot found - they come back where they die)";
+            }
+
+            if (target is Player online)
+            {
+                if (sanctuary != null) online.Sanctuary = new Position(sanctuary); else online.RemovePosition(PositionType.Sanctuary);
+                online.RemovePosition(PositionType.LinkedLifestone);
+            }
+            else if (target is OfflinePlayer offline)
+            {
+                if (sanctuary != null) offline.Biota.SetPosition(PositionType.Sanctuary, sanctuary, offline.BiotaDatabaseLock);
+                else offline.Biota.TryRemoveProperty(PositionType.Sanctuary, offline.BiotaDatabaseLock);
+                offline.Biota.TryRemoveProperty(PositionType.LinkedLifestone, offline.BiotaDatabaseLock);
+                offline.ChangesDetected = true;
+                offline.SaveBiotaToDatabase();
+            }
+            else
+                return "not a player";
+
+            return deathText + "; Lifestone Tie cleared";
         }
     }
 }

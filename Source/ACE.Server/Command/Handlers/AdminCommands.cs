@@ -7817,7 +7817,7 @@ namespace ACE.Server.Command.Handlers
         /// </summary>
         [CommandHandler("plstone", AccessLevel.Developer, CommandHandlerFlag.None, 0,
             "Personal Lifestone: blocked areas, spot check, cooldown status and reset.",
-            "plstone list | add <where> [scope] | remove <where> [scope] | check | status <player> | reset <player> | help")]
+            "plstone list | add <where> [scope] | remove <where> [scope] | check | status <player> | reset <player> | resetls <player> [town] | help")]
         public static void HandlePersonalLifestone(Session session, params string[] parameters)
         {
             void Msg(string s) => CommandHandlerHelper.WriteOutputInfo(session, s);
@@ -7834,6 +7834,10 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /plstone check           - may I raise one where I stand?");
                 Msg("  /plstone status <player> - cooldown left, stone up?");
                 Msg("  /plstone reset <player>  - clear a cooldown");
+                Msg("  /plstone resetls <player> [town]");
+                Msg("      - clear their lifestone point + tie; death");
+                Msg("        goes to their starter town, or to [town]:");
+                Msg("        holtburg | shoushi | yaraq | sanamar");
                 Msg("");
                 Msg("  <where>: here | 016C | 016C,016D (one write)");
                 Msg("  scope:   base | 11 | all  ('here' alone = your layer)");
@@ -7862,6 +7866,28 @@ namespace ACE.Server.Command.Handlers
                 var reason = Player.PersonalLifestoneBlockReason(loc);
                 Msg($"{loc.Landblock:X4} cell {loc.Cell:X8} at {Player.NoLogScopeName(Player.NoLogVariationKey(loc.Variation))}: "
                     + (reason == null ? "ALLOWED - a Personal Lifestone works here." : $"BLOCKED by {reason}."));
+                return;
+            }
+
+            if (sub == "resetls")
+            {
+                if (parameters.Length < 2) { Msg("Usage: /plstone resetls <player name> [holtburg|shoushi|yaraq|sanamar]"); return; }
+                var words = parameters.Skip(1).ToList();
+                Position townPos = null;
+                string townName = null;
+                if (words.Count > 1 && Player.StarterTownFreeRideSpells.ContainsKey(words[^1]))
+                {
+                    townName = words[^1];
+                    words.RemoveAt(words.Count - 1);
+                    townPos = Player.StarterTownPosition(townName);
+                    if (townPos == null) { Msg($"No spot found for {townName} (its Free Ride spell is missing). Nothing changed."); return; }
+                }
+                var lsName = string.Join(" ", words);
+                var lsTarget = PlayerManager.FindByName(lsName, out _);
+                if (lsTarget == null) { Msg($"No character named '{lsName}'."); return; }
+                var done = Player.ResetLifestonePoints(lsTarget, townPos);
+                Msg($"{lsTarget.Name}: {done}.");
+                PlayerManager.BroadcastToAuditChannel(session?.Player, $"Reset the lifestone point and tie of {lsTarget.Name}{(townName != null ? " to " + townName : "")}");
                 return;
             }
 
