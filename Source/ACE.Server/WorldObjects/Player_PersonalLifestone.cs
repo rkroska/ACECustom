@@ -23,11 +23,11 @@ namespace ACE.Server.WorldObjects
     /// after the stone fades - that is the point of the item, and why the blocked-area rules below matter.
     ///
     /// Cooldown: PropertyInt64.PersonalLifestoneNextUse on the character, unix seconds, REAL time (a cooldown enchantment
-    /// only ticks while online, so 20 h would mean 20 h of play). The item also carries a SharedCooldown purely so the
-    /// client draws a ring on its icon; that ring is re-set to the real time left at login and after every raise.
+    /// only ticks while online, so 20 h would mean 20 h of play). The item has no SharedCooldown, so the stock item
+    /// cooldown never applies to it.
     ///
     /// Blocked areas, in order (first hit wins, the reason is what /plstone shows):
-    ///   always:   a house interior, a Vaulted Dungeon (Room Assign dungeon).
+    ///   always:   a house (inside it, or the outdoor cell it stands in), a Vaulted Dungeon (Room Assign dungeon).
     ///   a '-' token in personal_lifestone_excluded_landblocks for this landblock/variation ALLOWS the spot past
     ///             everything below this line.
     ///   a '+' token (or bare) blocks; the built-in list blocks (jail 00C0, PK arena 0066, Marketplace, apartments - every
@@ -118,6 +118,23 @@ namespace ACE.Server.WorldObjects
         public static IReadOnlyDictionary<ushort, string> PersonalLifestoneBuiltIns => PersonalLifestoneBuiltInBlocks;
 
         /// <summary>
+        /// A house, by the game's own rule (Player.CheckHouseRestrictions): HouseCell.HouseCells is keyed by the OUTDOOR cell a
+        /// house stands in, so a spot inside a house (an indoor cell of an outdoor landblock) is looked up by the outdoor cell
+        /// under it. Dungeon cells keep their own id. The outdoor cell itself (the yard around the house) counts too.
+        /// </summary>
+        private static bool IsInHouseCell(Position pos)
+        {
+            if (HouseCell.HouseCells.ContainsKey(pos.Cell))
+                return true;
+            if (!pos.Indoors)
+                return false;
+            var landblock = ACE.Server.Physics.Common.LScape.get_landblock(pos.LandblockId.Raw, pos.Variation);
+            if (landblock != null && landblock.IsDungeon)
+                return false;
+            return HouseCell.HouseCells.ContainsKey(pos.GetOutdoorCell());
+        }
+
+        /// <summary>
         /// Why the Personal Lifestone may not be used at this spot, or null when it may. The text reads after "blocked by"
         /// / "in" in /plstone; players only ever see the generic refusal.
         /// </summary>
@@ -127,7 +144,7 @@ namespace ACE.Server.WorldObjects
                 return "no position";
 
             // always blocked - no token can lift these
-            if (HouseCell.HouseCells.ContainsKey(pos.Cell))
+            if (IsInHouseCell(pos))
                 return "a house";
             if (RoomAssignManager.IsInRoomDungeon(pos))
                 return "a Vaulted Dungeon";
@@ -171,8 +188,8 @@ namespace ACE.Server.WorldObjects
             return $"{t.Seconds}s";
         }
 
-        /// <summary>The refusal while on cooldown. Also sent by CheckUseRequirements when the icon ring blocks the use first.</summary>
-        public void SendPersonalLifestoneCooldownMessage()
+        /// <summary>The refusal while on cooldown, with the real time left.</summary>
+        private void SendPersonalLifestoneCooldownMessage()
         {
             var left = PersonalLifestoneCooldownRemaining();
             if (left > 0)
@@ -181,49 +198,9 @@ namespace ACE.Server.WorldObjects
                 Session.Network.EnqueueSend(new GameMessageSystemChat("The stone is ready. Try again.", ChatMessageType.Broadcast));
         }
 
-        /// <summary>
-        /// Display only: set the icon ring on one Personal Lifestone item to the real time left, or clear it when ready.
-        /// The Int64 stays the authority.
-        /// </summary>
-        private void RefreshPersonalLifestoneCooldownRing(WorldObject item)
-        {
-            if (item?.CooldownId == null || EnchantmentManager == null || Session == null)
-                return;
-
-            var left = PersonalLifestoneCooldownRemaining();
-            if (left > 0)
-            {
-                EnchantmentManager.StartOrRefreshItemCooldown(item.Guid.Full, item.CooldownId.Value, (float)left);
-                return;
-            }
-
-            var spellId = EnchantmentManager.GetCooldownSpellID(item.CooldownId.Value);
-            var existing = EnchantmentManager.GetEnchantment(spellId, item.Guid.Full);
-            if (existing != null)
-                EnchantmentManager.Remove(existing, sound: false);
-        }
-
-        /// <summary>Login (Player_Networking.PlayerEnterWorld) and /plstone reset: every Personal Lifestone item in the packs.</summary>
-        public void RefreshPersonalLifestoneCooldownRings()
-        {
-            try
-            {
-                foreach (var item in GetInventoryItemsOfWCID(PersonalLifestoneItemWcid))
-                    RefreshPersonalLifestoneCooldownRing(item);
-            }
-            catch (Exception ex)
-            {
-                log.Warn($"[PersonalLifestone] ring refresh for {Name} failed: {ex.Message}");
-            }
-        }
-
-        /// <summary>/plstone reset: clear the cooldown (and the ring when online).</summary>
+        /// <summary>/plstone reset: clear the cooldown.</summary>
         public void ResetPersonalLifestoneCooldown()
-        {
-            RemoveProperty(PropertyInt64.PersonalLifestoneNextUse);
-            if (Session != null)
-                RefreshPersonalLifestoneCooldownRings();
-        }
+            => RemoveProperty(PropertyInt64.PersonalLifestoneNextUse);
 
         // ---- the use ----------------------------------------------------------------------------------------------
 
@@ -280,7 +257,6 @@ namespace ACE.Server.WorldObjects
             if (PersonalLifestoneCooldownRemaining() > 0)
             {
                 SendPersonalLifestoneCooldownMessage();
-                RefreshPersonalLifestoneCooldownRing(item);
                 return;
             }
 
@@ -324,7 +300,6 @@ namespace ACE.Server.WorldObjects
             // the cooldown is spent only now, after the stone is really standing
             var cooldown = Math.Max(0, ServerConfig.personal_lifestone_cooldown_seconds.Value);
             SetProperty(PropertyInt64.PersonalLifestoneNextUse, (long)Math.Ceiling(now + cooldown));
-            RefreshPersonalLifestoneCooldownRing(item);
 
             EnqueueBroadcast(new GameMessageSound(Guid, Sound.LifestoneOn, 1.0f));
             Session.Network.EnqueueSend(new GameMessageSystemChat($"A lifestone rises before you. Only you can attune to it or tie to it, and it fades in {FormatPersonalLifestoneTime(lifetime)}.", ChatMessageType.Magic));

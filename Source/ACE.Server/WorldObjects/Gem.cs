@@ -39,13 +39,6 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Personal Lifestone: the stock activation path would start a SharedCooldown on every click (even a refused one).
-        /// Its cooldown is real time and kept on the character; the icon ring is set by Player_PersonalLifestone only.
-        /// </summary>
-        protected override bool ShouldApplyActivationCooldown(Player player)
-            => WeenieClassId != Player.PersonalLifestoneItemWcid && base.ShouldApplyActivationCooldown(player);
-
-        /// <summary>
         /// This is raised by Player.HandleActionUseItem.<para />
         /// The item should be in the players possession.
         /// 

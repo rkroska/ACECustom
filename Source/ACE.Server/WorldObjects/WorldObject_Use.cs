@@ -307,13 +307,6 @@ namespace ACE.Server.WorldObjects
             // Check for a cooldown
             if (!player.EnchantmentManager.CheckCooldown(CooldownId))
             {
-                // Personal Lifestone: its icon ring blocks here first - give its own message with the real time left
-                if (WeenieClassId == Player.PersonalLifestoneItemWcid)
-                {
-                    player.SendPersonalLifestoneCooldownMessage();
-                    return new ActivationResult(false);
-                }
-
                 // TODO: werror/string not found, find exact message
 
                 /*var cooldown = player.GetCooldown(this);
