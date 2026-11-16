@@ -497,6 +497,8 @@ namespace ACE.Server
                 WorldManager.Open(null);
             }
 
+            ServerStatusAnnouncer.AnnounceOnline(!ServerConfig.world_closed.Value);
+
             // Start the Web Portal (optional — game server runs without it when disabled)
             if (ServerConfig.enable_web_portal.Value)
             {
@@ -524,7 +526,11 @@ namespace ACE.Server
             if (!IsRunningInContainer)
             {
                 if (!ServerManager.ShutdownInitiated)
+                {
                     log.Warn("Unsafe server shutdown detected! Data loss is possible!");
+                    // stopped on purpose (SIGTERM etc.), not a crash: say so before the process is gone
+                    ServerStatusAnnouncer.AnnounceOfflineStopped();
+                }
 
 
                 PropertyManager.StopUpdating();
