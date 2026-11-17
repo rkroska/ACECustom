@@ -197,14 +197,19 @@ namespace ACE.Server.Managers.ZoneControl
             return 0;
         }
 
-        /// <summary>The highest tier gem among these weenie class ids, 0 when there is none.</summary>
-        internal static int HighestGemTier(IEnumerable<uint> wcids)
+        /// <summary>The highest tier gem among these weenie class ids, 0 when there is none. Stops looking once a gem at
+        /// <paramref name="stopAt"/> or higher is found (a gem above the hit tier never raises the reward tier).</summary>
+        internal static int HighestGemTier(IEnumerable<uint> wcids, int stopAt = int.MaxValue)
         {
             var best = 0;
             if (wcids == null)
                 return best;
             foreach (var wcid in wcids)
+            {
                 best = Math.Max(best, GemTier(wcid));
+                if (best >= stopAt)
+                    break;
+            }
             return best;
         }
 
@@ -218,9 +223,9 @@ namespace ACE.Server.Managers.ZoneControl
         /// T11 is the floor (owner 2026-11-17): T11 is reached without its gem, so anyone who can hit T11 counts as at least
         /// T11 and the gem cap only bites from T12.
         ///
-        /// The gem tier is the one the player's own heartbeat last found in their pack (Player.OwnedGemTier) - inventory is
-        /// only read on the player's thread, and this is also called from a dying monster's thread (the rare roll). Until the
-        /// first heartbeat after login it is unknown, and the hit tier alone is used.
+        /// The gem tier is the one last found in the player's pack (Player.OwnedGemTier, read at login and on every heartbeat)
+        /// - inventory is only read on the player's thread, and this is also called from a dying monster's thread (the rare
+        /// roll). If it has never been read the hit tier alone is used.
         /// </summary>
         public static int RewardTier(Player player) => player == null ? 0 : RewardTier(PlayerTier(player), player.OwnedGemTier);
 

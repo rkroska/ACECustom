@@ -1329,7 +1329,9 @@ namespace ACE.Server.Command.Handlers
             var ownTier = ZoneRare.OwnTier(playerTier, enabled);
             Msg($"zcrare: your tier (highest tier whose monsters you can hit) = {(hitTier > 0 ? "T" + hitTier : "below T11")}");
             if (playerTier < hitTier)
-                Msg($"zcrare: rare odds count you at T{playerTier} - the highest tier gem you own (T11 needs no gem)");
+                Msg(player.OwnedGemTier >= TierHitGate.MinGatedVariation
+                    ? $"zcrare: rare odds count you at T{playerTier} - the highest tier gem you own"
+                    : $"zcrare: rare odds count you at T{playerTier} - you own no tier gem, and T11 needs none");
             Msg($"zcrare: tiers with an enabled zone = {(enabled.Count > 0 ? string.Join(", ", enabled.Select(t => "T" + t)) : "(none)")}");
             Msg($"zcrare: your own tier for rare odds = {(ownTier > 0 ? "T" + ownTier : "none - no enabled zone tier at or below your tier, so no kill rolls a rare for you")}");
             Msg($"zcrare: settings - Pristine 1 in {ACE.Server.Managers.ServerConfig.zc_rare_pristine_odds.Value} (0 = off), Ascendant 1 in {ACE.Server.Managers.ServerConfig.zc_rare_ascendant_odds.Value} (0 = off), "

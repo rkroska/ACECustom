@@ -39,7 +39,9 @@ namespace ACE.Server.Command.Handlers
             Msg($"Your tier: {TierText(playerTier)} (the highest tier whose monsters you can hit).");
             // 2026-11-17: rewards count you no higher than the highest tier gem you own
             if (rewardTier < playerTier)
-                Msg($"Rewards count you at {TierText(rewardTier)}: the highest tier gem you own (T11 needs no gem).");
+                Msg(player.OwnedGemTier >= TierHitGate.MinGatedVariation
+                    ? $"Rewards count you at {TierText(rewardTier)}: the highest tier gem you own."
+                    : $"Rewards count you at {TierText(rewardTier)}: you own no tier gem, and T11 needs none.");
             if (ownTier != rewardTier)
                 Msg($"Your own tier for rewards: {TierText(ownTier)} (the highest tier at or below yours that has a zone).");
 

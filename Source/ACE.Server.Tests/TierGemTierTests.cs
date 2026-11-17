@@ -51,5 +51,19 @@ namespace ACE.Server.Tests
             Assert.AreEqual(0, TierHitGate.HighestGemTier(new uint[] { 1, 2, 777707001 }));
             Assert.AreEqual(13, TierHitGate.HighestGemTier(new uint[] { 777700029, 777705121, 777705120, 12345 }));
         }
+
+        [TestMethod]
+        public void HighestGemTier_StopsAtTheHitTier()
+        {
+            // a T14 gem found first: stopping at a hit tier of 13 still caps the reward tier correctly
+            var seen = 0;
+            System.Collections.Generic.IEnumerable<uint> Pack()
+            {
+                foreach (var w in new uint[] { 777705122, 777705121, 777705133 }) { seen++; yield return w; }
+            }
+            Assert.AreEqual(14, TierHitGate.HighestGemTier(Pack(), stopAt: 13));
+            Assert.AreEqual(1, seen, "the rest of the pack is not walked");
+            Assert.AreEqual(13, TierHitGate.RewardTier(13, 14));
+        }
     }
 }
