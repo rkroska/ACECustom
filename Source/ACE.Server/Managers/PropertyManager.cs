@@ -59,6 +59,8 @@ namespace ACE.Server.Managers
         /// </summary>
         private static readonly Dictionary<string, string> RenamedKeys = BuildRenamedKeys();
 
+        /// <summary>The old-name -> new-name map behind <see cref="RenamedKeys"/>: the v11_ -> zc_ endgame keys, and #595's
+        /// Prestige Coin falloff pace (same meaning under the kill cap's name).</summary>
         private static Dictionary<string, string> BuildRenamedKeys()
         {
             var d = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -192,6 +194,15 @@ namespace ACE.Server.Managers
                 if (_modifiedDoubleProps.ContainsKey(CanonicalKey(c.Key)) || Shadowed(c.Key)) continue;
                 SetValue(c.Key, c.Value, markModified: false);
             }
+            // the Prestige Coin kill cap (2026-11-17) replaced #595's falloff share zc_pcoin_falloff_mult (the share KEPT past the
+            // pace; 1 = no falloff) with zc_kill_cap_reduction (the share CUT at each step) - not a plain rename. A server that
+            // stored the old share keeps its meaning (1 stays "no cut"): written ONCE as 1 - share (markModified), so later loads
+            // read zc_kill_cap_reduction itself, as #539 did for the combat switch. (#595's zc_pcoin_falloff_reserve has no
+            // counterpart in the coin hour; a stored row is ignored.)
+            var legacyFalloffShare = doubles.FirstOrDefault(c => c.Key == "zc_pcoin_falloff_mult");
+            if (legacyFalloffShare != null && double.IsFinite(legacyFalloffShare.Value)
+                && !storedKeys.Contains(nameof(zc_kill_cap_reduction)) && !_modifiedDoubleProps.ContainsKey(nameof(zc_kill_cap_reduction)))
+                SetValue(nameof(zc_kill_cap_reduction), 1.0 - Math.Clamp(legacyFalloffShare.Value, 0.0, 1.0), markModified: true);
 
             foreach (ConfigPropertiesString c in strings)
             {
@@ -1110,8 +1121,8 @@ namespace ACE.Server.Managers
         // credit), one count per character across every zone and tier. The Zone Control stats pcoin_falloff_kills_per_hour (the
         // zone's start; stretches the interval and max with it; 0 = off there) and pcoin_falloff_mult (the share each step keeps
         // there, 1 - reduction) re-tune it per zone or tier Default. Read live. See TierRewardScale.FalloffKill / TierRewards.
-        public static ConfigProperty<double> zc_kill_cap_start { get; private set; } = new(375.0, "PRESTIGE COIN KILL CAP: kills a character can make in a coin hour (60 minutes from their first coin kill) at the full Prestige Coin rate - a kill below their own tier counts as its tier-dip credit. Past it the share is cut by zc_kill_cap_reduction every zc_kill_cap_interval kills. 0 = no kill cap at all. A zone or tier Default can move it with the Zone Control stat pcoin_falloff_kills_per_hour, which stretches the interval and max with it. (Was zc_pcoin_falloff_kills_per_hour; the old name still works.)");
-        public static ConfigProperty<double> zc_kill_cap_reduction { get; private set; } = new(0.5, "PRESTIGE COIN KILL CAP: how much of the share is cut at each interval past zc_kill_cap_start - each step keeps 1 minus this of the step before (0.5 = 50 pct less each time: 50, 25, 12.5 pct ...; 0.25 = 75, 56.25, 42.2 pct ...; 0 = full pay; 1 = nothing past the start). A zone or tier Default can re-tune it with the Zone Control stat pcoin_falloff_mult, the share kept (1 - this).");
+        public static ConfigProperty<double> zc_kill_cap_start { get; private set; } = new(375.0, "PRESTIGE COIN KILL CAP: kills a character can make in a coin hour (60 minutes from their first coin kill) at the full Prestige Coin rate - a kill below their own tier counts as its tier-dip credit. Past it the share is cut by zc_kill_cap_reduction every zc_kill_cap_interval kills. 0 = no kill cap, except in a zone whose Default authors pcoin_falloff_kills_per_hour above 0 (stretched from 375). A zone or tier Default can move it with the Zone Control stat pcoin_falloff_kills_per_hour, which stretches the interval and max with it. (Was zc_pcoin_falloff_kills_per_hour; the old name still works.)");
+        public static ConfigProperty<double> zc_kill_cap_reduction { get; private set; } = new(0.5, "PRESTIGE COIN KILL CAP: how much of the share is cut at each interval past zc_kill_cap_start - each step keeps 1 minus this of the step before (0.5 = 50 pct less each time: 50, 25, 12.5 pct ...; 0.25 = 75, 56.25, 42.2 pct ...; 0 = full pay, up to zc_kill_cap_max if set; 1 = nothing past the start). (Replaces zc_pcoin_falloff_mult, the share kept: a stored value of it loads once as 1 - share.) A zone or tier Default can re-tune it with the Zone Control stat pcoin_falloff_mult, the share kept (1 - this).");
         public static ConfigProperty<double> zc_kill_cap_interval { get; private set; } = new(75.0, "PRESTIGE COIN KILL CAP: kills in each step past zc_kill_cap_start; each new step cuts the share by zc_kill_cap_reduction (75 = 50 pct less every 75 kills at a 0.5 reduction). 0 = one step: every kill past the start pays 1 - zc_kill_cap_reduction up to zc_kill_cap_max.");
         public static ConfigProperty<double> zc_kill_cap_max { get; private set; } = new(0.0, "PRESTIGE COIN KILL CAP: optional hard stop - kills past this many in a coin hour pay no Prestige Coins until the hour ends. 0 = no stop: the steps keep falling (with the defaults an hour never pays more than 450 kills' worth either way; a stop at 750 makes it 447.66).");
 

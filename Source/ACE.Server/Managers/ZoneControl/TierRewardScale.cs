@@ -319,6 +319,12 @@ namespace ACE.Server.Managers.ZoneControl
         /// any part paid less than full. Off: full pay and the count unchanged.
         /// </summary>
         public static (double Paid, double Count, bool Reduced) FalloffKill(double count, double credit, FalloffDials dials)
+            => FalloffKill(count, credit, dials, FalloffBands(dials));
+
+        /// <summary>The same as FalloffKill(count, credit, dials) with the bands already built (FalloffBands(dials)), so one kill
+        /// builds them once.</summary>
+        internal static (double Paid, double Count, bool Reduced) FalloffKill(double count, double credit, FalloffDials dials,
+            List<(double UpTo, double Rate)> bands)
         {
             var c = double.IsFinite(credit) && credit > 0 ? credit : 0.0;
             var at = double.IsFinite(count) && count > 0 ? count : 0.0;
@@ -331,7 +337,7 @@ namespace ACE.Server.Managers.ZoneControl
             var paid = 0.0;
             var reduced = false;
 
-            foreach (var (upTo, rate) in FalloffBands(dials))
+            foreach (var (upTo, rate) in bands)
             {
                 if (left <= 0)
                     break;
@@ -352,10 +358,14 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>The band the next kill starts in with <paramref name="count"/> server kills already in the hour: the share it
         /// pays and the server kill counts the band runs from and up to.</summary>
         public static (double Rate, double From, double UpTo) FalloffBandAt(double count, FalloffDials dials)
+            => FalloffBandAt(count, FalloffBands(dials));
+
+        /// <summary>The same as FalloffBandAt(count, dials) with the bands already built.</summary>
+        internal static (double Rate, double From, double UpTo) FalloffBandAt(double count, List<(double UpTo, double Rate)> bands)
         {
             var at = double.IsFinite(count) && count > 0 ? count : 0.0;
             var from = 0.0;
-            foreach (var (upTo, rate) in FalloffBands(dials))
+            foreach (var (upTo, rate) in bands)
             {
                 if (at < upTo)
                     return (rate, from, upTo);
@@ -367,7 +377,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Whether a kill that moved the player from a band paying <paramref name="before"/> into one paying
         /// <paramref name="after"/> earns a chat notice: a lower share of at least MinNoticeShare, or the hard stop.</summary>
         public static bool FalloffNotice(double before, double after)
-            => after < before - Epsilon && (after <= 0.0 || after >= MinNoticeShare - Epsilon);
+            => after <= 0.0 ? before > 0.0 : after < before - Epsilon && after >= MinNoticeShare - Epsilon;
 
         /// <summary>The most reduced bands DescribeFalloff lists one by one; a longer schedule is told as its rule instead.</summary>
         private const int MaxDescribedBands = 6;

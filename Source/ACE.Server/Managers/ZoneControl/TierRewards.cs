@@ -121,9 +121,10 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>
         /// This kill through the falloff, on the player's own thread. Reads and saves their coin hour (PropertyFloat.PrestigeCoinHourKills
         /// / PrestigeCoinHourStart - saved, so relogging never resets it, and an hour that ran out while offline is simply over; see
-        /// TierRewardScale.FalloffHour / FalloffKill). Tells them once as each band starts ("375 kills this hour: kills now pay 50 pct
-        /// ...") and once when a new hour starts after one that reached the falloff. At most one message per band per hour, so no
-        /// quiet timer is needed. Returns the credit to pay coins on (= <paramref name="credit"/> while in the full-rate band).
+        /// TierRewardScale.FalloffHour / FalloffKill). Tells them once as each step starts ("Prestige Coins: 375 kills this hour. Your
+        /// next 75 kills pay 50 pct of their coins (the hour ends in 42 minutes).") down to steps paying 1 pct, always at a hard stop,
+        /// and once when a new hour starts after one that reached a cut step. At most one message per step per hour, so no quiet
+        /// timer is needed. Returns the credit to pay coins on (= <paramref name="credit"/> while in the full-rate band).
         /// </summary>
         private static double ApplyFalloff(Player player, double credit, TierRewardScale.FalloffDials dials)
         {
@@ -142,27 +143,39 @@ namespace ACE.Server.Managers.ZoneControl
             var savedCount = player.GetProperty(PropertyFloat.PrestigeCoinHourKills);
             var (count, start, fresh) = TierRewardScale.FalloffHour(savedCount, player.GetProperty(PropertyFloat.PrestigeCoinHourStart), now);
 
+            // the steps, built once for this kill
+            var bands = TierRewardScale.FalloffBands(dials);
+
             // a new hour after one that reached a reduced band: say so before this kill's own notice, if any
-            if (fresh && savedCount.HasValue && TierRewardScale.FalloffBandAt(savedCount.Value, dials).Rate < 1.0)
+            if (fresh && savedCount.HasValue && TierRewardScale.FalloffBandAt(savedCount.Value, bands).Rate < 1.0)
                 player.SendMessage("Prestige Coins: a new hour has started, so your kills pay their full coins again.", ChatMessageType.Broadcast);
 
-            var before = TierRewardScale.FalloffBandAt(count, dials).Rate;
-            var (paid, newCount, _) = TierRewardScale.FalloffKill(count, credit, dials);
+            var before = TierRewardScale.FalloffBandAt(count, bands).Rate;
+            var (paid, newCount, _) = TierRewardScale.FalloffKill(count, credit, dials, bands);
 
             player.SetProperty(PropertyFloat.PrestigeCoinHourKills, newCount);
             player.SetProperty(PropertyFloat.PrestigeCoinHourStart, start);
 
             // the next kill starts in a lower band than this one did: tell them what it pays and for how long (not for shares
             // under 1 pct - with no stop the steps keep falling, and a fast hunter would hear about every one)
-            var (after, from, _) = TierRewardScale.FalloffBandAt(newCount, dials);
+            var (after, from, upTo) = TierRewardScale.FalloffBandAt(newCount, bands);
             if (TierRewardScale.FalloffNotice(before, after))
             {
                 var minutes = (int)Math.Max(1, Math.Ceiling((start + TierRewardScale.CoinHourSeconds - now) / 60.0));
                 var left = $"{minutes} minute{(minutes == 1 ? "" : "s")}";
                 var kills = TierRewardScale.Kills(from * dials.Scale);
-                player.SendMessage(after > 0
-                    ? $"Prestige Coins: {kills} kills this hour. Kills now pay {TierRewardScale.Pct(after)} pct of their coins for the next {left}."
-                    : $"Prestige Coins: {kills} kills this hour. Kills pay no coins for the next {left}.", ChatMessageType.Broadcast);
+                var pct = TierRewardScale.Pct(after);
+
+                // a step that ends: name how many kills it lasts, not the hour (the share falls again after it)
+                string text;
+                if (!(after > 0))
+                    text = $"Prestige Coins: {kills} kills this hour. Kills pay no coins for the next {left}.";
+                else if (double.IsPositiveInfinity(upTo))
+                    text = $"Prestige Coins: {kills} kills this hour. Kills now pay {pct} pct of their coins for the next {left}.";
+                else
+                    text = $"Prestige Coins: {kills} kills this hour. Your next {TierRewardScale.Kills((upTo - newCount) * dials.Scale)} kills pay {pct} pct of their coins (the hour ends in {left}).";
+
+                player.SendMessage(text, ChatMessageType.Broadcast);
             }
 
             return paid;

@@ -352,6 +352,8 @@ namespace ACE.Server.Tests
             Assert.IsTrue(TierRewardScale.FalloffNotice(0.03125, 0.015625), "1.5625 pct is still told");
             Assert.IsFalse(TierRewardScale.FalloffNotice(0.015625, 0.0078125), "0.78 pct is not");
             Assert.IsTrue(TierRewardScale.FalloffNotice(0.0078125, 0.0), "a hard stop always is");
+            Assert.IsTrue(TierRewardScale.FalloffNotice(Math.Pow(0.5, 20), 0.0), "even after a step paying almost nothing (a far zc_kill_cap_max)");
+            Assert.IsFalse(TierRewardScale.FalloffNotice(0.0, 0.0), "nothing to nothing is not news");
             Assert.IsFalse(TierRewardScale.FalloffNotice(0.5, 0.5), "same share");
             Assert.IsFalse(TierRewardScale.FalloffNotice(0.5, 1.0), "a higher share is never a notice");
         }

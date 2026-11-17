@@ -102,7 +102,7 @@ namespace ACE.Server.Command.Handlers
                 return;   // no coins per kill at all
 
             var dials = TierRewardScale.FalloffFor(ZoneControlManager.ResolveZoneDefaultForPlayer(player));
-            if (!dials.On)
+            if (!dials.On || TierRewardScale.FalloffBands(dials).Count == 1)   // off, or every kill pays in full anyway
             {
                 Msg("Prestige Coins from kills here have no hourly falloff.");
                 return;
@@ -122,7 +122,8 @@ namespace ACE.Server.Command.Handlers
 
             var minutes = (int)Math.Max(1, Math.Ceiling((start + TierRewardScale.CoinHourSeconds - now) / 60.0));
             var rate = TierRewardScale.FalloffBandAt(count, dials).Rate;
-            Msg($"You have made {TierRewardScale.Kills(count * dials.Scale)} kills this coin hour, which ends in {minutes} minute{(minutes == 1 ? "" : "s")}: your next kill pays {TierRewardScale.Pct(rate)} pct of its coins.");
+            // in this zone's kills: a zone with its own start counts the same hour against its stretched schedule
+            Msg($"Your coin hour so far counts as {TierRewardScale.Kills(count * dials.Scale)} kills here and ends in {minutes} minute{(minutes == 1 ? "" : "s")}: your next kill pays {TierRewardScale.Pct(rate)} pct of its coins.");
         }
 
         /// <summary>"T15", or "below T11" for a tier under the endgame.</summary>
