@@ -607,13 +607,13 @@ namespace ACE.Server.Managers.ZoneScaling
         // use it. Deliberately not weapon_*_chance: that shape makes a stat a weapon card (BuildWeaponCardChances).
         public const string SlayerPoolShare = "slayer_pool_share";
 
-        // PRESTIGE COIN FALLOFF (2026-11-01; steps 2026-11-17): per zone / tier re-tunes of zc_pcoin_falloff_kills_per_hour and
-        // zc_pcoin_falloff_mult. Read where the KILL happens: the governing zone's Default row (its own stats over the tier Default),
+        // PRESTIGE COIN KILL CAP (falloff 2026-11-01; steps 2026-11-17): per zone / tier re-tunes of zc_kill_cap_start and
+        // zc_kill_cap_reduction. Read where the KILL happens: the governing zone's Default row (its own stats over the tier Default),
         // per stat; unset = the server setting. The coin hour is one count per character across every zone (TierRewardScale.FalloffKill).
-        // pcoin_falloff_kills_per_hour moves the full-rate limit for kills made here and stretches the step and the cap with it
-        // (500 against the server's 375 = full to 500, steps of 100, cap 1000); 0 = no falloff here. pcoin_falloff_mult is the share
-        // each step keeps of the step before.
-        public const string PcoinFalloffKillsPerHour = "pcoin_falloff_kills_per_hour";   // full-rate kills a coin hour (server 375)
+        // pcoin_falloff_kills_per_hour is the zone's start and stretches the interval and max with it (500 against the server's
+        // 375 = full to 500, steps of 100); 0 = no kill cap here. pcoin_falloff_mult is the share each step keeps there
+        // (1 - reduction: 0.5 = halve). The names stay as #595 shipped them (APPEND-ONLY list, mirrored by the plugin).
+        public const string PcoinFalloffKillsPerHour = "pcoin_falloff_kills_per_hour";   // the zone's kill cap start (server 375)
         public const string PcoinFalloffMult = "pcoin_falloff_mult";                       // share each step keeps of the one before, 0..1 (server 0.5)
 
         // C5. ARMOR BASE VALUES (owner 2026-08-24, Armor_Base_Values_Plan_2026-08-24.md sections 2.1-2.3).

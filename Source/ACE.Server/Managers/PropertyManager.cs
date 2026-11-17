@@ -73,6 +73,9 @@ namespace ACE.Server.Managers
                 "mob_dmg_taken_enabled", "mob_dmg_taken_min_variation", "mob_dmg_taken_mult", "mob_dmg_taken_boss_mult", "mob_dmg_taken_floor",
             })
                 d["v11_" + s] = "zc_" + s;
+
+            // Prestige Coin kill cap (2026-11-17): the falloff's full-rate pace from #595, same meaning under its new name
+            d["zc_pcoin_falloff_kills_per_hour"] = "zc_kill_cap_start";
             return d;
         }
 
@@ -1097,20 +1100,20 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> zc_pcoin_kill_base { get; private set; } = new(0.05, "PRESTIGE COINS PER KILL: coins a T11 Zone Control kill banks for the top damager (or a pet's owner) before the tier dip - 0.05 = one coin per 20 kills. Fractions carry over on the character. 0 = off.");
         public static ConfigProperty<double> zc_pcoin_kill_tier_step { get; private set; } = new(1.20, "PRESTIGE COINS PER KILL: each zone tier above T11 is worth this much more per kill than the tier below it (1.20 = +20 pct per tier: T12 0.060, T13 0.072 at a 0.05 base).");
 
-        // PRESTIGE COIN FALLOFF (2026-11-01; steps per coin hour 2026-11-17): a character's T11+ Zone Control coin kills are counted
-        // per coin hour (60 minutes from their first coin kill; the next kill after it ends starts a new one). Of the kills in an
-        // hour, the first zc_pcoin_falloff_kills_per_hour pay in full; then every zc_pcoin_falloff_step_kills kills the share falls
-        // to zc_pcoin_falloff_mult of the step before, and nothing is paid past zc_pcoin_falloff_cap_kills_per_hour until the hour
-        // ends. Defaults: kills 1-375 full, then half again every 75 kills (376-450 half, 451-525 a quarter, 526-600 an eighth,
-        // 601-675 a sixteenth, 676-750 a thirty-second), 751 on nothing - an hour of 750 kills or more pays 447.65625 kills' worth.
-        // Counted in full-value kills (a below-tier kill counts as its tier-dip credit), one count per character across every zone
-        // and tier. The Zone Control stats pcoin_falloff_kills_per_hour (stretches the step and the cap with it; 0 = off there) and
-        // pcoin_falloff_mult re-tune it per zone or tier Default, read where the kill happens. Read live. See
-        // TierRewardScale.FalloffKill / TierRewards.
-        public static ConfigProperty<double> zc_pcoin_falloff_kills_per_hour { get; private set; } = new(375.0, "PRESTIGE COIN FALLOFF: kills a character can make in a coin hour (60 minutes from their first coin kill) at the full Prestige Coin rate - a kill below their own tier counts as its tier-dip credit. Past it the share falls every zc_pcoin_falloff_step_kills kills. 0 = no falloff at all. A zone or tier Default can move it with the Zone Control stat pcoin_falloff_kills_per_hour, which stretches the step and the cap with it.");
-        public static ConfigProperty<double> zc_pcoin_falloff_mult { get; private set; } = new(0.5, "PRESTIGE COIN FALLOFF: the share each step keeps of the step before - the first zc_pcoin_falloff_step_kills kills past zc_pcoin_falloff_kills_per_hour pay this share of their Prestige Coins, the next step this share of that, and so on (0.5 = halve every step: 50, 25, 12.5 pct ...; 1 = full up to the cap; 0 = nothing past the full-rate kills). A zone or tier Default can re-tune it with the Zone Control stat pcoin_falloff_mult.");
-        public static ConfigProperty<double> zc_pcoin_falloff_step_kills { get; private set; } = new(75.0, "PRESTIGE COIN FALLOFF: kills in each step past zc_pcoin_falloff_kills_per_hour; each new step pays zc_pcoin_falloff_mult of the step before (75 = halve every 75 kills at a 0.5 mult). 0 = one step: every kill past the full-rate kills pays zc_pcoin_falloff_mult up to the cap.");
-        public static ConfigProperty<double> zc_pcoin_falloff_cap_kills_per_hour { get; private set; } = new(750.0, "PRESTIGE COIN FALLOFF: hard stop - kills past this many in a coin hour pay no Prestige Coins until the hour ends (750 kills or 9,999 pay the same). 0 = no stop: the steps keep falling for the rest of the hour.");
+        // PRESTIGE COIN KILL CAP (falloff 2026-11-01; steps per coin hour 2026-11-17): a character's T11+ Zone Control coin kills
+        // are counted per coin hour (60 minutes from their first coin kill; the next kill after it ends starts a new one). Of the
+        // kills in an hour, the first zc_kill_cap_start pay in full; then every zc_kill_cap_interval kills the share is cut by
+        // zc_kill_cap_reduction (each step keeps 1 - reduction of the step before), and past zc_kill_cap_max (when set) nothing is
+        // paid until the hour ends. Defaults: kills 1-375 full, then 50 pct less every 75 kills (376-450 half, 451-525 a quarter,
+        // 526-600 an eighth ...) with no stop - an hour can never pay more than 450 kills' worth (375 + 75). Prestige Coins only:
+        // XP, loot, kill tasks and bounties are untouched. Counted in full-value kills (a below-tier kill counts as its tier-dip
+        // credit), one count per character across every zone and tier. The Zone Control stats pcoin_falloff_kills_per_hour (the
+        // zone's start; stretches the interval and max with it; 0 = off there) and pcoin_falloff_mult (the share each step keeps
+        // there, 1 - reduction) re-tune it per zone or tier Default. Read live. See TierRewardScale.FalloffKill / TierRewards.
+        public static ConfigProperty<double> zc_kill_cap_start { get; private set; } = new(375.0, "PRESTIGE COIN KILL CAP: kills a character can make in a coin hour (60 minutes from their first coin kill) at the full Prestige Coin rate - a kill below their own tier counts as its tier-dip credit. Past it the share is cut by zc_kill_cap_reduction every zc_kill_cap_interval kills. 0 = no kill cap at all. A zone or tier Default can move it with the Zone Control stat pcoin_falloff_kills_per_hour, which stretches the interval and max with it. (Was zc_pcoin_falloff_kills_per_hour; the old name still works.)");
+        public static ConfigProperty<double> zc_kill_cap_reduction { get; private set; } = new(0.5, "PRESTIGE COIN KILL CAP: how much of the share is cut at each interval past zc_kill_cap_start - each step keeps 1 minus this of the step before (0.5 = 50 pct less each time: 50, 25, 12.5 pct ...; 0.25 = 75, 56.25, 42.2 pct ...; 0 = full pay; 1 = nothing past the start). A zone or tier Default can re-tune it with the Zone Control stat pcoin_falloff_mult, the share kept (1 - this).");
+        public static ConfigProperty<double> zc_kill_cap_interval { get; private set; } = new(75.0, "PRESTIGE COIN KILL CAP: kills in each step past zc_kill_cap_start; each new step cuts the share by zc_kill_cap_reduction (75 = 50 pct less every 75 kills at a 0.5 reduction). 0 = one step: every kill past the start pays 1 - zc_kill_cap_reduction up to zc_kill_cap_max.");
+        public static ConfigProperty<double> zc_kill_cap_max { get; private set; } = new(0.0, "PRESTIGE COIN KILL CAP: optional hard stop - kills past this many in a coin hour pay no Prestige Coins until the hour ends. 0 = no stop: the steps keep falling (with the defaults an hour never pays more than 450 kills' worth either way; a stop at 750 makes it 447.66).");
 
         // KILL-TASK CREDIT ON T11+ ZONE KILLS (owner 2026-10-24, locked): only for monsters Zone Control governs at T11+ - every other kill keeps
         // the stock kill-task code. Taggers get a full kill, non-damaging fellowship / Zone Share sharers the fellowship share, everyone x their

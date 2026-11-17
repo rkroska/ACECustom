@@ -26,9 +26,10 @@ namespace ACE.Server.Managers.ZoneControl
     /// (LandblockManager.RunOnThreadFor), exactly as BountyManager hands off its credit. No save is forced: the regular character
     /// save stores the properties.
     ///
-    /// FALLOFF (2026-11-01; steps per coin hour 2026-11-17): of a character's coin kills in one coin hour (60 minutes from their
-    /// first), kills 1-375 pay in full, then the pay halves every 75 kills (376-450 half, 451-525 a quarter, ... 676-750 a
-    /// thirty-second) and 751 on pay nothing (the zc_pcoin_falloff_* settings). See TierRewardScale.FalloffKill.
+    /// KILL CAP (falloff 2026-11-01; steps per coin hour 2026-11-17): of a character's coin kills in one coin hour (60 minutes
+    /// from their first), kills 1-375 pay in full, then the pay is cut by half every 75 kills (376-450 half, 451-525 a quarter,
+    /// 526-600 an eighth ...), so an hour never pays more than 450 kills' worth (the zc_kill_cap_* settings). See
+    /// TierRewardScale.FalloffKill.
     /// </summary>
     public static class TierRewards
     {
@@ -115,7 +116,7 @@ namespace ACE.Server.Managers.ZoneControl
             }
         }
 
-        // ---- Prestige Coin falloff (2026-11-01; steps per coin hour 2026-11-17) ---------------------------------------------
+        // ---- Prestige Coin kill cap (falloff 2026-11-01; steps per coin hour 2026-11-17) ------------------------------------
 
         /// <summary>
         /// This kill through the falloff, on the player's own thread. Reads and saves their coin hour (PropertyFloat.PrestigeCoinHourKills
@@ -151,9 +152,10 @@ namespace ACE.Server.Managers.ZoneControl
             player.SetProperty(PropertyFloat.PrestigeCoinHourKills, newCount);
             player.SetProperty(PropertyFloat.PrestigeCoinHourStart, start);
 
-            // the next kill starts in a lower band than this one did: tell them what it pays and for how long
+            // the next kill starts in a lower band than this one did: tell them what it pays and for how long (not for shares
+            // under 1 pct - with no stop the steps keep falling, and a fast hunter would hear about every one)
             var (after, from, _) = TierRewardScale.FalloffBandAt(newCount, dials);
-            if (after < before - TierRewardScale.Epsilon)
+            if (TierRewardScale.FalloffNotice(before, after))
             {
                 var minutes = (int)Math.Max(1, Math.Ceiling((start + TierRewardScale.CoinHourSeconds - now) / 60.0));
                 var left = $"{minutes} minute{(minutes == 1 ? "" : "s")}";
