@@ -312,6 +312,31 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
+        /// The hour's count in server kills from the value SAVED on the character (PropertyFloat.PrestigeCoinHourShare), which is
+        /// the share of the full-rate start used: count / Start, 1 = the whole start. Saving the share rather than kills keeps what
+        /// each kill already used when zc_kill_cap_start changes mid-hour - a zone with its own start of 500 still reaches its first
+        /// cut step after 500 of its kills (CodeRabbit #607). Off dials, or a bad saved value, read 0.
+        /// </summary>
+        public static double FalloffCountFromSaved(double saved, FalloffDials dials)
+            => dials.Start > 0 && double.IsFinite(saved) && saved > 0 ? saved * dials.Start : 0.0;
+
+        /// <summary>The value to save for an hour's count in server kills: the share of the full-rate start used (see
+        /// FalloffCountFromSaved).</summary>
+        public static double FalloffCountToSaved(double count, FalloffDials dials)
+            => dials.Start > 0 && double.IsFinite(count) && count > 0 ? count / dials.Start : 0.0;
+
+        /// <summary>
+        /// The share of its coins the next kill pays (pure, read only - for /tierdip), with <paramref name="count"/> server kills
+        /// already in the hour and the kill worth <paramref name="credit"/> kills (its tier-dip credit; 0 or less previews a
+        /// full-value kill). A kill that straddles a step pays a blend: at 374.5 a full-value kill pays 75 pct (CodeRabbit #607).
+        /// </summary>
+        public static double FalloffNextShare(double count, double credit, FalloffDials dials)
+        {
+            var probe = double.IsFinite(credit) && credit > 0 ? credit : 1.0;
+            return FalloffKill(count, probe, dials).Paid / probe;
+        }
+
+        /// <summary>
         /// One kill through the kill cap (pure). <paramref name="count"/> is the server kills already counted in this coin hour;
         /// the kill is worth <paramref name="credit"/> kills (its tier-dip credit) and uses credit / Scale of the hour. Each part of
         /// it pays the share of the band it lands in, so with the defaults the 375th kill of the hour pays in full, the 376th half,

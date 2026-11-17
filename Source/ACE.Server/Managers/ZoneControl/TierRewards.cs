@@ -119,7 +119,7 @@ namespace ACE.Server.Managers.ZoneControl
         // ---- Prestige Coin kill cap (falloff 2026-11-01; steps per coin hour 2026-11-17) ------------------------------------
 
         /// <summary>
-        /// This kill through the falloff, on the player's own thread. Reads and saves their coin hour (PropertyFloat.PrestigeCoinHourKills
+        /// This kill through the falloff, on the player's own thread. Reads and saves their coin hour (PropertyFloat.PrestigeCoinHourShare
         /// / PrestigeCoinHourStart - saved, so relogging never resets it, and an hour that ran out while offline is simply over; see
         /// TierRewardScale.FalloffHour / FalloffKill). Tells them once as each step starts ("Prestige Coins: 375 kills this hour. Your
         /// next 75 kills pay 50 pct of their coins (the hour ends in 42 minutes).") down to steps paying 1 pct, always at a hard stop,
@@ -140,20 +140,22 @@ namespace ACE.Server.Managers.ZoneControl
                 return credit;
 
             var now = Time.GetUnixTime();
-            var savedCount = player.GetProperty(PropertyFloat.PrestigeCoinHourKills);
-            var (count, start, fresh) = TierRewardScale.FalloffHour(savedCount, player.GetProperty(PropertyFloat.PrestigeCoinHourStart), now);
+            // the saved hour is a share of the full-rate start; the kill cap works in server kills
+            var savedShare = player.GetProperty(PropertyFloat.PrestigeCoinHourShare);
+            var (share, start, fresh) = TierRewardScale.FalloffHour(savedShare, player.GetProperty(PropertyFloat.PrestigeCoinHourStart), now);
+            var count = TierRewardScale.FalloffCountFromSaved(share, dials);
 
             // the steps, built once for this kill
             var bands = TierRewardScale.FalloffBands(dials);
 
             // a new hour after one that reached a reduced band: say so before this kill's own notice, if any
-            if (fresh && savedCount.HasValue && TierRewardScale.FalloffBandAt(savedCount.Value, bands).Rate < 1.0)
+            if (fresh && savedShare.HasValue && TierRewardScale.FalloffBandAt(TierRewardScale.FalloffCountFromSaved(savedShare.Value, dials), bands).Rate < 1.0)
                 player.SendMessage("Prestige Coins: a new hour has started, so your kills pay their full coins again.", ChatMessageType.Broadcast);
 
             var before = TierRewardScale.FalloffBandAt(count, bands).Rate;
             var (paid, newCount, _) = TierRewardScale.FalloffKill(count, credit, dials, bands);
 
-            player.SetProperty(PropertyFloat.PrestigeCoinHourKills, newCount);
+            player.SetProperty(PropertyFloat.PrestigeCoinHourShare, TierRewardScale.FalloffCountToSaved(newCount, dials));
             player.SetProperty(PropertyFloat.PrestigeCoinHourStart, start);
 
             // the next kill starts in a lower band than this one did: tell them what it pays and for how long (not for shares

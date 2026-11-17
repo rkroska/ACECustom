@@ -358,6 +358,50 @@ namespace ACE.Server.Tests
             Assert.IsFalse(TierRewardScale.FalloffNotice(0.5, 1.0), "a higher share is never a notice");
         }
 
+        /// <summary>
+        /// The hour is saved as a share of the full-rate start, so a mid-hour change of zc_kill_cap_start keeps what each kill used:
+        /// 500 kills in a zone with its own start of 500 still leave it past its start after the server start moves (CodeRabbit #607).
+        /// </summary>
+        [TestMethod]
+        public void SavedHour_KeepsItsMeaningWhenTheStartChanges()
+        {
+            var zone500 = new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 500 };
+            var before = TierRewardScale.FalloffFor(Zone(zone500), Shipped);
+
+            double count = 0;
+            for (var k = 0; k < 500; k++)
+                count = TierRewardScale.FalloffKill(count, 1, before).Count;
+            var saved = TierRewardScale.FalloffCountToSaved(count, before);
+            Assert.AreEqual(1.0, saved, 1e-9, "the whole start used");
+
+            // unchanged settings: the next kill there is in the first cut step
+            Assert.AreEqual(0.5, TierRewardScale.FalloffBandAt(TierRewardScale.FalloffCountFromSaved(saved, before), before).Rate, 1e-12);
+
+            // the server start moves to 750 mid-hour: the zone's own start is still 500, so it is still past it
+            var after = TierRewardScale.FalloffFor(Zone(zone500), Shipped with { Start = 750 });
+            Assert.AreEqual(0.5, TierRewardScale.FalloffBandAt(TierRewardScale.FalloffCountFromSaved(saved, after), after).Rate, 1e-12,
+                "no extra full-rate kills from a settings change");
+
+            // round trip, and the edges
+            Assert.AreEqual(212.5, TierRewardScale.FalloffCountFromSaved(TierRewardScale.FalloffCountToSaved(212.5, Shipped), Shipped), 1e-9);
+            Assert.AreEqual(0.0, TierRewardScale.FalloffCountFromSaved(1.0, Shipped with { Start = 0 }), "off reads 0");
+            Assert.AreEqual(0.0, TierRewardScale.FalloffCountFromSaved(double.NaN, Shipped));
+            Assert.AreEqual(0.0, TierRewardScale.FalloffCountToSaved(-3, Shipped));
+        }
+
+        /// <summary>/tierdip's preview of the next kill: the blend a kill that straddles a step really pays, at its tier-dip credit (CodeRabbit #607).</summary>
+        [TestMethod]
+        public void NextShare_PreviewsTheRealPay()
+        {
+            Assert.AreEqual(1.0, TierRewardScale.FalloffNextShare(0, 1, Shipped), 1e-12);
+            Assert.AreEqual(0.75, TierRewardScale.FalloffNextShare(374.5, 1, Shipped), 1e-12, "half full, half at 50 pct");
+            Assert.AreEqual(1.0, TierRewardScale.FalloffNextShare(374.5, 0.5, Shipped), 1e-12, "a half-credit kill still fits under the start");
+            Assert.AreEqual(0.5, TierRewardScale.FalloffNextShare(375, 1, Shipped), 1e-12);
+            Assert.AreEqual(0.0, TierRewardScale.FalloffNextShare(9999, 1, Stop750), 1e-12, "past a stop");
+            Assert.AreEqual(0.75, TierRewardScale.FalloffNextShare(374.5, 0, Shipped), 1e-12, "no credit here previews a full-value kill");
+            Assert.AreEqual(1.0, TierRewardScale.FalloffNextShare(9999, 1, Shipped with { Start = 0 }), 1e-12, "off");
+        }
+
         /// <summary>The schedule in a player's words: the shipped rule, a zone's stretched limits, band by band when short, and plain ASCII.</summary>
         [TestMethod]
         public void Describe_ReadsTheSchedule()

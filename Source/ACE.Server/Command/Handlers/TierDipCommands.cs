@@ -54,7 +54,7 @@ namespace ACE.Server.Command.Handlers
             else
                 ShowTierDip(ownTier, here, Msg);
 
-            ShowFalloff(player, Msg);
+            ShowFalloff(player, here, Msg);
         }
 
         /// <summary>The share of a kill's credit kept here, and which rewards the dip reaches.</summary>
@@ -96,7 +96,7 @@ namespace ACE.Server.Command.Handlers
         /// The Prestige Coin falloff where the player stands (2026-11-01; bands per coin hour 2026-11-17): the schedule in force
         /// here, with this zone's limits, and where they are in their coin hour. Read only - nothing is written.
         /// </summary>
-        private static void ShowFalloff(Player player, Action<string> Msg)
+        private static void ShowFalloff(Player player, int here, Action<string> Msg)
         {
             if (!(ServerConfig.zc_pcoin_kill_base.Value > 0))
                 return;   // no coins per kill at all
@@ -111,8 +111,9 @@ namespace ACE.Server.Command.Handlers
             Msg($"Prestige Coins from kills here, per coin hour: {TierRewardScale.DescribeFalloff(dials)}.");
 
             var now = ACE.Common.Time.GetUnixTime();
-            var (count, start, fresh) = TierRewardScale.FalloffHour(
-                player.GetProperty(PropertyFloat.PrestigeCoinHourKills), player.GetProperty(PropertyFloat.PrestigeCoinHourStart), now);
+            var (share, start, fresh) = TierRewardScale.FalloffHour(
+                player.GetProperty(PropertyFloat.PrestigeCoinHourShare), player.GetProperty(PropertyFloat.PrestigeCoinHourStart), now);
+            var count = TierRewardScale.FalloffCountFromSaved(share, dials);
 
             if (fresh)
             {
@@ -121,9 +122,11 @@ namespace ACE.Server.Command.Handlers
             }
 
             var minutes = (int)Math.Max(1, Math.Ceiling((start + TierRewardScale.CoinHourSeconds - now) / 60.0));
-            var rate = TierRewardScale.FalloffBandAt(count, dials).Rate;
+            // what the next kill here actually pays, at the player's tier-dip credit for this zone (a kill that straddles a step
+            // pays a blend), not just the share of the step it starts in
+            var nextShare = TierRewardScale.FalloffNextShare(count, TierRewardScale.CreditFor(player, here), dials);
             // in this zone's kills: a zone with its own start counts the same hour against its stretched schedule
-            Msg($"Your coin hour so far counts as {TierRewardScale.Kills(count * dials.Scale)} kills here and ends in {minutes} minute{(minutes == 1 ? "" : "s")}: your next kill pays {TierRewardScale.Pct(rate)} pct of its coins.");
+            Msg($"Your coin hour so far counts as {TierRewardScale.Kills(count * dials.Scale)} kills here and ends in {minutes} minute{(minutes == 1 ? "" : "s")}: your next kill here pays {TierRewardScale.Pct(nextShare)} pct of its coins.");
         }
 
         /// <summary>"T15", or "below T11" for a tier under the endgame.</summary>

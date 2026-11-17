@@ -405,10 +405,12 @@ namespace ACE.Entity.Enum.Properties
         /// Kept so the id is never reused.</summary>
         PrestigeCoinPaceDebtTime = 57002,
 
-        /// <summary>Prestige Coin falloff (2026-11-17), on a CHARACTER: the full-value T11+ zone kills counted in their current
-        /// coin hour, in server kills (a below-tier kill counts as its tier-dip credit; a kill in a zone with its own falloff
-        /// limit counts 1 / its stretch). Read with <see cref="PrestigeCoinHourStart"/>. Server-only. See TierRewardScale.FalloffKill.</summary>
-        PrestigeCoinHourKills = 57003,
+        /// <summary>Prestige Coin kill cap (2026-11-17), on a CHARACTER: how much of the full-rate start (zc_kill_cap_start) their
+        /// current coin hour has used, as a share - 1 = the whole start, 1.2 = the start and 20 pct of it more. Kills are full-value
+        /// kills (a below-tier kill counts as its tier-dip credit; a kill in a zone with its own start counts 1 / its stretch).
+        /// A share, not kills, so a mid-hour change of zc_kill_cap_start keeps what each kill used. Read with
+        /// <see cref="PrestigeCoinHourStart"/>. Server-only. See TierRewardScale.FalloffCountFromSaved.</summary>
+        PrestigeCoinHourShare = 57003,
 
         /// <summary>Prestige Coin falloff (2026-11-17), on a CHARACTER: when their current coin hour started (Unix epoch seconds).
         /// The first coin kill 60 minutes or more after it starts a new hour. Server-only. See TierRewardScale.FalloffHour.</summary>
