@@ -26,9 +26,9 @@ namespace ACE.Server.Managers.ZoneControl
     /// (LandblockManager.RunOnThreadFor), exactly as BountyManager hands off its credit. No save is forced: the regular character
     /// save stores the properties.
     ///
-    /// FALLOFF (2026-11-01; bands per coin hour 2026-11-17): of a character's coin kills in one coin hour (60 minutes from their
-    /// first), kills 1-375 pay in full, 376-450 half, 451-550 a quarter, 551-600 a tenth and 601 on nothing (the zc_pcoin_falloff_*
-    /// settings). See TierRewardScale.FalloffKill.
+    /// FALLOFF (2026-11-01; steps per coin hour 2026-11-17): of a character's coin kills in one coin hour (60 minutes from their
+    /// first), kills 1-375 pay in full, then the pay halves every 75 kills (376-450 half, 451-525 a quarter, ... 676-750 a
+    /// thirty-second) and 751 on pay nothing (the zc_pcoin_falloff_* settings). See TierRewardScale.FalloffKill.
     /// </summary>
     public static class TierRewards
     {
@@ -115,7 +115,7 @@ namespace ACE.Server.Managers.ZoneControl
             }
         }
 
-        // ---- Prestige Coin falloff (2026-11-01; bands per coin hour 2026-11-17) ---------------------------------------------
+        // ---- Prestige Coin falloff (2026-11-01; steps per coin hour 2026-11-17) ---------------------------------------------
 
         /// <summary>
         /// This kill through the falloff, on the player's own thread. Reads and saves their coin hour (PropertyFloat.PrestigeCoinHourKills

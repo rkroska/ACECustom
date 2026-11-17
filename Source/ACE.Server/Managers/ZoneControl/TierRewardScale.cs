@@ -137,27 +137,31 @@ namespace ACE.Server.Managers.ZoneControl
             return ((long)whole, frac);
         }
 
-        // ---- Prestige Coin falloff (2026-11-01; bands and the coin hour 2026-11-17) ---------------------------------------
+        // ---- Prestige Coin falloff (2026-11-01; steps per coin hour 2026-11-17) ---------------------------------------
 
         /// <summary>Length of a coin hour in seconds: the window a character's coin kills are counted in. It starts at their
         /// first coin kill and the next one after it ends starts a new one.</summary>
         public const double CoinHourSeconds = 3600.0;
 
+        /// <summary>The most reduced steps a schedule is built with; past them the last step's share runs on to the cap (or to
+        /// the end of the hour when there is no cap). At the shipped half per step, the 100th step pays 0.5^100 - nothing.</summary>
+        internal const int MaxFalloffSteps = 100;
+
         /// <summary>
         /// The falloff schedule for one kill, already held to its ranges (<see cref="CleanFalloff"/>). Of the kills a character
-        /// makes in one coin hour, the first <see cref="KillsPerHour"/> pay in full; the next ones pay <see cref="Mult"/> up to
-        /// <see cref="KillsPerHour2"/>, then <see cref="Mult2"/> up to <see cref="KillsPerHour3"/>, then <see cref="Mult3"/> up to
-        /// <see cref="CapKillsPerHour"/>, and nothing past the cap. The defaults (375 / 0.5 / 450 / 0.25 / 550 / 0.1 / 600) make
-        /// kills 1-375 of the hour pay in full, 376-450 half, 451-550 a quarter, 551-600 a tenth and 601 on nothing, so an hour
-        /// of 600 kills or more pays 442.5 kills' worth.
+        /// makes in one coin hour, the first <see cref="KillsPerHour"/> pay in full; then every <see cref="StepKills"/> kills the
+        /// share falls to <see cref="Mult"/> of the step before (first step Mult, then Mult^2, ...), and nothing is paid past
+        /// <see cref="CapKillsPerHour"/>. The defaults (375 / 0.5 / 75 / 750) halve the pay every 75 kills past 375: kills 1-375
+        /// of the hour pay in full, 376-450 half, 451-525 a quarter, 526-600 an eighth, 601-675 a sixteenth, 676-750 a
+        /// thirty-second and 751 on nothing, so an hour of 750 kills or more pays 447.65625 kills' worth.
         ///
-        /// A limit of 0 means its band never ends: KillsPerHour 0 turns the falloff off, KillsPerHour2 0 makes every kill past
-        /// the first limit pay Mult for the rest of the hour, CapKillsPerHour 0 makes kills past KillsPerHour3 pay Mult3 with no
-        /// stop. A limit at or below the one before it skips its band. <see cref="Scale"/> stretches every limit for one zone
-        /// (FalloffFor); the hour's count is kept in server kills, so a kill there uses 1 / Scale of one.
+        /// KillsPerHour 0 turns the falloff off. StepKills 0 makes every kill past KillsPerHour pay Mult up to the cap.
+        /// CapKillsPerHour 0 means no stop (the steps run on, see MaxFalloffSteps); a cap at or under KillsPerHour stops all pay
+        /// at the cap. <see cref="Scale"/> stretches every limit for one zone (FalloffFor); the hour's count is kept in server
+        /// kills, so a kill there uses 1 / Scale of one.
         /// </summary>
-        public readonly record struct FalloffDials(double KillsPerHour, double Mult, double KillsPerHour2, double Mult2,
-            double KillsPerHour3, double Mult3, double CapKillsPerHour, double Scale = 1.0)
+        public readonly record struct FalloffDials(double KillsPerHour, double Mult, double StepKills, double CapKillsPerHour,
+            double Scale = 1.0)
         {
             /// <summary>True when kills under these dials are counted and can pay less than full.</summary>
             public bool On => KillsPerHour > 0 && Scale > 0 && double.IsFinite(Scale);
@@ -165,20 +169,16 @@ namespace ACE.Server.Managers.ZoneControl
 
         /// <summary>
         /// Holds the falloff numbers to their ranges - server settings and zone stats alike, since neither is checked when it is
-        /// set: every limit 0..1,000,000 kills an hour, every share 0..1. A value that is not a number takes the setting's
+        /// set: every limit and the step 0..1,000,000 kills, the share 0..1. A value that is not a number takes the setting's
         /// declared default (PropertyManager).
         /// </summary>
-        public static FalloffDials CleanFalloff(double killsPerHour, double mult, double killsPerHour2, double mult2,
-            double killsPerHour3, double mult3, double capKillsPerHour) => new(
+        public static FalloffDials CleanFalloff(double killsPerHour, double mult, double stepKills, double capKillsPerHour) => new(
             Clean(killsPerHour, 0.0, MaxFalloffLimit, ServerConfig.zc_pcoin_falloff_kills_per_hour.Default),
             Clean(mult, 0.0, 1.0, ServerConfig.zc_pcoin_falloff_mult.Default),
-            Clean(killsPerHour2, 0.0, MaxFalloffLimit, ServerConfig.zc_pcoin_falloff2_kills_per_hour.Default),
-            Clean(mult2, 0.0, 1.0, ServerConfig.zc_pcoin_falloff2_mult.Default),
-            Clean(killsPerHour3, 0.0, MaxFalloffLimit, ServerConfig.zc_pcoin_falloff3_kills_per_hour.Default),
-            Clean(mult3, 0.0, 1.0, ServerConfig.zc_pcoin_falloff3_mult.Default),
+            Clean(stepKills, 0.0, MaxFalloffLimit, ServerConfig.zc_pcoin_falloff_step_kills.Default),
             Clean(capKillsPerHour, 0.0, MaxFalloffLimit, ServerConfig.zc_pcoin_falloff_cap_kills_per_hour.Default));
 
-        /// <summary>The highest any falloff limit can be set, in kills an hour.</summary>
+        /// <summary>The highest any falloff limit or step can be set, in kills.</summary>
         private const double MaxFalloffLimit = 1_000_000.0;
 
         /// <summary>One dial held to [<paramref name="min"/>, <paramref name="max"/>]; NaN or infinity takes <paramref name="fallback"/>.</summary>
@@ -189,21 +189,18 @@ namespace ACE.Server.Managers.ZoneControl
         public static FalloffDials ServerFalloff() => CleanFalloff(
             ServerConfig.zc_pcoin_falloff_kills_per_hour.Value,
             ServerConfig.zc_pcoin_falloff_mult.Value,
-            ServerConfig.zc_pcoin_falloff2_kills_per_hour.Value,
-            ServerConfig.zc_pcoin_falloff2_mult.Value,
-            ServerConfig.zc_pcoin_falloff3_kills_per_hour.Value,
-            ServerConfig.zc_pcoin_falloff3_mult.Value,
+            ServerConfig.zc_pcoin_falloff_step_kills.Value,
             ServerConfig.zc_pcoin_falloff_cap_kills_per_hour.Value);
 
         /// <summary>
         /// The falloff for a kill governed by <paramref name="zoneDefault"/> (the zone's Default row - its own stats over the tier
         /// Default; ZoneControlManager.ResolveZoneDefaultRowForCreature). Null row = the server settings.
         ///
-        /// pcoin_falloff_kills_per_hour moves the full-rate limit for the zone and stretches every later limit with it (a zone at
-        /// 500 against the server's 375 has 1.333 x each: 500 / 600 / 733.3 / 800); 0 turns the falloff off there. pcoin_falloff_mult
-        /// replaces zc_pcoin_falloff_mult, the share of the first band past the full rate. A stat the row does not author, or
-        /// authors as something that is not a number, keeps the server value. With the server's full-rate limit at 0 (falloff off
-        /// except where a zone turns it on) the zone's limit is read against the setting's declared default (375).
+        /// pcoin_falloff_kills_per_hour moves the full-rate limit for the zone and stretches the step and the cap with it (a zone at
+        /// 500 against the server's 375 has 1.333 x each: full to 500, steps of 100, cap 1000); 0 turns the falloff off there.
+        /// pcoin_falloff_mult replaces zc_pcoin_falloff_mult, the share each step keeps. A stat the row does not author, or authors
+        /// as something that is not a number, keeps the server value. With the server's full-rate limit at 0 (falloff off except
+        /// where a zone turns it on) the zone's limit is read against the setting's declared default (375).
         /// </summary>
         public static FalloffDials FalloffFor(EvaluatedProfile zoneDefault) => FalloffFor(zoneDefault, ServerFalloff());
 
@@ -236,37 +233,46 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// The bands of <paramref name="dials"/> in order, in server kills an hour (before Scale): each is the kill count it runs
-        /// up to and the share of its coins a kill in it pays. The first is (KillsPerHour, 1). The last always runs to +infinity:
-        /// at 0 past the cap, or at the share of a band whose limit is 0. Off = one full-pay band.
+        /// The bands of <paramref name="dials"/> in order, in server kills (before Scale): each is the kill count it runs up to and
+        /// the share of its coins a kill in it pays. The first is (KillsPerHour, 1), then one band per step at Mult, Mult^2, ...
+        /// The last always runs to +infinity: at 0 past the cap, or at the last step's share when there is no cap. Off = one
+        /// full-pay band.
         /// </summary>
         public static List<(double UpTo, double Rate)> FalloffBands(FalloffDials dials)
         {
-            var bands = new List<(double UpTo, double Rate)>(5);
+            var inf = double.PositiveInfinity;
+            var bands = new List<(double UpTo, double Rate)>(8);
             if (!dials.On)
             {
-                bands.Add((double.PositiveInfinity, 1.0));
+                bands.Add((inf, 1.0));
                 return bands;
             }
 
-            bands.Add((dials.KillsPerHour, 1.0));
-            var prev = dials.KillsPerHour;
+            var cap = dials.CapKillsPerHour > 0 ? dials.CapKillsPerHour : inf;
+            var at = Math.Min(dials.KillsPerHour, cap);
+            bands.Add((at, 1.0));
 
-            foreach (var (limit, rate) in new[] { (dials.KillsPerHour2, dials.Mult), (dials.KillsPerHour3, dials.Mult2), (dials.CapKillsPerHour, dials.Mult3) })
+            if (at < cap)
             {
-                if (!(limit > 0))
+                if (!(dials.StepKills > 0))
                 {
-                    bands.Add((double.PositiveInfinity, rate));   // this band never ends
-                    return bands;
+                    bands.Add((cap, dials.Mult));   // one reduced band up to the cap
+                    at = cap;
                 }
-                if (limit > prev)
+                else
                 {
-                    bands.Add((limit, rate));
-                    prev = limit;
+                    var rate = 1.0;
+                    for (var step = 1; step <= MaxFalloffSteps && at < cap; step++)
+                    {
+                        rate *= dials.Mult;
+                        at = step == MaxFalloffSteps ? cap : Math.Min(at + dials.StepKills, cap);
+                        bands.Add((at, rate));
+                    }
                 }
             }
 
-            bands.Add((double.PositiveInfinity, 0.0));   // past the cap: nothing
+            if (!double.IsPositiveInfinity(at))
+                bands.Add((inf, 0.0));   // past the cap: nothing
             return bands;
         }
 
@@ -288,8 +294,9 @@ namespace ACE.Server.Managers.ZoneControl
         /// One kill through the falloff (pure). <paramref name="count"/> is the server kills already counted in this coin hour;
         /// the kill is worth <paramref name="credit"/> kills (its tier-dip credit) and uses credit / Scale of the hour. Each part of
         /// it pays the share of the band it lands in, so with the defaults the 375th kill of the hour pays in full, the 376th half,
-        /// the 451st a quarter, the 551st a tenth and the 601st nothing. Returns the credit to pay coins on, the count to save and
-        /// whether any part paid less than full. Off: full pay and the count unchanged.
+        /// the 451st a quarter, the 526th an eighth, the 601st a sixteenth, the 676th a thirty-second and the 751st nothing.
+        /// Returns the credit to pay coins on, the count to save and whether any part paid less than full. Off: full pay and the
+        /// count unchanged.
         /// </summary>
         public static (double Paid, double Count, bool Reduced) FalloffKill(double count, double credit, FalloffDials dials)
         {
@@ -337,9 +344,14 @@ namespace ACE.Server.Managers.ZoneControl
             return (0.0, from, double.PositiveInfinity);   // not reached: the last band runs to +infinity
         }
 
+        /// <summary>The most reduced bands DescribeFalloff lists one by one; a longer schedule is told as its rule instead.</summary>
+        private const int MaxDescribedBands = 6;
+
         /// <summary>
         /// The schedule in a player's words, with this zone's limits (x Scale): "full for the first 375 kills, then 50 pct up to
-        /// 450, 25 pct up to 550, 10 pct up to 600 and none past 600". Plain ASCII (it goes to the client).
+        /// 450, 25 pct up to 525, 12.5 pct up to 600, 6.25 pct up to 675, 3.125 pct up to 750 and none past 750". A schedule with
+        /// more steps than MaxDescribedBands is told as its rule ("then 50 pct, and 50 pct of that again every 75 kills"). Plain
+        /// ASCII (it goes to the client).
         /// </summary>
         public static string DescribeFalloff(FalloffDials dials)
         {
@@ -347,7 +359,14 @@ namespace ACE.Server.Managers.ZoneControl
             if (bands.Count == 1)
                 return "full for every kill";
 
-            var parts = new List<string> { $"full for the first {Kills(bands[0].UpTo * dials.Scale)} kills" };
+            var first = $"full for the first {Kills(bands[0].UpTo * dials.Scale)} kills";
+
+            if (bands.Count - 1 > MaxDescribedBands)
+            {
+                var rule = $"{first}, then {Pct(dials.Mult)} pct, and {Pct(dials.Mult)} pct of that again every {Kills(dials.StepKills * dials.Scale)} kills";
+                return dials.CapKillsPerHour > 0 ? $"{rule}, and none past {Kills(dials.CapKillsPerHour * dials.Scale)}" : rule;
+            }
+
             var rest = new List<string>();
             for (var i = 1; i < bands.Count; i++)
             {
@@ -360,14 +379,14 @@ namespace ACE.Server.Managers.ZoneControl
             }
 
             var tail = rest.Count == 1 ? rest[0] : string.Join(", ", rest.GetRange(0, rest.Count - 1)) + " and " + rest[^1];
-            return parts[0] + ", then " + tail;
+            return first + ", then " + tail;
         }
 
         /// <summary>A kill count for a player: whole numbers bare, else one decimal ("733.3").</summary>
         internal static string Kills(double kills) => kills.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
 
-        /// <summary>A share as a percent for a player ("50", "12.5").</summary>
-        internal static string Pct(double share) => (share * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+        /// <summary>A share as a percent for a player, to three decimals so halved shares stay exact ("50", "12.5", "3.125").</summary>
+        internal static string Pct(double share) => (share * 100).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
 
         // ---- kill-task credit (T11+ Zone Control kills only) ------------------------------------------------------------
 
