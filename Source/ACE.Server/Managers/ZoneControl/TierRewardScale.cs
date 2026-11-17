@@ -11,8 +11,9 @@ namespace ACE.Server.Managers.ZoneControl
     /// a kill always counts in full, and so does any kill or player below T11 (Valley of Death, retail content and players
     /// without a tier are never touched).
     ///
-    /// "Own tier" is AUG-BASED: the highest tier whose monsters the player can hit (TierHitGate.PlayerTier) narrowed to the
-    /// highest tier that has an enabled zone (ZoneRare.OwnTier) - the same own tier the rare odds use.
+    /// "Own tier" is AUG-BASED: the highest tier whose monsters the player can hit AND whose portal gem lets them in
+    /// (TierHitGate.RewardTier, 2026-11-17) narrowed to the highest tier that has an enabled zone (ZoneRare.OwnTier) - the same
+    /// own tier the rare odds use.
     ///
     /// The credit scales Prestige Coins per kill, kill-task credit and bounty kills (and, behind zc_tier_dip_xp_enabled, kill XP and
     /// luminance). Rares keep their own ZoneRare.BelowTierScale. The rules here are pure functions so they can be tested
@@ -49,13 +50,13 @@ namespace ACE.Server.Managers.ZoneControl
             return Credit(ownTier, killTier, ServerConfig.zc_tier_dip_step.Value, ServerConfig.zc_tier_dip_floor.Value);
         }
 
-        /// <summary>This player's own tier for the dip: the aug-based tier narrowed to the enabled zone tiers. 0 = none.</summary>
+        /// <summary>This player's own tier for the dip: the tier they can hit and enter, narrowed to the enabled zone tiers. 0 = none.</summary>
         public static int OwnTier(Player player)
         {
             if (player == null)
                 return 0;
 
-            return ZoneRare.OwnTier(TierHitGate.PlayerTier(player), ZoneControlManager.EnabledZoneTiers);
+            return ZoneRare.OwnTier(TierHitGate.RewardTier(player), ZoneControlManager.EnabledZoneTiers);
         }
 
         /// <summary>The live credit for this player on a kill at <paramref name="killTier"/>.</summary>

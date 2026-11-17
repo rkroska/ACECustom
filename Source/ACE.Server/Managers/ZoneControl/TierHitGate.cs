@@ -180,6 +180,58 @@ namespace ACE.Server.Managers.ZoneControl
                 WeaponScalingManager.Current.Tiers);
         }
 
+        // ---- reward tier: capped at the highest tier gem the player owns (owner 2026-11-17) ----------------------------
+
+        /// <summary>The Tou Tou Endgame Portal Gems: v11 is 777700029, v12-v25 are 777705120-777705133. Bonded and attuned with
+        /// unlimited uses, so owning one means the player passed that tier's gem requirements and can enter the tier.</summary>
+        public const uint GemT11Wcid = 777700029;
+        public const uint GemT12Wcid = 777705120;
+
+        /// <summary>The tier a weenie class id is the portal gem of, or 0 when it is not a tier gem.</summary>
+        public static int GemTier(uint wcid)
+        {
+            if (wcid == GemT11Wcid)
+                return MinGatedVariation;
+            if (wcid >= GemT12Wcid && wcid <= GemT12Wcid + (uint)(ZoneRare.MaxTier - 12))
+                return 12 + (int)(wcid - GemT12Wcid);
+            return 0;
+        }
+
+        /// <summary>The highest tier gem among these weenie class ids, 0 when there is none.</summary>
+        internal static int HighestGemTier(IEnumerable<uint> wcids)
+        {
+            var best = 0;
+            if (wcids == null)
+                return best;
+            foreach (var wcid in wcids)
+                best = Math.Max(best, GemTier(wcid));
+            return best;
+        }
+
+        /// <summary>
+        /// The tier a player is rewarded as (owner 2026-11-17: "these should align", then "use whichever the highest gem they
+        /// have is"): the lower of the tier they can hit (PlayerTier) and the highest tier gem they own. Before this a player
+        /// who could hit a tier but whose gem refused them (short on Life augs or Enlightenment) was counted at that tier, and
+        /// every kill in the tier they could actually reach was cut by the tier dip. Feeds TierRewardScale.OwnTier (coins, kill
+        /// tasks, bounties, own-tier Triune and school gems) and the rare odds.
+        ///
+        /// T11 is the floor (owner 2026-11-17): T11 is reached without its gem, so anyone who can hit T11 counts as at least
+        /// T11 and the gem cap only bites from T12.
+        ///
+        /// The gem tier is the one the player's own heartbeat last found in their pack (Player.OwnedGemTier) - inventory is
+        /// only read on the player's thread, and this is also called from a dying monster's thread (the rare roll). Until the
+        /// first heartbeat after login it is unknown, and the hit tier alone is used.
+        /// </summary>
+        public static int RewardTier(Player player) => player == null ? 0 : RewardTier(PlayerTier(player), player.OwnedGemTier);
+
+        /// <summary>The rule itself: the hit tier, capped at the gem tier floored at T11. A gem tier below 0 = unknown, no cap.</summary>
+        internal static int RewardTier(int hitTier, int gemTier)
+        {
+            if (gemTier < 0)
+                return hitTier;
+            return Math.Min(hitTier, Math.Max(gemTier, MinGatedVariation));
+        }
+
         /// <summary>
         /// CanHit plus the player-facing message. Every blocked swing says why - deliberately not
         /// rate-limited (owner 2026-08-31: "This message can be displayed every swing / hit").
