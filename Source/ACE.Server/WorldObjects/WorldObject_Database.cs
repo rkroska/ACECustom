@@ -65,6 +65,51 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool ChangesDetected { get; set; }
         
+        /// <summary>How long a save flag may be held before a blocked save is reported as a stale flag
+        /// instead of a concurrent save. Set above the longest database stall seen on the live server
+        /// (45 minutes, 2026-11-16), so saves blocked behind a real stall still alert.</summary>
+        public const double StaleSaveFlagMs = 60 * 60 * 1000;
+
+        /// <summary>True when a save flag has been held too long to be a save still in flight.</summary>
+        public static bool IsStaleSaveFlag(double timeInFlightMs) => timeInFlightMs >= StaleSaveFlagMs;
+
+        // The SaveStartTime of the stuck flag already reported, so one stuck flag logs one line.
+        private DateTime _staleSaveFlagLoggedFor;
+
+        private void LogStaleSaveFlagOnce(string itemName, ACE.Entity.ObjectGuid itemGuid, double timeInFlight)
+        {
+            try
+            {
+                var startedAt = SaveStartTime;
+                if (_staleSaveFlagLoggedFor == startedAt)
+                    return;
+
+                var containerId = ContainerId;
+                var wielderId = WielderId;
+                var container = containerId.HasValue ? $"0x{containerId.Value:X8}" : "none";
+                var wielder = wielderId.HasValue ? $"0x{wielderId.Value:X8}" : "none";
+
+                // Same stack check the live-race line makes: a stack that moved while saves are being
+                // refused is the case that matters, so it keeps its marker here.
+                var currentStack = StackSize;
+                var stackChanged = currentStack.HasValue && LastSavedStackSize.HasValue && currentStack != LastSavedStackSize;
+                var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}->{currentStack}" : "";
+                var severityMarker = stackChanged ? " DATA CHANGED" : "";
+
+                log.Warn($"[DB STALE FLAG]{severityMarker} {itemName} (0x{itemGuid}) save flag held {timeInFlight / 60000:N0} min since {startedAt:u}" +
+                         $" | Destroyed: {IsDestroyed} | ChangesDetected: {ChangesDetected} | Container: {container} | Wielder: {wielder}" +
+                         $"{stackInfo} | Token: {SaveToken}");
+
+                // Marked only once the line is written, so a failure above is retried on the next attempt.
+                _staleSaveFlagLoggedFor = startedAt;
+            }
+            catch (Exception ex)
+            {
+                // Diagnostics only - never let this reach the caller's save path.
+                log.Debug($"[DB STALE FLAG] could not describe stuck flag: {ex.Message}");
+            }
+        }
+
         private void DetectAndLogConcurrentSave()
         {
             if (!SaveInProgress)
@@ -90,6 +135,17 @@ namespace ACE.Server.WorldObjects
             // SaveInProgress but hasn't actually dispatched the DB call yet. Not a real race.
             if (timeInFlight < 50)
                 return;
+
+            // A flag held this long is not two saves colliding - it is a flag nothing cleared. Each
+            // later save attempt would otherwise re-report the same object for hours, burying real
+            // races. Log it once per stuck flag, with what is needed to find the cause, and keep it
+            // out of the Discord alert. Reporting only: the flag and the save path are not touched.
+            if (IsStaleSaveFlag(timeInFlight))
+            {
+                LogStaleSaveFlagOnce(itemName, itemGuid, timeInFlight);
+                return;
+            }
+
             var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{itemGuid}";
             
             var currentStack = StackSize;
