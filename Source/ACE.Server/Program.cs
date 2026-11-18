@@ -41,6 +41,9 @@ namespace ACE.Server
 
         private static int ctrlCShutdownStarted;
 
+        // .NET 10 no longer raises ProcessExit on SIGTERM by default. Kept in a field so it isn't disposed when Main returns.
+        private static System.Runtime.InteropServices.PosixSignalRegistration sigtermRegistration;
+
         public static readonly bool IsRunningInContainer = Convert.ToBoolean(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"));
 
         public static async Task Main(string[] args)
@@ -483,6 +486,10 @@ namespace ACE.Server
                     log.Error("Error during cooperative shutdown from Ctrl+C", ex);
                 }
             };
+
+            // route SIGTERM (systemd stop, docker stop, kill) through Environment.Exit so OnProcessExit runs
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                sigtermRegistration = PosixSignalRegistration.Create(PosixSignal.SIGTERM, _ => Environment.Exit(0));
 
             //Register mod commands
             log.Info("Registering ModManager commands...");

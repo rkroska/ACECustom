@@ -29,10 +29,18 @@ namespace ACE.Server.Managers
         private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(1);
         private static readonly TimeSpan StartupDiscordWait = TimeSpan.FromMinutes(2);
         private static readonly TimeSpan ShutdownSendWait = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan StartupRetryDelay = TimeSpan.FromSeconds(5);
 
         private static Timer heartbeat;
         private static int online;            // set once AnnounceOnline ran
-        private static int offlineAnnounced;
+        private static int offlineAnnounced;  // set once shutdown began; stops heartbeat writes and pending startup posts
+
+        // heartbeat and the final clean/stopped write share this lock, so a heartbeat already running when
+        // shutdown starts can't overwrite the final state (Timer.Dispose doesn't wait for running callbacks)
+        private static readonly object stateLock = new object();
+
+        // one status post at a time, so an online post still in flight finishes before the offline post goes out
+        private static readonly SemaphoreSlim sendLock = new SemaphoreSlim(1, 1);
 
         private static long ChannelId => ServerConfig.discord_server_status_channel.Value;
 
@@ -118,7 +126,7 @@ namespace ACE.Server.Managers
             var (previousState, previousUtc) = ReadState();
             WriteState(StateRunning);
             Interlocked.Exchange(ref online, 1);
-            heartbeat = new Timer(_ => WriteState(StateRunning), null, HeartbeatInterval, HeartbeatInterval);
+            heartbeat = new Timer(_ => Heartbeat(), null, HeartbeatInterval, HeartbeatInterval);
 
             var message = BuildOnlineMessage(previousState, previousUtc, worldOpen);
             log.Info($"[ServerStatus] Startup. Previous run ended: {previousState ?? "unknown"}.");
@@ -126,24 +134,53 @@ namespace ACE.Server.Managers
             if (ChannelId <= 0)
                 return;
 
-            // the Discord client connects in the background during startup; give it time
+            // the Discord client connects and loads its guilds in the background during startup, so the channel
+            // may not resolve yet: keep retrying until it sends, the deadline passes, or shutdown begins
             _ = Task.Run(async () =>
             {
+                var deadline = DateTime.UtcNow + StartupDiscordWait;
                 try
                 {
-                    var waited = TimeSpan.Zero;
-                    while (!DiscordChatManager.IsDiscordClientReady && waited < StartupDiscordWait)
+                    while (Volatile.Read(ref offlineAnnounced) == 0)
                     {
-                        await Task.Delay(2000);
-                        waited += TimeSpan.FromSeconds(2);
+                        if (DiscordChatManager.IsDiscordClientReady)
+                        {
+                            await sendLock.WaitAsync();
+                            try
+                            {
+                                if (Volatile.Read(ref offlineAnnounced) != 0)
+                                    return;
+                                if (await DiscordChatManager.SendDiscordChannelMessageAsync(message, ChannelId) != null)
+                                    return;
+                            }
+                            finally
+                            {
+                                sendLock.Release();
+                            }
+                        }
+
+                        if (DateTime.UtcNow >= deadline)
+                        {
+                            log.Warn($"[ServerStatus] Online post not sent: channel {ChannelId} not available within {StartupDiscordWait.TotalMinutes} minutes.");
+                            return;
+                        }
+                        await Task.Delay(StartupRetryDelay);
                     }
-                    await DiscordChatManager.SendDiscordChannelMessageAsync(message, ChannelId);
                 }
                 catch (Exception ex)
                 {
                     log.Error($"[ServerStatus] Online post failed: {ex.Message}");
                 }
             });
+        }
+
+        private static void Heartbeat()
+        {
+            lock (stateLock)
+            {
+                if (Volatile.Read(ref offlineAnnounced) == 0)
+                    WriteState(StateRunning);
+            }
         }
 
         public static void AnnounceRestartScheduled(uint seconds)
@@ -166,10 +203,13 @@ namespace ACE.Server.Managers
             // or a crash followed by a failed restart would be forgotten
             if (Volatile.Read(ref online) == 0)
                 return;
-            if (Interlocked.Exchange(ref offlineAnnounced, 1) != 0)
-                return;
-            heartbeat?.Dispose();
-            WriteState(state);
+            lock (stateLock)
+            {
+                if (Interlocked.Exchange(ref offlineAnnounced, 1) != 0)
+                    return;
+                heartbeat?.Dispose();
+                WriteState(state);
+            }
             Post(message, wait: true);
         }
 
@@ -177,16 +217,27 @@ namespace ACE.Server.Managers
         {
             if (ChannelId <= 0)
                 return;
-            try
+
+            var send = Task.Run(async () =>
             {
-                var send = DiscordChatManager.SendDiscordChannelMessageAsync(message, ChannelId);
-                if (wait)
-                    send.Wait(ShutdownSendWait);
-            }
-            catch (Exception ex)
-            {
-                log.Error($"[ServerStatus] Post failed: {ex.Message}");
-            }
+                await sendLock.WaitAsync();
+                try
+                {
+                    await DiscordChatManager.SendDiscordChannelMessageAsync(message, ChannelId);
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[ServerStatus] Post failed: {ex.Message}");
+                }
+                finally
+                {
+                    sendLock.Release();
+                }
+            });
+
+            // shutdown posts get a short wait (queue + send) so they leave before the process exits
+            if (wait)
+                send.Wait(ShutdownSendWait + ShutdownSendWait);
         }
     }
 }
