@@ -152,11 +152,12 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            // Item bounties (owner 2026-11-10): a bounty item used on a ring or bracelet fills the character's next free bounty
-            // slot of that kind. Before the generic type check, so a wrong target gets the bounty's own explanation.
+            // Item bounties (owner 2026-11-10; Bounty Ledger rework 2026-11-12): a bounty item used on the player's Bounty
+            // Ledger starts; used on anything else (the player, a ring as before the rework) it shows its terms and how to
+            // start it - ItemBounties.HandleUse. Before the generic type check, so every target gets the bounty's own answer.
             if (ItemBounties.IsBountyItem(sourceItem))
             {
-                ItemBounties.HandleApply(this, sourceItem, target);
+                ItemBounties.HandleUse(this, sourceItem, target);
                 SendUseDoneEvent();
                 return;
             }
@@ -706,6 +707,16 @@ namespace ACE.Server.WorldObjects
             {
                 SendUseDoneEvent(WeenieError.TradeItemBeingTraded);
                 //SendWeenieError(WeenieError.TradeItemBeingTraded);
+                return;
+            }
+
+            // Item bounties (rework 2026-11-12): a bounty the client sends as a plain double-click - ledgers off, or one whose
+            // use the client still has from before - shows its terms, and a second double-click starts it (ItemBounties.HandleUse).
+            // Here, before any walk to the item or its own use rules, for any weenie type; one not in the pack is told so there.
+            if (ItemBounties.IsBountyItem(item))
+            {
+                ItemBounties.HandleUse(this, item);
+                SendUseDoneEvent();
                 return;
             }
 

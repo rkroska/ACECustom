@@ -771,7 +771,8 @@ namespace ACE.Server.WorldObjects
             // anything that slipped in before IsLoggingOut was set) - review 2026-10-20
             NearbyHealth.Remove(this);
 
-            // item bounties: a waiting /bounty confirm (theirs, or an admin's aimed at them) goes with the session
+            // item bounties: an abandon waiting to be typed again (theirs, or an admin's aimed at them) and a bounty armed for
+            // its second use go with the session
             ItemBounties.OnLogout(this);
 
             // Universal Quiver: the virtual ammo objects never entered the world; free their GUIDs

@@ -18,21 +18,38 @@ namespace ACE.Server.Managers
 {
     /// <summary>
     /// ITEM BOUNTIES (owner 2026-11-10; design: ilt-dev docs\design\item-bounties.md). A bounty is an ITEM: it names a tier,
-    /// a target, a kill count and a reward (PropertyInt.ItemBounty*). Used on a ring or bracelet, it fills the character's
-    /// next free bounty slot of that kind - R1, R2 (rings) or B1, B2 (bracelets). The jewelry is only the stand-in for
-    /// applying it: which ring, which hand, and what is worn later never matter. The slots live on the CHARACTER
-    /// (PropertyString.ItemBountySlots).
+    /// a target, a kill count and a reward (PropertyInt.ItemBounty*). Used ON the player's Bounty Ledger (rework 2026-11-12,
+    /// see below), it starts in the character's lowest free bounty slot, #1 to #4 (item_bounty_max_active). The slots live on
+    /// the CHARACTER (PropertyString.ItemBountySlots); the cap and the choice are the point: a player holds as many bounty
+    /// items as they like and picks which ones are going.
+    ///
+    /// REWORK 2026-11-12 (players found the jewelry confusing, and wanted no commands to remember): a bounty used to be used
+    /// ON a ring or bracelet to fill an R1, R2, B1 or B2 slot, but the jewelry was only a stand-in - which ring, whether it
+    /// was worn, ring vs bracelet never mattered, yet players took the bounty to live on that ring. Now:
+    ///   - the BOUNTY LEDGER (item_bounty_ledger_wcid, its own section below) is the one thing players use: a bounty used on
+    ///     it starts (at once in its own tier or region, or a town; in another tier or region the first use says where its
+    ///     kills count and a second use confirms); double-clicked, it opens as a book with a page per bounty and its progress;
+    ///     appraised, it lists them. Nothing is stored on it, and one is handed over whenever a player with bounties has none;
+    ///   - a bounty used on anything else (the player, a ring) shows its terms and how to start it. With ledgers off, or for
+    ///     a bounty the client still treats as a plain double-click, two uses start it: the first shows its terms, the slot it
+    ///     takes and any warning, a second within item_bounty_confirm_seconds starts it;
+    ///   - new bounties get the ItemUseable / TargetType for this (OnNewItem), the ones in a player's pack at login
+    ///     (NormalizeHeldBounties), and appraisal shows the current description (AppraisalText) without writing the item;
+    ///   - four plain slots #1-#4 instead of two kinds: a stored R1, R2, B1, B2 reads as #1, #2, #3, #4 with its progress
+    ///     (ParseSlotKey) and is written back under the new key on the next save.
     ///
     /// Owner rules:
-    ///   - applying never overwrites a bounty: both slots of that kind full = refused, the item is kept. The only way to
-    ///     replace a bounty is /bounty remove, which forfeits it;
-    ///   - slot numbers never shift: R2 stays R2 when R1 completes; a new bounty takes the lowest free slot;
+    ///   - starting never overwrites a bounty: every slot full = refused, the item is kept. The only way to replace a bounty
+    ///     is /bounty abandon (remove), which forfeits it;
+    ///   - slot numbers never shift: #2 stays #2 when #1 completes; a new bounty takes the lowest free slot;
     ///   - only the character's OWN kills count (the kill's top damager, a pet's kill for its owner - the bounty rule), and
     ///     only kills in EXACTLY the bounty's tier; a Species bounty only its creature type. The tier dip applies;
     ///   - completion pays automatically, into the pack; a full pack holds the reward (BountyManager's held rewards);
-    ///   - every confirmation is in the CONSOLE (/bounty confirm code), never a popup: custom clients may not show popups.
-    ///     A fresh 4-digit code each time, and it expires (item_bounty_confirm_seconds), so a macro, a typo or an old command
-    ///     can never confirm. Used for removing a bounty, and for applying one while standing in a different tier.
+    ///   - every confirmation is the same thing done again within item_bounty_confirm_seconds - never a popup (custom
+    ///     clients may not show popups) and never a code to type. Abandoning: /bounty abandon &lt;#&gt; says what it would forfeit,
+    ///     and the same command again does it, only while the same bounty is in the slot, so a typo or an old command alone
+    ///     never forfeits one. Starting one on the ledger is deliberate (two clicks); in another tier or region, and for any
+    ///     other start, it takes a second use.
     ///
     /// REGION bounties (owner 2026-11-10): a bounty whose weenie names a region (PropertyString.ItemBountyRegion: "vod"
     /// Valley of Death, "t10" Thaelaryn Island - ZoneControlManager.BountyRegions, below T11) instead of a tier. Only kills
@@ -59,13 +76,23 @@ namespace ACE.Server.Managers
         /// <summary>A bounty's kind: only kills of one CreatureType count.</summary>
         public const int KindSpecies = 2;
 
-        /// <summary>The slots, in the order /bounty lists them.</summary>
-        public static readonly string[] SlotKeys = { "R1", "R2", "B1", "B2" };
+        /// <summary>The most bounty slots a character can ever have: item_bounty_max_active is held to 1..MaxSlots.</summary>
+        public const int MaxSlots = 8;
+
+        /// <summary>Every slot key there can be, in the order /bounty lists them: "1".."8", shown to players as #1..#8. Read-only.</summary>
+        public static readonly IReadOnlyList<string> SlotKeys
+            = Array.AsReadOnly(Enumerable.Range(1, MaxSlots).Select(n => n.ToString(CultureInfo.InvariantCulture)).ToArray());
+
+        /// <summary>
+        /// The slot keys from before the 2026-11-12 rework, in the order they now read as #1-#4: R1, R2 (rings), B1, B2
+        /// (bracelets). A stored or typed one still works (ParseSlotKey).
+        /// </summary>
+        internal static readonly string[] LegacySlotKeys = { "R1", "R2", "B1", "B2" };
 
         /// <summary>The lowest and highest tier a bounty can name.</summary>
         public const int MinTier = 11, MaxTier = 25;
 
-        /// <summary>ItemBountyMystery flag: the kill count is rolled (and shown) only when the bounty is applied.</summary>
+        /// <summary>ItemBountyMystery flag: the kill count is rolled (and shown) only when the bounty is started.</summary>
         public const int MysteryKills = 1;
         /// <summary>ItemBountyMystery flag: the reward is rolled from the reward table only when the bounty is done.</summary>
         public const int MysteryReward = 2;
@@ -85,7 +112,7 @@ namespace ACE.Server.Managers
         /// <summary>One active bounty in one slot. Progress is a decimal because of the tier dip.</summary>
         public sealed class Slot
         {
-            public string Key;            // R1, R2, B1, B2
+            public string Key;            // "1".."8", shown as #1..#8 (R1, R2, B1, B2 before the 2026-11-12 rework)
             public int Tier;
             public int Kind;              // KindSweep / KindSpecies
             public uint Target;           // CreatureType, Species only
@@ -93,8 +120,8 @@ namespace ACE.Server.Managers
             public double Progress;
             public uint RewardWcid;
             public int RewardAmount = 1;
-            public long AppliedUnix;      // with Name, tells two bounties apart (a remove confirms against it)
-            public string Name = "";      // the item's name when it was applied
+            public long AppliedUnix;      // when it started; with Name, tells two bounties apart (an abandon confirms against it)
+            public string Name = "";      // the item's name when it was started
             public string TargetName = "";// "Banderlings"; empty for Sweep
             public string Region = "";    // a REGION bounty's BountyRegions key ("vod", "t10"; Tier is 0); empty for a tier bounty
             public int Mystery;           // ItemBountyMystery flags the bounty item carried
@@ -133,40 +160,58 @@ namespace ACE.Server.Managers
         internal static string PlaceShort(Slot s) => s.IsRegion ? RegionShort(s.Region) : $"T{s.Tier}";
 
         /// <summary>
-        /// "R1", "R2", "B1", "B2" from what a player typed: r1, R1, ring1, ring 1, bracelet 2, b2 (case-insensitive). Null if
-        /// it isn't one of the four.
+        /// A slot key "1".."8" from what a player typed or a character stored: 2, #2, slot 2, slot #2, bounty 2 - and the names
+        /// from before the rework, which read as #1-#4: r1 / ring 1 -> "1", r2 / ring2 -> "2", b1 / bracelet 1 -> "3", b2 ->
+        /// "4" (case and spaces ignored). Null if it isn't a slot.
         /// </summary>
         internal static string ParseSlotKey(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return null;
             var t = new string(text.Where(c => !char.IsWhiteSpace(c)).ToArray()).ToLowerInvariant();
-            if (t.StartsWith("ring")) t = "r" + t.Substring(4);
-            else if (t.StartsWith("bracelet")) t = "b" + t.Substring(8);
-            var key = t.ToUpperInvariant();
-            return SlotKeys.Contains(key) ? key : null;
+
+            // before the rework: R1, R2 (rings), B1, B2 (bracelets) - the same bounties, now #1-#4
+            var legacy = t.StartsWith("ring") ? "r" + t.Substring(4) : t.StartsWith("bracelet") ? "b" + t.Substring(8) : t;
+            var at = Array.IndexOf(LegacySlotKeys, legacy.ToUpperInvariant());
+            if (at >= 0) return SlotKeys[at];
+
+            foreach (var word in SlotWords)
+                if (t.StartsWith(word)) t = t.Substring(word.Length);
+            return SlotKeys.Contains(t) ? t : null;
         }
 
-        /// <summary>"ring" / "bracelet".</summary>
-        internal static string KindWord(char kind) => kind == 'R' ? "ring" : "bracelet";
+        /// <summary>The words ParseSlotKey skips before a slot number ("slot 2", "bounty #2"), in the order it skips them.</summary>
+        private static readonly string[] SlotWords = { "slot", "bounty", "#" };
 
-        /// <summary>The lowest free slot of a kind (R1 before R2), or null when both are in use.</summary>
-        internal static string LowestFree(IReadOnlyDictionary<string, Slot> slots, char kind)
-            => SlotKeys.Where(k => k[0] == kind).FirstOrDefault(k => !slots.ContainsKey(k));
+        /// <summary>How many bounties a character can have going at once: item_bounty_max_active, held to 1..MaxSlots.</summary>
+        internal static int MaxActive(long setting) => (int)Math.Clamp(setting, 1, MaxSlots);
 
-        /// <summary>Which slot kinds take new bounties (item_bounty_slots): 'R' and/or 'B'.</summary>
-        internal static HashSet<char> EnabledKinds(string setting)
+        /// <summary>The live cap (item_bounty_max_active).</summary>
+        internal static int MaxActiveNow => MaxActive(ServerConfig.item_bounty_max_active.Value);
+
+        /// <summary>
+        /// The slot a new bounty takes: the lowest free one of #1..#<paramref name="max"/>; null while <paramref name="max"/>
+        /// or more bounties are going. A bounty in a slot above the cap (the cap was lowered after it started) still counts
+        /// toward it, keeps counting kills and pays out.
+        /// </summary>
+        internal static string LowestFree(IReadOnlyDictionary<string, Slot> slots, int max)
         {
-            var kinds = new HashSet<char>();
-            foreach (var part in (setting ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                var p = part.ToLowerInvariant();
-                if (p.StartsWith("ring")) kinds.Add('R');
-                else if (p.StartsWith("bracelet")) kinds.Add('B');
-            }
-            return kinds;
+            max = Math.Clamp(max, 1, MaxSlots);
+            if (slots.Count >= max) return null;
+            return SlotKeys.Take(max).FirstOrDefault(k => !slots.ContainsKey(k));
         }
 
-        /// <summary>The character's slots from PropertyString.ItemBountySlots. Bad entries are skipped, never thrown.</summary>
+        /// <summary>
+        /// The slots /bounty, the tracker and BOUNTYDATA show, in order: #1..#<paramref name="max"/>, then any slot above it
+        /// that still holds a bounty. <paramref name="max"/> 0 = only the slots holding one.
+        /// </summary>
+        internal static List<string> ShownKeys(IReadOnlyDictionary<string, Slot> slots, int max)
+            => SlotKeys.Where((k, i) => i < max || slots.ContainsKey(k)).ToList();
+
+        /// <summary>
+        /// The character's slots from PropertyString.ItemBountySlots. Bad entries are skipped, never thrown. An entry stored
+        /// before the 2026-11-12 rework (R1, R2, B1, B2) reads as #1-#4 with everything it held (ParseSlotKey); the next save
+        /// writes it back under its new key.
+        /// </summary>
         internal static Dictionary<string, Slot> ParseSlots(string raw)
         {
             var map = new Dictionary<string, Slot>(StringComparer.OrdinalIgnoreCase);
@@ -359,8 +404,10 @@ namespace ACE.Server.Managers
         /// <summary>
         /// A new item (WorldObjectFactory.CreateNewWorldObject - /ci, loot, an NPC's Give, a vendor). For a bounty, the kill
         /// count is rolled now, once, from its RANGE (ItemBountyKillsMin / Max) so the item keeps it when traded (owner
-        /// 2026-11-10: bounties are named for their reward, and the task varies) - unless the count is a mystery, rolled at
-        /// apply instead. The description then states the terms. Anything that isn't a bounty returns after three lookups in
+        /// 2026-11-10: bounties are named for their reward, and the task varies) - unless the count is a mystery, rolled when
+        /// it starts instead. The item gets the use of the current mode (MakeUsable, rework 2026-11-12: used on the Bounty
+        /// Ledger, or a plain double-click with ledgers off) whatever its weenie says, and the description then states the
+        /// terms. Anything that isn't a bounty returns after three lookups in
         /// <paramref name="weenie"/>'s own dictionary (the cached weenie it was made from: no biota lock); a KillsMin / Max of
         /// 0 or less counts as unset, as everywhere else.
         /// </summary>
@@ -384,6 +431,10 @@ namespace ACE.Server.Managers
                 if ((mystery & MysteryKills) == 0 && hasRange)
                     wo.SetProperty(PropertyInt.ItemBountyKills, RollKills(min > 0 ? min : max, max > 0 ? max : min, NextUnit()));
 
+                // how the client uses it (rework 2026-11-12): on the Bounty Ledger, or a plain double-click with ledgers off -
+                // whatever the weenie says (a weenie made for the old use-on-a-ring targets jewelry)
+                MakeUsable(wo);
+
                 var terms = TermsOf(wo);
                 if (terms != null)
                     wo.SetProperty(PropertyString.LongDesc, Describe(terms));
@@ -395,8 +446,9 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// A bounty item's description, from its terms: what to kill, where, and the reward. A mystery kill count or reward
-        /// says so (and when it is revealed); the place is always stated.
+        /// A bounty item's description, from its terms: what to kill, where, the reward, and how to start it - on the Bounty
+        /// Ledger, or with two double-clicks when ledgers are off. A mystery kill count or reward says so (and when it is
+        /// revealed); the place is always stated.
         /// </summary>
         internal static string Describe(Slot t)
         {
@@ -408,7 +460,33 @@ namespace ACE.Server.Managers
             var reward = t.IsMysteryReward
                 ? "Reward: a mystery, revealed when the bounty is done and paid to your pack automatically."
                 : $"Reward: {RewardText(t)}, paid to your pack automatically when done.";
-            return $"{task} Only your own kills count, and only in {place}. {reward} Use it on a ring or bracelet you have to start it; /bounty shows your slots.";
+            var start = LedgersOn
+                ? "To start it, double-click it and then click your Bounty Ledger (no ledger yet? click yourself instead and one is added to your pack)."
+                : "Double-click it twice to start it: the first shows its terms, the second starts it.";
+            return $"{task} Only your own kills count, and only in {place}. {reward} {start} "
+                + $"You can have up to {MaxActiveNow} bounties going at once{(LedgersOn ? "; your Bounty Ledger shows them." : "; /bounty shows them.")}";
+        }
+
+        /// <summary>
+        /// Appraisal (AppraiseInfo): a bounty item's description from its terms as they are now, or null for anything else (and
+        /// for a bounty whose terms aren't complete yet, which keeps its own). Display only - the item is never written - so a
+        /// bounty made before the 2026-11-12 rework, whose stored description still says to use it on a ring or bracelet,
+        /// reads the current words.
+        /// </summary>
+        public static string DescribeItem(WorldObject wo)
+        {
+            try
+            {
+                if (!IsBountyItem(wo))
+                    return null;
+                var terms = TermsOf(wo);
+                return terms != null ? Describe(terms) : null;
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[ItemBounty] DescribeItem: {ex}");
+                return null;
+            }
         }
 
         /// <summary>
@@ -431,7 +509,7 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// True for an item that carries bounty terms - a kill count, or a kill range still to roll (a mystery count) - so the
-        /// use-with-target hook (Player_Use) routes it here.
+        /// use hooks (Player_Use: a double-click, or a use on any target) route it here.
         /// </summary>
         public static bool IsBountyItem(WorldObject wo)
             => wo != null && ((wo.GetProperty(PropertyInt.ItemBountyKills) ?? 0) > 0
@@ -454,7 +532,8 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// True when the bounty's reward can be paid; otherwise tells the player the bounty is kept and why, and logs it.
-        /// Asked before applying (and again before a confirmed apply), so a slot is never filled by a bounty that can't pay.
+        /// Asked on every use of a bounty (the first, and the second that starts it), so a slot is never filled by a bounty
+        /// that can't pay.
         /// </summary>
         private static bool RewardReadyOrTell(Player player, WorldObject item, Slot terms)
         {
@@ -462,14 +541,14 @@ namespace ACE.Server.Managers
             if (problem == null)
                 return true;
             Tell(player, $"The {item.Name}'s {problem}. Keep it, and please tell an admin.");
-            log.Warn($"[ItemBounty] {player.Name}: {item.Name} (wcid {item.WeenieClassId}) can't be applied: {detail}.");
+            log.Warn($"[ItemBounty] {player.Name}: {item.Name} (wcid {item.WeenieClassId}) can't be started: {detail}.");
             return false;
         }
 
         /// <summary>
         /// Why the terms' reward can't be paid as things stand (null = it can): a fixed reward that isn't a carryable item,
         /// or a mystery whose Zone Control table has nothing that can be paid at the bounty's place. Checked before a bounty
-        /// is applied, so nobody fills a slot that could never pay. <paramref name="detail"/> is for the log.
+        /// starts, so nobody fills a slot that could never pay. <paramref name="detail"/> is for the log.
         /// </summary>
         private static string RewardProblem(Slot t, out string detail)
         {
@@ -482,17 +561,53 @@ namespace ACE.Server.Managers
             return MysteryOptions(t, out _).Count > 0 ? null : "mystery reward isn't set up yet";
         }
 
-        /// <summary>The /bounty line for one slot: "R1 bounty: 640 of 1,000 kills (T15) -> Bag of Rebirth" or "B2 bounty: empty".</summary>
+        /// <summary>The /bounty line for one slot: "#1: 640 of 1,000 kills in T15 -> Bag of Rebirth" or "#4: empty".</summary>
         internal static string SlotLine(string key, Slot s)
-            => s == null ? $"{key} bounty: empty" : $"{key} bounty: {ProgressText(s)} ({PlaceShort(s)}) -> {RewardText(s)}";
-
-        // ── Applying (Player_Use: a bounty item used on a ring or bracelet) ──
+            => s == null ? $"#{key}: empty" : $"#{key}: {ProgressText(s)} in {PlaceShort(s)} -> {RewardText(s)}";
 
         /// <summary>
-        /// A bounty item used on a target. On the player's thread (HandleActionUseWithTarget). The target only decides the
-        /// slot KIND: any ring (worn or in the pack, either hand) -> the lowest free ring slot; a bracelet -> a bracelet slot.
+        /// "kill 1,000 creatures in Tier 15" / "kill a mystery number of Banderlings in Valley of Death (revealed when it
+        /// starts)": the task of a bounty not started yet, for the line a first double-click shows.
         /// </summary>
-        public static void HandleApply(Player player, WorldObject item, WorldObject target)
+        internal static string TaskText(Slot t)
+        {
+            var what = t.Kind == KindSpecies ? t.TargetName : "creatures";
+            return KillsHidden(t)
+                ? $"kill a mystery number of {what} in {PlaceName(t)} (revealed when it starts)"
+                : $"kill {t.Kills:N0} {what} in {PlaceName(t)}";
+        }
+
+        // ── Starting (Player_Use: a bounty item double-clicked, or used on anything) ──
+
+        /// <summary>A start waiting for its second use: the bounty item's guid and when the offer runs out (unix seconds).</summary>
+        private readonly record struct ArmedStart(uint ItemGuid, double ExpiresAt);
+
+        /// <summary>
+        /// Player guid -> the bounty a first use armed (its terms shown, or the warning that its kills don't count where the
+        /// player stands): their next use of it in time starts it. Set and taken on that player's thread (HandleUse); dropped
+        /// at logout (OnLogout). Holds no Player object, so nothing outlives a session through it.
+        /// </summary>
+        private static readonly ConcurrentDictionary<uint, ArmedStart> _armed = new();
+
+        /// <summary>
+        /// A bounty item used: double-clicked (Player.HandleActionUseItem, <paramref name="target"/> null), or used on
+        /// something (HandleActionUseWithTarget). On the player's thread.
+        ///
+        /// With ledgers on (item_bounty_ledger_wcid, 2026-11-12) a bounty is used ON the Bounty Ledger:
+        ///   - on the player's own ledger it starts at once where its kills count, or in a town - double-clicking the bounty
+        ///     and then clicking the ledger is deliberate enough. Standing in ANOTHER tier or region (probably a mistake, as
+        ///     the ring start judged it) the first use says where its kills count, and a second use on the ledger within
+        ///     item_bounty_confirm_seconds starts it: a click where the ring start asked for a typed /bounty confirm code;
+        ///   - on anything else (the player, a ring as before the rework, a book) it shows the bounty and how to start it, and
+        ///     hands the player a ledger if they have none. In another tier or region that preview carries the warning, so
+        ///     the next use on the ledger starts it without asking again.
+        /// TWO USES start it everywhere else: with ledgers off, for a plain double-click (a bounty whose ItemUseable the
+        /// client still has from before the ledger), and when no ledger could be handed over (a full pack, its weenie
+        /// missing), so nobody is ever stuck. The first use shows the bounty; a second use of the same item within
+        /// item_bounty_confirm_seconds starts it - starting uses up a tradeable item for good, so one stray click never does.
+        /// Every check runs again on every use; anything that stops a start says why and keeps the bounty in the pack.
+        /// </summary>
+        public static void HandleUse(Player player, WorldObject item, WorldObject target = null)
         {
             try
             {
@@ -500,84 +615,205 @@ namespace ACE.Server.Managers
 
                 if (!ServerConfig.item_bounty_enabled.Value)
                 {
-                    Tell(player, "Bounties can't be applied right now.");
+                    _armed.TryRemove(player.Guid.Full, out _);
+                    Tell(player, "Bounties can't be started right now.");
                     return;
                 }
 
-                // The bounty from the pack (not one lying on the ground), onto jewelry the player has.
-                if (player.FindObject(item.Guid.Full, Player.SearchLocations.MyInventory) == null)
+                // No ledger yet: one FIRST, whatever then happens to this bounty - all slots full, a tier they can't fight yet -
+                // since using a bounty (on themselves, as its description says) is how a player gets one.
+                var ledger = FindLedger(player);
+                var granted = false;
+                if (ledger == null && LedgersOn)
                 {
-                    Tell(player, $"The {item.Name} must be in your pack.");
+                    ledger = GrantLedger(player, atLogin: false);
+                    granted = ledger != null;
+                }
+                if (granted)
+                    Tell(player, "A Bounty Ledger was added to your pack: it keeps track of your bounties - double-click it to read them. To start a bounty, double-click the bounty and then click the ledger.");
+
+                if (!CanStartOrTell(player, item, out var terms, out var slots, out var free))
+                {
+                    _armed.TryRemove(player.Guid.Full, out _);
                     return;
                 }
 
-                var kind = JewelryKind(target);
-                if (kind == null || player.FindObject(target.Guid.Full, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems) == null)
-                {
-                    Tell(player, "Use the bounty on a ring or bracelet you have (worn or in your pack).");
-                    return;
-                }
+                // a bounty whose use the client has from before (picked up since login from a house chest or a corpse: login
+                // fixes only what the player carries, NormalizeHeldBounties) is fixed now and sent to the client again, so its
+                // cursor takes the ledger from the next double-click on - the preview below says to click the ledger
+                if (MakeUsable(item))
+                    player.Session?.Network.EnqueueSend(new GameMessageUpdateObject(item));
 
-                if (player.IsMule || player.IsOlthoiPlayer)
+                if (LedgersOn && target != null)
                 {
-                    Tell(player, "This character can't take bounties.");
-                    return;
-                }
+                    var note = StandingNote(player, terms);
 
-                var terms = TermsOf(item);
-                if (terms == null)
-                {
-                    Tell(player, $"The {item.Name} is missing its bounty terms. Please tell an admin.");
-                    log.Warn($"[ItemBounty] {player.Name}: {item.Name} (wcid {item.WeenieClassId}) has incomplete bounty terms.");
-                    return;
-                }
-                if (!RewardReadyOrTell(player, item, terms))
-                    return;
-
-                if (!CanTake(player, terms, out var why))
-                {
-                    Tell(player, why);
-                    return;
-                }
-
-                var slots = LoadSlots(player);
-                if (!FreeSlotOrTell(player, slots, kind.Value, out var free))
-                    return;
-
-                // Standing in a DIFFERENT place that counts (another tier, or a region) from the bounty's: probably a mistake -
-                // ask in the console first. Standing anywhere else (a town) applies at once.
-                var (standTier, standRegion) = StandingPlace(player);
-                var here = standRegion != null ? RegionName(standRegion) : standTier != 0 ? $"Tier {standTier}" : null;
-                var counts = terms.IsRegion
-                    ? standRegion != null && string.Equals(standRegion, terms.Region, StringComparison.OrdinalIgnoreCase)
-                    : standRegion == null && standTier == terms.Tier;
-                if (here != null && !counts)
-                {
-                    Ask(player, new Pending
+                    // on the player's own ledger: started - at once where its kills count, or in a town. Standing in another
+                    // tier or region the first use says so and arms it; a second use on the ledger in time starts it.
+                    if (IsLedger(target) && player.FindObject(target.Guid.Full, Player.SearchLocations.MyInventory) != null)
                     {
-                        Kind = PendingKind.Apply, Target = player, ItemGuid = item.Guid.Full, SlotKind = kind.Value,
-                        What = $"apply {item.Name} to {free}",
-                    },
-                    $"This is a {PlaceName(terms)} bounty: only kills in {PlaceName(terms)} count, and you are in {here}.");
-                    return;
+                        if (note != null && !TakeArmed(player, item))
+                        {
+                            var seconds = Arm(player, item);
+                            Tell(player, $"{note} To start it anyway, use it on your Bounty Ledger again within {seconds} seconds.");
+                            return;
+                        }
+                        _armed.TryRemove(player.Guid.Full, out _);
+                        Commit(player, item, terms, free);
+                        return;
+                    }
+
+                    // on anything else (themselves, a ring): what it is, and how to start it. In another tier or region the
+                    // preview's note is the warning, so it arms the bounty: the next use on the ledger starts it.
+                    if (ledger != null)
+                    {
+                        if (note != null)
+                            Arm(player, item);
+                        else
+                            _armed.TryRemove(player.Guid.Full, out _);
+                        Preview(player, item, terms, note);
+                        if (!granted)
+                            Tell(player, $"To start it, double-click it and then click your Bounty Ledger. It goes in as bounty #{free} ({slots.Count} of {MaxActiveNow} going).");
+                        return;
+                    }
+                    // no ledger could be handed over (a full pack, its weenie missing): the two uses below still start it
                 }
 
-                Commit(player, item, terms, free);
+                StartOnSecondUse(player, item, terms, slots, free, target == null ? "Double-click it again" : "Use it again");
             }
             catch (Exception ex)
             {
-                log.Error($"[ItemBounty] HandleApply: {ex}");
+                log.Error($"[ItemBounty] HandleUse: {ex}");
             }
         }
 
-        /// <summary>'R' for a ring, 'B' for a bracelet (by where it can be worn), else null.</summary>
-        private static char? JewelryKind(WorldObject wo)
+        /// <summary>
+        /// The two-use start: the second use of the SAME bounty within item_bounty_confirm_seconds starts it; any other use
+        /// shows it and waits for that second use. <paramref name="again"/> names the gesture ("Double-click it again").
+        /// </summary>
+        private static void StartOnSecondUse(Player player, WorldObject item, Slot terms, Dictionary<string, Slot> slots, string free, string again)
         {
-            if (wo == null) return null;
-            var where = wo.ValidLocations ?? EquipMask.None;
-            if ((where & EquipMask.FingerWear) != 0) return 'R';
-            if ((where & EquipMask.WristWear) != 0) return 'B';
-            return null;
+            if (TakeArmed(player, item))
+            {
+                Commit(player, item, terms, free);
+                return;
+            }
+
+            var seconds = Arm(player, item);
+            Preview(player, item, terms, StandingNote(player, terms));
+            Tell(player, $"{again} within {seconds} seconds to start it as bounty #{free} ({slots.Count} of {MaxActiveNow} going). "
+                + "Once started it is used up - it can't be traded or put back - and abandoning it forfeits it.");
+        }
+
+        /// <summary>Arms <paramref name="item"/> for this player (<see cref="Arm(uint, uint)"/>).</summary>
+        private static int Arm(Player player, WorldObject item) => Arm(player.Guid.Full, item.Guid.Full);
+
+        /// <summary>
+        /// Arms a bounty for a player: their next use of the SAME bounty within item_bounty_confirm_seconds starts it
+        /// (<see cref="TakeArmed(uint, uint)"/>). Replaces whatever was armed for them before. Returns the seconds it stays
+        /// armed. By guid, so the tests can drive it without a Player.
+        /// </summary>
+        internal static int Arm(uint playerGuid, uint itemGuid) => Arm(playerGuid, itemGuid, Time.GetUnixTime());
+
+        /// <summary><see cref="Arm(uint, uint)"/> at a given time (unix seconds), so the tests can check expiry.</summary>
+        internal static int Arm(uint playerGuid, uint itemGuid, double now)
+        {
+            var seconds = ConfirmSeconds;
+            _armed[playerGuid] = new ArmedStart(itemGuid, now + seconds);
+            return seconds;
+        }
+
+        /// <summary>Takes this player's arm when it is for <paramref name="item"/> (<see cref="TakeArmed(uint, uint)"/>).</summary>
+        private static bool TakeArmed(Player player, WorldObject item) => TakeArmed(player.Guid.Full, item.Guid.Full);
+
+        /// <summary>
+        /// True, once, when <paramref name="itemGuid"/> is the bounty armed for this player and its time hasn't run out. The
+        /// arm is taken, so one arm starts at most one bounty; an arm for another bounty is left alone.
+        /// </summary>
+        internal static bool TakeArmed(uint playerGuid, uint itemGuid) => TakeArmed(playerGuid, itemGuid, Time.GetUnixTime());
+
+        /// <summary><see cref="TakeArmed(uint, uint)"/> at a given time (unix seconds), so the tests can check expiry.</summary>
+        internal static bool TakeArmed(uint playerGuid, uint itemGuid, double now)
+        {
+            return _armed.TryGetValue(playerGuid, out var armed) && armed.ItemGuid == itemGuid && armed.ExpiresAt >= now
+                && _armed.TryRemove(new KeyValuePair<uint, ArmedStart>(playerGuid, armed));
+        }
+
+        /// <summary>
+        /// What a bounty is before it starts: the task and reward, then <paramref name="note"/> (StandingNote: where its kills
+        /// count, when the player stands somewhere they don't), if any.
+        /// </summary>
+        private static void Preview(Player player, WorldObject item, Slot terms, string note)
+        {
+            Tell(player, $"{item.Name} - {TaskText(terms)} -> {RewardText(terms)}. Only your own kills there count.");
+            if (note != null)
+                Tell(player, note);
+        }
+
+        /// <summary>
+        /// Whether <paramref name="player"/> can start <paramref name="item"/> now: it is in their pack and not in a trade
+        /// window, the character can take bounties, its terms are complete and its reward can be paid, they can fight its
+        /// tier and still get credit there, and a slot is free (<paramref name="free"/>). When not, tells them why - the bounty
+        /// is kept - and returns false. On the player's thread.
+        /// </summary>
+        private static bool CanStartOrTell(Player player, WorldObject item, out Slot terms, out Dictionary<string, Slot> slots, out string free)
+        {
+            terms = null;
+            slots = null;
+            free = null;
+
+            // the bounty from the pack - not one lying on the ground or in a corpse - and not one offered in a trade (both use
+            // hooks refuse a traded item before they get here; checked again so HandleUse is safe on its own)
+            if (player.FindObject(item.Guid.Full, Player.SearchLocations.MyInventory) == null)
+            {
+                Tell(player, $"The {item.Name} must be in your pack to start it.");
+                return false;
+            }
+            if (player.IsTrading && item.IsBeingTradedOrContainsItemBeingTraded(player.ItemsInTradeWindow))
+            {
+                Tell(player, $"The {item.Name} is in your trade window. Take it out of the trade to start it.");
+                return false;
+            }
+            if (player.IsMule || player.IsOlthoiPlayer)
+            {
+                Tell(player, "This character can't take bounties.");
+                return false;
+            }
+
+            terms = TermsOf(item);
+            if (terms == null)
+            {
+                Tell(player, $"The {item.Name} is missing its bounty terms. Please tell an admin.");
+                log.Warn($"[ItemBounty] {player.Name}: {item.Name} (wcid {item.WeenieClassId}) has incomplete bounty terms.");
+                return false;
+            }
+            if (!RewardReadyOrTell(player, item, terms))
+                return false;
+            if (!CanTake(player, terms, out var why))
+            {
+                Tell(player, why);
+                return false;
+            }
+
+            slots = LoadSlots(player);
+            return FreeSlotOrTell(player, slots, out free);
+        }
+
+        /// <summary>
+        /// "Note: you are in Tier 14 - only kills in Tier 15 count for this bounty." when the player stands in a place that
+        /// counts for bounties (a T11+ tier, or a bounty region) other than the bounty's; null there, or anywhere else (a town).
+        /// It only informs: a bounty started in town or another tier counts as soon as the player hunts in its place.
+        /// </summary>
+        private static string StandingNote(Player player, Slot terms)
+        {
+            var (standTier, standRegion) = StandingPlace(player);
+            var here = standRegion != null ? RegionName(standRegion) : standTier != 0 ? $"Tier {standTier}" : null;
+            if (here == null)
+                return null;
+            var counts = terms.IsRegion
+                ? standRegion != null && string.Equals(standRegion, terms.Region, StringComparison.OrdinalIgnoreCase)
+                : standRegion == null && standTier == terms.Tier;
+            return counts ? null : $"Note: you are in {here} - only kills in {PlaceName(terms)} count for this bounty.";
         }
 
         /// <summary>
@@ -609,43 +845,34 @@ namespace ACE.Server.Managers
             return true;
         }
 
-        /// <summary>The lowest free slot of the kind; when there is none (or the kind is switched off), says so and returns false.</summary>
-        private static bool FreeSlotOrTell(Player player, Dictionary<string, Slot> slots, char kind, out string free)
+        /// <summary>
+        /// The slot a new bounty takes (<see cref="LowestFree"/> under item_bounty_max_active); when the character already has
+        /// that many going, lists them, says how to make room and returns false.
+        /// </summary>
+        private static bool FreeSlotOrTell(Player player, Dictionary<string, Slot> slots, out string free)
         {
-            free = null;
-            var enabled = EnabledKinds(ServerConfig.item_bounty_slots.Value);
-            if (!enabled.Contains(kind))
-            {
-                Tell(player, $"There are no {KindWord(kind)} bounty slots" + (enabled.Count > 0 ? $": use it on a {KindWord(enabled.First())}." : "."));
-                return false;
-            }
-
-            free = LowestFree(slots, kind);
+            var max = MaxActiveNow;
+            free = LowestFree(slots, max);
             if (free != null)
                 return true;
 
-            var mine = SlotKeys.Where(k => k[0] == kind).ToList();
-            var line = $"Both {KindWord(kind)} bounty slots are in use ({string.Join(", ", mine.Select(k => $"{k}: {slots[k].Name}"))}). "
-                + $"To replace one, remove it first: /bounty remove {mine[0].ToLowerInvariant()}.";
-            var other = kind == 'R' ? 'B' : 'R';
-            var otherFree = enabled.Contains(other) ? LowestFree(slots, other) : null;
-            if (otherFree != null)
-                line += $" {otherFree} is free: use the bounty on a {KindWord(other)}.";
-            Tell(player, line);
+            var going = SlotKeys.Where(slots.ContainsKey).Select(k => $"#{k} {slots[k].Name} ({ProgressText(slots[k])})");
+            Tell(player, $"You have {slots.Count} bounties going and can have at most {max}: {string.Join("; ", going)}. "
+                + "Finish one, or abandon one with /bounty abandon <#> (it forfeits that bounty), to start this one. It stays in your pack.");
             return false;
         }
 
         /// <summary>
-        /// Puts the bounty in the slot: re-checked, everything that can fail worked out first (a mystery kill count), then the
-        /// item consumed, then the slot written and the character saved at once (as UseLumToken does), so neither a failure
-        /// nor a crash can leave both the item and the slot - or neither.
+        /// Starts the bounty in the slot: re-checked, everything that can fail worked out first (a mystery kill count), then
+        /// the item consumed, then the slot written and the character saved at once (as UseLumToken does), so neither a
+        /// failure nor a crash can leave both the item and the slot - or neither.
         /// </summary>
         private static void Commit(Player player, WorldObject item, Slot terms, string key)
         {
             var slots = LoadSlots(player);
-            if (slots.ContainsKey(key))
+            if (slots.ContainsKey(key) || slots.Count >= MaxActiveNow)
             {
-                Tell(player, $"{key} is no longer free. Nothing was applied.");
+                Tell(player, $"Bounty slot #{key} is no longer free. Nothing was started.");
                 return;
             }
 
@@ -661,7 +888,7 @@ namespace ACE.Server.Managers
 
             if (!player.TryConsumeFromInventoryWithNetworking(item, 1))
             {
-                Tell(player, $"The {item.Name} could not be used. Nothing was applied.");
+                Tell(player, $"The {item.Name} could not be used. Nothing was started.");
                 return;
             }
 
@@ -672,9 +899,12 @@ namespace ACE.Server.Managers
             SaveSlots(player, slots);
             player.SavePlayerToDatabase();
 
-            Tell(player, $"Bounty applied to {key}: {(revealed ? "the mystery count is " : "")}{terms.Kills:N0} {(terms.Kind == KindSpecies ? terms.TargetName : "kills")} in {PlaceName(terms)} -> {RewardText(terms)}. "
-                + $"Only your kills in {PlaceName(terms)} count. /bounty shows your slots.");
-            log.Info($"[ItemBounty] apply {player.Name} {key} {PlaceShort(terms)} kind={terms.Kind} target={terms.Target} kills={terms.Kills}{(revealed ? " (mystery count)" : "")} "
+            Tell(player, $"Bounty #{key} started: {(revealed ? "the mystery count is " : "")}{terms.Kills:N0} {(terms.Kind == KindSpecies ? terms.TargetName : "kills")} in {PlaceName(terms)} -> {RewardText(terms)}. "
+                + $"{slots.Count} of {MaxActiveNow} bounties going; {(LedgersOn ? "double-click your Bounty Ledger to see your progress." : "/bounty shows your progress.")}");
+            var note = StandingNote(player, terms);
+            if (note != null)
+                Tell(player, note);
+            log.Info($"[ItemBounty] start {player.Name} #{key} {PlaceShort(terms)} kind={terms.Kind} target={terms.Target} kills={terms.Kills}{(revealed ? " (mystery count)" : "")} "
                 + (terms.IsMysteryReward ? $"reward=mystery(table {terms.RewardTableName})" : $"reward={terms.RewardWcid}x{terms.RewardAmount}") + $" \"{terms.Name}\"");
         }
 
@@ -790,7 +1020,7 @@ namespace ACE.Server.Managers
                     s.Progress = after;
                     var half = s.Kills / 2.0;
                     if (s.Kills >= 4 && before < half && after >= half)
-                        Tell(player, $"{s.Key} bounty: halfway there, {ProgressText(s)}.");
+                        Tell(player, $"Bounty #{s.Key} is halfway: {ProgressText(s)} in {PlaceShort(s)}.");
                 }
                 // a done mystery still waiting for its reward table retries on every counted kill, wherever it is
                 foreach (var s in slots.Values)
@@ -801,7 +1031,7 @@ namespace ACE.Server.Managers
 
                 // Saved BEFORE anything is handed over: a failure while giving can never pay the same bounty twice.
                 SaveSlots(player, slots);
-                PayOut(player, pay);
+                PayOut(player, pay, slots.Count);
             }
             catch (Exception ex)
             {
@@ -843,25 +1073,28 @@ namespace ACE.Server.Managers
                 }
                 else if (reachedNow.Contains(s.Key))
                 {
-                    Tell(player, $"{s.Key} bounty is done, but its mystery reward isn't set up yet. It stays done in {s.Key} and pays as soon as it is; please tell an admin.");
+                    Tell(player, $"Bounty #{s.Key} is done, but its mystery reward isn't set up yet. It stays done in slot #{s.Key} and pays as soon as it is; please tell an admin.");
                     log.Warn($"[ItemBounty] {player.Name} {s.Key} \"{s.Name}\" is done but mystery reward table '{s.RewardTableName}' has nothing to pay at {PlaceKey(s)} - waiting");
                 }
             }
             return pay;
         }
 
-        /// <summary>Pays each payout through BountyManager (into the pack, or held when it's full) and says the slot is free.</summary>
-        private static void PayOut(Player player, List<Payout> pay)
+        /// <summary>
+        /// Pays each payout through BountyManager (into the pack, or held when it's full) and says the slot is free, with how
+        /// many bounties are still going (<paramref name="goingAfter"/>, counted after the paid ones left their slots).
+        /// </summary>
+        private static void PayOut(Player player, List<Payout> pay, int goingAfter)
         {
             foreach (var p in pay)
             {
                 var s = p.Slot;
                 try
                 {
-                    var line = $"{s.Key} bounty complete! ({s.Name})" + (s.IsMysteryReward ? " The mystery reward is revealed:" : "");
-                    log.Info($"[ItemBounty] complete {player.Name} {s.Key} {PlaceShort(s)} kills={s.Kills} reward={p.Wcid}x{p.Amount}{p.Note} \"{s.Name}\"");
+                    var line = $"Bounty #{s.Key} complete! ({s.Name})" + (s.IsMysteryReward ? " The mystery reward is revealed:" : "");
+                    log.Info($"[ItemBounty] complete {player.Name} #{s.Key} {PlaceShort(s)} kills={s.Kills} reward={p.Wcid}x{p.Amount}{p.Note} \"{s.Name}\"");
                     BountyManager.PayItemBounty(player, p.Wcid, p.Amount, line);
-                    Tell(player, $"{s.Key} is free for a new bounty.");
+                    Tell(player, $"Slot #{s.Key} is free for a new bounty ({goingAfter} of {MaxActiveNow} going).");
                 }
                 catch (Exception ex)
                 {
@@ -884,16 +1117,17 @@ namespace ACE.Server.Managers
             if (pay.Count == 0)
                 return;
             SaveSlots(owner, slots);
-            PayOut(owner, pay);
+            PayOut(owner, pay, slots.Count);
         }
 
         // ── /bounty (BountyCommands) ─────────────────────────────────────────
 
         /// <summary>
-        /// The /bounty lines for a character's slots, sent to <paramref name="viewer"/>: one line per slot that exists or is
-        /// filled, then the remove hint when any is filled; one short line when every slot is empty. Runs on the character's
-        /// thread. When the owner looks, a done mystery bounty that was waiting for its reward table is paid first, if the
-        /// table has something now. With item_bounty_enabled off, only filled slots show (nothing counts or pays meanwhile).
+        /// The /bounty lines for a character's bounties, sent to <paramref name="viewer"/>: a header with how many are going
+        /// out of how many they can have, one line per slot (#1..#cap, and any slot above the cap still holding one), then how
+        /// to start and abandon one; one short line when none is going. Runs on the character's thread. When the owner looks,
+        /// a done mystery bounty that was waiting for its reward table is paid first, if the table has something now. With
+        /// item_bounty_enabled off, only the slots holding a bounty show (nothing counts or pays meanwhile).
         /// </summary>
         public static void ShowSlots(Player viewer, Player owner)
         {
@@ -903,30 +1137,38 @@ namespace ACE.Server.Managers
                 try
                 {
                     var on = ServerConfig.item_bounty_enabled.Value;
+                    var own = ReferenceEquals(viewer, owner);
                     // a done mystery waiting for its reward table pays now if the table has something again
-                    if (on && ReferenceEquals(viewer, owner))
+                    if (on && own)
                         PayWaitingMysteries(owner);
 
                     var slots = LoadSlots(owner);
-                    var enabled = on ? EnabledKinds(ServerConfig.item_bounty_slots.Value) : new HashSet<char>();
-                    if (enabled.Count == 0 && slots.Count == 0) return;
+                    if (!on && slots.Count == 0) return;
 
-                    var prefix = ReferenceEquals(viewer, owner) ? "" : owner.Name + " ";
+                    var max = MaxActiveNow;
+                    var whose = own ? "Your" : owner.Name + "'s";
                     if (slots.Count == 0)
                     {
-                        Tell(viewer, prefix + "Item bounty slots: all empty. Use a bounty on a ring or bracelet you have to start one.");
+                        Tell(viewer, own
+                            ? $"Your bounties: none going (you can have up to {max}). "
+                                + (LedgersOn ? "To start one, double-click the bounty and then click your Bounty Ledger." : "Double-click a bounty in your pack to start one.")
+                            : $"{whose} bounties: none going.");
                         return;
                     }
+
+                    Tell(viewer, $"{whose} bounties: {slots.Count} of {max} going.");
                     if (!on)
-                        Tell(viewer, prefix + "Item bounties are paused by the admins: nothing counts or pays until they are back on.");
-                    foreach (var key in SlotKeys)
+                        Tell(viewer, "Bounties are paused by the admins: nothing counts or pays until they are back on.");
+                    foreach (var key in ShownKeys(slots, on ? max : 0))
                     {
                         slots.TryGetValue(key, out var s);
-                        if (s == null && !enabled.Contains(key[0])) continue;
-                        Tell(viewer, prefix + SlotLine(key, s));
+                        Tell(viewer, SlotLine(key, s));
                     }
-                    if (slots.Count > 0 && ReferenceEquals(viewer, owner))
-                        Tell(viewer, "To clear a slot (forfeits it): /bounty remove <slot>, e.g. /bounty remove r1.");
+                    if (own)
+                        Tell(viewer, (LedgersOn
+                                ? "Your Bounty Ledger shows all of this: double-click it. To start a bounty, double-click it and then click the ledger."
+                                : "To start a bounty, double-click it in your pack.")
+                            + " To abandon one (forfeits it): /bounty abandon <#>, e.g. /bounty abandon 2.");
                 }
                 catch (Exception ex)
                 {
@@ -935,13 +1177,17 @@ namespace ACE.Server.Managers
             });
         }
 
-        /// <summary>The /bounty data and ItemBountyDisplay format version; bump it when a field is added or moved.
-        /// v2 (2026-11-10): placeShort and placeName added at the end (region bounties: tier 0, place "VoD").</summary>
-        public const string DataVersion = "v2";
+        /// <summary>The /bounty data and ItemBountyDisplay format version; bump it when a field is added or moved, or a field's
+        /// values change meaning.
+        /// v2 (2026-11-10): placeShort and placeName added at the end (region bounties: tier 0, place "VoD").
+        /// v3 (2026-11-12, the Bounty Ledger rework): the same 16 fields in the same order; the slot keys are "1".."8" (shown as
+        /// #1..#8) instead of R1, R2, B1, B2, and the header lists the slots that exist - #1 up to item_bounty_max_active
+        /// (default 4), then any slot above it still holding a bounty.</summary>
+        public const string DataVersion = "v3";
 
         /// <summary>
-        /// One slot as the tracker reads it: "R1|tier|kind|progress|kills|targetName|rewardWcid|amount|icon|overlay|underlay|
-        /// bountyName|rewardName|rewardUse|placeShort|placeName", or "B2|empty". kind: 1 Sweep, 2 Species; icon / overlay /
+        /// One slot as the tracker reads it: "1|tier|kind|progress|kills|targetName|rewardWcid|amount|icon|overlay|underlay|
+        /// bountyName|rewardName|rewardUse|placeShort|placeName", or "4|empty". kind: 1 Sweep, 2 Species; icon / overlay /
         /// underlay: the reward weenie's icon layers (0 = none); tier is 0 for a region bounty, whose place is e.g. "VoD" /
         /// "Valley of Death" ("T15" / "Tier 15" for a tier bounty). '|' and ';' never appear inside a field.
         /// </summary>
@@ -978,13 +1224,12 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// The whole ItemBountyDisplay value: "v2|R1,R2,B1,B2" (the format version, then the slots that exist), then one
-        /// DisplayEntry per existing slot, all joined with ';'.
+        /// The whole ItemBountyDisplay value: "v3|1,2,3,4" (the format version, then the slots that exist: ShownKeys), then
+        /// one DisplayEntry per existing slot, all joined with ';'.
         /// </summary>
         internal static string BuildDisplay(IReadOnlyDictionary<string, Slot> slots)
         {
-            var enabled = EnabledKinds(ServerConfig.item_bounty_slots.Value);
-            var keys = SlotKeys.Where(k => slots.ContainsKey(k) || enabled.Contains(k[0])).ToList();
+            var keys = ShownKeys(slots, MaxActiveNow);
             var parts = new List<string> { DataVersion + "|" + string.Join(",", keys) };
             foreach (var key in keys)
             {
@@ -1033,10 +1278,10 @@ namespace ACE.Server.Managers
         /// <summary>
         /// /bounty data: the slots as machine-readable lines for the Bounty Tracker UB script, which reads and hides them, so
         /// it never has to scrape the human /bounty text (that mmo_meta_handler also reads). One line per slot that exists
-        /// or is filled, then an END line:
-        ///   BOUNTYDATA R1|tier|kind|progress|kills|targetName|rewardWcid|amount|icon|overlay|underlay|bountyName|rewardName|rewardUse|placeShort|placeName
-        ///   BOUNTYDATA B2|empty
-        ///   BOUNTYDATA END|v2|R1,R2,B1,B2   (the format version, then the slots that exist)
+        /// (ShownKeys), then an END line:
+        ///   BOUNTYDATA 1|tier|kind|progress|kills|targetName|rewardWcid|amount|icon|overlay|underlay|bountyName|rewardName|rewardUse|placeShort|placeName
+        ///   BOUNTYDATA 4|empty
+        ///   BOUNTYDATA END|v3|1,2,3,4   (the format version, then the slots that exist)
         /// kind: 1 Sweep, 2 Species. icon / overlay / underlay: the reward weenie's icon layers (0 = none). '|' never appears
         /// inside a field.
         /// </summary>
@@ -1048,14 +1293,10 @@ namespace ACE.Server.Managers
                 try
                 {
                     var slots = LoadSlots(player);
-                    var enabled = EnabledKinds(ServerConfig.item_bounty_slots.Value);
-                    var exist = new List<string>();
-                    foreach (var key in SlotKeys)
+                    var exist = ShownKeys(slots, MaxActiveNow);
+                    foreach (var key in exist)
                     {
                         slots.TryGetValue(key, out var s);
-                        if (s == null && !enabled.Contains(key[0])) continue;
-                        exist.Add(key);
-
                         Tell(player, "BOUNTYDATA " + DisplayEntry(key, s));
                     }
                     Tell(player, $"BOUNTYDATA END|{DataVersion}|{string.Join(",", exist)}");
@@ -1068,8 +1309,11 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// /bounty remove: asks the requester to confirm in the console. Nothing is removed until /bounty confirm with the
-        /// code. <paramref name="owner"/> is the requester (a player) or another player (an admin's request).
+        /// /bounty abandon (or remove, drop) <paramref name="key"/>. The first time it says what would be forfeited and to type
+        /// the same command again; the same command again within item_bounty_confirm_seconds abandons it - only while the SAME
+        /// bounty is in the slot, so a typo, an old command or a bounty that completed meanwhile never forfeits one. No code,
+        /// no second command to learn, and doing nothing cancels. <paramref name="owner"/> is the requester (a player) or
+        /// another player (an admin's request). On the owner's thread.
         /// </summary>
         public static void RequestRemove(Player requester, Player owner, string key)
         {
@@ -1078,21 +1322,45 @@ namespace ACE.Server.Managers
             {
                 try
                 {
-                    var slots = LoadSlots(owner);
-                    var whose = ReferenceEquals(requester, owner) ? "" : owner.Name + "'s ";
-                    if (!slots.TryGetValue(key, out var s))
+                    var own = ReferenceEquals(requester, owner);
+                    // logging out: the logout save is running and OnLogout has already cleared pending abandons, so a
+                    // new one could reach DoRemove and start a second save on top of it (as the start path refuses)
+                    if (owner.IsLoggingOut || !ReferenceEquals(PlayerManager.GetOnlinePlayer(owner.Guid), owner))
                     {
-                        Tell(requester, $"{whose}{key} has no bounty. Nothing to remove.");
+                        Tell(requester, own ? "You are logging out. Nothing was abandoned." : $"{owner.Name} is logging out. Nothing was abandoned.");
                         return;
                     }
 
-                    Ask(requester, new Pending
+                    var slots = LoadSlots(owner);
+                    var whose = own ? "" : owner.Name + "'s ";
+                    if (!slots.TryGetValue(key, out var s))
                     {
-                        Kind = PendingKind.Remove, Target = owner, SlotKey = key, Identity = s.Identity,
-                        What = $"remove the {whose}{key} bounty",
-                    },
-                    $"You are about to remove the bounty in {whose}{key}: {s.Name} -> {RewardText(s)} ({ProgressText(s)}). "
-                    + "The bounty and its reward will be FORFEITED and cannot be recovered.");
+                        Tell(requester, $"{(own ? "Bounty" : whose + "bounty")} #{key} is empty. Nothing to abandon.");
+                        return;
+                    }
+
+                    // the same abandon typed again in time, for the same bounty: done
+                    var now = Time.GetUnixTime();
+                    if (_pending.TryGetValue(requester.Guid.Full, out var p) && ReferenceEquals(p.Requester, requester)
+                        && ReferenceEquals(p.Target, owner) && p.SlotKey == key && p.Identity == s.Identity && p.ExpiresAt >= now
+                        && _pending.TryRemove(new KeyValuePair<uint, Pending>(requester.Guid.Full, p)))
+                    {
+                        DoRemove(p);
+                        return;
+                    }
+
+                    // the first time: what it would forfeit, and how to confirm - the same command again
+                    foreach (var kv in _pending)
+                        if (kv.Value.ExpiresAt < now)
+                            _pending.TryRemove(kv);
+                    var seconds = ConfirmSeconds;
+                    _pending[requester.Guid.Full] = new Pending
+                    {
+                        Requester = requester, Target = owner, SlotKey = key, Identity = s.Identity, ExpiresAt = now + seconds,
+                    };
+                    var again = own ? $"/bounty abandon {key}" : $"/bounty abandon {key} {owner.Name}";
+                    Tell(requester, $"Abandoning {whose}bounty #{key} forfeits it and its reward: {s.Name} -> {RewardText(s)} ({ProgressText(s)} in {PlaceShort(s)}). "
+                        + $"To abandon it, type {again} again within {seconds} seconds. To keep it, do nothing.");
                 }
                 catch (Exception ex)
                 {
@@ -1101,144 +1369,56 @@ namespace ACE.Server.Managers
             });
         }
 
-        // ── Console confirmation ─────────────────────────────────────────────
-
-        /// <summary>What a waiting /bounty confirm will do: forfeit a slot, or apply a bounty while standing elsewhere.</summary>
-        private enum PendingKind { Remove, Apply }
-
-        /// <summary>One request waiting for /bounty confirm &lt;code&gt;: who asked, whose slots it changes, and what it does.</summary>
-        private sealed class Pending
-        {
-            public PendingKind Kind;
-            public Player Requester;      // who must confirm (a relog makes a new Player object: an old request no longer matches)
-            public Player Target;         // whose slots it changes
-            public string Code;
-            public int Token;
-            public double ExpiresAt;
-            public string What;           // "remove the R1 bounty" - for the expiry line
-            // Remove
-            public string SlotKey;
-            public string Identity;
-            // Apply
-            public uint ItemGuid;
-            public char SlotKind;
-        }
-
-        /// <summary>Requester guid -> their one waiting request.</summary>
-        private static readonly ConcurrentDictionary<uint, Pending> _pending = new();
-        private static int _tokenSeq;
-
-        /// <summary>The confirmation window in seconds (item_bounty_confirm_seconds, held to 10..600).</summary>
-        private static int ConfirmSeconds => (int)Math.Clamp(ServerConfig.item_bounty_confirm_seconds.Value, 10, 600);
-
-        /// <summary>Stores the request (replacing any older one), prints the question and the code, and schedules the expiry line.</summary>
-        private static void Ask(Player requester, Pending p, string question)
-        {
-            var now = Time.GetUnixTime();
-            foreach (var kv in _pending)
-                if (kv.Value.ExpiresAt < now)
-                    _pending.TryRemove(kv);
-
-            var seconds = ConfirmSeconds;
-            p.Requester = requester;
-            p.Code = ThreadSafeRandom.Next(1000, 9999).ToString(CultureInfo.InvariantCulture);
-            p.Token = Interlocked.Increment(ref _tokenSeq);
-            p.ExpiresAt = now + seconds;
-
-            var replaced = _pending.TryGetValue(requester.Guid.Full, out var old) && old.ExpiresAt >= now;
-            _pending[requester.Guid.Full] = p;
-
-            if (replaced)
-                Tell(requester, $"(Your earlier request to {old.What} was cancelled; this one replaces it.)");
-            Tell(requester, $"{question} To confirm, type /bounty confirm {p.Code} within {seconds} seconds. To cancel, do nothing or type /bounty cancel.");
-
-            // the expiry line runs on the WORLD queue, not the requester's (a player's queue stops when they log out, which
-            // would leave the entry - and its Player objects - in _pending); OnLogout drops a leaver's entries at once
-            var token = p.Token;
-            var chain = new ActionChain();
-            chain.AddDelaySeconds(seconds + 0.5);
-            chain.AddAction(WorldManager.ActionQueue, ActionType.ItemBounty_ConfirmExpired, () =>
-            {
-                if (_pending.TryGetValue(requester.Guid.Full, out var cur) && cur.Token == token && _pending.TryRemove(new KeyValuePair<uint, Pending>(requester.Guid.Full, cur)))
-                    Tell(requester, $"Your request to {cur.What} expired. Nothing was changed.");
-            });
-            chain.EnqueueChain();
-        }
+        // ── Confirming an abandon: the same command again ──────────────────
 
         /// <summary>
-        /// A player leaving (Player.FinalizeLogout): drops their waiting confirmation and any admin request aimed at them, so
-        /// no Player object outlives its session in <see cref="_pending"/>.
+        /// One abandon waiting to be typed again (RequestRemove): who typed it, whose bounty it forfeits, which one, and until
+        /// when. (#599 asked for /bounty confirm with a 4-digit code here, and before a start outside the bounty's place; an
+        /// abandon now asks for the same command again, and a start for a second use on the Bounty Ledger - HandleUse.)
+        /// </summary>
+        private sealed class Pending
+        {
+            public Player Requester;      // who typed it (a relog makes a new Player object: an old request no longer matches)
+            public Player Target;         // whose bounty it forfeits
+            public double ExpiresAt;
+            public string SlotKey;
+            public string Identity;       // the bounty asked about: a different one in the slot by then is never abandoned
+        }
+
+        /// <summary>Requester guid -> their one waiting abandon.</summary>
+        private static readonly ConcurrentDictionary<uint, Pending> _pending = new();
+
+        /// <summary>
+        /// The confirmation window in seconds (item_bounty_confirm_seconds, held to 10..600): for typing /bounty abandon again,
+        /// and for the second use that starts a bounty (on the ledger in another tier or region, or without one).
+        /// </summary>
+        private static int ConfirmSeconds => (int)Math.Clamp(ServerConfig.item_bounty_confirm_seconds.Value, 10, 600);
+
+        /// <summary>
+        /// A player leaving (Player.FinalizeLogout): drops their waiting confirmation, any admin request aimed at them, and a
+        /// bounty armed for its second use, so no Player object outlives its session in <see cref="_pending"/>
+        /// and a start never carries over a relog.
         /// </summary>
         public static void OnLogout(Player player)
         {
             if (player == null) return;
+            _armed.TryRemove(player.Guid.Full, out _);
+            _ledgerTried.TryRemove(player.Guid.Full, out _);
+            _ledgerOpened.TryRemove(player.Guid.Full, out _);
             _pending.TryRemove(player.Guid.Full, out _);
             foreach (var kv in _pending)
                 if (ReferenceEquals(kv.Value.Target, player))
                     _pending.TryRemove(kv);
         }
 
-        /// <summary>/bounty confirm code: runs the requester's waiting request if the code matches and it hasn't expired.</summary>
-        public static void Confirm(Player requester, string code)
-        {
-            if (requester == null) return;
-
-            var now = Time.GetUnixTime();
-            if (!_pending.TryGetValue(requester.Guid.Full, out var p) || !ReferenceEquals(p.Requester, requester) || p.ExpiresAt < now)
-            {
-                Tell(requester, "No request is waiting for confirmation. Nothing was changed.");
-                return;
-            }
-            if (!string.Equals((code ?? "").Trim(), p.Code, StringComparison.Ordinal))
-            {
-                Tell(requester, $"That code doesn't match your request to {p.What}. Nothing was changed. The code is in the line that asked you to confirm.");
-                return;
-            }
-            if (!_pending.TryRemove(new KeyValuePair<uint, Pending>(requester.Guid.Full, p)))
-            {
-                Tell(requester, "No request is waiting for confirmation. Nothing was changed.");
-                return;
-            }
-
-            var target = p.Target;
-            if (target == null || target.IsLoggingOut || !ReferenceEquals(PlayerManager.GetOnlinePlayer(target.Guid), target))
-            {
-                Tell(requester, "That character is no longer online. Nothing was changed.");
-                return;
-            }
-
-            LandblockManager.RunOnThreadFor(target, ActionType.ItemBounty_Command, () =>
-            {
-                try
-                {
-                    if (p.Kind == PendingKind.Remove) DoRemove(p);
-                    else DoConfirmedApply(p);
-                }
-                catch (Exception ex)
-                {
-                    log.Error($"[ItemBounty] Confirm: {ex}");
-                }
-            });
-        }
-
-        /// <summary>/bounty cancel: drops the requester's waiting request, if any.</summary>
-        public static void Cancel(Player requester)
-        {
-            if (requester == null) return;
-            if (_pending.TryRemove(requester.Guid.Full, out var p) && p.ExpiresAt >= Time.GetUnixTime())
-                Tell(requester, $"Cancelled: your request to {p.What}. Nothing was changed.");
-            else
-                Tell(requester, "No request was waiting. Nothing was changed.");
-        }
-
-        /// <summary>A confirmed removal, on the owner's thread: only if the SAME bounty is still in the slot.</summary>
+        /// <summary>A confirmed abandon, on the owner's thread: only if the SAME bounty is still in the slot.</summary>
         private static void DoRemove(Pending p)
         {
             var owner = p.Target;
             var slots = LoadSlots(owner);
             if (!slots.TryGetValue(p.SlotKey, out var s) || s.Identity != p.Identity)
             {
-                Tell(p.Requester, $"{p.SlotKey} no longer holds that bounty (it may have completed). Nothing was removed.");
+                Tell(p.Requester, $"Slot #{p.SlotKey} no longer holds that bounty (it may have completed). Nothing was abandoned.");
                 return;
             }
 
@@ -1246,61 +1426,18 @@ namespace ACE.Server.Managers
             SaveSlots(owner, slots);
             owner.SavePlayerToDatabase();
 
-            var line = $"{p.SlotKey} bounty removed: {s.Name} -> {RewardText(s)} forfeited ({ProgressText(s)}). {p.SlotKey} is free.";
+            var what = $"{s.Name} -> {RewardText(s)} forfeited ({ProgressText(s)}). Slot #{p.SlotKey} is free ({slots.Count} of {MaxActiveNow} going).";
             if (ReferenceEquals(p.Requester, owner))
             {
-                Tell(owner, line);
+                Tell(owner, $"Bounty #{p.SlotKey} abandoned: {what}");
             }
             else
             {
-                Tell(p.Requester, $"{owner.Name}'s " + line);
-                Tell(owner, $"An admin ({p.Requester.Name}) removed your bounty. " + line);
-                PlayerManager.BroadcastToAuditChannel(p.Requester, $"{p.Requester.Name} removed {owner.Name}'s {p.SlotKey} bounty: {s.Name} ({ProgressText(s)}).");
+                Tell(p.Requester, $"{owner.Name}'s bounty #{p.SlotKey} abandoned: {what}");
+                Tell(owner, $"An admin ({p.Requester.Name}) removed your bounty #{p.SlotKey}: {what}");
+                PlayerManager.BroadcastToAuditChannel(p.Requester, $"{p.Requester.Name} removed {owner.Name}'s bounty #{p.SlotKey}: {s.Name} ({ProgressText(s)}).");
             }
-            log.Info($"[ItemBounty] remove {owner.Name} {p.SlotKey} by {p.Requester.Name} \"{s.Name}\" at {s.Progress.ToString("0.##", CultureInfo.InvariantCulture)}/{s.Kills}");
-        }
-
-        /// <summary>
-        /// A confirmed off-tier apply, on the player's thread: everything the direct apply checks is checked again (the
-        /// feature switch, the item in the pack and out of any trade window, the character, the terms, the reward, a free
-        /// slot), then applied.
-        /// </summary>
-        private static void DoConfirmedApply(Pending p)
-        {
-            var player = p.Target;
-            if (!ServerConfig.item_bounty_enabled.Value)
-            {
-                Tell(player, "Bounties can't be applied right now. Nothing was applied.");
-                return;
-            }
-            var item = player.FindObject(p.ItemGuid, Player.SearchLocations.MyInventory);
-            var terms = TermsOf(item);
-            if (item == null || terms == null)
-            {
-                Tell(player, "That bounty is no longer in your pack. Nothing was applied.");
-                return;
-            }
-            if (player.IsTrading && item.IsBeingTradedOrContainsItemBeingTraded(player.ItemsInTradeWindow))
-            {
-                Tell(player, $"The {item.Name} is in your trade window. Nothing was applied.");
-                return;
-            }
-            if (player.IsMule || player.IsOlthoiPlayer)
-            {
-                Tell(player, "This character can't take bounties.");
-                return;
-            }
-            if (!CanTake(player, terms, out var why))
-            {
-                Tell(player, why);
-                return;
-            }
-            if (!RewardReadyOrTell(player, item, terms))
-                return;
-            if (!FreeSlotOrTell(player, LoadSlots(player), p.SlotKind, out var free))
-                return;
-
-            Commit(player, item, terms, free);
+            log.Info($"[ItemBounty] abandon {owner.Name} #{p.SlotKey} by {p.Requester.Name} \"{s.Name}\" at {s.Progress.ToString("0.##", CultureInfo.InvariantCulture)}/{s.Kills}");
         }
 
         // ── Monster drops (owner 2026-11-10) ─────────────────────────────────
@@ -2057,8 +2194,8 @@ namespace ACE.Server.Managers
                     if (terms == null) { item.Destroy(); Tell(admin, $"{wcid} ({item.Name}) has incomplete bounty terms (tier or region, kills, reward)."); return; }
 
                     if (!admin.TryCreateInInventoryWithNetworking(item)) { item.Destroy(); Tell(admin, "No room in your pack."); return; }
-                    // the guid lets a test script use the bounty on a ring (usewith <bounty> <ring>)
-                    var killsText = KillsHidden(terms) ? $"mystery kills ({terms.KillsMin:N0}-{terms.KillsMax:N0}, rolled when applied)" : $"{terms.Kills:N0} kills";
+                    // the guid lets a test script use the bounty (use <bounty> twice starts it)
+                    var killsText = KillsHidden(terms) ? $"mystery kills ({terms.KillsMin:N0}-{terms.KillsMax:N0}, rolled when started)" : $"{terms.Kills:N0} kills";
                     var rewardText = RewardText(terms);
                     if (terms.IsMysteryReward)
                     {
@@ -2077,6 +2214,408 @@ namespace ACE.Server.Managers
                     log.Error($"[ItemBounty] Make: {ex}");
                 }
             });
+        }
+
+        // ── The Bounty Ledger (2026-11-12) ──────────────────────────────────
+        //
+        // One thing players look at and act on, instead of commands. The ledger is a BOOK, attuned STICKY and bonded so no
+        // player can get rid of it - no drop, trade, give (not even to an NPC that takes anything), sale, container outside
+        // the pack, salvage or mana drain, and it stays through death (its weenie is item_bounty_ledger_wcid; 0 = no ledgers):
+        //   - a bounty used ON it starts: double-click the bounty, then click the ledger (HandleUse) - at once in its own tier
+        //     or region or a town; standing in another tier or region, after a second use on the ledger;
+        //   - double-clicked, it opens as a book: a summary page, then one page per bounty with a progress bar - written from
+        //     the reader's slots every time it opens, as the Monster-Dex does, never stored on the item (OpenLedger); one chat
+        //     line sums it up as well, for a client that draws no book;
+        //   - appraised by the player carrying it, its description lists the bounties going and their progress (AppraisalText).
+        // Nothing lives ON the ledger - the slots stay on the character - so even one an admin deletes loses nothing: a new one
+        // is handed over the next time a bounty is used, and at login while bounties are going (OnLogin).
+
+        /// <summary>The Bounty Ledger's weenie (item_bounty_ledger_wcid); 0 = no ledgers.</summary>
+        internal static uint LedgerWcid
+        {
+            get
+            {
+                var v = ServerConfig.item_bounty_ledger_wcid.Value;
+                return v > 0 && v <= uint.MaxValue ? (uint)v : 0;
+            }
+        }
+
+        /// <summary>True while ledgers are on (item_bounty_ledger_wcid names a weenie).</summary>
+        internal static bool LedgersOn => LedgerWcid != 0;
+
+        /// <summary>True for a Bounty Ledger: an item made from item_bounty_ledger_wcid.</summary>
+        public static bool IsLedger(WorldObject wo) => wo != null && LedgersOn && wo.WeenieClassId == LedgerWcid;
+
+        /// <summary>A Bounty Ledger in the player's pack (main pack or a side pack), or null.</summary>
+        private static WorldObject FindLedger(Player player)
+            => LedgersOn ? player.GetInventoryItemsOfWCID(LedgerWcid).FirstOrDefault() : null;
+
+        /// <summary>Player guid -> when a ledger was last tried for them outside login (GrantLedger's throttle).</summary>
+        private static readonly ConcurrentDictionary<uint, double> _ledgerTried = new();
+
+        /// <summary>
+        /// At most one ledger attempt per player this often outside login: a forged client repeating bounty uses can't make the
+        /// server build and destroy a ledger (or log a warning) per packet. Long enough for that, short enough that a player
+        /// who just made room in a full pack is not kept waiting.
+        /// </summary>
+        private const double LedgerRetrySeconds = 3;
+
+        /// <summary>1 once the missing-ledger-weenie warning has been logged: once per server run, not once per use.</summary>
+        private static int _ledgerMissingLogged;
+
+        /// <summary>
+        /// A new Bounty Ledger into the player's pack, or null: ledgers off, a character that can't take bounties, tried for
+        /// them within LedgerRetrySeconds, the ledger's weenie missing (logged once: import the Bounty Ledger SQL, or set
+        /// item_bounty_ledger_wcid 0), or no room (the player is told, except at login). At login (<paramref name="atLogin"/>)
+        /// it is added without networking - SendSelf sends the pack right after; otherwise it is created in the pack with
+        /// networking.
+        /// </summary>
+        private static WorldObject GrantLedger(Player player, bool atLogin)
+        {
+            var wcid = LedgerWcid;
+            if (wcid == 0 || player == null || player.IsMule || player.IsOlthoiPlayer)
+                return null;
+
+            if (!atLogin)
+            {
+                var now = Time.GetUnixTime();
+                if (_ledgerTried.TryGetValue(player.Guid.Full, out var last) && now - last < LedgerRetrySeconds)
+                    return null;
+                _ledgerTried[player.Guid.Full] = now;
+            }
+
+            var ledger = Factories.WorldObjectFactory.CreateNewWorldObject(wcid);
+            if (ledger == null)
+            {
+                if (Interlocked.Exchange(ref _ledgerMissingLogged, 1) == 0)
+                    log.Warn($"[ItemBounty] ledger: weenie {wcid} (item_bounty_ledger_wcid) doesn't exist - import the Bounty Ledger SQL and @clearcache, or set item_bounty_ledger_wcid 0. Until then bounties start with two uses. (Logged once.)");
+                return null;
+            }
+            if (!(atLogin ? player.TryAddToInventory(ledger) : player.TryCreateInInventoryWithNetworking(ledger)))
+            {
+                ledger.Destroy();
+                if (!atLogin)
+                    Tell(player, "There is no room in your pack for a Bounty Ledger, which keeps track of your bounties. Make room to get one.");
+                return null;
+            }
+            log.Info($"[ItemBounty] ledger: given to {player.Name}{(atLogin ? " at login" : "")}");
+            return ledger;
+        }
+
+        /// <summary>
+        /// The ItemUseable a bounty carries, which decides what the client does when it is double-clicked: with ledgers on, a
+        /// cursor to use it ON something (the ledger starts it; the player themself or a ring get the how-to); with ledgers
+        /// off, a plain use (the two-use start).
+        /// </summary>
+        internal static Usable BountyUseable => LedgersOn ? Usable.SourceContainedTargetSelfOrContained : Usable.Contained;
+
+        /// <summary>
+        /// What the client lets a bounty be used on with ledgers on: the ledger (a book: Writable), the player themself (no
+        /// ledger yet? one is handed over) and jewelry (the habit from before the rework). The client refuses anything else.
+        /// </summary>
+        internal const ItemType BountyTargets = ItemType.Writable | ItemType.Creature | ItemType.Jewelry;
+
+        /// <summary>
+        /// Gives a bounty item the ItemUseable above - and, with ledgers on, the TargetType - whatever its weenie says; true
+        /// when anything changed. At creation (OnNewItem), at login for the bounties a player carries (OnLogin), and when a
+        /// bounty is used (HandleUse), for one that was elsewhere at login.
+        /// </summary>
+        internal static bool MakeUsable(WorldObject wo)
+        {
+            var changed = false;
+            var useable = BountyUseable;
+            if (wo.ItemUseable != useable)
+            {
+                wo.ItemUseable = useable;
+                changed = true;
+            }
+            if (LedgersOn && wo.TargetType != BountyTargets)
+            {
+                wo.TargetType = BountyTargets;
+                changed = true;
+            }
+            return changed;
+        }
+
+        /// <summary>One page of the ledger: its title (the book draws it as the page's author line) and its text.</summary>
+        internal readonly record struct LedgerPage(string Title, string Text);
+
+        /// <summary>A dashed line across a book page (the Monster-Dex's width).</summary>
+        private const string Rule = "-----------------------------\n";
+
+        /// <summary>
+        /// The ledger's pages for a character's slots: a summary, then one page per bounty going, in slot order. Pure - the
+        /// tests read it; OpenLedger sends it. <paramref name="on"/>: item_bounty_enabled.
+        /// </summary>
+        internal static List<LedgerPage> BuildLedger(IReadOnlyDictionary<string, Slot> slots, int max, bool on)
+        {
+            var pages = new List<LedgerPage> { new("Bounty Ledger", SummaryPage(slots, max, on)) };
+            foreach (var key in SlotKeys)
+                if (slots.TryGetValue(key, out var s))
+                    pages.Add(new($"Bounty #{key}", BountyPage(key, s)));
+            return pages;
+        }
+
+        /// <summary>The ledger's first page: how many are going, one line per slot ("#2  T15  64%  640/1,000"), and how to add one.</summary>
+        internal static string SummaryPage(IReadOnlyDictionary<string, Slot> slots, int max, bool on)
+        {
+            var sb = new StringBuilder();
+            sb.Append($"Bounties going: {slots.Count} of {max}\n").Append(Rule);
+            if (!on)
+                sb.Append("Paused by the admins: nothing counts or pays until they are back on.\n").Append(Rule);
+            foreach (var key in ShownKeys(slots, max))
+            {
+                slots.TryGetValue(key, out var s);
+                sb.Append(s == null ? $"#{key}  empty\n" : $"#{key}  {PlaceShort(s)}  {Percent(s)}%  {ShortProgress(s)}\n");
+            }
+            sb.Append(Rule);
+            if (slots.Count > 0)
+                sb.Append("Turn the page for each bounty.\n\n");
+            sb.Append("To add a bounty: double-click it, then click this ledger.");
+            return sb.ToString();
+        }
+
+        /// <summary>One bounty's page: its name, what and where to kill, the progress with a bar, the reward, and how to drop it.</summary>
+        internal static string BountyPage(string key, Slot s)
+        {
+            var sb = new StringBuilder();
+            sb.Append(s.Name).Append('\n').Append(Rule);
+            sb.Append("Kill: ").Append(s.Kind == KindSpecies ? s.TargetName : "any creature").Append('\n');
+            sb.Append("Where: ").Append(PlaceName(s)).Append('\n');
+            sb.Append("Progress: ").Append(ProgressText(s)).Append('\n');
+            sb.Append(ProgressBar(s)).Append(' ').Append(Percent(s).ToString(CultureInfo.InvariantCulture)).Append("%\n");
+            sb.Append("Reward: ").Append(s.IsMysteryReward ? "a mystery, revealed when it is done" : RewardText(s)).Append('\n');
+            if (s.AppliedUnix > 0 && s.AppliedUnix < 253_402_300_800)   // a readable date (a hand-edited slot could hold anything)
+                sb.Append("Started: ").Append(DateTimeOffset.FromUnixTimeSeconds(s.AppliedUnix).UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append('\n');
+            if (IsWaitingMystery(s))
+                sb.Append("Done! Its mystery reward is paid as soon as the admins set it up.\n");
+            sb.Append(Rule);
+            sb.Append(s.IsRegion
+                ? $"Only your own kills in {PlaceName(s)} count, each one in full.\n"
+                : $"Only your own kills in {PlaceName(s)} count (the tier dip applies).\n");
+            sb.Append($"\nTo abandon it (forfeits it):\n/bounty abandon {key}");
+            return sb.ToString();
+        }
+
+        /// <summary>How far a bounty is, 0-100: rounded down, so 100 only once it is done.</summary>
+        internal static int Percent(Slot s)
+        {
+            if (s == null || s.Kills <= 0) return 0;
+            if (s.Progress >= s.Kills) return 100;
+            return Math.Clamp((int)Math.Floor(100.0 * s.Progress / s.Kills), 0, 99);
+        }
+
+        /// <summary>"[############--------]": twenty cells, one per 5%, plain ASCII.</summary>
+        internal static string ProgressBar(Slot s)
+        {
+            const int cells = 20;
+            var filled = Math.Clamp(Percent(s) * cells / 100, 0, cells);
+            return "[" + new string('#', filled) + new string('-', cells - filled) + "]";
+        }
+
+        /// <summary>"640/1,000": the progress and the kill count, short.</summary>
+        internal static string ShortProgress(Slot s) => $"{TierRewardScale.FormatProgress(s.Progress)}/{s.Kills:N0}";
+
+        /// <summary>
+        /// The chat line opening the ledger also prints, for a client that draws no book: "Bounty Ledger: 2 of 4 going - #1
+        /// T16 4%, #2 T15 64%." or, with none going, how to add one.
+        /// </summary>
+        internal static string LedgerChatLine(IReadOnlyDictionary<string, Slot> slots, int max)
+        {
+            if (slots.Count == 0)
+                return $"Bounty Ledger: none going (you can have up to {max}). To add one, double-click the bounty, then click the ledger.";
+            var parts = SlotKeys.Where(slots.ContainsKey).Select(k => $"#{k} {PlaceShort(slots[k])} {Percent(slots[k])}%");
+            return $"Bounty Ledger: {slots.Count} of {max} going - {string.Join(", ", parts)}.";
+        }
+
+        /// <summary>
+        /// The ledger's description for the player carrying it: one line per slot with the progress and the reward, then how
+        /// to use it. <paramref name="on"/>: item_bounty_enabled.
+        /// </summary>
+        internal static string LedgerDescription(IReadOnlyDictionary<string, Slot> slots, int max, bool on)
+        {
+            var sb = new StringBuilder();
+            sb.Append($"Your bounties: {slots.Count} of {max} going.\n");
+            if (!on)
+                sb.Append("Paused by the admins: nothing counts or pays until they are back on.\n");
+            foreach (var key in ShownKeys(slots, max))
+            {
+                slots.TryGetValue(key, out var s);
+                sb.Append(s == null ? $"#{key} empty\n" : $"#{key} {PlaceShort(s)}: {ProgressText(s)} ({Percent(s)}%) -> {RewardText(s)}\n");
+            }
+            sb.Append("\nTo add a bounty, double-click it and then click this ledger. Double-click the ledger to read a page for each bounty.");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Appraisal (AppraiseInfo): the description to show instead of the stored one - a bounty's own terms (DescribeItem), or
+        /// a ledger's summary of the examiner's bounties when the examiner carries it - or null to keep the stored text.
+        /// Display only: nothing is written. On the examiner's thread.
+        /// </summary>
+        public static string AppraisalText(WorldObject wo, Player examiner)
+        {
+            if (!IsLedger(wo))
+                return DescribeItem(wo);
+            try
+            {
+                if (examiner == null || examiner.FindObject(wo.Guid.Full, Player.SearchLocations.MyInventory) == null)
+                    return null;
+                return LedgerDescription(LoadSlots(examiner), MaxActiveNow, ServerConfig.item_bounty_enabled.Value);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[ItemBounty] AppraisalText: {ex}");
+                return null;
+            }
+        }
+
+        /// <summary>Player guid -> when their ledger was last opened (OpenLedger's throttle).</summary>
+        private static readonly ConcurrentDictionary<uint, double> _ledgerOpened = new();
+
+        /// <summary>The least time between two ledger opens for one player, in seconds.</summary>
+        private const double LedgerReopenSeconds = 1;
+
+        /// <summary>
+        /// A Bounty Ledger opened (Book.ActOnUse, Player.ReadBook): its pages written from the reader's bounties and sent as
+        /// the book's contents - nothing stored on the item, as the Monster-Dex does - with as many pages as it has, so the
+        /// client offers no blank page to write on. One chat line sums it up too. A done mystery waiting for its reward table
+        /// is paid first if it can be now, as /bounty does. On the reader's thread.
+        /// </summary>
+        public static void OpenLedger(Player player, WorldObject ledger, int maxChars)
+        {
+            try
+            {
+                if (player?.Session == null || ledger == null) return;
+
+                // once a second at most: the book-data request (0x00AA, Player.ReadBook) has no throttle of its own, and each
+                // open builds the pages, sends them and a chat line, and may pay a waiting mystery. A legit double-click and a
+                // client re-request a moment later lose nothing: the first answer already carried the pages.
+                var now = Time.GetUnixTime();
+                if (_ledgerOpened.TryGetValue(player.Guid.Full, out var last) && now - last < LedgerReopenSeconds)
+                    return;
+                _ledgerOpened[player.Guid.Full] = now;
+
+                if (maxChars < 100) maxChars = 1000;   // as the Monster-Dex: an unset page size reads 0
+
+                var on = ServerConfig.item_bounty_enabled.Value;
+                if (on)
+                    PayWaitingMysteries(player);
+
+                var slots = LoadSlots(player);
+                var max = MaxActiveNow;
+                var pages = BuildLedger(slots, max, on)
+                    .Select(p => new ACE.Entity.Models.PropertiesBookPageData
+                    {
+                        AuthorId = 0xFFFFFFFF,
+                        AuthorName = p.Title,
+                        AuthorAccount = "",
+                        IgnoreAuthor = false,
+                        PageText = p.Text.Length > maxChars ? p.Text.Substring(0, maxChars) : p.Text,
+                    })
+                    .ToList();
+                player.Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventBookDataResponse(
+                    player.Session, ledger.Guid.Full, maxChars, pages.Count, pages, "", 0xFFFFFFFF, "", false));
+                Tell(player, LedgerChatLine(slots, max));
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[ItemBounty] OpenLedger: {ex}");
+            }
+        }
+
+        // ── Login ────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Login (Player.PlayerEnterWorld), BEFORE SendSelf sends the character and its pack to the client: the bounties a
+        /// player carries are given the ItemUseable of the current mode (NormalizeHeldBounties), the Bounty Tracker's stored
+        /// display is brought to the current format (RefreshStoredDisplay), and a player with bounties - going, or in the pack -
+        /// but no Bounty Ledger is given one (GiveLedgerAtLogin).
+        /// </summary>
+        public static void OnLogin(Player player)
+        {
+            var held = NormalizeHeldBounties(player);
+            RefreshStoredDisplay(player);
+            GiveLedgerAtLogin(player, held);
+        }
+
+        /// <summary>
+        /// At login, before the pack is sent: a Bounty Ledger for a player who has bounties going or carries
+        /// <paramref name="heldBounties"/> bounty items and has no ledger - the players from before ledgers existed, and
+        /// anyone who lost theirs. Added without networking (the pack goes out with it); a full pack just waits for the next
+        /// bounty use.
+        /// </summary>
+        private static void GiveLedgerAtLogin(Player player, int heldBounties)
+        {
+            try
+            {
+                if (!LedgersOn || player == null || player.IsMule || player.IsOlthoiPlayer)
+                    return;
+                if (heldBounties == 0 && string.IsNullOrEmpty(player.GetProperty(PropertyString.ItemBountySlots)))
+                    return;
+                if (FindLedger(player) != null)
+                    return;
+                if (GrantLedger(player, atLogin: true) != null)
+                    Tell(player, "A Bounty Ledger was added to your pack: double-click it to see your bounties and their progress. To start a bounty, double-click it and then click the ledger.");
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[ItemBounty] GiveLedgerAtLogin: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// The character's stored ItemBountyDisplay rebuilt in the current format (v3, slots #1..#cap), when it has one and it
+        /// differs - a character that used bounties before the rework stored a v2 one with R1..B2. Set on the character only,
+        /// nothing is sent: at login the property goes out with the character ([SendOnLogin]).
+        /// </summary>
+        private static void RefreshStoredDisplay(Player player)
+        {
+            try
+            {
+                var stored = player?.GetProperty(PropertyString.ItemBountyDisplay);
+                if (stored == null)
+                    return;
+                var current = BuildDisplay(LoadSlots(player));
+                if (current != stored)
+                    player.SetProperty(PropertyString.ItemBountyDisplay, current);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[ItemBounty] RefreshStoredDisplay: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Login (OnLogin, BEFORE the pack is sent to the client - the client keeps an item's ItemUseable from when it was
+        /// first told about it): every bounty the player carries gets the ItemUseable and TargetType of the current mode
+        /// (MakeUsable), as OnNewItem gives new ones - a bounty from before the 2026-11-12 rework targets jewelry. Only what the
+        /// player carries (GetAllPossessions); a bounty kept elsewhere (a house chest, a corpse) is fixed the first time it is
+        /// used (HandleUse), which also sends it to the client again. Returns how many bounty items the player carries.
+        /// </summary>
+        public static int NormalizeHeldBounties(Player player)
+        {
+            var held = 0;
+            try
+            {
+                if (player == null)
+                    return 0;
+                var changed = 0;
+                foreach (var item in player.GetAllPossessions())
+                {
+                    if (item == null || !IsBountyItem(item))
+                        continue;
+                    held++;
+                    if (MakeUsable(item))
+                        changed++;
+                }
+                if (changed > 0)
+                    log.Info($"[ItemBounty] login {player.Name}: {changed} bounty item(s) given the current use ({BountyUseable})");
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[ItemBounty] NormalizeHeldBounties: {ex}");
+            }
+            return held;
         }
 
         // ── Storage ──────────────────────────────────────────────────────────
