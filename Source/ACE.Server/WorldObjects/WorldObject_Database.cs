@@ -143,6 +143,17 @@ namespace ACE.Server.WorldObjects
             if (IsStaleSaveFlag(timeInFlight))
             {
                 LogStaleSaveFlagOnce(itemName, itemGuid, timeInFlight);
+
+                // Adds nothing to the alert, but sends any real race still waiting for its minute to
+                // pass - otherwise it would sit until the next real race happened to arrive.
+                try
+                {
+                    SendAggregatedDbRaceAlert();
+                }
+                catch (Exception ex)
+                {
+                    log.Debug($"[DB STALE FLAG] could not flush pending race alert: {ex.Message}");
+                }
                 return;
             }
 
