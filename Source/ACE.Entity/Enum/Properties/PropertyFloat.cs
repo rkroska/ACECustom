@@ -397,14 +397,24 @@ namespace ACE.Entity.Enum.Properties
         /// has not yet made a whole coin (0 .. 1). Whole coins go straight to BankedPrestigeCoins. Server-only.</summary>
         PrestigeCoinFraction = 57000,
 
-        /// <summary>Prestige Coin falloff (2026-11-01), on a CHARACTER: how far ahead of the full-rate kill pace they are, in
-        /// SECONDS of kills at that pace, as of <see cref="PrestigeCoinPaceDebtTime"/> (0 .. the falloff window, 288 at the
-        /// defaults; it drains one second a second). Unset = 0, a full reserve. Server-only. See TierRewardScale.FalloffOnDebt.</summary>
+        /// <summary>RETIRED 2026-11-17 (Prestige Coin falloff, first version): the rolling-pace count, in seconds. No longer
+        /// read; TierRewards removes it from a character at their next coin kill. Kept so the id is never reused.</summary>
         PrestigeCoinPaceDebt = 57001,
 
-        /// <summary>Prestige Coin falloff (2026-11-01), on a CHARACTER: when <see cref="PrestigeCoinPaceDebt"/> was last
-        /// written (Unix epoch seconds), so time offline drains it too. Server-only.</summary>
+        /// <summary>RETIRED 2026-11-17: when <see cref="PrestigeCoinPaceDebt"/> was written. No longer read; removed with it.
+        /// Kept so the id is never reused.</summary>
         PrestigeCoinPaceDebtTime = 57002,
+
+        /// <summary>Prestige Coin kill cap (2026-11-17), on a CHARACTER: how much of the full-rate start (zc_kill_cap_start) their
+        /// current coin hour has used, as a share - 1 = the whole start, 1.2 = the start and 20 pct of it more. Kills are full-value
+        /// kills (a below-tier kill counts as its tier-dip credit; a kill in a zone with its own start counts 1 / its stretch).
+        /// A share, not kills, so a mid-hour change of zc_kill_cap_start keeps what each kill used. Read with
+        /// <see cref="PrestigeCoinHourStart"/>. Server-only. See TierRewardScale.FalloffCountFromSaved.</summary>
+        PrestigeCoinHourShare = 57003,
+
+        /// <summary>Prestige Coin falloff (2026-11-17), on a CHARACTER: when their current coin hour started (Unix epoch seconds).
+        /// The first coin kill 60 minutes or more after it starts a new hour. Server-only. See TierRewardScale.FalloffHour.</summary>
+        PrestigeCoinHourStart = 57004,
 
         /// <summary>Triune earning (owner 2026-11-01), on a CHARACTER: the part of a Triune Weave point earned from own-tier kills
         /// that has not yet made a whole point (0 .. 1). Whole points go straight onto TriuneWeaveCount. Server-only.</summary>

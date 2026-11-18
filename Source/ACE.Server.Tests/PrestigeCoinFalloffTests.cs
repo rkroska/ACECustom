@@ -11,54 +11,59 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace ACE.Server.Tests
 {
     /// <summary>
-    /// Prestige Coin falloff (2026-11-01): coins per T11+ zone kill stay as they are up to a pace of
-    /// zc_pcoin_falloff_kills_per_hour (375) full-value kills an hour, and every kill past that pace pays zc_pcoin_falloff_mult
-    /// (0.5) of its coins. The pure rule (TierRewardScale.Falloff), the dial cleaning and zone override
-    /// (TierRewardScale.CleanFalloff / FalloffFor), the saved-seconds form (FalloffOnDebt), the shipped defaults and the two
-    /// Zone Control stats. No DB, no world.
+    /// Prestige Coin kill cap (falloff 2026-11-01; steps per coin hour 2026-11-17): of a character's T11+ zone coin kills in one
+    /// coin hour, the first zc_kill_cap_start (375) pay in full, then every zc_kill_cap_interval (75) kills the share is cut by
+    /// zc_kill_cap_reduction (0.5), with an optional hard stop at zc_kill_cap_max (0 = none). The pure rules
+    /// (TierRewardScale.FalloffBands / FalloffKill / FalloffHour / FalloffBandAt / FalloffNotice / DescribeFalloff), the dial
+    /// cleaning and zone override (CleanFalloff / FalloffFor), the shipped defaults and the two Zone Control stats. No DB, no world.
     /// </summary>
     [TestClass]
     public class PrestigeCoinFalloffTests
     {
-        private const double Pace = 375, Half = 0.5, Reserve = 30;
+        /// <summary>The shipped kill cap: full to 375, then 50 pct less every 75 kills, no hard stop.</summary>
+        private static readonly TierRewardScale.FalloffDials Shipped = new(375, 0.5, 75, 0);
+
+        /// <summary>The shipped kill cap with a hard stop at 750.</summary>
+        private static readonly TierRewardScale.FalloffDials Stop750 = Shipped with { Max = 750 };
 
         /// <summary>
-        /// Kills at a steady <paramref name="killsPerHour"/> from a fresh character (count 0), each worth <paramref name="credit"/>.
-        /// Returns the credit paid over kills [firstKill, lastKill).
+        /// <paramref name="kills"/> kills in one coin hour from a fresh hour (count 0), each worth <paramref name="credit"/>.
+        /// Returns the total credit paid.
         /// </summary>
-        private static double Simulate(double killsPerHour, int firstKill, int lastKill, double credit = 1.0,
-            double pace = Pace, double mult = Half, double reserve = Reserve)
+        private static double HourTotal(int kills, TierRewardScale.FalloffDials dials, double credit = 1.0)
         {
-            var interval = 3600.0 / killsPerHour;
-            double recent = 0, total = 0, last = 0;
-            for (var k = 0; k < lastKill; k++)
+            double count = 0, total = 0;
+            for (var k = 0; k < kills; k++)
             {
-                var t = k * interval;
-                var (paid, count, _) = TierRewardScale.Falloff(recent, k == 0 ? 0 : t - last, credit, pace, mult, reserve);
-                recent = count;
-                last = t;
-                if (k >= firstKill)
-                    total += paid;
+                var (paid, next, _) = TierRewardScale.FalloffKill(count, credit, dials);
+                count = next;
+                total += paid;
             }
             return total;
         }
 
-        /// <summary>Paid credit in the third hour of a steady pace (the first hour includes the 30-kill head start).</summary>
-        private static double ThirdHour(int killsPerHour, double credit = 1.0)
-            => Simulate(killsPerHour, 2 * killsPerHour, 3 * killsPerHour, credit);
+        /// <summary>What the <paramref name="n"/>th full-value kill of the hour pays under <paramref name="dials"/>.</summary>
+        private static double KillPays(int n, TierRewardScale.FalloffDials dials) => TierRewardScale.FalloffKill(n - 1, 1.0, dials).Paid;
+
+        /// <summary>A zone Default row authoring exactly <paramref name="values"/> (case-insensitive stat names).</summary>
+        private static EvaluatedProfile Zone(Dictionary<string, double> values)
+            => new EvaluatedProfile("test zone", 15, ZoneVariant.Minion,
+                new Dictionary<string, double>(values, StringComparer.OrdinalIgnoreCase));
 
         // -- shipped defaults and registration --
 
-        /// <summary>The shipped settings: 375 kills an hour, half pay past it, a 30-kill reserve.</summary>
+        /// <summary>The shipped settings are the requested kill cap, and the server dials read from them equal it.</summary>
         [TestMethod]
-        public void Defaults_Falloff()
+        public void Defaults_AreTheRequestedKillCap()
         {
-            Assert.AreEqual(375.0, ServerConfig.zc_pcoin_falloff_kills_per_hour.Default, 1e-9);
-            Assert.AreEqual(0.5, ServerConfig.zc_pcoin_falloff_mult.Default, 1e-9);
-            Assert.AreEqual(30.0, ServerConfig.zc_pcoin_falloff_reserve.Default, 1e-9);
+            Assert.AreEqual(375.0, ServerConfig.zc_kill_cap_start.Default, 1e-9);
+            Assert.AreEqual(0.5, ServerConfig.zc_kill_cap_reduction.Default, 1e-9);
+            Assert.AreEqual(75.0, ServerConfig.zc_kill_cap_interval.Default, 1e-9);
+            Assert.AreEqual(0.0, ServerConfig.zc_kill_cap_max.Default, 1e-9);
+            Assert.AreEqual(Shipped, TierRewardScale.ServerFalloff());
         }
 
-        /// <summary>Both Zone Control stats are registered once, at the end of ZoneStat.All (after SlayerPoolShare), and are not weapon cards.</summary>
+        /// <summary>Both Zone Control stats are registered once, at the end of the tail they were appended to (after SlayerPoolShare), and are not weapon cards.</summary>
         [TestMethod]
         public void Stats_AreRegisteredOnceAndAppended()
         {
@@ -76,314 +81,345 @@ namespace ACE.Server.Tests
             CollectionAssert.AreEqual(stats, ZoneStat.All.Skip(start).Take(stats.Length).ToArray());
         }
 
-        // -- a steady pace --
+        // -- the requested steps --
 
-        /// <summary>A steady pace at or under 375 an hour pays every kill in full.</summary>
+        /// <summary>An hour's total: full to 375, then each 75-kill step adds half what the one before did, never past 450 with no stop.</summary>
         [TestMethod]
-        public void UnderThePace_PaysInFull()
+        public void HourTotals_HalveEveryInterval()
         {
-            Assert.AreEqual(1500.0, Simulate(300, 0, 1500), 1e-9, "300 an hour for 5 hours");
-            Assert.AreEqual(1875.0, Simulate(375, 0, 1875), 1e-9, "exactly 375 an hour for 5 hours");
+            Assert.AreEqual(100.0, HourTotal(100, Shipped), 1e-6);
+            Assert.AreEqual(375.0, HourTotal(375, Shipped), 1e-6, "full up to and including 375");
+            Assert.AreEqual(375.5, HourTotal(376, Shipped), 1e-6);
+            Assert.AreEqual(412.5, HourTotal(450, Shipped), 1e-6, "+ 75 x 0.5");
+            Assert.AreEqual(431.25, HourTotal(525, Shipped), 1e-6, "+ 75 x 0.25");
+            Assert.AreEqual(440.625, HourTotal(600, Shipped), 1e-6, "+ 75 x 0.125");
+            Assert.AreEqual(445.3125, HourTotal(675, Shipped), 1e-6);
+            Assert.AreEqual(447.65625, HourTotal(750, Shipped), 1e-6);
+            Assert.AreEqual(448.828125, HourTotal(825, Shipped), 1e-6, "no stop: it keeps halving");
+            Assert.AreEqual(449.4140625, HourTotal(900, Shipped), 1e-6);
+            Assert.AreEqual(450.0, HourTotal(9999, Shipped), 1e-6, "never more than 375 + 75");
         }
 
-        /// <summary>Past the pace, every extra kill pays half: 500, 750 and 1000 an hour pay 437.5, 562.5 and 687.5.</summary>
+        /// <summary>With zc_kill_cap_max at 750 the pay stops there: 751 and 9,999 kills pay the same.</summary>
         [TestMethod]
-        public void PastThePace_EveryExtraKillPaysHalf()
+        public void HourTotals_WithAStop()
         {
-            Assert.AreEqual(437.5, ThirdHour(500), 1e-6, "375 + 125 x 0.5");
-            Assert.AreEqual(562.5, ThirdHour(750), 1e-6, "375 + 375 x 0.5");
-            Assert.AreEqual(687.5, ThirdHour(1000), 1e-6, "375 + 625 x 0.5");
+            Assert.AreEqual(447.65625, HourTotal(750, Stop750), 1e-6);
+            Assert.AreEqual(447.65625, HourTotal(751, Stop750), 1e-6, "hard stop");
+            Assert.AreEqual(447.65625, HourTotal(9999, Stop750), 1e-6);
+            Assert.AreEqual(0.0, KillPays(751, Stop750), 1e-12);
         }
 
-        /// <summary>A below-tier kill uses only its tier-dip credit of the pace, and is paid on that credit.</summary>
+        /// <summary>Each kill pays the share of its step: the 375th full, then half again every 75 kills.</summary>
+        [TestMethod]
+        public void EachKill_PaysItsStep()
+        {
+            Assert.AreEqual(1.0, KillPays(1, Shipped), 1e-12);
+            Assert.AreEqual(1.0, KillPays(375, Shipped), 1e-12);
+            Assert.AreEqual(0.5, KillPays(376, Shipped), 1e-12);
+            Assert.AreEqual(0.5, KillPays(450, Shipped), 1e-12);
+            Assert.AreEqual(0.25, KillPays(451, Shipped), 1e-12);
+            Assert.AreEqual(0.125, KillPays(526, Shipped), 1e-12);
+            Assert.AreEqual(0.015625, KillPays(751, Shipped), 1e-12);
+            Assert.AreEqual(0.0078125, KillPays(826, Shipped), 1e-12);
+
+            Assert.IsFalse(TierRewardScale.FalloffKill(374, 1, Shipped).Reduced, "the 375th is full");
+            Assert.IsTrue(TierRewardScale.FalloffKill(375, 1, Shipped).Reduced);
+            Assert.IsTrue(TierRewardScale.FalloffKill(800, 1, Stop750).Reduced, "a kill past the stop is cut to nothing");
+            Assert.AreEqual(801.0, TierRewardScale.FalloffKill(800, 1, Stop750).Count, 1e-9, "and is still counted");
+        }
+
+        /// <summary>zc_kill_cap_reduction is the share CUT at each step: 0.25 keeps 75 pct, then 56.25 pct.</summary>
+        [TestMethod]
+        public void Reduction_IsTheShareCut()
+        {
+            var quarter = Shipped with { Reduction = 0.25 };
+            Assert.AreEqual(0.75, quarter.Keep, 1e-12);
+            Assert.AreEqual(0.75, KillPays(376, quarter), 1e-12);
+            Assert.AreEqual(0.5625, KillPays(451, quarter), 1e-12);
+        }
+
+        /// <summary>A below-tier kill uses only its tier-dip credit of the hour and is paid on that credit.</summary>
         [TestMethod]
         public void BelowTierKills_CountAsTheirCredit()
         {
-            // 750 kills an hour at 0.5 credit is 375 full-value kills an hour: never cut
-            Assert.AreEqual(1125.0, Simulate(750, 0, 2250, 0.5), 1e-6);
-            // 1000 an hour at 0.5 = 500 full-value: 375 + 125 x 0.5
-            Assert.AreEqual(437.5, ThirdHour(1000, 0.5), 1e-6);
-        }
+            Assert.AreEqual(375.0, HourTotal(750, Shipped, 0.5), 1e-6, "750 half-credit kills = 375 full-value kills, all full");
+            Assert.AreEqual(412.5, HourTotal(900, Shipped, 0.5), 1e-6, "900 = 450 full-value kills");
+            Assert.AreEqual(447.65625, HourTotal(1500, Stop750, 0.5), 1e-6, "1500 = 750 full-value kills, the stop");
 
-        // -- bursts, splits and refills --
-
-        /// <summary>A burst with no time between kills pays the first 30 in full and cuts from the 31st.</summary>
-        [TestMethod]
-        public void Burst_TheReserveTakesThirtyAtOnce()
-        {
-            double recent = 0, total = 0;
-            for (var i = 0; i < 40; i++)
-            {
-                var (paid, count, reduced) = TierRewardScale.Falloff(recent, 0, 1, Pace, Half, Reserve);
-                Assert.AreEqual(i >= 30, reduced, $"kill {i + 1}");
-                recent = count;
-                total += paid;
-            }
-            Assert.AreEqual(30 + 10 * 0.5, total, 1e-9);
-            Assert.AreEqual(30.0, recent, 1e-9, "the count never goes past the reserve");
-        }
-
-        /// <summary>A kill that only partly fits under the reserve pays the fitting part in full and the rest at half.</summary>
-        [TestMethod]
-        public void SplitKill_PartFullPartHalf()
-        {
-            var (paid, count, reduced) = TierRewardScale.Falloff(29.5, 0, 1, Pace, Half, Reserve);
-            Assert.AreEqual(0.75, paid, 1e-9, "0.5 in full + 0.5 at half");
-            Assert.AreEqual(30.0, count, 1e-9);
-            Assert.IsTrue(reduced);
-        }
-
-        /// <summary>The count drains at the pace: 9.6 seconds frees one kill, 288 seconds or a day frees them all.</summary>
-        [TestMethod]
-        public void Refill_DrainsAtThePace()
-        {
-            // 9.6 s at 375 an hour drains one kill: back to exactly one full-rate kill
-            var (paid, count, reduced) = TierRewardScale.Falloff(30, 9.6, 1, Pace, Half, Reserve);
-            Assert.AreEqual(1.0, paid, 1e-9);
-            Assert.AreEqual(30.0, count, 1e-9);
-            Assert.IsFalse(reduced);
-
-            // 288 s drains all 30
-            (paid, count, _) = TierRewardScale.Falloff(30, 288, 1, Pace, Half, Reserve);
-            Assert.AreEqual(1.0, paid, 1e-9);
-            Assert.AreEqual(1.0, count, 1e-9);
-
-            // a day offline: the same, never below 0
-            (paid, count, _) = TierRewardScale.Falloff(30, 86400, 1, Pace, Half, Reserve);
-            Assert.AreEqual(1.0, paid, 1e-9);
-            Assert.AreEqual(1.0, count, 1e-9);
-        }
-
-        /// <summary>A kill worth no credit pays nothing and only drains the count to now.</summary>
-        [TestMethod]
-        public void ZeroCreditKill_OnlyDrains()
-        {
-            // what /tierdip uses to show the count as of now
-            var (paid, count, reduced) = TierRewardScale.Falloff(30, 96, 0, Pace, Half, Reserve);
-            Assert.AreEqual(0.0, paid);
-            Assert.AreEqual(20.0, count, 1e-9);
+            var (paid, count, reduced) = TierRewardScale.FalloffKill(374.5, 0.5, Shipped);
+            Assert.AreEqual(0.5, paid, 1e-9);
+            Assert.AreEqual(375.0, count, 1e-9);
             Assert.IsFalse(reduced);
         }
 
-        // -- the share --
-
-        /// <summary>A share of 1 never cuts, 0 pays nothing past the pace, and out-of-range or NaN shares are held to 0..1.</summary>
+        /// <summary>A kill that straddles a step pays each part at its own step's share.</summary>
         [TestMethod]
-        public void Mult_OneIsNoFalloff_ZeroPaysNothing()
+        public void SplitKill_EachPartPaysItsStep()
         {
-            var (paid, count, reduced) = TierRewardScale.Falloff(30, 0, 1, Pace, 1.0, Reserve);
-            Assert.AreEqual(1.0, paid, 1e-9);
-            Assert.AreEqual(30.0, count, 1e-9);
-            Assert.IsFalse(reduced, "a share of 1 never counts as cut, so nobody is told");
-
-            (paid, _, reduced) = TierRewardScale.Falloff(30, 0, 1, Pace, 0.0, Reserve);
-            Assert.AreEqual(0.0, paid, 1e-9);
+            var (paid, count, reduced) = TierRewardScale.FalloffKill(374.5, 1, Shipped);
+            Assert.AreEqual(0.75, paid, 1e-9, "0.5 full + 0.5 x 0.5");
+            Assert.AreEqual(375.5, count, 1e-9);
             Assert.IsTrue(reduced);
 
-            Assert.AreEqual(1.0, TierRewardScale.Falloff(30, 0, 1, Pace, 7.0, Reserve).Paid, 1e-9, "above 1 is held to 1");
-            Assert.AreEqual(0.0, TierRewardScale.Falloff(30, 0, 1, Pace, -1.0, Reserve).Paid, 1e-9, "below 0 is held to 0");
-            Assert.AreEqual(1.0, TierRewardScale.Falloff(30, 0, 1, Pace, double.NaN, Reserve).Paid, 1e-9, "NaN never cuts");
+            Assert.AreEqual(0.3125, TierRewardScale.FalloffKill(449.75, 1, Shipped).Paid, 1e-12, "0.25 x 0.5 + 0.75 x 0.25");
+            Assert.AreEqual(0.0234375, TierRewardScale.FalloffKill(749.5, 1, Shipped).Paid, 1e-12, "0.5 x 0.03125 + 0.5 x 0.015625");
+            Assert.AreEqual(0.015625, TierRewardScale.FalloffKill(749.5, 1, Stop750).Paid, 1e-12, "0.5 x 0.03125, the rest past the stop");
         }
 
-        // -- off and bad input --
+        // -- the coin hour --
 
-        /// <summary>A pace of 0, negative, NaN or infinite turns the falloff off: full pay and nothing counted.</summary>
+        /// <summary>The coin hour: kept for 60 minutes from its start, then the next kill starts a fresh one.</summary>
         [TestMethod]
-        public void Off_PaysInFullAndKeepsNothing()
+        public void CoinHour_KeepsThenStartsFresh()
         {
-            foreach (var pace in new[] { 0.0, -5.0, double.NaN, double.PositiveInfinity })
-            {
-                var (paid, count, reduced) = TierRewardScale.Falloff(30, 0, 1, pace, Half, Reserve);
-                Assert.AreEqual(1.0, paid, 1e-9, $"pace {pace}");
-                Assert.AreEqual(0.0, count, $"pace {pace}");
-                Assert.IsFalse(reduced, $"pace {pace}");
-            }
+            const double now = 1_000_000;
+
+            Assert.AreEqual((0.0, now, true), TierRewardScale.FalloffHour(null, null, now), "nothing saved");
+            Assert.AreEqual((600.0, now - 3599, false), TierRewardScale.FalloffHour(600, now - 3599, now), "a second left");
+            Assert.AreEqual((0.0, now, true), TierRewardScale.FalloffHour(600, now - 3600, now), "60 minutes on: a new hour");
+            Assert.AreEqual((0.0, now, true), TierRewardScale.FalloffHour(600, now - 86400, now), "a day offline");
+            Assert.AreEqual((0.0, now, true), TierRewardScale.FalloffHour(600, double.NaN, now), "a bad start");
+            Assert.AreEqual((0.0, now - 10, false), TierRewardScale.FalloffHour(double.NaN, now - 10, now), "a bad count reads as 0");
+            Assert.AreEqual((0.0, now - 10, false), TierRewardScale.FalloffHour(null, now - 10, now));
+            Assert.AreEqual((50.0, now, false), TierRewardScale.FalloffHour(50, now + 500, now), "a clock that went back keeps the count");
+
+            // a deep hour, then the hour runs out: the next kill pays in full again
+            var (count, _, fresh) = TierRewardScale.FalloffHour(9999, now - 3600, now);
+            Assert.IsTrue(fresh);
+            Assert.AreEqual(1.0, TierRewardScale.FalloffKill(count, 1, Shipped).Paid, 1e-9);
         }
 
-        /// <summary>Bad inputs (a clock that went back, NaN, a count above the reserve, a bad credit or reserve) never pay more than they should.</summary>
+        // -- bands, off and bad values --
+
+        /// <summary>The band list for the shipped steps, a stop, interval 0, a stop under the start, reductions of 0 and 1, and off.</summary>
+        [TestMethod]
+        public void Bands_FollowTheSteps()
+        {
+            var inf = double.PositiveInfinity;
+
+            // no stop: the steps run on to MaxFalloffSteps, and the last one to the end of the hour
+            var shipped = TierRewardScale.FalloffBands(Shipped);
+            Assert.AreEqual(TierRewardScale.MaxFalloffSteps + 1, shipped.Count);
+            CollectionAssert.AreEqual(new[] { (375.0, 1.0), (450.0, 0.5), (525.0, 0.25), (600.0, 0.125) }, shipped.Take(4).ToArray());
+            Assert.AreEqual((inf, Math.Pow(0.5, TierRewardScale.MaxFalloffSteps)), shipped[^1]);
+
+            CollectionAssert.AreEqual(new[] { (375.0, 1.0), (450.0, 0.5), (525.0, 0.25), (600.0, 0.125), (675.0, 0.0625), (750.0, 0.03125), (inf, 0.0) },
+                TierRewardScale.FalloffBands(Stop750).ToArray());
+
+            CollectionAssert.AreEqual(new[] { (375.0, 1.0), (750.0, 0.5), (inf, 0.0) },
+                TierRewardScale.FalloffBands(Stop750 with { Interval = 0 }).ToArray(), "interval 0 = half all the way to the stop");
+
+            CollectionAssert.AreEqual(new[] { (375.0, 1.0), (inf, 0.5) },
+                TierRewardScale.FalloffBands(Shipped with { Interval = 0 }).ToArray(), "and no stop = half for the rest of the hour");
+
+            CollectionAssert.AreEqual(new[] { (300.0, 1.0), (inf, 0.0) },
+                TierRewardScale.FalloffBands(Shipped with { Max = 300 }).ToArray(), "a stop under the start ends everything there");
+
+            CollectionAssert.AreEqual(new[] { (750.0, 1.0), (inf, 0.0) },
+                TierRewardScale.FalloffBands(Stop750 with { Reduction = 0 }).ToArray(), "reduction 0 = full pay up to the stop (equal bands merge)");
+
+            CollectionAssert.AreEqual(new[] { (inf, 1.0) },
+                TierRewardScale.FalloffBands(Shipped with { Reduction = 0 }).ToArray(), "reduction 0 and no stop = no cap in effect");
+
+            CollectionAssert.AreEqual(new[] { (375.0, 1.0), (inf, 0.0) },
+                TierRewardScale.FalloffBands(Shipped with { Reduction = 1 }).ToArray(), "reduction 1 = nothing past the start");
+
+            CollectionAssert.AreEqual(new[] { (inf, 1.0) }, TierRewardScale.FalloffBands(Shipped with { Start = 0 }).ToArray(), "off");
+
+            // a stop past MaxFalloffSteps steps: the last step runs to the stop, then nothing
+            var far = TierRewardScale.FalloffBands(Shipped with { Max = 1_000_000 });
+            Assert.AreEqual(TierRewardScale.MaxFalloffSteps + 2, far.Count);
+            Assert.AreEqual((1_000_000.0, Math.Pow(0.5, TierRewardScale.MaxFalloffSteps)), far[^2]);
+            Assert.AreEqual((inf, 0.0), far[^1]);
+        }
+
+        /// <summary>Off (start 0): every kill pays in full and the hour's count is left as it was.</summary>
+        [TestMethod]
+        public void Off_PaysInFullAndLeavesTheCount()
+        {
+            var off = Shipped with { Start = 0 };
+            Assert.IsFalse(off.On);
+            Assert.AreEqual((1.0, 700.0, false), TierRewardScale.FalloffKill(700, 1, off));
+            Assert.AreEqual(1.0, HourTotal(9999, off) / 9999, 1e-9);
+            Assert.IsFalse((Shipped with { Scale = 0 }).On, "a zero stretch is off too");
+        }
+
+        /// <summary>A bad credit pays nothing and counts nothing; a bad count reads as 0.</summary>
         [TestMethod]
         public void BadInputs_NeverMintCoins()
         {
-            Assert.AreEqual(0.5, TierRewardScale.Falloff(30, -100, 1, Pace, Half, Reserve).Paid, 1e-9, "a clock that went back drains nothing");
-            Assert.AreEqual(0.5, TierRewardScale.Falloff(30, double.NaN, 1, Pace, Half, Reserve).Paid, 1e-9);
-            Assert.AreEqual(1.0, TierRewardScale.Falloff(double.NaN, 0, 1, Pace, Half, Reserve).Paid, 1e-9, "a bad count is 0");
-            Assert.AreEqual(0.5, TierRewardScale.Falloff(50, 0, 1, Pace, Half, Reserve).Paid, 1e-9, "a count above a lowered reserve is held to it");
-            Assert.AreEqual(30.0, TierRewardScale.Falloff(50, 0, 1, Pace, Half, Reserve).Recent, 1e-9);
-            Assert.AreEqual(0.0, TierRewardScale.Falloff(10, 0, double.NaN, Pace, Half, Reserve).Paid, "a bad credit pays nothing");
-            Assert.AreEqual(0.0, TierRewardScale.Falloff(10, 0, -1, Pace, Half, Reserve).Paid);
-
-            // a reserve under 1 (or not a number) is 1: one kill at a time still pays in full
-            Assert.AreEqual(1.0, TierRewardScale.Falloff(0, 0, 1, Pace, Half, 0).Paid, 1e-9);
-            Assert.AreEqual(0.5, TierRewardScale.Falloff(1, 0, 1, Pace, Half, 0).Paid, 1e-9);
-            Assert.AreEqual(1.0, TierRewardScale.Falloff(0, 0, 1, Pace, Half, double.NaN).Paid, 1e-9);
+            Assert.AreEqual((0.0, 10.0, false), TierRewardScale.FalloffKill(10, double.NaN, Shipped));
+            Assert.AreEqual((0.0, 10.0, false), TierRewardScale.FalloffKill(10, -1, Shipped));
+            Assert.AreEqual((0.0, 10.0, false), TierRewardScale.FalloffKill(10, double.PositiveInfinity, Shipped));
+            Assert.AreEqual((1.0, 1.0, false), TierRewardScale.FalloffKill(double.NaN, 1, Shipped));
+            Assert.AreEqual((1.0, 1.0, false), TierRewardScale.FalloffKill(-50, 1, Shipped));
         }
 
-        // -- dial cleaning and the Zone Control override --
-
-        /// <summary>Each dial is held to its range, and a NaN takes the declared default.</summary>
+        /// <summary>Start, interval and max are held to 0..1,000,000 and the reduction to 0..1; a value that is not a number takes the declared default.</summary>
         [TestMethod]
         public void CleanFalloff_HoldsEachDialToItsRange()
         {
-            var high = TierRewardScale.CleanFalloff(1e9, 5, 1e9);
-            Assert.AreEqual(1_000_000.0, high.KillsPerHour);
-            Assert.AreEqual(1.0, high.Mult);
-            Assert.AreEqual(100_000.0, high.Reserve);
+            Assert.AreEqual(Shipped, TierRewardScale.CleanFalloff(double.NaN, double.NaN, double.NaN, double.NaN));
+            Assert.AreEqual(Shipped, TierRewardScale.CleanFalloff(double.PositiveInfinity, 0.5, 75, 0), "infinity is not a number here");
 
-            var low = TierRewardScale.CleanFalloff(-1, -1, -1);
-            Assert.AreEqual(0.0, low.KillsPerHour, "a negative pace is off");
-            Assert.AreEqual(0.0, low.Mult);
-            Assert.AreEqual(1.0, low.Reserve);
-
-            var nan = TierRewardScale.CleanFalloff(double.NaN, double.NaN, double.NaN);
-            Assert.AreEqual(375.0, nan.KillsPerHour, "not a number takes the declared default");
-            Assert.AreEqual(0.5, nan.Mult);
-            Assert.AreEqual(30.0, nan.Reserve);
+            var wild = TierRewardScale.CleanFalloff(-5, 3, 2_000_000, -1);
+            Assert.AreEqual(0.0, wild.Start);
+            Assert.AreEqual(1.0, wild.Reduction);
+            Assert.AreEqual(1_000_000.0, wild.Interval);
+            Assert.AreEqual(0.0, wild.Max);
+            Assert.AreEqual(1.0, wild.Scale);
         }
 
-        /// <summary>A zone Default row authoring exactly <paramref name="values"/> (case-insensitive stat names).</summary>
-        private static EvaluatedProfile Zone(Dictionary<string, double> values)
-            => new EvaluatedProfile("test zone", 15, ZoneVariant.Minion,
-                new Dictionary<string, double>(values, StringComparer.OrdinalIgnoreCase));
+        // -- zones --
 
-        /// <summary>A zone Default row overrides the server per stat, and a zone pace scales the reserve so it holds the same time.</summary>
+        /// <summary>A zone row: unset = server; its start stretches the interval and max; its mult is the share each step keeps; 0 = off there.</summary>
         [TestMethod]
-        public void FalloffFor_ZoneStatsOverrideTheServerPerStat()
+        public void FalloffFor_ZoneStretchesTheSteps()
         {
-            var server = TierRewardScale.FalloffFor(null);
-            Assert.AreEqual(375.0, server.KillsPerHour);
-            Assert.AreEqual(0.5, server.Mult);
-            Assert.AreEqual(30.0, server.Reserve);
+            Assert.AreEqual(Shipped, TierRewardScale.FalloffFor(null, Shipped));
+            Assert.AreEqual(Shipped, TierRewardScale.FalloffFor(Zone(new Dictionary<string, double>()), Shipped), "nothing authored");
 
-            var none = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double>()));
-            Assert.AreEqual(server, none, "a zone that authors neither stat = the server settings");
+            var at500 = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 500 }), Shipped);
+            Assert.AreEqual(375.0, at500.Start, "limits stay in server kills...");
+            Assert.AreEqual(500.0 / 375.0, at500.Scale, 1e-12, "...stretched by 500 / 375");
+            Assert.AreEqual(500.0, HourTotal(500, at500), 1e-6, "500 full kills there");
+            Assert.AreEqual(596.875, HourTotal(1000, at500), 1e-6, "447.65625 x 4/3: 1000 kills there = 750 server kills");
+            Assert.AreEqual(600.0, HourTotal(5000, at500), 1e-6, "never more than 450 x 4/3");
 
-            Assert.AreEqual(288.0, server.WindowSeconds, 1e-9, "30 kills at 375 an hour");
+            var keepQuarter = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffMult] = 0.25 }), Shipped);
+            Assert.AreEqual(Shipped with { Reduction = 0.75 }, keepQuarter, "the zone mult is the share KEPT: 0.25 = a 0.75 reduction");
 
-            var pace = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 500 }));
-            Assert.AreEqual(500.0, pace.KillsPerHour);
-            Assert.AreEqual(0.5, pace.Mult, "the unset stat keeps the server value");
-            Assert.AreEqual(40.0, pace.Reserve, 1e-9, "the reserve scales with the zone's pace...");
-            Assert.AreEqual(288.0, pace.WindowSeconds, 1e-9, "...so it holds the same time in every zone");
+            var off = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 0 }), Shipped);
+            Assert.IsFalse(off.On, "0 in a zone = no kill cap for kills there");
 
-            var share = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffMult] = 0.25 }));
-            Assert.AreEqual(375.0, share.KillsPerHour);
-            Assert.AreEqual(0.25, share.Mult);
-
-            var off = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 0 }));
-            Assert.AreEqual(0.0, off.KillsPerHour, "0 in a zone = no falloff for kills there");
-            Assert.AreEqual(30.0, off.Reserve);
-            Assert.AreEqual(0.0, off.WindowSeconds);
-        }
-
-        /// <summary>An authored NaN keeps the server value, and an out-of-range share is held to 0..1.</summary>
-        [TestMethod]
-        public void FalloffFor_BadZoneValues()
-        {
-            var nan = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double>
+            var bad = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double>
             {
                 [ZoneStat.PcoinFalloffKillsPerHour] = double.NaN,
-                [ZoneStat.PcoinFalloffMult] = double.NaN,
-            }));
-            Assert.AreEqual(375.0, nan.KillsPerHour, "an authored NaN keeps the server value");
-            Assert.AreEqual(0.5, nan.Mult);
-
-            var wild = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffMult] = 3 }));
-            Assert.AreEqual(1.0, wild.Mult, "held to 0..1");
+                [ZoneStat.PcoinFalloffMult] = 3,
+            }), Shipped);
+            Assert.AreEqual(1.0, bad.Scale, "NaN keeps the server start");
+            Assert.AreEqual(0.0, bad.Reduction, "a kept share held to 1 = no reduction");
         }
 
-        /// <summary>With the server pace off and a zone turning the falloff on, the zone's reserve is counted at the declared
-        /// default pace, so it still holds 288 seconds (CodeRabbit #595).</summary>
+        /// <summary>With the server kill cap off, a zone that turns it on is stretched from the declared default (375).</summary>
         [TestMethod]
-        public void FalloffFor_ServerPaceOff_ZoneReserveUsesTheDefaultPace()
+        public void FalloffFor_ServerOff_ZoneStretchesFromTheDefault()
         {
-            var serverOff = TierRewardScale.CleanFalloff(0, Half, Reserve);
-
+            var serverOff = Shipped with { Start = 0 };
             var at500 = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 500 }), serverOff);
-            Assert.AreEqual(500.0, at500.KillsPerHour);
-            Assert.AreEqual(40.0, at500.Reserve, 1e-9);
-            Assert.AreEqual(288.0, at500.WindowSeconds, 1e-9);
+            Assert.IsTrue(at500.On);
+            Assert.AreEqual(375.0, at500.Start);
+            Assert.AreEqual(500.0 / 375.0, at500.Scale, 1e-12);
 
-            var at3750 = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 3750 }), serverOff);
-            Assert.AreEqual(300.0, at3750.Reserve, 1e-9);
-            Assert.AreEqual(288.0, at3750.WindowSeconds, 1e-9, "not 28.8 s");
-
-            var at375 = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 375 }), serverOff);
-            Assert.AreEqual(30.0, at375.Reserve, 1e-9);
-
-            var still = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double>()), serverOff);
-            Assert.AreEqual(0.0, still.KillsPerHour, "a zone that does not turn it on stays off");
-            Assert.AreEqual(serverOff, TierRewardScale.FalloffFor(null, serverOff));
+            Assert.IsFalse(TierRewardScale.FalloffFor(Zone(new Dictionary<string, double>()), serverOff).On, "a zone that does not turn it on stays off");
         }
 
-        // -- the saved count, in seconds (FalloffOnDebt) --
-
-        /// <summary>Like <see cref="Simulate"/>, through the saved-seconds form with the given dials. Paid credit over [firstKill, lastKill).</summary>
-        private static double SimulateDebt(double killsPerHour, TierRewardScale.FalloffDials dials, int firstKill, int lastKill)
-        {
-            var interval = 3600.0 / killsPerHour;
-            double debt = 0, total = 0, last = 0;
-            for (var k = 0; k < lastKill; k++)
-            {
-                var t = k * interval;
-                var (paid, next, _) = TierRewardScale.FalloffOnDebt(debt, k == 0 ? 0 : t - last, 1.0, dials);
-                debt = next;
-                last = t;
-                if (k >= firstKill)
-                    total += paid;
-            }
-            return total;
-        }
-
-        /// <summary>The saved-seconds form pays exactly as the kill-count rule at one pace, in a server-pace or a zone-pace zone.</summary>
+        /// <summary>The hour is one count in server kills, so hopping to a zone with a higher start does not hand out a second allowance.</summary>
         [TestMethod]
-        public void Debt_AtOnePace_IsTheSameRule()
+        public void ZoneHopping_SharesOneHour()
         {
-            var server = TierRewardScale.FalloffFor(null);
-            Assert.AreEqual(437.5, SimulateDebt(500, server, 1000, 1500), 1e-6, "500 an hour against 375, third hour");
+            var at500 = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 500 }), Shipped);
 
-            var zone500 = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 500 }));
-            Assert.AreEqual(500.0, SimulateDebt(500, zone500, 1000, 1500), 1e-6, "a 500 zone pays 500 an hour in full");
-            Assert.AreEqual(625.0, SimulateDebt(750, zone500, 1500, 2250), 1e-6, "750 there: 500 + 250 x 0.5");
+            double count = 0;
+            for (var k = 0; k < 500; k++)
+                count = TierRewardScale.FalloffKill(count, 1, at500).Count;
+            Assert.AreEqual(375.0, count, 1e-9, "500 kills there use the whole full-rate start");
 
-            var (paid, debt, reduced) = TierRewardScale.FalloffOnDebt(288, 0, 1, server);
-            Assert.AreEqual(0.5, paid, 1e-9, "a full window cuts the next kill");
-            Assert.AreEqual(288.0, debt, 1e-9);
-            Assert.IsTrue(reduced);
+            Assert.AreEqual(0.5, TierRewardScale.FalloffKill(count, 1, Shipped).Paid, 1e-9, "the next kill in a 375 zone pays half");
         }
 
-        /// <summary>A kill where the falloff is off pays in full and leaves the saved count as it was.</summary>
-        [TestMethod]
-        public void Debt_NoFalloffZone_LeavesTheCountAlone()
-        {
-            // a kill where the falloff is off pays in full and must not empty the count (that would hand back the reserve)
-            var off = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 0 }));
-            var (paid, debt, reduced) = TierRewardScale.FalloffOnDebt(288, 5, 1, off);
-            Assert.AreEqual(1.0, paid, 1e-9);
-            Assert.AreEqual(288.0, debt, 1e-9, "unchanged, not drained, not emptied");
-            Assert.IsFalse(reduced);
+        // -- what the player sees --
 
-            Assert.AreEqual(0.0, TierRewardScale.FalloffOnDebt(double.NaN, 5, 1, off).Debt, "a bad count reads as 0");
+        /// <summary>The band the next kill starts in, and where it runs from and to.</summary>
+        [TestMethod]
+        public void BandAt_NamesTheNextKillsBand()
+        {
+            Assert.AreEqual((1.0, 0.0, 375.0), TierRewardScale.FalloffBandAt(0, Shipped));
+            Assert.AreEqual((1.0, 0.0, 375.0), TierRewardScale.FalloffBandAt(374, Shipped));
+            Assert.AreEqual((0.5, 375.0, 450.0), TierRewardScale.FalloffBandAt(375, Shipped), "after the 375th kill");
+            Assert.AreEqual((0.03125, 675.0, 750.0), TierRewardScale.FalloffBandAt(700, Shipped));
+            Assert.AreEqual((0.015625, 750.0, 825.0), TierRewardScale.FalloffBandAt(750, Shipped), "no stop: the next step");
+            Assert.AreEqual((0.0, 750.0, double.PositiveInfinity), TierRewardScale.FalloffBandAt(750, Stop750), "with a stop: nothing");
+            Assert.AreEqual((1.0, 0.0, 375.0), TierRewardScale.FalloffBandAt(double.NaN, Shipped));
         }
 
-        /// <summary>A kill in a zone authored at a very high pace cannot empty a count built up at a slower pace.</summary>
+        /// <summary>A step notice goes out for each lower share down to 1 pct, and always for a hard stop - never for the same share or slivers.</summary>
         [TestMethod]
-        public void Debt_HighPaceZone_CannotEmptyACountBuiltElsewhere()
+        public void Notice_StopsUnderOnePercent()
         {
-            var server = TierRewardScale.FalloffFor(null);
-            var fast = TierRewardScale.FalloffFor(Zone(new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 100_000 }));
-            Assert.AreEqual(8000.0, fast.Reserve, 1e-9);
+            Assert.IsTrue(TierRewardScale.FalloffNotice(1.0, 0.5));
+            Assert.IsTrue(TierRewardScale.FalloffNotice(0.03125, 0.015625), "1.5625 pct is still told");
+            Assert.IsFalse(TierRewardScale.FalloffNotice(0.015625, 0.0078125), "0.78 pct is not");
+            Assert.IsTrue(TierRewardScale.FalloffNotice(0.0078125, 0.0), "a hard stop always is");
+            Assert.IsTrue(TierRewardScale.FalloffNotice(Math.Pow(0.5, 20), 0.0), "even after a step paying almost nothing (a far zc_kill_cap_max)");
+            Assert.IsFalse(TierRewardScale.FalloffNotice(0.0, 0.0), "nothing to nothing is not news");
+            Assert.IsFalse(TierRewardScale.FalloffNotice(0.5, 0.5), "same share");
+            Assert.IsFalse(TierRewardScale.FalloffNotice(0.5, 1.0), "a higher share is never a notice");
+        }
 
-            // full window (288 s) from the 375 zone, one kill in the 100,000 zone a second later: it costs 0.036 s and fits...
-            var (paid, debt, reduced) = TierRewardScale.FalloffOnDebt(288, 1, 1, fast);
-            Assert.AreEqual(1.0, paid, 1e-9);
-            Assert.AreEqual(287.036, debt, 1e-9, "...but drains only the one second that passed");
-            Assert.IsFalse(reduced);
+        /// <summary>
+        /// The hour is saved as a share of the full-rate start, so a mid-hour change of zc_kill_cap_start keeps what each kill used:
+        /// 500 kills in a zone with its own start of 500 still leave it past its start after the server start moves (CodeRabbit #607).
+        /// </summary>
+        [TestMethod]
+        public void SavedHour_KeepsItsMeaningWhenTheStartChanges()
+        {
+            var zone500 = new Dictionary<string, double> { [ZoneStat.PcoinFalloffKillsPerHour] = 500 };
+            var before = TierRewardScale.FalloffFor(Zone(zone500), Shipped);
 
-            // ...so back in the 375 zone a second later the count is still nearly full and the kill is cut
-            (paid, debt, reduced) = TierRewardScale.FalloffOnDebt(debt, 1, 1, server);
-            Assert.IsTrue(reduced, "the trip did not hand back the reserve");
-            Assert.AreEqual(0.6022916666666667, paid, 1e-9);
-            Assert.AreEqual(288.0, debt, 1e-9);
+            double count = 0;
+            for (var k = 0; k < 500; k++)
+                count = TierRewardScale.FalloffKill(count, 1, before).Count;
+            var saved = TierRewardScale.FalloffCountToSaved(count, before);
+            Assert.AreEqual(1.0, saved, 1e-9, "the whole start used");
+
+            // unchanged settings: the next kill there is in the first cut step
+            Assert.AreEqual(0.5, TierRewardScale.FalloffBandAt(TierRewardScale.FalloffCountFromSaved(saved, before), before).Rate, 1e-12);
+
+            // the server start moves to 750 mid-hour: the zone's own start is still 500, so it is still past it
+            var after = TierRewardScale.FalloffFor(Zone(zone500), Shipped with { Start = 750 });
+            Assert.AreEqual(0.5, TierRewardScale.FalloffBandAt(TierRewardScale.FalloffCountFromSaved(saved, after), after).Rate, 1e-12,
+                "no extra full-rate kills from a settings change");
+
+            // round trip, and the edges
+            Assert.AreEqual(212.5, TierRewardScale.FalloffCountFromSaved(TierRewardScale.FalloffCountToSaved(212.5, Shipped), Shipped), 1e-9);
+            Assert.AreEqual(0.0, TierRewardScale.FalloffCountFromSaved(1.0, Shipped with { Start = 0 }), "off reads 0");
+            Assert.AreEqual(0.0, TierRewardScale.FalloffCountFromSaved(double.NaN, Shipped));
+            Assert.AreEqual(0.0, TierRewardScale.FalloffCountToSaved(-3, Shipped));
+        }
+
+        /// <summary>/tierdip's preview of the next kill: the blend a kill that straddles a step really pays, at its tier-dip credit (CodeRabbit #607).</summary>
+        [TestMethod]
+        public void NextShare_PreviewsTheRealPay()
+        {
+            Assert.AreEqual(1.0, TierRewardScale.FalloffNextShare(0, 1, Shipped), 1e-12);
+            Assert.AreEqual(0.75, TierRewardScale.FalloffNextShare(374.5, 1, Shipped), 1e-12, "half full, half at 50 pct");
+            Assert.AreEqual(1.0, TierRewardScale.FalloffNextShare(374.5, 0.5, Shipped), 1e-12, "a half-credit kill still fits under the start");
+            Assert.AreEqual(0.5, TierRewardScale.FalloffNextShare(375, 1, Shipped), 1e-12);
+            Assert.AreEqual(0.0, TierRewardScale.FalloffNextShare(9999, 1, Stop750), 1e-12, "past a stop");
+            Assert.AreEqual(0.75, TierRewardScale.FalloffNextShare(374.5, 0, Shipped), 1e-12, "no credit here previews a full-value kill");
+            Assert.AreEqual(1.0, TierRewardScale.FalloffNextShare(9999, 1, Shipped with { Start = 0 }), 1e-12, "off");
+        }
+
+        /// <summary>The schedule in a player's words: the shipped rule, a zone's stretched limits, band by band when short, and plain ASCII.</summary>
+        [TestMethod]
+        public void Describe_ReadsTheSchedule()
+        {
+            Assert.AreEqual("full for the first 375 kills, then 50 pct less every 75 kills (50, 25, 12.5 pct ...)",
+                TierRewardScale.DescribeFalloff(Shipped));
+            Assert.AreEqual("full for the first 500 kills, then 50 pct less every 100 kills (50, 25, 12.5 pct ...)",
+                TierRewardScale.DescribeFalloff(Shipped with { Scale = 500.0 / 375.0 }));
+            Assert.AreEqual("full for the first 375 kills, then 50 pct less every 75 kills (50, 25, 12.5 pct ...), and none past 1000000",
+                TierRewardScale.DescribeFalloff(Shipped with { Max = 1_000_000 }));
+            Assert.AreEqual("full for the first 375 kills, then 50 pct up to 450, 25 pct up to 525, 12.5 pct up to 600, 6.25 pct up to 675, 3.125 pct up to 750 and none past 750",
+                TierRewardScale.DescribeFalloff(Stop750));
+            Assert.AreEqual("full for the first 375 kills, then 50 pct past 375", TierRewardScale.DescribeFalloff(Shipped with { Interval = 0 }));
+            Assert.AreEqual("full for the first 375 kills, then none past 375", TierRewardScale.DescribeFalloff(Shipped with { Reduction = 1 }));
+            Assert.AreEqual("full for every kill", TierRewardScale.DescribeFalloff(Shipped with { Reduction = 0 }));
+            Assert.AreEqual("full for every kill", TierRewardScale.DescribeFalloff(Shipped with { Start = 0 }));
+
+            Assert.IsTrue(TierRewardScale.DescribeFalloff(Shipped).All(ch => ch < 128), "client text must be 7-bit ASCII");
         }
     }
 }
