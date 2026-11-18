@@ -489,6 +489,9 @@ namespace ACE.Server.WorldObjects
 
             var prevState = GeneratorDisabled;
 
+            // tiered dungeons: a generator inside a tier copy follows the tier's own event, never retail's
+            using var tierScope = ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.EnterScope(this);
+
             if (!EventManager.IsEventAvailable(GeneratorEvent))
                 return;
 

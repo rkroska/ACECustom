@@ -2345,6 +2345,8 @@ namespace ACE.Server.Managers.ZoneControl
             m *= attacker.GetZcCurseDamageDealtMod(profile);
             // monster archetypes (2026-10-20): a rolled bow user's missile hits / caster's spell hits get their own dial
             m *= attacker.ZcArchetypeDamageMult(profile, kind);
+            // tiered dungeons (owner 2026-11-11): later rooms of a tier copy hit harder (x1 everywhere else)
+            m *= ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.RoomDamageMult(attacker);
             return (float)m;
         }
 
