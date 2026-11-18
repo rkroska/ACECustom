@@ -1171,6 +1171,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> discord_audit_level { get; private set; } = new(1, "Controls Admin Audit logs. 0=None, 1=Info (Bans/Kicks), 2=Verbose (All commands).");
         public static ConfigProperty<long> discord_broadcast_level { get; private set; } = new(1, "Controls World Broadcasts. 0=None, 1=Info (@broadcast/@event), 2=Verbose.");
         public static ConfigProperty<long> discord_performance_level { get; private set; } = new(1, "Controls Performance Alerts. 0=None, 1=Info (Overload/Queue), 2=Verbose (ActionLag/SlowSave).");
+        public static ConfigProperty<long> discord_server_status_channel { get; private set; } = new(0, "Discord channel id for server status posts: online, restart scheduled/cancelled, offline (planned or stopped on purpose), and back online after a crash. 0 = off. Use /modifylong discord_server_status_channel <channel id>.");
 
         // Network Throttle Configuration
         public static ConfigProperty<long> net_max_packets_per_tick { get; private set; } = new(0, "Maximum UDP packets sent to a single client per server tick. 0 = unlimited (drain the whole queue each tick, matching base ACE) and is the default. A burst of CreateObject packets on landblock entry/teleport must not be trickled out over many ticks or objects pop in slowly. Set a positive value ONLY as an emergency throttle during mass-spawn incidents. Use /modifylong net_max_packets_per_tick <value>.");
