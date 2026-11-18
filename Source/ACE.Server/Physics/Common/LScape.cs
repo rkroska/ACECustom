@@ -27,6 +27,51 @@ namespace ACE.Server.Physics.Common
         /// This function is thread safe
         /// </summary>
         /// <param name="blockCellID">Any landblock + cell ID within the landblock</param>
+        // Deep dungeon fix (2026-11-17): a new EnvCell's PostInit = build_visible_cells (loads every cell it can see, via
+        // get_landcell) + init_static_objects. Each newly seen cell ran its OWN PostInit inside that call - recursion as deep
+        // as the dungeon's visibility chain. 00E5 (Temple of the Three) went ~1080 levels deep and overflowed the 1 MB World
+        // Manager stack on a login into the unloaded dungeon (0xc00000fd, server gone).
+        //
+        // Now a new cell starts a GROUP, run in two flat stages:
+        //   A. build visible cells breadth-first - a cell first seen while some cell of the group builds its list joins the
+        //      queue instead of recursing;
+        //   B. init_static_objects for every cell of the group, deepest-found first (as the old recursion finished them).
+        // Stage B runs only after EVERY cell of the group has its VisibleCells, which static placement relies on
+        // (GetVisible during find_transit_cells). A cell first loaded during stage B is a new, normal group of its own.
+        // Same cells, same caching; every cell fully set up before the outermost get_landcell returns. Per thread.
+        [ThreadStatic] private static Queue<(EnvCell Cell, int? Variation)> envCellGroupQueue;
+
+        private static void PostInitEnvCell(EnvCell envCell, int? variation)
+        {
+            if (envCellGroupQueue != null)
+            {
+                envCellGroupQueue.Enqueue((envCell, variation));   // seen during stage A: built by the running group
+                return;
+            }
+
+            var group = new List<(EnvCell Cell, int? Variation)>();
+            var queue = new Queue<(EnvCell Cell, int? Variation)>();
+            queue.Enqueue((envCell, variation));
+
+            envCellGroupQueue = queue;
+            try
+            {
+                while (queue.Count > 0)
+                {
+                    var item = queue.Dequeue();
+                    item.Cell.build_visible_cells();
+                    group.Add(item);
+                }
+            }
+            finally
+            {
+                envCellGroupQueue = null;
+            }
+
+            for (var i = group.Count - 1; i >= 0; i--)
+                group[i].Cell.init_static_objects(group[i].Variation);
+        }
+
         public static Landblock get_landblock(uint blockCellID, int? variationId)
         {
             var landblockID = blockCellID | 0xFFFF;
@@ -161,7 +206,7 @@ namespace ACE.Server.Physics.Common
                 stored.Pos.Variation = envVariation; //todo - gross
                 stored.VariationId = envVariation;
                 var envCell = (EnvCell)stored;
-                envCell.PostInit(envVariation);
+                PostInitEnvCell(envCell, envVariation);
                 if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(blockCellID))
                     log.Info($"[IndoorPlaceDiag] get_landcell loaded new env cell id={stored.ID:X8} origin={envCell.Pos.Frame.Origin} envV={envVariation?.ToString() ?? "null"} cacheKeyVar={cacheKey.Variant?.ToString() ?? "null"}");
                 cell = stored;
