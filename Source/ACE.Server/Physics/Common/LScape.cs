@@ -39,19 +39,23 @@ namespace ACE.Server.Physics.Common
         // Stage B runs only after EVERY cell of the group has its VisibleCells, which static placement relies on
         // (GetVisible during find_transit_cells). A cell first loaded during stage B is a new, normal group of its own.
         // Same cells, same caching; every cell fully set up before the outermost get_landcell returns. Per thread.
-        // One cell failing is logged and skipped, so it can never leave the REST of a big group half-built.
+        // One cell failing is logged and skipped, so it can never leave the REST of a big group half-built. A failed cell is
+        // never served as complete: it leaves the cache (the next get_landcell loads it fresh and runs the whole setup again),
+        // its partial static objects are destroyed, and no cell of the group keeps the broken copy as a neighbour.
         [ThreadStatic] private static Queue<(EnvCell Cell, int? Variation)> envCellGroupQueue;
 
-        private static void PostInitEnvCell(EnvCell envCell, int? variation)
+        /// <returns>false when THIS cell failed its setup (it has been evicted - the caller must not use it).</returns>
+        private static bool PostInitEnvCell(EnvCell envCell, int? variation)
         {
             if (envCellGroupQueue != null)
             {
                 envCellGroupQueue.Enqueue((envCell, variation));   // seen during stage A: built by the running group
-                return;
+                return true;
             }
 
             var group = new List<(EnvCell Cell, int? Variation)>();
             var queue = new Queue<(EnvCell Cell, int? Variation)>();
+            HashSet<EnvCell> failed = null;
             queue.Enqueue((envCell, variation));
 
             envCellGroupQueue = queue;
@@ -61,7 +65,11 @@ namespace ACE.Server.Physics.Common
                 {
                     var item = queue.Dequeue();
                     try { item.Cell.build_visible_cells(); }
-                    catch (Exception ex) { log.Error($"[PHYSICS] build_visible_cells failed for cell 0x{item.Cell.ID:X8} v{item.Variation?.ToString() ?? "base"}: {ex}"); }
+                    catch (Exception ex)
+                    {
+                        log.Error($"[PHYSICS] build_visible_cells failed for cell 0x{item.Cell.ID:X8} v{item.Variation?.ToString() ?? "base"} - evicted, it loads fresh next time: {ex}");
+                        (failed ??= new HashSet<EnvCell>()).Add(item.Cell);
+                    }
                     group.Add(item);
                 }
             }
@@ -72,9 +80,48 @@ namespace ACE.Server.Physics.Common
 
             for (var i = group.Count - 1; i >= 0; i--)
             {
+                if (failed != null && failed.Contains(group[i].Cell))
+                    continue;   // no visible cells: placing its static objects would only fail again
                 try { group[i].Cell.init_static_objects(group[i].Variation); }
-                catch (Exception ex) { log.Error($"[PHYSICS] init_static_objects failed for cell 0x{group[i].Cell.ID:X8} v{group[i].Variation?.ToString() ?? "base"}: {ex}"); }
+                catch (Exception ex)
+                {
+                    log.Error($"[PHYSICS] init_static_objects failed for cell 0x{group[i].Cell.ID:X8} v{group[i].Variation?.ToString() ?? "base"} - evicted, it loads fresh next time: {ex}");
+                    (failed ??= new HashSet<EnvCell>()).Add(group[i].Cell);
+                }
             }
+
+            if (failed == null)
+                return true;
+            EvictFailedEnvCells(group, failed);
+            return !failed.Contains(envCell);
+        }
+
+        /// <summary>
+        /// A cell whose setup failed must not be served as complete. Out of the landblock's cache (a later get_landcell loads a
+        /// new copy and runs the full setup again), its partly placed static objects destroyed (as init_static_objects does
+        /// for one it cannot place), and dropped from the group's VisibleCells (it is new in this group, so no older cell can
+        /// list it) - GetVisible then reports it as not loaded instead of handing out the broken copy.
+        /// </summary>
+        private static void EvictFailedEnvCells(List<(EnvCell Cell, int? Variation)> group, HashSet<EnvCell> failed)
+        {
+            foreach (var cell in failed)
+            {
+                var key = new VariantCacheId { Landblock = (ushort)(cell.ID & 0xFFFF), Variant = cell.VariationId };
+                cell.CurLandblock?.LandCells?.TryRemove(new KeyValuePair<VariantCacheId, ObjCell>(key, cell));
+
+                var partial = cell.StaticObjects;
+                cell.StaticObjects = null;
+                if (partial != null)
+                    foreach (var staticObj in partial)
+                    {
+                        try { staticObj.DestroyObject(); }
+                        catch (Exception ex) { log.Error($"[PHYSICS] could not remove a static object of failed cell 0x{cell.ID:X8}: {ex.Message}"); }
+                    }
+            }
+
+            foreach (var (cell, _) in group)
+                foreach (var bad in failed)
+                    cell.VisibleCells.TryRemove(new KeyValuePair<uint, EnvCell>(bad.ID & 0xFFFF, bad));
         }
 
         public static Landblock get_landblock(uint blockCellID, int? variationId)
@@ -211,7 +258,8 @@ namespace ACE.Server.Physics.Common
                 stored.Pos.Variation = envVariation; //todo - gross
                 stored.VariationId = envVariation;
                 var envCell = (EnvCell)stored;
-                PostInitEnvCell(envCell, envVariation);
+                if (!PostInitEnvCell(envCell, envVariation))
+                    return null;   // its setup failed: evicted, never served as complete (logged with cell + variation)
                 if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(blockCellID))
                     log.Info($"[IndoorPlaceDiag] get_landcell loaded new env cell id={stored.ID:X8} origin={envCell.Pos.Frame.Origin} envV={envVariation?.ToString() ?? "null"} cacheKeyVar={cacheKey.Variant?.ToString() ?? "null"}");
                 cell = stored;
