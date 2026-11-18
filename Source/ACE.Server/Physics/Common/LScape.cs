@@ -35,10 +35,11 @@ namespace ACE.Server.Physics.Common
         // Now a new cell starts a GROUP, run in two flat stages:
         //   A. build visible cells breadth-first - a cell first seen while some cell of the group builds its list joins the
         //      queue instead of recursing;
-        //   B. init_static_objects for every cell of the group, deepest-found first (as the old recursion finished them).
+        //   B. init_static_objects for every cell of the group (last found first - no ordering is relied on).
         // Stage B runs only after EVERY cell of the group has its VisibleCells, which static placement relies on
         // (GetVisible during find_transit_cells). A cell first loaded during stage B is a new, normal group of its own.
         // Same cells, same caching; every cell fully set up before the outermost get_landcell returns. Per thread.
+        // One cell failing is logged and skipped, so it can never leave the REST of a big group half-built.
         [ThreadStatic] private static Queue<(EnvCell Cell, int? Variation)> envCellGroupQueue;
 
         private static void PostInitEnvCell(EnvCell envCell, int? variation)
@@ -59,7 +60,8 @@ namespace ACE.Server.Physics.Common
                 while (queue.Count > 0)
                 {
                     var item = queue.Dequeue();
-                    item.Cell.build_visible_cells();
+                    try { item.Cell.build_visible_cells(); }
+                    catch (Exception ex) { log.Error($"[PHYSICS] build_visible_cells failed for cell 0x{item.Cell.ID:X8} v{item.Variation?.ToString() ?? "base"}: {ex}"); }
                     group.Add(item);
                 }
             }
@@ -69,7 +71,10 @@ namespace ACE.Server.Physics.Common
             }
 
             for (var i = group.Count - 1; i >= 0; i--)
-                group[i].Cell.init_static_objects(group[i].Variation);
+            {
+                try { group[i].Cell.init_static_objects(group[i].Variation); }
+                catch (Exception ex) { log.Error($"[PHYSICS] init_static_objects failed for cell 0x{group[i].Cell.ID:X8} v{group[i].Variation?.ToString() ?? "base"}: {ex}"); }
+            }
         }
 
         public static Landblock get_landblock(uint blockCellID, int? variationId)
