@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Linq;
 
 using log4net;
@@ -40,9 +41,15 @@ namespace ACE.Server.Physics.Common
         // (GetVisible during find_transit_cells). A cell first loaded during stage B is a new, normal group of its own.
         // Same cells, same caching; every cell fully set up before the outermost get_landcell returns. Per thread.
         // One cell failing is logged and skipped, so it can never leave the REST of a big group half-built. A failed cell is
-        // never served as complete: it leaves the cache (the next get_landcell loads it fresh and runs the whole setup again),
-        // its partial static objects are destroyed, and no cell of the group keeps the broken copy as a neighbour. When it
-        // later loads fine, the cells already cached that can see it take the new copy back (LinkToCachedNeighbours).
+        // never served as complete:
+        //   - it leaves the cache before anything outside the group can find it (a stage A failure when stage A ends - no
+        //     other group runs during stage A - a stage B failure at once). A later get_landcell loads it fresh and runs the
+        //     whole setup again; that includes the groups stage B itself starts.
+        //   - NO cached cell of its landblock keeps the broken copy as a neighbour (not only this group: a group stage B
+        //     started may have picked it up before it failed). A fresh copy loaded meanwhile takes its place. A stage A
+        //     failure is dropped before stage B, so static placement never goes through a cell with no visible cells.
+        //   - its partial static objects are destroyed.
+        // When it later loads fine, EVERY cached cell that lists it takes the new copy back (LinkToCachedNeighbours).
         [ThreadStatic] private static Queue<(EnvCell Cell, int? Variation)> envCellGroupQueue;
 
         /// <returns>false when THIS cell failed its setup (it has been evicted - the caller must not use it).</returns>
@@ -79,6 +86,15 @@ namespace ACE.Server.Physics.Common
                 envCellGroupQueue = null;
             }
 
+            // out of the cache and out of every neighbour list before stage B: static placement must not go through a cell
+            // with no visible cells, and a group stage B starts must load a fresh copy, never find this one
+            if (failed != null)
+            {
+                foreach (var cell in failed)
+                    RemoveFromCellCache(cell);
+                DropFailedFromNeighbours(failed);
+            }
+
             for (var i = group.Count - 1; i >= 0; i--)
             {
                 if (failed != null && failed.Contains(group[i].Cell))
@@ -88,51 +104,70 @@ namespace ACE.Server.Physics.Common
                 {
                     log.Error($"[PHYSICS] init_static_objects failed for cell 0x{group[i].Cell.ID:X8} v{group[i].Variation?.ToString() ?? "base"} - evicted, it loads fresh next time: {ex}");
                     (failed ??= new HashSet<EnvCell>()).Add(group[i].Cell);
+                    RemoveFromCellCache(group[i].Cell);   // at once: the rest of stage B may start groups that would find it
                 }
             }
 
             if (failed != null)
-                EvictFailedEnvCells(group, failed);
+            {
+                DestroyPartialStaticObjects(failed);
+                DropFailedFromNeighbours(failed);   // again: a stage B failure, and anything stage B's groups picked up
+            }
             LinkToCachedNeighbours(group, failed);
             return failed == null || !failed.Contains(envCell);
         }
 
         /// <summary>
-        /// Every cell of the group that set up fine adds itself to the neighbours it sees that were cached BEFORE this group
-        /// (those built their lists earlier, so they hold this cell only if it was loaded then). Without this, a cell that
-        /// once failed and was evicted would stay missing from an older neighbour's VisibleCells after it loads fine on a
-        /// retry. Cells of the group built their lists with every cell of the group cached, so they need nothing.
+        /// Cells evicted after a failed setup, per physics landblock (weak: they go with the landblock). Only these can be
+        /// missing from a cached neighbour's VisibleCells - any other cell was loaded by the neighbour's own build.
+        /// </summary>
+        private static readonly ConditionalWeakTable<Landblock, ConcurrentDictionary<VariantCacheId, byte>> evictedEnvCells = new();
+
+        /// <summary>
+        /// A cell that loads fine after an earlier copy of it failed and was evicted goes back into the VisibleCells of every
+        /// cached cell that lists it - not only the cells it sees itself (visibility lists need not be mutual). Cells of the
+        /// group built their lists with it cached, so they have it already. Nothing to do (one lookup) when nothing failed.
         /// </summary>
         private static void LinkToCachedNeighbours(List<(EnvCell Cell, int? Variation)> group, HashSet<EnvCell> failed)
         {
-            var inGroup = new HashSet<EnvCell>(group.Count);
-            foreach (var (cell, _) in group)
-                inGroup.Add(cell);
-
             foreach (var (cell, _) in group)
             {
                 if (failed != null && failed.Contains(cell))
                     continue;   // stays out until a load of it succeeds
+                var landblock = cell.CurLandblock;
+                if (landblock?.LandCells == null || !evictedEnvCells.TryGetValue(landblock, out var evicted) || evicted.IsEmpty
+                    || !evicted.TryRemove(CellCacheKey(cell.ID, cell.VariationId), out _))
+                    continue;
+
                 var id = (ushort)(cell.ID & 0xFFFF);
-                foreach (var neighbour in cell.VisibleCells.Values)
-                    if (!inGroup.Contains(neighbour) && neighbour.VisibleCellIDs.Contains(id))
-                        neighbour.VisibleCells.TryAdd(id, cell);
+                foreach (var cached in landblock.LandCells.Values)
+                    if (cached is EnvCell other && !ReferenceEquals(other, cell) && other.VariationId == cell.VariationId
+                        && other.VisibleCellIDs.Contains(id))
+                        other.VisibleCells.TryAdd(id, cell);
             }
         }
 
-        /// <summary>
-        /// A cell whose setup failed must not be served as complete. Out of the landblock's cache (a later get_landcell loads a
-        /// new copy and runs the full setup again), its partly placed static objects destroyed (as init_static_objects does
-        /// for one it cannot place), and dropped from the group's VisibleCells (it is new in this group, so no older cell can
-        /// list it) - GetVisible then reports it as not loaded instead of handing out the broken copy.
-        /// </summary>
-        private static void EvictFailedEnvCells(List<(EnvCell Cell, int? Variation)> group, HashSet<EnvCell> failed)
+        /// <summary>The cache key get_landcell stored this cell under.</summary>
+        private static VariantCacheId CellCacheKey(uint cellId, int? variation)
+            => new VariantCacheId { Landblock = (ushort)(cellId & 0xFFFF), Variant = variation };
+
+        /// <summary>Takes this very copy out of its landblock's cell cache (a newer copy under the same key stays) and notes
+        /// the cell as evicted, so a later good load of it relinks every cached cell that lists it.</summary>
+        private static void RemoveFromCellCache(EnvCell cell)
+        {
+            var landblock = cell.CurLandblock;
+            if (landblock?.LandCells == null)
+                return;
+            var key = CellCacheKey(cell.ID, cell.VariationId);
+            if (landblock.LandCells.TryRemove(new KeyValuePair<VariantCacheId, ObjCell>(key, cell)))
+                evictedEnvCells.GetOrCreateValue(landblock)[key] = 0;
+        }
+
+        /// <summary>A failed cell's partly placed static objects are destroyed, as init_static_objects does for one it cannot place.</summary>
+        private static void DestroyPartialStaticObjects(HashSet<EnvCell> failed)
         {
             foreach (var cell in failed)
             {
-                var key = new VariantCacheId { Landblock = (ushort)(cell.ID & 0xFFFF), Variant = cell.VariationId };
-                cell.CurLandblock?.LandCells?.TryRemove(new KeyValuePair<VariantCacheId, ObjCell>(key, cell));
-
                 var partial = cell.StaticObjects;
                 cell.StaticObjects = null;
                 if (partial != null)
@@ -142,10 +177,37 @@ namespace ACE.Server.Physics.Common
                         catch (Exception ex) { log.Error($"[PHYSICS] could not remove a static object of failed cell 0x{cell.ID:X8}: {ex.Message}"); }
                     }
             }
+        }
 
-            foreach (var (cell, _) in group)
-                foreach (var bad in failed)
-                    cell.VisibleCells.TryRemove(new KeyValuePair<uint, EnvCell>(bad.ID & 0xFFFF, bad));
+        /// <summary>
+        /// A cell whose setup failed must not be served as complete. Already out of the cache (RemoveFromCellCache); here every
+        /// cached cell of its landblock drops it from VisibleCells - this group's cells and any a group started during stage B
+        /// may have built with it. Where a fresh copy of that cell has been loaded since, it takes the broken one's place;
+        /// otherwise GetVisible reports the cell as not loaded until a load of it succeeds (LinkToCachedNeighbours).
+        /// Only runs after a failure, so the whole-landblock pass costs nothing on a normal load.
+        /// </summary>
+        private static void DropFailedFromNeighbours(HashSet<EnvCell> failed)
+        {
+            var landblocks = new HashSet<Landblock>();
+            foreach (var cell in failed)
+                if (cell.CurLandblock?.LandCells != null)
+                    landblocks.Add(cell.CurLandblock);
+
+            foreach (var landblock in landblocks)
+                foreach (var cached in landblock.LandCells.Values)
+                {
+                    if (cached is not EnvCell envCell || failed.Contains(envCell))
+                        continue;
+                    foreach (var entry in envCell.VisibleCells.ToArray())
+                    {
+                        if (!failed.Contains(entry.Value))
+                            continue;
+                        envCell.VisibleCells.TryRemove(entry);
+                        if (landblock.LandCells.TryGetValue(CellCacheKey(entry.Key, envCell.VariationId), out var fresh)
+                            && fresh is EnvCell freshCell && !failed.Contains(freshCell))
+                            envCell.VisibleCells.TryAdd(entry.Key, freshCell);
+                    }
+                }
         }
 
         public static Landblock get_landblock(uint blockCellID, int? variationId)
