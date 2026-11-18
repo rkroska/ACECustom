@@ -41,7 +41,8 @@ namespace ACE.Server.Physics.Common
         // Same cells, same caching; every cell fully set up before the outermost get_landcell returns. Per thread.
         // One cell failing is logged and skipped, so it can never leave the REST of a big group half-built. A failed cell is
         // never served as complete: it leaves the cache (the next get_landcell loads it fresh and runs the whole setup again),
-        // its partial static objects are destroyed, and no cell of the group keeps the broken copy as a neighbour.
+        // its partial static objects are destroyed, and no cell of the group keeps the broken copy as a neighbour. When it
+        // later loads fine, the cells already cached that can see it take the new copy back (LinkToCachedNeighbours).
         [ThreadStatic] private static Queue<(EnvCell Cell, int? Variation)> envCellGroupQueue;
 
         /// <returns>false when THIS cell failed its setup (it has been evicted - the caller must not use it).</returns>
@@ -90,10 +91,33 @@ namespace ACE.Server.Physics.Common
                 }
             }
 
-            if (failed == null)
-                return true;
-            EvictFailedEnvCells(group, failed);
-            return !failed.Contains(envCell);
+            if (failed != null)
+                EvictFailedEnvCells(group, failed);
+            LinkToCachedNeighbours(group, failed);
+            return failed == null || !failed.Contains(envCell);
+        }
+
+        /// <summary>
+        /// Every cell of the group that set up fine adds itself to the neighbours it sees that were cached BEFORE this group
+        /// (those built their lists earlier, so they hold this cell only if it was loaded then). Without this, a cell that
+        /// once failed and was evicted would stay missing from an older neighbour's VisibleCells after it loads fine on a
+        /// retry. Cells of the group built their lists with every cell of the group cached, so they need nothing.
+        /// </summary>
+        private static void LinkToCachedNeighbours(List<(EnvCell Cell, int? Variation)> group, HashSet<EnvCell> failed)
+        {
+            var inGroup = new HashSet<EnvCell>(group.Count);
+            foreach (var (cell, _) in group)
+                inGroup.Add(cell);
+
+            foreach (var (cell, _) in group)
+            {
+                if (failed != null && failed.Contains(cell))
+                    continue;   // stays out until a load of it succeeds
+                var id = (ushort)(cell.ID & 0xFFFF);
+                foreach (var neighbour in cell.VisibleCells.Values)
+                    if (!inGroup.Contains(neighbour) && neighbour.VisibleCellIDs.Contains(id))
+                        neighbour.VisibleCells.TryAdd(id, cell);
+            }
         }
 
         /// <summary>
