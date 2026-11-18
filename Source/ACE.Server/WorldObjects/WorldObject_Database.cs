@@ -76,11 +76,10 @@ namespace ACE.Server.WorldObjects
         // The SaveStartTime of the stuck flag already reported, so one stuck flag logs one line.
         private DateTime _staleSaveFlagLoggedFor;
 
-        private void LogStaleSaveFlagOnce(string itemName, ACE.Entity.ObjectGuid itemGuid, double timeInFlight)
+        private void LogStaleSaveFlagOnce(string itemName, ACE.Entity.ObjectGuid itemGuid, double timeInFlight, DateTime startedAt)
         {
             try
             {
-                var startedAt = SaveStartTime;
                 if (_staleSaveFlagLoggedFor == startedAt)
                     return;
 
@@ -119,7 +118,10 @@ namespace ACE.Server.WorldObjects
             var itemName = Name;
             var itemGuid = Guid;
 
-            if (SaveStartTime == DateTime.MinValue)
+            // Read once: a save callback on the database thread can reset SaveStartTime at any moment,
+            // and the age, the stale-flag log line and its once-only marker must all use the same value.
+            var startedAt = SaveStartTime;
+            if (startedAt == DateTime.MinValue)
             {
                 // SaveInProgress is set but SaveStartTime is uninitialized — this is a bug state
                 // (something set SaveInProgress=true without going through SaveBiotaToDatabase).
@@ -129,7 +131,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
             
-            var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+            var timeInFlight = (DateTime.UtcNow - startedAt).TotalMilliseconds;
             
             // Sub-50ms in-flight almost always means a batch player save just marked this item as
             // SaveInProgress but hasn't actually dispatched the DB call yet. Not a real race.
@@ -142,7 +144,7 @@ namespace ACE.Server.WorldObjects
             // out of the Discord alert. Reporting only: the flag and the save path are not touched.
             if (IsStaleSaveFlag(timeInFlight))
             {
-                LogStaleSaveFlagOnce(itemName, itemGuid, timeInFlight);
+                LogStaleSaveFlagOnce(itemName, itemGuid, timeInFlight, startedAt);
 
                 // Adds nothing to the alert, but sends any real race still waiting for its minute to
                 // pass - otherwise it would sit until the next real race happened to arrive.
