@@ -296,9 +296,10 @@ namespace ACE.Server.Managers
 
         private static void PreloadLandblock(ushort landblock, PreloadedLandblocks preloadLandblock)
         {
-            var landblockID = new LandblockId((uint)landblock << 16 | 0xFFFF);
-            GetLandblock(landblockID, preloadLandblock.IncludeAdjacents, null, preloadLandblock.Permaload);
-            log.DebugFormat("Landblock {0:X4}, ({1}) preloaded. IncludeAdjacents = {2}, Permaload = {3}", landblockID.Landblock, preloadLandblock.Description, preloadLandblock.IncludeAdjacents, preloadLandblock.Permaload);
+            var variation = VariationManager.NormalizeBase(preloadLandblock.Variation);
+            var landblockID = new LandblockId((uint)landblock << 16 | 0xFFFF, variation);
+            GetLandblock(landblockID, preloadLandblock.IncludeAdjacents, variation, preloadLandblock.Permaload);
+            log.DebugFormat("Landblock {0:X4} v{1}, ({2}) preloaded. IncludeAdjacents = {3}, Permaload = {4}", landblockID.Landblock, variation?.ToString() ?? "base", preloadLandblock.Description, preloadLandblock.IncludeAdjacents, preloadLandblock.Permaload);
         }
 
         /// <summary>
